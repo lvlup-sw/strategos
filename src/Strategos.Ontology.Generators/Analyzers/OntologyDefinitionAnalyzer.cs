@@ -475,10 +475,22 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
                 case "Initial":
                     info.LifecycleInitialCount++;
+                    var initialState = FindStateNameInChain(invocation);
+                    if (initialState != null)
+                    {
+                        info.LifecycleInitialStates.Add(initialState);
+                    }
+
                     break;
 
                 case "Terminal":
                     info.LifecycleTerminalCount++;
+                    var terminalState = FindStateNameInChain(invocation);
+                    if (terminalState != null)
+                    {
+                        info.LifecycleTerminalStates.Add(terminalState);
+                    }
+
                     break;
 
                 case "Transition":
@@ -499,6 +511,15 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     if (triggerActionName != null)
                     {
                         info.LifecycleTransitionActions.Add((triggerActionName, invocation.GetLocation()));
+                    }
+
+                    break;
+
+                case "TriggeredByEvent":
+                    if (calledMethod.TypeArguments.Length > 0)
+                    {
+                        var triggerEventType = calledMethod.TypeArguments[0].Name;
+                        info.LifecycleTransitionEvents.Add((triggerEventType, invocation.GetLocation()));
                     }
 
                     break;
@@ -748,6 +769,49 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 }
             }
 
+            // AONT019: TriggeredByEvent references undeclared event
+            foreach (var (eventType, location) in ot.LifecycleTransitionEvents)
+            {
+                if (!ot.DeclaredEvents.Contains(eventType))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        OntologyDiagnostics.LifecycleTransitionBadEvent, location, ot.Name, eventType));
+                }
+            }
+
+            // AONT020: Unreachable state (not Initial and not target of any transition)
+            if (ot.LifecyclePropertyName != null)
+            {
+                var reachableStates = new HashSet<string>(ot.LifecycleInitialStates);
+                foreach (var (_, to, _) in ot.LifecycleTransitions)
+                {
+                    reachableStates.Add(to);
+                }
+
+                foreach (var state in ot.LifecycleStates)
+                {
+                    if (!reachableStates.Contains(state))
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            OntologyDiagnostics.LifecycleUnreachableState, ot.LifecycleLocation!, state, ot.Name));
+                    }
+                }
+            }
+
+            // AONT021: Dead-end non-terminal state (no outgoing transitions and not Terminal)
+            if (ot.LifecyclePropertyName != null)
+            {
+                var statesWithOutgoing = new HashSet<string>(ot.LifecycleTransitions.Select(t => t.FromState));
+                foreach (var state in ot.LifecycleStates)
+                {
+                    if (!statesWithOutgoing.Contains(state) && !ot.LifecycleTerminalStates.Contains(state))
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            OntologyDiagnostics.LifecycleDeadEndState, ot.LifecycleLocation!, state, ot.Name));
+                    }
+                }
+            }
+
             // AONT022: DerivedFrom references undeclared property
             foreach (var (propName, sourceProp, location) in ot.DerivedFromReferences)
             {
@@ -953,6 +1017,37 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
+    private static string? FindStateNameInChain(InvocationExpressionSyntax invocation)
+    {
+        // Walk the fluent chain backwards to find the State(Enum.Value) call
+        // Pattern: lc.State(Status.Draft).Initial()
+        var current = invocation.Expression;
+        while (current is MemberAccessExpressionSyntax memberAccess)
+        {
+            if (memberAccess.Expression is InvocationExpressionSyntax parentInvocation)
+            {
+                // Check if the parent is a State() call by looking at the method name syntactically
+                if (parentInvocation.Expression is MemberAccessExpressionSyntax parentMemberAccess &&
+                    parentMemberAccess.Name.Identifier.Text == "State")
+                {
+                    var stateArg = parentInvocation.ArgumentList.Arguments.FirstOrDefault();
+                    if (stateArg != null)
+                    {
+                        return ExtractEnumValueName(stateArg.Expression);
+                    }
+                }
+
+                current = parentInvocation.Expression;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
     private static bool IsOntologyBuilderType(string typeName)
     {
         return typeName == "IOntologyBuilder" || typeName == "OntologyBuilder";
@@ -1029,11 +1124,16 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public HashSet<string> LifecycleStates { get; } = new HashSet<string>();
         public int LifecycleInitialCount { get; set; }
         public int LifecycleTerminalCount { get; set; }
+        public HashSet<string> LifecycleInitialStates { get; } = new HashSet<string>();
+        public HashSet<string> LifecycleTerminalStates { get; } = new HashSet<string>();
 
         public List<(string FromState, string ToState, Location Location)> LifecycleTransitions { get; } =
             new List<(string, string, Location)>();
 
         public List<(string ActionName, Location Location)> LifecycleTransitionActions { get; } =
+            new List<(string, Location)>();
+
+        public List<(string EventType, Location Location)> LifecycleTransitionEvents { get; } =
             new List<(string, Location)>();
 
         // Interface action mappings

@@ -116,6 +116,79 @@ public class TestDomain : DomainOntology
     }
 
     [Test]
+    public async Task AONT019_TriggeredByEventUndeclared_ReportsWarning()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+public record UndeclaredEvent(Guid Id);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Closed).TriggeredByEvent<UndeclaredEvent>();
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleTransitionBadEvent);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT019_TriggeredByDeclaredEvent_NoDiagnostic()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+public record ClosedEvent(Guid Id);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Event<ClosedEvent>(e => { });
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Closed).TriggeredByEvent<ClosedEvent>();
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleTransitionBadEvent);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task AONT018_TriggeredByUndeclaredAction_ReportsWarning()
     {
         var source = @"
@@ -148,5 +221,156 @@ public class TestDomain : DomainOntology
         var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleTransitionBadAction);
 
         await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT020_UnreachableState_ReportsWarning()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Orphan, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Active);
+                lc.State(Status.Orphan);
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Active);
+                lc.Transition(Status.Active, Status.Closed);
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleUnreachableState);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT020_AllStatesReachable_NoDiagnostic()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Active);
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Active);
+                lc.Transition(Status.Active, Status.Closed);
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleUnreachableState);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AONT021_NonTerminalDeadEnd_ReportsWarning()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Stuck, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Active);
+                lc.State(Status.Stuck);
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Active);
+                lc.Transition(Status.Active, Status.Stuck);
+                lc.Transition(Status.Active, Status.Closed);
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleDeadEndState);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT021_TerminalDeadEnd_NoDiagnostic()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public enum Status { Draft, Active, Closed }
+public class TestModel { public Guid Id { get; set; } public Status Status { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Status);
+            obj.Lifecycle(p => p.Status, (Action<ILifecycleBuilder<Status>>)(lc =>
+            {
+                lc.State(Status.Draft).Initial();
+                lc.State(Status.Active);
+                lc.State(Status.Closed).Terminal();
+                lc.Transition(Status.Draft, Status.Active);
+                lc.Transition(Status.Active, Status.Closed);
+            }));
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LifecycleDeadEndState);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 }
