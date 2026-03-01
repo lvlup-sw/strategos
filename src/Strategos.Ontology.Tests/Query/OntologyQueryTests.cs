@@ -324,14 +324,15 @@ public class OntologyQueryServicePreconditionTests
         {
             ["Status"] = QueryTestStatus.Active,
             ["Quantity"] = 100m,
+            ["Orders"] = true, // link exists
         };
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
         // All actions should be returned since:
         // - OpenPosition has no preconditions
-        // - ExecuteTrade has PropertyPredicate (Status==Active) + LinkExists (always satisfiable)
-        // - ClosePosition has PropertyPredicate (Quantity > 0) -> we provide Quantity
+        // - ExecuteTrade has PropertyPredicate (Status==Active) + LinkExists (Orders=true)
+        // - ClosePosition has PropertyPredicate (Quantity > 0) -> we provide Quantity=100
         await Assert.That(actions.Count).IsEqualTo(3);
     }
 
@@ -343,6 +344,92 @@ public class OntologyQueryServicePreconditionTests
         var actions = query.GetValidActions("NonExistent");
 
         await Assert.That(actions.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetValidActions_PropertyPredicateUnsat_FiltersAction()
+    {
+        var query = QueryTestGraphFactory.CreateQueryService();
+        var knownProps = new Dictionary<string, object?>
+        {
+            ["Status"] = QueryTestStatus.Closed,
+        };
+
+        var actions = query.GetValidActions("QueryPosition", knownProps);
+
+        // ExecuteTrade requires Status == Active, but we have Status == Closed
+        // So ExecuteTrade should be filtered out
+        var names = actions.Select(a => a.Name).ToList();
+        await Assert.That(names).DoesNotContain("ExecuteTrade");
+    }
+
+    [Test]
+    public async Task GetValidActions_PropertyPredicateSat_IncludesAction()
+    {
+        var query = QueryTestGraphFactory.CreateQueryService();
+        var knownProps = new Dictionary<string, object?>
+        {
+            ["Status"] = QueryTestStatus.Active,
+            ["Quantity"] = 100m,
+            ["Orders"] = true, // link exists
+        };
+
+        var actions = query.GetValidActions("QueryPosition", knownProps);
+
+        // ExecuteTrade requires Status == Active (satisfied) and link Orders (satisfied)
+        var names = actions.Select(a => a.Name).ToList();
+        await Assert.That(names).Contains("ExecuteTrade");
+    }
+
+    [Test]
+    public async Task GetValidActions_LinkExistsUnsat_FiltersAction()
+    {
+        var query = QueryTestGraphFactory.CreateQueryService();
+        var knownProps = new Dictionary<string, object?>
+        {
+            ["Status"] = QueryTestStatus.Active,
+            // No "Orders" key — link does not exist
+        };
+
+        var actions = query.GetValidActions("QueryPosition", knownProps);
+
+        // ExecuteTrade requires link "Orders" to exist, but no link info provided
+        // Should be filtered out
+        var names = actions.Select(a => a.Name).ToList();
+        await Assert.That(names).DoesNotContain("ExecuteTrade");
+    }
+
+    [Test]
+    public async Task GetValidActions_LinkExistsSat_IncludesAction()
+    {
+        var query = QueryTestGraphFactory.CreateQueryService();
+        var knownProps = new Dictionary<string, object?>
+        {
+            ["Status"] = QueryTestStatus.Active,
+            ["Orders"] = true, // link exists
+        };
+
+        var actions = query.GetValidActions("QueryPosition", knownProps);
+
+        // ExecuteTrade requires Status == Active (satisfied) and link Orders (satisfied via bool)
+        var names = actions.Select(a => a.Name).ToList();
+        await Assert.That(names).Contains("ExecuteTrade");
+    }
+
+    [Test]
+    public async Task GetValidActions_NoPreconditions_IncludesAll()
+    {
+        var query = QueryTestGraphFactory.CreateQueryService();
+        var knownProps = new Dictionary<string, object?>
+        {
+            ["Status"] = QueryTestStatus.Closed,
+        };
+
+        var actions = query.GetValidActions("QueryPosition", knownProps);
+
+        // OpenPosition has no preconditions, so it should always be included
+        var names = actions.Select(a => a.Name).ToList();
+        await Assert.That(names).Contains("OpenPosition");
     }
 
     [Test]

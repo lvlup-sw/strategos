@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Query;
@@ -56,7 +57,7 @@ internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
 
         return ot.Actions
             .Where(a => a.Preconditions.Count == 0 || a.Preconditions.All(p =>
-                p.Kind == PreconditionKind.LinkExists || IsPreconditionSatisfiable(p, knownProperties)))
+                IsPreconditionSatisfiable(p, knownProperties)))
             .ToList()
             .AsReadOnly();
     }
@@ -227,15 +228,145 @@ internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
         ActionPrecondition precondition,
         IReadOnlyDictionary<string, object?> knownProperties)
     {
-        // For PropertyPredicate preconditions, check if known properties could satisfy them
-        // This is a simple heuristic - we can't fully evaluate expression trees at runtime
-        // without compiling them, so we check if the referenced property is known
-        if (precondition.Kind != PreconditionKind.PropertyPredicate)
+        return precondition.Kind switch
+        {
+            PreconditionKind.LinkExists => IsLinkSatisfiable(precondition, knownProperties),
+            PreconditionKind.PropertyPredicate => IsPropertyPredicateSatisfiable(precondition, knownProperties),
+            _ => true, // Custom or unknown kinds are optimistically satisfiable
+        };
+    }
+
+    private static bool IsLinkSatisfiable(
+        ActionPrecondition precondition,
+        IReadOnlyDictionary<string, object?> knownProperties)
+    {
+        if (precondition.LinkName is null)
         {
             return true;
         }
 
-        // If there's no expression to parse, consider it satisfiable
-        return true;
+        if (!knownProperties.TryGetValue(precondition.LinkName, out var value))
+        {
+            return false;
+        }
+
+        return value is true or (not null and not false);
+    }
+
+    private static bool IsPropertyPredicateSatisfiable(
+        ActionPrecondition precondition,
+        IReadOnlyDictionary<string, object?> knownProperties)
+    {
+        var expression = precondition.Expression;
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return true;
+        }
+
+        // Try to evaluate simple binary comparisons from expression tree ToString() output.
+        // Expression format examples:
+        //   (p.Quantity > 0)
+        //   (Convert(p.Status, Int32) == 1)
+        return TryEvaluateSimpleComparison(expression, knownProperties) ?? true;
+    }
+
+    private static readonly Regex SimplePropertyPattern = new(
+        @"\((\w+)\.(\w+)\s*(==|!=|>|<|>=|<=)\s*(.+?)\)",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ConvertPropertyPattern = new(
+        @"\(Convert\((\w+)\.(\w+),\s*\w+\)\s*(==|!=|>|<|>=|<=)\s*(.+?)\)",
+        RegexOptions.Compiled);
+
+    private static bool? TryEvaluateSimpleComparison(
+        string expression,
+        IReadOnlyDictionary<string, object?> knownProperties)
+    {
+        string? propertyName = null;
+        string? op = null;
+        string? rightSide = null;
+
+        var convertMatch = ConvertPropertyPattern.Match(expression);
+        if (convertMatch.Success)
+        {
+            propertyName = convertMatch.Groups[2].Value;
+            op = convertMatch.Groups[3].Value;
+            rightSide = convertMatch.Groups[4].Value;
+        }
+        else
+        {
+            var simpleMatch = SimplePropertyPattern.Match(expression);
+            if (simpleMatch.Success)
+            {
+                propertyName = simpleMatch.Groups[2].Value;
+                op = simpleMatch.Groups[3].Value;
+                rightSide = simpleMatch.Groups[4].Value;
+            }
+        }
+
+        if (propertyName is null || op is null || rightSide is null)
+        {
+            return null; // Can't parse — optimistically satisfiable
+        }
+
+        if (!knownProperties.TryGetValue(propertyName, out var knownValue) || knownValue is null)
+        {
+            return null; // Property not known — optimistically satisfiable
+        }
+
+        return EvaluateComparison(knownValue, op, rightSide);
+    }
+
+    private static bool? EvaluateComparison(object knownValue, string op, string rightSide)
+    {
+        // Convert both sides to comparable decimals for numeric comparison
+        if (TryConvertToDecimal(knownValue, out var leftNum) &&
+            decimal.TryParse(rightSide, out var rightNum))
+        {
+            return op switch
+            {
+                "==" => leftNum == rightNum,
+                "!=" => leftNum != rightNum,
+                ">" => leftNum > rightNum,
+                "<" => leftNum < rightNum,
+                ">=" => leftNum >= rightNum,
+                "<=" => leftNum <= rightNum,
+                _ => null,
+            };
+        }
+
+        // For enum types, convert to int and compare
+        if (knownValue is Enum enumValue && int.TryParse(rightSide, out var rightInt))
+        {
+            var leftInt = Convert.ToInt32(enumValue);
+            return op switch
+            {
+                "==" => leftInt == rightInt,
+                "!=" => leftInt != rightInt,
+                _ => null,
+            };
+        }
+
+        // String equality comparison
+        var leftStr = knownValue.ToString() ?? string.Empty;
+        return op switch
+        {
+            "==" => string.Equals(leftStr, rightSide, StringComparison.Ordinal),
+            "!=" => !string.Equals(leftStr, rightSide, StringComparison.Ordinal),
+            _ => null,
+        };
+    }
+
+    private static bool TryConvertToDecimal(object value, out decimal result)
+    {
+        if (value is byte or sbyte or short or ushort or int or uint
+            or long or ulong or float or double or decimal)
+        {
+            result = Convert.ToDecimal(value);
+            return true;
+        }
+
+        result = 0;
+        return false;
     }
 }
