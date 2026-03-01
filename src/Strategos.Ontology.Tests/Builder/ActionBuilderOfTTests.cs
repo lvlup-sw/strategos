@@ -3,6 +3,11 @@ using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests.Builder;
 
+public class TestTool
+{
+    public Task DoSomethingAsync() => Task.CompletedTask;
+}
+
 public enum TestPositionStatus
 {
     Pending,
@@ -225,5 +230,28 @@ public class ActionBuilderOfTTests
         var result = builder.Description("desc");
 
         await Assert.That(result).IsNotNull();
+    }
+
+    [Test]
+    public async Task BoundToTool_Expression_SetsToolNameAndMethod()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote");
+
+        builder.BoundToTool<TestTool>(t => t.DoSomethingAsync);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BoundToolName).IsEqualTo("TestTool");
+        await Assert.That(descriptor.BoundToolMethod).IsEqualTo("DoSomethingAsync");
+    }
+
+    [Test]
+    public async Task BoundToTool_Expression_SetsBindingTypeToTool()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote");
+
+        builder.BoundToTool<TestTool>(t => t.DoSomethingAsync);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Tool);
     }
 }

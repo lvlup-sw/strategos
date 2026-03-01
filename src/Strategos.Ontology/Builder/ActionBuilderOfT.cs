@@ -55,6 +55,12 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         return this;
     }
 
+    public IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector)
+    {
+        var methodName = ExpressionHelper.ExtractMethodName(methodSelector);
+        return BoundToTool(typeof(TTool).Name, methodName);
+    }
+
     public IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate)
     {
         var expressionString = predicate.Body.ToString();
