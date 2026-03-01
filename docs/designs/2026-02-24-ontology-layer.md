@@ -1,5 +1,14 @@
 # Agentic Ontology: Semantic Type System for Agentic Operations
 
+> **Note:** The authoritative specification for the ontology layer is
+> `docs/reference/platform-architecture.md` §4.14. This design document captures the
+> initial runtime-first proposal (Revision 2). The platform architecture doc incorporates
+> additional schema refinements (preconditions, lifecycles, derivation chains, interface
+> actions, extension points) and specifies a compile-time source generation architecture
+> as the target. The current implementation follows a hybrid approach: runtime-first
+> architecture with the full schema refinement vocabulary. Migration to compile-time
+> source generation is planned as a separate effort.
+
 > **Scope:** Library design for `Strategos.Ontology` NuGet packages (lives in strategos repo).
 > Basileus is the first consumer; this repo receives ADR updates only.
 >
