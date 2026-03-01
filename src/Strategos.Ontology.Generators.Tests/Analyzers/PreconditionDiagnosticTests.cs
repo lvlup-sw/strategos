@@ -173,4 +173,73 @@ public class TestDomain : DomainOntology
 
         await Assert.That(diagnostics.Length).IsEqualTo(1);
     }
+
+    [Test]
+    public async Task AONT013_ModifiesPropertyAlsoUpdatedByEvent_ReportsWarning()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public Guid Id { get; set; } public decimal PnL { get; set; } }
+public record TradeEvent(Guid Id, decimal PnL);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.PnL);
+            obj.Event<TradeEvent>(e =>
+            {
+                e.UpdatesProperty<TestModel>(p => p.PnL, ev => ev.PnL);
+            });
+            obj.Action(""ExecuteTrade"").Modifies(p => p.PnL).EmitsEvent<TradeEvent>();
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.PostconditionOverlapsEvent);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT013_NoOverlap_NoDiagnostic()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public Guid Id { get; set; } public decimal PnL { get; set; } public decimal Qty { get; set; } }
+public record TradeEvent(Guid Id, decimal PnL);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.PnL);
+            obj.Property(p => p.Qty);
+            obj.Event<TradeEvent>(e =>
+            {
+                e.UpdatesProperty<TestModel>(p => p.PnL, ev => ev.PnL);
+            });
+            obj.Action(""ExecuteTrade"").Modifies(p => p.Qty).EmitsEvent<TradeEvent>();
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.PostconditionOverlapsEvent);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
 }

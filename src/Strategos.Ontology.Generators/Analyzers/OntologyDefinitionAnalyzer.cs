@@ -266,7 +266,18 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 case "Event":
                     if (calledMethod.TypeArguments.Length > 0)
                     {
-                        info.DeclaredEvents.Add(calledMethod.TypeArguments[0].Name);
+                        var eventTypeName2 = calledMethod.TypeArguments[0].Name;
+                        info.DeclaredEvents.Add(eventTypeName2);
+
+                        // Parse event configure lambda for UpdatesProperty calls
+                        if (invocation.ArgumentList.Arguments.Count > 0)
+                        {
+                            var eventLambdaArg = invocation.ArgumentList.Arguments[0].Expression;
+                            if (eventLambdaArg is LambdaExpressionSyntax eventLambda)
+                            {
+                                CollectEventInfo(eventLambda, model, info, eventTypeName2);
+                            }
+                        }
                     }
 
                     break;
@@ -384,6 +395,30 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     }
 
                     break;
+            }
+        }
+    }
+
+    private static void CollectEventInfo(
+        LambdaExpressionSyntax lambda, SemanticModel model, ObjectTypeInfo info, string eventTypeName)
+    {
+        var invocations = lambda.DescendantNodes().OfType<InvocationExpressionSyntax>();
+
+        foreach (var invocation in invocations)
+        {
+            var symbolInfo = model.GetSymbolInfo(invocation);
+            if (symbolInfo.Symbol is not IMethodSymbol calledMethod)
+            {
+                continue;
+            }
+
+            if (calledMethod.Name == "UpdatesProperty" && invocation.ArgumentList.Arguments.Count >= 1)
+            {
+                var propName = ExtractPropertyNameFromLambdaArg(invocation.ArgumentList.Arguments[0].Expression);
+                if (propName != null)
+                {
+                    info.EventUpdatesProperties.Add((eventTypeName, propName, invocation.GetLocation()));
+                }
             }
         }
     }
@@ -644,6 +679,25 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         OntologyDiagnostics.RequiresLinkUndeclared, location, actionName, ot.Name, linkName));
+                }
+            }
+
+            // AONT013: Postcondition overlaps event
+            var eventUpdatedProps = new HashSet<string>(ot.EventUpdatesProperties.Select(e => e.PropertyName));
+            foreach (var (actionName, propName, location) in ot.ActionModifiesProperties)
+            {
+                if (eventUpdatedProps.Contains(propName))
+                {
+                    // Check if this action also emits any event that updates this property
+                    var actionEvents = new HashSet<string>(
+                        ot.ActionEmitsEvents.Where(e => e.ActionName == actionName).Select(e => e.EventType));
+                    var overlapping = ot.EventUpdatesProperties
+                        .Any(e => e.PropertyName == propName && actionEvents.Contains(e.EventType));
+                    if (overlapping)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            OntologyDiagnostics.PostconditionOverlapsEvent, location, actionName, ot.Name, propName));
+                    }
                 }
             }
 
@@ -961,6 +1015,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionRequiresLinks { get; } =
+            new List<(string, string, Location)>();
+
+        public List<(string EventType, string PropertyName, Location Location)> EventUpdatesProperties { get; } =
             new List<(string, string, Location)>();
 
         public List<(string PropertyName, string SourceProperty, Location Location)> DerivedFromReferences { get; } =
