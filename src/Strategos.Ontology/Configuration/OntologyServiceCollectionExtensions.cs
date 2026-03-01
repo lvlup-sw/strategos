@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.Configuration;
 
@@ -31,6 +32,7 @@ public static class OntologyServiceCollectionExtensions
 
         var graph = graphBuilder.Build();
         services.AddSingleton(graph);
+        services.AddSingleton<IOntologyQuery>(new OntologyQueryService(graph));
 
         foreach (var registration in options.ServiceRegistrations)
         {
