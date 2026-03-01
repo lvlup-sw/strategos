@@ -349,6 +349,66 @@ public class TestDomain : DomainOntology
     }
 
     [Test]
+    public async Task AONT003_LinkTargetNotRegistered_ReportsError()
+    {
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } }
+public class UnregisteredModel { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasMany<UnregisteredModel>(""Items"");
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LinkTargetNotRegistered);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT003_Registered_NoDiagnostic()
+    {
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } }
+public class OtherModel { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasMany<OtherModel>(""Items"");
+        });
+        builder.Object<OtherModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.LinkTargetNotRegistered);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task NonDomainOntology_NoDiagnostics()
     {
         var source = @"

@@ -148,6 +148,36 @@ public class TestDomain : DomainOntology
     }
 
     [Test]
+    public async Task AONT011_DeclaredLink_NoDiagnostic()
+    {
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } }
+public class TestOrder { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasMany<TestOrder>(""Orders"");
+            obj.Action(""Trade"").CreatesLinked<TestOrder>(""Orders"");
+        });
+        builder.Object<TestOrder>(obj => { obj.Key(p => p.Id); });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.CreatesLinkedUndeclared);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task AONT012_RequiresLinkUndeclared_ReportsWarning()
     {
         var source = @"
@@ -172,6 +202,36 @@ public class TestDomain : DomainOntology
         var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.RequiresLinkUndeclared);
 
         await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT012_DeclaredLink_NoDiagnostic()
+    {
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } }
+public class Strategy { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasOne<Strategy>(""Strategy"");
+            obj.Action(""Trade"").RequiresLink(""Strategy"");
+        });
+        builder.Object<Strategy>(obj => { obj.Key(p => p.Id); });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.RequiresLinkUndeclared);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
