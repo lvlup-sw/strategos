@@ -64,7 +64,7 @@ public sealed class OntologyActionTool
                 .ConfigureAwait(false);
         }
 
-        return await DispatchBatchAsync(resolvedDomain!, objectType, action, request, ct)
+        return await DispatchBatchAsync(resolvedDomain!, objectType, action, request, filter, ct)
             .ConfigureAwait(false);
     }
 
@@ -86,9 +86,16 @@ public sealed class OntologyActionTool
         string objectType,
         string action,
         object request,
+        string? filter,
         CancellationToken ct)
     {
-        var expression = new RootExpression(typeof(object));
+        ObjectSetExpression expression = new RootExpression(typeof(object));
+
+        if (filter is not null)
+        {
+            expression = new RawFilterExpression(expression, filter);
+        }
+
         var queryResult = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
 
         var results = new List<ActionResult>(queryResult.Items.Count);
