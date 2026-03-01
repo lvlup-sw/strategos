@@ -75,6 +75,23 @@ public sealed class InterfaceNarrowExpression : ObjectSetExpression
 }
 
 /// <summary>
+/// Raw filter expression — represents an unprocessed string filter predicate
+/// applied to a source expression (e.g., from MCP tool input).
+/// </summary>
+public sealed class RawFilterExpression : ObjectSetExpression
+{
+    public RawFilterExpression(ObjectSetExpression source, string filterText)
+        : base(source.ObjectType)
+    {
+        Source = source;
+        FilterText = filterText;
+    }
+
+    public ObjectSetExpression Source { get; }
+    public string FilterText { get; }
+}
+
+/// <summary>
 /// Include expression — specifies which data facets to include in results.
 /// </summary>
 public sealed class IncludeExpression : ObjectSetExpression

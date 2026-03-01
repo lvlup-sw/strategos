@@ -91,6 +91,48 @@ public class OntologyActionToolTests
     }
 
     [Test]
+    public async Task ExecuteAsync_BatchWithFilter_PassesFilterToObjectSet()
+    {
+        // Arrange
+        var testItems = new List<object>
+        {
+            new TestPosition { Id = "p1", Symbol = "AAPL" },
+        };
+
+        ObjectSetExpression? capturedExpression = null;
+        _objectSetProvider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<ObjectSetExpression>();
+                return new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties);
+            });
+
+        _actionDispatcher
+            .DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
+            .Returns(new ActionResult(true));
+
+        var request = new { Quantity = 50 };
+        var filterText = "Symbol == 'AAPL'";
+
+        // Act
+        await _tool.ExecuteAsync(
+            objectType: "TestPosition",
+            action: "execute_trade",
+            request: request,
+            domain: "trading",
+            filter: filterText);
+
+        // Assert — the expression passed to ObjectSetProvider must be a RawFilterExpression
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression).IsTypeOf<RawFilterExpression>();
+
+        var rawFilter = (RawFilterExpression)capturedExpression!;
+        await Assert.That(rawFilter.FilterText).IsEqualTo(filterText);
+        await Assert.That(rawFilter.Source).IsTypeOf<RootExpression>();
+    }
+
+    [Test]
     public async Task OntologyAction_UnknownAction_ReturnsError()
     {
         // Act
