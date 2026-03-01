@@ -10,7 +10,7 @@
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <NoWarn>$(NoWarn);RS2008;CS8602;CS8604;NU5128</NoWarn>
     <PackageId>Strategos.Ontology.Generators</PackageId>
-    <Description>Roslyn diagnostic analyzers for Strategos ontology definitions. Validates domain ontology declarations at compile time with ONTO001-ONTO010 diagnostics.</Description>
+    <Description>Roslyn diagnostic analyzers for Strategos ontology definitions. Validates domain ontology declarations at compile time with AONT001-AONT035 diagnostics covering core, preconditions, lifecycle, derivation, interface actions, and extension points.</Description>
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
