@@ -34,6 +34,7 @@ namespace Strategos.Ontology.Generators
             PropertyAnalyzer.Register(context);
             InterfaceAnalyzer.Register(context);
             EventAnalyzer.Register(context);
+            CrossDomainLinkAnalyzer.Register(context);
         }
     }
 }
