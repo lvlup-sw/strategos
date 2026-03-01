@@ -360,6 +360,23 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
                     break;
 
+                case "DerivedFromExternal":
+                    var extDerivedPropName = FindPropertyNameInChain(invocation, model);
+                    if (extDerivedPropName != null)
+                    {
+                        info.PropertiesWithDerivedFrom.Add(extDerivedPropName);
+                        var extDomain = ExtractStringArg(invocation, 0);
+                        var extType = ExtractStringArg(invocation, 1);
+                        var extProp = ExtractStringArg(invocation, 2);
+                        if (extDomain != null && extType != null && extProp != null)
+                        {
+                            info.DerivedFromExternalReferences.Add(
+                                (extDerivedPropName, extDomain, extType, extProp, invocation.GetLocation()));
+                        }
+                    }
+
+                    break;
+
                 case "Lifecycle":
                     var lifecyclePropName = ExtractPropertyNameFromExpression(invocation);
                     if (lifecyclePropName != null)
@@ -832,6 +849,17 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 }
             }
 
+            // AONT024: Derivation cycle detection
+            DetectDerivationCycles(context, ot);
+
+            // AONT025: DerivedFromExternal unresolvable
+            foreach (var (propName, domain, objectType, property, location) in ot.DerivedFromExternalReferences)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.DerivedFromExternalUnresolvable, location,
+                    propName, ot.Name, domain, objectType, property));
+            }
+
             // AONT026: Computed but no DerivedFrom
             foreach (var propName in ot.ComputedProperties)
             {
@@ -886,6 +914,79 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 OntologyDiagnostics.CrossDomainLinkUnverifiable, link.Location,
                 link.Name, "external", "external domain"));
         }
+    }
+
+    private static void DetectDerivationCycles(SyntaxNodeAnalysisContext context, ObjectTypeInfo ot)
+    {
+        // Build adjacency list: property -> properties it derives from
+        var graph = new Dictionary<string, List<string>>();
+        foreach (var (propName, sourceProp, _) in ot.DerivedFromReferences)
+        {
+            if (!graph.ContainsKey(propName))
+            {
+                graph[propName] = new List<string>();
+            }
+
+            graph[propName].Add(sourceProp);
+        }
+
+        // DFS cycle detection
+        var visited = new HashSet<string>();
+        var inStack = new HashSet<string>();
+
+        foreach (var node in graph.Keys)
+        {
+            if (visited.Contains(node))
+            {
+                continue;
+            }
+
+            var path = new List<string>();
+            if (HasCycle(node, graph, visited, inStack, path))
+            {
+                // Find the cycle portion of the path
+                var cycleStart = path.Last();
+                var cycleStartIndex = path.IndexOf(cycleStart);
+                var cyclePath = string.Join(" -> ", path.Skip(cycleStartIndex));
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.DerivationCycle, ot.Location, ot.Name, cyclePath));
+                return; // Report only first cycle found
+            }
+        }
+    }
+
+    private static bool HasCycle(
+        string node,
+        Dictionary<string, List<string>> graph,
+        HashSet<string> visited,
+        HashSet<string> inStack,
+        List<string> path)
+    {
+        visited.Add(node);
+        inStack.Add(node);
+        path.Add(node);
+
+        if (graph.TryGetValue(node, out var neighbors))
+        {
+            foreach (var neighbor in neighbors)
+            {
+                if (inStack.Contains(neighbor))
+                {
+                    path.Add(neighbor);
+                    return true;
+                }
+
+                if (!visited.Contains(neighbor) && HasCycle(neighbor, graph, visited, inStack, path))
+                {
+                    return true;
+                }
+            }
+        }
+
+        inStack.Remove(node);
+        path.RemoveAt(path.Count - 1);
+        return false;
     }
 
     private static bool TryFindInterfaceByTypeName(
@@ -1117,6 +1218,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
         public List<(string PropertyName, string SourceProperty, Location Location)> DerivedFromReferences { get; } =
             new List<(string, string, Location)>();
+
+        public List<(string PropertyName, string Domain, string ObjectType, string Property, Location Location)> DerivedFromExternalReferences { get; } =
+            new List<(string, string, string, string, Location)>();
 
         // Lifecycle
         public string? LifecyclePropertyName { get; set; }
