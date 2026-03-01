@@ -33,6 +33,22 @@ internal static class ExpressionHelper
         return body;
     }
 
+    public static string ExtractMethodName<TTool>(Expression<Func<TTool, Delegate>> methodSelector)
+    {
+        // Method group expressions compile to a unary Convert wrapping a CreateDelegate call:
+        //   Convert(MethodInfo.CreateDelegate(DelegateType, target), Delegate)
+        // The MethodInfo is the Object of the MethodCallExpression.
+        if (methodSelector.Body is UnaryExpression { Operand: MethodCallExpression methodCall }
+            && methodCall.Object is ConstantExpression { Value: MethodInfo mi })
+        {
+            return mi.Name;
+        }
+
+        throw new ArgumentException(
+            $"Expression '{methodSelector}' does not refer to a method. " +
+            "Use a method group expression like: t => t.MethodName");
+    }
+
     private static MemberExpression ExtractMemberExpression(Expression expression) =>
         expression switch
         {
