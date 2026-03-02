@@ -28,11 +28,9 @@ internal sealed class PropertyBuilder(string name, Type propertyType) : IPropert
     }
 
     public PropertyDescriptor Build() =>
-        _vectorDimensions.HasValue
-            ? new(name, propertyType, _isRequired, _isComputed)
-            {
-                Kind = PropertyKind.Vector,
-                VectorDimensions = _vectorDimensions,
-            }
-            : new(name, propertyType, _isRequired, _isComputed);
+        new(name, propertyType, _isRequired, _isComputed)
+        {
+            Kind = _vectorDimensions.HasValue ? PropertyKind.Vector : PropertyKind.Scalar,
+            VectorDimensions = _vectorDimensions,
+        };
 }

@@ -124,6 +124,10 @@ public sealed class SimilarityExpression : ObjectSetExpression
         IReadOnlyDictionary<string, object>? filters = null)
         : base(source.ObjectType)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(topK, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(minRelevance, 0.0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minRelevance, 1.0);
+
         Source = source;
         QueryText = queryText;
         TopK = topK;

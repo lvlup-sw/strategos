@@ -8,6 +8,10 @@ namespace Strategos.Ontology.ObjectSets;
 /// Supports seeding items with searchable content, in-memory filtering via compiled predicates,
 /// and keyword-based similarity scoring.
 /// </summary>
+/// <remarks>
+/// <see cref="Seed{T}"/> is not thread-safe. Seed all items before querying,
+/// or synchronize access externally if seeding concurrently.
+/// </remarks>
 public sealed class InMemoryObjectSetProvider : IObjectSetProvider
 {
     private readonly ConcurrentDictionary<Type, List<object>> _items = new();
