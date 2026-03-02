@@ -24,13 +24,13 @@ Three areas of strong alignment stand out:
 2. **Action preconditions and effects.** Our `.Requires()` / `.Modifies()` / `.CreatesLinked<T>()` DSL directly mirrors N&R's PRECONDITION and EFFECT slot facets on EVENT concepts [Ch.7 §7.1.5].
 3. **Cross-domain composition.** Our `ComposedOntology` with cross-domain links and extension points solves the same problem N&R address with their "society of microtheories" architecture [Ch.1, Preface].
 
-Five significant gaps deserve attention:
+Five significant gaps were identified (three now addressed):
 
-1. **No IS-A hierarchy.** N&R's ontology is fundamentally organized as an inheritance hierarchy with subsumption; our Object Types exist in a flat registration model with no parent-child relationships.
-2. **No RELATION/ATTRIBUTE distinction.** N&R distinguish between properties whose values are other concepts (RELATIONs) and properties whose values are literals/scalars (ATTRIBUTEs). We treat all properties uniformly.
+1. ~~**No IS-A hierarchy.**~~ **Addressed (T-020).** `IsA<TParent>()` adds optional IS-A relationships with parent validation, cycle detection, and subsumption queries.
+2. ~~**No RELATION/ATTRIBUTE distinction.**~~ **Addressed (T-021).** `PropertyKind` enum (`Scalar`, `Reference`, `Computed`) is auto-inferred at graph build time.
 3. **No Fact Database analog.** N&R's four-resource architecture (ontology, fact database, lexicon, onomasticon) separates type-level knowledge from instance-level remembered facts. We have no equivalent of the Fact Database within the ontology layer.
-4. **No facet system.** N&R's properties carry multiple facets (VALUE, SEM, DEFAULT, RELAXABLE-TO, NOT) that express selectional restrictions and constraint relaxation. Our properties carry only a single value type.
-5. **No lexicon/semantic mapping layer.** N&R's lexicon bridges between natural language terms and ontological concepts. Our ontology has no equivalent mechanism for mapping agent-facing tool descriptions to ontological concepts.
+4. **No facet system.** N&R's properties carry multiple facets (VALUE, SEM, DEFAULT, RELAXABLE-TO, NOT) that express selectional restrictions and constraint relaxation. Our properties carry only a single value type. *Partially addressed by T-024 (hard/soft constraint distinction) and T-025 (structured constraint feedback).*
+5. **No lexicon/semantic mapping layer.** N&R's lexicon bridges between natural language terms and ontological concepts. *Partially addressed by T-026 (constraint-enriched MCP tool descriptions).*
 
 Recommendations are concrete and prioritized. The IS-A hierarchy gap (#1) is the most impactful: it would enable inheritance-based property propagation, polymorphic subsumption queries, and a more principled integration with our existing Interface system.
 
@@ -42,20 +42,20 @@ Alignment ratings: **Strong** = direct structural correspondence; **Moderate** =
 
 | # | Agentic.Ontology Primitive | N&R Equivalent | Alignment | Notes |
 |---|---------------------------|----------------|-----------|-------|
-| 1 | **Object Type** `builder.Object<T>()` | CONCEPT (OBJECT or EVENT frame) | Strong | Both represent typed entities as named collections of property-value pairs. N&R further divides concepts into OBJECT, EVENT, and PROPERTY subtrees [Ch.7 §7.1.1]. Our Object Types map to their OBJECT and EVENT categories but do not distinguish between the two. |
-| 2 | **Property** `obj.Property(x => x.Prop)` | ATTRIBUTE (literal/scalar filler) | Partial | N&R distinguish RELATIONs (concept-valued) from ATTRIBUTEs (literal/scalar-valued) [Ch.7 §7.1.1]. Our `Property()` treats both uniformly. N&R properties also carry a multi-facet system (SEM, DEFAULT, RELAXABLE-TO) that we lack entirely. |
-| 3 | **Link** `obj.HasMany<T>()` | RELATION (concept-valued slot) | Strong | N&R RELATIONs are slots whose fillers are other concepts, with DOMAIN and RANGE constraints [Ch.7 §7.1.1]. Our Links are typed directional relationships with cardinality. The key difference: N&R RELATIONs have an INVERSE slot for bidirectional traversal; our Links are unidirectional (with Extension Points as a partial workaround). |
+| 1 | **Object Type** `builder.Object<T>()` | CONCEPT (OBJECT or EVENT frame) | Strong | Both represent typed entities as named collections of property-value pairs. N&R further divides concepts into OBJECT, EVENT, and PROPERTY subtrees [Ch.7 §7.1.1]. Our Object Types map to their OBJECT and EVENT categories; the `ObjectKind` discriminator (T-022) now distinguishes `Entity` from `Process`. |
+| 2 | **Property** `obj.Property(x => x.Prop)` | ATTRIBUTE (literal/scalar filler) | Strong | N&R distinguish RELATIONs (concept-valued) from ATTRIBUTEs (literal/scalar-valued) [Ch.7 §7.1.1]. The `PropertyKind` discriminator (T-021) now auto-infers `Scalar`, `Reference`, or `Computed` at graph build time. N&R properties also carry a multi-facet system (SEM, DEFAULT, RELAXABLE-TO) that we do not fully model, though hard/soft constraint strength (T-024) addresses the most important aspect. |
+| 3 | **Link** `obj.HasMany<T>()` | RELATION (concept-valued slot) | Strong | N&R RELATIONs are slots whose fillers are other concepts, with DOMAIN and RANGE constraints [Ch.7 §7.1.1]. Our Links are typed directional relationships with cardinality. The `.Inverse()` declaration (T-023) now supports bidirectional traversal, matching N&R's INVERSE slot. |
 | 4 | **Action** `obj.Action("name")` | EVENT concept with case-role slots (AGENT, THEME, etc.) | Moderate | N&R model actions as EVENT concepts with case-role properties (AGENT, PATIENT, THEME, INSTRUMENT, etc.) [Ch.7 §7.1]. Our Actions are operations bound to Object Types with `Accepts<T>`/`Returns<T>` signatures. The N&R case-role system is richer: it explicitly types the participants, whereas our input/output types are opaque to the ontology. |
-| 5 | **Interface** `builder.Interface<T>()` | No direct equivalent; closest is multiple inheritance in the IS-A hierarchy | Weak | N&R's ontology allows multiple parents via IS-A [Ch.7 §7.1.2], enabling a concept to inherit from multiple branches. Our Interfaces serve a similar cross-cutting purpose but operate outside the type hierarchy. N&R have no distinct "interface" mechanism because their IS-A hierarchy with property inheritance subsumes the need. |
+| 5 | **Interface** `builder.Interface<T>()` | No direct equivalent; closest is multiple inheritance in the IS-A hierarchy | Moderate | N&R's ontology allows multiple parents via IS-A [Ch.7 §7.1.2], enabling a concept to inherit from multiple branches. Our Interfaces serve a similar cross-cutting purpose. With IS-A hierarchy now implemented (T-020), Interfaces and IS-A serve complementary roles: IS-A for vertical hierarchy, Interfaces for horizontal cross-cutting shapes. |
 | 6 | **Cross-Domain Link** `builder.CrossDomainLink()` | Inter-ontology references in the "society of microtheories" | Moderate | N&R describe a society of microtheories where specialized knowledge modules interconnect [Preface, Ch.1]. Our cross-domain links formalize this with explicit source/target resolution. N&R's approach is more implicit -- concepts from different knowledge areas share a single hierarchy rooted at ALL. |
-| 7 | **Precondition** `.Requires(p => p.Status == Active)` | PRECONDITION facet on EVENT slots | Strong | N&R's EVENTs have PRECONDITION slots specifying conditions that must hold [Ch.7 §7.1.5, Ch.6 §6.2]. Our `Requires()` expressions are a compile-time, predicate-based formalization of the same concept. N&R also support preconditions as SEM facet constraints (selectional restrictions) which provide a softer, "abductively relaxable" form of precondition we do not model. |
+| 7 | **Precondition** `.Requires(p => p.Status == Active)` | PRECONDITION facet on EVENT slots | Strong | N&R's EVENTs have PRECONDITION slots specifying conditions that must hold [Ch.7 §7.1.5, Ch.6 §6.2]. Our `Requires()` expressions are a compile-time, predicate-based formalization of the same concept. `ConstraintStrength` (T-024) now distinguishes `Hard` from `Soft` constraints, paralleling N&R's distinction between strict preconditions and abductively relaxable SEM facet constraints. `GetActionConstraintReport` (T-025) provides structured feedback with failure reasons and expected shapes. |
 | 8 | **Postcondition** `.Modifies()`, `.CreatesLinked<T>()`, `.EmitsEvent<T>()` | EFFECT facet on EVENT slots | Strong | N&R's EVENTs have EFFECT slots declaring state changes [Ch.7 §7.1.5]. Our postconditions decompose into three subtypes (property modification, link creation, event emission) which is more granular than N&R's single EFFECT slot. This is a case where our engineering design improves on the theoretical model. |
 | 9 | **Lifecycle** `obj.Lifecycle(p => p.Status, ...)` | PROCESS ontological category with temporal phases | Moderate | N&R model temporal progression through PROCESS concepts with temporal case roles (TIME, DURATION, PRECONDITION, EFFECT) and through the TMR's temporal ordering [Ch.6 §6.2]. Our Lifecycle is a finite state machine -- more constrained and more formally analyzable than N&R's open-ended temporal representation. This is a deliberate engineering trade-off: we sacrifice expressiveness for decidability. |
 | 10 | **Derivation Chain** `.Computed().DerivedFrom()` | No direct equivalent | Novel | N&R do not model property dependency graphs or staleness propagation. Their ontology assumes properties are defined at concept-definition time and instantiated at processing time. Our derivation chains address an engineering concern (data freshness in a mutable agent environment) that the textbook's NLP-focused framework does not encounter. |
 | 11 | **Interface Action** `iface.Action("Search")` | No direct equivalent | Novel | N&R have no mechanism for declaring actions at an abstract interface level and dispatching polymorphically. Their actions (EVENTs) are always concrete concepts in the hierarchy. Our Interface Actions are a software-engineering refinement without a theoretical precedent in the textbook. |
 | 12 | **Extension Point** `obj.AcceptsExternalLinks()` | No direct equivalent; closest is RANGE constraints on RELATIONs | Weak | N&R's RANGE slots on RELATIONs constrain which concepts can fill a relation [Ch.7 §7.1.1], serving a similar gatekeeper function. But extension points are advisory and target-initiated, while N&R's RANGE constraints are definitional and source-initiated. |
 
-**Summary:** 4 strong alignments, 3 moderate, 2 weak, 3 novel (no textbook equivalent). The strong alignments validate our core design. The gaps center on hierarchy, property richness, and the lexicon layer.
+**Summary (post-revision):** 6 strong alignments, 2 moderate, 1 weak, 3 novel. The implementations in T-020 through T-026 closed the hierarchy, property richness, link bidirectionality, and constraint expressiveness gaps. Remaining gaps center on the fact database and full lexicon/semantic mapping layer.
 
 ---
 
@@ -185,7 +185,7 @@ This facet system enables graceful degradation: "The program first attempts to m
 | **Domain** / **DomainOntology** | Microtheory | Good correspondence. N&R's "microtheory" is a specialized knowledge module; our "domain" is a bounded context with its own ontology definition. The terms serve the same architectural purpose. |
 | **ComposedOntology** | "Society of microtheories" / full ontology | Good. Our composition at build time mirrors N&R's runtime integration of microtheories. |
 
-**Key terminology recommendation:** Consider adding an `ObjectKind` discriminator (`Entity` vs `Process`) to `ObjectTypeDescriptor` to distinguish object-like types (Position, Strategy) from event/process-like types (TradeOrder lifecycle transitions). This aligns with N&R's fundamental OBJECT/EVENT split [Ch.7 §7.1.1] and would improve agent reasoning about temporal vs. static concepts.
+**Key terminology recommendation:** ~~Consider adding an `ObjectKind` discriminator~~ **Implemented (T-022).** `ObjectKind` (`Entity` vs `Process`) is now available on `ObjectTypeDescriptor`, distinguishing object-like types from event/process-like types. This aligns with N&R's fundamental OBJECT/EVENT split [Ch.7 §7.1.1]. Additionally, `PropertyKind` (T-021) addresses the terminology gap around ATTRIBUTE vs RELATION.
 
 ---
 
@@ -193,7 +193,7 @@ This facet system enables graceful degradation: "The program first attempts to m
 
 ### 6.1 Add Optional IS-A Hierarchy Support
 
-**Priority: High** | **Effort: Medium** | **Breaking: No**
+**Priority: High** | **Effort: Medium** | **Breaking: No** | **Status: Implemented (T-020)**
 
 N&R's most fundamental architectural principle is the IS-A hierarchy: "The inheritance hierarchy, which is implemented using IS-A and SUBCLASSES slots, is the backbone of the ontology" [Ch.7 §7.1.2, p.168].
 
@@ -227,9 +227,11 @@ builder.Object<FinancialTransaction>(obj =>
 
 **Interaction with Interfaces:** IS-A and Interfaces serve complementary purposes. IS-A represents "is a kind of" (vertical hierarchy), while Interfaces represent "has the shape of" (horizontal cross-cutting). Both are needed. N&R achieve both through multiple inheritance in a single hierarchy; our two-mechanism approach is cleaner from a software engineering perspective.
 
+> **Implementation note:** `IsA<TParent>()` was added to `IObjectTypeBuilder` in T-020. `OntologyGraphBuilder` validates parent existence and detects IS-A cycles. `ObjectTypeDescriptor` carries `ParentType` and `ParentTypeName`. `IOntologyQuery.GetObjectTypes()` accepts `includeSubtypes: bool` for subsumption queries. `OntologyGraph.GetSubtypes()` enables downward traversal. See `IsAHierarchyTests.cs` for 10 tests covering registration, validation, transitive chains, and subtype queries.
+
 ### 6.2 Add Property Kind Discriminator
 
-**Priority: Medium** | **Effort: Low** | **Breaking: No**
+**Priority: Medium** | **Effort: Low** | **Breaking: No** | **Status: Implemented (T-021)**
 
 N&R's RELATION/ATTRIBUTE distinction [Ch.7 §7.1.1] carries semantic information that aids reasoning. Add a `PropertyKind` to `PropertyDescriptor`:
 
@@ -246,9 +248,11 @@ The source generator can infer `PropertyKind` from the C# type: properties whose
 
 **Benefit:** Agents can distinguish "properties I can filter on" (Scalar) from "properties that link to other entities" (Reference) without inspecting the C# type system. This improves the quality of `IOntologyQuery` responses and enables N&R-style distinction between structural navigation (follow References) and value comparison (filter on Scalars).
 
+> **Implementation note:** `PropertyKind` enum (`Scalar`, `Reference`, `Computed`) was added to `PropertyDescriptor` in T-021. The kind is auto-inferred at graph build time by `OntologyGraphBuilder.InferPropertyKinds()`: property CLR type matching a registered Object Type → `Reference`, `.Computed()` → `Computed`, else → `Scalar`. See `PropertyKindTests.cs` for 5 tests.
+
 ### 6.3 Add Object Kind Discriminator (Entity vs. Process)
 
-**Priority: Medium** | **Effort: Low** | **Breaking: No**
+**Priority: Medium** | **Effort: Low** | **Breaking: No** | **Status: Implemented (T-022)**
 
 N&R's top-level split between OBJECT and EVENT [Ch.7 §7.1.1] reflects a fundamental ontological distinction: objects persist through time; events occur and complete. Add an optional `ObjectKind` to the builder:
 
@@ -268,9 +272,11 @@ builder.Object<TradeExecution>(obj =>
 
 **Benefit:** Agents can reason differently about entities (query current state, modify properties) vs. processes (check completion, trace temporal ordering). This aligns with N&R's claim that "the first difference among the concepts is that of 'free-standing' versus 'bound' concepts" [Ch.7 §7.1.1, p.160].
 
+> **Implementation note:** `ObjectKind` enum (`Entity`, `Process`) was added in T-022. `IObjectTypeBuilder.Kind(ObjectKind)` sets the discriminator (defaults to `Entity`). `ObjectTypeDescriptor.Kind` exposes it. See `ObjectKindTests.cs` for 3 tests.
+
 ### 6.4 Add INVERSE to Link Declarations
 
-**Priority: Medium** | **Effort: Medium** | **Breaking: No**
+**Priority: Medium** | **Effort: Medium** | **Breaking: No** | **Status: Implemented (T-023)**
 
 N&R's RELATIONs include an INVERSE slot: "the inverse of the relation PART-OF is the relation HAS-PARTS" [Ch.7 §7.1.1, p.171]. Our Links are unidirectional. While Extension Points [§4.14.9] partially address bidirectional awareness, they are advisory and target-initiated. Explicit inverse declarations would improve graph navigability:
 
@@ -283,6 +289,8 @@ builder.Object<Position>(obj =>
 ```
 
 **Benefit:** `IOntologyQuery` could offer `GetInverseLinks(objectType)` enabling agents to traverse relationships in both directions. Currently, an agent at a `TradeOrder` has no ontology-supported way to navigate back to its parent `Position` unless the TradeOrder explicitly declares a `HasOne<Position>` link.
+
+> **Implementation note:** `ILinkBuilder` with `.Inverse(string)` was added in T-023. `LinkDescriptor.InverseLinkName` stores the inverse. `OntologyGraphBuilder.ValidateInverseLinks()` validates symmetric declarations (if A→B declares inverse "X", then B must have link "X" with inverse pointing back). `IOntologyQuery.GetInverseLinks()` enables bidirectional traversal. See `InverseLinkTests.cs` for 7 tests.
 
 ### 6.5 Consider Lightweight Instance Metadata
 
