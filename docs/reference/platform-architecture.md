@@ -1229,10 +1229,15 @@ Key difference from Palantir: Foundry's ontology is a runtime-only metadata serv
 #### 4.14.3 Packages
 
 ```bash
-dotnet add package Strategos.Ontology              # Contracts, DomainOntology base, fluent builder interfaces
+dotnet add package Strategos.Ontology              # Contracts, DomainOntology base, fluent builder interfaces,
+                                                   # chunking, embedding abstractions, and ingestion pipeline
 dotnet add package Strategos.Ontology.Generators    # Roslyn incremental source generator
 dotnet add package Strategos.Ontology.MCP           # Progressive disclosure integration (§5.3)
+dotnet add package Strategos.Ontology.Embeddings    # OpenAI-compatible embedding provider (IEmbeddingProvider)
+dotnet add package Strategos.Ontology.Npgsql        # PostgreSQL pgvector-backed IObjectSetProvider + IObjectSetWriter
 ```
+
+The core `Strategos.Ontology` package includes text chunking (`ITextChunker`, `SentenceBoundaryChunker`, `ParagraphChunker`, `FixedSizeChunker`), embedding abstractions (`IEmbeddingProvider`), ingestion pipeline (`IngestionPipeline<T>`), and an `InMemoryObjectSetProvider` for testing. The `Embeddings` and `Npgsql` packages provide production implementations backed by OpenAI-compatible APIs and PostgreSQL pgvector respectively.
 
 #### 4.14.4 Core Primitives
 
@@ -3398,64 +3403,124 @@ The following features were intentionally deferred from the Strategos MVP. They 
 | Feature | Status | Workaround |
 |---------|--------|------------|
 | AgentStep base class | Deferred | Implement `IWorkflowStep<T>` with custom LLM integration |
-| Context Assembly DSL | Deferred | Manual assembly in step implementations using `IVectorSearchAdapter` |
-| RAG DSL | Deferred | Use `IVectorSearchAdapter` via DI |
+| Context Assembly DSL | **Implemented** | `IObjectSetProvider` + `IngestionPipeline<T>` with `SimilarTo()` queries (see section 12.2) |
+| RAG DSL | **Implemented** | `AddOpenAiEmbeddings` + `AddPgVectorObjectSets` DI registration (see section 12.3) |
 | Conversation History Management | Deferred | `[Append]` attribute + manual windowing/summarization |
 | OnFailure Handler Emitter | Deferred | Manual Wolverine handlers via partial class extension |
 | Auto Projections | Deferred | Manual Marten projection registration |
 
-### 12.2 Context Assembly (Consumer Responsibility)
+### 12.2 Context Assembly (First-Class Ontology Support)
 
-Agent steps require context assembly -- gathering relevant state, retrieved documents, and conversation history into a prompt. Since context requirements vary dramatically by domain (legal docs vs code vs customer support), this is implemented manually in step classes using `IVectorSearchAdapter` via dependency injection:
+Context assembly -- gathering relevant state, retrieved documents, and conversation history into a prompt -- is now a first-class capability of the ontology layer. The `IObjectSetProvider` interface exposes `ExecuteSimilarityAsync<T>` for vector similarity search, while `IngestionPipeline<T>` provides a fluent API for chunking, embedding, and storing unstructured data.
+
+**Ingestion** -- chunk text, generate embeddings, and store domain objects:
+
+```csharp
+// Define a domain object for document chunks
+public sealed record DocumentChunk : ISearchable
+{
+    public string Content { get; init; } = "";
+    public float[] Embedding { get; init; } = [];
+    public int SourceOffset { get; init; }
+}
+
+// Run the ingestion pipeline
+var result = await IngestionPipeline<DocumentChunk>.Create()
+    .Chunk(new SentenceBoundaryChunker())       // or ParagraphChunker, FixedSizeChunker
+    .Embed(embeddingProvider)                    // IEmbeddingProvider (e.g., OpenAI)
+    .Map((chunk, embedding) => new DocumentChunk
+    {
+        Content = chunk.Content,
+        Embedding = embedding,
+        SourceOffset = chunk.StartOffset,
+    })
+    .WriteTo(objectSetWriter)                    // IObjectSetWriter (e.g., pgvector)
+    .Build()
+    .ExecuteAsync(inputTexts);
+```
+
+**Retrieval** -- similarity search via `ObjectSet<T>.SimilarTo()`:
 
 ```csharp
 public class AnalyzeDocumentStep : IWorkflowStep<ClaimState>
 {
-    private readonly IVectorSearchAdapter _vectorSearch;
+    private readonly IObjectSetProvider _provider;
+    private readonly IActionDispatcher _dispatcher;
+    private readonly IEventStreamProvider _events;
     private readonly IChatClient _chatClient;
 
     public async Task<StepResult<ClaimState>> ExecuteAsync(
         ClaimState state, StepContext context, CancellationToken ct)
     {
-        // Manual context assembly
-        var retrievedDocs = await _vectorSearch.SearchAsync(
-            state.SearchQuery, topK: 10, minRelevance: 0.7);
+        // Similarity search via the ontology object set API
+        var docSet = new ObjectSet<DocumentChunk>(_provider, _dispatcher, _events);
+        var searchResult = await docSet
+            .SimilarTo(state.SearchQuery, topK: 10, minRelevance: 0.7)
+            .ExecuteAsync(ct);
 
         var assembledContext = $"""
             Document: {state.Document}
-            Related: {string.Join("\n", retrievedDocs.Select(d => d.Content))}
+            Related: {string.Join("\n", searchResult.Items.Select(d => d.Content))}
             """;
 
-        // Use assembled context with LLM
         var response = await _chatClient.GetResponseAsync(assembledContext, ct);
         return StepResult<ClaimState>.Success(state with { Analysis = response.Text });
     }
 }
 ```
 
-The `IVectorSearchAdapter` interface supports vector similarity search, hybrid search (combine vector + keyword), and filtering by metadata. The `IMultiCollectionRagProvider` builds on this by querying multiple collections in parallel and applying a two-stage retrieval pipeline: broad vector retrieval (TopK with permissive MinRelevance) followed by Cohere Rerank (`rerank-v4.0-pro`) to reorder results by semantic relevance to the query and filter by `MinRelevanceScore`. This two-stage pattern maximizes recall in the first stage and precision in the second, and is configured per-profile via `RerankConfiguration`.
+The `InMemoryObjectSetProvider` supports both keyword scoring and real cosine similarity (when constructed with an `IEmbeddingProvider`), making it suitable for unit and integration tests without a database.
 
-### 12.3 RAG Integration (Consumer Responsibility)
+### 12.3 RAG Integration (Package-Based)
 
-RAG (Retrieval-Augmented Generation) is implemented by registering a vector search adapter at startup and injecting it into workflow steps:
+RAG (Retrieval-Augmented Generation) is now supported through dedicated NuGet packages that register `IEmbeddingProvider`, `IObjectSetProvider`, and `IObjectSetWriter` into the DI container:
 
 ```csharp
-// Register retrieval as a standard dependency
-services.AddSingleton<IVectorSearchAdapter, YourVectorSearchAdapter>();
+// Register ontology with embeddings and pgvector storage
+services.AddOntology(opts =>
+{
+    opts.AddDomain<MyDomain>();
+    // InMemoryObjectSetProvider for dev/test, or use AddPgVectorObjectSets for production
+    opts.UseObjectSetProvider<InMemoryObjectSetProvider>();
+});
 
-// Use in steps via DI
-public class ResearchStep(IVectorSearchAdapter retrieval) : IWorkflowStep<ResearchState>
+// Production: OpenAI-compatible embeddings
+services.AddOpenAiEmbeddings(opts =>
+{
+    opts.ApiKey = "sk-...";
+    opts.Model = "text-embedding-3-small";
+    opts.Dimensions = 1536;
+});
+
+// Production: pgvector storage
+services.AddPgVectorObjectSets(opts =>
+{
+    opts.ConnectionString = "Host=localhost;Database=mydb";
+    opts.Schema = "ontology";
+});
+```
+
+Steps consume `IObjectSetProvider` (for queries) and `IObjectSetWriter` (for ingestion) via standard DI:
+
+```csharp
+public class ResearchStep(IObjectSetProvider provider, IActionDispatcher dispatcher, IEventStreamProvider events)
+    : IWorkflowStep<ResearchState>
 {
     public async Task<StepResult<ResearchState>> ExecuteAsync(
         ResearchState state, StepContext context, CancellationToken ct)
     {
-        var docs = await retrieval.SearchAsync(state.Query, ct);
-        return StepResult<ResearchState>.Success(state with { Sources = docs });
+        var docSet = new ObjectSet<DocumentChunk>(provider, dispatcher, events);
+        var results = await docSet
+            .SimilarTo(state.Query, topK: 10, minRelevance: 0.7)
+            .ExecuteAsync(ct);
+
+        return StepResult<ResearchState>.Success(
+            state with { Sources = results.Items.ToList() });
     }
 }
 ```
 
-This approach avoids vendor lock-in to specific vector stores (Pinecone, Qdrant, pgvector, Azure AI Search) and gives consumers full control over embedding models, chunk strategies, and retrieval parameters.
+This approach avoids vendor lock-in to specific vector stores (Pinecone, Qdrant, pgvector, Azure AI Search) and gives consumers full control over embedding models, chunk strategies, and retrieval parameters. The `IEmbeddingProvider` and `IObjectSetWriter` abstractions are defined in the core `Strategos.Ontology` package, while production implementations ship as separate packages (`Strategos.Ontology.Embeddings`, `Strategos.Ontology.Npgsql`).
 
 ### 12.4 Conversation History Management (Consumer Responsibility)
 

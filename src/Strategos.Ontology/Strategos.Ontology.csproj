@@ -3,7 +3,7 @@
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageId>Strategos.Ontology</PackageId>
-    <Description>Type-safe ontology definition layer for domain modeling. Provides descriptors, builders, and a fluent DSL for defining object types, links, actions, events, and interfaces across domains.</Description>
+    <Description>Type-safe ontology definition layer for domain modeling. Provides descriptors, builders, and a fluent DSL for defining object types, links, actions, events, and interfaces across domains. Includes embedding abstractions (IEmbeddingProvider), text chunking (ITextChunker with sentence, paragraph, and fixed-size strategies), an ingestion pipeline (IngestionPipeline), and an InMemoryObjectSetProvider for development and testing.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
