@@ -10,6 +10,12 @@ namespace Strategos.Ontology.Npgsql.Internal;
 internal static class SqlGenerator
 {
     /// <summary>
+    /// Quotes a SQL identifier, escaping any embedded double quotes per the SQL standard.
+    /// </summary>
+    internal static string QuoteIdentifier(string identifier) =>
+        $"\"{identifier.Replace("\"", "\"\"")}\"";
+
+    /// <summary>
     /// Returns the pgvector distance operator for the given metric.
     /// </summary>
     internal static string GetDistanceOperator(DistanceMetric metric) => metric switch
@@ -42,7 +48,7 @@ internal static class SqlGenerator
     {
         var op = GetDistanceOperator(metric);
         var sb = new StringBuilder();
-        sb.Append($"SELECT id, data, (embedding {op} @query) AS distance FROM \"{schema}\".\"{tableName}\"");
+        sb.Append($"SELECT id, data, (embedding {op} @query) AS distance FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)}");
 
         if (!string.IsNullOrEmpty(whereClause))
         {
@@ -63,7 +69,7 @@ internal static class SqlGenerator
         string? whereClause = null)
     {
         var sb = new StringBuilder();
-        sb.Append($"SELECT id, data FROM \"{schema}\".\"{tableName}\"");
+        sb.Append($"SELECT id, data FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)}");
 
         if (!string.IsNullOrEmpty(whereClause))
         {
@@ -80,10 +86,10 @@ internal static class SqlGenerator
     {
         if (hasEmbedding)
         {
-            return $"INSERT INTO \"{schema}\".\"{tableName}\" (id, data, embedding) VALUES (@id, @data::jsonb, @embedding)";
+            return $"INSERT INTO {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} (id, data, embedding) VALUES (@id, @data::jsonb, @embedding)";
         }
 
-        return $"INSERT INTO \"{schema}\".\"{tableName}\" (id, data) VALUES (@id, @data::jsonb)";
+        return $"INSERT INTO {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} (id, data) VALUES (@id, @data::jsonb)";
     }
 
     /// <summary>
@@ -102,7 +108,7 @@ internal static class SqlGenerator
 
         sb.AppendLine("CREATE EXTENSION IF NOT EXISTS vector;");
         sb.AppendLine();
-        sb.AppendLine($"CREATE TABLE IF NOT EXISTS \"{schema}\".\"{tableName}\" (");
+        sb.AppendLine($"CREATE TABLE IF NOT EXISTS {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} (");
         sb.AppendLine("    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
         sb.AppendLine("    data jsonb NOT NULL,");
         sb.AppendLine($"    embedding vector({vectorDimensions}),");
@@ -118,7 +124,8 @@ internal static class SqlGenerator
             _ => throw new ArgumentOutOfRangeException(nameof(indexType), indexType, "Unsupported pgvector index type."),
         };
 
-        sb.Append($"CREATE INDEX IF NOT EXISTS idx_{tableName}_embedding ON \"{schema}\".\"{tableName}\" USING {indexMethod} (embedding {opsClass})");
+        var indexName = QuoteIdentifier($"idx_{tableName}_embedding");
+        sb.Append($"CREATE INDEX IF NOT EXISTS {indexName} ON {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} USING {indexMethod} (embedding {opsClass})");
 
         if (indexType == PgVectorIndexType.IvfFlat)
         {

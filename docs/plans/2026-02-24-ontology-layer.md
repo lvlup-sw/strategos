@@ -1540,7 +1540,7 @@ Link: `docs/designs/2026-02-24-ontology-layer.md`
 ## Parallelization Strategy
 
 ### Phase 0: Scaffolding (Sequential)
-```
+```text
 001 → 002 → 003
 ```
 Creates all project files on main branch.
@@ -1558,7 +1558,7 @@ Teams 1A and 1B have **zero shared files** — they create in different subdirec
 - 1B: `ObjectSets/`, `Events/`, `Actions/`, `Query/`, `Telemetry/`
 
 ### Phase 2: Runtime Layer (Single Team)
-```
+```text
 Team 1C: Tasks 039-045 (7 tasks)
 Branch: feat/ontology-runtime-layer
 ```
@@ -1574,7 +1574,7 @@ Depends on merge of Teams 1A + 1B. Builds OntologyGraph on top of both layers.
 
 ### Dependency Graph
 
-```
+```text
 Phase 0:  [001] → [002] → [003]
               ↓
 Phase 1:  [Team 1A: 004-025] ‖ [Team 1B: 026-038]
@@ -1587,7 +1587,7 @@ Final:    merge all → integration test (063)
 ```
 
 ### Critical Path
-```
+```text
 001 → 004 → 010 → 015 → 022 → 024 → 025 → 040 → 041 → 042 → 043 → 044 → 045 → 061 → 063
 ```
 Critical path length: 15 tasks (through Language → Runtime → DI → Integration)

@@ -77,7 +77,7 @@ public class PgVectorSchemaTests
             vectorDimensions: 1536,
             indexType: PgVectorIndexType.IvfFlat);
 
-        await Assert.That(ddl).Contains("CREATE INDEX IF NOT EXISTS idx_test_table_embedding");
+        await Assert.That(ddl).Contains("CREATE INDEX IF NOT EXISTS \"idx_test_table_embedding\"");
     }
 
     [Test]

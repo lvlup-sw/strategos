@@ -49,6 +49,8 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var queryVector = expression.QueryVector
             ?? await _embeddingProvider.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
+        ValidateEmbedding(queryVector);
+
         // 2. Get table name from TypeMapper
         var tableName = TypeMapper.GetTableName<T>();
 
@@ -195,9 +197,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
 
+        var qualifiedTable = $"{SqlGenerator.QuoteIdentifier(_options.Schema)}.{SqlGenerator.QuoteIdentifier(tableName)}";
         var copyColumns = hasEmbedding
-            ? $"\"{_options.Schema}\".\"{tableName}\" (id, data, embedding)"
-            : $"\"{_options.Schema}\".\"{tableName}\" (id, data)";
+            ? $"{qualifiedTable} (id, data, embedding)"
+            : $"{qualifiedTable} (id, data)";
 
         await using var writer = await connection.BeginBinaryImportAsync(
             $"COPY {copyColumns} FROM STDIN (FORMAT BINARY)", ct).ConfigureAwait(false);

@@ -18,6 +18,9 @@ public static class EmbeddingServiceCollectionExtensions
         this IServiceCollection services,
         Action<OpenAiEmbeddingOptions> configure)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
+
         services.Configure(configure);
         services.AddHttpClient<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvider>();
         return services;

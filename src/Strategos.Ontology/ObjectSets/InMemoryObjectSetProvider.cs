@@ -159,18 +159,19 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         SimilarityExpression expression,
         CancellationToken ct) where T : class
     {
-        var queryEmbedding = await _embeddingProvider!.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
+        // Honor QueryVector if provided, otherwise embed QueryText
+        var queryEmbedding = expression.QueryVector
+            ?? await _embeddingProvider!.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
-        // Build a lookup from original items to their stored embeddings
+        // Build identity-based index map to avoid O(n^2) IndexOf lookups and duplicate-item misalignment
         var allItems = GetSeededItems<T>();
-        var allEmbeddings = storedEmbeddings;
+        var indexMap = BuildIdentityIndexMap(allItems);
 
         var scored = items
             .Select(item =>
             {
-                var originalIndex = allItems.IndexOf(item);
-                var embedding = originalIndex >= 0 && originalIndex < allEmbeddings.Count
-                    ? allEmbeddings[originalIndex]
+                var embedding = indexMap.TryGetValue(item, out var idx) && idx < storedEmbeddings.Count
+                    ? storedEmbeddings[idx]
                     : [];
                 return (Item: item, Score: CosineSimilarity(queryEmbedding, embedding));
             })
@@ -195,16 +196,16 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         List<T> items,
         SimilarityExpression expression) where T : class
     {
-        // Build a lookup from original items to their searchable content
+        // Build identity-based index map to avoid O(n^2) IndexOf lookups and duplicate-item misalignment
         var allItems = GetSeededItems<T>();
         var allContent = GetSearchableContent<T>();
+        var indexMap = BuildIdentityIndexMap(allItems);
 
         var scored = items
             .Select(item =>
             {
-                var originalIndex = allItems.IndexOf(item);
-                var content = originalIndex >= 0 && originalIndex < allContent.Count
-                    ? allContent[originalIndex]
+                var content = indexMap.TryGetValue(item, out var idx) && idx < allContent.Count
+                    ? allContent[idx]
                     : string.Empty;
                 return (Item: item, Score: CalculateKeywordScore(expression.QueryText, content));
             })
@@ -223,6 +224,21 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         return new ScoredObjectSetResult<T>(
             resultItems, totalCount, ObjectSetInclusion.Properties, resultScores);
+    }
+
+    /// <summary>
+    /// Builds an identity-based (ReferenceEquals) map from item to its index in the list.
+    /// First occurrence wins, avoiding issues with duplicate-valued items.
+    /// </summary>
+    private static Dictionary<T, int> BuildIdentityIndexMap<T>(List<T> items) where T : class
+    {
+        var map = new Dictionary<T, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < items.Count; i++)
+        {
+            map.TryAdd(items[i], i);
+        }
+
+        return map;
     }
 
     private List<T> GetSeededItems<T>() where T : class

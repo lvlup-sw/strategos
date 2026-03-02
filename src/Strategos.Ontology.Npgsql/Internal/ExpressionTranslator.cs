@@ -27,6 +27,8 @@ internal static class ExpressionTranslator
     [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
     internal static TranslationResult Translate(ObjectSetExpression expression)
     {
+        ArgumentNullException.ThrowIfNull(expression);
+
         return expression switch
         {
             FilterExpression filter => TranslateFilter(filter),
