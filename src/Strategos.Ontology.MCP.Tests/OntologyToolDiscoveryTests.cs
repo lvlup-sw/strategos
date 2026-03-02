@@ -152,6 +152,7 @@ public class OntologyToolDiscoveryTests
         await Assert.That(queryTool.Description).Contains("semanticQuery");
         await Assert.That(queryTool.Description).Contains("topK");
         await Assert.That(queryTool.Description).Contains("minRelevance");
+        await Assert.That(queryTool.Description).Contains("distanceMetric");
     }
 
     [Test]

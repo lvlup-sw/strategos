@@ -12,6 +12,9 @@ public sealed record ScoredObjectSetResult<T>
         ObjectSetInclusion inclusion,
         IReadOnlyList<double> scores)
     {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(scores);
+
         if (scores.Count != items.Count)
         {
             throw new ArgumentException(

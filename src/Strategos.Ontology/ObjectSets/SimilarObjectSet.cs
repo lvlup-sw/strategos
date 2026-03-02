@@ -11,6 +11,8 @@ public sealed class SimilarObjectSet<T> where T : class
 
     public SimilarObjectSet(SimilarityExpression expression, IObjectSetProvider provider)
     {
+        ArgumentNullException.ThrowIfNull(expression);
+        ArgumentNullException.ThrowIfNull(provider);
         Expression = expression;
         _provider = provider;
     }

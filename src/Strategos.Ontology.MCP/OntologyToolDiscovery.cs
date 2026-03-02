@@ -91,7 +91,7 @@ public sealed class OntologyToolDiscovery
         sb.Append("Query ontology objects. ");
         sb.Append($"Domains: {domainNames}. ");
         sb.Append($"{objectTypeCount} object type(s) available. ");
-        sb.Append("Supports filter, traverseLink, interface narrowing, include, and semantic search (semanticQuery, topK, minRelevance).");
+        sb.Append("Supports filter, traverseLink, interface narrowing, include, and semantic search (semanticQuery, topK, minRelevance, distanceMetric).");
         return sb.ToString();
     }
 
