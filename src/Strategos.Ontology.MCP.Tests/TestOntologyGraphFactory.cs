@@ -99,4 +99,49 @@ public static class TestOntologyGraphFactory
         builder.AddDomain<TestTradingDomainOntology>();
         return builder.Build();
     }
+
+    public static OntologyGraph CreateVectorGraph()
+    {
+        var builder = new OntologyGraphBuilder();
+        builder.AddDomain<TestVectorDomainOntology>();
+        return builder.Build();
+    }
+}
+
+// Test types for vector domain
+public class TestDocument
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public float[] Embedding { get; set; } = [];
+}
+
+public class TestImage
+{
+    public string ImageId { get; set; } = "";
+    public string Description { get; set; } = "";
+}
+
+/// <summary>
+/// A test domain ontology with vector properties for testing semantic search support.
+/// </summary>
+public class TestVectorDomainOntology : DomainOntology
+{
+    public override string DomainName => "content";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestDocument>(obj =>
+        {
+            obj.Key(d => d.Id);
+            obj.Property(d => d.Title).Required();
+            obj.Property(d => d.Embedding).Vector(1536);
+        });
+
+        builder.Object<TestImage>(obj =>
+        {
+            obj.Key(i => i.ImageId);
+            obj.Property(i => i.Description);
+        });
+    }
 }

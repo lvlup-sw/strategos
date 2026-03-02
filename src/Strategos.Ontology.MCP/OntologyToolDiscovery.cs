@@ -81,7 +81,7 @@ public sealed class OntologyToolDiscovery
         sb.Append("Explore the ontology schema. ");
         sb.Append($"Domains: {domainNames}. ");
         sb.Append($"{objectTypeCount} object type(s) available. ");
-        sb.Append("Scopes: domains, objectTypes, actions, links, interfaces, events, workflowChains.");
+        sb.Append("Scopes: domains, objectTypes, actions, links, interfaces, events, workflowChains, vectorProperties.");
         return sb.ToString();
     }
 
@@ -91,7 +91,7 @@ public sealed class OntologyToolDiscovery
         sb.Append("Query ontology objects. ");
         sb.Append($"Domains: {domainNames}. ");
         sb.Append($"{objectTypeCount} object type(s) available. ");
-        sb.Append("Supports filter, traverseLink, interface narrowing, and include.");
+        sb.Append("Supports filter, traverseLink, interface narrowing, include, and semantic search (semanticQuery, topK, minRelevance).");
         return sb.ToString();
     }
 

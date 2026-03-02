@@ -553,7 +553,11 @@ public sealed class OntologyGraphBuilder
 
                 PropertyKind kind;
 
-                if (prop.IsComputed)
+                if (prop.Kind == PropertyKind.Vector)
+                {
+                    kind = PropertyKind.Vector;
+                }
+                else if (prop.IsComputed)
                 {
                     kind = PropertyKind.Computed;
                 }

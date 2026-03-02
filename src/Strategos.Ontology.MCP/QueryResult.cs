@@ -3,7 +3,7 @@ namespace Strategos.Ontology.MCP;
 /// <summary>
 /// Result of an ontology query operation.
 /// </summary>
-public sealed record QueryResult(
+public record QueryResult(
     string ObjectType,
     IReadOnlyList<object> Items)
 {

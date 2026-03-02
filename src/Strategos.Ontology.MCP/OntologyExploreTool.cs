@@ -39,6 +39,7 @@ public sealed class OntologyExploreTool
             "events" => ExploreEvents(domain, objectType),
             "interfaces" => ExploreInterfaces(),
             "workflowChains" => ExploreWorkflowChains(),
+            "vectorProperties" => ExploreVectorProperties(domain),
             _ => new ExploreResult(scope, []),
         };
     }
@@ -68,6 +69,7 @@ public sealed class OntologyExploreTool
             ["linkCount"] = t.Links.Count,
             ["actionCount"] = t.Actions.Count,
             ["eventCount"] = t.Events.Count,
+            ["isSemanticSearchable"] = t.Properties.Any(p => p.Kind == PropertyKind.Vector),
         }).ToList();
 
         return new ExploreResult("objectTypes", items);
@@ -167,6 +169,32 @@ public sealed class OntologyExploreTool
         }).ToList();
 
         return new ExploreResult("links", items);
+    }
+
+    private ExploreResult ExploreVectorProperties(string? domain)
+    {
+        var types = domain is null
+            ? _graph.ObjectTypes
+            : _graph.ObjectTypes.Where(t => t.DomainName == domain).ToList();
+
+        var items = types
+            .Where(t => t.Properties.Any(p => p.Kind == PropertyKind.Vector))
+            .Select(t => new Dictionary<string, object?>
+            {
+                ["name"] = t.Name,
+                ["domain"] = t.DomainName,
+                ["vectorProperties"] = t.Properties
+                    .Where(p => p.Kind == PropertyKind.Vector)
+                    .Select(p => new Dictionary<string, object?>
+                    {
+                        ["name"] = p.Name,
+                        ["dimensions"] = p.VectorDimensions,
+                    })
+                    .ToList(),
+            })
+            .ToList();
+
+        return new ExploreResult("vectorProperties", items);
     }
 
     private ObjectTypeDescriptor? ResolveObjectType(string? domain, string? objectType)

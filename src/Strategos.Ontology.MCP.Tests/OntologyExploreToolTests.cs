@@ -99,4 +99,45 @@ public class OntologyExploreToolTests
         var traversedTypeNames = result.Items.Select(i => i["objectType"]?.ToString()).ToList();
         await Assert.That(traversedTypeNames).Contains("TestOrder");
     }
+
+    [Test]
+    public async Task Explore_VectorProperties_ReturnsVectorAnnotatedTypes()
+    {
+        // Arrange — use vector graph which has TestDocument with an Embedding vector property
+        var vectorGraph = TestOntologyGraphFactory.CreateVectorGraph();
+        var vectorTool = new OntologyExploreTool(vectorGraph);
+
+        // Act
+        var result = vectorTool.Explore(scope: "vectorProperties");
+
+        // Assert — should return only types with vector properties
+        await Assert.That(result.Scope).IsEqualTo("vectorProperties");
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0]["name"]?.ToString()).IsEqualTo("TestDocument");
+        await Assert.That(result.Items[0]["domain"]?.ToString()).IsEqualTo("content");
+
+        var vectorProps = result.Items[0]["vectorProperties"] as IReadOnlyList<Dictionary<string, object?>>;
+        await Assert.That(vectorProps).IsNotNull();
+        await Assert.That(vectorProps!).HasCount().EqualTo(1);
+        await Assert.That(vectorProps[0]["name"]?.ToString()).IsEqualTo("Embedding");
+        await Assert.That(vectorProps[0]["dimensions"]).IsEqualTo(1536);
+    }
+
+    [Test]
+    public async Task Explore_ObjectTypes_IncludesIsSemanticSearchable()
+    {
+        // Arrange — use vector graph which has TestDocument (vector) and TestImage (no vector)
+        var vectorGraph = TestOntologyGraphFactory.CreateVectorGraph();
+        var vectorTool = new OntologyExploreTool(vectorGraph);
+
+        // Act
+        var result = vectorTool.Explore(scope: "objectTypes");
+
+        // Assert
+        var docType = result.Items.First(i => i["name"]?.ToString() == "TestDocument");
+        var imgType = result.Items.First(i => i["name"]?.ToString() == "TestImage");
+
+        await Assert.That(docType["isSemanticSearchable"]).IsEqualTo(true);
+        await Assert.That(imgType["isSemanticSearchable"]).IsEqualTo(false);
+    }
 }

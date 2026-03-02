@@ -235,4 +235,101 @@ public class OntologyQueryToolTests
         await Assert.That(result).HasCount().EqualTo(1);
         await Assert.That(result[0].EventType).IsEqualTo("TradeExecuted");
     }
+
+    [Test]
+    public async Task QueryAsync_WithSemanticQuery_BuildsSimilarityExpression()
+    {
+        // Arrange
+        SimilarityExpression? capturedExpression = null;
+        var testItems = new List<object> { new { Id = "p1", Symbol = "AAPL" } };
+        var testScores = new List<double> { 0.92 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(testItems, testScores, testItems.Count, ObjectSetInclusion.Properties);
+            });
+
+        // Act
+        await _tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "high-value tech stocks");
+
+        // Assert — ExecuteSimilarityAsync should have been called
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.QueryText).IsEqualTo("high-value tech stocks");
+    }
+
+    [Test]
+    public async Task QueryAsync_WithSemanticQuery_ReturnsSemanticQueryResult()
+    {
+        // Arrange
+        var testItems = new List<object> { new { Id = "p1", Symbol = "AAPL" } };
+        var testScores = new List<double> { 0.92 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(testItems, testScores, testItems.Count, ObjectSetInclusion.Properties));
+
+        // Act
+        var result = await _tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "high-value tech stocks");
+
+        // Assert
+        await Assert.That(result).IsTypeOf<SemanticQueryResult>();
+        var semanticResult = (SemanticQueryResult)result;
+        await Assert.That(semanticResult.Scores).HasCount().EqualTo(1);
+        await Assert.That(semanticResult.Scores[0]).IsEqualTo(0.92);
+        await Assert.That(semanticResult.SemanticQuery).IsEqualTo("high-value tech stocks");
+    }
+
+    [Test]
+    public async Task QueryAsync_WithSemanticQuery_SetsDefaultTopKAndMinRelevance()
+    {
+        // Arrange
+        SimilarityExpression? capturedExpression = null;
+        var testItems = new List<object>();
+        var testScores = new List<double>();
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(testItems, testScores, 0, ObjectSetInclusion.Properties);
+            });
+
+        // Act
+        await _tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "any query");
+
+        // Assert — defaults should be TopK=5, MinRelevance=0.7
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.TopK).IsEqualTo(5);
+        await Assert.That(capturedExpression.MinRelevance).IsEqualTo(0.7);
+    }
+
+    [Test]
+    public async Task QueryAsync_WithoutSemanticQuery_ReturnsRegularQueryResult()
+    {
+        // Arrange
+        var testItems = new List<object> { new { Id = "p1", Symbol = "AAPL" } };
+        _objectSetProvider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties));
+
+        // Act
+        var result = await _tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading");
+
+        // Assert — without semanticQuery, should return plain QueryResult, not SemanticQueryResult
+        await Assert.That(result).IsTypeOf<QueryResult>();
+        await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+    }
 }

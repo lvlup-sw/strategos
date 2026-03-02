@@ -25,7 +25,7 @@ public sealed class OntologyQueryTool
 
     /// <summary>
     /// Queries ontology objects by type with optional filtering, link traversal,
-    /// interface narrowing, and inclusion control.
+    /// interface narrowing, inclusion control, and semantic search.
     /// </summary>
     public async Task<QueryResult> QueryAsync(
         string objectType,
@@ -34,10 +34,21 @@ public sealed class OntologyQueryTool
         string? traverseLink = null,
         string? interfaceName = null,
         string? include = null,
+        string? semanticQuery = null,
+        int topK = 5,
+        double minRelevance = 0.7,
+        string? distanceMetric = null,
         CancellationToken ct = default)
     {
         var inclusion = ParseInclusion(include);
         var expression = BuildExpression(domain, objectType, filter, traverseLink, interfaceName, inclusion);
+
+        if (semanticQuery is not null)
+        {
+            return await ExecuteSemanticQueryAsync(
+                expression, objectType, semanticQuery, topK, minRelevance, distanceMetric,
+                filter, traverseLink, interfaceName, include, ct).ConfigureAwait(false);
+        }
 
         var result = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
 
@@ -70,6 +81,45 @@ public sealed class OntologyQueryTool
         }
 
         return events;
+    }
+
+    private async Task<SemanticQueryResult> ExecuteSemanticQueryAsync(
+        ObjectSetExpression baseExpression,
+        string objectType,
+        string semanticQuery,
+        int topK,
+        double minRelevance,
+        string? distanceMetric,
+        string? filter,
+        string? traverseLink,
+        string? interfaceName,
+        string? include,
+        CancellationToken ct)
+    {
+        var metric = ParseDistanceMetric(distanceMetric);
+
+        var similarityExpression = new SimilarityExpression(baseExpression, semanticQuery)
+        {
+            TopK = topK,
+            MinRelevance = minRelevance,
+            Metric = metric,
+        };
+
+        var result = await _objectSetProvider
+            .ExecuteSimilarityAsync<object>(similarityExpression, ct)
+            .ConfigureAwait(false);
+
+        return new SemanticQueryResult(objectType, result.Items)
+        {
+            Scores = result.Scores,
+            SemanticQuery = semanticQuery,
+            TopK = topK,
+            MinRelevance = minRelevance,
+            Filter = filter,
+            TraverseLink = traverseLink,
+            InterfaceName = interfaceName,
+            Include = include,
+        };
     }
 
     private ObjectSetExpression BuildExpression(
@@ -107,6 +157,18 @@ public sealed class OntologyQueryTool
         }
 
         return expression;
+    }
+
+    private static DistanceMetric ParseDistanceMetric(string? distanceMetric)
+    {
+        if (distanceMetric is null)
+        {
+            return DistanceMetric.Cosine;
+        }
+
+        return Enum.TryParse<DistanceMetric>(distanceMetric, ignoreCase: true, out var result)
+            ? result
+            : DistanceMetric.Cosine;
     }
 
     private static ObjectSetInclusion? ParseInclusion(string? include)

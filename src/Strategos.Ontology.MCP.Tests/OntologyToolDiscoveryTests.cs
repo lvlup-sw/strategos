@@ -137,6 +137,24 @@ public class OntologyToolDiscoveryTests
     }
 
     [Test]
+    public async Task Discover_QueryToolDescription_MentionsSemanticSearch()
+    {
+        // Arrange
+        var graph = TestOntologyGraphFactory.CreateTradingGraph();
+        var discovery = new OntologyToolDiscovery(graph);
+
+        // Act
+        var tools = discovery.Discover();
+        var queryTool = tools.First(t => t.Name == "ontology_query");
+
+        // Assert — description should mention semantic search capabilities
+        await Assert.That(queryTool.Description).Contains("semantic search");
+        await Assert.That(queryTool.Description).Contains("semanticQuery");
+        await Assert.That(queryTool.Description).Contains("topK");
+        await Assert.That(queryTool.Description).Contains("minRelevance");
+    }
+
+    [Test]
     public async Task Discover_ActionDescription_IncludesConstraintCount()
     {
         // Arrange
