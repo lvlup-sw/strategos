@@ -14,4 +14,9 @@ public interface IObjectSetProvider
     /// Streams results of an object set expression as an async enumerable.
     /// </summary>
     IAsyncEnumerable<T> StreamAsync<T>(ObjectSetExpression expression, CancellationToken ct = default) where T : class;
+
+    /// <summary>
+    /// Executes a similarity search and returns scored results.
+    /// </summary>
+    Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(SimilarityExpression expression, CancellationToken ct = default) where T : class;
 }

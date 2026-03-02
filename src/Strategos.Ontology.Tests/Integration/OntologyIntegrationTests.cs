@@ -140,6 +140,10 @@ public class IntegrationStubObjectSetProvider : IObjectSetProvider
     public IAsyncEnumerable<T> StreamAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
         where T : class =>
         AsyncEnumerable.Empty<T>();
+
+    public Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(SimilarityExpression expression, CancellationToken ct = default)
+        where T : class =>
+        Task.FromResult(new ScoredObjectSetResult<T>([], 0, ObjectSetInclusion.Properties, []));
 }
 
 public class IntegrationStubEventStreamProvider : IEventStreamProvider
