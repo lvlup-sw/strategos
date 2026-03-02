@@ -27,10 +27,7 @@ Metaphysics is a traditional philosophical discipline, perhaps the most ancient 
 “underlie all genuine scientific inquiry because science cannot even begin in the absence of philosophical assumptions and presuppositions. These assumptions are generally not stated explicitly and so may not even be noticed by practicing scientists or students of science. But they are there.
 
 
-As an example, physics presupposes the following three things: (1) that there exists a physical reality independent of our mental states; (2) that the interactions of the stuff constituting this reality conform to certain general laws; and (3) that we are capable of grasping physical laws and obtaining evidence that favors or disfavors specific proposed laws.... The first two are metaphysical in nature while the third is epistemological.... [T]hey
-
-
-are not at all self-evidently true...... [T]hey are not themselves part of the subject matter of physics.” (Jubien 1997: 3-4)
+As an example, physics presupposes the following three things: (1) that there exists a physical reality independent of our mental states; (2) that the interactions of the stuff constituting this reality conform to certain general laws; and (3) that we are capable of grasping physical laws and obtaining evidence that favors or disfavors specific proposed laws.... The first two are metaphysical in nature while the third is epistemological.... [T]hey are not at all self-evidently true...... [T]hey are not themselves part of the subject matter of physics.” (Jubien 1997: 3-4)
 
 
 Now, the list of basic categories proposed by metaphysics, the “‘official’ philosophical inventory of things that are... is usually called an ontology” (Loux 1998: 15; cf. also Bergman 1992, Grossman 1992, Chisholm 1996). This is, of course, Guarino’s lower-case ontology; it is the sense also, in which our ontology, that of ontological semantics, exists.
@@ -50,10 +47,7 @@ Sherlock Holmes), and abstract entities as existing. For us, however, the decisi
 
 
 Constructing an ontology should not be viewed as a task for metaphysics. Instead, this is a problem of representing knowledge and, thus, belongs in epistemology. That is, the object of study here is human knowledge about entities, not entities themselves. Inasmuch as humans know about unicorns as well as, say, goats, the respective concepts in the ontology have the same status. It is not, therefore, important for a constructed ontology that unicorns do not “exist” and goats do. The main criterion for inclusion is a consensus among the members of the community using the ontology (and generating and understanding documents to be processed with the help of the ontology)
-concerning the properties of a concept. The basic conclusion of this line of thought is that epistemology (and, therefore, any constructed ontology) is neutral with respect to the major metaphysi
-
-
-cal issue of existence. [58]
+concerning the properties of a concept. The basic conclusion of this line of thought is that epistemology (and, therefore, any constructed ontology) is neutral with respect to the major metaphysical issue of existence. [58]
 
 
 There is another claim routinely made about metaphysics that strikes us as importantly incorrect, even if it is made by those who, like ourselves, recognize the importance of metaphysics. “[M]etaphysics,” Loux states, “is the most general of all disciplines; its aim is to identify the nature and structure of all that there is” (1998: x). But is it really? On the one hand, the very top levels of an ontology should contain the most basic—and general—categories that no particular area of research will claim as their own (Bateman refers to these levels as the “Upper Model” (see Bateman 1990, 1993; Hovy and Nirenburg 1992 reserves the term ‘ontology’ for the top levels only, and uses ‘domain model’ for the lower levels). On the other hand, metaphysics is not responsible for “the nature and structure” of, say, microbiological entities: microbiology, a part of biology, is.
@@ -73,12 +67,9 @@ While metaphysics is an ancient discipline and ontology has been commented upon 
 (1900-01) who is usually credited with founding formal ontology. He saw the field as parallel to formal logic: “[f]ormal logic deals with the interconnections of truths... [while] formal ontology deals with the interconnections of things, with objects and properties, parts and wholes, relations and collectives” (Smith 1998: 19).
 
 
-Formal ontology is seen as being founded on the mathematical disciplines of mereology, which studies the relations between parts and wholes, theory of dependence, and topology. There is a body of work studying these disciplines, their relations to ontologies, and issues with their appli
+Formal ontology is seen as being founded on the mathematical disciplines of mereology, which studies the relations between parts and wholes, theory of dependence, and topology. There is a body of work studying these disciplines, their relations to ontologies, and issues with their applications to ontology
 
-58. It is precisely because of this neutrality that text meaning (a form of recording knowledge) is neutral to its truth value. In other words, a sentence may be meaningful even if it does not have a truth value; that is, for instance, if it talks about unicorns or the present kings of France or even if it states that apples fall upwards. The above is a succinct refutation of truth-conditional semantics (see XREF).
-
-
-cations to ontology (see, for instance, Simons 1987, Bochman 1990, Smith 1996, 1997, 1998,
+58. It is precisely because of this neutrality that text meaning (a form of recording knowledge) is neutral to its truth value. In other words, a sentence may be meaningful even if it does not have a truth value; that is, for instance, if it talks about unicorns or the present kings of France or even if it states that apples fall upwards. The above is a succinct refutation of truth-conditional semantics (see XREF). (see, for instance, Simons 1987, Bochman 1990, Smith 1996, 1997, 1998,
 Varzi 1994, 1996, 1998 [59] ). Other scholars develop formal devices within mereo(topo)logy to accommodate such particular elements of ontology as space and time (Muller 1998), a particular kind of artifacts (Reicher 1998), deontic phenomena (Johannesson and Wohed 1998) or inheritance models (Schäfer 1998), among others. Complex ontological entities, such as patterns
 (Johansson 1998, Johannesson and Wohed 1998), stand out in this respect (cf. our own complex events in Carlson and Nirenburg 1990; Section 7.1.5 below). To all of this, one must add the study of inheritance (see, for instance, Horty _et al_ . 1990).
 
@@ -161,10 +152,7 @@ The last important issue of formal ontology we will touch upon briefly here is t
 There are, however, two non-trivial issues with ontology interchange. One of them is the dichotomy, well-known in descriptive and computational linguistics, between a specific domain and a multidomain situation. When designing an ontology for a domain (or describing a sublanguage of natural language—see Section 9.3.6; cf. Raskin 1990), one can take full advantage of its limited nature and achieve a higher accuracy of description. This comes, however, at a price: the more domain-specific the description the less portable it is outside of the domain.
 
 
-Furthermore, some scholars claim that no domain knowledge is or can be independent from a par
-
-
-ticular task for which it is developed and a particular method employed—this approach is, of course, well-known in physics. According to Bylander and Chandrasekaran (1988), ontology design cannot be free of “the so-called interaction problem: ‘Representing knowledge for the purpose of solving some problem is strongly affected by the nature of the problem and the inference strategy to be applied to the problem.’” Ignoring the long-standing debate on the issue in postBohr physics, Guarino (1997: 293) mounts his own defense, coupled with a reasonable plea:
+Furthermore, some scholars claim that no domain knowledge is or can be independent from a particular task for which it is developed and a particular method employed—this approach is, of course, well-known in physics. According to Bylander and Chandrasekaran (1988), ontology design cannot be free of “the so-called interaction problem: ‘Representing knowledge for the purpose of solving some problem is strongly affected by the nature of the problem and the inference strategy to be applied to the problem.’” Ignoring the long-standing debate on the issue in postBohr physics, Guarino (1997: 293) mounts his own defense, coupled with a reasonable plea:
 
 
 “I will defend here the thesis of the independence of domain knowledge. This thesis should not be intended in a rigid sense, since it is clear that—more or less—ontological commitments always reflect particular points of view (for instance, the same physical phenomenon may be described in different ways by an engineer, by a physicist or by a chemist); rather, what I would like to stress is the fact that reusability across multiple tasks or methods _can and should be systematically pursued_ [62] ...”
@@ -314,7 +302,7 @@ Section 9.3.5 below). In multilingual dictionaries, an important motivation for 
 |bois<br>1) ‘wood’ material<br>2) ‘wood’ part of landscape|Holz|Holz|
 |bois<br>1) ‘wood’ material<br>2) ‘wood’ part of landscape|Holz|skov|
 |bois<br>1) ‘wood’ material<br>2) ‘wood’ part of landscape|Wald|Wald|
-|forêt ‘forest|forêt ‘forest|forêt ‘forest|
+|forêt ‘forest’|Wald ‘forest’|skov ‘forest’|
 
 
 In the above table, the French column features two sets of synonyms— _arbre/bois1_ and _bois2/forêt_
@@ -324,10 +312,7 @@ and one polysemous word, _bois_ . The Danish column features two polysemous word
 What Hjelmslev implied here is a method of crosslinguistic lexical semantic analysis. Dolgopol’sky (1962) implemented this method on the material of 28 languages. This method is based on a geometric metaphor: should one choose to extend all horizontal lines across the entire table, the resulting rows will correspond to what Hjelmslev called ‘values,’ i.e., relative, differential meanings. One would think that, in ontological terms, these values would correspond to the most detailed, atomistic conceptual representations, excluding any possibility of concept ambiguity or conflation. In reality, some of these extensions will be hard to interpret: thus, the extension to the left of the line between _troe_ and _skov_ would split the concept of wood as material into two unmotivated concepts.
 
 
-As any dictionary of French, German or Danish will demonstrate, the words in the table realize three distinct senses—those of plant, material and landscape feature. It is an accident that these three senses correspond to the German words. One should expect that, in other cases of crosslinguistic description, it will be another language that will turn out to be nonpolysemous. [66] And yet in other cases, no language may be found to provide nonpolysemous coverage of the senses involved. The most appropriate ontology for representing the senses of the words in the table should contain three concepts corresponding to the German word senses. As will be discussed in the next section, we see it as a task for formal ontology to explore why it is so and what criteria can be discovered for making such decisions. We have a very strong intuition that these three concepts must be represented in the ontology to the exclusion of all alternatives. Such a decision
-
-
-strikes us as “natural” and obvious. As we have mentioned elsewhere (Nirenburg et al. 1995), this feeling is shared by all the members of our research team, which makes such decisions reproducible. It is not entirely clear to us what this certainty is based on, and we believe that it is the task of formal and philosophical ontology to address this issue.
+As any dictionary of French, German or Danish will demonstrate, the words in the table realize three distinct senses—those of plant, material and landscape feature. It is an accident that these three senses correspond to the German words. One should expect that, in other cases of crosslinguistic description, it will be another language that will turn out to be nonpolysemous. [66] And yet in other cases, no language may be found to provide nonpolysemous coverage of the senses involved. The most appropriate ontology for representing the senses of the words in the table should contain three concepts corresponding to the German word senses. As will be discussed in the next section, we see it as a task for formal ontology to explore why it is so and what criteria can be discovered for making such decisions. We have a very strong intuition that these three concepts must be represented in the ontology to the exclusion of all alternatives. Such a decision strikes us as “natural” and obvious. As we have mentioned elsewhere (Nirenburg et al. 1995), this feeling is shared by all the members of our research team, which makes such decisions reproducible. It is not entirely clear to us what this certainty is based on, and we believe that it is the task of formal and philosophical ontology to address this issue.
 
 
 Ambiguity is pervasive in language and must be handled. We have seen that it cannot be expunged from any specific implementation of ontology, because of no purely conceptual limits on grain size. Moreover, an effort to split ontological concepts into the ever smaller unambiguous units leads to a sharp increase in polysemy and, therefore, makes the task of disambiguation so much more difficult. As we will argue in the next section, no ontology exists in a vacuum. It interacts with other resources, such as knowledge representation languages, lexicons, analyzers, generators, general reasoning modules, etc. It is safe to assume that the overall amount of ambiguity to be addressed in any application is fairly constant at a given grain size. The differences among the various approaches to the treatment of ambiguity may be articulated as differences in the distribution across the above resources of the knowledge necessary for resolving the ambiguity. So, if an ontology is made less ambiguous, it only means that the ambiguity will have to be treated increasingly elsewhere.

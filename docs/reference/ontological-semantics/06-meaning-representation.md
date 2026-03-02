@@ -42,7 +42,7 @@ manufacturing capacity will reduce imports from Japan.
 In “Computerese,” that is, in the form that we expect that a semantic analyzer would be able to process and represent the above text, the latter will be glossed, for example, as follows:
 
 
-(2)   A spokeseperson for the company called Dresser Industries made this statement: Dresser
+(2)   A spokesperson for the company called Dresser Industries made this statement: Dresser
 Industries expects that imports into the US from Japan will decrease through large capital investment for the purpose of expanding the manufacturing potential in the US; the expenditure precedes expansion, which precedes reduction, and all of them take place after the statement.
 In a somewhat more formal fashion, the meaning of (1) glossed in (2) can be seen to include the following meaning components:
 
@@ -389,11 +389,13 @@ time time-begin unknown time-end (< decrease-1.time-begin) (< import-1.time-begi
 decrease-1
 agent value unknown theme value import-1
 instrument value expend-1
-time time-begin (> inform-1inform-1.time-end) (> expend-1.time-begin) (> import-1.time-begin)
-time-end < import-1.begin-time import-1
+time time-begin (> inform-1.time-end) (> expend-1.time-begin) (> import-1.time-begin)
+time-end < import-1.begin-time
+import-1
 agent value unknown theme value unknown source value Japan destination value USA
-time time-begin (> inform.time-end) (< expend-1.begin-time)
-time-end unknown expend-1
+time time-begin (> inform-1.time-end) (< expend-1.begin-time)
+time-end unknown
+expend-1
 agent value unknown theme value money-1
 amount value                 - 0.7
 purpose value increase-1

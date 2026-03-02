@@ -26,6 +26,6 @@ This paper addresses the same core problem as our `Agentic.Ontology` layer: comp
 - **Hard constraints (axioms)** parallel our `Requires()` preconditions
 - **Soft constraints (annotations)** parallel our `Description()` metadata
 - **MCP tool exposure** parallels our `Agentic.Ontology.MCP` package
-- **Constraint feedback loop** parallels our postcondition/derivation chain staleness reasoning
+- **Constraint feedback loop** informs our postcondition/derivation chain staleness reasoning
 
 See [ontology-to-tools-grounding.md](../ontology-to-tools-grounding.md) for the formal analysis.

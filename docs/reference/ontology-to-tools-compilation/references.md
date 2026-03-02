@@ -4,11 +4,10 @@ source: "Zhou, X. et al. (2025). Ontology-to-tools compilation for executable se
 notice: "Reference copy for internal analysis"
 ---
 
-#### **References**
+## References
 
 
-[1] Anthropic. Introducing the model context protocol. [https://www.anthropic.com/ne](https://www.anthropic.com/news/model-context-protocol)
-[ws/model-context-protocol, Nov. 2024.](https://www.anthropic.com/news/model-context-protocol) Accessed: 2025-12-18.
+[1] Anthropic. Introducing the model context protocol. [https://www.anthropic.com/news/model-context-protocol](https://www.anthropic.com/news/model-context-protocol), Nov. 2024. Accessed: 2025-12-18.
 
 
 [2] A. W. Augustyniak, M. Fandzloch, M. Domingo, I. Łakomska, and J. A. R.
@@ -46,8 +45,7 @@ style="font-variant:small-caps;">l</span> -alanine). _RSC_ _Advances_, 6(12):991
 
 [8] T. Dave, S. A. Athaluri, and S. Singh. ChatGPT in medicine: an overview of
 its applications, advantages, limitations, future prospects, and ethical considerations. _Frontiers in Artificial Intelligence_, 6:1169595, May 2023. ISSN 2624-8212.
-[doi:10.3389/frai.2023.1169595.](https://doi.org/10.3389/frai.2023.1169595) [URL https://www.frontiersin.org/articles/10.3389](https://www.frontiersin.org/articles/10.3389/frai.2023.1169595/full)
-[/frai.2023.1169595/full.](https://www.frontiersin.org/articles/10.3389/frai.2023.1169595/full)
+[doi:10.3389/frai.2023.1169595.](https://doi.org/10.3389/frai.2023.1169595) [URL https://www.frontiersin.org/articles/10.3389/frai.2023.1169595/full.](https://www.frontiersin.org/articles/10.3389/frai.2023.1169595/full)
 
 
 [9] S. Du, C. Hu, J.-C. Xiao, H. Tan, and W. Liao. A giant coordination cage
@@ -58,9 +56,6 @@ based on sulfonylcalix[4]arenes. _Chemical_ _Communications_, 48(73):9177, 2012.
 [10] B. Garai, A. Mallick, A. Das, R. Mukherjee, and R. Banerjee. Self-Exfoliated
 Metal-Organic Nanosheets through Hydrolytic Unfolding of Metal-Organic Polyhedra. _Chemistry_ _–_ _A_ _European_ _Journal_, 23(30):7361–7366, May 2017.
 [doi:10.1002/chem.201700848.](https://doi.org/10.1002/chem.201700848)
-
-
-46
 
 
 [11] Y. Gong, Y. Zhang, C. Qin, C. Sun, X. Wang, and Z. Su. Bottom-Up Construction
@@ -95,8 +90,7 @@ _Acquisition_, 5(2):199–220, 1993. [doi:10.1006/knac.1993.1008.](https://doi.o
 _gies_, pages 1–17. Springer, 2 edition, 2009. [doi:10.1007/978-3-540-92673-3_0.](https://doi.org/10.1007/978-3-540-92673-3_0)
 
 
-[18] G. Hall. Memento MCP: A knowledge graph memory system for LLMs. [https:](https://github.com/gannonh/memento-mcp)
-[//github.com/gannonh/memento-mcp, 2025.](https://github.com/gannonh/memento-mcp) Accessed: 2025-12-09.
+[18] G. Hall. Memento MCP: A knowledge graph memory system for LLMs. [https://github.com/gannonh/memento-mcp](https://github.com/gannonh/memento-mcp), 2025. Accessed: 2025-12-09.
 
 
 [19] K. M. Jablonka, P. Schwaller, A. Ortega-Guerrero, and B. Smit. Leveraging large
@@ -124,9 +118,6 @@ An LLM supported approach to ontology and knowledge graph construction. _arXiv_
 _preprint arXiv:2403.08345_, 2024. [doi:10.48550/arXiv.2403.08345.](https://doi.org/10.48550/arXiv.2403.08345)
 
 
-47
-
-
 [24] A. Kondinski, A. Menon, D. Nurkowski, F. Farazi, S. Mosbach, J. Akroyd,
 and M. Kraft. Automated rational design of metal–organic polyhedra.
 _Journal_ _of_ _the_ _American_ _Chemical_ _Society_, 144(26):11713–11728, 2022.
@@ -146,8 +137,7 @@ _Interfaces_, 10(10):8685–8691, Mar. 2018. [doi:10.1021/acsami.7b18836.](https
 [27] D. Li, Y. Zhao, Z. Wang, C. Jung, and Z. Zhang. Large Language Model-Driven
 Structured Output: A Comprehensive Benchmark and Spatial Data Generation
 Framework. _ISPRS_ _International_ _Journal_ _of_ _Geo-Information_, 13(11):405, Nov.
-2024. ISSN 2220-9964. [doi:10.3390/ijgi13110405.](https://doi.org/10.3390/ijgi13110405) URL [https://www.mdpi.c](https://www.mdpi.com/2220-9964/13/11/405)
-[om/2220-9964/13/11/405.](https://www.mdpi.com/2220-9964/13/11/405)
+2024. ISSN 2220-9964. [doi:10.3390/ijgi13110405.](https://doi.org/10.3390/ijgi13110405) URL [https://www.mdpi.com/2220-9964/13/11/405.](https://www.mdpi.com/2220-9964/13/11/405)
 
 
 [28] X. Liang, Z. Wang, M. Li, and Z. Yan. A survey of LLM-augmented knowledge
@@ -167,8 +157,7 @@ _European Journal_ [, 22(48):17345–17350, Nov. 2016. doi:10.1002/chem.20160426
 [31] M. X. Liu, F. Liu, A. J. Fiannaca, T. Koo, L. Dixon, M. Terry, and C. J. Cai. "We
 Need Structured Output": Towards User-centered Constraints on Large Language
 Model Output. In _Extended Abstracts of the CHI Conference on Human Factors in_
-_Computing Systems_, pages 1–9, Honolulu HI USA, May 2024. ACM. ISBN 979-84007-0331-7. [doi:10.1145/3613905.3650756.](https://doi.org/10.1145/3613905.3650756) [URL https://dl.acm.org/doi/10.1145](https://dl.acm.org/doi/10.1145/3613905.3650756)
-[/3613905.3650756.](https://dl.acm.org/doi/10.1145/3613905.3650756)
+_Computing Systems_, pages 1–9, Honolulu HI USA, May 2024. ACM. ISBN 979-84007-0331-7. [doi:10.1145/3613905.3650756.](https://doi.org/10.1145/3613905.3650756) [URL https://dl.acm.org/doi/10.1145/3613905.3650756.](https://dl.acm.org/doi/10.1145/3613905.3650756)
 
 
 [32] S. J. Martínez-Rodríguez, A. Hogan, and A. Meroño-Peñuela. Ontology-based information extraction for the semantic web: A survey. _Semantic Web_, 11(2):255–335,
@@ -185,11 +174,7 @@ _preprint arXiv:2502.09956_, 2025. [doi:10.48550/arXiv.2502.09956.](https://doi.
 2025. Accessed: 2025-12-18.
 
 
-48
-
-
-[35] Model Context Protocol Project. Model Context Protocol specification. [https://mo](https://modelcontextprotocol.io/specification/)
-[delcontextprotocol.io/specification/, 2025.](https://modelcontextprotocol.io/specification/) Accessed: 2025-12-04.
+[35] Model Context Protocol Project. Model Context Protocol specification. [https://modelcontextprotocol.io/specification/](https://modelcontextprotocol.io/specification/), 2025. Accessed: 2025-12-04.
 
 
 [36] O. R. Olasunkanmi, M. Satursky, H. Yi, C. Bizon, H. Lee, and S. Ahalt. Relate:
@@ -197,12 +182,10 @@ Relation extraction in biomedical abstracts with LLMs and ontology constraints.
 _arXiv preprint arXiv:2509.19057_, 2025. [doi:10.48550/arXiv.2509.19057.](https://doi.org/10.48550/arXiv.2509.19057)
 
 
-[37] OpenAI. Function calling and structured output formatting in the openai api. [https:](https://platform.openai.com/docs/guides/structured-outputs)
-[//platform.openai.com/docs/guides/structured-outputs, 2024.](https://platform.openai.com/docs/guides/structured-outputs)
+[37] OpenAI. Function calling and structured output formatting in the openai api. [https://platform.openai.com/docs/guides/structured-outputs](https://platform.openai.com/docs/guides/structured-outputs), 2024.
 
 
-[38] OpenAI. Model Context Protocol in the OpenAI Agents SDK. [https://platform.ope](https://platform.openai.com/docs/mcp)
-[nai.com/docs/mcp, 2025.](https://platform.openai.com/docs/mcp) Accessed: 2025-12-04.
+[38] OpenAI. Model Context Protocol in the OpenAI Agents SDK. [https://platform.openai.com/docs/mcp](https://platform.openai.com/docs/mcp), 2025. Accessed: 2025-12-04.
 
 
 [39] J. Park, Z. Perry, Y.-P. Chen, J. Bae, and H.-C. Zhou. Chromium(II) Metal–Organic
@@ -247,9 +230,6 @@ and E. Kessels. Schema-minerpro: Agentic AI for ontology grounding over LLMdisco
 _nal_, 2025. In review.
 
 
-49
-
-
 [47] S. Sadruddin, J. D’Souza, E. Poupaki, A. Watkins, B. Karasulu, S. Auer, A. Rula,
 H. B. Giglou, A. Mackus, and E. Kessels. Llms4schemadiscovery: A human-inthe-loop workflow for scientific schema mining with large language models. In _The_
 _Semantic_ _Web._ _ESWC_ _2025_, pages 244–261, 2025. [doi:10.1007/978-3-031-94578-](https://doi.org/10.1007/978-3-031-94578-6_14)
@@ -263,8 +243,7 @@ Tools, 2023. [URL https://arxiv.org/abs/2302.04761.](https://arxiv.org/abs/2302.
 [49] M. Schilling-Wilhelmi, M. Ríos-García, S. Shabih, M. V. Gil, S. Miret, C. T. Koch,
 J. A. Márquez, and K. M. Jablonka. From text to insight: large language models for
 chemical data extraction. _Chemical Society Reviews_, 54(3):1125–1150, 2025. ISSN
-0306-0012, 1460-4744. [doi:10.1039/D4CS00913D.](https://doi.org/10.1039/D4CS00913D) [URL https://xlink.rsc.org/?D](https://xlink.rsc.org/?DOI=D4CS00913D)
-[OI=D4CS00913D.](https://xlink.rsc.org/?DOI=D4CS00913D)
+0306-0012, 1460-4744. [doi:10.1039/D4CS00913D.](https://doi.org/10.1039/D4CS00913D) [URL https://xlink.rsc.org/?DOI=D4CS00913D.](https://xlink.rsc.org/?DOI=D4CS00913D)
 
 
 [50] A. Shrimal, A. Jain, S. Chowdhury, and P. Yenigalla. Parse: LLM driven schema
@@ -286,8 +265,7 @@ Constructed by M4 -TC4A Secondary Building Units (M = Co [ii] and Fe [ii] ) and 
 [53] L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen,
 Y. Lin, W. X. Zhao, Z. Wei, and J. Wen. A survey on large language model based
 autonomous agents. _Frontiers of Computer Science_, 18(6):186345, Dec. 2024. ISSN
-2095-2228, 2095-2236. [doi:10.1007/s11704-024-40231-1.](https://doi.org/10.1007/s11704-024-40231-1) URL [https://link.sprin](https://link.springer.com/10.1007/s11704-024-40231-1)
-[ger.com/10.1007/s11704-024-40231-1.](https://link.springer.com/10.1007/s11704-024-40231-1)
+2095-2228, 2095-2236. [doi:10.1007/s11704-024-40231-1.](https://doi.org/10.1007/s11704-024-40231-1) URL [https://link.springer.com/10.1007/s11704-024-40231-1.](https://link.springer.com/10.1007/s11704-024-40231-1)
 
 
 [54] Y.-H. Wang, K.-W. Tong, S.-R. Xiong, C.-Q. Chen, Y.-H. Song, and
@@ -302,24 +280,13 @@ Polyoxovanadate-Based Metal–Organic Polyhedra. _Inorganic_ _Chemistry_, 63(44)
 
 [56] Q. Wu, G. Bansal, J. Zhang, Y. Wu, B. Li, E. Zhu, L. Jiang, X. Zhang, S. Zhang,
 J. Liu, A. H. Awadallah, R. W. White, D. Burger, and C. Wang. AutoGen: Enabling
-
-
-50
-
-
-Next-Gen LLM Applications via Multi-Agent Conversation, 2023. [URL https://arxi](https://arxiv.org/abs/2308.08155)
-[v.org/abs/2308.08155.](https://arxiv.org/abs/2308.08155) Version Number: 2.
+Next-Gen LLM Applications via Multi-Agent Conversation, 2023. [URL https://arxiv.org/abs/2308.08155.](https://arxiv.org/abs/2308.08155) Version Number: 2.
 
 
 [57] D. Xu, W. Chen, W. Peng, C. Zhang, T. Xu, X. Zhao, X. Wu, Y. Zheng, Y. Wang,
 and E. Chen. Large language models for generative information extraction: a survey.
-_Frontiers of Computer Science_, 18(6):186357, Dec. 2024. ISSN 2095-2228, 20952236. [doi:10.1007/s11704-024-40555-y.](https://doi.org/10.1007/s11704-024-40555-y) [URL https://link.springer.com/10.1007/s1](https://link.springer.com/10.1007/s11704-024-40555-y)
-[1704-024-40555-y.](https://link.springer.com/10.1007/s11704-024-40555-y)
+_Frontiers of Computer Science_, 18(6):186357, Dec. 2024. ISSN 2095-2228, 20952236. [doi:10.1007/s11704-024-40555-y.](https://doi.org/10.1007/s11704-024-40555-y) [URL https://link.springer.com/10.1007/s11704-024-40555-y.](https://link.springer.com/10.1007/s11704-024-40555-y)
 
-
-[58] W. Xu et al. Constrained decoding methods for structured text generation with large
-language models. _arXiv preprint arXiv:2302.XXXX_, 2023. To be updated with full
-bibliographic details once confirmed.
 
 
 [59] Y. Yang, Y. Fu, Y. Tian, L. Zhao, C. Qin, X. Wang, and Z. Su. Efficient iodine
@@ -362,9 +329,6 @@ _tions_, 52(62):9632–9635, 2016. [doi:10.1039/C6CC04583A.](https://doi.org/10.
 [doi:10.1039/C5DT04764A.](https://doi.org/10.1039/C5DT04764A)
 
 
-51
-
-
 [67] S.-T. Zheng, J. Zhang, X.-X. Li, W.-H. Fang, and G.-Y. Yang. Cubic
 Polyoxometalate-Organic Molecular Cage. _Journal of the American Chemical Soci-_
 _ety_, 132(43):15102–15103, Nov. 2010. [doi:10.1021/ja105986b.](https://doi.org/10.1021/ja105986b)
@@ -378,8 +342,3 @@ _ety_, 132(43):15102–15103, Nov. 2010. [doi:10.1021/ja105986b.](https://doi.or
 composition framework for the j-park simulator   - a knowledge graph for the
 process industry. _Computers_ _&_ _Chemical_ _Engineering_, 130:106577, 2019.
 [doi:10.1016/j.compchemeng.2019.106577.](https://doi.org/10.1016/j.compchemeng.2019.106577)
-
-
-52
-
-

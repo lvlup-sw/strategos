@@ -31,7 +31,7 @@ Convert the 328-page PDF (FrameMaker 5.5.6, PDF 1.4, untagged) to structured mar
 - `03-meaning-in-linguistics.md` -- Ch. 3: Ontological Semantics and the Study of Meaning (p.82-99)
 - `04-lexical-semantics.md` -- Ch. 4: Choices for Lexical Semantics (p.100-115)
 - `05-formal-ontology.md` -- Ch. 5: Formal Ontology and the Needs of Ontological Semantics (p.116-130)
-- `06-meaning-representation.md` -- Ch. 6: Meaning Representation in Ontological Semantics (p.132-?)
+- `06-meaning-representation.md` -- Ch. 6: Meaning Representation in Ontological Semantics (p.132-179)
 - `07-static-knowledge-sources.md` -- Ch. 7: The Static Knowledge Sources: Ontology, Fact Database and Lexicons
 - `08-processing.md` -- Ch. 8: Basic Processing in Ontological Semantic Text Analysis
 - `09-acquisition.md` -- Ch. 9: Acquisition of Static Knowledge Sources
@@ -101,7 +101,7 @@ The PDF conversion must handle known issues with FrameMaker-era PDFs and the ana
 
 ### Conversion Pipeline
 
-```
+```text
 PDF (328pp) ──→ pymupdf4llm ──→ Raw Markdown ──→ Chapter Splitter ──→ Per-Chapter Files
                                                          │
                                                          └──→ Claude Cleanup Pass ──→ Final Markdown
@@ -152,7 +152,7 @@ The theoretical grounding analysis may produce recommendations that feed into fu
 This is a documentation/analysis task, not a code change. Verification is:
 - **Conversion**: Spot-check 3 chapters (one early, one middle, one late) for structural accuracy against the PDF
 - **Analysis**: Cross-reference every claim in the grounding document against the source chapter files
-- **Completeness**: Verify all 11 Agentic.Ontology primitives from section 4.14.4 appear in the concept mapping table
+- **Completeness**: Verify all 12 Agentic.Ontology primitives from section 4.14.4 appear in the concept mapping table
 
 ## Open Questions
 

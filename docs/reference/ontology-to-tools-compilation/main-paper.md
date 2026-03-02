@@ -11,7 +11,7 @@ Preprint Cambridge Centre for Computational Chemical Engineering ISSN 1473 – 4
 
 ## **Ontology-to-tools compilation for executable** **semantic constraint enforcement in LLM agents**
 
-##### Xiaochi Zhou [1], Patrick Butler [1], Changxuan Yang [3], Simon Rihm [5], Thitikarn Angkanaporn [1], Jethro Akroyd [1] [,] [2] [,] [4], Sebastian Mosbach [1] [,] [2] [,] [4], Markus Kraft [1] [,] [2] [,] [3] [,] [5]
+**Xiaochi Zhou** [1], **Patrick Butler** [1], **Changxuan Yang** [3], **Simon Rihm** [5], **Thitikarn Angkanaporn** [1], **Jethro Akroyd** [1] [,] [2] [,] [4], **Sebastian Mosbach** [1] [,] [2] [,] [4], **Markus Kraft** [1] [,] [2] [,] [3] [,] [5]
 
 
 released: February 4, 2026
@@ -777,7 +777,7 @@ Precision Recall F1
 
 
 **No-feedback output**
-```
+```text
 Step 1: Add Bis(cyclopentadienyl)...
 !! Step 1: Add Bis(cyclopentadienyl)...
 Step 2: Add DMF
@@ -803,7 +803,7 @@ C: regression to placeholders (full→no-fb)
 
 
 **With feedback**
-```
+```text
 Step 1: Add Bis(cyclopentadienyl)...
 Step 2: Add DMF
 Step 3: Add [CH2(C6H4)2(CO2)2]
@@ -926,7 +926,7 @@ FP share (%)
 
 
 
-```
+```text
 1. atmosphere       2. addedChemical.amts   3. washingSolvent.amts
 4. addedChemical.names  5. sealedVessel      6. usedDevice
 7. duration        8. washingSolvent.names  9. targetTemperature

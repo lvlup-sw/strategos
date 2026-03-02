@@ -322,7 +322,7 @@ cat n sem-struc
 1 2 ^$var1 sem OR clothing furniture modality type evaluative value value                           - 0.75
 relaxable-to                                    - 0.6
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 An additional advantage of this approach is that it can use synonymy, antonymy, and other paradigmatic relations among words to generate lists of entries that can be acquired on the basis of a single lexical entry template. Availability of thesauri and similar online resources facilitates this method of acquisition. It also facilitates the acquisition of entries across languages. The single word senses acquired the way demonstrated for the adjectives above were all reused, without any semantic changes, in the Spanish lexicon and those for other languages. This, in fact, was an empirical corroboration of the principle of practical effability discussed in Section 9.3.6 below:
@@ -345,7 +345,7 @@ abhor-v1
 cat v syn-struc root abhor obj root $var1
 cat n sem-struc modality type evaluative value < 0.1
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 (63)
@@ -357,7 +357,7 @@ cat n mods root abhorrent
 2 root abhorrent cat adj subj root $var1
 cat n sem-struc modality type evaluative value < 0.1
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 The lexical entry for _abhorrent_ is generated from that for _abhor_ using the following lexical rule:
@@ -368,7 +368,7 @@ lhs syn-struc root $var0
 obj root $var1
 cat n sem-struc modality type evaluative value < 0.1
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 rhs syn-struc
 1 root $var1
 cat n mods root adj($var0)
@@ -376,7 +376,7 @@ cat n mods root adj($var0)
 cat adj subj root $var1
 cat n sem-struc modality type evaluative value < 0.1
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 Lexical rules overtly put in correspondence two types of lexical entry: that for the source entry and that for the target one. The binding of variables scopes over the entire rule, both its left-hand side (lhs) and the right-hand side (rhs). The above rule establishes that the semantics of _abhor_ and
@@ -393,7 +393,7 @@ sem human
 theme value ^$var2
 theme OR event object modality type evaluative value < 0.5
 scope ^$var2
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 critical-adj2
@@ -403,7 +403,7 @@ cat n
 2 root critical cat adj oblique root of cat prep xcomp root $var1
 cat v sem-struc modality type evaluative value < 0.5
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 The lexical rule for the above pair differs from _LR-v-adj-1_ in several respects. The semantics of the verb includes a reference to an ontological concept with some of its properties listed. One of these properties, THEME, plays a central role in the relationship between the meaning of the verb and that of the adjective derived from it: the scope of the modality in the meaning of the adjective is the filler of the THEME property.
@@ -425,7 +425,7 @@ cat n sem-struc
 theme value ^$var2
 modality type evaluative value < 0.5
 scope ^$var2
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 rhs syn-struc
@@ -436,7 +436,7 @@ cat n
 cat adj oblique root of cat prep xcomp root $var2
 cat v sem-struc modality type evaluative value < 0.5
 scope ^$var1
-attributed-to *speaker*
+attributed-to _speaker_
 
 
 The role played by THEME in the above rule will be assumed by other properties (typically, case roles) in other rules.

@@ -4,7 +4,7 @@ source: "Zhou, X. et al. (2025). Ontology-to-tools compilation for executable se
 notice: "Reference copy for internal analysis"
 ---
 
-#### **7 Supplementary Information**
+## 7 Supplementary Information
 
 ##### **7.1 Supplementary Note 1: Background and related work**
 
@@ -504,9 +504,9 @@ Generate a KG building prompt for an extension ontology.
 
 T-Box (analyze to understand the ontology structure and requirements):
 
-‘‘‘turtle
-
+```turtle
 {tbox}
+```
 
 MCP Main Script (understand available tools, their parameters, and
 
@@ -514,10 +514,9 @@ MCP Main Script (understand available tools, their parameters, and
 calling sequences):
 
 
-python
-
-
+```python
 {mcp_main_script}
+```
 
 Your prompt MUST:
 
@@ -563,9 +562,7 @@ include those notes
 Structure your output as:
 
 
-css
-
-
+```text
 Your task is to extend the provided A-Box of [MainOntology] with the
 
 
@@ -620,6 +617,7 @@ Here is the paper content:
 
 
 {{paper_content}}
+```
 
 
 CRITICAL:
@@ -777,7 +775,7 @@ visualisation tool [4] and then manually edited to adjust the layout for present
 fitting.
 
 
-[4https://giacomociti.github.io/rdf2dot/](https://giacomociti.github.io/rdf2dot/)
+[rdf2dot](https://giacomociti.github.io/rdf2dot/)
 
 
 39

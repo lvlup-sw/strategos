@@ -7,17 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  format-check:
-    uses: lvlup-sw/.github/.github/workflows/format-check.yml@main
-    permissions:
-      contents: write
-    with:
-      solution-path: 'src/strategos.sln'
-      dotnet-version: '10.0.x'
-      dotnet-quality: 'preview'
-
   build-test:
-    needs: format-check
     uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@main
     with:
       solution-path: 'src/strategos.sln'

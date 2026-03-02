@@ -320,7 +320,7 @@ Map each Agentic.Ontology primitive to Nirenburg & Raskin equivalents:
 **Implements:** DR-3
 
 Review the grounding analysis for:
-1. Every ontology primitive from section 4.14.4 appears in the concept mapping table (11 primitives)
+1. Every ontology primitive from section 4.14.4 appears in the concept mapping table (12 primitives)
 2. All claims cite specific textbook chapters/sections
 3. Recommendations are concrete and actionable
 4. Document is self-contained
@@ -336,7 +336,7 @@ Review the grounding analysis for:
 Spot-check verification:
 1. **Conversion quality**: Read 3 chapter files alongside the PDF pages to verify accuracy
    - Check Ch. 1 (early), Ch. 5 (middle, key chapter), Ch. 9 (late)
-2. **Analysis completeness**: Verify all 11 ontology primitives from section 4.14.4 appear in the mapping table
+2. **Analysis completeness**: Verify all 12 ontology primitives from section 4.14.4 appear in the mapping table
 3. **Citation integrity**: Verify 5 random citations in the analysis document trace back to the correct chapter/section
 
 **Dependencies:** 016, 018

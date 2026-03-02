@@ -4,6 +4,7 @@
 Uses pymupdf4llm for LLM/RAG-optimized extraction, then splits by chapter boundaries.
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -11,8 +12,8 @@ from pathlib import Path
 import pymupdf4llm
 import pymupdf
 
-PDF_PATH = Path.home() / "Documents/academic/textbooks/ontological-semantics.pdf"
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/reference/ontological-semantics"
+DEFAULT_PDF_PATH = Path.home() / "Documents/academic/textbooks/ontological-semantics.pdf"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/reference/ontological-semantics"
 
 # Chapter boundaries: (filename, title, start_page_0indexed, end_page_0indexed_inclusive)
 CHAPTERS = [
@@ -65,20 +66,40 @@ def clean_markdown(md: str) -> str:
 
 
 def main():
-    if not PDF_PATH.exists():
-        print(f"ERROR: PDF not found at {PDF_PATH}", file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        description="Convert Ontological Semantics PDF to per-chapter markdown."
+    )
+    parser.add_argument(
+        "--pdf",
+        type=Path,
+        default=DEFAULT_PDF_PATH,
+        help=f"Path to the source PDF (default: {DEFAULT_PDF_PATH})",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Output directory for markdown files (default: {DEFAULT_OUTPUT_DIR})",
+    )
+    args = parser.parse_args()
+
+    pdf_path: Path = args.pdf
+    output_dir: Path = args.out
+
+    if not pdf_path.exists():
+        print(f"ERROR: PDF not found at {pdf_path}", file=sys.stderr)
         sys.exit(1)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Converting {PDF_PATH.name} -> {OUTPUT_DIR}/")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Converting {pdf_path.name} -> {output_dir}/")
     print(f"  {len(CHAPTERS)} chapters to extract")
 
     for slug, title, start, end in CHAPTERS:
-        outfile = OUTPUT_DIR / f"{slug}.md"
+        outfile = output_dir / f"{slug}.md"
         page_count = end - start + 1
         print(f"  {slug}.md ({page_count} pages: {start+1}-{end+1})...", end=" ", flush=True)
 
-        md = extract_chapter(PDF_PATH, start, end)
+        md = extract_chapter(pdf_path, start, end)
         md = clean_markdown(md)
 
         frontmatter = FRONTMATTER_TEMPLATE.format(
@@ -87,7 +108,7 @@ def main():
         outfile.write_text(frontmatter + md + "\n", encoding="utf-8")
         print(f"OK ({len(md)} chars)")
 
-    print(f"\nDone. {len(CHAPTERS)} files written to {OUTPUT_DIR}/")
+    print(f"\nDone. {len(CHAPTERS)} files written to {output_dir}/")
 
 
 if __name__ == "__main__":

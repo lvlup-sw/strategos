@@ -35,31 +35,31 @@ the processing takes place in actual implementations through the specification o
 Historically, ontological semantics has been implemented in several NLP projects, as follows:
 
 
-|Project<br>Name|Content|Dates|Principal<br>Developers|References|
+|Project Name|Content|Dates|Principal Developers|References|
 |---|---|---|---|---|
-|Translator|Knowledge-<br>based MT; orig-<br>inal formulation|1984-86|Sergei Nirenburg<br>Victor Raskin<br>Allen B. Tucker|Nirenburg_et al_. 1986|
-|Poplar|Modeling intel-<br>ligent agents|1983-86|Sergei Nirenburg<br>James H. Reynolds<br>Irene Nirenburg|Nirenburg_et al_. 1985; see<br>also Nirenburg and Lesser<br>1986|
-|KBMT-89|Medium-scale<br>KBMT, Japa-<br>nese-English|1987-89|Sergei Nirenburg<br>Jaime G. Carbonell<br>Masaru Tomita<br>Lori Levin|Nirenburg_et al_. 1991<br>Goodman and Nirenburg<br>1991|
-|Ontos|Ontological<br>modeling and<br>the original<br>acquisition and<br>maintenance<br>toolkit|1988-90|Sergei Nirenburg<br>Ira Monarch<br>Todd Kaufmann<br>Lynn Carlson|Monarch and Nirenburg<br>1987, 1988<br>Carlson and Nirenburg 1990|
-|SMEARR|Extension of<br>Ontos;<br>mapping of lin-<br>guistic seman-<br>tics into<br>computational<br>semantics|1988-91|Victor Raskin<br>Salvatore Attardo<br>Donalee H. Attardo<br>Manfred Stede|Raskin_et al_. 1994a,b|
-|KIWI|Using human<br>expertise to<br>help semantic<br>analysis|1989-91|Ralf Brown<br>Sergei Nirenburg|Brown and Nirenburg 1990|
+|Translator|Knowledge-based MT; original formulation|1984-86|Sergei Nirenburg, Victor Raskin, Allen B. Tucker|Nirenburg _et al_. 1986|
+|Poplar|Modeling intelligent agents|1983-86|Sergei Nirenburg, James H. Reynolds, Irene Nirenburg|Nirenburg _et al_. 1985; see also Nirenburg and Lesser 1986|
+|KBMT-89|Medium-scale KBMT, Japanese-English|1987-89|Sergei Nirenburg, Jaime G. Carbonell, Masaru Tomita, Lori Levin|Nirenburg _et al_. 1991; Goodman and Nirenburg 1991|
+|Ontos|Ontological modeling and the original acquisition and maintenance toolkit|1988-90|Sergei Nirenburg, Ira Monarch, Todd Kaufmann, Lynn Carlson|Monarch and Nirenburg 1987, 1988; Carlson and Nirenburg 1990|
+|SMEARR|Extension of Ontos; mapping of linguistic semantics into computational semantics|1988-91|Victor Raskin, Salvatore Attardo, Donalee H. Attardo, Manfred Stede|Raskin _et al_. 1994a,b|
+|KIWI|Using human expertise to help semantic analysis|1989-91|Ralf Brown, Sergei Nirenburg|Brown and Nirenburg 1990|
 
 
-|Project<br>Name|Content|Dates|Principal<br>Developers|References|
+|Project Name|Content|Dates|Principal Developers|References|
 |---|---|---|---|---|
-|Dionysus<br>(including<br>DIANA and<br>DIO-<br>GENES)|An umbrella<br>project includ-<br>ing morphologi-<br>cal, syntactic,<br>semantic analy-<br>sis; text genera-<br>tion and<br>ontological and<br>lexical knowl-<br>edge acquisition|1989-92|Sergei Nirenburg<br>Ted Gibson<br>Lynn Carlson<br>Ralf Brown<br>Eric Nyberg<br>Christine Defrise<br>Stephen Beale<br>Boyan Onysh-<br>kevych<br>Ingrid Meyer|Monarch_et al_. 1989; Niren-<br>burg 1989a,b; Nirenburg_et_<br>_al_. 1989; Nirenburg and<br>Nyberg 1989; Defrise and<br>Nirenburg 1990a,b; Niren-<br>burg and Goodman 1990;<br>Onyshkevych and Nirenburg<br>1991; Nirenburg and Levin<br>1991; Meyer_et al_. 1990|
-|Pangloss|another KBMT<br>application,<br>Spanish-<br>English; hybrid<br>system includ-<br>ing elements of<br>ontological<br>semantics|1990-95|Jaime G. Carbonell<br>Sergei Nirenburg<br>Yorick Wilks<br>Eduard Hovy<br>David Farwell<br>Stephen Helmreich|Nirenburg 1994; Farwell_et_<br>_al_. 1994|
-|Mikrokos-<br>mos|Large-scale<br>KBMT;<br>Spanish,<br>English, Japa-<br>nese; first com-<br>prehensive<br>implementation<br>of ontological<br>semantics|1993-99|Sergei Nirenburg<br>Victor Raskin<br>Kavi Mahesh<br>Steven Beale<br>Evelyne Viegas<br>Boyan Onysh-<br>kevych|Beale_et al_. 1995;<br>Mahesh and Nirenburg 1995;<br>Mahesh_et al_. 1997a,b;<br>Nirenburg_et al_. 1995; Ony-<br>shkevych and Nirenburg<br>1995; Raskin and Nirenburg<br>1995; Mahesh 1996; Niren-<br>burg_et al_. 1996; Beale 1997;|
-|PAWS|A patent<br>authoring work-<br>station|1996-97|Svetlana Sher-<br>emetyeva<br>Sergei Nirenburg|Sheremetyeva and Niren-<br>burg 1996|
-|Savona|a mixed human-<br>computer agent<br>network for<br>generating<br>reports about<br>emerging crises|1997-98|Sergei Nirenburg<br>James Cowie<br>Steven Beale|Nirenburg 1998a|
-|MINDS|Intelligent<br>information<br>extraction|1998-<br>2000|James Cowie<br>William Ogden<br>Sergei Nirenburg|Ludovik_et al_. 1999; Cowie<br>_et al_. 2000a,b; Cowie and<br>Nirenburg 2000|
+|Dionysus (including DIANA and DIOGENES)|An umbrella project including morphological, syntactic, semantic analysis; text generation and ontological and lexical knowledge acquisition|1989-92|Sergei Nirenburg, Ted Gibson, Lynn Carlson, Ralf Brown, Eric Nyberg, Christine Defrise, Stephen Beale, Boyan Onyshkevych, Ingrid Meyer|Monarch _et al_. 1989; Nirenburg 1989a,b; Nirenburg _et al_. 1989; Nirenburg and Nyberg 1989; Defrise and Nirenburg 1990a,b; Nirenburg and Goodman 1990; Onyshkevych and Nirenburg 1991; Nirenburg and Levin 1991; Meyer _et al_. 1990|
+|Pangloss|Another KBMT application, Spanish-English; hybrid system including elements of ontological semantics|1990-95|Jaime G. Carbonell, Sergei Nirenburg, Yorick Wilks, Eduard Hovy, David Farwell, Stephen Helmreich|Nirenburg 1994; Farwell _et al_. 1994|
+|Mikrokosmos|Large-scale KBMT; Spanish, English, Japanese; first comprehensive implementation of ontological semantics|1993-99|Sergei Nirenburg, Victor Raskin, Kavi Mahesh, Steven Beale, Evelyne Viegas, Boyan Onyshkevych|Beale _et al_. 1995; Mahesh and Nirenburg 1995; Mahesh _et al_. 1997a,b; Nirenburg _et al_. 1995; Onyshkevych and Nirenburg 1995; Raskin and Nirenburg 1995; Mahesh 1996; Nirenburg _et al_. 1996; Beale 1997;|
+|PAWS|A patent authoring workstation|1996-97|Svetlana Sheremetyeva, Sergei Nirenburg|Sheremetyeva and Nirenburg 1996|
+|Savona|A mixed human-computer agent network for generating reports about emerging crises|1997-98|Sergei Nirenburg, James Cowie, Steven Beale|Nirenburg 1998a|
+|MINDS|Intelligent information extraction|1998-2000|James Cowie, William Ogden, Sergei Nirenburg|Ludovik _et al_. 1999; Cowie _et al_. 2000a,b; Cowie and Nirenburg 2000|
 
 
-|Project<br>Name|Content|Dates|Principal<br>Developers|References|
+|Project Name|Content|Dates|Principal Developers|References|
 |---|---|---|---|---|
-|Expedition|Semi-auto-<br>matic environ-<br>ment for<br>configuring MT<br>systems and<br>language<br>knowledge to<br>support them|1997 -|Sergei Nirenburg<br>Victor Raskin<br>Marjorie McShane<br>Ron Zacharski<br>James Cowie<br>Rémi Zajac<br>Svetlana Sher-<br>emetyeva|Nirenburg 1998b; Nirenburg<br>and Raskin 1998; Oflazer<br>and Nirenburg 1999; Sher-<br>emetyeva and Nirenburg<br>2000a, b; Oflazer_et al_. 2001.|
-|CAMBIO|Mikrokosmos-<br>lite|1999-|Sergei Nirenburg<br>Spencer B. Koehler|Nirenburg 2000a|
-|CREST|Question<br>answering|1999 -|Sergei Nirenburg<br>James Cowie<br>Spencer B. Koehler<br>Eugene Ludovik<br>Victor Raskin<br>Svetlana Sher-<br>emetyeva|Nirenburg 2000b|
+|Expedition|Semi-automatic environment for configuring MT systems and language knowledge to support them|1997 -|Sergei Nirenburg, Victor Raskin, Marjorie McShane, Ron Zacharski, James Cowie, Rémi Zajac, Svetlana Sheremetyeva|Nirenburg 1998b; Nirenburg and Raskin 1998; Oflazer and Nirenburg 1999; Sheremetyeva and Nirenburg 2000a, b; Oflazer _et al_. 2001.|
+|CAMBIO|Mikrokosmos-lite|1999-|Sergei Nirenburg, Spencer B. Koehler|Nirenburg 2000a|
+|CREST|Question answering|1999 -|Sergei Nirenburg, James Cowie, Spencer B. Koehler, Eugene Ludovik, Victor Raskin, Svetlana Sheremetyeva|Nirenburg 2000b|
 
 
 In this book, we will refer to three implementations of ontological semantics, Dionysus, Mikrokosmos and CAMBIO/CREST, which are the major stages in the development of the approach, dating from, roughly, 1992, 1996 and 2000.
@@ -355,7 +355,7 @@ NLP system; thus, for instance, Longman’s Dictionary of Contemporary English l
 While the deficiencies of the lexicon are real and omnipresent in all real-size applications, much more serious difficulties arise from the preponderance in natural language texts, even non-artistic, expository ones, of nonliteral language—metaphors, metonymies and other tropes. In terms of the basic compositional-semantic processing mode, nonliteral language leads to violations of cooccurrence constraints: indeed, you do not really crush your opponent in an argument; or have the orchestra play the composer Bach (e.g., Ballim _et al._ 1991, Martin 1992, see also 8.4.2).
 
 
-## ...
+## Flat Processing Model
 
 
 **Figure 4. In a “flat” model (illustrated here for the case of text analysis), all modules operate and record**
@@ -543,7 +543,7 @@ TMR representation of a text. Figure 5 illustrates an architecture for combining
 ASPECT frame in a TMR. The left-hand sides of such rules will contain a Boolean formula of a set of conditions for assigning a particular value of PHASE to an input clause derived from a variety of knowledge sources—the nascent TMR, morphology, syntax, semantics, pragmatics or discourse information. Microtheories supporting generation would contain rules whose left-hand sides will contain a Boolean formula of TMR values and prior lexicalization (and other text planning) decisions and whose right-hand sides will contain instructions for further lexical selection and other appropriate generation decisions.
 
 
-## ...
+## Microtheory Architecture
 
 
 **Figure 5. When meaning representation rules are bunched according to a single principle, they become**

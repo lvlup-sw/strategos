@@ -52,12 +52,20 @@ def join_broken_paragraphs(text: str) -> str:
     return text
 
 
-def strip_page_markers(text: str) -> str:
-    """Remove remaining page number artifacts."""
+def strip_page_markers(text: str, strip_bare_numbers: bool = False) -> str:
+    """Remove remaining page number artifacts.
+
+    Args:
+        text: The markdown text to clean.
+        strip_bare_numbers: If True, also remove bare numbers on their own line.
+            Disabled by default because it can delete legitimate numeric content
+            (e.g. numbered list items, table cells, standalone values).
+    """
     # "Page N" on its own line
     text = re.sub(r"^\s*Page\s+\d+\s*$", "", text, flags=re.MULTILINE)
     # Bare numbers on their own line (page numbers that leaked through)
-    text = re.sub(r"^\s*\d{1,3}\s*$", "", text, flags=re.MULTILINE)
+    if strip_bare_numbers:
+        text = re.sub(r"^\s*\d{1,3}\s*$", "", text, flags=re.MULTILINE)
     return text
 
 
@@ -74,11 +82,11 @@ def cleanup_file(filepath: Path) -> None:
     """Apply all cleanup transformations to a chapter file."""
     text = filepath.read_text(encoding="utf-8")
 
-    # Split frontmatter from content
-    parts = text.split("---", 2)
-    if len(parts) >= 3:
-        frontmatter = f"---{parts[1]}---\n\n"
-        content = parts[2]
+    # Split frontmatter from content using regex anchored at start of file
+    fm = re.match(r"\A---\n.*?\n---\n?", text, flags=re.DOTALL)
+    if fm:
+        frontmatter = fm.group(0).rstrip("\n") + "\n\n"
+        content = text[fm.end():]
     else:
         frontmatter = ""
         content = text
