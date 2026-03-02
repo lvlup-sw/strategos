@@ -138,6 +138,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 Array.Empty<T>(), 0, ObjectSetInclusion.Properties, Array.Empty<double>());
         }
 
+        // Apply Source filter if present (e.g., pre-filtered source + similarity)
+        if (expression.Source is FilterExpression filter)
+        {
+            items = ApplyExpression(items, filter);
+        }
+
         // When an embedding provider is available and embeddings are stored, use cosine similarity
         if (_embeddingProvider is not null && _embeddings.TryGetValue(typeof(T), out var storedEmbeddings) && storedEmbeddings.Count > 0)
         {
@@ -156,10 +162,17 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         var queryEmbedding = await _embeddingProvider!.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
+        // Build a lookup from original items to their stored embeddings
+        var allItems = GetSeededItems<T>();
+        var allEmbeddings = storedEmbeddings;
+
         var scored = items
-            .Select((item, index) =>
+            .Select(item =>
             {
-                var embedding = index < storedEmbeddings.Count ? storedEmbeddings[index] : [];
+                var originalIndex = allItems.IndexOf(item);
+                var embedding = originalIndex >= 0 && originalIndex < allEmbeddings.Count
+                    ? allEmbeddings[originalIndex]
+                    : [];
                 return (Item: item, Score: CosineSimilarity(queryEmbedding, embedding));
             })
             .Where(pair => pair.Score >= expression.MinRelevance)
@@ -183,10 +196,19 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         List<T> items,
         SimilarityExpression expression) where T : class
     {
-        var content = GetSearchableContent<T>();
+        // Build a lookup from original items to their searchable content
+        var allItems = GetSeededItems<T>();
+        var allContent = GetSearchableContent<T>();
 
         var scored = items
-            .Select((item, index) => (Item: item, Score: CalculateKeywordScore(expression.QueryText, content[index])))
+            .Select(item =>
+            {
+                var originalIndex = allItems.IndexOf(item);
+                var content = originalIndex >= 0 && originalIndex < allContent.Count
+                    ? allContent[originalIndex]
+                    : string.Empty;
+                return (Item: item, Score: CalculateKeywordScore(expression.QueryText, content));
+            })
             .Where(pair => pair.Score >= expression.MinRelevance)
             .OrderByDescending(pair => pair.Score)
             .ToList();

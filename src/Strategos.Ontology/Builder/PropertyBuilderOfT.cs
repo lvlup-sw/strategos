@@ -46,12 +46,6 @@ internal sealed class PropertyBuilder<T>(string name, Type propertyType) : IProp
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(dimensions, 1);
 
-        if (propertyType != typeof(float[]))
-        {
-            throw new InvalidOperationException(
-                $"Property '{name}' must be of type float[] to be configured as a vector, but was {propertyType}.");
-        }
-
         _vectorDimensions = dimensions;
         return this;
     }
@@ -73,6 +67,6 @@ internal sealed class PropertyBuilder<T>(string name, Type propertyType) : IProp
         {
             Kind = _vectorDimensions.HasValue ? PropertyKind.Vector : PropertyKind.Scalar,
             VectorDimensions = _vectorDimensions,
-            DerivedFrom = _derivationSources.AsReadOnly(),
+            DerivedFrom = _derivationSources.ToList().AsReadOnly(),
         };
 }
