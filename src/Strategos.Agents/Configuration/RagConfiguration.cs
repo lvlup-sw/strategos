@@ -4,6 +4,7 @@ namespace Strategos.Agents.Configuration;
 /// Configuration options for Retrieval-Augmented Generation (RAG) behavior.
 /// Maps conceptually to TextSearchProviderOptions in Microsoft Agent Framework.
 /// </summary>
+[Obsolete("RagConfiguration is no longer consumed. Configure vector search through IObjectSetProvider.", false)]
 public class RagConfiguration
 {
     /// <summary>

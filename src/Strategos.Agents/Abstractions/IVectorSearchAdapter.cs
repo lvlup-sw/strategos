@@ -8,6 +8,7 @@ namespace Strategos.Agents.Abstractions;
 /// Defines a contract for vector search operations used by RAG middleware.
 /// Mirrors the shape of Microsoft.Extensions.AI.TextSearchProvider but tailored for our workflow.
 /// </summary>
+[Obsolete("Implement IObjectSetProvider with ExecuteSimilarityAsync. See Strategos.Ontology.ObjectSets.", false)]
 public interface IVectorSearchAdapter
 {
     /// <summary>
@@ -28,6 +29,7 @@ public interface IVectorSearchAdapter
 /// <summary>
 /// Represents a result from a vector search operation.
 /// </summary>
+[Obsolete("Use ScoredObjectSetResult<T> from Strategos.Ontology.ObjectSets.", false)]
 public record VectorSearchResult
 {
     /// <summary>
