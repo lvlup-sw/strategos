@@ -1,6 +1,6 @@
 <Project>
   <!-- Test and benchmark projects: suppress diagnostics not relevant to non-library code -->
   <PropertyGroup Condition="'$(IsTestProject)' == 'true' Or $(MSBuildProjectName.Contains('Benchmarks'))">
-    <NoWarn>$(NoWarn);VSTHRD111;VSTHRD103;VSTHRD002;CS8604;CS0219;CS0414;TUnitAssertions0005;SA1600;SA1611;SA1615</NoWarn>
+    <NoWarn>$(NoWarn);VSTHRD111;VSTHRD103;VSTHRD002;CS8604;CS0219;CS0414;CS0618;TUnitAssertions0005;SA1600;SA1611;SA1615</NoWarn>
   </PropertyGroup>
 </Project>

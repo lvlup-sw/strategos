@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <!-- NuGet Package Configuration -->
     <PackageId>Strategos.Rag</PackageId>
-    <Description>Vector store adapters for Strategos RAG integration.</Description>
+    <Description>[DEPRECATED] Vector store adapters for Strategos RAG integration. Use Strategos.Ontology with IObjectSetProvider instead.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 

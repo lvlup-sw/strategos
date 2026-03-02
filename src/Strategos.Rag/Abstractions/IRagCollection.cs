@@ -11,6 +11,7 @@ namespace Strategos.Rag;
 /// Implement this interface on a class to identify it as a RAG collection
 /// that can be used with <see cref="IVectorSearchAdapter{TCollection}"/>.
 /// </summary>
+[Obsolete("Use ontology Object Types via AddOntology(). See Strategos.Ontology package.", false)]
 public interface IRagCollection
 {
 }

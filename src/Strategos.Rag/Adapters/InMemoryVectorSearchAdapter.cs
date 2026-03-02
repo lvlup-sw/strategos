@@ -13,6 +13,7 @@ namespace Strategos.Rag.Adapters;
 /// For production scenarios, use a dedicated vector database adapter (e.g., PgVector, Azure AI Search)
 /// which will be provided in future updates.
 /// </remarks>
+[Obsolete("Use InMemoryObjectSetProvider from Strategos.Ontology.ObjectSets.", false)]
 public class InMemoryVectorSearchAdapter : IVectorSearchAdapter
 {
     private readonly ConcurrentBag<VectorSearchResult> _documents = new();

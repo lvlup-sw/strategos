@@ -11,6 +11,7 @@ namespace Strategos.Rag;
 /// <summary>
 /// Extension methods for registering RAG collection adapters with the DI container.
 /// </summary>
+[Obsolete("Use OntologyOptions.UseObjectSetProvider<T>() from Strategos.Ontology. See AddOntology().", false)]
 public static class RagServiceExtensions
 {
     /// <summary>

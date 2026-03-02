@@ -12,6 +12,7 @@ namespace Strategos.Rag;
 /// Typed vector search adapter for a specific RAG collection.
 /// </summary>
 /// <typeparam name="TCollection">The collection marker type implementing <see cref="IRagCollection"/>.</typeparam>
+[Obsolete("Implement IObjectSetProvider with ExecuteSimilarityAsync. See Strategos.Ontology.ObjectSets.", false)]
 public interface IVectorSearchAdapter<TCollection>
     where TCollection : IRagCollection
 {
