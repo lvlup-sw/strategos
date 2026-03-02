@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.Configuration;
@@ -37,6 +38,17 @@ public static class OntologyServiceCollectionExtensions
         foreach (var registration in options.ServiceRegistrations)
         {
             registration(services);
+        }
+
+        // Auto-detect: if the registered IObjectSetProvider also implements IObjectSetWriter,
+        // register IObjectSetWriter to resolve to the same instance.
+        var providerDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IObjectSetProvider));
+        if (providerDescriptor is not null && typeof(IObjectSetWriter).IsAssignableFrom(providerDescriptor.ImplementationType))
+        {
+            if (!services.Any(d => d.ServiceType == typeof(IObjectSetWriter)))
+            {
+                services.AddSingleton<IObjectSetWriter>(sp => (IObjectSetWriter)sp.GetRequiredService<IObjectSetProvider>());
+            }
         }
 
         return services;

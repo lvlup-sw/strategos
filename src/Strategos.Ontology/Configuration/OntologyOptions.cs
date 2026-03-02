@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Embeddings;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.Extensions;
 using Strategos.Ontology.ObjectSets;
@@ -47,6 +48,20 @@ public sealed class OntologyOptions
         where T : class, IActionDispatcher
     {
         _serviceRegistrations.Add(services => services.AddSingleton<IActionDispatcher, T>());
+        return this;
+    }
+
+    public OntologyOptions UseEmbeddingProvider<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
+        where T : class, IEmbeddingProvider
+    {
+        _serviceRegistrations.Add(services => services.AddSingleton<IEmbeddingProvider, T>());
+        return this;
+    }
+
+    public OntologyOptions UseObjectSetWriter<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
+        where T : class, IObjectSetWriter
+    {
+        _serviceRegistrations.Add(services => services.AddSingleton<IObjectSetWriter, T>());
         return this;
     }
 
