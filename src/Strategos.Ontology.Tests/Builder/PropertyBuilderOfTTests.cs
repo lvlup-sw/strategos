@@ -141,4 +141,36 @@ public class PropertyBuilderOfTTests
 
         await Assert.That(result).IsNotNull();
     }
+
+    [Test]
+    public async Task Vector_SetsKindAndDimensions()
+    {
+        var builder = new PropertyBuilder<TestDerivedPosition>("Embedding", typeof(float[]));
+
+        builder.Vector(768);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Kind).IsEqualTo(PropertyKind.Vector);
+        await Assert.That(descriptor.VectorDimensions).IsEqualTo(768);
+    }
+
+    [Test]
+    public async Task Vector_ZeroDimensions_ThrowsArgumentOutOfRange()
+    {
+        var builder = new PropertyBuilder<TestDerivedPosition>("Embedding", typeof(float[]));
+
+        await Assert.That(() => builder.Vector(0))
+            .ThrowsException()
+            .WithExceptionType(typeof(ArgumentOutOfRangeException));
+    }
+
+    [Test]
+    public async Task Vector_NonGenericInterface_VectorWorks()
+    {
+        IPropertyBuilder builder = new PropertyBuilder<TestDerivedPosition>("Embedding", typeof(float[]));
+
+        var result = builder.Vector(1536);
+
+        await Assert.That(result).IsNotNull();
+    }
 }

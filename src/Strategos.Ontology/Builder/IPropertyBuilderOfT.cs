@@ -9,6 +9,8 @@ public interface IPropertyBuilder<T> : IPropertyBuilder
 
     new IPropertyBuilder<T> Computed();
 
+    new IPropertyBuilder<T> Vector(int dimensions);
+
     IPropertyBuilder<T> DerivedFrom(params Expression<Func<T, object>>[] sources);
 
     IPropertyBuilder<T> DerivedFromExternal(string domain, string objectType, string property);

@@ -545,6 +545,12 @@ public sealed class OntologyGraphBuilder
 
             foreach (var prop in objectType.Properties)
             {
+                if (prop.Kind == PropertyKind.Vector)
+                {
+                    updatedProperties.Add(prop);
+                    continue;
+                }
+
                 PropertyKind kind;
 
                 if (prop.IsComputed)

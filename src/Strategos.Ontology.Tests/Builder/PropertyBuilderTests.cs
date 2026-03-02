@@ -1,4 +1,5 @@
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests.Builder;
 
@@ -47,5 +48,37 @@ public class PropertyBuilderTests
 
         await Assert.That(descriptor.IsRequired).IsTrue();
         await Assert.That(descriptor.IsComputed).IsTrue();
+    }
+
+    [Test]
+    public async Task PropertyBuilder_Vector_SetsKindAndDimensions()
+    {
+        var builder = new PropertyBuilder("Embedding", typeof(float[]));
+
+        builder.Vector(1536);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Kind).IsEqualTo(PropertyKind.Vector);
+        await Assert.That(descriptor.VectorDimensions).IsEqualTo(1536);
+    }
+
+    [Test]
+    public async Task PropertyBuilder_Vector_ZeroDimensions_ThrowsArgumentOutOfRange()
+    {
+        var builder = new PropertyBuilder("Embedding", typeof(float[]));
+
+        await Assert.That(() => builder.Vector(0))
+            .ThrowsException()
+            .WithExceptionType(typeof(ArgumentOutOfRangeException));
+    }
+
+    [Test]
+    public async Task PropertyBuilder_Vector_NegativeDimensions_ThrowsArgumentOutOfRange()
+    {
+        var builder = new PropertyBuilder("Embedding", typeof(float[]));
+
+        await Assert.That(() => builder.Vector(-1))
+            .ThrowsException()
+            .WithExceptionType(typeof(ArgumentOutOfRangeException));
     }
 }

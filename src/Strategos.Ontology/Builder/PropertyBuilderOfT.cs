@@ -8,10 +8,12 @@ internal sealed class PropertyBuilder<T>(string name, Type propertyType) : IProp
 {
     private bool _isRequired;
     private bool _isComputed;
+    private int? _vectorDimensions;
     private readonly List<DerivationSource> _derivationSources = [];
 
     IPropertyBuilder IPropertyBuilder.Required() => Required();
     IPropertyBuilder IPropertyBuilder.Computed() => Computed();
+    IPropertyBuilder IPropertyBuilder.Vector(int dimensions) => Vector(dimensions);
 
     public IPropertyBuilder<T> Required()
     {
@@ -40,6 +42,13 @@ internal sealed class PropertyBuilder<T>(string name, Type propertyType) : IProp
         return this;
     }
 
+    public IPropertyBuilder<T> Vector(int dimensions)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(dimensions, 1);
+        _vectorDimensions = dimensions;
+        return this;
+    }
+
     public IPropertyBuilder<T> DerivedFromExternal(string domain, string objectType, string property)
     {
         _derivationSources.Add(new DerivationSource
@@ -55,6 +64,8 @@ internal sealed class PropertyBuilder<T>(string name, Type propertyType) : IProp
     public PropertyDescriptor Build() =>
         new(name, propertyType, _isRequired, _isComputed)
         {
+            Kind = _vectorDimensions.HasValue ? PropertyKind.Vector : PropertyKind.Scalar,
+            VectorDimensions = _vectorDimensions,
             DerivedFrom = _derivationSources.AsReadOnly(),
         };
 }

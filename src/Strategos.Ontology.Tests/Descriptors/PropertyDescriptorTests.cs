@@ -34,4 +34,29 @@ public class PropertyDescriptorTests
         // Assert
         await Assert.That(descriptor.IsComputed).IsEqualTo(false);
     }
+
+    [Test]
+    public async Task PropertyDescriptor_VectorDimensions_DefaultsNull()
+    {
+        // Arrange & Act
+        var descriptor = new PropertyDescriptor("Embedding", typeof(float[]));
+
+        // Assert
+        await Assert.That(descriptor.VectorDimensions).IsNull();
+    }
+
+    [Test]
+    public async Task PropertyDescriptor_VectorDimensions_CanBeSet()
+    {
+        // Arrange & Act
+        var descriptor = new PropertyDescriptor("Embedding", typeof(float[]))
+        {
+            VectorDimensions = 1536,
+            Kind = PropertyKind.Vector,
+        };
+
+        // Assert
+        await Assert.That(descriptor.VectorDimensions).IsEqualTo(1536);
+        await Assert.That(descriptor.Kind).IsEqualTo(PropertyKind.Vector);
+    }
 }

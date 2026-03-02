@@ -23,6 +23,28 @@ public class PropKindPortfolio
     public decimal TotalValue { get; set; }
 }
 
+public class PropKindVectorArticle
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; } = "";
+    public float[] Embedding { get; set; } = [];
+}
+
+public class PropKindVectorOntology : DomainOntology
+{
+    public override string DomainName => "test-vector";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<PropKindVectorArticle>(obj =>
+        {
+            obj.Key(a => a.Id);
+            obj.Property(a => a.Title).Required();
+            obj.Property(a => a.Embedding).Vector(1536);
+        });
+    }
+}
+
 public class PropKindOntology : DomainOntology
 {
     public override string DomainName => "test";
@@ -114,5 +136,28 @@ public class PropertyKindTests
         var descriptor = new PropertyDescriptor("Test", typeof(string));
 
         await Assert.That(descriptor.Kind).IsEqualTo(PropertyKind.Scalar);
+    }
+
+    [Test]
+    public async Task PropertyKind_Vector_EnumValueExists()
+    {
+        var kind = PropertyKind.Vector;
+
+        await Assert.That(kind).IsNotEqualTo(PropertyKind.Scalar);
+        await Assert.That(kind).IsNotEqualTo(PropertyKind.Reference);
+        await Assert.That(kind).IsNotEqualTo(PropertyKind.Computed);
+    }
+
+    [Test]
+    public async Task PropertyKind_VectorProperty_PreservedThroughInference()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<PropKindVectorOntology>();
+
+        var graph = graphBuilder.Build();
+        var article = graph.ObjectTypes.First(ot => ot.Name == "PropKindVectorArticle");
+        var embeddingProp = article.Properties.First(p => p.Name == "Embedding");
+
+        await Assert.That(embeddingProp.Kind).IsEqualTo(PropertyKind.Vector);
     }
 }

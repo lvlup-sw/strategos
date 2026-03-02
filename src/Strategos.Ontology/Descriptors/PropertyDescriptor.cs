@@ -9,6 +9,8 @@ public sealed record PropertyDescriptor(
 {
     public PropertyKind Kind { get; init; } = PropertyKind.Scalar;
 
+    public int? VectorDimensions { get; init; }
+
     public IReadOnlyList<DerivationSource> DerivedFrom { get; init; } = [];
 
     public IReadOnlyList<DerivationSource> TransitiveDerivedFrom { get; init; } = [];

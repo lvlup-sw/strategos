@@ -11,4 +11,5 @@ public enum PropertyKind
     Scalar,
     Reference,
     Computed,
+    Vector,
 }
