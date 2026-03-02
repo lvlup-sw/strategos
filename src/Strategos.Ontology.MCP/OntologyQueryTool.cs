@@ -98,12 +98,8 @@ public sealed class OntologyQueryTool
     {
         var metric = ParseDistanceMetric(distanceMetric);
 
-        var similarityExpression = new SimilarityExpression(baseExpression, semanticQuery)
-        {
-            TopK = topK,
-            MinRelevance = minRelevance,
-            Metric = metric,
-        };
+        var similarityExpression = new SimilarityExpression(
+            baseExpression, semanticQuery, topK, minRelevance, metric);
 
         var result = await _objectSetProvider
             .ExecuteSimilarityAsync<object>(similarityExpression, ct)

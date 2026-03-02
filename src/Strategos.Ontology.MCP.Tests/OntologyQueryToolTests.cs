@@ -248,7 +248,7 @@ public class OntologyQueryToolTests
             .Returns(callInfo =>
             {
                 capturedExpression = callInfo.Arg<SimilarityExpression>();
-                return new ScoredObjectSetResult<object>(testItems, testScores, testItems.Count, ObjectSetInclusion.Properties);
+                return new ScoredObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties, testScores);
             });
 
         // Act
@@ -270,7 +270,7 @@ public class OntologyQueryToolTests
         var testScores = new List<double> { 0.92 };
         _objectSetProvider
             .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
-            .Returns(new ScoredObjectSetResult<object>(testItems, testScores, testItems.Count, ObjectSetInclusion.Properties));
+            .Returns(new ScoredObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties, testScores));
 
         // Act
         var result = await _tool.QueryAsync(
@@ -298,7 +298,7 @@ public class OntologyQueryToolTests
             .Returns(callInfo =>
             {
                 capturedExpression = callInfo.Arg<SimilarityExpression>();
-                return new ScoredObjectSetResult<object>(testItems, testScores, 0, ObjectSetInclusion.Properties);
+                return new ScoredObjectSetResult<object>(testItems, 0, ObjectSetInclusion.Properties, testScores);
             });
 
         // Act
