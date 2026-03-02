@@ -6,7 +6,9 @@ namespace Strategos.Ontology.Query;
 internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
 {
     public IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(
-        string? domain = null, string? implementsInterface = null)
+        string? domain = null,
+        string? implementsInterface = null,
+        bool includeSubtypes = false)
     {
         IEnumerable<ObjectTypeDescriptor> result = graph.ObjectTypes;
 
@@ -22,7 +24,19 @@ internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
                     i.Name == implementsInterface || i.InterfaceType.Name == implementsInterface));
         }
 
-        return result.ToList().AsReadOnly();
+        var matched = result.ToList();
+
+        if (includeSubtypes && matched.Count > 0)
+        {
+            var matchedNames = matched.Select(ot => ot.Name).ToHashSet();
+            var subtypes = graph.ObjectTypes
+                .Where(ot => ot.ParentTypeName is not null && matchedNames.Contains(ot.ParentTypeName))
+                .Where(ot => !matchedNames.Contains(ot.Name));
+
+            matched.AddRange(subtypes);
+        }
+
+        return matched.AsReadOnly();
     }
 
     public IReadOnlyList<ActionDescriptor> GetActions(string objectType)
@@ -56,8 +70,9 @@ internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
         }
 
         return ot.Actions
-            .Where(a => a.Preconditions.Count == 0 || a.Preconditions.All(p =>
-                IsPreconditionSatisfiable(p, knownProperties)))
+            .Where(a => a.Preconditions.Count == 0 || a.Preconditions
+                .Where(p => p.Strength == Descriptors.ConstraintStrength.Hard)
+                .All(p => IsPreconditionSatisfiable(p, knownProperties)))
             .ToList()
             .AsReadOnly();
     }
@@ -199,6 +214,35 @@ internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
         }
 
         return ot.Actions.FirstOrDefault(a => a.Name == mapping.ConcreteActionName);
+    }
+
+    public IReadOnlyList<LinkDescriptor> GetInverseLinks(string objectType, string linkName)
+    {
+        var ot = FindObjectType(objectType);
+        if (ot is null)
+        {
+            return [];
+        }
+
+        var link = ot.Links.FirstOrDefault(l => l.Name == linkName);
+        if (link?.InverseLinkName is null)
+        {
+            return [];
+        }
+
+        var targetOt = FindObjectType(link.TargetTypeName);
+        if (targetOt is null)
+        {
+            return [];
+        }
+
+        var inverseLink = targetOt.Links.FirstOrDefault(l => l.Name == link.InverseLinkName);
+        if (inverseLink is null)
+        {
+            return [];
+        }
+
+        return [inverseLink];
     }
 
     public IReadOnlyList<ExternalLinkExtensionPoint> GetExtensionPoints(string objectType)

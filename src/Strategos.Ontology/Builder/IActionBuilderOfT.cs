@@ -19,7 +19,11 @@ public interface IActionBuilder<T> : IActionBuilder
 
     IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate);
 
+    IActionBuilder<T> RequiresSoft(Expression<Func<T, bool>> predicate);
+
     IActionBuilder<T> RequiresLink(string linkName);
+
+    IActionBuilder<T> RequiresLinkSoft(string linkName);
 
     IActionBuilder<T> Modifies(Expression<Func<T, object>> propertySelector);
 

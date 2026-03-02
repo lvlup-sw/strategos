@@ -9,4 +9,6 @@ public sealed record ActionPrecondition
     public required PreconditionKind Kind { get; init; }
 
     public string? LinkName { get; init; }
+
+    public ConstraintStrength Strength { get; init; } = ConstraintStrength.Hard;
 }

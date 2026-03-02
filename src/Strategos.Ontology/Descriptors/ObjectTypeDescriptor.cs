@@ -22,4 +22,12 @@ public sealed record ObjectTypeDescriptor(
     public IReadOnlyList<InterfaceActionMapping> InterfaceActionMappings { get; init; } = [];
 
     public IReadOnlyList<ExternalLinkExtensionPoint> ExternalLinkExtensionPoints { get; init; } = [];
+
+    public IReadOnlyList<InterfacePropertyMapping> InterfacePropertyMappings { get; init; } = [];
+
+    public ObjectKind Kind { get; init; } = ObjectKind.Entity;
+
+    public Type? ParentType { get; init; }
+
+    public string? ParentTypeName { get; init; }
 }

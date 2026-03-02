@@ -8,4 +8,6 @@ public sealed record LinkDescriptor(
 {
     public IReadOnlyList<PropertyDescriptor> EdgeProperties { get; init; } =
         EdgeProperties ?? [];
+
+    public string? InverseLinkName { get; init; }
 }

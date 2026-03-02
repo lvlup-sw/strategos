@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
 
@@ -9,9 +10,11 @@ public interface IObjectTypeBuilder<T>
 
     IPropertyBuilder<T> Property(Expression<Func<T, object>> propertySelector);
 
-    void HasOne<TLinked>(string linkName);
+    void Kind(ObjectKind kind);
 
-    void HasMany<TLinked>(string linkName);
+    ILinkBuilder HasOne<TLinked>(string linkName);
+
+    ILinkBuilder HasMany<TLinked>(string linkName);
 
     void ManyToMany<TLinked>(string linkName);
 
@@ -29,4 +32,6 @@ public interface IObjectTypeBuilder<T>
         where TEnum : struct, Enum;
 
     void AcceptsExternalLinks(string name, Action<IExtensionPointBuilder> configure);
+
+    void IsA<TParent>() where TParent : class;
 }

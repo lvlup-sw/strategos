@@ -63,10 +63,13 @@ public sealed class OntologyGraphBuilder
         var resolvedLinks = ResolveCrossDomainLinks(
             allCrossDomainLinkDescriptors, domainLookup, objectTypeLookup, allObjectTypes);
 
+        ValidateIsAHierarchy(allObjectTypes);
         ValidateInterfaceImplementations(allObjectTypes, allInterfaces);
         ValidateInterfaceActionMappings(allObjectTypes, allInterfaces);
         ValidateLifecycles(allObjectTypes);
         ComputeTransitiveDerivationChains(allObjectTypes);
+        InferPropertyKinds(allObjectTypes);
+        ValidateInverseLinks(allObjectTypes);
 
         var warnings = new List<string>();
         MatchExtensionPoints(allObjectTypes, resolvedLinks, warnings);
@@ -211,44 +214,119 @@ public sealed class OntologyGraphBuilder
         }
     }
 
+    private static void ValidateIsAHierarchy(List<ObjectTypeDescriptor> allObjectTypes)
+    {
+        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+
+        foreach (var objectType in allObjectTypes)
+        {
+            if (objectType.ParentTypeName is null)
+            {
+                continue;
+            }
+
+            if (!typesByName.ContainsKey(objectType.ParentTypeName))
+            {
+                throw new OntologyCompositionException(
+                    $"Object type '{objectType.Name}' declares IS-A relationship with unregistered parent type '{objectType.ParentTypeName}'.");
+            }
+        }
+
+        // Detect cycles using DFS
+        foreach (var objectType in allObjectTypes)
+        {
+            if (objectType.ParentTypeName is null)
+            {
+                continue;
+            }
+
+            var visited = new HashSet<string>();
+            var current = objectType.Name;
+
+            while (current is not null)
+            {
+                if (!visited.Add(current))
+                {
+                    throw new OntologyCompositionException(
+                        $"IS-A hierarchy cycle detected involving type '{current}'.");
+                }
+
+                if (typesByName.TryGetValue(current, out var currentType))
+                {
+                    current = currentType.ParentTypeName;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+    }
+
     private static void ValidateInterfaceImplementations(
         List<ObjectTypeDescriptor> allObjectTypes,
         List<InterfaceDescriptor> allInterfaces)
     {
-        // Use Name-based lookup: property validation requires exact name matches,
-        // which only works when the interface name matches typeof(TInterface).Name.
-        // When users provide custom names (e.g., "Searchable" for IQuerySearchable),
-        // Via() mappings handle the property name translation, so we intentionally
-        // skip strict property validation for those cases.
-        var interfaceLookup = allInterfaces
+        var interfaceByName = allInterfaces
             .GroupBy(i => i.Name)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var interfaceByType = allInterfaces
+            .GroupBy(i => i.InterfaceType)
             .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var objectType in allObjectTypes)
         {
             foreach (var implementedInterface in objectType.ImplementedInterfaces)
             {
-                if (!interfaceLookup.TryGetValue(implementedInterface.Name, out var interfaceDescriptor))
+                // Try name-based lookup first, then fall back to type-based
+                if (!interfaceByName.TryGetValue(implementedInterface.Name, out var interfaceDescriptor))
                 {
-                    continue;
+                    if (!interfaceByType.TryGetValue(implementedInterface.InterfaceType, out interfaceDescriptor))
+                    {
+                        continue;
+                    }
                 }
 
                 var objectPropertyLookup = objectType.Properties
                     .ToDictionary(p => p.Name, p => p.PropertyType);
 
+                // Build a set of interface property names covered by Via() mappings
+                var viaMappedTargets = objectType.InterfacePropertyMappings
+                    .Where(m => m.InterfaceName == implementedInterface.Name)
+                    .ToDictionary(m => m.TargetPropertyName, m => m.SourcePropertyName);
+
                 foreach (var interfaceProperty in interfaceDescriptor.Properties)
                 {
-                    if (!objectPropertyLookup.TryGetValue(interfaceProperty.Name, out var objectPropertyType))
+                    // Check direct name match first
+                    if (objectPropertyLookup.TryGetValue(interfaceProperty.Name, out var objectPropertyType))
                     {
-                        throw new OntologyCompositionException(
-                            $"Object type '{objectType.Name}' implements interface '{implementedInterface.Name}' but is missing property '{interfaceProperty.Name}'.");
+                        if (!interfaceProperty.PropertyType.IsAssignableFrom(objectPropertyType))
+                        {
+                            throw new OntologyCompositionException(
+                                $"Object type '{objectType.Name}' implements interface '{implementedInterface.Name}' but property '{interfaceProperty.Name}' has incompatible type. Expected '{interfaceProperty.PropertyType.Name}', found '{objectPropertyType.Name}'.");
+                        }
+
+                        continue;
                     }
 
-                    if (!interfaceProperty.PropertyType.IsAssignableFrom(objectPropertyType))
+                    // Check Via() mapping
+                    if (viaMappedTargets.TryGetValue(interfaceProperty.Name, out var sourcePropName))
                     {
-                        throw new OntologyCompositionException(
-                            $"Object type '{objectType.Name}' implements interface '{implementedInterface.Name}' but property '{interfaceProperty.Name}' has incompatible type. Expected '{interfaceProperty.PropertyType.Name}', found '{objectPropertyType.Name}'.");
+                        if (objectPropertyLookup.TryGetValue(sourcePropName, out var sourcePropertyType))
+                        {
+                            if (!interfaceProperty.PropertyType.IsAssignableFrom(sourcePropertyType))
+                            {
+                                throw new OntologyCompositionException(
+                                    $"Object type '{objectType.Name}' implements interface '{implementedInterface.Name}' but Via() mapped property '{sourcePropName}' has incompatible type for interface property '{interfaceProperty.Name}'. Expected '{interfaceProperty.PropertyType.Name}', found '{sourcePropertyType.Name}'.");
+                            }
+
+                            continue;
+                        }
                     }
+
+                    throw new OntologyCompositionException(
+                        $"Object type '{objectType.Name}' implements interface '{implementedInterface.Name}' but is missing property '{interfaceProperty.Name}'.");
                 }
             }
         }
@@ -410,6 +488,109 @@ public sealed class OntologyGraphBuilder
         }
 
         visited.Remove(propertyName);
+    }
+
+    private static void ValidateInverseLinks(List<ObjectTypeDescriptor> allObjectTypes)
+    {
+        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+
+        foreach (var objectType in allObjectTypes)
+        {
+            foreach (var link in objectType.Links)
+            {
+                if (link.InverseLinkName is null)
+                {
+                    continue;
+                }
+
+                if (!typesByName.TryGetValue(link.TargetTypeName, out var targetType))
+                {
+                    continue; // Target type not found; other validations handle this
+                }
+
+                var inverseLink = targetType.Links.FirstOrDefault(l => l.Name == link.InverseLinkName);
+                if (inverseLink is null)
+                {
+                    throw new OntologyCompositionException(
+                        $"Link '{link.Name}' on '{objectType.Name}' declares inverse '{link.InverseLinkName}' but target type '{link.TargetTypeName}' has no link named '{link.InverseLinkName}'.");
+                }
+
+                // If the inverse link also declares an inverse, verify symmetry
+                if (inverseLink.InverseLinkName is not null && inverseLink.InverseLinkName != link.Name)
+                {
+                    throw new OntologyCompositionException(
+                        $"Asymmetric inverse declaration: '{objectType.Name}.{link.Name}' declares inverse '{link.InverseLinkName}', but '{link.TargetTypeName}.{link.InverseLinkName}' declares inverse '{inverseLink.InverseLinkName}' instead of '{link.Name}'.");
+                }
+            }
+        }
+    }
+
+    private static void InferPropertyKinds(List<ObjectTypeDescriptor> allObjectTypes)
+    {
+        var registeredClrTypes = allObjectTypes
+            .Select(ot => ot.ClrType)
+            .ToHashSet();
+
+        for (var i = 0; i < allObjectTypes.Count; i++)
+        {
+            var objectType = allObjectTypes[i];
+            var updatedProperties = new List<PropertyDescriptor>();
+            var hasChanges = false;
+
+            foreach (var prop in objectType.Properties)
+            {
+                PropertyKind kind;
+
+                if (prop.IsComputed)
+                {
+                    kind = PropertyKind.Computed;
+                }
+                else if (IsReferenceType(prop.PropertyType, registeredClrTypes))
+                {
+                    kind = PropertyKind.Reference;
+                }
+                else
+                {
+                    kind = PropertyKind.Scalar;
+                }
+
+                if (kind != prop.Kind)
+                {
+                    hasChanges = true;
+                    updatedProperties.Add(prop with { Kind = kind });
+                }
+                else
+                {
+                    updatedProperties.Add(prop);
+                }
+            }
+
+            if (hasChanges)
+            {
+                allObjectTypes[i] = objectType with
+                {
+                    Properties = updatedProperties.AsReadOnly(),
+                };
+            }
+        }
+    }
+
+    private static bool IsReferenceType(Type propertyType, HashSet<Type> registeredClrTypes)
+    {
+        // Check the direct type
+        if (registeredClrTypes.Contains(propertyType))
+        {
+            return true;
+        }
+
+        // Check for Nullable<T>
+        var underlying = Nullable.GetUnderlyingType(propertyType);
+        if (underlying is not null && registeredClrTypes.Contains(underlying))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static List<WorkflowChain> BuildWorkflowChains(

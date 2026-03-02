@@ -5,7 +5,10 @@ namespace Strategos.Ontology.Query;
 public interface IOntologyQuery
 {
     // Core queries
-    IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(string? domain = null, string? implementsInterface = null);
+    IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(
+        string? domain = null,
+        string? implementsInterface = null,
+        bool includeSubtypes = false);
 
     IReadOnlyList<ActionDescriptor> GetActions(string objectType);
 
@@ -41,6 +44,9 @@ public interface IOntologyQuery
 
     ActionDescriptor? ResolveInterfaceAction(
         string objectType, string interfaceActionName);
+
+    // Inverse Link queries
+    IReadOnlyList<LinkDescriptor> GetInverseLinks(string objectType, string linkName);
 
     // Extension Point queries (§4.14.9)
     IReadOnlyList<ExternalLinkExtensionPoint> GetExtensionPoints(

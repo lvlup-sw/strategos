@@ -89,6 +89,9 @@ public sealed class OntologyGraph
         return results;
     }
 
+    public IReadOnlyList<ObjectTypeDescriptor> GetSubtypes(string objectType) =>
+        ObjectTypes.Where(ot => ot.ParentTypeName == objectType).ToList().AsReadOnly();
+
     public IReadOnlyList<WorkflowChain> FindWorkflowChains(string targetWorkflow) =>
         _workflowChainLookup.TryGetValue(targetWorkflow, out var chains)
             ? chains

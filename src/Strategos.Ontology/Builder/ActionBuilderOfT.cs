@@ -71,6 +71,22 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             Expression = expressionString,
             Description = description,
             Kind = PreconditionKind.PropertyPredicate,
+            Strength = ConstraintStrength.Hard,
+        });
+        return this;
+    }
+
+    public IActionBuilder<T> RequiresSoft(Expression<Func<T, bool>> predicate)
+    {
+        var expressionString = predicate.Body.ToString();
+        var description = ExpressionHelper.ExtractPredicateString(predicate);
+
+        _preconditions.Add(new ActionPrecondition
+        {
+            Expression = expressionString,
+            Description = description,
+            Kind = PreconditionKind.PropertyPredicate,
+            Strength = ConstraintStrength.Soft,
         });
         return this;
     }
@@ -83,6 +99,20 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             Description = $"Requires link '{linkName}' to have at least one target",
             Kind = PreconditionKind.LinkExists,
             LinkName = linkName,
+            Strength = ConstraintStrength.Hard,
+        });
+        return this;
+    }
+
+    public IActionBuilder<T> RequiresLinkSoft(string linkName)
+    {
+        _preconditions.Add(new ActionPrecondition
+        {
+            Expression = $"Link '{linkName}' exists",
+            Description = $"Prefers link '{linkName}' to have at least one target",
+            Kind = PreconditionKind.LinkExists,
+            LinkName = linkName,
+            Strength = ConstraintStrength.Soft,
         });
         return this;
     }

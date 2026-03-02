@@ -8,20 +8,28 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
 {
     private PropertyDescriptor? _keyProperty;
     private readonly List<PropertyBuilder<T>> _propertyBuilders = [];
-    private readonly List<LinkDescriptor> _links = [];
+    private readonly List<LinkBuilder> _linkBuilders = [];
     private readonly List<ActionBuilder<T>> _actionBuilders = [];
     private readonly List<ActionDescriptor> _defaultActionDescriptors = [];
     private readonly List<EventDescriptor> _events = [];
     private readonly List<InterfaceDescriptor> _interfaces = [];
     private readonly List<InterfaceActionMapping> _interfaceActionMappings = [];
+    private readonly List<InterfacePropertyMapping> _interfacePropertyMappings = [];
     private readonly List<ExtensionPointBuilder> _extensionPointBuilders = [];
     private LifecycleDescriptor? _lifecycle;
+    private ObjectKind _objectKind = ObjectKind.Entity;
+    private Type? _parentType;
 
     public void Key(Expression<Func<T, object>> keySelector)
     {
         var memberName = ExpressionHelper.ExtractMemberName(keySelector);
         var memberType = ExpressionHelper.ExtractMemberType(keySelector);
         _keyProperty = new PropertyDescriptor(memberName, memberType);
+    }
+
+    public void Kind(ObjectKind kind)
+    {
+        _objectKind = kind;
     }
 
     public IPropertyBuilder<T> Property(Expression<Func<T, object>> propertySelector)
@@ -33,19 +41,23 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         return builder;
     }
 
-    public void HasOne<TLinked>(string linkName)
+    public ILinkBuilder HasOne<TLinked>(string linkName)
     {
-        _links.Add(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.OneToOne));
+        var linkBuilder = new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.OneToOne));
+        _linkBuilders.Add(linkBuilder);
+        return linkBuilder;
     }
 
-    public void HasMany<TLinked>(string linkName)
+    public ILinkBuilder HasMany<TLinked>(string linkName)
     {
-        _links.Add(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.OneToMany));
+        var linkBuilder = new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.OneToMany));
+        _linkBuilders.Add(linkBuilder);
+        return linkBuilder;
     }
 
     public void ManyToMany<TLinked>(string linkName)
     {
-        _links.Add(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany));
+        _linkBuilders.Add(new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany)));
     }
 
     public void ManyToMany<TLinked>(string linkName, Action<IEdgeBuilder> edgeConfig)
@@ -53,10 +65,10 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         var edgeBuilder = new EdgeBuilder();
         edgeConfig(edgeBuilder);
 
-        _links.Add(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany)
+        _linkBuilders.Add(new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany)
         {
             EdgeProperties = edgeBuilder.Build(),
-        });
+        }));
     }
 
     public IActionBuilder<T> Action(string actionName)
@@ -79,6 +91,12 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         configure(mapping);
         _interfaces.Add(new InterfaceDescriptor(typeof(TInterface).Name, typeof(TInterface)));
         _interfaceActionMappings.AddRange(mapping.GetActionMappings());
+
+        foreach (var (sourceName, targetName) in mapping.GetMappings())
+        {
+            _interfacePropertyMappings.Add(new InterfacePropertyMapping(
+                sourceName, targetName, typeof(TInterface).Name));
+        }
 
         // Register default actions directly to preserve full metadata
         _defaultActionDescriptors.AddRange(mapping.GetDefaultActions());
@@ -103,6 +121,11 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         _extensionPointBuilders.Add(builder);
     }
 
+    public void IsA<TParent>() where TParent : class
+    {
+        _parentType = typeof(TParent);
+    }
+
     public ObjectTypeDescriptor Build()
     {
         var actions = _actionBuilders.ConvertAll(b => b.Build());
@@ -110,14 +133,18 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
 
         return new(typeof(T).Name, typeof(T), domainName)
         {
+            Kind = _objectKind,
             KeyProperty = _keyProperty,
             Properties = _propertyBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
-            Links = _links.AsReadOnly(),
+            Links = _linkBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
             Actions = actions.AsReadOnly(),
             Events = _events.AsReadOnly(),
             ImplementedInterfaces = _interfaces.AsReadOnly(),
             Lifecycle = _lifecycle,
             InterfaceActionMappings = _interfaceActionMappings.AsReadOnly(),
+            InterfacePropertyMappings = _interfacePropertyMappings.AsReadOnly(),
+            ParentType = _parentType,
+            ParentTypeName = _parentType?.Name,
             ExternalLinkExtensionPoints = _extensionPointBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
         };
     }
