@@ -121,6 +121,37 @@ public class OntologyToolDiscoveryTests
         await Assert.That(actionTool.ConstraintSummaries).HasCount().EqualTo(0);
     }
 
+    [Test]
+    public async Task Discover_ExploreTool_HasEmptyConstraintSummaries()
+    {
+        // Arrange — even when the graph has constrained actions, explore tool should not carry them
+        var graph = CreateConstrainedGraph();
+        var discovery = new OntologyToolDiscovery(graph);
+
+        // Act
+        var tools = discovery.Discover();
+        var exploreTool = tools.First(t => t.Name == "ontology_explore");
+
+        // Assert — constraint summaries are only attached to ontology_action, not explore
+        await Assert.That(exploreTool.ConstraintSummaries).HasCount().EqualTo(0);
+    }
+
+    [Test]
+    public async Task Discover_ActionDescription_IncludesConstraintCount()
+    {
+        // Arrange
+        var graph = CreateConstrainedGraph();
+        var discovery = new OntologyToolDiscovery(graph);
+
+        // Act
+        var tools = discovery.Discover();
+        var actionTool = tools.First(t => t.Name == "ontology_action");
+
+        // Assert — description should mention the count of constrained actions
+        await Assert.That(actionTool.Description).Contains("1 action(s)");
+        await Assert.That(actionTool.Description).Contains("constraint rule(s)");
+    }
+
     /// <summary>
     /// Creates a test ontology graph with constrained actions for testing
     /// constraint summary generation.
