@@ -459,11 +459,11 @@ public class ContextAssemblerEmitterTests
         var source = ContextAssemblerEmitter.Emit(model);
 
         // Assert
-        await Assert.That(source).Contains("var filters = new Dictionary<string, object>");
+        await Assert.That(source).Contains("var productCatalogResultsFilters = new Dictionary<string, object>");
         await Assert.That(source).Contains("\"category\"");
         await Assert.That(source).Contains("\"electronics\"");
         await Assert.That(source).Contains("\"status\"");
-        await Assert.That(source).Contains("filters: filters");
+        await Assert.That(source).Contains("filters: productCatalogResultsFilters");
     }
 
     // =============================================================================

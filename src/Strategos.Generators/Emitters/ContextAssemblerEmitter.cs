@@ -136,6 +136,7 @@ internal static class ContextAssemblerEmitter
             sb.AppendLine($"    /// </summary>");
             sb.AppendLine($"    public {step.StepName}ContextAssembler(IObjectSetProvider objectSetProvider)");
             sb.AppendLine("    {");
+            sb.AppendLine("        ArgumentNullException.ThrowIfNull(objectSetProvider);");
             sb.AppendLine("        _objectSetProvider = objectSetProvider;");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -211,9 +212,10 @@ internal static class ContextAssemblerEmitter
         }
 
         // Emit filters dictionary if filters exist
+        var filtersVarName = $"{resultsVarName}Filters";
         if (retrieval.Filters.Count > 0)
         {
-            sb.AppendLine($"        var filters = new Dictionary<string, object>");
+            sb.AppendLine($"        var {filtersVarName} = new Dictionary<string, object>");
             sb.AppendLine("        {");
             foreach (var filter in retrieval.Filters)
             {
@@ -236,7 +238,7 @@ internal static class ContextAssemblerEmitter
         if (retrieval.Filters.Count > 0)
         {
             sb.AppendLine($"            {queryExpr}, {retrieval.TopK}, {retrieval.MinRelevance}m,");
-            sb.AppendLine($"            filters: filters);");
+            sb.AppendLine($"            filters: {filtersVarName});");
         }
         else
         {
