@@ -27,12 +27,12 @@ Spanish uses inverted exclamation marks at the beginning of exclamatory sentence
 _Nations_ ). An NLP system must recognize all this material and present it in a standardized textual form. The module responsible for this functionality is often called the tokenizer.
 
 
+```text
 <!-- Yahoo TimeStamp: 950652115 -->
 <b>Tuesday February 15 5:01 PM ET</b>
 <title>'American Beauty' Leads Oscar Nods</title>
 <h2>'American Beauty' Leads Oscar Nods</h2>
 <!-- TextStart -->
-
 
 <p><font size ="-1"><i>By DAVID GERMAIN AP Entertainment Writer </i></font><p>BEVERLY HILLS, Calif. (AP) - The
 Oscars embraced dysfunction and darkness Tuesday, bestowing a leading eight nominations on the suburban burlesque
@@ -44,6 +44,7 @@ shop?d=hv&cf=info&id=1800025632">The Insider</a>'' a film about a tobacco indust
 <a href="http://search.yahoo.com/bin/search?p=Kevin%20Spacey">Kevin Spacey</a> in "American
 Beauty'' as a dad who blackmails his boss, smokes pot with a son kid and flirts with his daughter's cheerleading friend.
 <!-- TextEnd -->
+```
 
 
 **Figure 30. A document with HTML encodings. Only a part of this material must be processed by an NLP**
@@ -62,8 +63,8 @@ Both the tokenizer and the morphological analyzer rely on static resources:
 - morphological declension and conjugation paradigms (e.g., all the possible sets of forms of
 French verbs, indexed by the value of corresponding features), morphophonological information about stem alternations, and other types of knowledge needed to produce a record, such as {“ _vendre_, Past Indefinite, Third Person, Singular”} from the word form
 _vendait_ .
-As usual in NLP, there is no guarantee that the static knowledge sources are complete—in fact, one can practically guarantee that they will be incomplete at any given time! In addition, the set of processing rules can contain omissions, ambiguities and errors. For example, the German tokenization rule above will fail when the symbol _2_ is put at the end of a sentence. The rule will tokenize the input sequence _2._ as <number-ordinal second> while the correct tokenization may, in fact, be
-<number: 2> <punctuation: period>.
+As usual in NLP, there is no guarantee that the static knowledge sources are complete—in fact, one can practically guarantee that they will be incomplete at any given time! In addition, the set of processing rules can contain omissions, ambiguities and errors. For example, the German tokenization rule above will fail when the symbol _2_ is put at the end of a sentence. The rule will tokenize the input sequence _2._ as `<number-ordinal second>` while the correct tokenization may, in fact, be
+`<number: 2>` `<punctuation: period>`.
 
 
 ‘American Beauty’ Leads Oscar Nods
@@ -954,8 +955,8 @@ If absolute times cannot be determined, a significant amount of information abou
 and end points of other events, even if the absolute times of these referent events are unknown. As a shorthand, we allow the ‘=’ operator to apply to time intervals. In such cases, the semantics of the operator is cotemporaneity of those intervals.
 
 
-A detailed example of calculating propositional temporal meaning at the grain size of dates is given below. This procedure will allow the specification of absolute times if the time of speech is known to the system and relative times otherwise. The function given in the example details how to determine the temporal meaning of the sentence _he will leave on <day-of-the-week>_, where
-<day-of-the-week> is any of { _Monday_, ..., _Sunday_ }. The function is described in pseudocode for legibility.
+A detailed example of calculating propositional temporal meaning at the grain size of dates is given below. This procedure will allow the specification of absolute times if the time of speech is known to the system and relative times otherwise. The function given in the example details how to determine the temporal meaning of the sentence _he will leave on \<day-of-the-week\>_, where
+\<day-of-the-week\> is any of { _Monday_, ..., _Sunday_ }. The function is described in pseudocode for legibility.
 
 
 get-proposition.time :=
@@ -1027,8 +1028,8 @@ monday = speech-act.time.date + 6
 undetermined AND (> speech-act.time.date + 1) (< speech-act.time.date + 7)
 
 
-The above function can be extended for treating such sentences as _he left on <day-of-the-week>_,
-_he leaves next week / month / year, he returns in <number> minutes / hours/ days / weeks / months_
+The above function can be extended for treating such sentences as _he left on \<day-of-the-week\>_,
+_he leaves next week / month / year, he returns in \<number\> minutes / hours/ days / weeks / months_
 _/ years_, etc.
 
 
@@ -1059,10 +1060,12 @@ _age._ Their meanings have much in common. They all require complements that are
 As shown in Section 7.1.1 above, modalities in ontological semantics are represented in the following format:
 
 
+```
 modality type epistemic | epiteuctic | deontic | volitive | potential | evaluative | saliency attributed-to *speaker*
 scope <any TMR element>
 value [0.0, 1.0]
 time time
+```
 
 
 Modalities can scope over entire propositions, proposition heads, other concept instances or even instances of properties. Note that MODALITY.TIME is often different from PROPOSITION.TIME, as in

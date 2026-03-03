@@ -99,7 +99,7 @@ below).
 In this section, we formally introduce the syntax and the semantics of the ontology, the former, using a BNF while the latter more informally, by commenting on the semantics of the notation elements and illustrating the various ontological representation decisions. We introduce the semantics of the ontology incrementally, with the semantics of new features appearing after they are introduced syntactically. In the BNF, once again, “{ }” are used for grouping; “[ ]” means optional (i.e., 0 or 1); “+” means 1 or more; and “*” means 0 or more.
 
 
-ONTOLOGY ::= CONCEPT+
+`ONTOLOGY ::= CONCEPT+`
 
 
 An ontology is organized as a set of concepts, each of which is a named collection of properties with their values at least partially specified. For example, the ontological concept PAY can be represented, in a simplified manner, as follows:
@@ -118,14 +118,14 @@ people) while _ten dollars_ will match COMMODITY. The above representation is in
 (values, fillers) for concepts as we continue this presentation.
 
 
-CONCEPT := ROOT | OBJECT-OR-EVENT | PROPERTY
+`CONCEPT := ROOT | OBJECT-OR-EVENT | PROPERTY`
 
 
 Concepts come in three different syntactic formats, corresponding to semantic and topological differences in the organization of the ontology. First of all, ontological concepts are not simply an unconnected set. They are organized in an inheritance hierarchy (we will see how in a short while). This device is common in knowledge representation in AI because it facilitates economies of search, storage and access to ontological concepts. Semantically, the first difference among the concepts is that of “free-standing” versus “bound” concepts. The former represent OBJECT and
 EVENT types that are instantiated in a TMR. The latter represent PROPERTY types that categorize the OBJECTs and the EVENTs and are not normally individually instantiated but rather become slots in instantiated OBJECTs and EVENTs. [73]
 
 
-ROOT ::= **ALL** DEF-SLOT TIME-STAMP-SLOT SUBCLASSES-SLOT
+`ROOT ::= **ALL** DEF-SLOT TIME-STAMP-SLOT SUBCLASSES-SLOT`
 
 
 The root is a unique concept in the ontology. It does not inherit properties from anywhere, as it is the top node in the inheritance hierarchy. It has the two special slots (properties), DEF-SLOT and
@@ -140,32 +140,30 @@ ALL (see Figure 23, where the TIME-STAMP property is routinely omitted for reada
 73. They may, however, be instantiated in a TMR by means of a _reification_ operation (e.g., Russell and Norvig 1995), thereby making them stand-alone instances in the TMR.
 
 
-OBJECT-OR-EVENT ::= CONCEPT-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] [INSTANCES-SLOT]
-
-OTHER-SLOT*
+`OBJECT-OR-EVENT ::= CONCEPT-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] [INSTANCES-SLOT] OTHER-SLOT*`
 
 
 OBJECTs and EVENTs have names, definitions and time stamps. They are descendants of some other OBJECT or EVENT, respectively, as indicated by the IS-A slot; some of them have SUBCLASSES, some have (remembered) instances stored in the Fact DB (see Section 7.2). And finally, they possess unique value sets for particular properties that differentiate them from other concepts. This latter information, introduced under OTHER-SLOT, is stored as fillers of the RELATION
 and ATTRIBUTE properties (see below).
 
 
-PROPERTY ::= RELATION | ATTRIBUTE | ONTOLOGY-SLOT
+`PROPERTY ::= RELATION | ATTRIBUTE | ONTOLOGY-SLOT`
 
 
 Properties are the ontology’s conceptual primitives. As an example, in the Mikrokosmos implementation of ontological semantics, there are about 300 such properties that help to define about
 6000 concepts. Properties appear in the ontology in two guises, as defined types of concepts in the property branch and as slots in the definitions of objects and events. We will first explain how the latter are used and then will describe the properties as concepts.
 
 
-OTHER-SLOT ::= RELATION-SLOT | ATTRIBUTE-SLOT
+`OTHER-SLOT ::= RELATION-SLOT | ATTRIBUTE-SLOT`
 
 
-RELATION-SLOT ::= RELATION-NAME FACET CONCEPT-NAME+
+`RELATION-SLOT ::= RELATION-NAME FACET CONCEPT-NAME+`
 
 
-ATTRIBUTE-SLOT ::= ATTRIBUTE-NAME FACET {number | literal}+
+`ATTRIBUTE-SLOT ::= ATTRIBUTE-NAME FACET {number | literal}+`
 
 
-FACET ::= value | sem | default | relaxable-to | not | default-measure | inv | time-range | info-source
+`FACET ::= value | sem | default | relaxable-to | not | default-measure | inv | time-range | info-source`
 
 
 A slot is the basic mechanism for representing relationships between concepts. In fact, the slot is the fundamental metaontological predicate, based on which the entire ontology can be described axiomatically (see Section 7.1.6 below). Several kinds of fillers that properties can have are described by introducing the device of facet in the representation language in order to handle the different types of constraints. All properties (slots) have all permissible facets defined for them
@@ -254,35 +252,34 @@ ONTOLOGY-SLOTs, as already mentioned, are special properties, in that they do no
 **Figure 24. The auxiliary slots in the ontology, the ONTOLOGY-SLOT subtree**
 
 
-ONTOLOGY-SLOT ::= ONTOLOGY-SLOT-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN
-SLOT ONTO-RANGE-SLOT INVERSE-SLOT
+`ONTOLOGY-SLOT ::= ONTOLOGY-SLOT-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN-SLOT ONTO-RANGE-SLOT INVERSE-SLOT`
 
 
-DEF-SLOT ::= DEFINITION value “an English definition string”
+`DEF-SLOT ::= DEFINITION value “an English definition string”`
 
 
-TIME-STAMP-SLOT ::= time-stamp value time-date-and-username+
+`TIME-STAMP-SLOT ::= time-stamp value time-date-and-username+`
 
 
-ISA-SLOT ::= IS-A value { ALL | CONCEPT-NAME+ | RELATION-NAME+ | ATTRIBUTE-NAME+ }
+`ISA-SLOT ::= IS-A value { ALL | CONCEPT-NAME+ | RELATION-NAME+ | ATTRIBUTE-NAME+ }`
 
 
-SUBCLASSES-SLOT ::= subclasses value {CONCEPT-NAME+ | RELATION-NAME+ | ATTRIBUTE-NAME+}
+`SUBCLASSES-SLOT ::= subclasses value {CONCEPT-NAME+ | RELATION-NAME+ | ATTRIBUTE-NAME+}`
 
 
-INSTANCES-SLOT ::= instances value instance-name+
+`INSTANCES-SLOT ::= instances value instance-name+`
 
 
-INSTANCE-OF-SLOT ::= instance-of value concept-name+
+`INSTANCE-OF-SLOT ::= instance-of value concept-name+`
 
 
-DOMAIN-SLOT ::= domain sem concept-name+
+`DOMAIN-SLOT ::= domain sem concept-name+`
 
 
-INVERSE-SLOT ::= inverse value relation-name
+`INVERSE-SLOT ::= inverse value relation-name`
 
 
-ONTO-RANGE-SLOt ::= REL-RANGE-SLOT | ATTR-RANGE-SLOT
+`ONTO-RANGE-SLOt ::= REL-RANGE-SLOT | ATTR-RANGE-SLOT`
 
 
 The semantics of the properties that are children of ONTOLOGY-SLOT is as follows:
@@ -327,42 +324,38 @@ In relations, the SEM facet is filled with the names of concepts that are in the
 in a slot in some other instance.
 
 
-RELATION ::= RELATION-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN-SLOT
-
-REL-RANGE-SLOT INVERSE-SLOT
+`RELATION ::= RELATION-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN-SLOT REL-RANGE-SLOT INVERSE-SLOT`
 
 
-ATTRIBUTE ::= ATTRIBUTE-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN-SLOT
-
-ATTR-RANGE-SLOT
+`ATTRIBUTE ::= ATTRIBUTE-NAME DEF-SLOT TIME-STAMP-SLOT ISA-SLOT [SUBCLASSES-SLOT] DOMAIN-SLOT ATTR-RANGE-SLOT`
 
 
-REL-RANGE-SLOT ::= RANGE SEM CONCEPT-NAME+
+`REL-RANGE-SLOT ::= RANGE SEM CONCEPT-NAME+`
 
 
-ATTR-RANGE-SLOT ::= RANGE SEM { number | literal }*
+`ATTR-RANGE-SLOT ::= RANGE SEM { number | literal }*`
 
 
 The above definitions introduce RELATIONs and ATTRIBUTEs as free-standing concepts, not properties (slots) in other concepts (frames). The difference between RELATIONs and ATTRIBUTEs boils down to the nature of their fillers: RELATIONs have references to concepts in their RANGE slots;
 ATTRIBUTEs, references to elements—individual, sets or ranges—taken from (numerical or symbolic—see below) specific value sets.
 
 
-CONCEPT-NAME ::= name-string
+`CONCEPT-NAME ::= name-string`
 
 
-INSTANCE-NAME ::= name-string
+`INSTANCE-NAME ::= name-string`
 
 
-ONTOLOGY-SLOT-NAME ::= name-string
+`ONTOLOGY-SLOT-NAME ::= name-string`
 
 
-RELATION-NAME ::= name-string
+`RELATION-NAME ::= name-string`
 
 
-ATTRIBUTE-NAME ::= name-string
+`ATTRIBUTE-NAME ::= name-string`
 
 
-NAME-STRING ::= alpha {alpha | digit}* {- {alpha | digit}+ }*
+`NAME-STRING ::= alpha {alpha | digit}* {- {alpha | digit}+ }*`
 
 
 A word is in order about naming conventions. While, syntactically, names of concepts and instances, are arbitrary name strings, semantically, further conventions are introduced in any implementation of ontological semantics, in order to maintain order and uniformity in representations. All concept names in the ontology are alphanumeric strings with the addition of only the hyphen character. No accents are permitted on any of the characters. Such enhancements are permitted only in lexicons. As far as ontology development is concerned, all symbols that we encounter can be classified into one of the following types:
@@ -890,10 +883,10 @@ Meta-ontological predicates: frame, concept, instance, slot and ancestor. Frame,
 may appear; an instance is a frame in whose slots only the facet VALUE appears. An ancestor of a concept is a concept that is among the fillers of the IS-A slot of the latter (or, recursively, of one of its ancestors).
 
 
-Other predicates: =, ≠, ∈, ∉, ⊂, ∩, ∪, string, literal, reference and scalar. The predicate ∈ is to be read as _belongs to_ and indicates membership in a set. The predicate ⊂ is used in a generic sense and includes the relationship between a scalar range and its subranges. String, literal, and scalar are one-place predicates indicating whether an entity is a string, a scalar (i.e., a number or a range of numbers), or a literal symbol. Reference is a two-place predicate whose arguments are an entity and a slot and whose semantics is that the entity is bound to the filler of the slot.
+`Other predicates: =, ≠, ∈, ∉, ⊂, ∩, ∪, string, literal, reference and scalar. The predicate ∈ is to be read as _belongs to_ and indicates membership in a set. The predicate ⊂ is used in a generic sense and includes the relationship between a scalar range and its subranges. String, literal, and scalar are one-place predicates indicating whether an entity is a string, a scalar (i.e., a number or a range of numbers), or a literal symbol. Reference is a two-place predicate whose arguments are an entity and a slot and whose semantics is that the entity is bound to the filler of the slot.`
 
 
-Logical symbols: ¬, ∧, ∨, ∀, ∃, ⇒, ⇔
+`Logical symbols: ¬, ∧, ∨, ∀, ∃, ⇒, ⇔`
 
 
 Constants from the ontology: ALL, OBJECT, EVENT, PROPERTY, RELATION, ATTRIBUTE, LITERALATTRIBUTE, SCALAR-ATTRIBUTE, IS-A, INSTANCE-OF, SUBCLASSES, INSTANCES, DEFINITION, TIMESTAMP, DOMAIN, RANGE, INVERSE, NOTHING, VALUE, SEM, DEFAULT, NOT, RELAXABLE-TO,
@@ -906,156 +899,156 @@ The list of axioms follows:
 1. A frame is a concept or an instance
 
 
-frame(x) ⇔ concept(x) ∨ instance(x)
-concept(x) ⇒ ¬ instance(x)
-instance(x) ⇒ ¬ concept(x)
+`frame(x) ⇔ concept(x) ∨ instance(x)`
+`concept(x) ⇒ ¬ instance(x)`
+`instance(x) ⇒ ¬ concept(x)`
 
 
 2. Every concept except ALL must have an ancestor.
 
 
-concept(x) ⇔ (x = all) ∨ ( ∃ y concept(y) ∧ slot(x, is-a, value, y))
+`concept(x) ⇔ (x = all) ∨ ( ∃ y concept(y) ∧ slot(x, is-a, value, y))`
 
 
 3. No concept is an INSTANCE-OF anything
 
 
-concept(x) ⇒ ¬ ∃ y slot(x, instance-of, value, y)
+`concept(x) ⇒ ¬ ∃ y slot(x, instance-of, value, y)`
 
 
 4. If a concept x IS-A y then is in the SUBCLASSES of y.
 
 
-slot(x, is-a, value, y) ⇔ slot(y, subclasses, value, x)
+`slot(x, is-a, value, y) ⇔ slot(y, subclasses, value, x)`
 
 
 5. Every instance must have a concept that is its INSTANCE-OF.
 
 
-instance(x) ⇔ ∃ y concept(y) ∧ slot(x, instance-of, value, y)
+`instance(x) ⇔ ∃ y concept(y) ∧ slot(x, instance-of, value, y)`
 
 
 6. No instance is an IS-A of anything.
 
 
-instance(x) ⇒ ¬ ∃ y slot(x, is-a, value, y)
+`instance(x) ⇒ ¬ ∃ y slot(x, is-a, value, y)`
 
 
 7. If an instance x is an instance-of a concept y, then x is in the instances of y.
 
 
-slot(x, instance-of, value, y) ⇔ slot(y, instances, value, x)
+`slot(x, instance-of, value, y) ⇔ slot(y, instances, value, x)`
 
 
 8. Instances do not have INSTANCES or SUBCLASSES.
 
 
-instance(x) ⇒ ( ¬ ∃ y slot(y, instance-of, value, x)) ∧ ( ¬ ∃ y slot(y, is-a, value, x))
+`instance(x) ⇒ ( ¬ ∃ y slot(y, instance-of, value, x)) ∧ ( ¬ ∃ y slot(y, is-a, value, x))`
 
 
 9. If y is an ancestor of x, then x and y are concepts and either x = y or x IS-A y or x IS-A z and y is an ancestor of z.
 
 
-ancestor(x,y) ⇔ concept(x) ∧ concept(y) ∧ ((x = y) ∨ slot(x, is-a, value, y) ∨ ( ∃ z slot(x, is-a, value, z) ∧ ancestor(z,y)))
+`ancestor(x,y) ⇔ concept(x) ∧ concept(y) ∧ ((x = y) ∨ slot(x, is-a, value, y) ∨ ( ∃ z slot(x, is-a, value, z) ∧ ancestor(z,y)))`
 
 
 10. A concept is either ALL or has one of OBJECT, EVENT and PROPERTY as an ancestor.
 
 
-concept(x) ⇔ (x = all) ∨ ancestor(x, object) ∨ ancestor(x, event) ∨ ancestor(x, property)
+`concept(x) ⇔ (x = all) ∨ ancestor(x, object) ∨ ancestor(x, event) ∨ ancestor(x, property)`
 
 
 11. No concept has more than one of OBJECT, EVENT and PROPERTY as ancestors.
 
 
-concept(x) ⇒ ¬ (ancestor(x, object) ∧ ancestor(x, event))
-concept(x) ⇒ ¬ (ancestor(x, object) ∧ ancestor(x, property))
+`concept(x) ⇒ ¬ (ancestor(x, object) ∧ ancestor(x, event))`
+`concept(x) ⇒ ¬ (ancestor(x, object) ∧ ancestor(x, property))`
 
 
-concept(x) ⇒ ¬ (ancestor(x, event) ∧ ancestor(x, property))
+`concept(x) ⇒ ¬ (ancestor(x, event) ∧ ancestor(x, property))`
 
 
 12. Every frame has a DEFINITION and a TIME-STAMP slot, each filled by a string.
 
 
-frame(x) ⇒ slot(x, definition, value, y) ∧ string(y) ∧ slot(x, time-stamp, value, z) ∧ string(z)
+`frame(x) ⇒ slot(x, definition, value, y) ∧ string(y) ∧ slot(x, time-stamp, value, z) ∧ string(z)`
 
 
 13. If y is a slot in a concept, then y IS-A PROPERTY.
 
 
-slot(x, y, w, z) ⇒ ancestor(y, property)
+`slot(x, y, w, z) ⇒ ancestor(y, property)`
 
 
 14. Every PROPERTY is either a RELATION or an ATTRIBUTE. No PROPERTY is both.
 
 
-slot(x, is-a, value, property) ⇒ (x=relation) ∨ (x=attribute)
-ancestor(x, relation) ⇒ ¬ ancestor(x, attribute)
-ancestor(x, attribute) ⇒ ¬ ancestor(x, relation)
+`slot(x, is-a, value, property) ⇒ (x=relation) ∨ (x=attribute)`
+`ancestor(x, relation) ⇒ ¬ ancestor(x, attribute)`
+`ancestor(x, attribute) ⇒ ¬ ancestor(x, relation)`
 
 
 15. If concept x IS-A ATTRIBUTE and y is a slot in x, then y is one of IS-A, SUBCLASSES,
 DEFINITION, TIME-STAMP, DOMAIN and RANGE.
 
 
-slot(x, y, w, z) ∧ ancestor(x, attribute) ⇒ y ∈ {is-a, subclasses, definition, time-stamp, domain, range}
+`slot(x, y, w, z) ∧ ancestor(x, attribute) ⇒ y ∈ {is-a, subclasses, definition, time-stamp, domain, range}`
 
 
 16. If concept x IS-A RELATION and y is a slot in x, then y is one of IS-A, SUBCLASSES,
 DEFINITION, TIME-STAMP, DOMAIN, RANGE and INVERSE.
 
 
-slot(x, y, w, z) ∧ ancestor(x, attribute) ⇒ y ∈ {is-a, subclasses, definition, time-stamp, domain, range, inverse}
+`slot(x, y, w, z) ∧ ancestor(x, attribute) ⇒ y ∈ {is-a, subclasses, definition, time-stamp, domain, range, inverse}`
 
 
 17. Property slots in frames can be filled either directly or by reference to the filler in a slot of another concept, that is, by reference.
 
 
-∀ y slot(x, y, w, z) ⇒ frame(z) ∨ scalar(z) ∨ literal(z) ∨ ∃ t ( slot(s, t, u, v) ∧ reference(z, slot(s, t, u, v)))
+`∀ y slot(x, y, w, z) ⇒ frame(z) ∨ scalar(z) ∨ literal(z) ∨ ∃ t ( slot(s, t, u, v) ∧ reference(z, slot(s, t, u, v)))`
 
 
 18. Fillers of INVERSE slot are always RELATIONs.
 
 
-slot(x, inverse, value, y) ⇒ ancestor(y, relation)
+`slot(x, inverse, value, y) ⇒ ancestor(y, relation)`
 
 
 19. If y is the INVERSE of x then x is the INVERSE of y.
 
 
-slot(x, inverse, value, y) ⇔ slot(y, inverse, value, x)
+`slot(x, inverse, value, y) ⇔ slot(y, inverse, value, x)`
 
 
 20. There is only one INVERSE for every RELATION.
 
 
-slot(x, inverse, value, y) ⇒ ¬ ∃ z (slot(x, inverse, value, z) ∧ (y ≠ z))
+`slot(x, inverse, value, y) ⇒ ¬ ∃ z (slot(x, inverse, value, z) ∧ (y ≠ z))`
 
 
 21. Fillers of domain slots must be OBJECTs, EVENTs or INSTANCEs.
 
 
-slot(x, domain, w, y) ⇒ object(y) ∨ event(y) ∨ instance(y)
+`slot(x, domain, w, y) ⇒ object(y) ∨ event(y) ∨ instance(y)`
 
 
 22. Fillers of RANGE slots of relations must be OBJECTs, EVENTs, INSTANCEs or NOTHING.
 
 
-slot(x, range, w, y) ∧ ancestor(x, relation) ⇒ object(y) ∨ event(y) ∨ instance(y) ∨ nothing
+`slot(x, range, w, y) ∧ ancestor(x, relation) ⇒ object(y) ∨ event(y) ∨ instance(y) ∨ nothing`
 
 
 23. If x has a slot y then x must have an ancestor t that is in the DOMAIN slot of concept y.
 
 
-slot(x, y, w, z) ⇒ ∃ t slot(y, domain, sem, t) ∧ ancestor(x, t)
+`slot(x, y, w, z) ⇒ ∃ t slot(y, domain, sem, t) ∧ ancestor(x, t)`
 
 
 24. If x has a slot y that is a RELATION filled by z then z must have an ancestor t that is in the
 RANGE of the concept y or z must be NOTHING.
 
 
-slot(x, y, w, z) ∧ ancestor(y, relation) ⇒ (∃ t slot(y, range, sem, t) ∧ ancestor(z, t)) ∨ (z =
+`slot(x, y, w, z) ∧ ancestor(y, relation) ⇒ (∃ t slot(y, range, sem, t) ∧ ancestor(z, t)) ∨ (z =`
 nothing)
 
 
@@ -1063,33 +1056,33 @@ nothing)
 filled by z then z has a slot u filled by v where v is an ancestor of x, and y has an INVERSE t that is an ancestor of u.
 
 
-slot(x, y, w, z) ∧ ancestor(y, relation) ∧ (z ≠ nothing) ⇒ ( ∃ u ∃ v slot(z, u, w, v) ∧ ancestor(x, v) ∧ ∃ t (slot(y, inverse, value, t) ∧ (ancestor(u, t) ∧ ancestor(t, u)))) ∨ ( ∃ t ∃ v slot(y, inverse, value, t) ∧ slot(t, range, sem, v) ∧ ancestor(x, v))
+`slot(x, y, w, z) ∧ ancestor(y, relation) ∧ (z ≠ nothing) ⇒ ( ∃ u ∃ v slot(z, u, w, v) ∧ ancestor(x, v) ∧ ∃ t (slot(y, inverse, value, t) ∧ (ancestor(u, t) ∧ ancestor(t, u)))) ∨ ( ∃ t ∃ v slot(y, inverse, value, t) ∧ slot(t, range, sem, v) ∧ ancestor(x, v))`
 
 
 26. Inheritance of RELATION slots: if x has a RELATION y as a slot filled by z, and x is an ancestor of t, then t also has a slot y that is filled a u that has z as one of its ancestors or is NOTHING.
 
 
-slot(x, y, sem, z) ∧ ancestor(y, relation) ∧ ancestor(t, x) ⇒ ∃ u (slot(t, y, sem, u) ∧ (ancestor(u, z) ∨ (u = nothing)))
+`slot(x, y, sem, z) ∧ ancestor(y, relation) ∧ ancestor(t, x) ⇒ ∃ u (slot(t, y, sem, u) ∧ (ancestor(u, z) ∨ (u = nothing)))`
 
 
 27. Inheritance of ATTRIBUTE slots: if x has an ATTRIBUTE y as a slot filled by z, and x is an ancestor of t, then t also has a slot y that is filled by a u that is either z or a subset of z or
 NOTHING.
 
 
-slot(x, y, sem, z) ∧ ancestor(y, attribute) ∧ ancestor(t, x) ⇒ ∃ u (slot(t, y, sem, u) ∧ ((u = z) ∨
-(u ⊂ z) ∨ (u = nothing)))
+`slot(x, y, sem, z) ∧ ancestor(y, attribute) ∧ ancestor(t, x) ⇒ ∃ u (slot(t, y, sem, u) ∧ ((u = z) ∨`
+`(u ⊂ z) ∨ (u = nothing)))`
 
 
 28. Every slot y in an instance x of concept t is also a slot in concept t; in x, y is filled with a narrower range or a lower concept (or an instance thereof), using the value facet.
 
 
-slot(x, y, w, z) ∧ instance-of(x, t) ⇒ slot(t, y, v, u) ∧ w = value ∧ (( z ⊂ u) ∨ ancestor(z, u))
+`slot(x, y, w, z) ∧ instance-of(x, t) ⇒ slot(t, y, v, u) ∧ w = value ∧ (( z ⊂ u) ∨ ancestor(z, u))`
 
 
 29. Every slot of a concept has at least one of VALUE, SEM and DEFAULT facets.
 
 
-slot(x, y, w, z) ⇒ w ∈ {value, sem, default}
+`slot(x, y, w, z) ⇒ w ∈ {value, sem, default}`
 
 
 30. Every slot y (other than IS-A, SUBCLASSES, DEFINITION, TIME-STAMP, DOMAIN, RANGE and
@@ -1098,36 +1091,36 @@ DEFAULT-MEASURE or NOT, either DEFAULT, SEM, or both, with or without RELAXABLE-
 NOT and DEFAULT-MEASURE.
 
 
-slot(x, y, w, z) ∧ y ∉ { IS-A SUBCLASSES DEFINITION TIME-STAMP DOMAIN RANGE INVERSE} ∧
-t ⊂ {not default-measure} ∧ u ⊂ {default sem} ∧ v ⊂ { relaxable-to not default-measure } ⇒
-w ⊂ {value t} ∨ w = { u ∪ v}
+`slot(x, y, w, z) ∧ y ∉ { IS-A SUBCLASSES DEFINITION TIME-STAMP DOMAIN RANGE INVERSE} ∧`
+`t ⊂ {not default-measure} ∧ u ⊂ {default sem} ∧ v ⊂ { relaxable-to not default-measure } ⇒`
+`w ⊂ {value t} ∨ w = { u ∪ v}`
 
 
 31. Every attribute is either a SCALAR-ATTRIBUTE or a LITERAL-ATTRIBUTE but not both.
 
 
-slot(x, is-a, value, attribute) ⇒ (x = scalar-attribute) ∨ (x = literal-attribute)
-ancestor(x, scalar-attribute) ⇒ ¬ ancestor(x, literal-attribute)
-ancestor(x, literal-attribute) ⇒ ¬ ancestor(x, scalar-attribute)
+`slot(x, is-a, value, attribute) ⇒ (x = scalar-attribute) ∨ (x = literal-attribute)`
+`ancestor(x, scalar-attribute) ⇒ ¬ ancestor(x, literal-attribute)`
+`ancestor(x, literal-attribute) ⇒ ¬ ancestor(x, scalar-attribute)`
 
 
 32. The range of a SCALAR-ATTRIBUTE can only be filled by a scalar.
 
 
-ancestor(x, scalar-attribute) ∧ slot(x, range, w, y) ⇒ scalar(y)
+`ancestor(x, scalar-attribute) ∧ slot(x, range, w, y) ⇒ scalar(y)`
 
 
 33. The range of a LITERAL-ATTRIBUTE can only be filled by a literal.
 
 
-ancestor(x, literal-attribute) ∧ slot(x, range, w, y) ⇒ literal(y)
+`ancestor(x, literal-attribute) ∧ slot(x, range, w, y) ⇒ literal(y)`
 
 
 34. If property y is one of PRECONDITION, EFFECT, HAS-PARTS, COMPONENT-RELATIONS, and
 COMPONENT-MODALITIES, then its filler z is a frame s the fillers of whose slots are only references.
 
 
-slot(x, y, w, z) ∧ y ∈ {precondition effect has-parts component-relations componentmodalities}⇒ frame(z) ∧ ∀ t ∀ v ∃ u (slot(z, t, value, v) ∧ ( slot(s, u, p, r) ∧ reference(v, slot(s, u, p, r))))
+`slot(x, y, w, z) ∧ y ∈ {precondition effect has-parts component-relations componentmodalities}⇒ frame(z) ∧ ∀ t ∀ v ∃ u (slot(z, t, value, v) ∧ ( slot(s, u, p, r) ∧ reference(v, slot(s, u, p, r))))`
 
 
 Note: this axiom is needed to define the class of ontological instances.
