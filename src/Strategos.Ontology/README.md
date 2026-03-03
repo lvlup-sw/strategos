@@ -5,8 +5,8 @@ Type-safe ontology definition layer for domain modeling. Map your existing C# ty
 ## Installation
 
 ```bash
-dotnet add package Strategos.Ontology
-dotnet add package Strategos.Ontology.Generators
+dotnet add package LevelUp.Strategos.Ontology
+dotnet add package LevelUp.Strategos.Ontology.Generators
 ```
 
 ## Quick Start

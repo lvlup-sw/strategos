@@ -124,8 +124,8 @@ Before running examples, ensure you have:
 3. **Strategos packages** installed:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
 ```
 
 ---

@@ -5,7 +5,7 @@ Microsoft Agent Framework integration for Strategos. Provides abstractions for L
 ## Installation
 
 ```bash
-dotnet add package Strategos.Agents
+dotnet add package LevelUp.Strategos.Agents
 ```
 
 ## Features

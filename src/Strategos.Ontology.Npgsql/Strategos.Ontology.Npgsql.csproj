@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
-    <PackageId>Strategos.Ontology.Npgsql</PackageId>
+    <PackageId>LevelUp.Strategos.Ontology.Npgsql</PackageId>
     <Description>PostgreSQL pgvector-backed object set provider for Strategos.Ontology.</Description>
   </PropertyGroup>
 

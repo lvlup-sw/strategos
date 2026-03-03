@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
-    <PackageId>Strategos.Ontology.MCP</PackageId>
+    <PackageId>LevelUp.Strategos.Ontology.MCP</PackageId>
     <Description>MCP tool surface for Strategos ontology. Exposes ontology exploration, querying, and action dispatch as MCP tools for AI agent integration.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

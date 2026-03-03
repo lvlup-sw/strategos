@@ -89,16 +89,21 @@ jobs:
           body: ${{ steps.changelog.outputs.content }}
           generate_release_notes: false
 
-      - name: Deprecate old Agentic.Workflow packages
+      - name: Deprecate old packages
         if: success()
         continue-on-error: true  # Don't fail release if deprecation fails (e.g. already deprecated)
         run: |
           OLD_PACKAGES=(
-            "Agentic.Workflow:Strategos"
-            "Agentic.Workflow.Agents:Strategos.Agents"
-            "Agentic.Workflow.Infrastructure:Strategos.Infrastructure"
-            "Agentic.Workflow.Rag:Strategos.Rag"
-            "Agentic.Workflow.Generators:Strategos.Generators"
+            "Agentic.Workflow:LevelUp.Strategos"
+            "Agentic.Workflow.Agents:LevelUp.Strategos.Agents"
+            "Agentic.Workflow.Infrastructure:LevelUp.Strategos.Infrastructure"
+            "Agentic.Workflow.Rag:LevelUp.Strategos.Rag"
+            "Agentic.Workflow.Generators:LevelUp.Strategos.Generators"
+            "Strategos:LevelUp.Strategos"
+            "Strategos.Agents:LevelUp.Strategos.Agents"
+            "Strategos.Infrastructure:LevelUp.Strategos.Infrastructure"
+            "Strategos.Rag:LevelUp.Strategos.Rag"
+            "Strategos.Generators:LevelUp.Strategos.Generators"
           )
           for entry in "${OLD_PACKAGES[@]}"; do
             old="${entry%%:*}"
@@ -107,7 +112,7 @@ jobs:
             dotnet nuget deprecate "$old" \
               --all-versions \
               --alternate-package "$new" \
-              --message "Renamed to $new. See https://github.com/levelup-software/strategos for migration guide." \
+              --message "Renamed to $new. See https://github.com/lvlup-sw/strategos for migration guide." \
               --source https://api.nuget.org/v3/index.json \
               --api-key ${{ secrets.NUGET_API_KEY }} || true
           done

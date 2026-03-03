@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- NuGet Package Configuration -->
-    <PackageId>Strategos.Infrastructure</PackageId>
+    <PackageId>LevelUp.Strategos.Infrastructure</PackageId>
     <Description>Infrastructure implementations for Strategos including Thompson Sampling agent selection, loop detection (repetition, semantic, oscillation, no-progress), and budget enforcement with scarcity levels.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

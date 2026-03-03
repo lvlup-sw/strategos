@@ -4,7 +4,7 @@
     <!-- NativeAOT compatibility - library is AOT-safe when using source-generated patterns -->
     <IsAotCompatible>true</IsAotCompatible>
     <!-- NuGet Package Configuration -->
-    <PackageId>Strategos</PackageId>
+    <PackageId>LevelUp.Strategos</PackageId>
     <Description>Fluent DSL for building durable agentic workflows with Wolverine sagas and Marten event sourcing. Supports Thompson Sampling agent selection, loop detection, budget enforcement, and fork/join parallelism.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

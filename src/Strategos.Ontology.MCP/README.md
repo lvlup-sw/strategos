@@ -5,7 +5,7 @@ MCP tool surface for Strategos ontology. Exposes ontology exploration, querying,
 ## Installation
 
 ```bash
-dotnet add package Strategos.Ontology.MCP
+dotnet add package LevelUp.Strategos.Ontology.MCP
 ```
 
 Requires `Strategos.Ontology` (included as a dependency).

@@ -5,8 +5,8 @@ Fluent DSL for building durable agentic workflows with Wolverine sagas and Marte
 ## Installation
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
 ```
 
 ## Quick Start

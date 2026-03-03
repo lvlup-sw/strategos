@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- NuGet Package Configuration -->
-    <PackageId>Strategos.Agents</PackageId>
+    <PackageId>LevelUp.Strategos.Agents</PackageId>
     <Description>Microsoft Agent Framework integration for Strategos. Provides abstractions for LLM-powered workflow steps with conversation continuity, streaming responses, and agent selection.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

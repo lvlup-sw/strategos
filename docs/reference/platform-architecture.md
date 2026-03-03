@@ -146,7 +146,7 @@ This glossary provides the single authoritative definition for each term used th
 | **Policy Engine** | ControlPlane component evaluating every tool call before and after execution. Pre-execution: authentication, authorization, input validation, content filtering, rate limiting. Post-execution: output filtering, resource checks, audit logging. |
 | **Streamable HTTP** | HTTP-based streaming transport for real-time execution updates from ControlPlane to AgentHost, used as the preferred MCP protocol transport. Future upgrade path to gRPC. |
 | **Tool Callback Hairpin** | The call chain where sandbox code invokes a tool wrapper, which communicates via envd vsock to the E2B orchestrator, which routes to the ControlPlane for actual tool execution, and results flow back through the same path. The ControlPlane is the sole gateway for all external access. |
-| **Strategos** | The fluent DSL library for defining durable, event-sourced agent workflows. Generates Wolverine sagas, Marten events, phase enums, and DI registrations from declarative workflow definitions. Distributed via [NuGet](https://www.nuget.org/packages/Strategos). |
+| **Strategos** | The fluent DSL library for defining durable, event-sourced agent workflows. Generates Wolverine sagas, Marten events, phase enums, and DI registrations from declarative workflow definitions. Distributed via [NuGet](https://www.nuget.org/packages/LevelUp.Strategos). |
 | **Thompson Sampling** | Contextual multi-armed bandit algorithm used for execution strategy selection. Maintains Beta(alpha, beta) distributions per (strategy, taskCategory) pair and samples to select the strategy with highest expected reward. Previously targeted specialist agents; retargeted to strategies in the Phronesis pattern. |
 | **Strategos.Ontology** | A semantic type system for agentic operations, distributed as a separate NuGet package within the Strategos repository. Provides a fluent DSL for declaring Object Types, Properties, Links, Actions, and Interfaces across domain boundaries. A Roslyn source generator produces compile-time descriptors, typed accessors, and cross-domain link validation. Enhances progressive disclosure with schema-driven tool stubs. Inspired by [Palantir Foundry's Ontology](https://www.palantir.com/docs/foundry/ontology/overview). |
 | **Domain Ontology** | A `DomainOntology` subclass declared per domain assembly (e.g., `TradingOntology`, `KnowledgeOntology`). Maps existing domain types into the ontology via a fluent builder API. The source generator parses these definitions at compile time to produce descriptors and validate the type graph. |
@@ -543,14 +543,14 @@ Profile-specific RAG collections ensure exemplar relevance is high for every tas
 
 ## 4. Strategos Library
 
-Strategos is a standalone .NET library for building production-grade agentic workflows. It combines the ergonomics of modern agent frameworks with the reliability guarantees of enterprise workflow engines, adding capabilities unique to AI-powered systems. Distributed via [NuGet](https://www.nuget.org/packages/Strategos).
+Strategos is a standalone .NET library for building production-grade agentic workflows. It combines the ergonomics of modern agent frameworks with the reliability guarantees of enterprise workflow engines, adding capabilities unique to AI-powered systems. Distributed via [NuGet](https://www.nuget.org/packages/LevelUp.Strategos).
 
 **Installation:**
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
-dotnet add package Strategos.Infrastructure
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
+dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 ### 4.1 Design Philosophy
@@ -1229,12 +1229,12 @@ Key difference from Palantir: Foundry's ontology is a runtime-only metadata serv
 #### 4.14.3 Packages
 
 ```bash
-dotnet add package Strategos.Ontology              # Contracts, DomainOntology base, fluent builder interfaces,
+dotnet add package LevelUp.Strategos.Ontology              # Contracts, DomainOntology base, fluent builder interfaces,
                                                    # chunking, embedding abstractions, and ingestion pipeline
-dotnet add package Strategos.Ontology.Generators    # Roslyn incremental source generator
-dotnet add package Strategos.Ontology.MCP           # Progressive disclosure integration (§5.3)
-dotnet add package Strategos.Ontology.Embeddings    # OpenAI-compatible embedding provider (IEmbeddingProvider)
-dotnet add package Strategos.Ontology.Npgsql        # PostgreSQL pgvector-backed IObjectSetProvider + IObjectSetWriter
+dotnet add package LevelUp.Strategos.Ontology.Generators    # Roslyn incremental source generator
+dotnet add package LevelUp.Strategos.Ontology.MCP           # Progressive disclosure integration (§5.3)
+dotnet add package LevelUp.Strategos.Ontology.Embeddings    # OpenAI-compatible embedding provider (IEmbeddingProvider)
+dotnet add package LevelUp.Strategos.Ontology.Npgsql        # PostgreSQL pgvector-backed IObjectSetProvider + IObjectSetWriter
 ```
 
 The core `Strategos.Ontology` package includes text chunking (`ITextChunker`, `SentenceBoundaryChunker`, `ParagraphChunker`, `FixedSizeChunker`), embedding abstractions (`IEmbeddingProvider`), ingestion pipeline (`IngestionPipeline<T>`), and an `InMemoryObjectSetProvider` for testing. The `Embeddings` and `Npgsql` packages provide production implementations backed by OpenAI-compatible APIs and PostgreSQL pgvector respectively.

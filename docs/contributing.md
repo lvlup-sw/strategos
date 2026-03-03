@@ -93,7 +93,7 @@ For shell commands:
 
 ~~~markdown
 ```bash
-dotnet add package Strategos
+dotnet add package LevelUp.Strategos
 ```
 ~~~
 

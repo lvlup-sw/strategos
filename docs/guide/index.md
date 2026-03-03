@@ -26,8 +26,8 @@ If you prefer to jump straight into code, here is the minimal setup:
 
 ```csharp
 // 1. Install packages
-// dotnet add package Strategos
-// dotnet add package Strategos.Marten
+// dotnet add package LevelUp.Strategos
+// dotnet add package LevelUp.Strategos.Marten
 
 // 2. Configure services
 services.AddStrategos()

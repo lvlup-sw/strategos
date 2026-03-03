@@ -11,7 +11,7 @@ Strategos is distributed as several NuGet packages. Choose the combination that 
 For basic workflow functionality without persistence:
 
 ```bash
-dotnet add package Strategos
+dotnet add package LevelUp.Strategos
 ```
 
 This includes the core workflow DSL, step interfaces, and in-memory execution. Suitable for prototyping and testing.
@@ -21,8 +21,8 @@ This includes the core workflow DSL, step interfaces, and in-memory execution. S
 For production workflows with durable persistence:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Marten
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Marten
 ```
 
 This adds PostgreSQL persistence via [Marten](https://martendb.io/) and [Wolverine](https://wolverinefx.net/), enabling workflows that survive process restarts.
@@ -32,10 +32,10 @@ This adds PostgreSQL persistence via [Marten](https://martendb.io/) and [Wolveri
 For AI agent workflows with retrieval-augmented generation:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Marten
-dotnet add package Strategos.Agents
-dotnet add package Strategos.RAG
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Marten
+dotnet add package LevelUp.Strategos.Agents
+dotnet add package LevelUp.Strategos.RAG
 ```
 
 This adds Thompson Sampling agent selection and vector-based document retrieval.

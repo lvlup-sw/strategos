@@ -5,7 +5,7 @@ Infrastructure implementations for Strategos including Thompson Sampling agent s
 ## Installation
 
 ```bash
-dotnet add package Strategos.Infrastructure
+dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 ## Features

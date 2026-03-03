@@ -15,7 +15,7 @@
     <!-- RS2008: Analyzer release tracking; CS8602/CS8604: netstandard2.0 lacks nullable annotations -->
     <NoWarn>$(NoWarn);RS2008;CS8602;CS8604;NU5128</NoWarn>
     <!-- NuGet Package Configuration -->
-    <PackageId>Strategos.Generators</PackageId>
+    <PackageId>LevelUp.Strategos.Generators</PackageId>
     <Description>Roslyn source generators for Strategos. Generates Wolverine sagas, phase enums, commands, events, worker handlers, and DI extensions from fluent workflow definitions.</Description>
     <DevelopmentDependency>true</DevelopmentDependency>
     <!-- Source generators don't have lib/ content, so no symbol package -->

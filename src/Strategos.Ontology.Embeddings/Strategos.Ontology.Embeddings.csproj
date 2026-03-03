@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
-    <PackageId>Strategos.Ontology.Embeddings</PackageId>
+    <PackageId>LevelUp.Strategos.Ontology.Embeddings</PackageId>
     <Description>OpenAI-compatible embedding provider for Strategos.Ontology vector search.</Description>
   </PropertyGroup>
 

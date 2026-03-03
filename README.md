@@ -1,6 +1,6 @@
 # Strategos
 
-[![NuGet](https://img.shields.io/nuget/v/Strategos.svg)](https://www.nuget.org/packages/Strategos)
+[![NuGet](https://img.shields.io/nuget/v/LevelUp.Strategos.svg)](https://www.nuget.org/packages/LevelUp.Strategos)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/lvlup-sw/strategos/ci.yml?branch=main)](https://github.com/lvlup-sw/strategos/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -81,16 +81,16 @@ The library builds on proven .NET infrastructure rather than reinventing durabil
 
 **Minimal setup** (workflows without LLM agents):
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
 ```
 
 **With LLM integration** (most common):
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
-dotnet add package Strategos.Agents
-dotnet add package Strategos.Infrastructure
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
+dotnet add package LevelUp.Strategos.Agents
+dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 See [Package Documentation](docs/packages.md) for detailed guidance.

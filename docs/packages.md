@@ -49,7 +49,7 @@ The core package containing the fluent DSL for defining workflows and all founda
 ### Installation
 
 ```bash
-dotnet add package Strategos
+dotnet add package LevelUp.Strategos
 ```
 
 ---
@@ -87,7 +87,7 @@ See [Diagnostics Reference](diagnostics.md) for the complete list.
 ### Installation
 
 ```bash
-dotnet add package Strategos.Generators
+dotnet add package LevelUp.Strategos.Generators
 ```
 
 > **Note:** This is a development dependency. It runs at compile time and produces no runtime overhead.
@@ -128,7 +128,7 @@ Detects stuck workflows using four strategies:
 ### Installation
 
 ```bash
-dotnet add package Strategos.Infrastructure
+dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 ### Usage
@@ -166,7 +166,7 @@ Integration with Microsoft Agent Framework via `Microsoft.Extensions.AI` for LLM
 ### Installation
 
 ```bash
-dotnet add package Strategos.Agents
+dotnet add package LevelUp.Strategos.Agents
 ```
 
 ### Usage
@@ -226,7 +226,7 @@ Vector store adapters for Retrieval-Augmented Generation (RAG) patterns.
 ### Installation
 
 ```bash
-dotnet add package Strategos.Rag
+dotnet add package LevelUp.Strategos.Rag
 ```
 
 ### Usage
@@ -262,8 +262,8 @@ public class RetrieveContextStep : IWorkflowStep<QueryState>
 For workflows that don't involve LLM agents:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
 ```
 
 ### Standard (LLM-Powered Workflows)
@@ -271,10 +271,10 @@ dotnet add package Strategos.Generators
 Most common setup for AI agent workflows:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
-dotnet add package Strategos.Agents
-dotnet add package Strategos.Infrastructure
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
+dotnet add package LevelUp.Strategos.Agents
+dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 ### Full (With RAG)
@@ -282,11 +282,11 @@ dotnet add package Strategos.Infrastructure
 For workflows that include retrieval-augmented generation:
 
 ```bash
-dotnet add package Strategos
-dotnet add package Strategos.Generators
-dotnet add package Strategos.Agents
-dotnet add package Strategos.Infrastructure
-dotnet add package Strategos.Rag
+dotnet add package LevelUp.Strategos
+dotnet add package LevelUp.Strategos.Generators
+dotnet add package LevelUp.Strategos.Agents
+dotnet add package LevelUp.Strategos.Infrastructure
+dotnet add package LevelUp.Strategos.Rag
 ```
 
 ---
