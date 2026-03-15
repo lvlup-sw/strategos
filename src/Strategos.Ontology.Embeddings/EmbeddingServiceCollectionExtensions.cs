@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Strategos.Ontology.Embeddings;
 
 namespace Strategos.Ontology.Embeddings;
@@ -22,7 +23,12 @@ public static class EmbeddingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         services.Configure(configure);
-        services.AddHttpClient<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvider>();
+        services.AddHttpClient<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvider>()
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var opts = sp.GetRequiredService<IOptions<OpenAiEmbeddingOptions>>().Value;
+                client.Timeout = opts.Timeout;
+            });
         return services;
     }
 }
