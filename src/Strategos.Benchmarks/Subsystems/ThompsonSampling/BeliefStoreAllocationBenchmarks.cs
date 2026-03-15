@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.Selection;
 using Strategos.Primitives;
@@ -46,7 +48,7 @@ public class BeliefStoreAllocationBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _store = new InMemoryBeliefStore();
+        _store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Pre-populate a belief for cache-hit testing
         _cachedAgentId = "agent-cached";

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Ontology;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
@@ -17,7 +19,7 @@ public class OntologyQueryToolTests
         _graph = TestOntologyGraphFactory.CreateTradingGraph();
         _objectSetProvider = Substitute.For<IObjectSetProvider>();
         _eventStreamProvider = Substitute.For<IEventStreamProvider>();
-        _tool = new OntologyQueryTool(_graph, _objectSetProvider, _eventStreamProvider);
+        _tool = new OntologyQueryTool(_graph, _objectSetProvider, _eventStreamProvider, NullLogger<OntologyQueryTool>.Instance);
     }
 
     [Test]

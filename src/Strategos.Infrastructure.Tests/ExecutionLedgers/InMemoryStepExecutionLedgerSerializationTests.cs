@@ -8,6 +8,8 @@ using Strategos.Infrastructure.ExecutionLedgers;
 
 using MemoryPack;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Strategos.Infrastructure.Tests.ExecutionLedgers;
 
 /// <summary>
@@ -32,7 +34,7 @@ public sealed partial class InMemoryStepExecutionLedgerSerializationTests
     {
         // Arrange
         var timeProvider = TimeProvider.System;
-        var ledger = new InMemoryStepExecutionLedger(timeProvider);
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, NullLogger<InMemoryStepExecutionLedger>.Instance);
         var stepName = "TestStep";
         var input = new MemoryPackableInput("test", 123);
         var inputHash = ledger.ComputeInputHash(input);
@@ -56,7 +58,7 @@ public sealed partial class InMemoryStepExecutionLedgerSerializationTests
     {
         // Arrange
         var timeProvider = TimeProvider.System;
-        var ledger = new InMemoryStepExecutionLedger(timeProvider);
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, NullLogger<InMemoryStepExecutionLedger>.Instance);
         var input = new MemoryPackableInput("test", 123);
 
         // Act
@@ -75,7 +77,7 @@ public sealed partial class InMemoryStepExecutionLedgerSerializationTests
     {
         // Arrange
         var timeProvider = TimeProvider.System;
-        var ledger = new InMemoryStepExecutionLedger(timeProvider);
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, NullLogger<InMemoryStepExecutionLedger>.Instance);
         var stepName = "ComplexStep";
         var result = new MemoryPackableComplexResult(
             "outer",
@@ -104,7 +106,7 @@ public sealed partial class InMemoryStepExecutionLedgerSerializationTests
     {
         // Arrange
         var timeProvider = TimeProvider.System;
-        var ledger = new InMemoryStepExecutionLedger(timeProvider);
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, NullLogger<InMemoryStepExecutionLedger>.Instance);
         var stepName = "NullNestedStep";
         var result = new MemoryPackableComplexResult("outer", null, []);
         var inputHash = "test-hash-null";

@@ -8,6 +8,7 @@ using Strategos.Infrastructure.ExecutionLedgers;
 
 using MemoryPack;
 
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Strategos.Infrastructure.Tests.ExecutionLedgers;
@@ -983,7 +984,7 @@ public sealed partial class InMemoryStepExecutionLedgerTests
 
     private static InMemoryStepExecutionLedger CreateLedger(TimeProvider? timeProvider = null)
     {
-        return new InMemoryStepExecutionLedger(timeProvider ?? TimeProvider.System);
+        return new InMemoryStepExecutionLedger(timeProvider ?? TimeProvider.System, NullLogger<InMemoryStepExecutionLedger>.Instance);
     }
 
     // =========================================================================

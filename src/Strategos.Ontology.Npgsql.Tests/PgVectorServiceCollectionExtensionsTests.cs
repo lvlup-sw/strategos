@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Strategos.Ontology.ObjectSets;
 
@@ -26,6 +28,8 @@ public class PgVectorServiceCollectionExtensionsTests
         using var ds = CreateDataSource();
         services.AddSingleton(ds);
         services.AddSingleton(Substitute.For<IEmbeddingProvider>());
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         services.AddPgVectorObjectSets(opts =>
         {
@@ -49,6 +53,8 @@ public class PgVectorServiceCollectionExtensionsTests
         using var ds = CreateDataSource();
         services.AddSingleton(ds);
         services.AddSingleton(Substitute.For<IEmbeddingProvider>());
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         services.AddPgVectorObjectSets(opts =>
         {
@@ -72,6 +78,8 @@ public class PgVectorServiceCollectionExtensionsTests
         using var ds = CreateDataSource();
         services.AddSingleton(ds);
         services.AddSingleton(Substitute.For<IEmbeddingProvider>());
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         services.AddPgVectorObjectSets(opts =>
         {

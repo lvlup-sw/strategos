@@ -105,7 +105,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInMemoryStepExecutionLedger(this IServiceCollection services)
     {
         services.AddSingleton<IStepExecutionLedger>(sp =>
-            new InMemoryStepExecutionLedger(TimeProvider.System));
+            new InMemoryStepExecutionLedger(
+                TimeProvider.System,
+                sp.GetRequiredService<ILogger<InMemoryStepExecutionLedger>>()));
         return services;
     }
 

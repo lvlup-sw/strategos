@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Infrastructure.Configuration;
 
 using Microsoft.Extensions.Options;
@@ -306,7 +308,7 @@ public sealed class FileSystemArtifactStoreTests : IAsyncDisposable
     public async Task Constructor_WithNullOptions_ThrowsArgumentNullException()
     {
         // Act & Assert
-        await Assert.That(() => new FileSystemArtifactStore(null!))
+        await Assert.That(() => new FileSystemArtifactStore(null!, NullLogger<FileSystemArtifactStore>.Instance))
             .Throws<ArgumentNullException>()
             .WithParameterName("options");
     }
@@ -323,7 +325,7 @@ public sealed class FileSystemArtifactStoreTests : IAsyncDisposable
             BasePath = _testBasePath,
             FileExtension = ".dat",
         });
-        var store = new FileSystemArtifactStore(options);
+        var store = new FileSystemArtifactStore(options, NullLogger<FileSystemArtifactStore>.Instance);
         var artifact = new TestArtifact { Data = "test-data" };
 
         // Act
@@ -544,7 +546,7 @@ public sealed class FileSystemArtifactStoreTests : IAsyncDisposable
             BasePath = _testBasePath,
         });
 
-        return new FileSystemArtifactStore(options);
+        return new FileSystemArtifactStore(options, NullLogger<FileSystemArtifactStore>.Instance);
     }
 
     // =========================================================================
