@@ -48,10 +48,30 @@ public static class ServiceCollectionExtensions
     /// <remarks>
     /// The in-memory store is suitable for testing and development scenarios.
     /// For production use with durability requirements, use <see cref="AddFileSystemArtifactStore"/>.
-    /// Registered as a singleton.
+    /// Registered as a singleton with default options (10,000 max capacity).
     /// </remarks>
     public static IServiceCollection AddInMemoryArtifactStore(this IServiceCollection services)
     {
+        services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the in-memory artifact store implementation to the service collection with configuration.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Action to configure artifact store options.</param>
+    /// <returns>The service collection for chaining.</returns>
+    /// <remarks>
+    /// The in-memory store is suitable for testing and development scenarios.
+    /// For production use with durability requirements, use <see cref="AddFileSystemArtifactStore"/>.
+    /// Registered as a singleton.
+    /// </remarks>
+    public static IServiceCollection AddInMemoryArtifactStore(
+        this IServiceCollection services,
+        Action<InMemoryArtifactStoreOptions> configure)
+    {
+        services.Configure(configure);
         services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
         return services;
     }

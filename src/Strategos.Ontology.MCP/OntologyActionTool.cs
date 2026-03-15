@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
@@ -13,15 +16,32 @@ public sealed class OntologyActionTool
     private readonly OntologyGraph _graph;
     private readonly IActionDispatcher _actionDispatcher;
     private readonly IObjectSetProvider _objectSetProvider;
+    private readonly ILogger<OntologyActionTool> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OntologyActionTool"/> class.
+    /// </summary>
     public OntologyActionTool(
         OntologyGraph graph,
         IActionDispatcher actionDispatcher,
         IObjectSetProvider objectSetProvider)
+        : this(graph, actionDispatcher, objectSetProvider, NullLogger<OntologyActionTool>.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OntologyActionTool"/> class with logging.
+    /// </summary>
+    public OntologyActionTool(
+        OntologyGraph graph,
+        IActionDispatcher actionDispatcher,
+        IObjectSetProvider objectSetProvider,
+        ILogger<OntologyActionTool> logger)
     {
         _graph = graph;
         _actionDispatcher = actionDispatcher;
         _objectSetProvider = objectSetProvider;
+        _logger = logger;
     }
 
     /// <summary>
@@ -47,27 +67,33 @@ public sealed class OntologyActionTool
 
         if (objectTypeDescriptor is null)
         {
+            var availableDomains = string.Join(", ", _graph.Domains.Select(d => d.DomainName));
             return new ActionToolResult(
             [
-                new ActionResult(false, Error: $"Object type '{objectType}' not found in domain '{resolvedDomain ?? "unknown"}'."),
+                new ActionResult(false, Error: $"Object type '{objectType}' not found in domain '{resolvedDomain ?? "any"}'. Available domains: [{availableDomains}]"),
             ]);
         }
 
         if (!HasAction(objectTypeDescriptor, action))
         {
+            var availableActions = string.Join(", ", objectTypeDescriptor.Actions.Select(a => a.Name));
             return new ActionToolResult(
             [
-                new ActionResult(false, Error: $"Action '{action}' not found on object type '{objectType}'."),
+                new ActionResult(false, Error: $"Action '{action}' not found on object type '{objectType}'. Available actions: [{availableActions}]"),
             ]);
         }
 
+        // Safe: resolvedDomain is non-null here because objectTypeDescriptor is non-null,
+        // which requires resolvedDomain to be non-null (null resolvedDomain yields null descriptor).
+        var validDomain = resolvedDomain!;
+
         if (objectId is not null)
         {
-            return await DispatchSingleAsync(resolvedDomain!, objectType, objectId, action, request, ct)
+            return await DispatchSingleAsync(validDomain, objectType, objectId, action, request, ct)
                 .ConfigureAwait(false);
         }
 
-        return await DispatchBatchAsync(resolvedDomain!, objectType, action, request, filter, ct)
+        return await DispatchBatchAsync(validDomain, objectType, action, request, filter, ct)
             .ConfigureAwait(false);
     }
 
@@ -114,6 +140,7 @@ public sealed class OntologyActionTool
             }
             catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Action dispatch failed for item '{ItemId}' of type '{ObjectType}'", itemId, objectType);
                 results.Add(new ActionResult(false, Error: $"Dispatch failed for '{itemId}': {ex.Message}"));
             }
         }

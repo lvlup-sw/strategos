@@ -29,4 +29,9 @@ public sealed class OpenAiEmbeddingOptions
     /// Gets or sets the maximum number of texts to include in a single API call.
     /// </summary>
     public int BatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Gets or sets the HTTP request timeout. Default is 30 seconds.
+    /// </summary>
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 }
