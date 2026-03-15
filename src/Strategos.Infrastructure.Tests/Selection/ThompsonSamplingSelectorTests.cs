@@ -192,7 +192,7 @@ public sealed class ThompsonSamplingSelectorTests
         var selections = new Dictionary<string, int> { ["agent-1"] = 0, ["agent-2"] = 0 };
         for (int trial = 0; trial < 100; trial++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
             selections[result.Value.SelectedAgentId]++;
         }
@@ -233,7 +233,7 @@ public sealed class ThompsonSamplingSelectorTests
 
         for (int trial = 0; trial < 300; trial++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
             selections[result.Value.SelectedAgentId]++;
         }
@@ -436,7 +436,7 @@ public sealed class ThompsonSamplingSelectorTests
         const int candidateCount = 5;
         const int delayPerFetchMs = 50;
         var delayingStore = new DelayingBeliefStore(TimeSpan.FromMilliseconds(delayPerFetchMs));
-        var selector = new ThompsonSamplingAgentSelector(delayingStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(delayingStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var agents = Enumerable.Range(1, candidateCount).Select(i => $"agent-{i}").ToList();
         var context = new AgentSelectionContext
@@ -522,7 +522,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task Constructor_NullBeliefStore_ThrowsArgumentNullException()
     {
         // Act & Assert
-        await Assert.That(() => new ThompsonSamplingAgentSelector(null!, NullLogger<ThompsonSamplingAgentSelector>.Instance))
+        await Assert.That(() => new ThompsonSamplingAgentSelector(null!, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance))
             .Throws<ArgumentNullException>();
     }
 
@@ -598,7 +598,7 @@ public sealed class ThompsonSamplingSelectorTests
     {
         // Arrange
         var failingStore = new FailingBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(failingStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(failingStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -626,7 +626,7 @@ public sealed class ThompsonSamplingSelectorTests
     {
         // Arrange
         var partialFailStore = new PartialFailingBeliefStore("agent-2");
-        var selector = new ThompsonSamplingAgentSelector(partialFailStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(partialFailStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -738,7 +738,7 @@ public sealed class ThompsonSamplingSelectorTests
         // Act - Run multiple times with different seeds
         for (int seed = 0; seed < 50; seed++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: seed);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: seed);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
 
             // Assert - Theta must always be in valid range
