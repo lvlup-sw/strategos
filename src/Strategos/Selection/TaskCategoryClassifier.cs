@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Strategos.Abstractions;
+
 namespace Strategos.Selection;
 
 /// <summary>
@@ -28,7 +30,7 @@ namespace Strategos.Selection;
 /// </list>
 /// </para>
 /// </remarks>
-public static class TaskCategoryClassifier
+public sealed class TaskCategoryClassifier : ITaskCategoryClassifier
 {
     /// <summary>
     /// Keywords that indicate CodeGeneration tasks.
@@ -99,7 +101,8 @@ public static class TaskCategoryClassifier
     /// FileOperation, Reasoning, TextGeneration, then General (default).
     /// </para>
     /// </remarks>
-    public static TaskCategory Classify(string? description)
+    /// <inheritdoc/>
+    public TaskCategory Classify(string? description)
     {
         if (string.IsNullOrWhiteSpace(description))
         {

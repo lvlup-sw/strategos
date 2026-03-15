@@ -36,17 +36,24 @@ namespace Strategos.Infrastructure.Selection;
 public sealed class ThompsonSamplingAgentSelector : IAgentSelector
 {
     private readonly IBeliefStore _beliefStore;
+    private readonly ITaskCategoryClassifier _classifier;
     private readonly Random _random;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ThompsonSamplingAgentSelector"/> class.
     /// </summary>
     /// <param name="beliefStore">The belief store for persisting agent beliefs.</param>
+    /// <param name="classifier">The task category classifier.</param>
     /// <param name="randomSeed">Optional seed for reproducible sampling.</param>
-    public ThompsonSamplingAgentSelector(IBeliefStore beliefStore, int? randomSeed = null)
+    public ThompsonSamplingAgentSelector(
+        IBeliefStore beliefStore,
+        ITaskCategoryClassifier classifier,
+        int? randomSeed = null)
     {
         ArgumentNullException.ThrowIfNull(beliefStore);
+        ArgumentNullException.ThrowIfNull(classifier);
         _beliefStore = beliefStore;
+        _classifier = classifier;
         _random = randomSeed.HasValue ? new Random(randomSeed.Value) : new Random();
     }
 
@@ -58,7 +65,7 @@ public sealed class ThompsonSamplingAgentSelector : IAgentSelector
         ArgumentNullException.ThrowIfNull(context);
 
         // 1. Classify task
-        var taskCategory = TaskCategoryClassifier.Classify(context.TaskDescription);
+        var taskCategory = _classifier.Classify(context.TaskDescription);
         var categoryName = taskCategory.ToString();
 
         // 2. Get available agents (exclude any excluded)

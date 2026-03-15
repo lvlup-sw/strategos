@@ -11,6 +11,7 @@ using Strategos.Infrastructure.Budget;
 using Strategos.Infrastructure.Configuration;
 using Strategos.Infrastructure.ExecutionLedgers;
 using Strategos.Infrastructure.LoopDetection;
+using Strategos.Selection;
 
 namespace Strategos.Infrastructure.Extensions;
 
@@ -193,6 +194,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddBudgetGuard();
         services.AddLoopDetector();
+        services.AddSingleton<ITaskCategoryClassifier, TaskCategoryClassifier>();
         return services;
     }
 }

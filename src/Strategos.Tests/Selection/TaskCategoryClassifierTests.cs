@@ -26,7 +26,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsCode_ReturnsCodeGeneration()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Write some code for me");
+        var result = new TaskCategoryClassifier().Classify("Write some code for me");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -39,7 +39,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsImplement_ReturnsCodeGeneration()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Implement a new feature");
+        var result = new TaskCategoryClassifier().Classify("Implement a new feature");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -52,7 +52,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsDebug_ReturnsCodeGeneration()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Debug this issue");
+        var result = new TaskCategoryClassifier().Classify("Debug this issue");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -65,7 +65,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsRefactor_ReturnsCodeGeneration()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Refactor the legacy module");
+        var result = new TaskCategoryClassifier().Classify("Refactor the legacy module");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -82,7 +82,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsAnalyze_ReturnsDataAnalysis()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Analyze the sales data");
+        var result = new TaskCategoryClassifier().Classify("Analyze the sales data");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.DataAnalysis);
@@ -95,7 +95,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsStatistics_ReturnsDataAnalysis()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Calculate statistics for the dataset");
+        var result = new TaskCategoryClassifier().Classify("Calculate statistics for the dataset");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.DataAnalysis);
@@ -108,7 +108,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsChart_ReturnsDataAnalysis()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Create a chart showing trends");
+        var result = new TaskCategoryClassifier().Classify("Create a chart showing trends");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.DataAnalysis);
@@ -121,7 +121,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsVisualize_ReturnsDataAnalysis()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Visualize the correlation between values");
+        var result = new TaskCategoryClassifier().Classify("Visualize the correlation between values");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.DataAnalysis);
@@ -138,7 +138,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsSearch_ReturnsWebSearch()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Search for information about topic");
+        var result = new TaskCategoryClassifier().Classify("Search for information about topic");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.WebSearch);
@@ -151,7 +151,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsBrowse_ReturnsWebSearch()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Browse the web for results");
+        var result = new TaskCategoryClassifier().Classify("Browse the web for results");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.WebSearch);
@@ -164,7 +164,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsInternet_ReturnsWebSearch()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Look on the internet for answers");
+        var result = new TaskCategoryClassifier().Classify("Look on the internet for answers");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.WebSearch);
@@ -181,7 +181,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsFile_ReturnsFileOperation()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Read the file contents");
+        var result = new TaskCategoryClassifier().Classify("Read the file contents");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.FileOperation);
@@ -194,7 +194,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsDirectory_ReturnsFileOperation()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("List the directory");
+        var result = new TaskCategoryClassifier().Classify("List the directory");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.FileOperation);
@@ -207,7 +207,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsCsv_ReturnsFileOperation()
     {
         // Act - Use "csv" without "data" to avoid DataAnalysis match
-        var result = TaskCategoryClassifier.Classify("Parse the csv contents");
+        var result = new TaskCategoryClassifier().Classify("Parse the csv contents");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.FileOperation);
@@ -224,7 +224,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsReason_ReturnsReasoning()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Reason through this problem");
+        var result = new TaskCategoryClassifier().Classify("Reason through this problem");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.Reasoning);
@@ -237,7 +237,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsEvaluate_ReturnsReasoning()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Evaluate the options carefully");
+        var result = new TaskCategoryClassifier().Classify("Evaluate the options carefully");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.Reasoning);
@@ -254,7 +254,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsSummarize_ReturnsTextGeneration()
     {
         // Act - Use "summarize" without "document" to avoid FileOperation match
-        var result = TaskCategoryClassifier.Classify("Summarize this article");
+        var result = new TaskCategoryClassifier().Classify("Summarize this article");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.TextGeneration);
@@ -267,7 +267,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_ContainsTranslate_ReturnsTextGeneration()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Translate to Spanish");
+        var result = new TaskCategoryClassifier().Classify("Translate to Spanish");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.TextGeneration);
@@ -284,7 +284,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_NullInput_ReturnsGeneral()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify(null);
+        var result = new TaskCategoryClassifier().Classify(null);
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.General);
@@ -297,7 +297,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_EmptyString_ReturnsGeneral()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify(string.Empty);
+        var result = new TaskCategoryClassifier().Classify(string.Empty);
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.General);
@@ -310,7 +310,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_WhitespaceOnly_ReturnsGeneral()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("   ");
+        var result = new TaskCategoryClassifier().Classify("   ");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.General);
@@ -323,7 +323,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_NoMatchingKeywords_ReturnsGeneral()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("Hello world");
+        var result = new TaskCategoryClassifier().Classify("Hello world");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.General);
@@ -340,7 +340,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_UpperCaseKeyword_MatchesCorrectly()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("ANALYZE the DATA");
+        var result = new TaskCategoryClassifier().Classify("ANALYZE the DATA");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.DataAnalysis);
@@ -353,7 +353,7 @@ public class TaskCategoryClassifierTests
     public async Task Classify_MixedCaseKeyword_MatchesCorrectly()
     {
         // Act
-        var result = TaskCategoryClassifier.Classify("ImPlEmEnT a function");
+        var result = new TaskCategoryClassifier().Classify("ImPlEmEnT a function");
 
         // Assert
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -371,7 +371,7 @@ public class TaskCategoryClassifierTests
     {
         // "code" matches CodeGeneration, "analyze" matches DataAnalysis
         // CodeGeneration should win due to priority order
-        var result = TaskCategoryClassifier.Classify("Analyze the code");
+        var result = new TaskCategoryClassifier().Classify("Analyze the code");
 
         // Assert - "code" should match first
         await Assert.That(result).IsEqualTo(TaskCategory.CodeGeneration);
@@ -385,7 +385,7 @@ public class TaskCategoryClassifierTests
     {
         // "data" matches DataAnalysis, "search" matches WebSearch
         // DataAnalysis should win due to priority order
-        var result = TaskCategoryClassifier.Classify("Search the data");
+        var result = new TaskCategoryClassifier().Classify("Search the data");
 
         // Assert - CodeGeneration check comes before WebSearch, but "data" is DataAnalysis
         // Actually "search" comes before "data" in the string, but classification checks categories in order
