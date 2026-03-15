@@ -602,61 +602,86 @@ internal static class StepExtractor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var caseArg = arguments[i];
-
-            // BranchCase.When() or BranchCase.Otherwise() returns an invocation
-            if (caseArg.Expression is not InvocationExpressionSyntax caseInvocation)
+            if (!TryExtractBranchCasePathLambda(arguments[i], out var pathLambda))
             {
                 continue;
             }
 
-            // Get the path builder lambda from the case invocation
-            // When(value, path => path.Then<Step>()) or Otherwise(path => path.Then<Step>())
-            var caseArgs = caseInvocation.ArgumentList.Arguments;
-            ArgumentSyntax? pathBuilderArg = null;
+            CollectStepsFromPathLambda(pathLambda, semanticModel, currentPrefix, StepContext.BranchPath, steps);
+        }
+    }
 
-            if (SyntaxHelper.IsMethodCall(caseInvocation, "When") && caseArgs.Count >= 2)
-            {
-                pathBuilderArg = caseArgs[1];
-            }
-            else if (SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise") && caseArgs.Count >= 1)
-            {
-                pathBuilderArg = caseArgs[0];
-            }
+    /// <summary>
+    /// Tries to extract the path builder lambda from a branch case argument (When or Otherwise).
+    /// </summary>
+    private static bool TryExtractBranchCasePathLambda(
+        ArgumentSyntax caseArg,
+        out LambdaExpressionSyntax pathLambda)
+    {
+        pathLambda = null!;
 
-            if (pathBuilderArg is null)
-            {
-                continue;
-            }
+        // BranchCase.When() or BranchCase.Otherwise() returns an invocation
+        if (caseArg.Expression is not InvocationExpressionSyntax caseInvocation)
+        {
+            return false;
+        }
 
-            // Extract path builder lambda
-            var pathLambda = pathBuilderArg.Expression switch
-            {
-                SimpleLambdaExpressionSyntax simple => (LambdaExpressionSyntax)simple,
-                ParenthesizedLambdaExpressionSyntax parens => parens,
-                _ => null
-            };
+        // When(value, path => path.Then<Step>()) or Otherwise(path => path.Then<Step>())
+        var caseArgs = caseInvocation.ArgumentList.Arguments;
+        ArgumentSyntax? pathBuilderArg = null;
 
-            if (pathLambda is null)
-            {
-                continue;
-            }
+        if (SyntaxHelper.IsMethodCall(caseInvocation, "When") && caseArgs.Count >= 2)
+        {
+            pathBuilderArg = caseArgs[1];
+        }
+        else if (SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise") && caseArgs.Count >= 1)
+        {
+            pathBuilderArg = caseArgs[0];
+        }
 
-            // Find Then<T>() calls in the path lambda
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+        if (pathBuilderArg is null)
+        {
+            return false;
+        }
 
-            foreach (var inv in pathInvocations)
+        var extracted = pathBuilderArg.Expression switch
+        {
+            SimpleLambdaExpressionSyntax simple => (LambdaExpressionSyntax)simple,
+            ParenthesizedLambdaExpressionSyntax parens => parens,
+            _ => null
+        };
+
+        if (extracted is null)
+        {
+            return false;
+        }
+
+        pathLambda = extracted;
+        return true;
+    }
+
+    /// <summary>
+    /// Collects Then steps from a path lambda and adds them to the steps list.
+    /// </summary>
+    private static void CollectStepsFromPathLambda(
+        LambdaExpressionSyntax pathLambda,
+        SemanticModel semanticModel,
+        string? currentPrefix,
+        StepContext context,
+        List<StepInfo> steps)
+    {
+        var pathInvocations = pathLambda
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
+            .Reverse()
+            .ToList();
+
+        foreach (var inv in pathInvocations)
+        {
+            if (TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
             {
-                if (TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
-                {
-                    // Branch path steps have BranchPath context (exclusive execution)
-                    steps.Add(new StepInfo(stepName, instanceName, currentPrefix, StepContext.BranchPath));
-                }
+                steps.Add(new StepInfo(stepName, instanceName, currentPrefix, context));
             }
         }
     }
@@ -959,45 +984,12 @@ internal static class StepExtractor
     {
         stepModel = default!;
 
-        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        if (!TryGetGenericTypeArgument(invocation, "Join", out var typeArgument))
         {
             return false;
         }
 
-        if (memberAccess.Name is not GenericNameSyntax genericName)
-        {
-            return false;
-        }
-
-        if (!SyntaxHelper.GetMethodName(memberAccess).Equals("Join", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var typeArgument = genericName.TypeArgumentList.Arguments.FirstOrDefault();
-        if (typeArgument is null)
-        {
-            return false;
-        }
-
-        string stepName;
-        string stepTypeName;
-
-        var symbolInfo = semanticModel.GetSymbolInfo(typeArgument);
-        if (symbolInfo.Symbol is INamedTypeSymbol namedType)
-        {
-            stepName = namedType.Name;
-            stepTypeName = namedType.ToDisplayString(new SymbolDisplayFormat(
-                globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
-                typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces));
-        }
-        else
-        {
-            stepName = SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
-            stepTypeName = typeArgument.ToString();
-        }
-
-        if (string.IsNullOrEmpty(stepName))
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
         {
             return false;
         }
@@ -1038,23 +1030,7 @@ internal static class StepExtractor
             return false;
         }
 
-        string stepName;
-        string stepTypeName;
-
-        var symbolInfo = semanticModel.GetSymbolInfo(typeArgument);
-        if (symbolInfo.Symbol is INamedTypeSymbol namedType)
-        {
-            stepName = namedType.Name;
-            // Use custom format to get Namespace.TypeName without global:: prefix
-            stepTypeName = namedType.ToDisplayString(NamespacedTypeFormat);
-        }
-        else
-        {
-            stepName = SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
-            stepTypeName = typeArgument.ToString();
-        }
-
-        if (string.IsNullOrEmpty(stepName))
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
         {
             return false;
         }
@@ -1067,5 +1043,64 @@ internal static class StepExtractor
             validationPredicate: validationPredicate,
             validationErrorMessage: validationErrorMessage);
         return true;
+    }
+
+    /// <summary>
+    /// Tries to get the generic type argument from an invocation of the specified method name.
+    /// </summary>
+    private static bool TryGetGenericTypeArgument(
+        InvocationExpressionSyntax invocation,
+        string expectedMethodName,
+        out TypeSyntax typeArgument)
+    {
+        typeArgument = null!;
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return false;
+        }
+
+        if (memberAccess.Name is not GenericNameSyntax genericName)
+        {
+            return false;
+        }
+
+        if (!SyntaxHelper.GetMethodName(memberAccess).Equals(expectedMethodName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var arg = genericName.TypeArgumentList.Arguments.FirstOrDefault();
+        if (arg is null)
+        {
+            return false;
+        }
+
+        typeArgument = arg;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves a type syntax to both its short name and fully qualified type name using the semantic model.
+    /// </summary>
+    private static bool ResolveTypeNameAndFullName(
+        TypeSyntax typeArgument,
+        SemanticModel semanticModel,
+        out string stepName,
+        out string stepTypeName)
+    {
+        var symbolInfo = semanticModel.GetSymbolInfo(typeArgument);
+        if (symbolInfo.Symbol is INamedTypeSymbol namedType)
+        {
+            stepName = namedType.Name;
+            stepTypeName = namedType.ToDisplayString(NamespacedTypeFormat);
+        }
+        else
+        {
+            stepName = SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
+            stepTypeName = typeArgument.ToString();
+        }
+
+        return !string.IsNullOrEmpty(stepName);
     }
 }

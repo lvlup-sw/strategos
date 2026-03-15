@@ -172,14 +172,7 @@ internal static class LoopExtractor
         }
 
         // Extract loop name from argument index 1
-        string? loopName = null;
-        var loopNameArg = arguments[1];
-        if (loopNameArg.Expression is LiteralExpressionSyntax literal &&
-            literal.Kind() == SyntaxKind.StringLiteralExpression)
-        {
-            loopName = literal.Token.ValueText;
-        }
-        else
+        if (!TryExtractLoopName(arguments[1], out var loopName))
         {
             return false;
         }
@@ -191,32 +184,101 @@ internal static class LoopExtractor
         effectivePrefix = computedPrefix;
 
         // Extract max iterations from argument index 3 (if present), default to 10
-        int maxIterations = 10;
-        if (arguments.Count > 3)
+        var maxIterations = ExtractMaxIterations(arguments, semanticModel);
+
+        // Find loop body steps that are direct children of this loop
+        var bodySteps = FindDirectBodySteps(computedPrefix, allSteps);
+
+        if (bodySteps.Count == 0)
         {
-            var maxIterArg = arguments[3];
-            if (maxIterArg.Expression is LiteralExpressionSyntax maxLiteral &&
-                maxLiteral.Kind() == SyntaxKind.NumericLiteralExpression)
+            return false;
+        }
+
+        // Find continuation step (first step after the loop body that is not a child of this loop)
+        var continuationStepName = FindContinuationStepName(computedPrefix, bodySteps, allSteps);
+
+        // Build condition ID
+        var conditionId = $"{workflowName}-{loopName}";
+
+        // Check if a Branch immediately follows this RepeatUntil
+        var branchOnExit = ExtractBranchOnExit(invocation, semanticModel, workflowName, cancellationToken);
+
+        loopModel = new LoopModel(
+            LoopName: loopName,
+            ConditionId: conditionId,
+            MaxIterations: maxIterations,
+            FirstBodyStepName: bodySteps.First().PhaseName,
+            LastBodyStepName: bodySteps.Last().PhaseName,
+            ContinuationStepName: continuationStepName,
+            ParentLoopName: parentLoopName,
+            BranchOnExitId: branchOnExit?.BranchId,
+            BranchOnExit: branchOnExit);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Tries to extract the loop name from a RepeatUntil's second argument (index 1).
+    /// </summary>
+    private static bool TryExtractLoopName(ArgumentSyntax loopNameArg, out string loopName)
+    {
+        loopName = string.Empty;
+
+        if (loopNameArg.Expression is LiteralExpressionSyntax literal &&
+            literal.Kind() == SyntaxKind.StringLiteralExpression)
+        {
+            loopName = literal.Token.ValueText;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Extracts the max iterations value from a RepeatUntil's fourth argument (index 3).
+    /// Returns the default of 10 if not specified or not parseable.
+    /// </summary>
+    private static int ExtractMaxIterations(SeparatedSyntaxList<ArgumentSyntax> arguments, SemanticModel semanticModel)
+    {
+        const int defaultMaxIterations = 10;
+
+        if (arguments.Count <= 3)
+        {
+            return defaultMaxIterations;
+        }
+
+        var maxIterArg = arguments[3];
+        if (maxIterArg.Expression is LiteralExpressionSyntax maxLiteral &&
+            maxLiteral.Kind() == SyntaxKind.NumericLiteralExpression)
+        {
+            if (int.TryParse(maxLiteral.Token.ValueText, out var parsed))
             {
-                if (int.TryParse(maxLiteral.Token.ValueText, out var parsed))
-                {
-                    maxIterations = parsed;
-                }
+                return parsed;
             }
-            else
+        }
+        else
+        {
+            // Try to resolve constant references via semantic model
+            var constantValue = semanticModel.GetConstantValue(maxIterArg.Expression);
+            if (constantValue.HasValue && constantValue.Value is int intValue)
             {
-                // Try to resolve constant references via semantic model
-                var constantValue = semanticModel.GetConstantValue(maxIterArg.Expression);
-                if (constantValue.HasValue && constantValue.Value is int intValue)
-                {
-                    maxIterations = intValue;
-                }
+                return intValue;
             }
         }
 
-        // Find loop body steps
+        return defaultMaxIterations;
+    }
+
+    /// <summary>
+    /// Finds the direct body steps of a loop (steps prefixed with the loop name but not nested deeper).
+    /// </summary>
+    private static List<(string PhaseName, int Order)> FindDirectBodySteps(
+        string computedPrefix,
+        List<(string PhaseName, int Order)> allSteps)
+    {
         var prefixWithUnderscore = $"{computedPrefix}_";
-        var bodySteps = allSteps
+
+        return allSteps
             .Where(s =>
             {
                 if (!s.PhaseName.StartsWith(prefixWithUnderscore))
@@ -229,44 +291,23 @@ internal static class LoopExtractor
             })
             .OrderBy(s => s.Order)
             .ToList();
+    }
 
-        if (bodySteps.Count == 0)
-        {
-            return false;
-        }
-
-        var firstBodyStepName = bodySteps.First().PhaseName;
-        var lastBodyStepName = bodySteps.Last().PhaseName;
-
-        // Find continuation step
+    /// <summary>
+    /// Finds the continuation step name (the first step after the loop body that is not a child of this loop).
+    /// </summary>
+    private static string? FindContinuationStepName(
+        string computedPrefix,
+        List<(string PhaseName, int Order)> bodySteps,
+        List<(string PhaseName, int Order)> allSteps)
+    {
         var lastBodyOrder = bodySteps.Max(s => s.Order);
         var continuationStep = allSteps
             .Where(s => s.Order > lastBodyOrder && !s.PhaseName.StartsWith($"{computedPrefix}_"))
             .OrderBy(s => s.Order)
             .FirstOrDefault();
 
-        var continuationStepName = continuationStep.PhaseName;
-
-        // Build condition ID
-        var conditionId = $"{workflowName}-{loopName}";
-
-        // Check if a Branch immediately follows this RepeatUntil
-        // Extract the full branch model for direct use in loop exit handler
-        var branchOnExit = ExtractBranchOnExit(invocation, semanticModel, workflowName, cancellationToken);
-        var branchOnExitId = branchOnExit?.BranchId;
-
-        loopModel = new LoopModel(
-            LoopName: loopName,
-            ConditionId: conditionId,
-            MaxIterations: maxIterations,
-            FirstBodyStepName: firstBodyStepName,
-            LastBodyStepName: lastBodyStepName,
-            ContinuationStepName: continuationStepName,
-            ParentLoopName: parentLoopName,
-            BranchOnExitId: branchOnExitId,
-            BranchOnExit: branchOnExit);
-
-        return true;
+        return continuationStep.PhaseName;
     }
 
     /// <summary>
@@ -392,67 +433,96 @@ internal static class LoopExtractor
 
         if (lambda is not null)
         {
-            // Get the property access from the body
-            var body = lambda switch
-            {
-                SimpleLambdaExpressionSyntax simple => simple.Body,
-                ParenthesizedLambdaExpressionSyntax parens => parens.Body,
-                _ => null
-            };
-
-            if (body is not MemberAccessExpressionSyntax memberAccess)
-            {
-                return false;
-            }
-
-            // Extract property path
-            propertyPath = SyntaxHelper.ExtractPropertyPath(memberAccess);
-
-            // Get the type info for the property
-            var typeInfo = semanticModel.GetTypeInfo(memberAccess);
-            if (typeInfo.Type is INamedTypeSymbol namedType)
-            {
-                typeName = namedType.Name;
-                isEnum = namedType.TypeKind == TypeKind.Enum;
-            }
-            else
-            {
-                typeName = "Object";
-            }
-
-            return !string.IsNullOrEmpty(propertyPath);
+            return TryExtractLambdaDiscriminator(lambda, semanticModel, out propertyPath, out typeName, out isEnum);
         }
 
         // Try to extract method reference: DetermineOutcome (IdentifierNameSyntax)
         if (discriminatorArg.Expression is IdentifierNameSyntax identifier)
         {
-            propertyPath = identifier.Identifier.Text;
-            isMethod = true;
-
-            // Get the method symbol to determine return type
-            var symbolInfo = semanticModel.GetSymbolInfo(identifier);
-            if (symbolInfo.Symbol is IMethodSymbol methodSymbol)
-            {
-                var returnType = methodSymbol.ReturnType;
-                if (returnType is INamedTypeSymbol returnNamedType)
-                {
-                    typeName = returnNamedType.Name;
-                    isEnum = returnNamedType.TypeKind == TypeKind.Enum;
-                }
-                else
-                {
-                    typeName = returnType.Name;
-                }
-            }
-            else
-            {
-                typeName = "Object";
-            }
-
-            return !string.IsNullOrEmpty(propertyPath);
+            return TryExtractMethodReferenceDiscriminator(identifier, semanticModel, out propertyPath, out typeName, out isEnum, out isMethod);
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a lambda expression (state => state.Property).
+    /// </summary>
+    private static bool TryExtractLambdaDiscriminator(
+        LambdaExpressionSyntax lambda,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum)
+    {
+        propertyPath = string.Empty;
+        typeName = string.Empty;
+        isEnum = false;
+
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body,
+            ParenthesizedLambdaExpressionSyntax parens => parens.Body,
+            _ => null
+        };
+
+        if (body is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return false;
+        }
+
+        propertyPath = SyntaxHelper.ExtractPropertyPath(memberAccess);
+
+        var typeInfo = semanticModel.GetTypeInfo(memberAccess);
+        if (typeInfo.Type is INamedTypeSymbol namedType)
+        {
+            typeName = namedType.Name;
+            isEnum = namedType.TypeKind == TypeKind.Enum;
+        }
+        else
+        {
+            typeName = "Object";
+        }
+
+        return !string.IsNullOrEmpty(propertyPath);
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a method reference identifier (e.g., DetermineOutcome).
+    /// </summary>
+    private static bool TryExtractMethodReferenceDiscriminator(
+        IdentifierNameSyntax identifier,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum,
+        out bool isMethod)
+    {
+        propertyPath = identifier.Identifier.Text;
+        typeName = string.Empty;
+        isEnum = false;
+        isMethod = true;
+
+        var symbolInfo = semanticModel.GetSymbolInfo(identifier);
+        if (symbolInfo.Symbol is IMethodSymbol methodSymbol)
+        {
+            var returnType = methodSymbol.ReturnType;
+            if (returnType is INamedTypeSymbol returnNamedType)
+            {
+                typeName = returnNamedType.Name;
+                isEnum = returnNamedType.TypeKind == TypeKind.Enum;
+            }
+            else
+            {
+                typeName = returnType.Name;
+            }
+        }
+        else
+        {
+            typeName = "Object";
+        }
+
+        return !string.IsNullOrEmpty(propertyPath);
     }
 
     /// <summary>
@@ -467,45 +537,15 @@ internal static class LoopExtractor
     {
         caseModel = default!;
 
-        var expression = caseArg.Expression;
-
-        if (expression is not InvocationExpressionSyntax caseInvocation)
+        if (caseArg.Expression is not InvocationExpressionSyntax caseInvocation)
         {
             return false;
         }
 
-        // Check if it's When() or Otherwise()
-        var isOtherwise = SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise");
-        var isWhen = SyntaxHelper.IsMethodCall(caseInvocation, "When");
-
-        if (!isWhen && !isOtherwise)
+        // Extract the case value and path builder argument from When() or Otherwise()
+        if (!TryExtractCaseArguments(caseInvocation, out var caseValueLiteral, out var pathBuilderArg))
         {
             return false;
-        }
-
-        var caseArgs = caseInvocation.ArgumentList.Arguments;
-        string caseValueLiteral;
-        ArgumentSyntax pathBuilderArg;
-
-        if (isOtherwise)
-        {
-            if (caseArgs.Count < 1)
-            {
-                return false;
-            }
-
-            caseValueLiteral = "default";
-            pathBuilderArg = caseArgs[0];
-        }
-        else
-        {
-            if (caseArgs.Count < 2)
-            {
-                return false;
-            }
-
-            caseValueLiteral = ExtractCaseValueLiteral(caseArgs[0]);
-            pathBuilderArg = caseArgs[1];
         }
 
         // Extract path builder lambda
@@ -539,6 +579,50 @@ internal static class LoopExtractor
             StepNames: stepNames,
             IsTerminal: isTerminal);
 
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the case value literal and path builder argument from a When() or Otherwise() invocation.
+    /// </summary>
+    private static bool TryExtractCaseArguments(
+        InvocationExpressionSyntax caseInvocation,
+        out string caseValueLiteral,
+        out ArgumentSyntax pathBuilderArg)
+    {
+        caseValueLiteral = string.Empty;
+        pathBuilderArg = default!;
+
+        var isOtherwise = SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise");
+        var isWhen = SyntaxHelper.IsMethodCall(caseInvocation, "When");
+
+        if (!isWhen && !isOtherwise)
+        {
+            return false;
+        }
+
+        var caseArgs = caseInvocation.ArgumentList.Arguments;
+
+        if (isOtherwise)
+        {
+            if (caseArgs.Count < 1)
+            {
+                return false;
+            }
+
+            caseValueLiteral = "default";
+            pathBuilderArg = caseArgs[0];
+            return true;
+        }
+
+        // isWhen
+        if (caseArgs.Count < 2)
+        {
+            return false;
+        }
+
+        caseValueLiteral = ExtractCaseValueLiteral(caseArgs[0]);
+        pathBuilderArg = caseArgs[1];
         return true;
     }
 
