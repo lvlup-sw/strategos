@@ -51,7 +51,7 @@ public sealed class InMemoryArtifactStore : IArtifactStore
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class
-    /// with default settings (unbounded, no logging).
+    /// with default settings (10,000 item capacity, no logging).
     /// </summary>
     public InMemoryArtifactStore()
         : this(
@@ -70,8 +70,12 @@ public sealed class InMemoryArtifactStore : IArtifactStore
         ILogger<InMemoryArtifactStore> logger,
         IOptions<InMemoryArtifactStoreOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        ArgumentNullException.ThrowIfNull(options, nameof(options));
+
         _logger = logger;
         var storeOptions = options.Value;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(storeOptions.MaxCapacity, nameof(storeOptions.MaxCapacity));
         _artifacts = new ConcurrentLru<string, string>(storeOptions.MaxCapacity);
     }
 

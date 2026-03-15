@@ -58,6 +58,7 @@ public sealed class InMemoryStepExecutionLedger : IStepExecutionLedger
     public InMemoryStepExecutionLedger(TimeProvider timeProvider, IOptions<StepExecutionLedgerOptions>? options, ILogger<InMemoryStepExecutionLedger> logger)
     {
         ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        ArgumentNullException.ThrowIfNull(timeProvider, nameof(timeProvider));
         _timeProvider = timeProvider;
         _logger = logger;
 

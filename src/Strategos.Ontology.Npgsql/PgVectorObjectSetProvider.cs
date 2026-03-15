@@ -81,6 +81,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var dataJson = reader.GetString(1);
@@ -88,6 +89,8 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
             // Convert distance to similarity score (higher = more similar)
             var similarity = ConvertDistanceToSimilarity(distance, expression.Metric);
+
+            rowIndex++;
 
             // Filter by minRelevance
             if (similarity < expression.MinRelevance)
@@ -103,7 +106,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             }
             else
             {
-                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, items.Count);
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
 
@@ -126,8 +129,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         AddTranslatedParameters(cmd, translation.Parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
+            rowIndex++;
             var dataJson = reader.GetString(1);
             var item = JsonSerializer.Deserialize<T>(dataJson);
             if (item is not null)
@@ -136,7 +141,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             }
             else
             {
-                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, items.Count);
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
 
@@ -270,7 +275,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         if (embedding is null || embedding.Length == 0)
         {
             throw new InvalidOperationException(
-                $"ISearchable.Embedding must not be null or empty when storing {typeof(T).Name} items with embeddings.");
+                $"ISearchable.Embedding must not be null or empty for {typeof(T).Name} items.");
         }
 
         if (embedding.Length != _embeddingProvider.Dimensions)

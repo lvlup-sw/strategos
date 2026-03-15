@@ -318,6 +318,7 @@ internal static class BranchExtractor
         if (body is InvocationExpressionSyntax invocationBody &&
             invocationBody.Expression is MemberAccessExpressionSyntax invokedMember)
         {
+            isMethod = true;
             return TryExtractMethodInvocationDiscriminator(invocationBody, invokedMember, semanticModel, out propertyPath, out typeName, out isEnum);
         }
 

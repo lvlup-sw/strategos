@@ -73,6 +73,11 @@ public sealed class InMemoryArtifactStoreLruTests
         var lastUri = uris[^1];
         var lastResult = await store.RetrieveAsync<TestArtifact>(lastUri, CancellationToken.None).ConfigureAwait(false);
         await Assert.That(lastResult.Data).IsEqualTo("data-9");
+
+        // Assert - oldest items should have been evicted
+        var firstUri = uris[0];
+        await Assert.That(async () => await store.RetrieveAsync<TestArtifact>(firstUri, CancellationToken.None))
+            .Throws<KeyNotFoundException>();
     }
 
     /// <summary>

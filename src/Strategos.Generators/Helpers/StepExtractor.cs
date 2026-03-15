@@ -994,7 +994,8 @@ internal static class StepExtractor
             return false;
         }
 
-        stepModel = StepModel.Create(stepName, stepTypeName, instanceName: null, loopName: loopName);
+        var instanceName = ExtractInstanceName(invocation);
+        stepModel = StepModel.Create(stepName, stepTypeName, instanceName: instanceName, loopName: loopName);
         return true;
     }
 
@@ -1035,14 +1036,34 @@ internal static class StepExtractor
             return false;
         }
 
+        var instanceName = ExtractInstanceName(invocation);
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
-            instanceName: null,
+            instanceName: instanceName,
             loopName: loopName,
             validationPredicate: validationPredicate,
             validationErrorMessage: validationErrorMessage);
         return true;
+    }
+
+    /// <summary>
+    /// Extracts the instance name from a string literal argument (e.g., Then&lt;T&gt;("alias")).
+    /// </summary>
+    private static string? ExtractInstanceName(InvocationExpressionSyntax invocation)
+    {
+        var arguments = invocation.ArgumentList?.Arguments;
+        if (arguments is not null && arguments.Value.Count > 0)
+        {
+            var firstArg = arguments.Value[0];
+            if (firstArg.Expression is LiteralExpressionSyntax literal
+                && literal.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StringLiteralExpression))
+            {
+                return literal.Token.ValueText;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
