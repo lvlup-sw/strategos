@@ -162,8 +162,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         AddTranslatedParameters(cmd, translation.Parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
+            rowIndex++;
             var dataJson = reader.GetString(1);
             var item = JsonSerializer.Deserialize<T>(dataJson);
             if (item is not null)
@@ -172,7 +174,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             }
             else
             {
-                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data during streaming", typeof(T).Name);
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex} during streaming", typeof(T).Name, rowIndex);
             }
         }
     }
@@ -275,7 +277,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         if (embedding is null || embedding.Length == 0)
         {
             throw new InvalidOperationException(
-                $"ISearchable.Embedding must not be null or empty for {typeof(T).Name} items.");
+                $"Embedding must not be null or empty for {typeof(T).Name}.");
         }
 
         if (embedding.Length != _embeddingProvider.Dimensions)

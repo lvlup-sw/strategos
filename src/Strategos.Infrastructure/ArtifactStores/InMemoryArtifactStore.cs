@@ -12,18 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Strategos.Infrastructure.ArtifactStores;
 
 /// <summary>
-/// Configuration options for <see cref="InMemoryArtifactStore"/>.
-/// </summary>
-public sealed class InMemoryArtifactStoreOptions
-{
-    /// <summary>
-    /// Gets or sets the maximum number of artifacts to store.
-    /// When the capacity is exceeded, the least recently used artifacts are evicted.
-    /// </summary>
-    public int MaxCapacity { get; set; } = 10_000;
-}
-
-/// <summary>
 /// In-memory implementation of <see cref="IArtifactStore"/> for testing and development.
 /// </summary>
 /// <remarks>
@@ -50,8 +38,8 @@ public sealed class InMemoryArtifactStore : IArtifactStore
     private long _counter;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class
-    /// with default settings (10,000 item capacity, no logging).
+    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class.
+    /// Uses default settings (10,000 item capacity, no logging).
     /// </summary>
     public InMemoryArtifactStore()
         : this(
@@ -61,8 +49,8 @@ public sealed class InMemoryArtifactStore : IArtifactStore
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class
-    /// with configurable capacity and logging.
+    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class.
+    /// Uses configurable capacity and logging.
     /// </summary>
     /// <param name="logger">The logger instance.</param>
     /// <param name="options">Configuration options for cache behavior.</param>
