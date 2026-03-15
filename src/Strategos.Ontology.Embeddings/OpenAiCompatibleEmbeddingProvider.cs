@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Strategos.Ontology.Embeddings;
 
@@ -11,6 +12,7 @@ namespace Strategos.Ontology.Embeddings;
 public sealed class OpenAiCompatibleEmbeddingProvider : IEmbeddingProvider
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<OpenAiCompatibleEmbeddingProvider> _logger;
     private readonly OpenAiEmbeddingOptions _options;
 
     /// <summary>
@@ -18,13 +20,16 @@ public sealed class OpenAiCompatibleEmbeddingProvider : IEmbeddingProvider
     /// </summary>
     /// <param name="httpClient">The HTTP client to use for API calls.</param>
     /// <param name="options">The configuration options.</param>
-    public OpenAiCompatibleEmbeddingProvider(HttpClient httpClient, IOptions<OpenAiEmbeddingOptions> options)
+    /// <param name="logger">The logger instance.</param>
+    public OpenAiCompatibleEmbeddingProvider(HttpClient httpClient, IOptions<OpenAiEmbeddingOptions> options, ILogger<OpenAiCompatibleEmbeddingProvider> logger)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
 
         _httpClient = httpClient;
         _options = options.Value;
+        _logger = logger;
 
         ArgumentOutOfRangeException.ThrowIfLessThan(_options.BatchSize, 1);
     }
@@ -91,6 +96,8 @@ public sealed class OpenAiCompatibleEmbeddingProvider : IEmbeddingProvider
         var endpoint = _options.Endpoint.TrimEnd('/');
         var requestUri = $"{endpoint}/embeddings";
 
+        _logger.LogDebug("Sending embedding batch request for {InputCount} inputs to {Endpoint}", inputs.Length, requestUri);
+
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
         request.Content = JsonContent.Create(requestBody, EmbeddingsJsonContext.Default.EmbeddingRequest);
@@ -100,6 +107,7 @@ public sealed class OpenAiCompatibleEmbeddingProvider : IEmbeddingProvider
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogWarning("Embedding API request failed with status {StatusCode}: {ErrorBody}", (int)response.StatusCode, errorBody);
             throw new HttpRequestException(
                 $"Embedding API request failed with status {(int)response.StatusCode}: {errorBody}",
                 inner: null,

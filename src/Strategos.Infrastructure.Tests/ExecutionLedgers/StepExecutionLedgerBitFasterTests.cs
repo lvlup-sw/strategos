@@ -8,6 +8,7 @@ using Strategos.Infrastructure.ExecutionLedgers;
 
 using MemoryPack;
 
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Strategos.Infrastructure.Tests.ExecutionLedgers;
@@ -38,7 +39,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "cached-value" };
 
         // Act
@@ -113,7 +114,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
     public async Task InMemoryStepExecutionLedger_WithoutOptions_UsesConcurrentDictionary()
     {
         // Arrange - use existing constructor without options
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System);
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "cached-value" };
 
         // Act
@@ -157,7 +158,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 3
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
 
         // Act - Add 4 entries (exceeding capacity of 3)
         for (var i = 1; i <= 4; i++)
@@ -188,7 +189,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "test-value" };
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -216,7 +217,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result1 = new TestResult { Value = "first" };
         var result2 = new TestResult { Value = "second" };
 
@@ -246,7 +247,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var input = new TestInput { Id = 42, Name = "workflow-step" };
         var result = new TestResult { Value = "computed-result" };
 
@@ -277,7 +278,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "boundary-test" };
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -307,7 +308,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "boundary-test" };
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -336,7 +337,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100
         };
-        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(timeProvider, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "persistent-value" };
 
         // Act
@@ -372,7 +373,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 3
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result1 = new TestResult { Value = "first" };
         var result2 = new TestResult { Value = "second" };
         var result3 = new TestResult { Value = "third" };
@@ -413,7 +414,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
         };
 
         // Act & Assert - BitFaster throws when capacity < 3
-        await Assert.That(() => new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options)))
+        await Assert.That(() => new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance))
             .Throws<ArgumentOutOfRangeException>();
     }
 
@@ -429,7 +430,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 5,
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
 
         // Act - Add exactly 5 entries (matching capacity)
         for (var i = 1; i <= 5; i++)
@@ -463,7 +464,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 1000,
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
         const int taskCount = 100;
 
         // Act - Execute concurrent writes
@@ -502,7 +503,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
             UseBitFasterCache = true,
             CacheCapacity = 100,
         };
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create(options), NullLogger<InMemoryStepExecutionLedger>.Instance);
 
         // Pre-populate some entries
         for (var i = 0; i < 50; i++)
@@ -541,7 +542,7 @@ public sealed partial class StepExecutionLedgerBitFasterTests
     public async Task InMemoryStepExecutionLedger_WithNullOptionsValue_UsesDictionary()
     {
         // Arrange - Pass IOptions with null Value
-        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create<StepExecutionLedgerOptions>(null!));
+        var ledger = new InMemoryStepExecutionLedger(TimeProvider.System, Options.Create<StepExecutionLedgerOptions>(null!), NullLogger<InMemoryStepExecutionLedger>.Instance);
         var result = new TestResult { Value = "test-value" };
 
         // Act

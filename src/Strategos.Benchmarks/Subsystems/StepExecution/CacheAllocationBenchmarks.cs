@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.ExecutionLedgers;
 
@@ -46,7 +48,7 @@ public class CacheAllocationBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _ledger = new InMemoryStepExecutionLedger(TimeProvider.System);
+        _ledger = new InMemoryStepExecutionLedger(TimeProvider.System, NullLogger<InMemoryStepExecutionLedger>.Instance);
         _stepName = "SteadyStateStep";
         _inputHash = "steadystate123";
 

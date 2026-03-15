@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.Selection;
 using Strategos.Primitives;
@@ -50,7 +52,7 @@ public class BeliefStoreBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _store = new InMemoryBeliefStore();
+        _store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Distribute beliefs across agents and categories
         // Aim for ~5 categories per agent

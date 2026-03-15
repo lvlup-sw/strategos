@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -12,15 +14,19 @@ public sealed class OntologyQueryTool
     private readonly OntologyGraph _graph;
     private readonly IObjectSetProvider _objectSetProvider;
     private readonly IEventStreamProvider _eventStreamProvider;
+    private readonly ILogger<OntologyQueryTool> _logger;
 
     public OntologyQueryTool(
         OntologyGraph graph,
         IObjectSetProvider objectSetProvider,
-        IEventStreamProvider eventStreamProvider)
+        IEventStreamProvider eventStreamProvider,
+        ILogger<OntologyQueryTool> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
         _graph = graph;
         _objectSetProvider = objectSetProvider;
         _eventStreamProvider = eventStreamProvider;
+        _logger = logger;
     }
 
     /// <summary>
@@ -155,27 +161,35 @@ public sealed class OntologyQueryTool
         return expression;
     }
 
-    private static DistanceMetric ParseDistanceMetric(string? distanceMetric)
+    private DistanceMetric ParseDistanceMetric(string? distanceMetric)
     {
         if (distanceMetric is null)
         {
             return DistanceMetric.Cosine;
         }
 
-        return Enum.TryParse<DistanceMetric>(distanceMetric, ignoreCase: true, out var result)
-            ? result
-            : DistanceMetric.Cosine;
+        if (Enum.TryParse<DistanceMetric>(distanceMetric, ignoreCase: true, out var result))
+        {
+            return result;
+        }
+
+        _logger.LogWarning("Failed to parse distance metric {DistanceMetric}, defaulting to Cosine", distanceMetric);
+        return DistanceMetric.Cosine;
     }
 
-    private static ObjectSetInclusion? ParseInclusion(string? include)
+    private ObjectSetInclusion? ParseInclusion(string? include)
     {
         if (include is null)
         {
             return null;
         }
 
-        return Enum.TryParse<ObjectSetInclusion>(include, ignoreCase: true, out var result)
-            ? result
-            : null;
+        if (Enum.TryParse<ObjectSetInclusion>(include, ignoreCase: true, out var result))
+        {
+            return result;
+        }
+
+        _logger.LogWarning("Failed to parse inclusion value {Include}, defaulting to null", include);
+        return null;
     }
 }

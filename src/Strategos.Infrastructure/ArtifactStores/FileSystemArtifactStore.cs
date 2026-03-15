@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging;
+
 using Strategos.Infrastructure.Configuration;
 
 namespace Strategos.Infrastructure.ArtifactStores;
@@ -28,19 +30,23 @@ namespace Strategos.Infrastructure.ArtifactStores;
 public sealed class FileSystemArtifactStore : IArtifactStore
 {
     private readonly FileSystemArtifactStoreOptions _options;
+    private readonly ILogger<FileSystemArtifactStore> _logger;
     private long _counter;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileSystemArtifactStore"/> class.
     /// </summary>
     /// <param name="options">The configuration options.</param>
+    /// <param name="logger">The logger instance.</param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="options"/> is null.
+    /// Thrown when <paramref name="options"/> or <paramref name="logger"/> is null.
     /// </exception>
-    public FileSystemArtifactStore(IOptions<FileSystemArtifactStoreOptions> options)
+    public FileSystemArtifactStore(IOptions<FileSystemArtifactStoreOptions> options, ILogger<FileSystemArtifactStore> logger)
     {
         ArgumentNullException.ThrowIfNull(options, nameof(options));
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
         _options = options.Value;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -65,6 +71,8 @@ public sealed class FileSystemArtifactStore : IArtifactStore
 
         var json = JsonSerializer.Serialize(artifact);
         await File.WriteAllTextAsync(filePath, json, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogDebug("Stored artifact {ArtifactType} to {FilePath} in category {Category}", typeof(T).Name, filePath, category);
 
         return new Uri(filePath);
     }
@@ -92,6 +100,8 @@ public sealed class FileSystemArtifactStore : IArtifactStore
         var artifact = JsonSerializer.Deserialize<T>(json)
             ?? throw new InvalidOperationException($"Failed to deserialize artifact: {reference}");
 
+        _logger.LogDebug("Retrieved artifact {ArtifactType} from {FilePath}", typeof(T).Name, filePath);
+
         return artifact;
     }
 
@@ -111,6 +121,7 @@ public sealed class FileSystemArtifactStore : IArtifactStore
         if (File.Exists(filePath))
         {
             File.Delete(filePath);
+            _logger.LogDebug("Deleted artifact at {FilePath}", filePath);
         }
 
         return ValueTask.CompletedTask;

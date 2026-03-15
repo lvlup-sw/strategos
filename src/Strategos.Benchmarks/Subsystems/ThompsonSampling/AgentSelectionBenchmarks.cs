@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Benchmarks.Fixtures;
 using Strategos.Infrastructure.Selection;
 using Strategos.Selection;
@@ -52,7 +54,7 @@ public class AgentSelectionBenchmarks
         var beliefStore = TestAgents.CreatePopulatedBeliefStore(CandidateCount, categoriesPerAgent: 5);
 
         // Create selector with a fixed seed for reproducible benchmarks
-        _selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), randomSeed: 42);
+        _selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Create agent IDs
         _agentIds = TestAgents.CreateAgentIds(CandidateCount);

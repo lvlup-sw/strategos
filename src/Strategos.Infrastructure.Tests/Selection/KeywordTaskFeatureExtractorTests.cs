@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.Selection;
 using Strategos.Selection;
@@ -17,7 +19,7 @@ namespace Strategos.Infrastructure.Tests.Selection;
 [Property("Category", "Unit")]
 public class KeywordTaskFeatureExtractorTests
 {
-    private readonly ITaskFeatureExtractor _extractor = new KeywordTaskFeatureExtractor();
+    private readonly ITaskFeatureExtractor _extractor = new KeywordTaskFeatureExtractor(NullLogger<KeywordTaskFeatureExtractor>.Instance);
 
     // =============================================================================
     // A. Category Extraction Tests

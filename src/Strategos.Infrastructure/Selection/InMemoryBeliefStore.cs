@@ -6,6 +6,8 @@
 
 using System.Collections.Concurrent;
 
+using Microsoft.Extensions.Logging;
+
 using Strategos.Abstractions;
 using Strategos.Primitives;
 using Strategos.Selection;
@@ -40,6 +42,7 @@ namespace Strategos.Infrastructure.Selection;
 /// </remarks>
 public sealed class InMemoryBeliefStore : IBeliefStore
 {
+    private readonly ILogger<InMemoryBeliefStore> _logger;
     private readonly ConcurrentDictionary<string, AgentBelief> _beliefs = new();
 
     /// <summary>
@@ -63,6 +66,19 @@ public sealed class InMemoryBeliefStore : IBeliefStore
     /// Lock object for synchronizing access to HashSet instances in _byCategory.
     /// </summary>
     private readonly object _categoryLock = new();
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryBeliefStore"/> class.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="logger"/> is null.
+    /// </exception>
+    public InMemoryBeliefStore(ILogger<InMemoryBeliefStore> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        _logger = logger;
+    }
 
     /// <inheritdoc/>
     public ValueTask<Result<AgentBelief>> GetBeliefAsync(

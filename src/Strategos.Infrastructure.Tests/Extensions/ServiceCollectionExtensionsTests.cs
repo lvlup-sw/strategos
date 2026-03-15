@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Infrastructure.Configuration;
 using Strategos.Infrastructure.Extensions;
 
@@ -33,6 +35,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         services.AddInMemoryArtifactStore();
@@ -52,6 +55,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         var result = services.AddInMemoryArtifactStore();
@@ -68,6 +72,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddInMemoryArtifactStore();
         var provider = services.BuildServiceProvider();
 
@@ -91,6 +96,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         services.AddFileSystemArtifactStore(options =>
@@ -113,6 +119,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         services.AddFileSystemArtifactStore(options =>
@@ -137,6 +144,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         var result = services.AddFileSystemArtifactStore(o => o.BasePath = "/tmp");
@@ -157,6 +165,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         services.AddInMemoryStepExecutionLedger();
@@ -176,6 +185,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         var result = services.AddInMemoryStepExecutionLedger();
@@ -192,6 +202,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddInMemoryStepExecutionLedger();
         var provider = services.BuildServiceProvider();
 
@@ -215,6 +226,7 @@ public sealed class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // Act
         services
