@@ -52,7 +52,7 @@ public class AgentSelectionBenchmarks
         var beliefStore = TestAgents.CreatePopulatedBeliefStore(CandidateCount, categoriesPerAgent: 5);
 
         // Create selector with a fixed seed for reproducible benchmarks
-        _selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        _selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), randomSeed: 42);
 
         // Create agent IDs
         _agentIds = TestAgents.CreateAgentIds(CandidateCount);
