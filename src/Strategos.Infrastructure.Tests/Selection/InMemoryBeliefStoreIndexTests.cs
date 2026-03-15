@@ -6,6 +6,8 @@
 
 using System.Reflection;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Infrastructure.Selection;
 
 namespace Strategos.Infrastructure.Tests.Selection;
@@ -36,7 +38,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task AddToIndices_HashSet_EliminatesByteSentinel()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act - Add a belief to trigger index population
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
@@ -100,7 +102,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task HashSetIndices_ConcurrentAccess_MaintainsThreadSafety()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int taskCount = 100;
         const int categoriesPerTask = 10;
 
@@ -144,7 +146,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task HashSetIndices_SimultaneousReadsWrites_NoExceptions()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 50;
         var exceptions = new List<Exception>();
 
@@ -223,7 +225,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task IndexConsistency_MultipleUpdatesToSameBelief_NoIndexDuplicates()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int updateCount = 50;
 
         // Act - Update the same belief many times
@@ -257,7 +259,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task ConcurrentUpdates_DifferentAgents_IndicesRemainIsolated()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int agentCount = 50;
         const int updatesPerAgent = 20;
 
@@ -296,7 +298,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task SaveBeliefAsync_ReplacesExisting_IndicesRemainConsistent()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         var initialBelief = Strategos.Selection.AgentBelief.CreatePrior("agent-1", "category-1");
         await store.SaveBeliefAsync(initialBelief).ConfigureAwait(false);
 
@@ -323,7 +325,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task LargeScaleIndex_ManyAgentsAndCategories_IndicesCorrect()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int agentCount = 200;
         const int categoryCount = 50;
 
@@ -361,7 +363,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task GetBeliefAsync_CreatesNewPrior_AddsToIndices()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act - GetBeliefAsync creates a prior when belief doesn't exist
         var result = await store.GetBeliefAsync("new-agent", "new-category").ConfigureAwait(false);
@@ -389,7 +391,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task ConcurrentReadsWrites_OverlappingKeys_NoDataCorruption()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int taskCount = 100;
         var exceptions = new List<Exception>();
         var successCounts = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
@@ -457,7 +459,7 @@ public sealed class InMemoryBeliefStoreIndexTests
     public async Task MixedGetAndUpdate_SameBelief_IndexRemainsSingleEntry()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int operationCount = 100;
 
         // Act - Interleave Get and Update operations

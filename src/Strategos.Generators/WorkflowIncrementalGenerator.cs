@@ -118,6 +118,9 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             return new WorkflowGeneratorResult(null, diagnostics);
         }
 
+        // Safe: IsNullOrWhiteSpace guard above ensures workflowName is non-null
+        var validName = workflowName!;
+
         // Get namespace from symbol
         var symbol = context.TargetSymbol as INamedTypeSymbol;
         var ns = symbol?.ContainingNamespace?.ToDisplayString();
@@ -127,12 +130,15 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(
                 WorkflowDiagnostics.InvalidNamespace,
                 location,
-                workflowName));
+                validName));
             return new WorkflowGeneratorResult(null, diagnostics);
         }
 
+        // Safe: IsNullOrEmpty guard above ensures ns is non-null
+        var validNs = ns!;
+
         // Convert kebab-case to PascalCase for enum name
-        var pascalName = ToPascalCase(workflowName!);
+        var pascalName = ToPascalCase(validName);
 
         // Parse step names from the DSL definition
         var stepNames = FluentDslParser.ExtractStepNames(
@@ -153,11 +159,11 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             ct);
 
         // Extract loop models for loop handler generation
-        // Use original workflowName (not pascalName) to match runtime condition ID format
+        // Use original validName (not pascalName) to match runtime condition ID format
         var loopModels = FluentDslParser.ExtractLoopModels(
             context.TargetNode,
             context.SemanticModel,
-            workflowName!,
+            validName,
             ct);
 
         // Extract branch models for branch handler generation
@@ -185,7 +191,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         var approvalModels = FluentDslParser.ExtractApprovalModels(
             context.TargetNode,
             context.SemanticModel,
-            workflowName!,
+            validName,
             ct);
 
         // Include failure handler step names and step models in the overall lists
@@ -411,7 +417,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(
                 WorkflowDiagnostics.NoStepsFound,
                 location,
-                workflowName));
+                validName));
         }
 
         // Context-aware duplicate step detection
@@ -440,7 +446,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 WorkflowDiagnostics.DuplicateStepName,
                 location,
                 duplicate,
-                workflowName));
+                validName));
         }
 
         // Validate workflow starts with StartWith<T>()
@@ -455,7 +461,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(
                 WorkflowDiagnostics.MissingStartWith,
                 location,
-                workflowName,
+                validName,
                 firstMethodName));
         }
 
@@ -467,7 +473,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(
                 WorkflowDiagnostics.ForkWithoutJoin,
                 location,
-                workflowName));
+                validName));
         }
 
         // Validate workflow ends with Finally<T>() (Warning only - does not block generation)
@@ -482,7 +488,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(
                 WorkflowDiagnostics.MissingFinally,
                 location,
-                workflowName));
+                validName));
         }
 
         // Validate all loops have non-empty bodies
@@ -498,7 +504,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 WorkflowDiagnostics.LoopWithoutBody,
                 location,
                 emptyLoopName,
-                workflowName));
+                validName));
         }
 
         // Return null model (no code generation) when there are errors
@@ -512,9 +518,9 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         }
 
         var model = new WorkflowModel(
-            WorkflowName: workflowName!,
+            WorkflowName: validName,
             PascalName: pascalName,
-            Namespace: ns!,
+            Namespace: validNs,
             StepNames: stepNames,
             StateTypeName: stateTypeName,
             Version: version,

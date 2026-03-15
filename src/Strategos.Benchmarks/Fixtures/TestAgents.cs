@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Infrastructure.Selection;
 using Strategos.Selection;
 
@@ -50,7 +52,7 @@ public static class TestAgents
     /// </remarks>
     public static InMemoryBeliefStore CreatePopulatedBeliefStore(int agentCount, int categoriesPerAgent)
     {
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         for (int a = 0; a < agentCount; a++)
         {

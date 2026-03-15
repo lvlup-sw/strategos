@@ -4,6 +4,11 @@
 // </copyright>
 // =============================================================================
 
+using BitFaster.Caching.Lru;
+
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Strategos.Infrastructure.ArtifactStores;
 
 /// <summary>
@@ -11,23 +16,56 @@ namespace Strategos.Infrastructure.ArtifactStores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This implementation stores artifacts in memory using a concurrent dictionary.
-/// It is suitable for testing, development, and scenarios where durability is not required.
+/// This implementation stores artifacts in memory using BitFaster's <see cref="ConcurrentLru{K, V}"/>
+/// with a configurable bounded capacity. When the capacity is exceeded, the least recently used
+/// artifacts are evicted.
 /// </para>
 /// <para>
 /// For production use with durability requirements, use <see cref="FileSystemArtifactStore"/>
 /// or a cloud-based implementation.
 /// </para>
 /// <list type="bullet">
-///   <item><description>Thread-safe via <see cref="ConcurrentDictionary{TKey, TValue}"/></description></item>
+///   <item><description>Thread-safe via <see cref="ConcurrentLru{K, V}"/></description></item>
+///   <item><description>Bounded capacity with LRU eviction</description></item>
 ///   <item><description>Uses JSON serialization for artifact storage</description></item>
 ///   <item><description>URI scheme: memory://artifacts/{category}/{id}</description></item>
 /// </list>
 /// </remarks>
 public sealed class InMemoryArtifactStore : IArtifactStore
 {
-    private readonly ConcurrentDictionary<string, string> _artifacts = new();
+    private readonly ConcurrentLru<string, string> _artifacts;
+    private readonly ILogger<InMemoryArtifactStore> _logger;
     private long _counter;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class.
+    /// Uses default settings (10,000 item capacity, no logging).
+    /// </summary>
+    public InMemoryArtifactStore()
+        : this(
+            NullLogger<InMemoryArtifactStore>.Instance,
+            Options.Create(new InMemoryArtifactStoreOptions()))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryArtifactStore"/> class.
+    /// Uses configurable capacity and logging.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="options">Configuration options for cache behavior.</param>
+    public InMemoryArtifactStore(
+        ILogger<InMemoryArtifactStore> logger,
+        IOptions<InMemoryArtifactStoreOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        ArgumentNullException.ThrowIfNull(options, nameof(options));
+
+        _logger = logger;
+        var storeOptions = options.Value;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(storeOptions.MaxCapacity, nameof(storeOptions.MaxCapacity));
+        _artifacts = new ConcurrentLru<string, string>(storeOptions.MaxCapacity);
+    }
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException">
@@ -46,7 +84,14 @@ public sealed class InMemoryArtifactStore : IArtifactStore
         var key = $"{category}/{id}";
         var json = JsonSerializer.Serialize(artifact);
 
-        _artifacts[key] = json;
+        if (_artifacts.Count >= _artifacts.Capacity)
+        {
+            _logger.LogWarning(
+                "InMemoryArtifactStore at capacity ({Capacity}). Least recently used items will be evicted.",
+                _artifacts.Capacity);
+        }
+
+        _artifacts.AddOrUpdate(key, json);
 
         var uri = new Uri($"memory://artifacts/{key}");
         return new ValueTask<Uri>(uri);
@@ -66,7 +111,7 @@ public sealed class InMemoryArtifactStore : IArtifactStore
 
         var key = ExtractKeyFromUri(reference);
 
-        if (!_artifacts.TryGetValue(key, out var json))
+        if (!_artifacts.TryGet(key, out var json))
         {
             throw new KeyNotFoundException($"Artifact not found: {reference}");
         }
@@ -89,7 +134,7 @@ public sealed class InMemoryArtifactStore : IArtifactStore
         ArgumentNullException.ThrowIfNull(reference, nameof(reference));
 
         var key = ExtractKeyFromUri(reference);
-        _artifacts.TryRemove(key, out _);
+        _artifacts.TryRemove(key);
 
         return ValueTask.CompletedTask;
     }

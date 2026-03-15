@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging;
+
 using Strategos.Abstractions;
 using Strategos.Selection;
 
@@ -29,6 +31,21 @@ namespace Strategos.Infrastructure.Selection;
 /// </remarks>
 public sealed class KeywordTaskFeatureExtractor : ITaskFeatureExtractor
 {
+    private readonly ILogger<KeywordTaskFeatureExtractor> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KeywordTaskFeatureExtractor"/> class.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="logger"/> is null.
+    /// </exception>
+    public KeywordTaskFeatureExtractor(ILogger<KeywordTaskFeatureExtractor> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        _logger = logger;
+    }
+
     /// <summary>
     /// Maximum description length for complexity normalization.
     /// </summary>
@@ -98,6 +115,7 @@ public sealed class KeywordTaskFeatureExtractor : ITaskFeatureExtractor
 
         if (string.IsNullOrWhiteSpace(description))
         {
+            _logger.LogWarning("Empty or null task description provided, returning default features");
             return TaskFeatures.CreateDefault();
         }
 

@@ -8,6 +8,8 @@ using BitFaster.Caching.Lru;
 
 using MemoryPack;
 
+using Microsoft.Extensions.Logging;
+
 namespace Strategos.Infrastructure.ExecutionLedgers;
 
 /// <summary>
@@ -33,14 +35,16 @@ public sealed class InMemoryStepExecutionLedger : IStepExecutionLedger
 {
     private readonly ICacheStore _cacheStore;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<InMemoryStepExecutionLedger> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryStepExecutionLedger"/> class
     /// with default settings using <see cref="ConcurrentDictionary{TKey, TValue}"/>.
     /// </summary>
     /// <param name="timeProvider">The time provider for TTL calculations.</param>
-    public InMemoryStepExecutionLedger(TimeProvider timeProvider)
-        : this(timeProvider, null)
+    /// <param name="logger">The logger instance.</param>
+    public InMemoryStepExecutionLedger(TimeProvider timeProvider, ILogger<InMemoryStepExecutionLedger> logger)
+        : this(timeProvider, null, logger)
     {
     }
 
@@ -50,9 +54,13 @@ public sealed class InMemoryStepExecutionLedger : IStepExecutionLedger
     /// </summary>
     /// <param name="timeProvider">The time provider for TTL calculations.</param>
     /// <param name="options">Optional configuration options for cache behavior.</param>
-    public InMemoryStepExecutionLedger(TimeProvider timeProvider, IOptions<StepExecutionLedgerOptions>? options)
+    /// <param name="logger">The logger instance.</param>
+    public InMemoryStepExecutionLedger(TimeProvider timeProvider, IOptions<StepExecutionLedgerOptions>? options, ILogger<InMemoryStepExecutionLedger> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
+        ArgumentNullException.ThrowIfNull(timeProvider, nameof(timeProvider));
         _timeProvider = timeProvider;
+        _logger = logger;
 
         var ledgerOptions = options?.Value ?? new StepExecutionLedgerOptions();
         _cacheStore = ledgerOptions.UseBitFasterCache
@@ -77,6 +85,7 @@ public sealed class InMemoryStepExecutionLedger : IStepExecutionLedger
 
         if (!_cacheStore.TryGetValue(key, out var entry))
         {
+            _logger.LogDebug("Cache miss for step {StepName} with hash {InputHash}", stepName, inputHash);
             // Return default ValueTask without allocation
             return default;
         }
@@ -84,10 +93,12 @@ public sealed class InMemoryStepExecutionLedger : IStepExecutionLedger
         // Check TTL expiration
         if (entry.ExpiresAt.HasValue && _timeProvider.GetUtcNow() > entry.ExpiresAt.Value)
         {
+            _logger.LogDebug("Cache entry expired for step {StepName} with hash {InputHash}", stepName, inputHash);
             _cacheStore.TryRemove(key);
             return default;
         }
 
+        _logger.LogDebug("Cache hit for step {StepName} with hash {InputHash}", stepName, inputHash);
         var result = MemoryPackSerializer.Deserialize<TResult>(entry.Data);
         return new ValueTask<TResult?>(result);
     }

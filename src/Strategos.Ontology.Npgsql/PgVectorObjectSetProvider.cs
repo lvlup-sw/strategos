@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Pgvector;
@@ -20,6 +21,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly ILogger<PgVectorObjectSetProvider> _logger;
     private readonly PgVectorOptions _options;
 
     /// <summary>
@@ -28,15 +30,18 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public PgVectorObjectSetProvider(
         NpgsqlDataSource dataSource,
         IEmbeddingProvider embeddingProvider,
-        IOptions<PgVectorOptions> options)
+        IOptions<PgVectorOptions> options,
+        ILogger<PgVectorObjectSetProvider> logger)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger, nameof(logger));
 
         _dataSource = dataSource;
         _embeddingProvider = embeddingProvider;
         _options = options.Value;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -49,7 +54,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var queryVector = expression.QueryVector
             ?? await _embeddingProvider.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
-        ValidateEmbedding(queryVector);
+        ValidateEmbedding<T>(queryVector);
 
         // 2. Get table name from TypeMapper
         var tableName = TypeMapper.GetTableName<T>();
@@ -76,6 +81,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var dataJson = reader.GetString(1);
@@ -83,6 +89,8 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
             // Convert distance to similarity score (higher = more similar)
             var similarity = ConvertDistanceToSimilarity(distance, expression.Metric);
+
+            rowIndex++;
 
             // Filter by minRelevance
             if (similarity < expression.MinRelevance)
@@ -95,6 +103,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             {
                 items.Add(item);
                 scores.Add(similarity);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
 
@@ -117,13 +129,19 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         AddTranslatedParameters(cmd, translation.Parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
+            rowIndex++;
             var dataJson = reader.GetString(1);
             var item = JsonSerializer.Deserialize<T>(dataJson);
             if (item is not null)
             {
                 items.Add(item);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
 
@@ -144,13 +162,19 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         AddTranslatedParameters(cmd, translation.Parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
+            rowIndex++;
             var dataJson = reader.GetString(1);
             var item = JsonSerializer.Deserialize<T>(dataJson);
             if (item is not null)
             {
                 yield return item;
+            }
+            else
+            {
+                _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex} during streaming", typeof(T).Name, rowIndex);
             }
         }
     }
@@ -170,7 +194,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         if (item is ISearchable searchable)
         {
-            ValidateEmbedding(searchable.Embedding);
+            ValidateEmbedding<T>(searchable.Embedding);
             cmd.Parameters.AddWithValue("embedding", new Vector(searchable.Embedding));
         }
 
@@ -210,7 +234,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
             if (item is ISearchable searchable)
             {
-                ValidateEmbedding(searchable.Embedding);
+                ValidateEmbedding<T>(searchable.Embedding);
                 await writer.WriteAsync(new Vector(searchable.Embedding), ct).ConfigureAwait(false);
             }
         }
@@ -248,18 +272,18 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "Unsupported distance metric."),
     };
 
-    private void ValidateEmbedding(float[]? embedding)
+    private void ValidateEmbedding<T>(float[]? embedding)
     {
         if (embedding is null || embedding.Length == 0)
         {
             throw new InvalidOperationException(
-                "ISearchable.Embedding must not be null or empty when storing items with embeddings.");
+                $"Embedding must not be null or empty for {typeof(T).Name}.");
         }
 
         if (embedding.Length != _embeddingProvider.Dimensions)
         {
             throw new InvalidOperationException(
-                $"Embedding dimension mismatch: item has {embedding.Length} dimensions, provider expects {_embeddingProvider.Dimensions}.");
+                $"Embedding dimension mismatch for {typeof(T).Name}: item has {embedding.Length} dimensions, provider expects {_embeddingProvider.Dimensions}.");
         }
     }
 

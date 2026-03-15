@@ -22,7 +22,7 @@ jobs:
   pack-verify:
     name: Pack (verify)
     needs: build-test
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,5 +49,3 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
-    with:
-      runner: 'blacksmith-4vcpu-ubuntu-2204'

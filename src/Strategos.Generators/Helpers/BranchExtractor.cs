@@ -110,37 +110,44 @@ internal static class BranchExtractor
                 continue;
             }
 
-            // This is a head branch - collect consecutive branches that follow it
-            var consecutiveBranches = new List<BranchModel>();
-            var j = i + 1;
-            while (j < branches.Count && string.IsNullOrEmpty(branches[j].PreviousStepName))
-            {
-                consecutiveBranches.Add(branches[j]);
-                j++;
-            }
-
-            // Link the head branch to its consecutive chain
-            if (consecutiveBranches.Count > 0)
-            {
-                var linkedHead = BuildConsecutiveChain(current, consecutiveBranches);
-                result.Add(linkedHead);
-            }
-            else
-            {
-                result.Add(current);
-            }
+            // This is a head branch - collect and link consecutive branches that follow it
+            var (linkedHead, consecutiveBranches, nextIndex) = CollectAndLinkConsecutiveGroup(branches, i);
+            result.Add(linkedHead);
 
             // Add all the consecutive branches as-is (for step handler generation)
-            foreach (var consecutive in consecutiveBranches)
-            {
-                result.Add(consecutive);
-            }
+            result.AddRange(consecutiveBranches);
 
-            // Move past all processed branches
-            i = j;
+            i = nextIndex;
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Collects consecutive branches following a head branch and links them into a chain.
+    /// </summary>
+    /// <param name="branches">All branches in order.</param>
+    /// <param name="headIndex">The index of the head branch.</param>
+    /// <returns>The linked head branch, the list of consecutive branches, and the next index to process.</returns>
+    private static (BranchModel LinkedHead, List<BranchModel> ConsecutiveBranches, int NextIndex) CollectAndLinkConsecutiveGroup(
+        List<BranchModel> branches,
+        int headIndex)
+    {
+        var head = branches[headIndex];
+        var consecutiveBranches = new List<BranchModel>();
+
+        var j = headIndex + 1;
+        while (j < branches.Count && string.IsNullOrEmpty(branches[j].PreviousStepName))
+        {
+            consecutiveBranches.Add(branches[j]);
+            j++;
+        }
+
+        var linkedHead = consecutiveBranches.Count > 0
+            ? BuildConsecutiveChain(head, consecutiveBranches)
+            : head;
+
+        return (linkedHead, consecutiveBranches, j);
     }
 
     /// <summary>
@@ -265,95 +272,143 @@ internal static class BranchExtractor
 
         if (lambda is not null)
         {
-            // Get the body from the lambda
-            var body = lambda switch
-            {
-                SimpleLambdaExpressionSyntax simple => simple.Body,
-                ParenthesizedLambdaExpressionSyntax parens => parens.Body,
-                _ => null
-            };
-
-            // Handle property access: state => state.GateRequiresHitl
-            if (body is MemberAccessExpressionSyntax memberAccess)
-            {
-                // Extract property path
-                propertyPath = SyntaxHelper.ExtractPropertyPath(memberAccess);
-
-                // Get the type info for the property
-                var typeInfo = semanticModel.GetTypeInfo(memberAccess);
-                if (typeInfo.Type is INamedTypeSymbol namedType)
-                {
-                    typeName = namedType.Name;
-                    isEnum = namedType.TypeKind == TypeKind.Enum;
-                }
-                else
-                {
-                    // Fallback to syntax-based extraction
-                    typeName = "Object";
-                }
-
-                return !string.IsNullOrEmpty(propertyPath);
-            }
-
-            // Handle method invocation on state: state => state.IsInCrisisMode()
-            // Treat like property access but include () in the path for method call syntax
-            if (body is InvocationExpressionSyntax invocationBody &&
-                invocationBody.Expression is MemberAccessExpressionSyntax invokedMember)
-            {
-                // Extract method name with parentheses for proper code generation
-                // This generates: State.IsInCrisisMode() (like property but with method call syntax)
-                propertyPath = invokedMember.Name.Identifier.Text + "()";
-                isMethod = false; // Treat as property-style access (State.X rather than X(State))
-
-                // Get the return type of the method
-                var typeInfo = semanticModel.GetTypeInfo(invocationBody);
-                if (typeInfo.Type is INamedTypeSymbol namedType)
-                {
-                    typeName = namedType.Name;
-                    isEnum = namedType.TypeKind == TypeKind.Enum;
-                }
-                else
-                {
-                    typeName = "Boolean"; // Most method discriminators return bool
-                }
-
-                return !string.IsNullOrEmpty(propertyPath);
-            }
-
-            return false;
+            return TryExtractLambdaDiscriminator(lambda, semanticModel, out propertyPath, out typeName, out isEnum, out isMethod);
         }
 
         // Try to extract method reference: DetermineOutcome (IdentifierNameSyntax)
         if (discriminatorArg.Expression is IdentifierNameSyntax identifier)
         {
-            propertyPath = identifier.Identifier.Text;
-            isMethod = true;
-
-            // Get the method symbol to determine return type
-            var symbolInfo = semanticModel.GetSymbolInfo(identifier);
-            if (symbolInfo.Symbol is IMethodSymbol methodSymbol)
-            {
-                var returnType = methodSymbol.ReturnType;
-                if (returnType is INamedTypeSymbol returnNamedType)
-                {
-                    typeName = returnNamedType.Name;
-                    isEnum = returnNamedType.TypeKind == TypeKind.Enum;
-                }
-                else
-                {
-                    typeName = returnType.Name;
-                }
-            }
-            else
-            {
-                // Fallback - assume enum based on common usage pattern
-                typeName = "Object";
-            }
-
-            return !string.IsNullOrEmpty(propertyPath);
+            return TryExtractMethodReferenceDiscriminator(identifier, semanticModel, out propertyPath, out typeName, out isEnum, out isMethod);
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a lambda expression.
+    /// Handles both property access (state => state.Prop) and method invocation (state => state.Method()).
+    /// </summary>
+    private static bool TryExtractLambdaDiscriminator(
+        LambdaExpressionSyntax lambda,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum,
+        out bool isMethod)
+    {
+        propertyPath = string.Empty;
+        typeName = string.Empty;
+        isEnum = false;
+        isMethod = false;
+
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body,
+            ParenthesizedLambdaExpressionSyntax parens => parens.Body,
+            _ => null
+        };
+
+        // Handle property access: state => state.GateRequiresHitl
+        if (body is MemberAccessExpressionSyntax memberAccess)
+        {
+            return TryExtractPropertyDiscriminator(memberAccess, semanticModel, out propertyPath, out typeName, out isEnum);
+        }
+
+        // Handle method invocation on state: state => state.IsInCrisisMode()
+        if (body is InvocationExpressionSyntax invocationBody &&
+            invocationBody.Expression is MemberAccessExpressionSyntax invokedMember)
+        {
+            isMethod = true;
+            return TryExtractMethodInvocationDiscriminator(invocationBody, invokedMember, semanticModel, out propertyPath, out typeName, out isEnum);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a property access expression (state => state.Property).
+    /// </summary>
+    private static bool TryExtractPropertyDiscriminator(
+        MemberAccessExpressionSyntax memberAccess,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum)
+    {
+        propertyPath = SyntaxHelper.ExtractPropertyPath(memberAccess);
+        typeName = "Object";
+        isEnum = false;
+
+        var typeInfo = semanticModel.GetTypeInfo(memberAccess);
+        if (typeInfo.Type is INamedTypeSymbol namedType)
+        {
+            typeName = namedType.Name;
+            isEnum = namedType.TypeKind == TypeKind.Enum;
+        }
+
+        return !string.IsNullOrEmpty(propertyPath);
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a method invocation on state (state => state.IsInCrisisMode()).
+    /// Treats as property-style access but includes () in the path for method call syntax.
+    /// </summary>
+    private static bool TryExtractMethodInvocationDiscriminator(
+        InvocationExpressionSyntax invocationBody,
+        MemberAccessExpressionSyntax invokedMember,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum)
+    {
+        // Extract method name with parentheses for proper code generation
+        // This generates: State.IsInCrisisMode() (like property but with method call syntax)
+        propertyPath = invokedMember.Name.Identifier.Text + "()";
+        typeName = "Boolean"; // Most method discriminators return bool
+        isEnum = false;
+
+        var typeInfo = semanticModel.GetTypeInfo(invocationBody);
+        if (typeInfo.Type is INamedTypeSymbol namedType)
+        {
+            typeName = namedType.Name;
+            isEnum = namedType.TypeKind == TypeKind.Enum;
+        }
+
+        return !string.IsNullOrEmpty(propertyPath);
+    }
+
+    /// <summary>
+    /// Extracts discriminator info from a method reference identifier (e.g., DetermineOutcome).
+    /// </summary>
+    private static bool TryExtractMethodReferenceDiscriminator(
+        IdentifierNameSyntax identifier,
+        SemanticModel semanticModel,
+        out string propertyPath,
+        out string typeName,
+        out bool isEnum,
+        out bool isMethod)
+    {
+        propertyPath = identifier.Identifier.Text;
+        typeName = "Object";
+        isEnum = false;
+        isMethod = true;
+
+        var symbolInfo = semanticModel.GetSymbolInfo(identifier);
+        if (symbolInfo.Symbol is IMethodSymbol methodSymbol)
+        {
+            var returnType = methodSymbol.ReturnType;
+            if (returnType is INamedTypeSymbol returnNamedType)
+            {
+                typeName = returnNamedType.Name;
+                isEnum = returnNamedType.TypeKind == TypeKind.Enum;
+            }
+            else
+            {
+                typeName = returnType.Name;
+            }
+        }
+
+        return !string.IsNullOrEmpty(propertyPath);
     }
 
     /// <summary>
@@ -423,40 +478,48 @@ internal static class BranchExtractor
 
         while (currentInvocation is not null)
         {
-            // Look for a call that chains off the current invocation
-            var parent = currentInvocation.Parent;
-            while (parent is not null)
-            {
-                if (parent is MemberAccessExpressionSyntax memberAccess &&
-                    memberAccess.Expression == currentInvocation)
-                {
-                    // Found a call that chains off the current invocation
-                    if (memberAccess.Parent is InvocationExpressionSyntax nextInvocation)
-                    {
-                        // If it's a step, we found the rejoin point
-                        if (StepExtractor.TryGetStepName(nextInvocation, semanticModel, out var stepName))
-                        {
-                            // Apply loop prefix if branch is inside a loop
-                            return ApplyPrefix(stepName, loopPrefix);
-                        }
+            var nextInvocation = FindNextChainedInvocation(currentInvocation);
 
-                        // If it's another branch, continue walking from that branch
-                        if (SyntaxHelper.IsMethodCall(nextInvocation, "Branch"))
-                        {
-                            currentInvocation = nextInvocation;
-                            break;
-                        }
-                    }
-                }
-
-                parent = parent.Parent;
-            }
-
-            // If we didn't find another invocation to continue from, stop
-            if (parent is null)
+            if (nextInvocation is null)
             {
                 break;
             }
+
+            // If it's a step, we found the rejoin point
+            if (StepExtractor.TryGetStepName(nextInvocation, semanticModel, out var stepName))
+            {
+                return ApplyPrefix(stepName, loopPrefix);
+            }
+
+            // If it's another branch, continue walking from that branch
+            if (SyntaxHelper.IsMethodCall(nextInvocation, "Branch"))
+            {
+                currentInvocation = nextInvocation;
+                continue;
+            }
+
+            break;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the next invocation that is chained off the given invocation (i.e., the caller of this invocation).
+    /// </summary>
+    private static InvocationExpressionSyntax? FindNextChainedInvocation(InvocationExpressionSyntax invocation)
+    {
+        var parent = invocation.Parent;
+        while (parent is not null)
+        {
+            if (parent is MemberAccessExpressionSyntax memberAccess &&
+                memberAccess.Expression == invocation &&
+                memberAccess.Parent is InvocationExpressionSyntax nextInvocation)
+            {
+                return nextInvocation;
+            }
+
+            parent = parent.Parent;
         }
 
         return null;
@@ -574,45 +637,15 @@ internal static class BranchExtractor
     {
         caseModel = default!;
 
-        var expression = caseArg.Expression;
-
-        if (expression is not InvocationExpressionSyntax caseInvocation)
+        if (caseArg.Expression is not InvocationExpressionSyntax caseInvocation)
         {
             return false;
         }
 
-        // Check if it's When() or Otherwise()
-        var isOtherwise = SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise");
-        var isWhen = SyntaxHelper.IsMethodCall(caseInvocation, "When");
-
-        if (!isWhen && !isOtherwise)
+        // Extract the case value and path builder argument from When() or Otherwise()
+        if (!TryExtractCaseArguments(caseInvocation, out var caseValueLiteral, out var pathBuilderArg))
         {
             return false;
-        }
-
-        var caseArgs = caseInvocation.ArgumentList.Arguments;
-        string caseValueLiteral;
-        ArgumentSyntax pathBuilderArg;
-
-        if (isOtherwise)
-        {
-            if (caseArgs.Count < 1)
-            {
-                return false;
-            }
-
-            caseValueLiteral = "default";
-            pathBuilderArg = caseArgs[0];
-        }
-        else
-        {
-            if (caseArgs.Count < 2)
-            {
-                return false;
-            }
-
-            caseValueLiteral = ExtractCaseValueLiteral(caseArgs[0]);
-            pathBuilderArg = caseArgs[1];
         }
 
         // Extract path builder lambda
@@ -646,6 +679,50 @@ internal static class BranchExtractor
             StepNames: stepNames,
             IsTerminal: isTerminal);
 
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the case value literal and path builder argument from a When() or Otherwise() invocation.
+    /// </summary>
+    private static bool TryExtractCaseArguments(
+        InvocationExpressionSyntax caseInvocation,
+        out string caseValueLiteral,
+        out ArgumentSyntax pathBuilderArg)
+    {
+        caseValueLiteral = string.Empty;
+        pathBuilderArg = default!;
+
+        var isOtherwise = SyntaxHelper.IsMethodCall(caseInvocation, "Otherwise");
+        var isWhen = SyntaxHelper.IsMethodCall(caseInvocation, "When");
+
+        if (!isWhen && !isOtherwise)
+        {
+            return false;
+        }
+
+        var caseArgs = caseInvocation.ArgumentList.Arguments;
+
+        if (isOtherwise)
+        {
+            if (caseArgs.Count < 1)
+            {
+                return false;
+            }
+
+            caseValueLiteral = "default";
+            pathBuilderArg = caseArgs[0];
+            return true;
+        }
+
+        // isWhen
+        if (caseArgs.Count < 2)
+        {
+            return false;
+        }
+
+        caseValueLiteral = ExtractCaseValueLiteral(caseArgs[0]);
+        pathBuilderArg = caseArgs[1];
         return true;
     }
 

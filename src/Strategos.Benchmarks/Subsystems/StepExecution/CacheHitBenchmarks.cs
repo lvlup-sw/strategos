@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.ExecutionLedgers;
 
@@ -47,7 +49,7 @@ public class CacheHitBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _ledger = new InMemoryStepExecutionLedger(TimeProvider.System);
+        _ledger = new InMemoryStepExecutionLedger(TimeProvider.System, NullLogger<InMemoryStepExecutionLedger>.Instance);
 
         // Setup for cache hit scenario
         _hitStepName = "CachedStep";

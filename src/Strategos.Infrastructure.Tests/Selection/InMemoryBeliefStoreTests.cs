@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Infrastructure.Selection;
 using Strategos.Selection;
 
@@ -27,7 +29,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_NoExistingBelief_ReturnsPrior()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.GetBeliefAsync("agent-1", "CodeGeneration").ConfigureAwait(false);
@@ -48,7 +50,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_AfterUpdate_ReturnsUpdatedBelief()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
 
         // Act
@@ -68,7 +70,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_DifferentKeys_ReturnsSeparateBeliefs()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-1", "DataAnalysis", success: false).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-2", "CodeGeneration", success: true).ConfigureAwait(false);
@@ -100,7 +102,7 @@ public class InMemoryBeliefStoreTests
     public async Task UpdateBeliefAsync_Success_IncrementsAlpha()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
@@ -120,7 +122,7 @@ public class InMemoryBeliefStoreTests
     public async Task UpdateBeliefAsync_Failure_IncrementsBeta()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: false).ConfigureAwait(false);
@@ -140,7 +142,7 @@ public class InMemoryBeliefStoreTests
     public async Task UpdateBeliefAsync_MultipleUpdates_AccumulatesCorrectly()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act - 3 successes, 2 failures
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
@@ -167,7 +169,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForAgentAsync_NoBeliefs_ReturnsEmptyList()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.GetBeliefsForAgentAsync("unknown-agent").ConfigureAwait(false);
@@ -184,7 +186,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForAgentAsync_MultipleBeliefsExist_ReturnsAllForAgent()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-1", "DataAnalysis", success: false).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-1", "WebSearch", success: true).ConfigureAwait(false);
@@ -206,7 +208,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForAgentAsync_MultipleAgents_ExcludesOtherAgents()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-2", "CodeGeneration", success: true).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-2", "DataAnalysis", success: true).ConfigureAwait(false);
@@ -230,7 +232,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForCategoryAsync_NoBeliefs_ReturnsEmptyList()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.GetBeliefsForCategoryAsync("UnknownCategory").ConfigureAwait(false);
@@ -247,7 +249,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForCategoryAsync_MultipleBeliefsExist_ReturnsAllForCategory()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         await store.UpdateBeliefAsync("agent-1", "CodeGeneration", success: true).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-2", "CodeGeneration", success: false).ConfigureAwait(false);
         await store.UpdateBeliefAsync("agent-3", "CodeGeneration", success: true).ConfigureAwait(false);
@@ -273,7 +275,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentUpdates_ThreadSafe()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 100;
 
         // Act - Run concurrent updates
@@ -300,7 +302,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentReadsAndWrites_ThreadSafe()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 50;
 
         // Act - Concurrent reads and writes
@@ -333,7 +335,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForAgentAsync_ManyBeliefs_ReturnsCorrectResultsViaIndex()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int agentCount = 100;
         const int categoriesPerAgent = 100;
 
@@ -364,7 +366,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForCategoryAsync_ManyBeliefs_ReturnsCorrectResultsViaIndex()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int agentCount = 100;
         const int categoriesPerAgent = 100;
 
@@ -393,7 +395,7 @@ public class InMemoryBeliefStoreTests
     public async Task SaveBeliefAsync_MaintainsIndices()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         var belief = AgentBelief.CreatePrior("agent-1", "CodeGeneration").WithSuccess();
 
         // Act
@@ -420,7 +422,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_NullAgentId_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.GetBeliefAsync(null!, "CodeGeneration").AsTask())
@@ -434,7 +436,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_NullTaskCategory_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.GetBeliefAsync("agent-1", null!).AsTask())
@@ -448,7 +450,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefAsync_EmptyCategory_ReturnsBeliefWithEmptyCategory()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act
         var result = await store.GetBeliefAsync("agent-1", string.Empty).ConfigureAwait(false);
@@ -465,7 +467,7 @@ public class InMemoryBeliefStoreTests
     public async Task UpdateBeliefAsync_NullAgentId_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.UpdateBeliefAsync(null!, "CodeGeneration", true).AsTask())
@@ -479,7 +481,7 @@ public class InMemoryBeliefStoreTests
     public async Task UpdateBeliefAsync_NullTaskCategory_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.UpdateBeliefAsync("agent-1", null!, true).AsTask())
@@ -493,7 +495,7 @@ public class InMemoryBeliefStoreTests
     public async Task SaveBeliefAsync_NullBelief_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.SaveBeliefAsync(null!).AsTask())
@@ -507,7 +509,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForAgentAsync_NullAgentId_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.GetBeliefsForAgentAsync(null!).AsTask())
@@ -521,7 +523,7 @@ public class InMemoryBeliefStoreTests
     public async Task GetBeliefsForCategoryAsync_NullTaskCategory_ThrowsArgumentNullException()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Act & Assert
         await Assert.That(() => store.GetBeliefsForCategoryAsync(null!).AsTask())
@@ -539,7 +541,7 @@ public class InMemoryBeliefStoreTests
     public async Task SaveBeliefAsync_NewBelief_SavesSuccessfully()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         var belief = AgentBelief.CreatePrior("agent-1", "CodeGeneration")
             .WithSuccess()
             .WithSuccess()
@@ -564,7 +566,7 @@ public class InMemoryBeliefStoreTests
     public async Task SaveBeliefAsync_ExistingBelief_OverwritesExisting()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         var originalBelief = AgentBelief.CreatePrior("agent-1", "CodeGeneration").WithSuccess();
         await store.SaveBeliefAsync(originalBelief).ConfigureAwait(false);
 
@@ -592,7 +594,7 @@ public class InMemoryBeliefStoreTests
     public async Task SaveBeliefAsync_OverwritesBelief_IndicesRemainCorrect()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         var belief1 = AgentBelief.CreatePrior("agent-1", "CodeGeneration").WithSuccess();
         var belief2 = AgentBelief.CreatePrior("agent-1", "DataAnalysis").WithSuccess();
         await store.SaveBeliefAsync(belief1).ConfigureAwait(false);
@@ -625,7 +627,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentSaves_ThreadSafe()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 50;
 
         // Act - Concurrent saves for different agents
@@ -650,7 +652,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentSaves_SameKey_LastWriteWins()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 100;
 
         // Create beliefs with different alpha values
@@ -682,7 +684,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentMixedOperations_ThreadSafe()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int iterationCount = 30;
 
         // Pre-populate some beliefs
@@ -723,7 +725,7 @@ public class InMemoryBeliefStoreTests
     public async Task ConcurrentOperations_MultipleAgentsAndCategories_ThreadSafe()
     {
         // Arrange
-        var store = new InMemoryBeliefStore();
+        var store = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
         const int agentCount = 10;
         const int categoryCount = 10;
 

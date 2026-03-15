@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Strategos.Ontology.Embeddings;
 
@@ -11,6 +13,8 @@ public class EmbeddingServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOpenAiEmbeddings(o =>
         {
             o.Endpoint = "https://api.openai.com/v1";
@@ -32,6 +36,8 @@ public class EmbeddingServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOpenAiEmbeddings(o =>
         {
             o.Endpoint = "https://custom.api.com/v1";

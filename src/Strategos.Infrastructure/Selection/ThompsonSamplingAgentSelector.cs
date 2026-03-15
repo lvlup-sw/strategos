@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging;
+
 using Strategos.Abstractions;
 using Strategos.Primitives;
 using Strategos.Selection;
@@ -36,17 +38,29 @@ namespace Strategos.Infrastructure.Selection;
 public sealed class ThompsonSamplingAgentSelector : IAgentSelector
 {
     private readonly IBeliefStore _beliefStore;
+    private readonly ITaskCategoryClassifier _classifier;
+    private readonly ILogger<ThompsonSamplingAgentSelector> _logger;
     private readonly Random _random;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ThompsonSamplingAgentSelector"/> class.
     /// </summary>
     /// <param name="beliefStore">The belief store for persisting agent beliefs.</param>
+    /// <param name="classifier">The task category classifier.</param>
+    /// <param name="logger">The logger instance.</param>
     /// <param name="randomSeed">Optional seed for reproducible sampling.</param>
-    public ThompsonSamplingAgentSelector(IBeliefStore beliefStore, int? randomSeed = null)
+    public ThompsonSamplingAgentSelector(
+        IBeliefStore beliefStore,
+        ITaskCategoryClassifier classifier,
+        ILogger<ThompsonSamplingAgentSelector> logger,
+        int? randomSeed = null)
     {
         ArgumentNullException.ThrowIfNull(beliefStore);
+        ArgumentNullException.ThrowIfNull(classifier);
+        ArgumentNullException.ThrowIfNull(logger);
         _beliefStore = beliefStore;
+        _classifier = classifier;
+        _logger = logger;
         _random = randomSeed.HasValue ? new Random(randomSeed.Value) : new Random();
     }
 
@@ -58,7 +72,7 @@ public sealed class ThompsonSamplingAgentSelector : IAgentSelector
         ArgumentNullException.ThrowIfNull(context);
 
         // 1. Classify task
-        var taskCategory = TaskCategoryClassifier.Classify(context.TaskDescription);
+        var taskCategory = _classifier.Classify(context.TaskDescription);
         var categoryName = taskCategory.ToString();
 
         // 2. Get available agents (exclude any excluded)
@@ -107,6 +121,14 @@ public sealed class ThompsonSamplingAgentSelector : IAgentSelector
 
         // 5. Compute confidence based on observation count
         var confidence = Math.Min(1.0, bestBelief.ObservationCount / 20.0);
+
+        _logger.LogDebug(
+            "Selected agent {AgentId} for category {TaskCategory} with theta {Theta:F4} and confidence {Confidence:F2} from {CandidateCount} candidates",
+            bestAgentId,
+            categoryName,
+            bestTheta,
+            confidence,
+            candidates.Count);
 
         return Result<AgentSelection>.Success(new AgentSelection
         {

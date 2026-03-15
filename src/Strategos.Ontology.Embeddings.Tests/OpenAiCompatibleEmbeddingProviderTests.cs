@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Strategos.Ontology.Embeddings.Tests;
@@ -31,7 +32,7 @@ public class OpenAiCompatibleEmbeddingProviderTests
     {
         var opts = options ?? DefaultOptions;
         var httpClient = new HttpClient(new MockHttpMessageHandler(handler));
-        return new OpenAiCompatibleEmbeddingProvider(httpClient, Options.Create(opts));
+        return new OpenAiCompatibleEmbeddingProvider(httpClient, Options.Create(opts), NullLogger<OpenAiCompatibleEmbeddingProvider>.Instance);
     }
 
     [Test]

@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Abstractions;
 using Strategos.Infrastructure.Selection;
 using Strategos.Primitives;
@@ -29,8 +31,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_WithAvailableAgents_ReturnsValidSelection()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -55,8 +57,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_WithCodeTask_ClassifiesAsCodeGeneration()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -80,8 +82,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_NoAvailableAgents_ReturnsFailure()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -106,8 +108,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_WithExclusions_RespectsExclusions()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -133,8 +135,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_AllAgentsExcluded_ReturnsFailure()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -164,7 +166,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_AgentWithMoreSuccesses_SelectedMoreOften()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Give agent-1 many successes (should have higher expected value)
         for (int i = 0; i < 20; i++)
@@ -190,7 +192,7 @@ public sealed class ThompsonSamplingSelectorTests
         var selections = new Dictionary<string, int> { ["agent-1"] = 0, ["agent-2"] = 0 };
         for (int trial = 0; trial < 100; trial++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: trial);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
             selections[result.Value.SelectedAgentId]++;
         }
@@ -211,7 +213,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_UniformPriors_ExploresAllAgents()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         var context = new AgentSelectionContext
         {
@@ -231,7 +233,7 @@ public sealed class ThompsonSamplingSelectorTests
 
         for (int trial = 0; trial < 300; trial++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: trial);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: trial);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
             selections[result.Value.SelectedAgentId]++;
         }
@@ -254,8 +256,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task RecordOutcomeAsync_Success_UpdatesBeliefAlpha()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act
         var result = await selector.RecordOutcomeAsync(
@@ -278,8 +280,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task RecordOutcomeAsync_Failure_UpdatesBeliefBeta()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act
         var result = await selector.RecordOutcomeAsync(
@@ -306,8 +308,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_FewObservations_LowConfidence()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -331,7 +333,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_ManyObservations_HighConfidence()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add 20 observations
         for (int i = 0; i < 20; i++)
@@ -339,7 +341,7 @@ public sealed class ThompsonSamplingSelectorTests
             await beliefStore.UpdateBeliefAsync("agent-1", "General", success: true).ConfigureAwait(false);
         }
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -367,8 +369,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_SampledTheta_InValidRange()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -397,7 +399,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_SameSeed_ProducesSameResult()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         var context = new AgentSelectionContext
         {
@@ -408,10 +410,10 @@ public sealed class ThompsonSamplingSelectorTests
         };
 
         // Act
-        var selector1 = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector1 = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
         var result1 = await selector1.SelectAgentAsync(context).ConfigureAwait(false);
 
-        var selector2 = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector2 = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
         var result2 = await selector2.SelectAgentAsync(context).ConfigureAwait(false);
 
         // Assert
@@ -434,7 +436,7 @@ public sealed class ThompsonSamplingSelectorTests
         const int candidateCount = 5;
         const int delayPerFetchMs = 50;
         var delayingStore = new DelayingBeliefStore(TimeSpan.FromMilliseconds(delayPerFetchMs));
-        var selector = new ThompsonSamplingAgentSelector(delayingStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(delayingStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var agents = Enumerable.Range(1, candidateCount).Select(i => $"agent-{i}").ToList();
         var context = new AgentSelectionContext
@@ -462,8 +464,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_NoExclusions_SkipsExceptAllocation()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -489,8 +491,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_EmptyExclusions_SkipsExceptAllocation()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -520,7 +522,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task Constructor_NullBeliefStore_ThrowsArgumentNullException()
     {
         // Act & Assert
-        await Assert.That(() => new ThompsonSamplingAgentSelector(null!))
+        await Assert.That(() => new ThompsonSamplingAgentSelector(null!, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance))
             .Throws<ArgumentNullException>();
     }
 
@@ -531,8 +533,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_NullContext_ThrowsArgumentNullException()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act & Assert
         await Assert.That(() => selector.SelectAgentAsync(null!))
@@ -546,8 +548,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task RecordOutcomeAsync_NullAgentId_ThrowsArgumentNullException()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act & Assert
         await Assert.That(() => selector.RecordOutcomeAsync(null!, "Category", AgentOutcome.Succeeded()))
@@ -561,8 +563,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task RecordOutcomeAsync_NullTaskCategory_ThrowsArgumentNullException()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act & Assert
         await Assert.That(() => selector.RecordOutcomeAsync("agent-1", null!, AgentOutcome.Succeeded()))
@@ -576,8 +578,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task RecordOutcomeAsync_NullOutcome_ThrowsArgumentNullException()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         // Act & Assert
         await Assert.That(() => selector.RecordOutcomeAsync("agent-1", "Category", null!))
@@ -596,7 +598,7 @@ public sealed class ThompsonSamplingSelectorTests
     {
         // Arrange
         var failingStore = new FailingBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(failingStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(failingStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -624,7 +626,7 @@ public sealed class ThompsonSamplingSelectorTests
     {
         // Arrange
         var partialFailStore = new PartialFailingBeliefStore("agent-2");
-        var selector = new ThompsonSamplingAgentSelector(partialFailStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(partialFailStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -653,7 +655,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_VeryHighAlpha_SampledThetaNearOne()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add many successes to create high alpha
         for (int i = 0; i < 100; i++)
@@ -661,7 +663,7 @@ public sealed class ThompsonSamplingSelectorTests
             await beliefStore.UpdateBeliefAsync("agent-1", "General", success: true).ConfigureAwait(false);
         }
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -685,7 +687,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_VeryHighBeta_SampledThetaNearZero()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add many failures to create high beta
         for (int i = 0; i < 100; i++)
@@ -693,7 +695,7 @@ public sealed class ThompsonSamplingSelectorTests
             await beliefStore.UpdateBeliefAsync("agent-1", "General", success: false).ConfigureAwait(false);
         }
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -717,7 +719,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_ExtremeBelief_SampledThetaAlwaysInValidRange()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Create extreme beliefs
         for (int i = 0; i < 200; i++)
@@ -736,7 +738,7 @@ public sealed class ThompsonSamplingSelectorTests
         // Act - Run multiple times with different seeds
         for (int seed = 0; seed < 50; seed++)
         {
-            var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: seed);
+            var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: seed);
             var result = await selector.SelectAgentAsync(context).ConfigureAwait(false);
 
             // Assert - Theta must always be in valid range
@@ -756,8 +758,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_SingleCandidate_SelectsThatCandidate()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -782,13 +784,13 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_SingleCandidateWithPrior_ThetaInValidRange()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add some history
         await beliefStore.UpdateBeliefAsync("only-agent", "General", success: true).ConfigureAwait(false);
         await beliefStore.UpdateBeliefAsync("only-agent", "General", success: false).ConfigureAwait(false);
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -818,8 +820,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_DataAnalysisTask_ClassifiesAsDataAnalysis()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -843,8 +845,8 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_TextGenerationTask_ClassifiesAsTextGeneration()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -872,7 +874,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_VaryingObservations_ConfidenceScalesLinearly()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add 10 observations
         for (int i = 0; i < 10; i++)
@@ -880,7 +882,7 @@ public sealed class ThompsonSamplingSelectorTests
             await beliefStore.UpdateBeliefAsync("agent-1", "General", success: true).ConfigureAwait(false);
         }
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -904,7 +906,7 @@ public sealed class ThompsonSamplingSelectorTests
     public async Task SelectAgentAsync_ManyObservations_ConfidenceCappedAtOne()
     {
         // Arrange
-        var beliefStore = new InMemoryBeliefStore();
+        var beliefStore = new InMemoryBeliefStore(NullLogger<InMemoryBeliefStore>.Instance);
 
         // Add 50 observations (more than 20)
         for (int i = 0; i < 50; i++)
@@ -912,7 +914,7 @@ public sealed class ThompsonSamplingSelectorTests
             await beliefStore.UpdateBeliefAsync("agent-1", "General", success: true).ConfigureAwait(false);
         }
 
-        var selector = new ThompsonSamplingAgentSelector(beliefStore, randomSeed: 42);
+        var selector = new ThompsonSamplingAgentSelector(beliefStore, new TaskCategoryClassifier(), NullLogger<ThompsonSamplingAgentSelector>.Instance, randomSeed: 42);
 
         var context = new AgentSelectionContext
         {
@@ -978,7 +980,7 @@ file sealed class FailingBeliefStore : IBeliefStore
 file sealed class PartialFailingBeliefStore : IBeliefStore
 {
     private readonly string _failingAgentId;
-    private readonly InMemoryBeliefStore _inner = new();
+    private readonly InMemoryBeliefStore _inner = new(NullLogger<InMemoryBeliefStore>.Instance);
 
     public PartialFailingBeliefStore(string failingAgentId)
     {
@@ -1032,7 +1034,7 @@ file sealed class PartialFailingBeliefStore : IBeliefStore
 file sealed class DelayingBeliefStore : IBeliefStore
 {
     private readonly TimeSpan _delay;
-    private readonly InMemoryBeliefStore _inner = new();
+    private readonly InMemoryBeliefStore _inner = new(NullLogger<InMemoryBeliefStore>.Instance);
     private int _currentConcurrentFetches;
     private int _maxConcurrentFetches;
 
