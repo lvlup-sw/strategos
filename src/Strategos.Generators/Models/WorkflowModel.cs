@@ -36,6 +36,7 @@ internal sealed record WorkflowModel(
     IReadOnlyList<string> StepNames,
     string? StateTypeName = null,
     int Version = 1,
+    PersistenceMode PersistenceMode = PersistenceMode.SagaDocument,
     IReadOnlyList<StepModel>? Steps = null,
     IReadOnlyList<LoopModel>? Loops = null,
     IReadOnlyList<BranchModel>? Branches = null,
@@ -67,6 +68,11 @@ internal sealed record WorkflowModel(
     /// or null if StateTypeName is not specified.
     /// </remarks>
     public string? ReducerTypeName => StateTypeName is null ? null : $"{StateTypeName}Reducer";
+
+    /// <summary>
+    /// Gets a value indicating whether this workflow uses event-sourced persistence.
+    /// </summary>
+    public bool IsEventSourced => PersistenceMode == PersistenceMode.EventSourced;
 
     /// <summary>
     /// Gets a value indicating whether this workflow contains any loop constructs.
@@ -128,6 +134,7 @@ internal sealed record WorkflowModel(
         IReadOnlyList<string> stepNames,
         string? stateTypeName = null,
         int version = 1,
+        PersistenceMode persistenceMode = PersistenceMode.SagaDocument,
         IReadOnlyList<StepModel>? steps = null,
         IReadOnlyList<LoopModel>? loops = null,
         IReadOnlyList<BranchModel>? branches = null,
@@ -181,6 +188,7 @@ internal sealed record WorkflowModel(
             StepNames: stepNames,
             StateTypeName: stateTypeName,
             Version: version,
+            PersistenceMode: persistenceMode,
             Steps: steps,
             Loops: loops,
             Branches: branches,

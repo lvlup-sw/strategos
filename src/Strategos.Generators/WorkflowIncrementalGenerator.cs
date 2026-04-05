@@ -108,6 +108,27 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             version = v;
         }
 
+        // Extract persistence mode from named argument (defaults to SagaDocument)
+        var persistenceMode = Models.PersistenceMode.SagaDocument;
+        foreach (var namedArg in attribute.NamedArguments)
+        {
+            if (namedArg.Key == "Persistence" && namedArg.Value.Value is int pm)
+            {
+                if (!Enum.IsDefined(typeof(Models.PersistenceMode), pm))
+                {
+                    var location = GetAttributeLocation(context);
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.InvalidPersistenceMode,
+                        location,
+                        workflowName ?? "<unknown>",
+                        pm));
+                    return new WorkflowGeneratorResult(null, diagnostics);
+                }
+
+                persistenceMode = (Models.PersistenceMode)pm;
+            }
+        }
+
         // Check for empty/whitespace workflow name
         if (string.IsNullOrWhiteSpace(workflowName))
         {
@@ -151,6 +172,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.TargetNode,
             context.SemanticModel,
             ct);
+
+        // Validate event-sourced mode requires a state type
+        if (persistenceMode == Models.PersistenceMode.EventSourced
+            && string.IsNullOrEmpty(stateTypeName))
+        {
+            var location = GetAttributeLocation(context);
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.EventSourcedRequiresState,
+                location,
+                validName));
+            return new WorkflowGeneratorResult(null, diagnostics);
+        }
 
         // Extract step models with type information
         var stepModels = FluentDslParser.ExtractStepModels(
@@ -524,6 +557,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             StepNames: stepNames,
             StateTypeName: stateTypeName,
             Version: version,
+            PersistenceMode: persistenceMode,
             Steps: stepModels,
             Loops: loopModels,
             Branches: branchModels,

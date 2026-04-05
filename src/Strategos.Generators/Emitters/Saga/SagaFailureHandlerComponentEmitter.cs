@@ -101,6 +101,25 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("    }");
     }
 
+    /// <summary>
+    /// Emits the parameter list for failure handler completed methods.
+    /// </summary>
+    private static void EmitFailureHandlerParams(
+        StringBuilder sb,
+        WorkflowModel model,
+        string completedEventName)
+    {
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine($"        {completedEventName} evt,");
+            sb.AppendLine("        IDocumentSession session)");
+        }
+        else
+        {
+            sb.AppendLine($"        {completedEventName} evt)");
+        }
+    }
+
     private static void EmitStartHandler(
         StringBuilder sb,
         WorkflowModel model,
@@ -150,18 +169,18 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         sb.AppendLine($"    /// Handles the {completedEventName} event.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The completed event.</param>");
-
-        var reducerTypeName = model.ReducerTypeName;
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
         if (isLastStep && handler.IsTerminal)
         {
             // Final step of a terminal handler - mark as Failed and complete
             sb.AppendLine("    public void Handle(");
-            sb.AppendLine($"        {completedEventName} evt)");
+            EmitFailureHandlerParams(sb, model, completedEventName);
             sb.AppendLine("    {");
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
             sb.AppendLine();
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
             sb.AppendLine("        MarkCompleted();");
             sb.AppendLine("    }");
@@ -170,11 +189,12 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         {
             // Final step of a non-terminal handler - just update state
             sb.AppendLine("    public void Handle(");
-            sb.AppendLine($"        {completedEventName} evt)");
+            EmitFailureHandlerParams(sb, model, completedEventName);
             sb.AppendLine("    {");
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
             sb.AppendLine();
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine("    }");
         }
         else
@@ -183,11 +203,12 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
             var nextStartCommandName = $"StartFailureHandler_{sanitizedId}_{nextStepName}Command";
             sb.AppendLine($"    /// <returns>The command to start the next failure handler step.</returns>");
             sb.AppendLine($"    public {nextStartCommandName} Handle(");
-            sb.AppendLine($"        {completedEventName} evt)");
+            EmitFailureHandlerParams(sb, model, completedEventName);
             sb.AppendLine("    {");
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
             sb.AppendLine();
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine($"        return new {nextStartCommandName}(WorkflowId);");
             sb.AppendLine("    }");
         }

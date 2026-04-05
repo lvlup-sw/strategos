@@ -61,7 +61,6 @@ internal sealed class LoopCompletedHandlerEmitter
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var loops = context.LoopsAtStep!;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var innermostLoop = loops[0];
@@ -71,6 +70,7 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - evaluates loop condition(s).");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The command for the next step based on loop conditions.</returns>");
 
@@ -78,16 +78,18 @@ internal sealed class LoopCompletedHandlerEmitter
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
         sb.AppendLine($"    public object Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
+        // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
         }
 

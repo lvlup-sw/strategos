@@ -42,6 +42,14 @@ internal static class ExtensionsEmitter
             "Microsoft.Extensions.DependencyInjection",
         };
 
+        // Event-sourced mode needs Marten for SnapshottedAggregation configuration
+        if (model.IsEventSourced)
+        {
+            usings.Add("Marten");
+            usings.Add("Marten.Events.Aggregation");
+            usings.Add("Marten.Events.Projections");
+        }
+
         // Add step type namespaces from the model
         if (model.Steps is not null)
         {
@@ -185,6 +193,17 @@ internal static class ExtensionsEmitter
         // registers conditions in WorkflowConditionRegistry for runtime lookup
         sb.AppendLine("        // Force evaluation of workflow definition to register loop conditions");
         sb.AppendLine($"        _ = {model.PascalName}WorkflowDefinition.Definition;");
+
+        // Configure Marten SnapshottedAggregation for event-sourced workflows
+        if (model.IsEventSourced && !string.IsNullOrEmpty(model.StateTypeName))
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // Configure Marten event-sourced aggregate with snapshotting");
+            sb.AppendLine($"        services.ConfigureMarten(opts =>");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            opts.Projections.Snapshot<{model.StateTypeName}>(SnapshotLifecycle.Inline);");
+            sb.AppendLine("        });");
+        }
 
         sb.AppendLine();
         sb.AppendLine("        return services;");

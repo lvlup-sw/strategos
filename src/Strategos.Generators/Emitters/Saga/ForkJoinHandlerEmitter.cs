@@ -69,7 +69,6 @@ internal sealed class ForkJoinHandlerEmitter
         // phase name (e.g., "TargetLoop_ValidateThesisStep" -> "ValidateThesisStep").
         var baseStepName = ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var sanitizedId = fork.ForkId.Replace("-", "_");
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -78,6 +77,7 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - updates path status and checks join readiness.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <remarks>");
         sb.AppendLine("    /// Uses IEnumerable return to conditionally yield join command when all paths complete.");
@@ -90,16 +90,18 @@ internal sealed class ForkJoinHandlerEmitter
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
         sb.AppendLine($"    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer and store path state if state type is specified
+        // Apply state change and store path state if state type is specified
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine($"        Fork_{sanitizedId}_Path{path.PathIndex}State = evt.UpdatedState;");
             sb.AppendLine();
         }

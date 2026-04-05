@@ -137,4 +137,34 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Every RepeatUntil loop must contain at least one step in its body. An empty loop body serves no purpose and is likely an error.");
+
+    /// <summary>
+    /// AGWF015: Invalid persistence mode.
+    /// </summary>
+    /// <remarks>
+    /// Reported when the [Workflow] attribute specifies an unrecognized Persistence value.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor InvalidPersistenceMode = new(
+        id: "AGWF015",
+        title: "Invalid persistence mode",
+        messageFormat: "Workflow '{0}' specifies an unrecognized Persistence value ({1}). Valid values are SagaDocument (0) and EventSourced (1).",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The Persistence property of the [Workflow] attribute must be a valid PersistenceMode value.");
+
+    /// <summary>
+    /// AGWF016: Event-sourced workflow requires state type.
+    /// </summary>
+    /// <remarks>
+    /// Reported when a workflow uses PersistenceMode.EventSourced but does not declare a state type.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor EventSourcedRequiresState = new(
+        id: "AGWF016",
+        title: "Event-sourced workflow requires state type",
+        messageFormat: "Workflow '{0}' uses PersistenceMode.EventSourced but no state type was found. Event-sourced workflows require a state type that implements IEventSourcedState<TState> with an ApplyEvent method.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Event-sourced workflows require a state type to generate handlers that call State.ApplyEvent(evt). Ensure the workflow uses Workflow<TState>.Create() with a state type that implements IEventSourcedState<TState>.");
 }

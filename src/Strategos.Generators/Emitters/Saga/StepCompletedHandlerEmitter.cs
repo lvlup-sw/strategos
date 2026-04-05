@@ -65,54 +65,50 @@ internal sealed class StepCompletedHandlerEmitter
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
 
-        var reducerTypeName = model.ReducerTypeName;
-
         // XML documentation
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {eventName} event - applies reducer and chains to next step.");
+        sb.AppendLine($"    /// Handles the {eventName} event - applies state change and chains to next step.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
         // Priority: Approval → Terminal/Final → Non-Final
         // Terminal steps (CompleteStep, FailedStep, TerminateStep, AutoFailStep) should always
         // call MarkCompleted() regardless of their position in the workflow.
         if (context.ApprovalAtStep is not null)
         {
-            EmitApprovalWaitingHandler(sb, model, eventName, reducerTypeName, context.ApprovalAtStep);
+            EmitApprovalWaitingHandler(sb, model, eventName, context.ApprovalAtStep);
         }
         else if (context.IsTerminalStep || context.IsLastStep)
         {
-            EmitFinalStepHandler(sb, model, eventName, reducerTypeName);
+            EmitFinalStepHandler(sb, model, eventName);
         }
         else
         {
-            EmitNonFinalStepHandler(sb, model, eventName, reducerTypeName, context.NextStepName!);
+            EmitNonFinalStepHandler(sb, model, eventName, context.NextStepName!);
         }
     }
 
     private static void EmitFinalStepHandler(
         StringBuilder sb,
         WorkflowModel model,
-        string eventName,
-        string? reducerTypeName)
+        string eventName)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
-        // Final step - apply reducer, then MarkCompleted
+        // Final step - apply state change, then MarkCompleted
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
         sb.AppendLine("    public void Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
-        if (!string.IsNullOrEmpty(model.StateTypeName))
-        {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
-        }
+        StateApplicationHelper.EmitStateApplication(sb, model);
 
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
         sb.AppendLine();
@@ -128,7 +124,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStepName)
     {
         // Non-final step - apply reducer, returns StartNextStepCommand
@@ -139,11 +134,11 @@ internal sealed class StepCompletedHandlerEmitter
         // - After reducer, check if Phase == Failed and route to FailedStep
         if (model.HasFailureHandlers)
         {
-            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, reducerTypeName, nextStepName, nextStartCommand);
+            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, nextStepName, nextStartCommand);
         }
         else
         {
-            EmitSimpleNonFinalStepHandler(sb, model, eventName, reducerTypeName, nextStartCommand);
+            EmitSimpleNonFinalStepHandler(sb, model, eventName, nextStartCommand);
         }
     }
 
@@ -151,7 +146,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStartCommand)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
@@ -161,16 +155,18 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"    /// <returns>The command to start the next step.</returns>");
         sb.AppendLine($"    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
+        StateApplicationHelper.EmitStateApplication(sb, model);
+
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
             sb.AppendLine();
         }
 
@@ -187,7 +183,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStepName,
         string nextStartCommand)
     {
@@ -201,16 +196,18 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"    /// <returns>The command to start the next step ({nextStepName}) or failure handler if phase is Failed.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
+        // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
 
             // Sync saga Phase from state for state types that have Phase property
             // State types ending in "WorkflowState" typically don't have Phase property
@@ -274,27 +271,28 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         ApprovalModel approval)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var requestEventName = $"Request{approval.ApprovalPointName}ApprovalEvent";
 
-        // Step with approval - apply reducer, set approval waiting phase, yield RequestApprovalEvent
+        // Step with approval - apply state change, set approval waiting phase, yield RequestApprovalEvent
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
         sb.AppendLine($"    /// <returns>The request approval event to initiate the approval flow.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
+        // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
         }
 

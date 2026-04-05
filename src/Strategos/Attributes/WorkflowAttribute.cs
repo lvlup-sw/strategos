@@ -72,4 +72,21 @@ public sealed class WorkflowAttribute(string name, int version = 1) : Attribute
     /// </para>
     /// </remarks>
     public int Version { get; } = version;
+
+    /// <summary>
+    /// Gets or sets the persistence mode for generated saga handlers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Defaults to <see cref="PersistenceMode.SagaDocument"/> (direct state mutation via reducers).
+    /// Set to <see cref="PersistenceMode.EventSourced"/> to generate handlers that append events
+    /// to the Marten event stream and apply them locally for saga routing.
+    /// </para>
+    /// <para>
+    /// When using <see cref="PersistenceMode.EventSourced"/>, the state type must implement
+    /// <c>IEventSourcedState&lt;TState&gt;</c> which provides the
+    /// <c>ApplyEvent</c> method used for local state application.
+    /// </para>
+    /// </remarks>
+    public PersistenceMode Persistence { get; set; } = PersistenceMode.SagaDocument;
 }

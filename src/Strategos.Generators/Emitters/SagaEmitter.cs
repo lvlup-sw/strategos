@@ -79,6 +79,12 @@ internal static class SagaEmitter
             "Wolverine.Persistence.Sagas",
         };
 
+        // Event-sourced mode needs IDocumentSession from Marten
+        if (model.IsEventSourced)
+        {
+            usings.Add("Marten");
+        }
+
         // Add step type namespaces from the model
         if (model.Steps is not null)
         {
