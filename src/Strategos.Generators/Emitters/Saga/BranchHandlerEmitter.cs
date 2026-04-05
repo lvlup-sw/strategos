@@ -77,16 +77,18 @@ internal sealed class BranchHandlerEmitter
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
         sb.AppendLine($"    public object Handle(");
         sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        // Apply reducer if state type is specified
+        // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
-            sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+            StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
         }
 
@@ -238,16 +240,18 @@ internal sealed class BranchHandlerEmitter
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
             sb.AppendLine($"    public {rejoinStepCommand} Handle(");
             sb.AppendLine($"        {eventName} evt,");
+            StateApplicationHelper.EmitSessionParameter(sb, model);
             sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
             sb.AppendLine("    {");
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
             sb.AppendLine();
 
-            // Apply reducer if state type is specified
+            // Apply state change
             if (!string.IsNullOrEmpty(model.StateTypeName))
             {
-                sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+                StateApplicationHelper.EmitStateApplication(sb, model);
                 sb.AppendLine();
             }
 
@@ -268,16 +272,18 @@ internal sealed class BranchHandlerEmitter
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
             sb.AppendLine("    public void Handle(");
             sb.AppendLine($"        {eventName} evt,");
+            StateApplicationHelper.EmitSessionParameter(sb, model);
             sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
             sb.AppendLine("    {");
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
             sb.AppendLine();
 
-            // Apply reducer if state type is specified
+            // Apply state change
             if (!string.IsNullOrEmpty(model.StateTypeName))
             {
-                sb.AppendLine($"        State = {reducerTypeName}.Reduce(State, evt.UpdatedState);");
+                StateApplicationHelper.EmitStateApplication(sb, model);
                 sb.AppendLine();
             }
 

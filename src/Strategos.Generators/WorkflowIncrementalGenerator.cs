@@ -108,6 +108,16 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             version = v;
         }
 
+        // Extract persistence mode from named argument (defaults to SagaDocument)
+        var persistenceMode = Models.PersistenceMode.SagaDocument;
+        foreach (var namedArg in attribute.NamedArguments)
+        {
+            if (namedArg.Key == "Persistence" && namedArg.Value.Value is int pm)
+            {
+                persistenceMode = (Models.PersistenceMode)pm;
+            }
+        }
+
         // Check for empty/whitespace workflow name
         if (string.IsNullOrWhiteSpace(workflowName))
         {
@@ -524,6 +534,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             StepNames: stepNames,
             StateTypeName: stateTypeName,
             Version: version,
+            PersistenceMode: persistenceMode,
             Steps: stepModels,
             Loops: loopModels,
             Branches: branchModels,
