@@ -70,6 +70,7 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - routes to appropriate branch path.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The start command for the selected branch path.</returns>");
 
@@ -230,6 +231,7 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - completes branch path and routes to rejoin.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
 
         if (branch.HasRejoinPoint)

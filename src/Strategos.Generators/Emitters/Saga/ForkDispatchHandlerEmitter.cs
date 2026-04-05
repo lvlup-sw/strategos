@@ -61,6 +61,7 @@ internal sealed class ForkDispatchHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - dispatches parallel fork paths.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The start commands for all fork paths.</returns>");
 

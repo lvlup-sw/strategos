@@ -72,6 +72,7 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - applies reducer and chains to next step.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
         // Priority: Approval → Terminal/Final → Non-Final
         // Terminal steps (CompleteStep, FailedStep, TerminateStep, AutoFailStep) should always

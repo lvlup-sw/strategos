@@ -169,6 +169,7 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         sb.AppendLine($"    /// Handles the {completedEventName} event.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
         var reducerTypeName = model.ReducerTypeName;
 

@@ -182,7 +182,51 @@ public class EventSourcedEmitterIntegrationTests
     }
 
     // =============================================================================
-    // C. Default Mode (SagaDocument) — Backward Compatibility
+    // C. XML Documentation
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that event-sourced handlers include session param XML doc.
+    /// </summary>
+    [Test]
+    public async Task EventSourced_Saga_HandlersIncludeSessionXmlDoc()
+    {
+        var result = GeneratorTestHelper.RunGenerator(EventSourcedLinearWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        await Assert.That(sagaSource).Contains("<param name=\"session\">");
+    }
+
+    // =============================================================================
+    // D. Validation Diagnostics
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that event-sourced mode without state type emits a diagnostic.
+    /// </summary>
+    [Test]
+    public async Task EventSourced_WithoutStateType_EmitsDiagnostic()
+    {
+        const string source = """
+            using Strategos.Attributes;
+
+            namespace TestNamespace;
+
+            [Workflow("no-state", Persistence = PersistenceMode.EventSourced)]
+            public static partial class NoStateWorkflow
+            {
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var diagnostics = result.Diagnostics;
+
+        await Assert.That(diagnostics).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(diagnostics.Any(d => d.Id == "AGWF016")).IsTrue();
+    }
+
+    // =============================================================================
+    // E. Default Mode (SagaDocument) — Backward Compatibility
     // =============================================================================
 
     /// <summary>

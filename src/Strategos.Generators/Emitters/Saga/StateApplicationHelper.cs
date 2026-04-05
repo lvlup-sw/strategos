@@ -87,6 +87,23 @@ internal static class StateApplicationHelper
     }
 
     /// <summary>
+    /// Emits the XML documentation for the <c>session</c> parameter when event-sourced.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="indent">The indentation prefix.</param>
+    public static void EmitSessionParameterDoc(
+        StringBuilder sb,
+        WorkflowModel model,
+        string indent = "    ")
+    {
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine($"{indent}/// <param name=\"session\">The Marten document session for event stream operations.</param>");
+        }
+    }
+
+    /// <summary>
     /// Emits the null guard for the <c>session</c> parameter when event-sourced.
     /// </summary>
     /// <param name="sb">The <see cref="StringBuilder"/> to append to.</param>

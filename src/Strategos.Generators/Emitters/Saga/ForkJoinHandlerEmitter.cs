@@ -78,6 +78,7 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - updates path status and checks join readiness.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <remarks>");
         sb.AppendLine("    /// Uses IEnumerable return to conditionally yield join command when all paths complete.");

@@ -71,6 +71,7 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine($"    /// Handles the {eventName} event - evaluates loop condition(s).");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The command for the next step based on loop conditions.</returns>");
 

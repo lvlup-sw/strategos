@@ -114,6 +114,17 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         {
             if (namedArg.Key == "Persistence" && namedArg.Value.Value is int pm)
             {
+                if (pm < 0 || pm > 1)
+                {
+                    var location = GetAttributeLocation(context);
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.InvalidPersistenceMode,
+                        location,
+                        workflowName ?? "<unknown>",
+                        pm));
+                    return new WorkflowGeneratorResult(null, diagnostics);
+                }
+
                 persistenceMode = (Models.PersistenceMode)pm;
             }
         }
@@ -161,6 +172,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.TargetNode,
             context.SemanticModel,
             ct);
+
+        // Validate event-sourced mode requires a state type
+        if (persistenceMode == Models.PersistenceMode.EventSourced
+            && string.IsNullOrEmpty(stateTypeName))
+        {
+            var location = GetAttributeLocation(context);
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.EventSourcedRequiresState,
+                location,
+                validName));
+            return new WorkflowGeneratorResult(null, diagnostics);
+        }
 
         // Extract step models with type information
         var stepModels = FluentDslParser.ExtractStepModels(
