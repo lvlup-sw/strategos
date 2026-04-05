@@ -65,11 +65,9 @@ internal sealed class StepCompletedHandlerEmitter
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
 
-        var reducerTypeName = model.ReducerTypeName;
-
         // XML documentation
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {eventName} event - applies reducer and chains to next step.");
+        sb.AppendLine($"    /// Handles the {eventName} event - applies state change and chains to next step.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
@@ -79,23 +77,22 @@ internal sealed class StepCompletedHandlerEmitter
         // call MarkCompleted() regardless of their position in the workflow.
         if (context.ApprovalAtStep is not null)
         {
-            EmitApprovalWaitingHandler(sb, model, eventName, reducerTypeName, context.ApprovalAtStep);
+            EmitApprovalWaitingHandler(sb, model, eventName, context.ApprovalAtStep);
         }
         else if (context.IsTerminalStep || context.IsLastStep)
         {
-            EmitFinalStepHandler(sb, model, eventName, reducerTypeName);
+            EmitFinalStepHandler(sb, model, eventName);
         }
         else
         {
-            EmitNonFinalStepHandler(sb, model, eventName, reducerTypeName, context.NextStepName!);
+            EmitNonFinalStepHandler(sb, model, eventName, context.NextStepName!);
         }
     }
 
     private static void EmitFinalStepHandler(
         StringBuilder sb,
         WorkflowModel model,
-        string eventName,
-        string? reducerTypeName)
+        string eventName)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -127,7 +124,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStepName)
     {
         // Non-final step - apply reducer, returns StartNextStepCommand
@@ -138,11 +134,11 @@ internal sealed class StepCompletedHandlerEmitter
         // - After reducer, check if Phase == Failed and route to FailedStep
         if (model.HasFailureHandlers)
         {
-            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, reducerTypeName, nextStepName, nextStartCommand);
+            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, nextStepName, nextStartCommand);
         }
         else
         {
-            EmitSimpleNonFinalStepHandler(sb, model, eventName, reducerTypeName, nextStartCommand);
+            EmitSimpleNonFinalStepHandler(sb, model, eventName, nextStartCommand);
         }
     }
 
@@ -150,7 +146,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStartCommand)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
@@ -188,7 +183,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         string nextStepName,
         string nextStartCommand)
     {
@@ -277,7 +271,6 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string? reducerTypeName,
         ApprovalModel approval)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);

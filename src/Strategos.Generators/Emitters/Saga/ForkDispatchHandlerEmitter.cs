@@ -51,7 +51,6 @@ internal sealed class ForkDispatchHandlerEmitter
         // Use unprefixed step type name for completed event (workers return per-type events)
         var baseStepName = ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var sanitizedId = fork.ForkId.Replace("-", "_");
 
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);

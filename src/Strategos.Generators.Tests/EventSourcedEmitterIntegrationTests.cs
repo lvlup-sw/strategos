@@ -182,6 +182,101 @@ public class EventSourcedEmitterIntegrationTests
     }
 
     // =============================================================================
+    // B2. Non-Linear Workflow — Loop Coverage
+    // =============================================================================
+
+    /// <summary>
+    /// Source code for an event-sourced workflow with a loop.
+    /// Exercises LoopCompletedHandlerEmitter event-sourced path.
+    /// </summary>
+    private const string EventSourcedLoopWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record RefinementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public decimal QualityScore { get; init; }
+        }
+
+        public class ValidateInput : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class CritiqueStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class RefineStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class PublishResult : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        [Workflow("iterative-refinement", Persistence = PersistenceMode.EventSourced)]
+        public static partial class IterativeRefinementWorkflow
+        {
+            public static WorkflowDefinition<RefinementState> Definition => Workflow<RefinementState>
+                .Create("iterative-refinement")
+                .StartWith<ValidateInput>()
+                .RepeatUntil(
+                    state => state.QualityScore >= 0.9m,
+                    "Refinement",
+                    loop => loop
+                        .Then<CritiqueStep>()
+                        .Then<RefineStep>(),
+                    maxIterations: 5)
+                .Finally<PublishResult>();
+        }
+        """;
+
+    /// <summary>
+    /// Verifies that event-sourced loop workflow generates ApplyEvent in loop handler.
+    /// </summary>
+    [Test]
+    public async Task EventSourced_LoopWorkflow_HandlersUseApplyEvent()
+    {
+        var result = GeneratorTestHelper.RunGenerator(EventSourcedLoopWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "IterativeRefinementSaga.g.cs");
+
+        await Assert.That(sagaSource).Contains("session.Events.Append(WorkflowId, evt);");
+        await Assert.That(sagaSource).Contains("State = State.ApplyEvent(evt);");
+        await Assert.That(sagaSource).Contains("IDocumentSession session,");
+        await Assert.That(sagaSource).DoesNotContain("Reduce(State, evt.UpdatedState)");
+    }
+
+    /// <summary>
+    /// Verifies that event-sourced loop workflow generates snapshot config.
+    /// </summary>
+    [Test]
+    public async Task EventSourced_LoopWorkflow_ExtensionsIncludeSnapshot()
+    {
+        var result = GeneratorTestHelper.RunGenerator(EventSourcedLoopWorkflow);
+        var extSource = GeneratorTestHelper.GetGeneratedSource(result, "IterativeRefinementExtensions.g.cs");
+
+        await Assert.That(extSource).Contains("Snapshot<RefinementState>");
+    }
+
+    // =============================================================================
     // C. XML Documentation
     // =============================================================================
 

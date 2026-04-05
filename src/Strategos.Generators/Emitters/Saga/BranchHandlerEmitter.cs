@@ -57,7 +57,6 @@ internal sealed class BranchHandlerEmitter
         // Use unprefixed step type name for completed event (workers return per-type events)
         var baseStepName = ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
         // Method discriminators are called with State as argument; property discriminators are accessed on State
@@ -223,7 +222,6 @@ internal sealed class BranchHandlerEmitter
         // Branch path step names include the branch prefix (e.g., "Approved_Complete")
         // and should be used as-is for the event name - don't strip the prefix
         var eventName = $"{stepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
         // XML documentation

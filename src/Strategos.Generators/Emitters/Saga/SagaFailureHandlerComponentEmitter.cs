@@ -171,8 +171,6 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         sb.AppendLine($"    /// <param name=\"evt\">The completed event.</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
-        var reducerTypeName = model.ReducerTypeName;
-
         if (isLastStep && handler.IsTerminal)
         {
             // Final step of a terminal handler - mark as Failed and complete

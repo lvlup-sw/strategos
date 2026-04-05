@@ -69,7 +69,6 @@ internal sealed class ForkJoinHandlerEmitter
         // phase name (e.g., "TargetLoop_ValidateThesisStep" -> "ValidateThesisStep").
         var baseStepName = ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var sanitizedId = fork.ForkId.Replace("-", "_");
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 

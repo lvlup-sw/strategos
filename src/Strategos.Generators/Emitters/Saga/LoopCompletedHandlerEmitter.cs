@@ -61,7 +61,6 @@ internal sealed class LoopCompletedHandlerEmitter
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
-        var reducerTypeName = model.ReducerTypeName;
         var loops = context.LoopsAtStep!;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var innermostLoop = loops[0];

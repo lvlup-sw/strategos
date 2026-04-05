@@ -114,7 +114,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         {
             if (namedArg.Key == "Persistence" && namedArg.Value.Value is int pm)
             {
-                if (pm < 0 || pm > 1)
+                if (!Enum.IsDefined(typeof(Models.PersistenceMode), pm))
                 {
                     var location = GetAttributeLocation(context);
                     diagnostics.Add(Diagnostic.Create(
