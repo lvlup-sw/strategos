@@ -131,6 +131,44 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         var actions = _actionBuilders.ConvertAll(b => b.Build());
         actions.AddRange(_defaultActionDescriptors);
 
+        // Project ValidFromState declarations into self-loop transitions (Track A — 2.4.0).
+        // Each (action, state) pair recorded via ActionBuilder<T>.ValidFromState becomes a
+        // self-loop LifecycleTransitionDescriptor { FromState = state, ToState = state, TriggerActionName = action.Name }.
+        // The OntologyQueryService.GetActionsForState read path then naturally returns those
+        // actions for the declared state(s) — no read-side changes are required.
+        //
+        // Validation note: AONT017 (LifecycleTransitionBadState) is a Roslyn analyzer that
+        // walks source-level transitions only and cannot see ValidFromState desugaring.
+        // We therefore add a runtime guard here so users get a clear error pointing back
+        // to ValidFromState rather than a downstream OntologyGraphBuilder failure.
+        if (_lifecycle is not null && _actionBuilders.Any(ab => ab.ValidFromStates.Count > 0))
+        {
+            var declaredStateNames = _lifecycle.States.Select(s => s.Name).ToHashSet();
+            var augmentedTransitions = new List<LifecycleTransitionDescriptor>(_lifecycle.Transitions);
+            foreach (var actionBuilder in _actionBuilders)
+            {
+                foreach (var stateName in actionBuilder.ValidFromStates)
+                {
+                    if (!declaredStateNames.Contains(stateName))
+                    {
+                        throw new InvalidOperationException(
+                            $"Action '{actionBuilder.Name}' on '{typeof(T).Name}' declares ValidFromState '{stateName}', " +
+                            $"but that state is not declared in the lifecycle. " +
+                            $"Declared states: {string.Join(", ", declaredStateNames)}.");
+                    }
+
+                    augmentedTransitions.Add(new LifecycleTransitionDescriptor
+                    {
+                        FromState = stateName,
+                        ToState = stateName,
+                        TriggerActionName = actionBuilder.Name,
+                    });
+                }
+            }
+
+            _lifecycle = _lifecycle with { Transitions = augmentedTransitions.AsReadOnly() };
+        }
+
         return new(typeof(T).Name, typeof(T), domainName)
         {
             Kind = _objectKind,

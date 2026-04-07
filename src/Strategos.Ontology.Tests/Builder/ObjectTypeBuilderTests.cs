@@ -132,4 +132,65 @@ public class ObjectTypeBuilderTests
         await Assert.That(descriptor.ImplementedInterfaces.Count).IsEqualTo(1);
         await Assert.That(descriptor.ImplementedInterfaces[0].InterfaceType).IsEqualTo(typeof(ITestSearchable));
     }
+
+    [Test]
+    public async Task Build_WithValidFromStateOnAction_EmitsSelfLoopTransitionIntoLifecycle()
+    {
+        var builder = new ObjectTypeBuilder<TrackATestType>("test-domain");
+        builder.Lifecycle<TrackATestState>(t => t.Status, lc =>
+        {
+            lc.State(TrackATestState.Open).Initial();
+            lc.State(TrackATestState.Closed).Terminal();
+        });
+        builder.Action("ViewPosition").ValidFromState(TrackATestState.Open);
+
+        var descriptor = builder.Build();
+
+        var selfLoop = descriptor.Lifecycle!.Transitions
+            .FirstOrDefault(t => t.FromState == "Open" && t.ToState == "Open" && t.TriggerActionName == "ViewPosition");
+        await Assert.That(selfLoop).IsNotNull();
+    }
+
+    [Test]
+    public async Task Build_WithValidFromStateForUndeclaredState_Throws()
+    {
+        var builder = new ObjectTypeBuilder<TrackATestType>("test-domain");
+        builder.Lifecycle<TrackATestState>(t => t.Status, lc =>
+        {
+            lc.State(TrackATestState.Open).Initial();
+            // Closed is intentionally NOT declared
+        });
+        builder.Action("Inspect").ValidFromState(TrackATestState.Closed);
+
+        await Assert.That(() => builder.Build())
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+
+        await Assert.That(() => builder.Build())
+            .ThrowsException()
+            .WithMessageContaining("Closed");
+    }
+
+    [Test]
+    public async Task Build_WithMultipleValidFromStates_EmitsOneSelfLoopPerState()
+    {
+        var builder = new ObjectTypeBuilder<TrackATestType>("test-domain");
+        builder.Lifecycle<TrackATestState>(t => t.Status, lc =>
+        {
+            lc.State(TrackATestState.Pending).Initial();
+            lc.State(TrackATestState.Active).Terminal();
+        });
+        builder.Action("ExecuteTrade")
+            .ValidFromState(TrackATestState.Pending)
+            .ValidFromState(TrackATestState.Active);
+
+        var descriptor = builder.Build();
+
+        var pending = descriptor.Lifecycle!.Transitions
+            .Any(t => t.FromState == "Pending" && t.ToState == "Pending" && t.TriggerActionName == "ExecuteTrade");
+        var active = descriptor.Lifecycle!.Transitions
+            .Any(t => t.FromState == "Active" && t.ToState == "Active" && t.TriggerActionName == "ExecuteTrade");
+        await Assert.That(pending).IsTrue();
+        await Assert.That(active).IsTrue();
+    }
 }
