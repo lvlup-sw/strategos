@@ -15,6 +15,11 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     private string? _boundToolMethod;
     private readonly List<ActionPrecondition> _preconditions = [];
     private readonly List<ActionPostcondition> _postconditions = [];
+    private readonly List<string> _validFromStates = [];
+
+    internal string Name => name;
+
+    internal IReadOnlyList<string> ValidFromStates => _validFromStates;
 
     IActionBuilder IActionBuilder.Description(string description) => Description(description);
     IActionBuilder IActionBuilder.Accepts<TAccepts>() => Accepts<TAccepts>();
@@ -145,6 +150,12 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             Kind = PostconditionKind.EmitsEvent,
             EventTypeName = typeof(TEvent).Name,
         });
+        return this;
+    }
+
+    public IActionBuilder<T> ValidFromState<TEnum>(TEnum state) where TEnum : struct, Enum
+    {
+        _validFromStates.Add(state.ToString());
         return this;
     }
 

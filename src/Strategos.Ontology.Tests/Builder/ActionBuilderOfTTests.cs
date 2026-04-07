@@ -25,6 +25,19 @@ public record TestPositionWithStatus(
 
 public record TestTradeExecutedEvent(Guid OrderId);
 
+public enum TrackATestState
+{
+    Open,
+    Closed,
+    Pending,
+    Active,
+}
+
+public sealed class TrackATestType
+{
+    public TrackATestState Status { get; set; }
+}
+
 public class ActionBuilderOfTTests
 {
     [Test]
@@ -253,5 +266,15 @@ public class ActionBuilderOfTTests
         var descriptor = builder.Build();
 
         await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Tool);
+    }
+
+    [Test]
+    public async Task ValidFromState_RecordsStateNameOnBuilder()
+    {
+        var builder = new ActionBuilder<TrackATestType>("ClosePosition");
+
+        builder.ValidFromState(TrackATestState.Open);
+
+        await Assert.That(builder.ValidFromStates).Contains("Open");
     }
 }
