@@ -1,10 +1,72 @@
 using System.Text.RegularExpressions;
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Events;
+using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Query;
 
-internal sealed class OntologyQueryService(OntologyGraph graph) : IOntologyQuery
+internal sealed class OntologyQueryService : IOntologyQuery
 {
+    private readonly OntologyGraph graph;
+    private readonly IObjectSetProvider? _objectSetProvider;
+    private readonly IActionDispatcher? _actionDispatcher;
+    private readonly IEventStreamProvider? _eventStreamProvider;
+
+    /// <summary>
+    /// Creates an <see cref="OntologyQueryService"/> for read-only graph queries.
+    /// <see cref="GetObjectSet{T}"/> will throw <see cref="InvalidOperationException"/>
+    /// because no provider/dispatcher/event stream were supplied.
+    /// </summary>
+    public OntologyQueryService(OntologyGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        this.graph = graph;
+    }
+
+    /// <summary>
+    /// Creates an <see cref="OntologyQueryService"/> with full object-set materialization
+    /// support. <see cref="GetObjectSet{T}"/> requires the provider/dispatcher/event stream
+    /// dependencies, which are forwarded into <see cref="ObjectSet{T}"/>.
+    /// </summary>
+    public OntologyQueryService(
+        OntologyGraph graph,
+        IObjectSetProvider objectSetProvider,
+        IActionDispatcher actionDispatcher,
+        IEventStreamProvider eventStreamProvider)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(objectSetProvider);
+        ArgumentNullException.ThrowIfNull(actionDispatcher);
+        ArgumentNullException.ThrowIfNull(eventStreamProvider);
+
+        this.graph = graph;
+        _objectSetProvider = objectSetProvider;
+        _actionDispatcher = actionDispatcher;
+        _eventStreamProvider = eventStreamProvider;
+    }
+
+    public ObjectSet<T> GetObjectSet<T>(string objectType) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(objectType);
+        var ot = FindObjectType(objectType);
+        if (ot is null)
+        {
+            throw new KeyNotFoundException(
+                $"Object type '{objectType}' is not registered in the ontology.");
+        }
+
+        if (_objectSetProvider is null || _actionDispatcher is null || _eventStreamProvider is null)
+        {
+            throw new InvalidOperationException(
+                $"GetObjectSet<{typeof(T).Name}> requires {nameof(IObjectSetProvider)}, " +
+                $"{nameof(IActionDispatcher)}, and {nameof(IEventStreamProvider)} to be supplied " +
+                "when constructing the OntologyQueryService.");
+        }
+
+        return new ObjectSet<T>(_objectSetProvider, _actionDispatcher, _eventStreamProvider);
+    }
+
     public IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(
         string? domain = null,
         string? implementsInterface = null,
