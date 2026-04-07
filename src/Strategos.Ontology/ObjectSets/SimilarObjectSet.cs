@@ -34,4 +34,25 @@ public sealed class SimilarObjectSet<T> where T : class
     {
         return _provider.ExecuteSimilarityAsync<T>(Expression, ct);
     }
+
+    /// <summary>
+    /// Returns a new <see cref="SimilarObjectSet{T}"/> with the minimum relevance score updated.
+    /// The original instance is unchanged.
+    /// </summary>
+    public SimilarObjectSet<T> WithMinRelevance(double minRelevance)
+        => new(new SimilarityExpression(Expression, minRelevance: minRelevance), _provider);
+
+    /// <summary>
+    /// Returns a new <see cref="SimilarObjectSet{T}"/> that limits results to the top <paramref name="topK"/> matches.
+    /// The original instance is unchanged.
+    /// </summary>
+    public SimilarObjectSet<T> Take(int topK)
+        => new(new SimilarityExpression(Expression, topK: topK), _provider);
+
+    /// <summary>
+    /// Returns a new <see cref="SimilarObjectSet{T}"/> using the specified distance metric.
+    /// The original instance is unchanged.
+    /// </summary>
+    public SimilarObjectSet<T> WithMetric(DistanceMetric metric)
+        => new(new SimilarityExpression(Expression, metric: metric), _provider);
 }
