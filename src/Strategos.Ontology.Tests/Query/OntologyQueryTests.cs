@@ -858,3 +858,59 @@ public class OntologyQueryServiceDiTests
         await Assert.That(types.Count).IsEqualTo(3);
     }
 }
+
+public class OntologyQueryServiceGetObjectSetTests
+{
+    [Test]
+    public async Task IOntologyQuery_HasGetObjectSetMethod()
+    {
+        // Arrange
+        var mock = Substitute.For<IOntologyQuery>();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        mock.GetObjectSet<QueryPosition>("QueryPosition")
+            .Returns(new Strategos.Ontology.ObjectSets.ObjectSet<QueryPosition>(provider, dispatcher, eventStream));
+
+        // Act
+        var result = mock.GetObjectSet<QueryPosition>("QueryPosition");
+
+        // Assert
+        await Assert.That(result).IsNotNull();
+    }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_ReturnsObjectSetForRegisteredType()
+    {
+        // Arrange
+        var graph = QueryTestGraphFactory.Build();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act
+        var set = query.GetObjectSet<QueryPosition>("QueryPosition");
+
+        // Assert
+        await Assert.That(set).IsNotNull();
+        await Assert.That(set.Expression).IsTypeOf<Strategos.Ontology.ObjectSets.RootExpression>();
+        await Assert.That(set.Expression.ObjectType).IsEqualTo(typeof(QueryPosition));
+    }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_ForUnregisteredType_ThrowsKeyNotFoundException()
+    {
+        // Arrange
+        var graph = QueryTestGraphFactory.Build();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act + Assert
+        await Assert.That(() => query.GetObjectSet<QueryPosition>("BogusType"))
+            .Throws<KeyNotFoundException>()
+            .WithMessageContaining("BogusType");
+    }
+}
