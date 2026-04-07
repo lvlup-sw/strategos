@@ -30,4 +30,6 @@ public interface IActionBuilder<T> : IActionBuilder
     IActionBuilder<T> CreatesLinked<TTarget>(string linkName);
 
     IActionBuilder<T> EmitsEvent<TEvent>();
+
+    IActionBuilder<T> ValidFromState<TEnum>(TEnum state) where TEnum : struct, Enum;
 }

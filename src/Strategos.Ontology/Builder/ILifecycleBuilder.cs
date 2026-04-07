@@ -5,5 +5,11 @@ public interface ILifecycleBuilder<TEnum>
 {
     ILifecycleStateBuilder State(TEnum state);
 
+    ILifecycleStateBuilder InitialState(TEnum state);
+
+    ILifecycleStateBuilder TerminalState(TEnum state);
+
     ILifecycleTransitionBuilder Transition(TEnum from, TEnum to);
+
+    ILifecycleTransitionBuilder Transition(TEnum from, TEnum to, string trigger);
 }

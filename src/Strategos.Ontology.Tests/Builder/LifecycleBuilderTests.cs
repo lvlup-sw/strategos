@@ -117,6 +117,46 @@ public class LifecycleBuilderTests
     }
 
     [Test]
+    public async Task InitialState_Shorthand_CallsStateThenInitial()
+    {
+        var builder = new LifecycleBuilder<TestPositionStatus>();
+
+        builder.InitialState(TestPositionStatus.Pending);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.States.Count).IsEqualTo(1);
+        await Assert.That(descriptor.States[0].Name).IsEqualTo("Pending");
+        await Assert.That(descriptor.States[0].IsInitial).IsTrue();
+    }
+
+    [Test]
+    public async Task TerminalState_Shorthand_CallsStateThenTerminal()
+    {
+        var builder = new LifecycleBuilder<TestPositionStatus>();
+
+        builder.TerminalState(TestPositionStatus.Closed);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.States.Count).IsEqualTo(1);
+        await Assert.That(descriptor.States[0].Name).IsEqualTo("Closed");
+        await Assert.That(descriptor.States[0].IsTerminal).IsTrue();
+    }
+
+    [Test]
+    public async Task Transition_WithTriggerOverload_ChainsTriggeredByAction()
+    {
+        var builder = new LifecycleBuilder<TestPositionStatus>();
+
+        builder.Transition(TestPositionStatus.Pending, TestPositionStatus.Active, trigger: "ActivatePosition");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Transitions.Count).IsEqualTo(1);
+        await Assert.That(descriptor.Transitions[0].FromState).IsEqualTo("Pending");
+        await Assert.That(descriptor.Transitions[0].ToState).IsEqualTo("Active");
+        await Assert.That(descriptor.Transitions[0].TriggerActionName).IsEqualTo("ActivatePosition");
+    }
+
+    [Test]
     public async Task FullLifecycle_ComplexStateMachine()
     {
         var builder = new LifecycleBuilder<TestOrderStatus>();

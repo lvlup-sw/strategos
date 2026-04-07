@@ -819,6 +819,86 @@ public class OntologyQueryServiceExtensionPointTests
     }
 }
 
+// --- Track A (2.4.0) ValidFromState end-to-end tests ---
+
+public enum TrackAQueryState
+{
+    Open,
+    Closed,
+}
+
+public sealed class TrackAQueryItem
+{
+    public Guid Id { get; set; }
+    public TrackAQueryState Status { get; set; }
+}
+
+public sealed class TrackAQueryDomainOntology : DomainOntology
+{
+    public override string DomainName => "track-a";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackAQueryItem>(obj =>
+        {
+            obj.Key(i => i.Id);
+            obj.Property(i => i.Status);
+
+            obj.Lifecycle<TrackAQueryState>(i => i.Status, lc =>
+            {
+                lc.InitialState(TrackAQueryState.Open);
+                lc.TerminalState(TrackAQueryState.Closed);
+                lc.Transition(TrackAQueryState.Open, TrackAQueryState.Closed, trigger: "CloseItem");
+            });
+
+            obj.Action("ViewItem").ValidFromState(TrackAQueryState.Open);
+            obj.Action("CloseItem");
+            obj.Action("Inspect");
+        });
+    }
+}
+
+public class OntologyQueryServiceValidFromStateTests
+{
+    private static IOntologyQuery CreateQueryService()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new TrackAQueryDomainOntology());
+        return new OntologyQueryService(graphBuilder.Build());
+    }
+
+    [Test]
+    public async Task GetActionsForState_ReturnsActionDeclaredViaValidFromState()
+    {
+        var query = CreateQueryService();
+
+        var openActions = query.GetActionsForState("TrackAQueryItem", "Open");
+        var closedActions = query.GetActionsForState("TrackAQueryItem", "Closed");
+
+        // ViewItem must be returned for the declared state...
+        await Assert.That(openActions.Select(a => a.Name)).Contains("ViewItem");
+
+        // ...and must NOT be returned for any other state. This is the discriminating
+        // assertion: without the A5 projection, ViewItem would be unconstrained
+        // (appears in no transition) and would leak into every state.
+        await Assert.That(closedActions.Select(a => a.Name)).DoesNotContain("ViewItem");
+    }
+
+    [Test]
+    public async Task GetActionsForState_UnconstrainedAction_RemainsUnconstrained()
+    {
+        var query = CreateQueryService();
+
+        // "Inspect" has no ValidFromState calls and is not referenced by any transition.
+        // It should appear in every lifecycle state.
+        var openActions = query.GetActionsForState("TrackAQueryItem", "Open");
+        var closedActions = query.GetActionsForState("TrackAQueryItem", "Closed");
+
+        await Assert.That(openActions.Select(a => a.Name)).Contains("Inspect");
+        await Assert.That(closedActions.Select(a => a.Name)).Contains("Inspect");
+    }
+}
+
 public class OntologyQueryServiceDiTests
 {
     [Test]
