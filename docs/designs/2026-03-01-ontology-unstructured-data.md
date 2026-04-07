@@ -400,9 +400,10 @@ var result = await IngestionPipeline<KnowledgeChunk>.Create()
     .Build()
     .ExecuteAsync(documents, ct);
 
-// Querying (existing ObjectSet API, unchanged):
+// Querying (fluent ObjectSet API — 2.4.0+):
 var results = await objectSet.Of<KnowledgeChunk>()
-    .SimilarTo("how does authentication work?", topK: 5)
+    .SimilarTo("how does authentication work?")
+    .Take(5)
     .ExecuteAsync(ct);
 ```
 
@@ -411,7 +412,7 @@ var results = await objectSet.Of<KnowledgeChunk>()
 | Before (Obsolete) | After |
 |---|---|
 | `services.AddRagCollection<T, TAdapter>()` | `services.AddOntology(o => o.UsePgVector(...))` |
-| `IVectorSearchAdapter.SearchAsync(query, topK, min)` | `ObjectSet<T>.SimilarTo(query, topK, min).ExecuteAsync()` |
+| `IVectorSearchAdapter.SearchAsync(query, topK, min)` | `ObjectSet<T>.SimilarTo(query).Take(topK).WithMinRelevance(min).ExecuteAsync()` |
 | `VectorSearchResult` (string content + score) | `ScoredObjectSetResult<T>` (typed items + scores) |
 | Manual embedding in adapter | `IEmbeddingProvider` injected into provider |
 | Manual chunking | `IngestionPipeline<T>` with built-in chunkers |

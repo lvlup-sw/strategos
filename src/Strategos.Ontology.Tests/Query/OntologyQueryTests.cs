@@ -993,4 +993,21 @@ public class OntologyQueryServiceGetObjectSetTests
             .Throws<KeyNotFoundException>()
             .WithMessageContaining("BogusType");
     }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_WithReadOnlyCtor_ThrowsInvalidOperationException()
+    {
+        // Arrange — construct via the read-only single-arg ctor (no provider/dispatcher/eventStream).
+        // This path is reachable in production via the DI factory in OntologyServiceCollectionExtensions
+        // when only the OntologyGraph is registered.
+        var graph = QueryTestGraphFactory.Build();
+        var query = new OntologyQueryService(graph);
+
+        // Act + Assert — query a REGISTERED type so KeyNotFoundException does not fire first.
+        // The defensive throw should produce an InvalidOperationException naming the missing
+        // dependency (IObjectSetProvider) so the user knows what to register.
+        await Assert.That(() => query.GetObjectSet<QueryPosition>("QueryPosition"))
+            .Throws<InvalidOperationException>()
+            .WithMessageContaining(nameof(Strategos.Ontology.ObjectSets.IObjectSetProvider));
+    }
 }
