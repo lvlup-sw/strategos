@@ -94,18 +94,17 @@ public class ObjectSetTests
     }
 
     [Test]
-    public async Task ObjectSet_SimilarTo_ExpressionHasCorrectProperties()
+    public async Task ObjectSet_SimilarTo_FluentChain_ProducesCorrectExpression()
     {
         // Arrange
         var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
 
-        // Act
-        var similar = set.SimilarTo(
-            "find related items",
-            topK: 10,
-            minRelevance: 0.8,
-            metric: DistanceMetric.L2,
-            embeddingPropertyName: "ContentEmbedding");
+        // Act — fluent chain replaces the legacy positional/optional-arg API
+        var similar = set
+            .SimilarTo("find related items")
+            .Take(10)
+            .WithMinRelevance(0.8)
+            .WithMetric(DistanceMetric.L2);
 
         // Assert
         var expr = similar.Expression;
@@ -113,41 +112,7 @@ public class ObjectSetTests
         await Assert.That(expr.TopK).IsEqualTo(10);
         await Assert.That(expr.MinRelevance).IsEqualTo(0.8);
         await Assert.That(expr.Metric).IsEqualTo(DistanceMetric.L2);
-        await Assert.That(expr.EmbeddingPropertyName).IsEqualTo("ContentEmbedding");
         await Assert.That(expr.Source).IsTypeOf<RootExpression>();
-    }
-
-    [Test]
-    public async Task ObjectSet_SimilarTo_DefaultParameters()
-    {
-        // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
-
-        // Act
-        var similar = set.SimilarTo("query");
-
-        // Assert
-        var expr = similar.Expression;
-        await Assert.That(expr.TopK).IsEqualTo(5);
-        await Assert.That(expr.MinRelevance).IsEqualTo(0.7);
-        await Assert.That(expr.Metric).IsEqualTo(DistanceMetric.Cosine);
-        await Assert.That(expr.EmbeddingPropertyName).IsNull();
-        await Assert.That(expr.QueryVector).IsNull();
-    }
-
-    [Test]
-    public async Task ObjectSet_SimilarTo_WithQueryVector()
-    {
-        // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
-        var vector = new float[] { 0.1f, 0.2f, 0.3f };
-
-        // Act
-        var similar = set.SimilarTo("query", queryVector: vector);
-
-        // Assert
-        await Assert.That(similar.Expression.QueryVector).IsNotNull();
-        await Assert.That(similar.Expression.QueryVector!.Length).IsEqualTo(3);
     }
 
     [Test]
@@ -162,5 +127,33 @@ public class ObjectSetTests
         // Assert
         var expr = similar.Expression;
         await Assert.That(expr.Source).IsTypeOf<FilterExpression>();
+    }
+
+    [Test]
+    public async Task SimilarTo_WithOnlyQueryText_ReturnsSimilarObjectSetWithDefaults()
+    {
+        // Arrange
+        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+
+        // Act
+        var similar = set.SimilarTo("query text");
+
+        // Assert
+        await Assert.That(similar.Expression.QueryText).IsEqualTo("query text");
+        await Assert.That(similar.Expression.TopK).IsEqualTo(5);
+        await Assert.That(similar.Expression.MinRelevance).IsEqualTo(0.7);
+        await Assert.That(similar.Expression.Metric).IsEqualTo(DistanceMetric.Cosine);
+        await Assert.That(similar.Expression.EmbeddingPropertyName).IsNull();
+        await Assert.That(similar.Expression.QueryVector).IsNull();
+    }
+
+    [Test]
+    public async Task SimilarTo_HasOnlyOneParameter()
+    {
+        var method = typeof(ObjectSet<string>).GetMethod("SimilarTo");
+        await Assert.That(method).IsNotNull();
+        var parameters = method!.GetParameters();
+        await Assert.That(parameters.Length).IsEqualTo(1);
+        await Assert.That(parameters[0].ParameterType).IsEqualTo(typeof(string));
     }
 }

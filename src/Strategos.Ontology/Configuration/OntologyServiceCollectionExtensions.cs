@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Strategos.Ontology.Actions;
+using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Query;
 
@@ -33,7 +35,25 @@ public static class OntologyServiceCollectionExtensions
 
         var graph = graphBuilder.Build();
         services.AddSingleton(graph);
-        services.AddSingleton<IOntologyQuery>(new OntologyQueryService(graph));
+
+        // Register IOntologyQuery as a factory so that IObjectSetProvider/IActionDispatcher/
+        // IEventStreamProvider — registered later via OntologyOptions service registrations —
+        // can be resolved at activation time. When backing services are not registered,
+        // falls back to the read-only constructor; GetObjectSet<T> will then throw with a
+        // clear diagnostic if invoked without those dependencies.
+        services.AddSingleton<IOntologyQuery>(sp =>
+        {
+            var graphInstance = sp.GetRequiredService<OntologyGraph>();
+            var objectSetProvider = sp.GetService<IObjectSetProvider>();
+            var actionDispatcher = sp.GetService<IActionDispatcher>();
+            var eventStreamProvider = sp.GetService<IEventStreamProvider>();
+
+            return objectSetProvider is not null
+                && actionDispatcher is not null
+                && eventStreamProvider is not null
+                    ? new OntologyQueryService(graphInstance, objectSetProvider, actionDispatcher, eventStreamProvider)
+                    : new OntologyQueryService(graphInstance);
+        });
 
         foreach (var registration in options.ServiceRegistrations)
         {

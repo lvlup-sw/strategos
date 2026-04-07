@@ -3452,10 +3452,12 @@ public class AnalyzeDocumentStep : IWorkflowStep<ClaimState>
     public async Task<StepResult<ClaimState>> ExecuteAsync(
         ClaimState state, StepContext context, CancellationToken ct)
     {
-        // Similarity search via the ontology object set API
+        // Similarity search via the ontology object set API (fluent chain — 2.4.0+)
         var docSet = new ObjectSet<DocumentChunk>(_provider, _dispatcher, _events);
         var searchResult = await docSet
-            .SimilarTo(state.SearchQuery, topK: 10, minRelevance: 0.7)
+            .SimilarTo(state.SearchQuery)
+            .WithMinRelevance(0.7)
+            .Take(10)
             .ExecuteAsync(ct);
 
         var assembledContext = $"""
@@ -3512,7 +3514,9 @@ public class ResearchStep(IObjectSetProvider provider, IActionDispatcher dispatc
     {
         var docSet = new ObjectSet<DocumentChunk>(provider, dispatcher, events);
         var results = await docSet
-            .SimilarTo(state.Query, topK: 10, minRelevance: 0.7)
+            .SimilarTo(state.Query)
+            .WithMinRelevance(0.7)
+            .Take(10)
             .ExecuteAsync(ct);
 
         return StepResult<ResearchState>.Success(

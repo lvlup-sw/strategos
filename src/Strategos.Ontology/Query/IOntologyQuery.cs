@@ -1,4 +1,5 @@
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Query;
 
@@ -58,4 +59,7 @@ public interface IOntologyQuery
 
     IReadOnlyList<ResolvedCrossDomainLink> GetIncomingCrossDomainLinks(
         string objectType);
+
+    // Object set queries
+    ObjectSet<T> GetObjectSet<T>(string objectType) where T : class;
 }

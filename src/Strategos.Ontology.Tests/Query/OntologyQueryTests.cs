@@ -819,6 +819,86 @@ public class OntologyQueryServiceExtensionPointTests
     }
 }
 
+// --- Track A (2.4.0) ValidFromState end-to-end tests ---
+
+public enum TrackAQueryState
+{
+    Open,
+    Closed,
+}
+
+public sealed class TrackAQueryItem
+{
+    public Guid Id { get; set; }
+    public TrackAQueryState Status { get; set; }
+}
+
+public sealed class TrackAQueryDomainOntology : DomainOntology
+{
+    public override string DomainName => "track-a";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackAQueryItem>(obj =>
+        {
+            obj.Key(i => i.Id);
+            obj.Property(i => i.Status);
+
+            obj.Lifecycle<TrackAQueryState>(i => i.Status, lc =>
+            {
+                lc.InitialState(TrackAQueryState.Open);
+                lc.TerminalState(TrackAQueryState.Closed);
+                lc.Transition(TrackAQueryState.Open, TrackAQueryState.Closed, trigger: "CloseItem");
+            });
+
+            obj.Action("ViewItem").ValidFromState(TrackAQueryState.Open);
+            obj.Action("CloseItem");
+            obj.Action("Inspect");
+        });
+    }
+}
+
+public class OntologyQueryServiceValidFromStateTests
+{
+    private static IOntologyQuery CreateQueryService()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new TrackAQueryDomainOntology());
+        return new OntologyQueryService(graphBuilder.Build());
+    }
+
+    [Test]
+    public async Task GetActionsForState_ReturnsActionDeclaredViaValidFromState()
+    {
+        var query = CreateQueryService();
+
+        var openActions = query.GetActionsForState("TrackAQueryItem", "Open");
+        var closedActions = query.GetActionsForState("TrackAQueryItem", "Closed");
+
+        // ViewItem must be returned for the declared state...
+        await Assert.That(openActions.Select(a => a.Name)).Contains("ViewItem");
+
+        // ...and must NOT be returned for any other state. This is the discriminating
+        // assertion: without the A5 projection, ViewItem would be unconstrained
+        // (appears in no transition) and would leak into every state.
+        await Assert.That(closedActions.Select(a => a.Name)).DoesNotContain("ViewItem");
+    }
+
+    [Test]
+    public async Task GetActionsForState_UnconstrainedAction_RemainsUnconstrained()
+    {
+        var query = CreateQueryService();
+
+        // "Inspect" has no ValidFromState calls and is not referenced by any transition.
+        // It should appear in every lifecycle state.
+        var openActions = query.GetActionsForState("TrackAQueryItem", "Open");
+        var closedActions = query.GetActionsForState("TrackAQueryItem", "Closed");
+
+        await Assert.That(openActions.Select(a => a.Name)).Contains("Inspect");
+        await Assert.That(closedActions.Select(a => a.Name)).Contains("Inspect");
+    }
+}
+
 public class OntologyQueryServiceDiTests
 {
     [Test]
@@ -856,5 +936,78 @@ public class OntologyQueryServiceDiTests
 
         var types = query.GetObjectTypes();
         await Assert.That(types.Count).IsEqualTo(3);
+    }
+}
+
+public class OntologyQueryServiceGetObjectSetTests
+{
+    [Test]
+    public async Task IOntologyQuery_HasGetObjectSetMethod()
+    {
+        // Arrange
+        var mock = Substitute.For<IOntologyQuery>();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        mock.GetObjectSet<QueryPosition>("QueryPosition")
+            .Returns(new Strategos.Ontology.ObjectSets.ObjectSet<QueryPosition>(provider, dispatcher, eventStream));
+
+        // Act
+        var result = mock.GetObjectSet<QueryPosition>("QueryPosition");
+
+        // Assert
+        await Assert.That(result).IsNotNull();
+    }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_ReturnsObjectSetForRegisteredType()
+    {
+        // Arrange
+        var graph = QueryTestGraphFactory.Build();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act
+        var set = query.GetObjectSet<QueryPosition>("QueryPosition");
+
+        // Assert
+        await Assert.That(set).IsNotNull();
+        await Assert.That(set.Expression).IsTypeOf<Strategos.Ontology.ObjectSets.RootExpression>();
+        await Assert.That(set.Expression.ObjectType).IsEqualTo(typeof(QueryPosition));
+    }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_ForUnregisteredType_ThrowsKeyNotFoundException()
+    {
+        // Arrange
+        var graph = QueryTestGraphFactory.Build();
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act + Assert
+        await Assert.That(() => query.GetObjectSet<QueryPosition>("BogusType"))
+            .Throws<KeyNotFoundException>()
+            .WithMessageContaining("BogusType");
+    }
+
+    [Test]
+    public async Task OntologyQueryService_GetObjectSet_WithReadOnlyCtor_ThrowsInvalidOperationException()
+    {
+        // Arrange — construct via the read-only single-arg ctor (no provider/dispatcher/eventStream).
+        // This path is reachable in production via the DI factory in OntologyServiceCollectionExtensions
+        // when only the OntologyGraph is registered.
+        var graph = QueryTestGraphFactory.Build();
+        var query = new OntologyQueryService(graph);
+
+        // Act + Assert — query a REGISTERED type so KeyNotFoundException does not fire first.
+        // The defensive throw should produce an InvalidOperationException naming the missing
+        // dependency (IObjectSetProvider) so the user knows what to register.
+        await Assert.That(() => query.GetObjectSet<QueryPosition>("QueryPosition"))
+            .Throws<InvalidOperationException>()
+            .WithMessageContaining(nameof(Strategos.Ontology.ObjectSets.IObjectSetProvider));
     }
 }

@@ -131,6 +131,8 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
         var actions = _actionBuilders.ConvertAll(b => b.Build());
         actions.AddRange(_defaultActionDescriptors);
 
+        ProjectValidFromStatesIntoLifecycle();
+
         return new(typeof(T).Name, typeof(T), domainName)
         {
             Kind = _objectKind,
@@ -147,5 +149,52 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
             ParentTypeName = _parentType?.Name,
             ExternalLinkExtensionPoints = _extensionPointBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
         };
+    }
+
+    /// <summary>
+    /// Projects every <see cref="ActionBuilder{T}.ValidFromStates"/> declaration into a
+    /// self-loop <see cref="LifecycleTransitionDescriptor"/> on the current lifecycle.
+    /// Each (action, state) pair becomes
+    /// <c>{ FromState = state, ToState = state, TriggerActionName = action.Name }</c>,
+    /// which is what <see cref="Strategos.Ontology.Query.OntologyQueryService.GetActionsForState"/>
+    /// reads — no read-side changes are required (Track A — 2.4.0).
+    /// </summary>
+    /// <remarks>
+    /// AONT017 (LifecycleTransitionBadState) is a Roslyn analyzer that walks source-level
+    /// transitions only and cannot see ValidFromState desugaring. A runtime guard is therefore
+    /// added here so users get a clear error pointing back to ValidFromState rather than a
+    /// downstream OntologyGraphBuilder failure.
+    /// </remarks>
+    private void ProjectValidFromStatesIntoLifecycle()
+    {
+        if (_lifecycle is null || !_actionBuilders.Any(ab => ab.ValidFromStates.Count > 0))
+        {
+            return;
+        }
+
+        var declaredStateNames = _lifecycle.States.Select(s => s.Name).ToHashSet();
+        var augmentedTransitions = new List<LifecycleTransitionDescriptor>(_lifecycle.Transitions);
+        foreach (var actionBuilder in _actionBuilders)
+        {
+            foreach (var stateName in actionBuilder.ValidFromStates)
+            {
+                if (!declaredStateNames.Contains(stateName))
+                {
+                    throw new InvalidOperationException(
+                        $"Action '{actionBuilder.Name}' on '{typeof(T).Name}' declares ValidFromState '{stateName}', " +
+                        $"but that state is not declared in the lifecycle. " +
+                        $"Declared states: {string.Join(", ", declaredStateNames)}.");
+                }
+
+                augmentedTransitions.Add(new LifecycleTransitionDescriptor
+                {
+                    FromState = stateName,
+                    ToState = stateName,
+                    TriggerActionName = actionBuilder.Name,
+                });
+            }
+        }
+
+        _lifecycle = _lifecycle with { Transitions = augmentedTransitions.AsReadOnly() };
     }
 }

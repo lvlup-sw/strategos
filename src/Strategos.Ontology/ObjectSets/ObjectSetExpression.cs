@@ -140,6 +140,28 @@ public sealed class SimilarityExpression : ObjectSetExpression
         Filters = filters;
     }
 
+    /// <summary>
+    /// Internal copy constructor for fluent builder mutations.
+    /// Chains to the primary constructor so validation always re-runs.
+    /// Used by <see cref="SimilarObjectSet{T}"/> fluent setters; not exposed publicly.
+    /// </summary>
+    internal SimilarityExpression(
+        SimilarityExpression source,
+        int? topK = null,
+        double? minRelevance = null,
+        DistanceMetric? metric = null)
+        : this(
+            source.Source,
+            source.QueryText,
+            topK ?? source.TopK,
+            minRelevance ?? source.MinRelevance,
+            metric ?? source.Metric,
+            source.EmbeddingPropertyName,
+            source.QueryVector,
+            source.Filters)
+    {
+    }
+
     public ObjectSetExpression Source { get; }
     public string QueryText { get; }
     public int TopK { get; }

@@ -74,24 +74,15 @@ public sealed class ObjectSet<T> where T : class
     }
 
     /// <summary>
-    /// Returns a similarity search over this object set.
+    /// Returns a similarity search over this object set. Configure additional knobs
+    /// (TopK, MinRelevance, DistanceMetric) via the fluent setters on
+    /// <see cref="SimilarObjectSet{T}"/>.
     /// </summary>
-    public SimilarObjectSet<T> SimilarTo(
-        string queryText,
-        int topK = 5,
-        double minRelevance = 0.7,
-        DistanceMetric metric = DistanceMetric.Cosine,
-        string? embeddingPropertyName = null,
-        float[]? queryVector = null)
+    public SimilarObjectSet<T> SimilarTo(string queryText)
     {
         ArgumentNullException.ThrowIfNull(queryText);
-
-        // Defensive copy of mutable float[] to preserve immutability
-        var vectorCopy = queryVector is not null ? (float[])queryVector.Clone() : null;
-
         var expression = new SimilarityExpression(
-            Expression, queryText, topK, minRelevance, metric,
-            embeddingPropertyName, vectorCopy);
+            Expression, queryText, topK: 5, minRelevance: 0.7);
         return new SimilarObjectSet<T>(expression, _provider);
     }
 
