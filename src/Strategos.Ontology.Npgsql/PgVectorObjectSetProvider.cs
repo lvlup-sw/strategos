@@ -67,6 +67,26 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return TypeMapper.ToSnakeCase(expression.RootObjectTypeName);
     }
 
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a write-path call
+    /// from an explicit descriptor name supplied by the caller (typically
+    /// via the <see cref="IObjectSetWriter"/> explicit-name overloads).
+    /// </summary>
+    /// <remarks>
+    /// Symmetric write-path counterpart to <see cref="ResolveTableName(ObjectSetExpression)"/>.
+    /// Exposed as <c>internal</c> so the explicit-name <c>StoreAsync</c> /
+    /// <c>StoreBatchAsync</c> overloads share a single dispatch step and unit
+    /// tests can pin its behavior without needing a live
+    /// <see cref="NpgsqlDataSource"/>. The default-named write overloads
+    /// continue to dispatch via <c>TypeMapper.GetTableName&lt;T&gt;()</c>
+    /// pending the F4/F5 graph-backed lookup.
+    /// </remarks>
+    internal static string ResolveTableNameForDescriptor(string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        return TypeMapper.ToSnakeCase(descriptorName);
+    }
+
     /// <inheritdoc />
     public async Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(
         SimilarityExpression expression, CancellationToken ct = default) where T : class
@@ -209,11 +229,60 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <inheritdoc />
-    public async Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class
+    public Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(item);
 
+        // Default overload: resolve via TypeMapper.GetTableName<T>() (typeof(T).Name → snake_case).
+        // Task F4 (Group 3) will replace this call site with graph-backed descriptor lookup.
         var tableName = TypeMapper.GetTableName<T>();
+        return StoreAsyncCore<T>(tableName, item, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        // Default overload: resolve via TypeMapper.GetTableName<T>() (typeof(T).Name → snake_case).
+        // Task F4 (Group 3) will replace this call site with graph-backed descriptor lookup.
+        var tableName = TypeMapper.GetTableName<T>();
+        return StoreBatchAsyncCore<T>(tableName, items, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(item);
+
+        // Explicit-name overload: dispatch via the shared write-path helper so
+        // the descriptor selects which physical partition to write to (bug #31).
+        var tableName = ResolveTableNameForDescriptor(descriptorName);
+        return StoreAsyncCore<T>(tableName, item, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(items);
+
+        // Explicit-name overload: dispatch via the shared write-path helper so
+        // the descriptor selects which physical partition to write to (bug #31).
+        var tableName = ResolveTableNameForDescriptor(descriptorName);
+        return StoreBatchAsyncCore<T>(tableName, items, ct);
+    }
+
+    /// <summary>
+    /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
+    /// so both the default <see cref="StoreAsync{T}(T, CancellationToken)"/> overload
+    /// (resolving via <see cref="TypeMapper.GetTableName{T}"/>) and the explicit-name
+    /// overload (resolving via <see cref="ResolveTableNameForDescriptor"/>) share a
+    /// single SQL/parameter-binding code path.
+    /// </summary>
+    private async Task StoreAsyncCore<T>(string tableName, T item, CancellationToken ct) where T : class
+    {
         var hasEmbedding = item is ISearchable;
         var sql = SqlGenerator.BuildInsertSql(_options.Schema, tableName, hasEmbedding);
 
@@ -230,17 +299,18 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    public async Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    /// <summary>
+    /// Core batch write helper. Takes a pre-resolved <paramref name="tableName"/>
+    /// so both the default <see cref="StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>
+    /// overload and the explicit-name overload share a single COPY pipeline.
+    /// </summary>
+    private async Task StoreBatchAsyncCore<T>(string tableName, IReadOnlyList<T> items, CancellationToken ct) where T : class
     {
-        ArgumentNullException.ThrowIfNull(items);
-
         if (items.Count == 0)
         {
             return;
         }
 
-        var tableName = TypeMapper.GetTableName<T>();
         var hasEmbedding = items[0] is ISearchable;
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -270,21 +340,6 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         await writer.CompleteAsync(ct).ConfigureAwait(false);
     }
-
-    // The two explicit-descriptor-name overloads below are INTENTIONAL temporary placeholders
-    // landed by Task F1 (Strategos 2.4.1 Ontology Descriptor-Name Dispatch, bug #31). They exist
-    // solely so PgVectorObjectSetProvider continues to satisfy IObjectSetWriter while the interface
-    // change lands ahead of the real implementation. Task F3 (graph-backed explicit-name write path)
-    // will replace the NotImplementedException throws with the descriptor-partition-aware
-    // SQL/COPY logic. Do not call these overloads yet.
-
-    /// <inheritdoc />
-    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
-        => throw new NotImplementedException("Implemented in Task F3");
-
-    /// <inheritdoc />
-    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
-        => throw new NotImplementedException("Implemented in Task F3");
 
     /// <summary>
     /// Ensures the database schema (extension, table, index) exists for the given type.

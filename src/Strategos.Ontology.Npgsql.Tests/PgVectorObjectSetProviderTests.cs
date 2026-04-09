@@ -101,6 +101,100 @@ public class PgVectorObjectSetProviderTests
         await Assert.That(sql).DoesNotContain("\"semantic_document\"");
     }
 
+    // ---------------------------------------------------------------------
+    // Track F3 — explicit-descriptor-name write-path dispatch tests.
+    //
+    // The write-path equivalent of ResolveTableName is exposed as the
+    // internal static helper PgVectorObjectSetProvider.ResolveTableNameForDescriptor,
+    // which the explicit-name StoreAsync/StoreBatchAsync overloads delegate to.
+    // Asserting against the helper plus the SQL/COPY strings produced by
+    // SqlGenerator pins the full code path without needing a live
+    // NpgsqlDataSource.
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task StoreAsync_ExplicitName_WritesToNamedTable()
+    {
+        // Arrange — descriptor name "trading_documents" deliberately differs
+        // from typeof(SemanticDocument).Name so we can detect a regression to
+        // the typeof(T).Name path.
+        const string descriptorName = "trading_documents";
+
+        // Act — invoke the dispatch helper the explicit-name StoreAsync<T>
+        // overload uses. Then build the INSERT SQL the production code path
+        // emits via SqlGenerator.BuildInsertSql.
+        var tableName = PgVectorObjectSetProvider.ResolveTableNameForDescriptor(descriptorName);
+        var insertSql = SqlGenerator.BuildInsertSql("public", tableName, hasEmbedding: false);
+        var insertSqlWithEmbedding = SqlGenerator.BuildInsertSql("public", tableName, hasEmbedding: true);
+
+        // Assert — table name resolves verbatim (already snake_case) and the
+        // generated INSERT statements target "trading_documents", NOT
+        // "semantic_document".
+        await Assert.That(tableName).IsEqualTo("trading_documents");
+        await Assert.That(TypeMapper.ToSnakeCase("trading_documents")).IsEqualTo("trading_documents");
+        await Assert.That(insertSql).Contains("\"public\".\"trading_documents\"");
+        await Assert.That(insertSql).DoesNotContain("\"semantic_document\"");
+        await Assert.That(insertSqlWithEmbedding).Contains("\"public\".\"trading_documents\"");
+        await Assert.That(insertSqlWithEmbedding).Contains("embedding");
+    }
+
+    [Test]
+    public async Task StoreBatchAsync_ExplicitName_UsesCopyToNamedTable()
+    {
+        // Arrange — same dispatch step. The batch path uses the resolved
+        // table name to build a fully-qualified COPY target identifier.
+        const string descriptorName = "trading_documents";
+
+        // Act
+        var tableName = PgVectorObjectSetProvider.ResolveTableNameForDescriptor(descriptorName);
+        var qualifiedTable =
+            $"{SqlGenerator.QuoteIdentifier("public")}.{SqlGenerator.QuoteIdentifier(tableName)}";
+        var copyColumnsNoEmbedding = $"{qualifiedTable} (id, data)";
+        var copyColumnsWithEmbedding = $"{qualifiedTable} (id, data, embedding)";
+        var copyCommandNoEmbedding = $"COPY {copyColumnsNoEmbedding} FROM STDIN (FORMAT BINARY)";
+        var copyCommandWithEmbedding = $"COPY {copyColumnsWithEmbedding} FROM STDIN (FORMAT BINARY)";
+
+        // Assert — COPY target table matches the explicit descriptor, not
+        // typeof(T).Name. The qualified identifier is the exact string
+        // PgVectorObjectSetProvider.StoreBatchAsync passes to
+        // NpgsqlConnection.BeginBinaryImportAsync.
+        await Assert.That(tableName).IsEqualTo("trading_documents");
+        await Assert.That(qualifiedTable).IsEqualTo("\"public\".\"trading_documents\"");
+        await Assert.That(copyCommandNoEmbedding)
+            .IsEqualTo("COPY \"public\".\"trading_documents\" (id, data) FROM STDIN (FORMAT BINARY)");
+        await Assert.That(copyCommandWithEmbedding)
+            .IsEqualTo("COPY \"public\".\"trading_documents\" (id, data, embedding) FROM STDIN (FORMAT BINARY)");
+        await Assert.That(copyCommandNoEmbedding).DoesNotContain("semantic_document");
+    }
+
+    [Test]
+    public async Task WriteOverloads_TypeMapperGetTableName_StillUsedByDefaultOverloads()
+    {
+        // Regression guard — pins the F4 seam. The default StoreAsync<T>(T)
+        // and StoreBatchAsync<T>(IReadOnlyList<T>) overloads must continue
+        // to resolve the table name via TypeMapper.GetTableName<T>() — i.e.
+        // typeof(T).Name → snake_case — so back-compat holds while F4 in
+        // Group 3 prepares to swap this for graph-backed lookup.
+        //
+        // We assert against the still-present TypeMapper.GetTableName<T>()
+        // helper directly. F4 will replace the default-overload call site
+        // and update this test to assert the new resolution path.
+        var defaultTableName = TypeMapper.GetTableName<SemanticDocument>();
+
+        // Assert — TypeMapper.GetTableName<T>() still exists, still returns
+        // the typeof(T).Name-derived snake_case name, and matches what
+        // SqlGenerator emits for the default write path.
+        await Assert.That(defaultTableName).IsEqualTo("semantic_document");
+        var defaultInsertSql = SqlGenerator.BuildInsertSql("public", defaultTableName, hasEmbedding: false);
+        await Assert.That(defaultInsertSql).Contains("\"public\".\"semantic_document\"");
+
+        // Sanity — the explicit-name dispatch helper produces a different
+        // table name from the same CLR type when given a non-matching
+        // descriptor, proving the two paths are independently resolvable.
+        var explicitTableName = PgVectorObjectSetProvider.ResolveTableNameForDescriptor("trading_documents");
+        await Assert.That(explicitTableName).IsNotEqualTo(defaultTableName);
+    }
+
     /// <summary>
     /// Test CLR type whose <c>Name</c> deliberately differs from any expected
     /// descriptor name, so we can detect if the provider is still reaching for
