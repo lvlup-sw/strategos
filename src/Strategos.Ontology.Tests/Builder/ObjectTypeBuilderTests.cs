@@ -237,4 +237,31 @@ public class ObjectTypeBuilderTests
             .FirstOrDefault(t => t.FromState == "Open" && t.ToState == "Open" && t.TriggerActionName == "ViewItem");
         await Assert.That(selfLoop).IsNotNull();
     }
+
+    [Test]
+    [Arguments("has spaces")]
+    [Arguments("starts-with-hyphen")]
+    [Arguments("1starts_with_digit")]
+    [Arguments("has.dots")]
+    public async Task ObjectTypeBuilder_WithInvalidExplicitName_ThrowsArgumentException(string invalidName)
+    {
+        await Assert.That(() => new ObjectTypeBuilder<TestPosition>("Trading", explicitName: invalidName))
+            .ThrowsException()
+            .WithExceptionType(typeof(ArgumentException));
+    }
+
+    [Test]
+    [Arguments("trading_documents")]
+    [Arguments("KnowledgeChunk")]
+    [Arguments("_underscore_start")]
+    [Arguments("snake_case_123")]
+    public async Task ObjectTypeBuilder_WithValidExplicitName_Succeeds(string validName)
+    {
+        var builder = new ObjectTypeBuilder<TestPosition>("Trading", explicitName: validName);
+
+        builder.Key(p => p.Id);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Name).IsEqualTo(validName);
+    }
 }

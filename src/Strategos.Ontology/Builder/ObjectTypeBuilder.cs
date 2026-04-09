@@ -1,11 +1,41 @@
 using System.Linq.Expressions;
+using System.Text.RegularExpressions;
+
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
 
-internal sealed class ObjectTypeBuilder<T>(string domainName, string? explicitName = null) : IObjectTypeBuilder<T>
+internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
     where T : class
 {
+    /// <summary>
+    /// Allowed explicit descriptor name shape: C#-identifier-compatible ASCII, i.e.
+    /// a letter or underscore followed by any number of letters, digits, or underscores.
+    /// This is a deliberately strict subset so that descriptor names are safe to use in
+    /// generated code paths (identifiers, dictionary keys) without additional escaping.
+    /// </summary>
+    private static readonly Regex ExplicitNamePattern = new(
+        "^[a-zA-Z_][a-zA-Z0-9_]*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private readonly string _domainName;
+    private readonly string? _explicitName;
+
+    public ObjectTypeBuilder(string domainName, string? explicitName = null)
+    {
+        if (explicitName is not null && !ExplicitNamePattern.IsMatch(explicitName))
+        {
+            throw new ArgumentException(
+                $"Explicit descriptor name '{explicitName}' is not a valid identifier. " +
+                $"Names must match '{ExplicitNamePattern}' — start with a letter or underscore, " +
+                "followed by letters, digits, or underscores only.",
+                nameof(explicitName));
+        }
+
+        _domainName = domainName;
+        _explicitName = explicitName;
+    }
+
     private PropertyDescriptor? _keyProperty;
     private readonly List<PropertyBuilder<T>> _propertyBuilders = [];
     private readonly List<LinkBuilder> _linkBuilders = [];
@@ -133,7 +163,7 @@ internal sealed class ObjectTypeBuilder<T>(string domainName, string? explicitNa
 
         ProjectValidFromStatesIntoLifecycle();
 
-        return new(explicitName ?? typeof(T).Name, typeof(T), domainName)
+        return new(_explicitName ?? typeof(T).Name, typeof(T), _domainName)
         {
             Kind = _objectKind,
             KeyProperty = _keyProperty,

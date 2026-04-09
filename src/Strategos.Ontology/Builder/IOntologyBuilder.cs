@@ -10,6 +10,7 @@ public interface IOntologyBuilder
     /// type to be registered under multiple logical descriptor names (e.g. one CLR type
     /// backing multiple object sets).
     /// </summary>
+    /// <typeparam name="T">CLR type the descriptor is bound to.</typeparam>
     /// <param name="name">
     /// Explicit descriptor name. When <c>null</c>, falls back to <c>typeof(T).Name</c>
     /// (parity with the parameterless overload). When non-null, must match
