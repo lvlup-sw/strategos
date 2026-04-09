@@ -23,6 +23,14 @@ public class StubObjectSetWriterForDI : IObjectSetWriter
 
     public Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
         Task.CompletedTask;
+
+    // Explicit-name overloads added for Task F1; this DI test double does not need
+    // partition-aware behavior.
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class =>
+        Task.CompletedTask;
+
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
+        Task.CompletedTask;
 }
 
 public class DualProvider : IObjectSetProvider, IObjectSetWriter
@@ -43,6 +51,14 @@ public class DualProvider : IObjectSetProvider, IObjectSetWriter
         Task.CompletedTask;
 
     public Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
+        Task.CompletedTask;
+
+    // Explicit-name overloads added for Task F1; this DI test double does not need
+    // partition-aware behavior.
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class =>
+        Task.CompletedTask;
+
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
         Task.CompletedTask;
 }
 
