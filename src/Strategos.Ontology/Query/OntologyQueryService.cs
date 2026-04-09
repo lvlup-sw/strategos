@@ -75,6 +75,13 @@ internal sealed class OntologyQueryService : IOntologyQuery
             _eventStreamProvider);
     }
 
+    public IReadOnlyList<string> GetObjectTypeNames<T>() where T : class
+    {
+        return graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names)
+            ? names
+            : Array.Empty<string>();
+    }
+
     public IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(
         string? domain = null,
         string? implementsInterface = null,

@@ -62,4 +62,13 @@ public interface IOntologyQuery
 
     // Object set queries
     ObjectSet<T> GetObjectSet<T>(string objectType) where T : class;
+
+    /// <summary>
+    /// Returns all descriptor names registered for the given CLR type across
+    /// the composed ontology, in registration order. Returns an empty list if
+    /// <typeparamref name="T"/> is not registered. Enables consumers (e.g. Basileus)
+    /// to enumerate per-collection partitions of a shared content-carrier type
+    /// without hardcoding descriptor names at call sites.
+    /// </summary>
+    IReadOnlyList<string> GetObjectTypeNames<T>() where T : class;
 }
