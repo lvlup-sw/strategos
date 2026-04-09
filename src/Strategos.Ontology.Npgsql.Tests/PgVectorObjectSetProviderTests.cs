@@ -278,6 +278,66 @@ public class PgVectorObjectSetProviderTests
         await Assert.That(tableName).IsEqualTo(TypeMapper.ToSnakeCase(nameof(F4Foo)));
     }
 
+    // ---------------------------------------------------------------------
+    // Track F5 — EnsureSchemaAsync descriptor-name overload tests.
+    //
+    // EnsureSchemaAsync<T>(string? descriptorName = null, ct) must resolve
+    // its target table from the explicit descriptor name when supplied and
+    // otherwise delegate to the same graph-backed default-overload
+    // resolution used by the write path. Pinned via the internal static
+    // seam PgVectorObjectSetProvider.ResolveEnsureSchemaTableName so the
+    // assertions reach the DDL-building step without needing a live
+    // NpgsqlDataSource.
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task EnsureSchemaAsync_WithExplicitName_CreatesNamedTable()
+    {
+        // Arrange — an explicit descriptor name. Even without a graph in
+        // scope the caller's choice wins.
+        // Act
+        var tableName = PgVectorObjectSetProvider
+            .ResolveEnsureSchemaTableName<SemanticDocument>("trading_documents", graph: null);
+        var ddl = SqlGenerator.BuildSchemaCreationDdl(
+            "public",
+            tableName,
+            vectorDimensions: 1536,
+            indexType: PgVectorIndexType.IvfFlat);
+
+        // Assert — DDL creates "trading_documents", NOT "semantic_document".
+        await Assert.That(tableName).IsEqualTo("trading_documents");
+        await Assert.That(ddl)
+            .Contains("CREATE TABLE IF NOT EXISTS \"public\".\"trading_documents\"");
+        await Assert.That(ddl).DoesNotContain("\"semantic_document\"");
+    }
+
+    [Test]
+    public async Task EnsureSchemaAsync_WithoutName_FallsBackToDefaultResolution()
+    {
+        // Arrange — a graph containing a single Object<F4Foo>("foo_table")
+        // registration. Calling EnsureSchemaAsync<F4Foo>() with no
+        // descriptor name must route through the default-overload
+        // resolution (F4) and honour the descriptor name "foo_table".
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<F4SingleRegistrationOntology>()
+            .Build();
+
+        // Act
+        var tableName = PgVectorObjectSetProvider
+            .ResolveEnsureSchemaTableName<F4Foo>(descriptorName: null, graph);
+        var ddl = SqlGenerator.BuildSchemaCreationDdl(
+            "public",
+            tableName,
+            vectorDimensions: 1536,
+            indexType: PgVectorIndexType.IvfFlat);
+
+        // Assert — DDL creates "foo_table", NOT "f4_foo".
+        await Assert.That(tableName).IsEqualTo("foo_table");
+        await Assert.That(ddl)
+            .Contains("CREATE TABLE IF NOT EXISTS \"public\".\"foo_table\"");
+        await Assert.That(ddl).DoesNotContain("\"f4_foo\"");
+    }
+
     /// <summary>
     /// Test CLR type whose <c>Name</c> deliberately differs from any expected
     /// descriptor name, so we can detect if the provider is still reaching for

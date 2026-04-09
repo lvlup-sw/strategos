@@ -410,9 +410,19 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <summary>
     /// Ensures the database schema (extension, table, index) exists for the given type.
     /// </summary>
-    public async Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class
+    /// <typeparam name="T">The CLR type whose backing table should be created.</typeparam>
+    /// <param name="descriptorName">
+    /// Optional explicit descriptor name identifying the target table. When
+    /// <c>null</c>, the target is resolved via
+    /// <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>
+    /// using the provider's optional <see cref="OntologyGraph"/>; for
+    /// multi-registered types the resolution throws and callers must
+    /// specify the name explicitly (one call per descriptor).
+    /// </param>
+    /// <param name="ct">The cancellation token.</param>
+    public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
     {
-        var tableName = TypeMapper.GetTableName<T>();
+        var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,
@@ -421,6 +431,29 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         await using var cmd = _dataSource.CreateCommand(ddl);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for an
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> call.
+    /// Honours an explicit <paramref name="descriptorName"/> when supplied;
+    /// otherwise delegates to the shared default-overload resolution
+    /// (<see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>)
+    /// so schema creation and writes stay in lockstep.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior
+    /// without a live <see cref="NpgsqlDataSource"/>, matching the seam used
+    /// by the write-path helpers.
+    /// </remarks>
+    internal static string ResolveEnsureSchemaTableName<T>(string? descriptorName, OntologyGraph? graph)
+    {
+        if (descriptorName is not null)
+        {
+            return TypeMapper.ToSnakeCase(descriptorName);
+        }
+
+        return ResolveTableNameForDefaultOverload<T>(graph);
     }
 
     private static double ConvertDistanceToSimilarity(double distance, DistanceMetric metric) => metric switch
