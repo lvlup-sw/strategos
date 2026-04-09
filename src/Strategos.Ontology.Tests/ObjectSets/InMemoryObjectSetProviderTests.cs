@@ -193,6 +193,50 @@ public class InMemoryObjectSetProviderTests
         await Assert.That(entityResult.Items[0].Name).IsEqualTo("Entity1");
         await Assert.That(otherResult.Items[0].Value).IsEqualTo(42);
     }
+
+    [Test]
+    public async Task InMemoryProvider_PartitionsByDescriptorName_NotClrType()
+    {
+        // Track E4: the provider must partition seeded items by the
+        // descriptor name supplied at Seed time, NOT by typeof(T). A single
+        // CLR type may be registered under multiple ontology descriptors
+        // (bug #31); a query against one descriptor must not see items from
+        // another even when both live in the same CLR collection.
+        var provider = new InMemoryObjectSetProvider();
+        provider.Seed(new TestEntity("TradingOnly"), "trading content", descriptorName: "trading_documents");
+
+        // Query via a root whose descriptor name differs from where we seeded.
+        var wrongPartition = new RootExpression(typeof(TestEntity), "knowledge_documents");
+        var wrongResult = await provider.ExecuteAsync<TestEntity>(wrongPartition);
+
+        // The item was seeded under "trading_documents" and must NOT be
+        // visible from the "knowledge_documents" partition.
+        await Assert.That(wrongResult.Items).HasCount().EqualTo(0);
+
+        // Querying the correct partition finds it.
+        var rightPartition = new RootExpression(typeof(TestEntity), "trading_documents");
+        var rightResult = await provider.ExecuteAsync<TestEntity>(rightPartition);
+
+        await Assert.That(rightResult.Items).HasCount().EqualTo(1);
+        await Assert.That(rightResult.Items[0].Name).IsEqualTo("TradingOnly");
+    }
+
+    [Test]
+    public async Task InMemoryProvider_DefaultSeed_UsesTypeofTName()
+    {
+        // Track E4 back-compat: existing Seed<T>(item, content) call sites
+        // (no descriptorName) must continue to work. The default key is
+        // typeof(T).Name, which matches the default root expression built
+        // by ObjectSet<T> when no explicit descriptor name is supplied.
+        var provider = new InMemoryObjectSetProvider();
+        provider.Seed(new TestEntity("Default"), "default content");
+
+        var expression = new RootExpression(typeof(TestEntity), nameof(TestEntity));
+        var result = await provider.ExecuteAsync<TestEntity>(expression);
+
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0].Name).IsEqualTo("Default");
+    }
 }
 
 // Test helpers

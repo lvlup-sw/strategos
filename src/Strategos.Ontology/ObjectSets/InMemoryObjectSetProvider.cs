@@ -18,9 +18,18 @@ namespace Strategos.Ontology.ObjectSets;
 /// </remarks>
 public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWriter
 {
-    private readonly ConcurrentDictionary<Type, List<object>> _items = new();
-    private readonly ConcurrentDictionary<Type, List<string>> _searchableContent = new();
-    private readonly ConcurrentDictionary<Type, List<float[]>> _embeddings = new();
+    // Partitioned by ontology descriptor name (string), NOT by CLR type. A
+    // single CLR type may be registered under multiple descriptors (e.g.
+    // trading_documents vs. knowledge_documents, both backed by
+    // SemanticDocument); each descriptor must own its own partition so
+    // queries routed to one do not accidentally see items from another
+    // (bug #31 / Strategos 2.4.1). The default partition key for a
+    // Seed<T>(item, content) call with no explicit descriptor name is
+    // typeof(T).Name, which matches the default root expression built by
+    // ObjectSet<T> when no descriptor name is supplied.
+    private readonly ConcurrentDictionary<string, List<object>> _items = new();
+    private readonly ConcurrentDictionary<string, List<string>> _searchableContent = new();
+    private readonly ConcurrentDictionary<string, List<float[]>> _embeddings = new();
     private readonly IEmbeddingProvider? _embeddingProvider;
 
     /// <summary>
@@ -49,18 +58,25 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <typeparam name="T">The domain object type.</typeparam>
     /// <param name="item">The item to seed.</param>
     /// <param name="searchableContent">The text content used for keyword-based similarity scoring.</param>
-    public void Seed<T>(T item, string searchableContent) where T : class
+    /// <param name="descriptorName">
+    /// Optional ontology descriptor name to partition the seeded item under.
+    /// When omitted, defaults to <c>typeof(T).Name</c>, which matches the
+    /// default root expression built by <c>ObjectSet&lt;T&gt;</c> with no
+    /// explicit descriptor. Supply an explicit name when a single CLR type
+    /// is registered under multiple descriptors (bug #31).
+    /// </param>
+    public void Seed<T>(T item, string searchableContent, string? descriptorName = null) where T : class
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(searchableContent);
 
-        var type = typeof(T);
-        _items.GetOrAdd(type, _ => new List<object>()).Add(item);
-        _searchableContent.GetOrAdd(type, _ => new List<string>()).Add(searchableContent);
+        var key = descriptorName ?? typeof(T).Name;
+        _items.GetOrAdd(key, _ => new List<object>()).Add(item);
+        _searchableContent.GetOrAdd(key, _ => new List<string>()).Add(searchableContent);
 
         // Store embedding (or empty placeholder) to maintain index alignment with _items
         var embedding = item is ISearchable searchable ? searchable.Embedding : [];
-        _embeddings.GetOrAdd(type, _ => new List<float[]>()).Add(embedding);
+        _embeddings.GetOrAdd(key, _ => new List<float[]>()).Add(embedding);
     }
 
     /// <inheritdoc />
@@ -68,15 +84,19 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        var type = typeof(T);
+        // Default partition key for the no-descriptor overload is
+        // typeof(T).Name, preserving the established behavior of the
+        // implicit (single-registration) write path. Task F2 will land
+        // a descriptor-name-aware overload for the multi-registered case.
+        var key = typeof(T).Name;
         var searchableText = item.ToString() ?? string.Empty;
 
-        _items.GetOrAdd(type, _ => new List<object>()).Add(item);
-        _searchableContent.GetOrAdd(type, _ => new List<string>()).Add(searchableText);
+        _items.GetOrAdd(key, _ => new List<object>()).Add(item);
+        _searchableContent.GetOrAdd(key, _ => new List<string>()).Add(searchableText);
 
         // Store embedding (or empty placeholder) to maintain index alignment with _items
         var embedding = item is ISearchable searchable ? searchable.Embedding : [];
-        _embeddings.GetOrAdd(type, _ => new List<float[]>()).Add(embedding);
+        _embeddings.GetOrAdd(key, _ => new List<float[]>()).Add(embedding);
 
         return Task.CompletedTask;
     }
@@ -113,7 +133,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
-        var items = GetSeededItems<T>();
+        var items = GetSeededItems<T>(expression.RootObjectTypeName);
         var filtered = ApplyExpression(items, expression);
         var result = new ObjectSetResult<T>(filtered, filtered.Count, ObjectSetInclusion.Properties);
         return Task.FromResult(result);
@@ -125,7 +145,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         [EnumeratorCancellation] CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
-        var items = GetSeededItems<T>();
+        var items = GetSeededItems<T>(expression.RootObjectTypeName);
         var filtered = ApplyExpression(items, expression);
 
         foreach (var item in filtered)
@@ -144,7 +164,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        var items = GetSeededItems<T>();
+        // Partition lookups route through the expression's declared descriptor
+        // name so queries honor the same dispatch as ExecuteAsync / StreamAsync
+        // (bug #31). The walk-to-root helper on ObjectSetExpression surfaces
+        // the name from the root even when wrapped by filters, includes, etc.
+        var partitionKey = expression.RootObjectTypeName;
+        var items = GetSeededItems<T>(partitionKey);
 
         if (items.Count == 0)
         {
@@ -157,19 +182,20 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         // When an embedding provider is available and non-placeholder embeddings exist, use cosine similarity
         if (_embeddingProvider is not null
-            && _embeddings.TryGetValue(typeof(T), out var storedEmbeddings)
+            && _embeddings.TryGetValue(partitionKey, out var storedEmbeddings)
             && storedEmbeddings.Any(static e => e.Length > 0))
         {
-            return await ExecuteCosineSimilarityAsync(items, storedEmbeddings, expression, ct).ConfigureAwait(false);
+            return await ExecuteCosineSimilarityAsync(items, storedEmbeddings, partitionKey, expression, ct).ConfigureAwait(false);
         }
 
         // Fall back to keyword scoring
-        return ExecuteKeywordSimilarity(items, expression);
+        return ExecuteKeywordSimilarity(items, partitionKey, expression);
     }
 
     private async Task<ScoredObjectSetResult<T>> ExecuteCosineSimilarityAsync<T>(
         List<T> items,
         List<float[]> storedEmbeddings,
+        string partitionKey,
         SimilarityExpression expression,
         CancellationToken ct) where T : class
     {
@@ -178,7 +204,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
             ?? await _embeddingProvider!.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
         // Build identity-based index map to avoid O(n^2) IndexOf lookups and duplicate-item misalignment
-        var allItems = GetSeededItems<T>();
+        var allItems = GetSeededItems<T>(partitionKey);
         var indexMap = BuildIdentityIndexMap(allItems);
 
         var scored = items
@@ -208,11 +234,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     private ScoredObjectSetResult<T> ExecuteKeywordSimilarity<T>(
         List<T> items,
+        string partitionKey,
         SimilarityExpression expression) where T : class
     {
         // Build identity-based index map to avoid O(n^2) IndexOf lookups and duplicate-item misalignment
-        var allItems = GetSeededItems<T>();
-        var allContent = GetSearchableContent<T>();
+        var allItems = GetSeededItems<T>(partitionKey);
+        var allContent = GetSearchableContent(partitionKey);
         var indexMap = BuildIdentityIndexMap(allItems);
 
         var scored = items
@@ -255,9 +282,9 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return map;
     }
 
-    private List<T> GetSeededItems<T>() where T : class
+    private List<T> GetSeededItems<T>(string partitionKey) where T : class
     {
-        if (!_items.TryGetValue(typeof(T), out var items))
+        if (!_items.TryGetValue(partitionKey, out var items))
         {
             return new List<T>();
         }
@@ -265,9 +292,9 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return items.Cast<T>().ToList();
     }
 
-    private List<string> GetSearchableContent<T>() where T : class
+    private List<string> GetSearchableContent(string partitionKey)
     {
-        if (!_searchableContent.TryGetValue(typeof(T), out var content))
+        if (!_searchableContent.TryGetValue(partitionKey, out var content))
         {
             return new List<string>();
         }
