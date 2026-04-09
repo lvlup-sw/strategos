@@ -119,7 +119,9 @@ public sealed class OntologyActionTool
         CancellationToken ct)
     {
         var clrType = _graph.GetObjectType(domain, objectType)?.ClrType ?? typeof(object);
-        ObjectSetExpression expression = new RootExpression(clrType);
+        // Track A placeholder: MCP tools use the descriptor name as declared by the caller.
+        // Track D will thread a resolved descriptor name once multi-registration support lands.
+        ObjectSetExpression expression = new RootExpression(clrType, objectType);
 
         if (filter is not null)
         {
