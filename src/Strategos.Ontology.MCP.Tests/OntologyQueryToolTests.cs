@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Strategos.Ontology;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -333,5 +334,62 @@ public class OntologyQueryToolTests
         await Assert.That(result).IsTypeOf<QueryResult>();
         await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
         await Assert.That(result.Items).HasCount().EqualTo(1);
+    }
+
+    [Test]
+    public async Task QueryAsync_WithExplicitDescriptorName_ThreadsNameIntoRootExpression()
+    {
+        // Arrange — register TestPosition under an explicit descriptor name that
+        // differs from typeof(TestPosition).Name. The MCP tool receives the descriptor
+        // name as its "objectType" parameter and must carry it through into the root
+        // expression so providers dispatch against the correct partition.
+        var graph = BuildExplicitNameGraph();
+        var provider = Substitute.For<IObjectSetProvider>();
+        var eventStream = Substitute.For<IEventStreamProvider>();
+        var tool = new OntologyQueryTool(graph, provider, eventStream, NullLogger<OntologyQueryTool>.Instance);
+
+        ObjectSetExpression? capturedExpression = null;
+        provider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<ObjectSetExpression>();
+                return new ObjectSetResult<object>([], 0, ObjectSetInclusion.Properties);
+            });
+
+        // Act
+        await tool.QueryAsync(objectType: "trading_documents", domain: "explicit-name-test");
+
+        // Assert — the RootExpression must carry the explicit descriptor name
+        // ("trading_documents"), NOT the CLR type name ("TestPosition").
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.RootObjectTypeName).IsEqualTo("trading_documents");
+
+        var root = capturedExpression as RootExpression;
+        await Assert.That(root).IsNotNull();
+        await Assert.That(root!.ObjectTypeName).IsEqualTo("trading_documents");
+        // Ensure the CLR type was still correctly resolved from the graph.
+        await Assert.That(root.ObjectType).IsEqualTo(typeof(TestPosition));
+    }
+
+    private static OntologyGraph BuildExplicitNameGraph()
+    {
+        var builder = new OntologyGraphBuilder();
+        builder.AddDomain<ExplicitNameTestDomain>();
+        return builder.Build();
+    }
+}
+
+internal sealed class ExplicitNameTestDomain : DomainOntology
+{
+    public override string DomainName => "explicit-name-test";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestPosition>("trading_documents", obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Symbol).Required();
+        });
     }
 }
