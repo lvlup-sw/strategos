@@ -44,6 +44,29 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         _logger = logger;
     }
 
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a read-path expression
+    /// from the descriptor name declared on the expression's root, normalising
+    /// it via <see cref="TypeMapper.ToSnakeCase(string)"/>.
+    ///
+    /// Replaces the prior <c>TypeMapper.GetTableName&lt;T&gt;()</c> lookup,
+    /// which silently collapsed to <c>typeof(T).Name</c> and routed queries to
+    /// the wrong physical table when a CLR type was registered under multiple
+    /// ontology descriptors (bug #31 / Strategos 2.4.1).
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal</c> so the three read-path methods
+    /// (<see cref="ExecuteSimilarityAsync{T}"/>, <see cref="ExecuteAsync{T}"/>,
+    /// <see cref="StreamAsync{T}"/>) share a single dispatch step and unit tests
+    /// can pin its behavior without needing a live
+    /// <see cref="NpgsqlDataSource"/>.
+    /// </remarks>
+    internal static string ResolveTableName(ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return TypeMapper.ToSnakeCase(expression.RootObjectTypeName);
+    }
+
     /// <inheritdoc />
     public async Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(
         SimilarityExpression expression, CancellationToken ct = default) where T : class
@@ -56,8 +79,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         ValidateEmbedding<T>(queryVector);
 
-        // 2. Get table name from TypeMapper
-        var tableName = TypeMapper.GetTableName<T>();
+        // 2. Resolve table name from the expression's declared descriptor name
+        //    (honors explicit names supplied via GetObjectSet<T>(descriptorName);
+        //    see ResolveTableName docs / bug #31).
+        var tableName = ResolveTableName(expression);
 
         // 3. Translate Source expression (handles Filter, Include, Root transparently)
         var sourceTranslation = ExpressionTranslator.Translate(expression.Source);
