@@ -220,9 +220,38 @@ public class ObjectSetExpressionTests
         await Assert.That(similarity.RootObjectTypeName).IsEqualTo("foo_table");
     }
 
-    // Helper type for A2/A3 tests
+    // -----------------------------------------------------------------------
+    // A3: TraverseLinkExpression.RootObjectTypeName override
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task TraverseLinkExpression_RootObjectTypeName_ReturnsLinkedTypeName()
+    {
+        // Arrange — traverse from Position into TradeOrder via the "Orders" link.
+        // After traversal, further query operations target the linked type's
+        // descriptor, not the source's. Under Option X multi-registered types
+        // cannot be link targets (AONT041, later track), so typeof(TLinked).Name
+        // is always unambiguous here.
+        var root = new RootExpression(typeof(Position), "positions");
+        var traverse = new TraverseLinkExpression(root, "Orders", typeof(TradeOrder));
+
+        // Assert — walking should not return "positions"; it should return "TradeOrder"
+        await Assert.That(traverse.RootObjectTypeName).IsEqualTo(nameof(TradeOrder));
+    }
+
+    // Helper types for A2/A3 tests
     private sealed class Foo
     {
         public string Name { get; set; } = string.Empty;
+    }
+
+    private sealed class Position
+    {
+        public string Symbol { get; set; } = string.Empty;
+    }
+
+    private sealed class TradeOrder
+    {
+        public string Id { get; set; } = string.Empty;
     }
 }

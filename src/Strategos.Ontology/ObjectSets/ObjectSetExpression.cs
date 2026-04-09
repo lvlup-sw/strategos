@@ -89,6 +89,14 @@ public sealed class TraverseLinkExpression : ObjectSetExpression
 
     public ObjectSetExpression Source { get; }
     public string LinkName { get; }
+
+    /// <summary>
+    /// Traversal breaks the walk-to-root chain: once we've traversed a link,
+    /// the query targets the linked type's descriptor, not the source root's.
+    /// Under Option X (multi-registered types cannot be link targets — enforced
+    /// by AONT041), <c>ObjectType.Name</c> is always unambiguous here.
+    /// </summary>
+    public override string RootObjectTypeName => ObjectType.Name;
 }
 
 /// <summary>
