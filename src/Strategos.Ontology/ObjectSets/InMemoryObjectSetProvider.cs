@@ -93,6 +93,21 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
     }
 
+    // The two explicit-descriptor-name overloads below are INTENTIONAL temporary placeholders
+    // landed by Task F1 (Strategos 2.4.1 Ontology Descriptor-Name Dispatch, bug #31). They exist
+    // solely so InMemoryObjectSetProvider continues to satisfy IObjectSetWriter while the interface
+    // change lands ahead of the real implementation. Task E4 (InMemory partition switch) + Task F2
+    // (in-memory explicit-name write path) will replace the NotImplementedException throws with the
+    // descriptor-partition-aware store logic. Do not call these overloads yet.
+
+    /// <inheritdoc />
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
+        => throw new NotImplementedException("Implemented in Task F2");
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+        => throw new NotImplementedException("Implemented in Task F2");
+
     /// <inheritdoc />
     public Task<ObjectSetResult<T>> ExecuteAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
         where T : class

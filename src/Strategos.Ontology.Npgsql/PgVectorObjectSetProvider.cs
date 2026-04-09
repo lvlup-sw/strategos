@@ -242,6 +242,21 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         await writer.CompleteAsync(ct).ConfigureAwait(false);
     }
 
+    // The two explicit-descriptor-name overloads below are INTENTIONAL temporary placeholders
+    // landed by Task F1 (Strategos 2.4.1 Ontology Descriptor-Name Dispatch, bug #31). They exist
+    // solely so PgVectorObjectSetProvider continues to satisfy IObjectSetWriter while the interface
+    // change lands ahead of the real implementation. Task F3 (graph-backed explicit-name write path)
+    // will replace the NotImplementedException throws with the descriptor-partition-aware
+    // SQL/COPY logic. Do not call these overloads yet.
+
+    /// <inheritdoc />
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
+        => throw new NotImplementedException("Implemented in Task F3");
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+        => throw new NotImplementedException("Implemented in Task F3");
+
     /// <summary>
     /// Ensures the database schema (extension, table, index) exists for the given type.
     /// </summary>
