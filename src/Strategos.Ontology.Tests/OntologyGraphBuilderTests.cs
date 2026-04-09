@@ -322,4 +322,54 @@ public class OntologyGraphBuilderTests
         await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
         await Assert.That(graph.ObjectTypes.Count(ot => ot.Name == "shared_name")).IsEqualTo(2);
     }
+
+    // -----------------------------------------------------------------------
+    // Track C2 — OntologyGraph.ObjectTypeNamesByType reverse index
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task OntologyGraph_ObjectTypeNamesByType_PopulatedForSingleRegistration()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCSingleRegistrationOntology>();
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.ObjectTypeNamesByType).IsNotNull();
+        await Assert.That(graph.ObjectTypeNamesByType.ContainsKey(typeof(TrackCFoo))).IsTrue();
+
+        var names = graph.ObjectTypeNamesByType[typeof(TrackCFoo)];
+        await Assert.That(names).HasCount().EqualTo(1);
+        await Assert.That(names[0]).IsEqualTo(nameof(TrackCFoo));
+    }
+
+    [Test]
+    public async Task OntologyGraph_ObjectTypeNamesByType_PopulatedForMultiRegistration()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCMultiRegistrationOntology>();
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.ObjectTypeNamesByType.ContainsKey(typeof(TrackCFoo))).IsTrue();
+
+        var names = graph.ObjectTypeNamesByType[typeof(TrackCFoo)];
+        await Assert.That(names).HasCount().EqualTo(2);
+        await Assert.That(names[0]).IsEqualTo("a");
+        await Assert.That(names[1]).IsEqualTo("b");
+    }
+
+    [Test]
+    public async Task OntologyGraph_ObjectTypeNamesByType_UnregisteredTypeReturnsEmpty()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCSingleRegistrationOntology>();
+
+        var graph = graphBuilder.Build();
+
+        IReadOnlyList<string> names = graph.ObjectTypeNamesByType
+            .GetValueOrDefault(typeof(TrackCBar), Array.Empty<string>());
+
+        await Assert.That(names).HasCount().EqualTo(0);
+    }
 }

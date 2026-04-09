@@ -15,12 +15,24 @@ public sealed class OntologyGraph
     public IReadOnlyList<WorkflowChain> WorkflowChains { get; }
     public IReadOnlyList<string> Warnings { get; }
 
+    /// <summary>
+    /// Reverse index from CLR type to the list of descriptor names it was registered
+    /// under. Preserves registration order. A type registered once (either implicitly
+    /// or via <c>Object&lt;T&gt;(name, ...)</c>) has a single-element list; a type
+    /// registered multiple times appears with every name in the order they were added.
+    /// Unknown types are absent from the dictionary — callers should use
+    /// <see cref="System.Collections.Generic.CollectionExtensions.GetValueOrDefault{TKey,TValue}(System.Collections.Generic.IReadOnlyDictionary{TKey,TValue},TKey,TValue)"/>
+    /// with an empty default.
+    /// </summary>
+    public IReadOnlyDictionary<Type, IReadOnlyList<string>> ObjectTypeNamesByType { get; }
+
     internal OntologyGraph(
         IReadOnlyList<DomainDescriptor> domains,
         IReadOnlyList<ObjectTypeDescriptor> objectTypes,
         IReadOnlyList<InterfaceDescriptor> interfaces,
         IReadOnlyList<ResolvedCrossDomainLink> crossDomainLinks,
         IReadOnlyList<WorkflowChain> workflowChains,
+        IReadOnlyDictionary<Type, IReadOnlyList<string>>? objectTypeNamesByType = null,
         IReadOnlyList<string>? warnings = null)
     {
         Domains = domains;
@@ -28,6 +40,8 @@ public sealed class OntologyGraph
         Interfaces = interfaces;
         CrossDomainLinks = crossDomainLinks;
         WorkflowChains = workflowChains;
+        ObjectTypeNamesByType = objectTypeNamesByType
+            ?? new Dictionary<Type, IReadOnlyList<string>>();
         Warnings = warnings ?? [];
 
         _objectTypeLookup = BuildObjectTypeLookup(objectTypes);

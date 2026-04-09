@@ -82,6 +82,15 @@ public sealed class OntologyGraphBuilder
             .GroupBy(ot => ot.DomainName)
             .ToDictionary(g => g.Key, g => g.ToDictionary(ot => ot.Name));
 
+        // Track C2 — reverse index from CLR type → descriptor names in registration order.
+        // Built after the AONT040 check so callers can trust name uniqueness-per-domain,
+        // and used by C3 below to detect multi-registered types in link positions.
+        var namesByType = allObjectTypes
+            .GroupBy(ot => ot.ClrType)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(ot => ot.Name).ToList().AsReadOnly());
+
         var resolvedLinks = ResolveCrossDomainLinks(
             allCrossDomainLinkDescriptors, domainLookup, objectTypeLookup, allObjectTypes);
 
@@ -104,6 +113,7 @@ public sealed class OntologyGraphBuilder
             interfaces: allInterfaces.ToArray(),
             crossDomainLinks: resolvedLinks.ToArray(),
             workflowChains: workflowChains.ToArray(),
+            objectTypeNamesByType: namesByType,
             warnings: warnings.AsReadOnly());
     }
 
