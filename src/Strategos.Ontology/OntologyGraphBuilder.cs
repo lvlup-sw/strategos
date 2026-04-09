@@ -56,6 +56,28 @@ public sealed class OntologyGraphBuilder
         }
 
         var domainLookup = domains.ToDictionary(d => d.DomainName);
+
+        // AONT040 — DuplicateObjectTypeName (Track C1)
+        // Enforce per-domain uniqueness of descriptor names with an explicit diagnostic,
+        // before the ToDictionary call below would otherwise throw a cryptic ArgumentException.
+        foreach (var group in allObjectTypes.GroupBy(ot => ot.DomainName))
+        {
+            var seen = new Dictionary<string, ObjectTypeDescriptor>();
+            foreach (var descriptor in group)
+            {
+                if (seen.TryGetValue(descriptor.Name, out var existing))
+                {
+                    throw new OntologyCompositionException(
+                        $"AONT040: Object type name '{descriptor.Name}' is registered twice in domain '{group.Key}'. " +
+                        $"First registration: CLR type '{existing.ClrType.FullName}'. " +
+                        $"Second registration: CLR type '{descriptor.ClrType.FullName}'. " +
+                        $"Either remove one registration, or specify distinct names via Object<T>(\"name\", ...).");
+                }
+
+                seen[descriptor.Name] = descriptor;
+            }
+        }
+
         var objectTypeLookup = allObjectTypes
             .GroupBy(ot => ot.DomainName)
             .ToDictionary(g => g.Key, g => g.ToDictionary(ot => ot.Name));
@@ -216,7 +238,9 @@ public sealed class OntologyGraphBuilder
 
     private static void ValidateIsAHierarchy(List<ObjectTypeDescriptor> allObjectTypes)
     {
-        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+        // Keys are (DomainName, Name) so that two domains can legally host descriptors
+        // that share a simple name (enforced by the AONT040 per-domain check above).
+        var typesByKey = allObjectTypes.ToDictionary(ot => (ot.DomainName, ot.Name));
 
         foreach (var objectType in allObjectTypes)
         {
@@ -225,14 +249,14 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            if (!typesByName.ContainsKey(objectType.ParentTypeName))
+            if (!typesByKey.ContainsKey((objectType.DomainName, objectType.ParentTypeName)))
             {
                 throw new OntologyCompositionException(
                     $"Object type '{objectType.Name}' declares IS-A relationship with unregistered parent type '{objectType.ParentTypeName}'.");
             }
         }
 
-        // Detect cycles using DFS
+        // Detect cycles using DFS (domain-scoped)
         foreach (var objectType in allObjectTypes)
         {
             if (objectType.ParentTypeName is null)
@@ -241,19 +265,20 @@ public sealed class OntologyGraphBuilder
             }
 
             var visited = new HashSet<string>();
-            var current = objectType.Name;
+            var currentName = objectType.Name;
+            var currentDomain = objectType.DomainName;
 
-            while (current is not null)
+            while (currentName is not null)
             {
-                if (!visited.Add(current))
+                if (!visited.Add(currentName))
                 {
                     throw new OntologyCompositionException(
-                        $"IS-A hierarchy cycle detected involving type '{current}'.");
+                        $"IS-A hierarchy cycle detected involving type '{currentName}'.");
                 }
 
-                if (typesByName.TryGetValue(current, out var currentType))
+                if (typesByKey.TryGetValue((currentDomain, currentName), out var currentType))
                 {
-                    current = currentType.ParentTypeName;
+                    currentName = currentType.ParentTypeName;
                 }
                 else
                 {
@@ -498,7 +523,9 @@ public sealed class OntologyGraphBuilder
 
     private static void ValidateInverseLinks(List<ObjectTypeDescriptor> allObjectTypes)
     {
-        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+        // Keyed by (DomainName, Name) because descriptor names are unique only within a
+        // domain — cross-domain name collisions are legal under the AONT040 invariant.
+        var typesByKey = allObjectTypes.ToDictionary(ot => (ot.DomainName, ot.Name));
 
         foreach (var objectType in allObjectTypes)
         {
@@ -509,7 +536,7 @@ public sealed class OntologyGraphBuilder
                     continue;
                 }
 
-                if (!typesByName.TryGetValue(link.TargetTypeName, out var targetType))
+                if (!typesByKey.TryGetValue((objectType.DomainName, link.TargetTypeName), out var targetType))
                 {
                     continue; // Target type not found; other validations handle this
                 }
@@ -610,7 +637,14 @@ public sealed class OntologyGraphBuilder
         List<WorkflowMetadataBuilder> workflowMetadata)
     {
         var chains = new List<WorkflowChain>();
-        var objectTypeByName = allObjectTypes.ToDictionary(ot => ot.Name);
+
+        // Workflow metadata uses unqualified type names; under the AONT040 invariant the
+        // same simple name can legitimately appear in two domains. Use GroupBy/First here
+        // so the lookup doesn't blow up on legal cross-domain name overlap. First-wins
+        // semantics match the pre-C1 behaviour for the single-domain common case.
+        var objectTypeByName = allObjectTypes
+            .GroupBy(ot => ot.Name)
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var metadata in workflowMetadata)
         {
