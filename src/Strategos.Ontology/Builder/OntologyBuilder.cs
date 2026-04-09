@@ -17,10 +17,20 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
 
     public void Object<T>(Action<IObjectTypeBuilder<T>> configure)
         where T : class
+        => Object<T>(name: null, configure);
+
+    public void Object<T>(string? name, Action<IObjectTypeBuilder<T>> configure)
+        where T : class
     {
         var builder = new ObjectTypeBuilder<T>(domainName);
         configure(builder);
-        _objectTypes.Add(builder.Build());
+        var descriptor = builder.Build();
+        if (name is not null)
+        {
+            descriptor = descriptor with { Name = name };
+        }
+
+        _objectTypes.Add(descriptor);
     }
 
     public void Interface<T>(string name, Action<IInterfaceBuilder<T>> configure)

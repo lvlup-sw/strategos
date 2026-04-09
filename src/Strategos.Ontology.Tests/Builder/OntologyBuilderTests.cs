@@ -66,4 +66,20 @@ public class OntologyBuilderTests
         await Assert.That(builder.ObjectTypes[0].Name).IsEqualTo("TestPosition");
         await Assert.That(builder.ObjectTypes[1].Name).IsEqualTo("TestTradeOrder");
     }
+
+    [Test]
+    public async Task OntologyBuilder_ObjectWithExplicitName_RegistersDescriptorWithThatName()
+    {
+        var builder = new OntologyBuilder("Trading");
+
+        builder.Object<TestPosition>("trading_documents", obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Symbol).Required();
+        });
+
+        await Assert.That(builder.ObjectTypes.Count).IsEqualTo(1);
+        await Assert.That(builder.ObjectTypes[0].Name).IsEqualTo("trading_documents");
+        await Assert.That(builder.ObjectTypes[0].ClrType).IsEqualTo(typeof(TestPosition));
+    }
 }
