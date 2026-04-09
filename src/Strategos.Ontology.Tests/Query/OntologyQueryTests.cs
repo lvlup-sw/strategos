@@ -1011,4 +1011,103 @@ public class OntologyQueryServiceGetObjectSetTests
             .Throws<InvalidOperationException>()
             .WithMessageContaining(nameof(Strategos.Ontology.ObjectSets.IObjectSetProvider));
     }
+
+    [Test]
+    public async Task GetObjectSet_ThreadsDescriptorNameIntoRootExpression()
+    {
+        // Arrange — register a single explicit descriptor name for QueryDescriptorFoo.
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new DescriptorNameTestDomain(registrations:
+        [
+            ("custom_name", typeof(QueryDescriptorFoo)),
+        ]));
+        var graph = graphBuilder.Build();
+
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act
+        var set = query.GetObjectSet<QueryDescriptorFoo>("custom_name");
+
+        // Assert — the root expression must carry the descriptor name that was
+        // *looked up* from the graph (ot.Name), not typeof(T).Name.
+        await Assert.That(set.Expression).IsTypeOf<Strategos.Ontology.ObjectSets.RootExpression>();
+        var root = (Strategos.Ontology.ObjectSets.RootExpression)set.Expression;
+        await Assert.That(root.ObjectTypeName).IsEqualTo("custom_name");
+        await Assert.That(root.ObjectType).IsEqualTo(typeof(QueryDescriptorFoo));
+    }
+
+    [Test]
+    public async Task GetObjectSet_WithMultiRegistration_ReturnsDistinctRootExpressionsPerName()
+    {
+        // Arrange — register the SAME CLR type under two different descriptor names
+        // ("descriptor_a" and "descriptor_b"). This exercises the multi-registration path.
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new DescriptorNameTestDomain(registrations:
+        [
+            ("descriptor_a", typeof(QueryDescriptorFoo)),
+            ("descriptor_b", typeof(QueryDescriptorFoo)),
+        ]));
+        var graph = graphBuilder.Build();
+
+        var provider = Substitute.For<Strategos.Ontology.ObjectSets.IObjectSetProvider>();
+        var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
+        var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
+        var query = new OntologyQueryService(graph, provider, dispatcher, eventStream);
+
+        // Act
+        var setA = query.GetObjectSet<QueryDescriptorFoo>("descriptor_a");
+        var setB = query.GetObjectSet<QueryDescriptorFoo>("descriptor_b");
+
+        // Assert — the two root expressions MUST carry the two distinct descriptor names,
+        // not a shared typeof(T).Name fallback (which is the bug being fixed).
+        var rootA = (Strategos.Ontology.ObjectSets.RootExpression)setA.Expression;
+        var rootB = (Strategos.Ontology.ObjectSets.RootExpression)setB.Expression;
+        await Assert.That(rootA.ObjectTypeName).IsEqualTo("descriptor_a");
+        await Assert.That(rootB.ObjectTypeName).IsEqualTo("descriptor_b");
+        await Assert.That(rootA.ObjectTypeName).IsNotEqualTo(rootB.ObjectTypeName);
+    }
+}
+
+// --- Test domain for descriptor-name dispatch tests (D2) ---
+
+public sealed class QueryDescriptorFoo
+{
+    public Guid Id { get; set; }
+}
+
+/// <summary>
+/// Test-only domain ontology that accepts a list of (descriptorName, clrType)
+/// registrations and emits them via <see cref="IOntologyBuilder.Object{T}(string?, Action{IObjectTypeBuilder{T}})"/>.
+/// Used to exercise multi-registration of the same CLR type under different descriptor names.
+/// </summary>
+internal sealed class DescriptorNameTestDomain : DomainOntology
+{
+    private readonly IReadOnlyList<(string Name, Type ClrType)> _registrations;
+
+    public DescriptorNameTestDomain(IReadOnlyList<(string Name, Type ClrType)> registrations)
+    {
+        _registrations = registrations;
+    }
+
+    public override string DomainName => "descriptor-name-test";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        foreach (var (name, clrType) in _registrations)
+        {
+            if (clrType != typeof(QueryDescriptorFoo))
+            {
+                throw new InvalidOperationException(
+                    $"DescriptorNameTestDomain only supports QueryDescriptorFoo; got {clrType.Name}");
+            }
+
+            builder.Object<QueryDescriptorFoo>(name, obj =>
+            {
+                obj.Key(f => f.Id);
+            });
+        }
+    }
 }

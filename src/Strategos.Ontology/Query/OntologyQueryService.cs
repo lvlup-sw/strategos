@@ -64,10 +64,12 @@ internal sealed class OntologyQueryService : IOntologyQuery
                 "when constructing the OntologyQueryService.");
         }
 
-        // Stop-gap descriptor name (task D1): passes typeof(T).Name until task D2 threads
-        // the resolved descriptor name (ot.Name) so multi-registration dispatches correctly.
+        // Thread the resolved descriptor name (ot.Name) — which may differ from
+        // typeof(T).Name when the caller registered the type under an explicit
+        // name via Object<T>(name, ...) — into the RootExpression so providers
+        // dispatch against the correct descriptor partition.
         return new ObjectSet<T>(
-            typeof(T).Name,
+            descriptorName: ot.Name,
             _objectSetProvider,
             _actionDispatcher,
             _eventStreamProvider);
