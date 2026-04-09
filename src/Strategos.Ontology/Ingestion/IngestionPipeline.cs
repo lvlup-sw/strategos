@@ -19,6 +19,7 @@ public sealed class IngestionPipeline<T> : IIngestionPipeline<T>
     private readonly Func<TextChunk, float[], T> _mapper;
     private readonly IObjectSetWriter _writer;
     private readonly IProgress<IngestionProgress>? _progress;
+    private readonly string? _descriptorName;
 
     /// <summary>
     /// Creates a new <see cref="IngestionPipelineBuilder{T}"/> for fluent pipeline construction.
@@ -29,13 +30,20 @@ public sealed class IngestionPipeline<T> : IIngestionPipeline<T>
     /// <summary>
     /// Initializes a new instance of the <see cref="IngestionPipeline{T}"/> class.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="descriptorName"/> is <c>null</c>, the pipeline dispatches
+    /// through the default <see cref="IObjectSetWriter.StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>
+    /// overload (conventional descriptor resolution). When non-null, it dispatches
+    /// through the explicit-name overload, targeting the chosen descriptor partition.
+    /// </remarks>
     internal IngestionPipeline(
         ITextChunker chunker,
         ChunkOptions? chunkOptions,
         IEmbeddingProvider embedder,
         Func<TextChunk, float[], T> mapper,
         IObjectSetWriter writer,
-        IProgress<IngestionProgress>? progress)
+        IProgress<IngestionProgress>? progress,
+        string? descriptorName = null)
     {
         _chunker = chunker;
         _chunkOptions = chunkOptions;
@@ -43,6 +51,7 @@ public sealed class IngestionPipeline<T> : IIngestionPipeline<T>
         _mapper = mapper;
         _writer = writer;
         _progress = progress;
+        _descriptorName = descriptorName;
     }
 
     /// <inheritdoc />
@@ -116,8 +125,17 @@ public sealed class IngestionPipeline<T> : IIngestionPipeline<T>
             mappedItems.Add(mapped);
         }
 
-        // Phase 4: Store via writer
-        await _writer.StoreBatchAsync<T>(mappedItems, ct).ConfigureAwait(false);
+        // Phase 4: Store via writer — dispatch through the explicit-name overload
+        // when a descriptor name was configured, otherwise use the default overload
+        // (conventional descriptor resolution).
+        if (_descriptorName is not null)
+        {
+            await _writer.StoreBatchAsync<T>(_descriptorName, mappedItems, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _writer.StoreBatchAsync<T>(mappedItems, ct).ConfigureAwait(false);
+        }
 
         _progress?.Report(new IngestionProgress(totalChunks, totalChunks, "Storing"));
 

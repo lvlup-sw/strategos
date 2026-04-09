@@ -216,4 +216,64 @@ public class IngestionPipelineTests
         await Assert.That(result.ItemsStored).IsEqualTo(3);
         await Assert.That(result.Duration).IsGreaterThanOrEqualTo(TimeSpan.Zero);
     }
+
+    [Test]
+    public async Task IngestionPipeline_WriteToWithDescriptorName_CallsExplicitStoreBatchAsync()
+    {
+        // Arrange — F6: when WriteTo(writer, descriptorName) is used, the pipeline
+        // must dispatch through the explicit-name StoreBatchAsync overload so that
+        // multi-registered domain types land in the correct descriptor partition.
+        var chunker = CreateMockChunker(new TextChunk("hello world", 0, 0, 11));
+        var embedder = CreateMockEmbedder([1f, 2f]);
+        var writer = Substitute.For<IObjectSetWriter>();
+
+        var pipeline = IngestionPipeline<PipelineTestEntity>.Create()
+            .Chunk(chunker)
+            .Embed(embedder)
+            .Map((chunk, embedding) => new PipelineTestEntity(chunk.Content, embedding))
+            .WriteTo(writer, "trading_documents")
+            .Build();
+
+        // Act
+        await pipeline.ExecuteAsync(["hello world"]);
+
+        // Assert — explicit-name overload invoked with "trading_documents", default overload NOT invoked
+        await writer.Received(1).StoreBatchAsync(
+            "trading_documents",
+            Arg.Any<IReadOnlyList<PipelineTestEntity>>(),
+            Arg.Any<CancellationToken>());
+        await writer.DidNotReceive().StoreBatchAsync(
+            Arg.Any<IReadOnlyList<PipelineTestEntity>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task IngestionPipeline_WriteToWithoutDescriptorName_CallsDefaultStoreBatchAsync()
+    {
+        // Arrange — regression guard: when WriteTo(writer) (no descriptor name) is
+        // used, the pipeline must continue to dispatch through the default
+        // StoreBatchAsync overload (conventional descriptor resolution).
+        var chunker = CreateMockChunker(new TextChunk("hello world", 0, 0, 11));
+        var embedder = CreateMockEmbedder([1f, 2f]);
+        var writer = Substitute.For<IObjectSetWriter>();
+
+        var pipeline = IngestionPipeline<PipelineTestEntity>.Create()
+            .Chunk(chunker)
+            .Embed(embedder)
+            .Map((chunk, embedding) => new PipelineTestEntity(chunk.Content, embedding))
+            .WriteTo(writer)
+            .Build();
+
+        // Act
+        await pipeline.ExecuteAsync(["hello world"]);
+
+        // Assert — default overload invoked, explicit-name overload NOT invoked
+        await writer.Received(1).StoreBatchAsync(
+            Arg.Any<IReadOnlyList<PipelineTestEntity>>(),
+            Arg.Any<CancellationToken>());
+        await writer.DidNotReceive().StoreBatchAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyList<PipelineTestEntity>>(),
+            Arg.Any<CancellationToken>());
+    }
 }
