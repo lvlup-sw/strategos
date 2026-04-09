@@ -45,6 +45,44 @@ public class PgVectorObjectSetProviderTests
         await Assert.That(sql).DoesNotContain("\"semantic_document\"");
     }
 
+    [Test]
+    public async Task ExecuteAsync_UsesDescriptorNameFromExpression_NotTypeofTName()
+    {
+        // Arrange — a plain RootExpression with an explicit descriptor name.
+        // The non-similarity read path (ExecuteAsync) must honour the
+        // declared name the same way ExecuteSimilarityAsync does.
+        var root = new RootExpression(typeof(SemanticDocument), "trading_documents");
+
+        // Act
+        var tableName = PgVectorObjectSetProvider.ResolveTableName(root);
+        var sql = SqlGenerator.BuildSelectQuery("public", tableName);
+
+        // Assert
+        await Assert.That(tableName).IsEqualTo("trading_documents");
+        await Assert.That(sql).Contains("\"public\".\"trading_documents\"");
+        await Assert.That(sql).DoesNotContain("\"semantic_document\"");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_FilterExpressionOverRoot_WalksToRootDescriptorName()
+    {
+        // Arrange — a FilterExpression wrapping a RootExpression with a
+        // non-default descriptor name. The walk-to-root helper on
+        // ObjectSetExpression (Track A2) must surface the root's declared
+        // name, and the provider's dispatch must reach it.
+        var root = new RootExpression(typeof(SemanticDocument), "knowledge_documents");
+        System.Linq.Expressions.Expression<Func<SemanticDocument, bool>> pred = d => d.Id != Guid.Empty;
+        var filter = new FilterExpression(root, pred);
+
+        // Act
+        var tableName = PgVectorObjectSetProvider.ResolveTableName(filter);
+        var sql = SqlGenerator.BuildSelectQuery("public", tableName);
+
+        // Assert
+        await Assert.That(tableName).IsEqualTo("knowledge_documents");
+        await Assert.That(sql).Contains("\"public\".\"knowledge_documents\"");
+    }
+
     /// <summary>
     /// Test CLR type whose <c>Name</c> deliberately differs from any expected
     /// descriptor name, so we can detect if the provider is still reaching for
