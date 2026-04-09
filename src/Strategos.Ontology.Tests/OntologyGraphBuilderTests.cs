@@ -372,4 +372,79 @@ public class OntologyGraphBuilderTests
 
         await Assert.That(names).HasCount().EqualTo(0);
     }
+
+    // -----------------------------------------------------------------------
+    // Track C3 — AONT041 MultiRegisteredTypeInLink invariant
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task GraphBuilder_WithMultiRegisteredTypeAsLinkTarget_ThrowsAONT041()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCMultiRegLinkTargetOntology>();
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithExceptionType(typeof(OntologyCompositionException));
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("AONT041");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining(typeof(TrackCSemanticDocument).FullName!);
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("'a'");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("'b'");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("Documents");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("#32");
+    }
+
+    [Test]
+    public async Task GraphBuilder_WithMultiRegisteredTypeAsLinkSource_ThrowsAONT041()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCMultiRegLinkSourceOntology>();
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithExceptionType(typeof(OntologyCompositionException));
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("AONT041");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining(typeof(TrackCSemanticDocument).FullName!);
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("#32");
+    }
+
+    [Test]
+    public async Task GraphBuilder_WithMultiRegisteredLeafType_NoLinks_Succeeds()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCMultiRegLeafOnlyOntology>();
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
+        await Assert.That(graph.ObjectTypeNamesByType[typeof(TrackCSemanticDocument)])
+            .HasCount().EqualTo(2);
+    }
 }

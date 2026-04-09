@@ -101,6 +101,7 @@ public sealed class OntologyGraphBuilder
         ComputeTransitiveDerivationChains(allObjectTypes);
         InferPropertyKinds(allObjectTypes);
         ValidateInverseLinks(allObjectTypes);
+        ValidateMultiRegisteredTypesNotInLinks(allObjectTypes, namesByType);
 
         var warnings = new List<string>();
         MatchExtensionPoints(allObjectTypes, resolvedLinks, warnings);
@@ -564,6 +565,70 @@ public sealed class OntologyGraphBuilder
                     throw new OntologyCompositionException(
                         $"Asymmetric inverse declaration: '{objectType.Name}.{link.Name}' declares inverse '{link.InverseLinkName}', but '{link.TargetTypeName}.{link.InverseLinkName}' declares inverse '{inverseLink.InverseLinkName}' instead of '{link.Name}'.");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// AONT041 — MultiRegisteredTypeInLink (Track C3).
+    /// Enforces the Option X freeze invariant that a CLR type registered under more than
+    /// one descriptor name cannot participate in structural links (neither as a link
+    /// target nor as a link source). The Basileus happy path is a multi-registered leaf
+    /// type with no links anywhere — that remains legal.
+    /// </summary>
+    /// <remarks>
+    /// Link targets carry only a <see cref="LinkDescriptor.TargetTypeName"/> string. Under
+    /// the Track B builder, <c>HasMany&lt;TLinked&gt;(name)</c> writes
+    /// <c>typeof(TLinked).Name</c> into that field. We therefore match multi-registered
+    /// CLR types against the link target by the simple type name — consistent with how
+    /// the rest of the builder resolves link targets. Future relaxation (see #32) can
+    /// carry the source CLR <see cref="Type"/> directly instead.
+    /// </remarks>
+    private static void ValidateMultiRegisteredTypesNotInLinks(
+        IReadOnlyList<ObjectTypeDescriptor> allObjectTypes,
+        IReadOnlyDictionary<Type, IReadOnlyList<string>> namesByType)
+    {
+        var multiRegistered = namesByType
+            .Where(kvp => kvp.Value.Count > 1)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        if (multiRegistered.Count == 0)
+        {
+            return;
+        }
+
+        // Map simple CLR-type names → CLR Type, restricted to multi-registered types.
+        // Simple names match what HasMany<TLinked>(name) writes into LinkDescriptor.TargetTypeName.
+        var multiRegisteredByClrSimpleName = multiRegistered
+            .GroupBy(kvp => kvp.Key.Name)
+            .ToDictionary(g => g.Key, g => g.First().Key);
+
+        foreach (var descriptor in allObjectTypes)
+        {
+            // Check: does this descriptor declare an outgoing link whose target
+            // resolves to a multi-registered CLR type?
+            foreach (var link in descriptor.Links)
+            {
+                if (multiRegisteredByClrSimpleName.TryGetValue(link.TargetTypeName, out var targetClrType))
+                {
+                    var names = multiRegistered[targetClrType];
+                    throw new OntologyCompositionException(
+                        $"AONT041: CLR type '{targetClrType.FullName}' has multiple registrations " +
+                        $"({string.Join(", ", names.Select(n => $"'{n}'"))}) but is also referenced as a link target " +
+                        $"in '{descriptor.Name}.{link.Name}'. Multi-registered types cannot participate in structural " +
+                        $"links. See #32 for a future relaxation path.");
+                }
+            }
+
+            // Check: does this descriptor's own CLR type have multiple registrations
+            // AND declare outgoing links? The source side is just as invalid as the target side.
+            if (descriptor.Links.Count > 0 && multiRegistered.TryGetValue(descriptor.ClrType, out var ownNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{descriptor.ClrType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", ownNames.Select(n => $"'{n}'"))}) but also declares outgoing links " +
+                    $"({string.Join(", ", descriptor.Links.Select(l => $"'{l.Name}'"))}). Multi-registered types cannot " +
+                    $"participate in structural links. See #32 for a future relaxation path.");
             }
         }
     }
