@@ -56,7 +56,12 @@ public class PgVectorWriteTests
     [Test]
     public async Task TypeMapper_ForISearchableType_ProducesTableName()
     {
-        var tableName = TypeMapper.GetTableName<SearchableDocument>();
+        // Post-E5 the write-path default-overload resolver delegates to
+        // graph lookup and falls back to typeof(T).Name → snake_case when
+        // no graph is in scope. Assert the fallback path produces the
+        // expected table name for a searchable type.
+        var tableName = PgVectorObjectSetProvider
+            .ResolveTableNameForDefaultOverload<SearchableDocument>(graph: null);
 
         await Assert.That(tableName).IsEqualTo("searchable_document");
     }
