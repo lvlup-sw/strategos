@@ -4,6 +4,13 @@ using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
 
+/// <summary>
+/// Test domain type used by the F2 explicit-name dispatch tests. Top-level so its
+/// CLR name is exactly <c>"Foo"</c> (i.e. <c>typeof(Foo).Name == "Foo"</c>), which
+/// the default-overload partition test asserts against.
+/// </summary>
+public sealed record Foo(string Name);
+
 public class StubObjectSetWriter : IObjectSetWriter
 {
     public List<object> StoredItems { get; } = [];
@@ -113,6 +120,95 @@ public class IObjectSetWriterTests
         await Assert.That(namedStoreBatchAsync)
             .IsNotNull()
             .Because("IObjectSetWriter must expose StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T>, CancellationToken) for explicit descriptor dispatch");
+    }
+
+    /// <summary>
+    /// Verifies the explicit-name <c>StoreAsync</c> overload routes the item into the
+    /// supplied descriptor partition. A subsequent query under that descriptor name
+    /// must see the item, while a query under any other descriptor name must not
+    /// (Strategos 2.4.1 Ontology Descriptor-Name Dispatch, bug #31).
+    /// </summary>
+    [Test]
+    public async Task InMemoryWriter_StoreAsync_ExplicitName_UsesSuppliedName()
+    {
+        // Arrange
+        var provider = new InMemoryObjectSetProvider();
+        IObjectSetWriter writer = provider;
+        var item = new Foo("alpha");
+
+        // Act — write under an explicit descriptor partition that does NOT match typeof(Foo).Name
+        await writer.StoreAsync<Foo>("my_partition", item);
+
+        // Assert — query under "my_partition" finds the item
+        var hit = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), "my_partition"));
+        await Assert.That(hit.Items).HasCount().EqualTo(1);
+        await Assert.That(hit.Items[0].Name).IsEqualTo("alpha");
+
+        // Assert — query under a different descriptor name returns nothing
+        var miss = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), "other_partition"));
+        await Assert.That(miss.Items).IsEmpty();
+    }
+
+    /// <summary>
+    /// Verifies the explicit-name <c>StoreBatchAsync</c> overload routes every item in
+    /// the batch into the supplied descriptor partition (and only that partition).
+    /// </summary>
+    [Test]
+    public async Task InMemoryWriter_StoreBatchAsync_ExplicitName_PartitionsByName()
+    {
+        // Arrange
+        var provider = new InMemoryObjectSetProvider();
+        IObjectSetWriter writer = provider;
+        var items = new List<Foo> { new("one"), new("two") };
+
+        // Act
+        await writer.StoreBatchAsync<Foo>("my_partition", items);
+
+        // Assert — both items found under "my_partition"
+        var hit = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), "my_partition"));
+        await Assert.That(hit.Items).HasCount().EqualTo(2);
+
+        // Assert — nothing leaked into "other"
+        var miss = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), "other"));
+        await Assert.That(miss.Items).IsEmpty();
+    }
+
+    /// <summary>
+    /// Regression / interaction test confirming the default <c>StoreAsync&lt;T&gt;(T, ct)</c>
+    /// overload partitions on <c>typeof(T).Name</c> and does not bleed across an
+    /// explicit-named partition seeded under a different descriptor. After F2 wires the
+    /// default overload to delegate into the explicit-name path, both code paths must
+    /// continue to partition cleanly.
+    /// </summary>
+    [Test]
+    public async Task InMemoryWriter_StoreAsync_DefaultOverload_UsesTypeofTName_AfterExplicitSeedIntoDifferentPartition()
+    {
+        // Arrange
+        var provider = new InMemoryObjectSetProvider();
+        IObjectSetWriter writer = provider;
+        var seeded = new Foo("seeded");
+        provider.Seed(seeded, "seeded content", descriptorName: "other_partition");
+
+        var defaultStored = new Foo("default");
+
+        // Act — default overload (no descriptor name) should land under typeof(Foo).Name
+        await writer.StoreAsync(defaultStored);
+
+        // Assert — default partition (typeof(Foo).Name == "Foo") sees only the default-stored item
+        var defaultHit = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), nameof(Foo)));
+        await Assert.That(defaultHit.Items).HasCount().EqualTo(1);
+        await Assert.That(defaultHit.Items[0].Name).IsEqualTo("default");
+
+        // Assert — "other_partition" still sees only the explicitly-seeded item
+        var otherHit = await provider.ExecuteAsync<Foo>(
+            new RootExpression(typeof(Foo), "other_partition"));
+        await Assert.That(otherHit.Items).HasCount().EqualTo(1);
+        await Assert.That(otherHit.Items[0].Name).IsEqualTo("seeded");
     }
 
     /// <summary>
