@@ -29,7 +29,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var results = await set.ApplyAsync("DoSomething", new { Value = 1 });
@@ -48,7 +48,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
         var request = new { To = "test@example.com" };
 
         // Act
@@ -69,7 +69,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(evt));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var events = new List<OntologyEvent>();
@@ -92,7 +92,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<OntologyEvent>());
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         await foreach (var _ in set.EventsAsync(since, eventTypes))

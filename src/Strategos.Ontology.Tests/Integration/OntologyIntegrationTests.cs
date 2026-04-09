@@ -258,7 +258,8 @@ public class OntologyIntegrationTests
         var eventStreamProvider = provider.GetRequiredService<IEventStreamProvider>();
 
         // Verify we can construct an ObjectSet with the resolved providers
-        var positionSet = new ObjectSet<Position>(objectSetProvider, actionDispatcher, eventStreamProvider);
+        var positionSet = new ObjectSet<Position>(
+            nameof(Position), objectSetProvider, actionDispatcher, eventStreamProvider);
         var result = await positionSet.ExecuteAsync();
 
         await Assert.That(result).IsNotNull();

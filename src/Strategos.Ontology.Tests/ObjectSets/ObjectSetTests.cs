@@ -24,7 +24,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Create_HasRootExpression()
     {
         // Arrange & Act
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Assert
         await Assert.That(set.Expression).IsTypeOf<RootExpression>();
@@ -35,7 +35,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Where_ReturnsNewObjectSetWithFilterExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set.Where(s => s.Length > 5);
@@ -50,7 +50,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Where_PreservesOriginalObjectSet()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set.Where(s => s.Length > 5);
@@ -64,7 +64,7 @@ public class ObjectSetTests
     public async Task ObjectSet_MultipleWheres_ChainsExpressions()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set
@@ -83,7 +83,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_ReturnsSimilarObjectSet()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.SimilarTo("search query");
@@ -97,7 +97,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_FluentChain_ProducesCorrectExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act — fluent chain replaces the legacy positional/optional-arg API
         var similar = set
@@ -119,7 +119,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_AfterWhere_ChainsExpressions()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.Where(s => s.Length > 5).SimilarTo("query");
@@ -133,7 +133,7 @@ public class ObjectSetTests
     public async Task SimilarTo_WithOnlyQueryText_ReturnsSimilarObjectSetWithDefaults()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.SimilarTo("query text");
@@ -155,5 +155,24 @@ public class ObjectSetTests
         var parameters = method!.GetParameters();
         await Assert.That(parameters.Length).IsEqualTo(1);
         await Assert.That(parameters[0].ParameterType).IsEqualTo(typeof(string));
+    }
+
+    [Test]
+    public async Task ObjectSet_Constructor_ThreadsDescriptorNameIntoRootExpression()
+    {
+        // Arrange & Act — use the new descriptor-name-first constructor
+        var set = new ObjectSet<Foo>(
+            "trading_documents", _provider, _dispatcher, _eventProvider);
+
+        // Assert — the root expression must carry the explicit descriptor name,
+        // not the CLR type name (which would be "Foo").
+        await Assert.That(set.Expression).IsTypeOf<RootExpression>();
+        var root = (RootExpression)set.Expression;
+        await Assert.That(root.ObjectTypeName).IsEqualTo("trading_documents");
+        await Assert.That(root.ObjectType).IsEqualTo(typeof(Foo));
+    }
+
+    private sealed class Foo
+    {
     }
 }

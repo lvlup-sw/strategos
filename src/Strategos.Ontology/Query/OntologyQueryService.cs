@@ -64,7 +64,13 @@ internal sealed class OntologyQueryService : IOntologyQuery
                 "when constructing the OntologyQueryService.");
         }
 
-        return new ObjectSet<T>(_objectSetProvider, _actionDispatcher, _eventStreamProvider);
+        // Stop-gap descriptor name (task D1): passes typeof(T).Name until task D2 threads
+        // the resolved descriptor name (ot.Name) so multi-registration dispatches correctly.
+        return new ObjectSet<T>(
+            typeof(T).Name,
+            _objectSetProvider,
+            _actionDispatcher,
+            _eventStreamProvider);
     }
 
     public IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(

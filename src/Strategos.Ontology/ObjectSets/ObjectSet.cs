@@ -17,14 +17,26 @@ public sealed class ObjectSet<T> where T : class
     private readonly IEventStreamProvider _eventStreamProvider;
 
     /// <summary>
-    /// Creates a new root ObjectSet for the given type.
+    /// Creates a new root ObjectSet for the given type, carrying an explicit ontology
+    /// descriptor name on the root expression so the provider can dispatch against the
+    /// correct registration when the CLR type is registered under multiple names.
+    /// Callers constructing an <see cref="ObjectSet{T}"/> directly (rather than through
+    /// <see cref="Strategos.Ontology.Query.IOntologyQuery.GetObjectSet{T}"/>) must supply
+    /// the descriptor name they want dispatched.
     /// </summary>
-    public ObjectSet(IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)
-        : this(new RootExpression(typeof(T), typeof(T).Name), provider, actionDispatcher, eventStreamProvider)
+    /// <param name="descriptorName">
+    /// The ontology descriptor name registered for this type in the graph. For
+    /// single-registered types this is typically <c>typeof(T).Name</c>; for multi-registered
+    /// types this is the explicit name passed to <c>Object&lt;T&gt;(name, ...)</c>.
+    /// </param>
+    public ObjectSet(
+        string descriptorName,
+        IObjectSetProvider provider,
+        IActionDispatcher actionDispatcher,
+        IEventStreamProvider eventStreamProvider)
+        : this(new RootExpression(typeof(T), descriptorName), provider, actionDispatcher, eventStreamProvider)
     {
-        // NOTE: the descriptor name defaults to typeof(T).Name here as a temporary
-        // placeholder. Track D1 threads the real descriptor name through
-        // OntologyQueryService.GetObjectSet<T>(string) → this constructor.
+        ArgumentNullException.ThrowIfNull(descriptorName);
     }
 
     internal ObjectSet(ObjectSetExpression expression, IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)

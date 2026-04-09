@@ -26,7 +26,7 @@ public class ObjectSetMaterializationTests
         var expected = new ObjectSetResult<string>(["a", "b"], 2, ObjectSetInclusion.Properties);
         _provider.ExecuteAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(expected));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var result = await set.ExecuteAsync();
@@ -49,7 +49,7 @@ public class ObjectSetMaterializationTests
 
         _provider.StreamAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
             .Returns(CreateStream());
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var items = new List<string>();
@@ -70,7 +70,7 @@ public class ObjectSetMaterializationTests
         var expected = new ObjectSetResult<string>(["a"], 1, ObjectSetInclusion.Properties);
         _provider.ExecuteAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(expected));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider)
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider)
             .Where(s => s.Length > 0);
 
         // Act

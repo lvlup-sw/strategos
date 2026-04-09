@@ -950,7 +950,8 @@ public class OntologyQueryServiceGetObjectSetTests
         var dispatcher = Substitute.For<Strategos.Ontology.Actions.IActionDispatcher>();
         var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
         mock.GetObjectSet<QueryPosition>("QueryPosition")
-            .Returns(new Strategos.Ontology.ObjectSets.ObjectSet<QueryPosition>(provider, dispatcher, eventStream));
+            .Returns(new Strategos.Ontology.ObjectSets.ObjectSet<QueryPosition>(
+                nameof(QueryPosition), provider, dispatcher, eventStream));
 
         // Act
         var result = mock.GetObjectSet<QueryPosition>("QueryPosition");

@@ -23,7 +23,7 @@ public class ObjectSetTraversalTests
     public async Task ObjectSet_TraverseLink_ReturnsObjectSetOfLinkedType()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var linked = set.TraverseLink<object>("Children");
@@ -37,7 +37,7 @@ public class ObjectSetTraversalTests
     public async Task ObjectSet_TraverseLink_AddsTraverseLinkExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var linked = set.TraverseLink<object>("Children");
@@ -53,7 +53,7 @@ public class ObjectSetTraversalTests
     public async Task ObjectSet_OfInterface_ReturnsObjectSetOfInterfaceType()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var narrowed = set.OfInterface<IDisposable>();
@@ -67,7 +67,7 @@ public class ObjectSetTraversalTests
     public async Task ObjectSet_OfInterface_AddsInterfaceNarrowExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var narrowed = set.OfInterface<IDisposable>();
