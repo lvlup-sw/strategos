@@ -193,4 +193,48 @@ public class ObjectTypeBuilderTests
         await Assert.That(pending).IsTrue();
         await Assert.That(active).IsTrue();
     }
+
+    [Test]
+    public async Task ObjectTypeBuilder_WithExplicitName_UsesExplicitNameInDescriptor()
+    {
+        var builder = new ObjectTypeBuilder<TestPosition>("Trading", explicitName: "trading_documents");
+
+        builder.Key(p => p.Id);
+        builder.Property(p => p.Symbol).Required();
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Name).IsEqualTo("trading_documents");
+        await Assert.That(descriptor.ClrType).IsEqualTo(typeof(TestPosition));
+    }
+
+    [Test]
+    public async Task ObjectTypeBuilder_WithNullExplicitName_FallsBackToTypeofTName()
+    {
+        var builder = new ObjectTypeBuilder<TestPosition>("Trading", explicitName: null);
+
+        builder.Key(p => p.Id);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Name).IsEqualTo("TestPosition");
+        await Assert.That(descriptor.ClrType).IsEqualTo(typeof(TestPosition));
+    }
+
+    [Test]
+    public async Task ObjectTypeBuilder_WithExplicitName_LifecycleProjectionAppliesToThatDescriptor()
+    {
+        var builder = new ObjectTypeBuilder<TrackATestType>("test-domain", explicitName: "archived_items");
+        builder.Lifecycle<TrackATestState>(t => t.Status, lc =>
+        {
+            lc.State(TrackATestState.Open).Initial();
+            lc.State(TrackATestState.Closed).Terminal();
+        });
+        builder.Action("ViewItem").ValidFromState(TrackATestState.Open);
+
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Name).IsEqualTo("archived_items");
+        var selfLoop = descriptor.Lifecycle!.Transitions
+            .FirstOrDefault(t => t.FromState == "Open" && t.ToState == "Open" && t.TriggerActionName == "ViewItem");
+        await Assert.That(selfLoop).IsNotNull();
+    }
 }

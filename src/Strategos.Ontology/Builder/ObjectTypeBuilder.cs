@@ -3,7 +3,7 @@ using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
 
-internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuilder<T>
+internal sealed class ObjectTypeBuilder<T>(string domainName, string? explicitName = null) : IObjectTypeBuilder<T>
     where T : class
 {
     private PropertyDescriptor? _keyProperty;
@@ -133,7 +133,7 @@ internal sealed class ObjectTypeBuilder<T>(string domainName) : IObjectTypeBuild
 
         ProjectValidFromStatesIntoLifecycle();
 
-        return new(typeof(T).Name, typeof(T), domainName)
+        return new(explicitName ?? typeof(T).Name, typeof(T), domainName)
         {
             Kind = _objectKind,
             KeyProperty = _keyProperty,
