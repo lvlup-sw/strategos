@@ -79,54 +79,51 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         _embeddings.GetOrAdd(key, _ => new List<float[]>()).Add(embedding);
     }
 
+    // Both default overloads delegate into the explicit-name variants with
+    // typeof(T).Name as the partition key. This keeps the two write paths in
+    // sync (a single source of truth for partition layout, embedding alignment,
+    // and searchable content extraction) and matches the dispatch convention
+    // used on the read side: ObjectSet<T> built without an explicit descriptor
+    // name produces a RootExpression whose RootObjectTypeName is typeof(T).Name.
+
     /// <inheritdoc />
     public Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class
+        => StoreAsync(typeof(T).Name, item, ct);
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+        => StoreBatchAsync(typeof(T).Name, items, ct);
+
+    /// <inheritdoc />
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
     {
+        ArgumentNullException.ThrowIfNull(descriptorName);
         ArgumentNullException.ThrowIfNull(item);
 
-        // Default partition key for the no-descriptor overload is
-        // typeof(T).Name, preserving the established behavior of the
-        // implicit (single-registration) write path. Task F2 will land
-        // a descriptor-name-aware overload for the multi-registered case.
-        var key = typeof(T).Name;
         var searchableText = item.ToString() ?? string.Empty;
 
-        _items.GetOrAdd(key, _ => new List<object>()).Add(item);
-        _searchableContent.GetOrAdd(key, _ => new List<string>()).Add(searchableText);
+        _items.GetOrAdd(descriptorName, _ => new List<object>()).Add(item);
+        _searchableContent.GetOrAdd(descriptorName, _ => new List<string>()).Add(searchableText);
 
         // Store embedding (or empty placeholder) to maintain index alignment with _items
         var embedding = item is ISearchable searchable ? searchable.Embedding : [];
-        _embeddings.GetOrAdd(key, _ => new List<float[]>()).Add(embedding);
+        _embeddings.GetOrAdd(descriptorName, _ => new List<float[]>()).Add(embedding);
 
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    public async Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
     {
+        ArgumentNullException.ThrowIfNull(descriptorName);
         ArgumentNullException.ThrowIfNull(items);
 
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
-            await StoreAsync(item, ct).ConfigureAwait(false);
+            await StoreAsync(descriptorName, item, ct).ConfigureAwait(false);
         }
     }
-
-    // The two explicit-descriptor-name overloads below are INTENTIONAL temporary placeholders
-    // landed by Task F1 (Strategos 2.4.1 Ontology Descriptor-Name Dispatch, bug #31). They exist
-    // solely so InMemoryObjectSetProvider continues to satisfy IObjectSetWriter while the interface
-    // change lands ahead of the real implementation. Task E4 (InMemory partition switch) + Task F2
-    // (in-memory explicit-name write path) will replace the NotImplementedException throws with the
-    // descriptor-partition-aware store logic. Do not call these overloads yet.
-
-    /// <inheritdoc />
-    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
-        => throw new NotImplementedException("Implemented in Task F2");
-
-    /// <inheritdoc />
-    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
-        => throw new NotImplementedException("Implemented in Task F2");
 
     /// <inheritdoc />
     public Task<ObjectSetResult<T>> ExecuteAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
