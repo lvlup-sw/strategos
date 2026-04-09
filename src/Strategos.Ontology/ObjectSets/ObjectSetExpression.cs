@@ -16,6 +16,27 @@ public abstract class ObjectSetExpression
     /// The CLR type this expression node produces.
     /// </summary>
     public Type ObjectType { get; }
+
+    /// <summary>
+    /// The ontology descriptor name this expression's query targets. Walks the
+    /// expression tree back to its <see cref="RootExpression"/> by following
+    /// <c>Source</c> references and returns the root's declared
+    /// <see cref="RootExpression.ObjectTypeName"/>. <see cref="TraverseLinkExpression"/>
+    /// overrides this to return the linked type's descriptor name (see A3).
+    /// </summary>
+    public virtual string RootObjectTypeName => WalkToRoot(this).ObjectTypeName;
+
+    private static RootExpression WalkToRoot(ObjectSetExpression expr) => expr switch
+    {
+        RootExpression root => root,
+        FilterExpression f => WalkToRoot(f.Source),
+        InterfaceNarrowExpression i => WalkToRoot(i.Source),
+        RawFilterExpression r => WalkToRoot(r.Source),
+        IncludeExpression inc => WalkToRoot(inc.Source),
+        SimilarityExpression s => WalkToRoot(s.Source),
+        TraverseLinkExpression t => WalkToRoot(t.Source),
+        _ => throw new InvalidOperationException($"Unknown expression type: {expr.GetType().Name}")
+    };
 }
 
 /// <summary>

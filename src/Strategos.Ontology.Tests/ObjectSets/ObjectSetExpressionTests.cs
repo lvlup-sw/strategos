@@ -144,4 +144,85 @@ public class ObjectSetExpressionTests
         // Assert
         await Assert.That(similarity.Metric).IsEqualTo(DistanceMetric.Cosine);
     }
+
+    // -----------------------------------------------------------------------
+    // A2: ObjectSetExpression.RootObjectTypeName walk-to-root computed property
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task FilterExpression_RootObjectTypeName_WalksToSourceRoot()
+    {
+        // Arrange
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        Expression<Func<Foo, bool>> predicate = x => true;
+        var filter = new FilterExpression(root, predicate);
+
+        // Assert — walks through the filter to the root and returns the explicit name
+        await Assert.That(filter.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    [Test]
+    public async Task InterfaceNarrowExpression_RootObjectTypeName_WalksToSourceRoot()
+    {
+        // Arrange
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        var narrow = new InterfaceNarrowExpression(root, typeof(IDisposable));
+
+        // Assert
+        await Assert.That(narrow.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    [Test]
+    public async Task IncludeExpression_RootObjectTypeName_WalksToSourceRoot()
+    {
+        // Arrange
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        var include = new IncludeExpression(root, ObjectSetInclusion.Properties);
+
+        // Assert
+        await Assert.That(include.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    [Test]
+    public async Task RawFilterExpression_RootObjectTypeName_WalksToSourceRoot()
+    {
+        // Arrange
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        var raw = new RawFilterExpression(root, "Name = 'bar'");
+
+        // Assert
+        await Assert.That(raw.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    [Test]
+    public async Task SimilarityExpression_RootObjectTypeName_WalksToSourceRoot()
+    {
+        // Arrange — this is the Basileus call site: similarity queries must
+        // route to the descriptor the caller dispatched against, not typeof(T).Name
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        var similarity = new SimilarityExpression(root, "query", 10, 0.5);
+
+        // Assert
+        await Assert.That(similarity.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    [Test]
+    public async Task ComposedExpression_Root_Filter_Similarity_ReturnsRootName()
+    {
+        // Arrange — nested composition: Similarity(Filter(Root)) must walk two hops
+        // back to the original RootExpression's descriptor name.
+        var root = new RootExpression(typeof(Foo), "foo_table");
+        Expression<Func<Foo, bool>> predicate = x => true;
+        var filter = new FilterExpression(root, predicate);
+        var similarity = new SimilarityExpression(filter, "query", 10, 0.5);
+
+        // Assert
+        await Assert.That(similarity.RootObjectTypeName).IsEqualTo("foo_table");
+    }
+
+    // Helper type for A2/A3 tests
+    private sealed class Foo
+    {
+        public string Name { get; set; } = string.Empty;
+    }
 }
