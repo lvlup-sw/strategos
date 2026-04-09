@@ -236,7 +236,7 @@ internal static class ContextAssemblerEmitter
         // Build SimilarityExpression
         var minRelevanceLiteral = ((double)retrieval.MinRelevance).ToString(System.Globalization.CultureInfo.InvariantCulture);
         sb.AppendLine($"        var {resultsVarName}Expression = new SimilarityExpression(");
-        sb.AppendLine($"            new RootExpression(typeof({retrieval.CollectionTypeName})),");
+        sb.AppendLine($"            new RootExpression(typeof({retrieval.CollectionTypeName}), nameof({retrieval.CollectionTypeName})),");
         if (retrieval.Filters.Count > 0)
         {
             sb.AppendLine($"            {queryExpr}, {retrieval.TopK}, {minRelevanceLiteral},");

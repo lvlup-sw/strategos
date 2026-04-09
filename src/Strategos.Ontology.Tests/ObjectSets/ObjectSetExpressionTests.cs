@@ -9,17 +9,31 @@ public class ObjectSetExpressionTests
     public async Task RootExpression_Create_HasObjectType()
     {
         // Arrange & Act
-        var expression = new RootExpression(typeof(string));
+        var expression = new RootExpression(typeof(string), "string");
 
         // Assert
         await Assert.That(expression.ObjectType).IsEqualTo(typeof(string));
     }
 
     [Test]
+    public async Task RootExpression_Constructor_RequiresObjectTypeName()
+    {
+        // Arrange & Act
+        var expression = new RootExpression(typeof(string), "trading_documents");
+
+        // Assert — explicit descriptor name is stored on the expression
+        await Assert.That(expression.ObjectTypeName).IsEqualTo("trading_documents");
+
+        // Assert — null descriptor name is rejected
+        await Assert.That(() => new RootExpression(typeof(string), null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
     public async Task FilterExpression_Create_HasPredicateAndObjectType()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         Expression<Func<string, bool>> predicate = s => s.Length > 0;
 
         // Act
@@ -35,7 +49,7 @@ public class ObjectSetExpressionTests
     public async Task TraverseLinkExpression_Create_HasLinkNameAndSourceExpression()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
 
         // Act
         var traverse = new TraverseLinkExpression(root, "Children", typeof(int));
@@ -50,7 +64,7 @@ public class ObjectSetExpressionTests
     public async Task InterfaceNarrowExpression_Create_HasInterfaceType()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
 
         // Act
         var narrow = new InterfaceNarrowExpression(root, typeof(IDisposable));
@@ -65,7 +79,7 @@ public class ObjectSetExpressionTests
     public async Task SimilarityExpression_Create_HasAllProperties()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
 
         // Act
         var similarity = new SimilarityExpression(
@@ -88,7 +102,7 @@ public class ObjectSetExpressionTests
     public async Task SimilarityExpression_WithQueryVector_StoresVector()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var vector = new float[] { 0.1f, 0.2f, 0.3f };
 
         // Act
@@ -105,7 +119,7 @@ public class ObjectSetExpressionTests
     public async Task SimilarityExpression_WithFilters_StoresFilters()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var filters = new Dictionary<string, object> { ["category"] = "tech" };
 
         // Act
@@ -122,7 +136,7 @@ public class ObjectSetExpressionTests
     public async Task SimilarityExpression_DefaultMetric_IsCosine()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
 
         // Act
         var similarity = new SimilarityExpression(root, "query", 5, 0.7);

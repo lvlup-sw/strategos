@@ -120,7 +120,7 @@ public class IngestionPipelineIntegrationTests
 
         // Query -- similarity search against the ingested data
         var searchExpression = new SimilarityExpression(
-            new RootExpression(typeof(DocumentChunk)),
+            new RootExpression(typeof(DocumentChunk), nameof(DocumentChunk)),
             queryText: "machine learning training",
             topK: 5,
             minRelevance: 0.0);

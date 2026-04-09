@@ -136,7 +136,10 @@ public sealed class OntologyQueryTool
             ? _graph.GetObjectType(domain, objectType)?.ClrType ?? typeof(object)
             : typeof(object);
 
-        ObjectSetExpression expression = new RootExpression(clrType);
+        // Track A placeholder: MCP tools use the descriptor name as declared by the caller
+        // (or fall back to CLR type name when unresolved). Track D will thread a resolved
+        // descriptor name once multi-registration support lands.
+        ObjectSetExpression expression = new RootExpression(clrType, objectType ?? clrType.Name);
 
         if (filter is not null)
         {

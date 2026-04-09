@@ -23,7 +23,19 @@ public abstract class ObjectSetExpression
 /// </summary>
 public sealed class RootExpression : ObjectSetExpression
 {
-    public RootExpression(Type objectType) : base(objectType) { }
+    public RootExpression(Type objectType, string objectTypeName) : base(objectType)
+    {
+        ArgumentNullException.ThrowIfNull(objectTypeName);
+        ObjectTypeName = objectTypeName;
+    }
+
+    /// <summary>
+    /// The ontology descriptor name this root was dispatched against.
+    /// For a single-registered type this equals <c>ObjectType.Name</c>; for a
+    /// multi-registered type this is the explicit descriptor name supplied by
+    /// the caller (e.g., via <c>query.GetObjectSet&lt;T&gt;("trading_documents")</c>).
+    /// </summary>
+    public string ObjectTypeName { get; }
 }
 
 /// <summary>

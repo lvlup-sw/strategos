@@ -8,7 +8,7 @@ public class SimilarObjectSetTests
     public async Task SimilarObjectSet_Create_HasExpression()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var similarity = new SimilarityExpression(root, "query", 5, 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
 
@@ -23,7 +23,7 @@ public class SimilarObjectSetTests
     public async Task SimilarObjectSet_ExecuteAsync_DelegatesToProvider()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var similarity = new SimilarityExpression(root, "query", 5, 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
         var expected = new ScoredObjectSetResult<string>(
@@ -46,7 +46,7 @@ public class SimilarObjectSetTests
     public async Task SimilarObjectSet_ExecuteAsync_PassesCancellationToken()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var similarity = new SimilarityExpression(root, "query", 5, 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
         var expected = new ScoredObjectSetResult<string>(
@@ -69,7 +69,7 @@ public class SimilarObjectSetTests
     public async Task WithMinRelevance_ReturnsNewInstanceWithUpdatedMinRelevance()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var original = new SimilarityExpression(root, "query", topK: 5, minRelevance: 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
         var originalSet = new SimilarObjectSet<string>(original, provider);
@@ -87,7 +87,7 @@ public class SimilarObjectSetTests
     public async Task Take_ReturnsNewInstanceWithUpdatedTopK()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var original = new SimilarityExpression(root, "query", topK: 5, minRelevance: 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
         var originalSet = new SimilarObjectSet<string>(original, provider);
@@ -105,7 +105,7 @@ public class SimilarObjectSetTests
     public async Task WithMetric_ReturnsNewInstanceWithUpdatedMetric()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var original = new SimilarityExpression(
             root, "query", topK: 5, minRelevance: 0.7, metric: DistanceMetric.Cosine);
         var provider = Substitute.For<IObjectSetProvider>();
@@ -124,7 +124,7 @@ public class SimilarObjectSetTests
     public async Task FluentChain_PreservesQueryTextAndIsImmutable()
     {
         // Arrange
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var original = new SimilarityExpression(root, "find docs", topK: 5, minRelevance: 0.7);
         var provider = Substitute.For<IObjectSetProvider>();
         var originalSet = new SimilarObjectSet<string>(original, provider);

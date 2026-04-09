@@ -13,7 +13,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("Alice"), "alice document");
         provider.Seed(new TestEntity("Bob"), "bob document");
 
-        var expression = new RootExpression(typeof(TestEntity));
+        var expression = new RootExpression(typeof(TestEntity), nameof(TestEntity));
 
         // Act
         var result = await provider.ExecuteAsync<TestEntity>(expression);
@@ -33,7 +33,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("High"), "machine learning deep neural network");
         provider.Seed(new TestEntity("Mid"), "machine learning basics");
 
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "machine learning neural", 10, 0.0);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "machine learning neural", 10, 0.0);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -51,7 +51,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("Match"), "alpha beta gamma delta");
         provider.Seed(new TestEntity("NoMatch"), "completely unrelated content");
 
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "alpha beta gamma delta", 10, 0.9);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "alpha beta gamma delta", 10, 0.9);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -72,7 +72,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("D"), "query match content");
         provider.Seed(new TestEntity("E"), "query match content");
 
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "query match content", 2, 0.0);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "query match content", 2, 0.0);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -86,7 +86,7 @@ public class InMemoryObjectSetProviderTests
     {
         // Arrange
         var provider = new InMemoryObjectSetProvider();
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "some query", 10, 0.0);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "some query", 10, 0.0);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -103,7 +103,7 @@ public class InMemoryObjectSetProviderTests
         var provider = new InMemoryObjectSetProvider();
         provider.Seed(new TestEntity("Item"), "MACHINE LEARNING DEEP");
 
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "machine learning deep", 10, 0.0);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "machine learning deep", 10, 0.0);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -121,7 +121,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("One"), "one");
         provider.Seed(new TestEntity("Two"), "two");
 
-        var expression = new RootExpression(typeof(TestEntity));
+        var expression = new RootExpression(typeof(TestEntity), nameof(TestEntity));
 
         // Act
         var items = new List<TestEntity>();
@@ -144,7 +144,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("Charlie"), "charlie");
 
         Expression<Func<TestEntity, bool>> predicate = e => e.Name.StartsWith("A");
-        var root = new RootExpression(typeof(TestEntity));
+        var root = new RootExpression(typeof(TestEntity), nameof(TestEntity));
         var filter = new FilterExpression(root, predicate);
 
         // Act
@@ -163,7 +163,7 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("A"), "word1 word2");
         provider.Seed(new TestEntity("B"), "word1");
 
-        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity)), "word1 word2", 10, 0.0);
+        var expression = new SimilarityExpression(new RootExpression(typeof(TestEntity), nameof(TestEntity)), "word1 word2", 10, 0.0);
 
         // Act
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
@@ -180,8 +180,8 @@ public class InMemoryObjectSetProviderTests
         provider.Seed(new TestEntity("Entity1"), "entity");
         provider.Seed(new OtherEntity(42), "other");
 
-        var entityExpression = new RootExpression(typeof(TestEntity));
-        var otherExpression = new RootExpression(typeof(OtherEntity));
+        var entityExpression = new RootExpression(typeof(TestEntity), nameof(TestEntity));
+        var otherExpression = new RootExpression(typeof(OtherEntity), nameof(OtherEntity));
 
         // Act
         var entityResult = await provider.ExecuteAsync<TestEntity>(entityExpression);

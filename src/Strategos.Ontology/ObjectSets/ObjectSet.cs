@@ -20,8 +20,11 @@ public sealed class ObjectSet<T> where T : class
     /// Creates a new root ObjectSet for the given type.
     /// </summary>
     public ObjectSet(IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)
-        : this(new RootExpression(typeof(T)), provider, actionDispatcher, eventStreamProvider)
+        : this(new RootExpression(typeof(T), typeof(T).Name), provider, actionDispatcher, eventStreamProvider)
     {
+        // NOTE: the descriptor name defaults to typeof(T).Name here as a temporary
+        // placeholder. Track D1 threads the real descriptor name through
+        // OntologyQueryService.GetObjectSet<T>(string) → this constructor.
     }
 
     internal ObjectSet(ObjectSetExpression expression, IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)
