@@ -23,15 +23,30 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly ILogger<PgVectorObjectSetProvider> _logger;
     private readonly PgVectorOptions _options;
+    private readonly OntologyGraph? _graph;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PgVectorObjectSetProvider"/> class.
     /// </summary>
+    /// <param name="dataSource">The PostgreSQL data source.</param>
+    /// <param name="embeddingProvider">The embedding provider used for vector generation.</param>
+    /// <param name="options">The pgvector provider options.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="graph">
+    /// Optional ontology graph used by the default-named write overloads
+    /// (<see cref="StoreAsync{T}(T, CancellationToken)"/>,
+    /// <see cref="StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>,
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/>) to look up
+    /// the registered descriptor name for a CLR type. When <c>null</c> (e.g. in
+    /// direct unit-test instantiation) the default-overload resolution falls back
+    /// to <c>typeof(T).Name</c> via <see cref="TypeMapper.ToSnakeCase(string)"/>.
+    /// </param>
     public PgVectorObjectSetProvider(
         NpgsqlDataSource dataSource,
         IEmbeddingProvider embeddingProvider,
         IOptions<PgVectorOptions> options,
-        ILogger<PgVectorObjectSetProvider> logger)
+        ILogger<PgVectorObjectSetProvider> logger,
+        OntologyGraph? graph = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
@@ -42,6 +57,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         _embeddingProvider = embeddingProvider;
         _options = options.Value;
         _logger = logger;
+        _graph = graph;
     }
 
     /// <summary>
@@ -78,13 +94,60 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <c>StoreBatchAsync</c> overloads share a single dispatch step and unit
     /// tests can pin its behavior without needing a live
     /// <see cref="NpgsqlDataSource"/>. The default-named write overloads
-    /// continue to dispatch via <c>TypeMapper.GetTableName&lt;T&gt;()</c>
-    /// pending the F4/F5 graph-backed lookup.
+    /// dispatch via <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>.
     /// </remarks>
     internal static string ResolveTableNameForDescriptor(string descriptorName)
     {
         ArgumentNullException.ThrowIfNull(descriptorName);
         return TypeMapper.ToSnakeCase(descriptorName);
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a write-path call
+    /// made via the default (no-name) overloads, using the ontology graph's
+    /// reverse index to look up the descriptor name registered for
+    /// <typeparamref name="T"/>. Falls back to <c>typeof(T).Name</c> when
+    /// <paramref name="graph"/> is <c>null</c> or the type is absent from
+    /// the graph.
+    /// </summary>
+    /// <remarks>
+    /// Symmetric write-path counterpart to <see cref="ResolveTableName(ObjectSetExpression)"/>
+    /// for callers that do not thread an <see cref="ObjectSetExpression"/>.
+    /// Replaces the prior <c>TypeMapper.GetTableName&lt;T&gt;()</c> lookup
+    /// which silently collapsed to <c>typeof(T).Name</c> and routed writes
+    /// to the wrong physical table when a CLR type was registered under
+    /// multiple ontology descriptors (bug #31 / Strategos 2.4.1). Throws
+    /// <see cref="InvalidOperationException"/> when the graph contains more
+    /// than one descriptor for the type — the default overload cannot
+    /// safely pick one and callers must use the explicit-name overload.
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior
+    /// without a live <see cref="NpgsqlDataSource"/>.
+    /// </remarks>
+    internal static string ResolveTableNameForDefaultOverload<T>(OntologyGraph? graph)
+    {
+        if (graph is not null && graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names))
+        {
+            if (names.Count == 1)
+            {
+                return TypeMapper.ToSnakeCase(names[0]);
+            }
+
+            if (names.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Type '{typeof(T).FullName}' has multiple registrations " +
+                    $"({string.Join(", ", names.Select(n => $"'{n}'"))}). " +
+                    $"Use StoreAsync<T>(string descriptorName, T item, ct) or " +
+                    $"StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, ct) " +
+                    $"to specify the target descriptor.");
+            }
+        }
+
+        // Graph absent, type unregistered, or empty name list — fall back to
+        // typeof(T).Name → snake_case for back-compat with direct unit-test
+        // instantiation and DI configurations that do not resolve an
+        // OntologyGraph.
+        return TypeMapper.ToSnakeCase(typeof(T).Name);
     }
 
     /// <inheritdoc />
@@ -233,9 +296,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        // Default overload: resolve via TypeMapper.GetTableName<T>() (typeof(T).Name → snake_case).
-        // Task F4 (Group 3) will replace this call site with graph-backed descriptor lookup.
-        var tableName = TypeMapper.GetTableName<T>();
+        // Default overload: resolve via the ontology graph's reverse index
+        // (F4). Throws if the type is multi-registered — callers must use
+        // the explicit-name overload to disambiguate.
+        var tableName = ResolveTableNameForDefaultOverload<T>(_graph);
         return StoreAsyncCore<T>(tableName, item, ct);
     }
 
@@ -244,9 +308,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(items);
 
-        // Default overload: resolve via TypeMapper.GetTableName<T>() (typeof(T).Name → snake_case).
-        // Task F4 (Group 3) will replace this call site with graph-backed descriptor lookup.
-        var tableName = TypeMapper.GetTableName<T>();
+        // Default overload: resolve via the ontology graph's reverse index
+        // (F4). Throws if the type is multi-registered — callers must use
+        // the explicit-name overload to disambiguate.
+        var tableName = ResolveTableNameForDefaultOverload<T>(_graph);
         return StoreBatchAsyncCore<T>(tableName, items, ct);
     }
 
@@ -277,9 +342,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <summary>
     /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
     /// so both the default <see cref="StoreAsync{T}(T, CancellationToken)"/> overload
-    /// (resolving via <see cref="TypeMapper.GetTableName{T}"/>) and the explicit-name
-    /// overload (resolving via <see cref="ResolveTableNameForDescriptor"/>) share a
-    /// single SQL/parameter-binding code path.
+    /// (resolving via <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>)
+    /// and the explicit-name overload (resolving via
+    /// <see cref="ResolveTableNameForDescriptor"/>) share a single SQL /
+    /// parameter-binding code path.
     /// </summary>
     private async Task StoreAsyncCore<T>(string tableName, T item, CancellationToken ct) where T : class
     {

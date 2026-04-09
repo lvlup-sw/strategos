@@ -1,7 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Strategos.Ontology.Configuration;
+using Strategos.Ontology.Embeddings;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Npgsql;
@@ -26,7 +29,7 @@ public static class PgVectorServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         services.Configure(configure);
-        services.AddSingleton<PgVectorObjectSetProvider>();
+        services.AddSingleton<PgVectorObjectSetProvider>(sp => CreateProvider(sp));
         services.AddSingleton<IObjectSetProvider>(sp => sp.GetRequiredService<PgVectorObjectSetProvider>());
         services.AddSingleton<IObjectSetWriter>(sp => sp.GetRequiredService<PgVectorObjectSetProvider>());
 
@@ -55,11 +58,29 @@ public static class PgVectorServiceCollectionExtensions
             dataSourceBuilder.UseVector();
             services.AddSingleton(dataSourceBuilder.Build());
 
-            services.AddSingleton<PgVectorObjectSetProvider>();
+            services.AddSingleton<PgVectorObjectSetProvider>(sp => CreateProvider(sp));
             services.AddSingleton<IObjectSetProvider>(sp => sp.GetRequiredService<PgVectorObjectSetProvider>());
             services.AddSingleton<IObjectSetWriter>(sp => sp.GetRequiredService<PgVectorObjectSetProvider>());
         });
 
         return options;
+    }
+
+    /// <summary>
+    /// Activation factory that resolves the required dependencies and passes the
+    /// optional <see cref="OntologyGraph"/> through to the provider constructor
+    /// so the default-named write overloads can honour graph-registered
+    /// descriptor names (F4 / bug #31).
+    /// </summary>
+    [RequiresDynamicCode("PgVectorObjectSetProvider uses JSON serialization which requires dynamic code.")]
+    [RequiresUnreferencedCode("PgVectorObjectSetProvider uses JSON serialization which requires unreferenced code.")]
+    private static PgVectorObjectSetProvider CreateProvider(IServiceProvider sp)
+    {
+        var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
+        var embeddingProvider = sp.GetRequiredService<IEmbeddingProvider>();
+        var providerOptions = sp.GetRequiredService<IOptions<PgVectorOptions>>();
+        var logger = sp.GetRequiredService<ILogger<PgVectorObjectSetProvider>>();
+        var graph = sp.GetService<OntologyGraph>();
+        return new PgVectorObjectSetProvider(dataSource, embeddingProvider, providerOptions, logger, graph);
     }
 }

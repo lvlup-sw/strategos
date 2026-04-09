@@ -1,3 +1,4 @@
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Npgsql.Internal;
 using Strategos.Ontology.ObjectSets;
 
@@ -195,6 +196,88 @@ public class PgVectorObjectSetProviderTests
         await Assert.That(explicitTableName).IsNotEqualTo(defaultTableName);
     }
 
+    // ---------------------------------------------------------------------
+    // Track F4 — graph-backed default-overload write-path dispatch tests.
+    //
+    // The default StoreAsync<T>(T) / StoreBatchAsync<T>(IReadOnlyList<T>)
+    // overloads must resolve the target table via the ontology graph when
+    // one is available, honouring single-registration names, throwing with
+    // a diagnostic for multi-registered types, and falling back to
+    // typeof(T).Name only when no graph is in scope (e.g. direct unit-test
+    // instantiation without DI wiring).
+    //
+    // The dispatch step is exposed as the internal static helper
+    // PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<T>(graph)
+    // so the assertions below pin the full code path without needing a
+    // live NpgsqlDataSource.
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task StoreAsync_DefaultOverload_ResolvesViaGraph_SingleRegistration()
+    {
+        // Arrange — one Object<F4Foo>("foo_table", ...) registration. The
+        // graph's reverse index should map typeof(F4Foo) → ["foo_table"].
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<F4SingleRegistrationOntology>()
+            .Build();
+
+        // Act — default-overload dispatch helper with the graph in scope.
+        var tableName = PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph);
+
+        // Assert — the descriptor name "foo_table" is honoured, NOT the
+        // typeof(F4Foo).Name → "f4_foo" fallback path.
+        await Assert.That(tableName).IsEqualTo("foo_table");
+        await Assert.That(tableName).IsNotEqualTo("f4_foo");
+    }
+
+    [Test]
+    public async Task StoreAsync_DefaultOverload_WithMultiRegistration_ThrowsWithDiagnostic()
+    {
+        // Arrange — two registrations of the same CLR type under different
+        // descriptor names. The default overload CANNOT safely pick one
+        // automatically and must throw with a diagnostic pointing the
+        // caller at the explicit-name overload.
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<F4MultiRegistrationOntology>()
+            .Build();
+
+        // Act + Assert — the dispatch helper throws InvalidOperationException
+        // naming the type, both descriptor names, and the explicit-name
+        // overload as the remediation.
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph))
+            .ThrowsException()
+            .WithMessageContaining(typeof(F4Foo).FullName!);
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph))
+            .ThrowsException()
+            .WithMessageContaining("'a'");
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph))
+            .ThrowsException()
+            .WithMessageContaining("'b'");
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph))
+            .ThrowsException()
+            .WithMessageContaining("StoreAsync");
+    }
+
+    [Test]
+    public async Task StoreAsync_DefaultOverload_FallsBackToTypeofTName_WhenGraphAbsent()
+    {
+        // Arrange — no graph available (direct unit-test call). The helper
+        // must fall back to typeof(T).Name → snake_case so existing
+        // provider constructions without a graph continue to work.
+        // Act
+        var tableName = PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F4Foo>(graph: null);
+
+        // Assert — snake_case form of typeof(F4Foo).Name ("F4Foo" → "f4_foo").
+        await Assert.That(tableName).IsEqualTo(TypeMapper.ToSnakeCase(nameof(F4Foo)));
+    }
+
     /// <summary>
     /// Test CLR type whose <c>Name</c> deliberately differs from any expected
     /// descriptor name, so we can detect if the provider is still reaching for
@@ -205,5 +288,46 @@ public class PgVectorObjectSetProviderTests
         public Guid Id { get; set; }
 
         public string Content { get; set; } = string.Empty;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Track F4 test fixtures — top-level so OntologyGraphBuilder.AddDomain<T>()
+// can instantiate them (requires a public parameterless constructor).
+// ---------------------------------------------------------------------------
+
+public class F4Foo
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public class F4SingleRegistrationOntology : DomainOntology
+{
+    public override string DomainName => "f4-single";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<F4Foo>("foo_table", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+    }
+}
+
+public class F4MultiRegistrationOntology : DomainOntology
+{
+    public override string DomainName => "f4-multi";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<F4Foo>("a", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+
+        builder.Object<F4Foo>("b", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
     }
 }
