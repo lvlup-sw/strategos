@@ -83,6 +83,24 @@ public class PgVectorObjectSetProviderTests
         await Assert.That(sql).Contains("\"public\".\"knowledge_documents\"");
     }
 
+    [Test]
+    public async Task StreamAsync_UsesDescriptorNameFromExpression_NotTypeofTName()
+    {
+        // Arrange — StreamAsync shares the non-similarity read-path dispatch
+        // with ExecuteAsync. Pin the behavior explicitly so a future refactor
+        // that diverges the two code paths cannot silently regress streaming.
+        var root = new RootExpression(typeof(SemanticDocument), "streaming_documents");
+
+        // Act
+        var tableName = PgVectorObjectSetProvider.ResolveTableName(root);
+        var sql = SqlGenerator.BuildSelectQuery("public", tableName);
+
+        // Assert
+        await Assert.That(tableName).IsEqualTo("streaming_documents");
+        await Assert.That(sql).Contains("\"public\".\"streaming_documents\"");
+        await Assert.That(sql).DoesNotContain("\"semantic_document\"");
+    }
+
     /// <summary>
     /// Test CLR type whose <c>Name</c> deliberately differs from any expected
     /// descriptor name, so we can detect if the provider is still reaching for

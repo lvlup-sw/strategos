@@ -181,7 +181,9 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        var tableName = TypeMapper.GetTableName<T>();
+        // Resolve table name from the expression's declared descriptor name
+        // via the shared read-path dispatch helper (bug #31).
+        var tableName = ResolveTableName(expression);
         var translation = ExpressionTranslator.Translate(expression);
         var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
 
