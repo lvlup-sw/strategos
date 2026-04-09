@@ -939,6 +939,96 @@ public class OntologyQueryServiceDiTests
     }
 }
 
+// --- Track D3 (2.4.1) — IOntologyQuery.GetObjectTypeNames<T>() reverse-index API fixtures ---
+
+public sealed class D3Foo
+{
+    public string Id { get; set; } = "";
+}
+
+public sealed class D3Bar
+{
+    public string Id { get; set; } = "";
+}
+
+public sealed class D3SingleRegistrationOntology : DomainOntology
+{
+    public override string DomainName => "d3-single";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<D3Foo>(obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+    }
+}
+
+public sealed class D3MultiRegistrationOntology : DomainOntology
+{
+    public override string DomainName => "d3-multi";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<D3Foo>("a", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+
+        builder.Object<D3Foo>("b", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+    }
+}
+
+public class OntologyQueryServiceGetObjectTypeNamesTests
+{
+    [Test]
+    public async Task GetObjectTypeNames_SingleRegistration_ReturnsOneName()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new D3SingleRegistrationOntology());
+        var graph = graphBuilder.Build();
+        var query = new OntologyQueryService(graph);
+
+        var names = query.GetObjectTypeNames<D3Foo>();
+
+        await Assert.That(names).IsNotNull();
+        await Assert.That(names).HasCount().EqualTo(1);
+        await Assert.That(names[0]).IsEqualTo(nameof(D3Foo));
+    }
+
+    [Test]
+    public async Task GetObjectTypeNames_MultiRegistration_ReturnsAllNamesInRegistrationOrder()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new D3MultiRegistrationOntology());
+        var graph = graphBuilder.Build();
+        var query = new OntologyQueryService(graph);
+
+        var names = query.GetObjectTypeNames<D3Foo>();
+
+        await Assert.That(names).HasCount().EqualTo(2);
+        await Assert.That(names[0]).IsEqualTo("a");
+        await Assert.That(names[1]).IsEqualTo("b");
+    }
+
+    [Test]
+    public async Task GetObjectTypeNames_UnregisteredType_ReturnsEmptyList()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new D3SingleRegistrationOntology());
+        var graph = graphBuilder.Build();
+        var query = new OntologyQueryService(graph);
+
+        var names = query.GetObjectTypeNames<D3Bar>();
+
+        await Assert.That(names).IsNotNull();
+        await Assert.That(names).HasCount().EqualTo(0);
+    }
+}
+
 public class OntologyQueryServiceGetObjectSetTests
 {
     [Test]
