@@ -169,22 +169,16 @@ public class PgVectorObjectSetProviderTests
     }
 
     [Test]
-    public async Task WriteOverloads_TypeMapperGetTableName_StillUsedByDefaultOverloads()
+    public async Task WriteOverloads_DefaultResolver_FallsBackToTypeofTName_WhenGraphAbsent()
     {
-        // Regression guard — pins the F4 seam. The default StoreAsync<T>(T)
-        // and StoreBatchAsync<T>(IReadOnlyList<T>) overloads must continue
-        // to resolve the table name via TypeMapper.GetTableName<T>() — i.e.
-        // typeof(T).Name → snake_case — so back-compat holds while F4 in
-        // Group 3 prepares to swap this for graph-backed lookup.
-        //
-        // We assert against the still-present TypeMapper.GetTableName<T>()
-        // helper directly. F4 will replace the default-overload call site
-        // and update this test to assert the new resolution path.
-        var defaultTableName = TypeMapper.GetTableName<SemanticDocument>();
+        // Post-F4/E5: the default StoreAsync<T>(T) / StoreBatchAsync<T>
+        // overloads dispatch via ResolveTableNameForDefaultOverload<T>,
+        // which falls back to typeof(T).Name → snake_case when no graph
+        // is in scope. Pins the back-compat fallback so direct
+        // instantiation without DI wiring keeps working.
+        var defaultTableName = PgVectorObjectSetProvider
+            .ResolveTableNameForDefaultOverload<SemanticDocument>(graph: null);
 
-        // Assert — TypeMapper.GetTableName<T>() still exists, still returns
-        // the typeof(T).Name-derived snake_case name, and matches what
-        // SqlGenerator emits for the default write path.
         await Assert.That(defaultTableName).IsEqualTo("semantic_document");
         var defaultInsertSql = SqlGenerator.BuildInsertSql("public", defaultTableName, hasEmbedding: false);
         await Assert.That(defaultInsertSql).Contains("\"public\".\"semantic_document\"");

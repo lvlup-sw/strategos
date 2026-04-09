@@ -1,9 +1,32 @@
+using System.Reflection;
 using Strategos.Ontology.Npgsql.Internal;
 
 namespace Strategos.Ontology.Npgsql.Tests.Internal;
 
 public class TypeMapperTests
 {
+    // -----------------------------------------------------------------------
+    // Track E5 — TypeMapper.GetTableName<T>() removal guard.
+    //
+    // After F4 and F5 land, the graph-backed dispatch helpers on
+    // PgVectorObjectSetProvider handle all write-path table-name resolution,
+    // and the legacy generic GetTableName<T>() footgun — which silently
+    // collapsed to typeof(T).Name and routed writes to the wrong physical
+    // table when a CLR type was registered under multiple descriptors
+    // (bug #31) — can be removed. This reflection guard fails loudly if a
+    // future change re-introduces it.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task TypeMapper_GetTableName_Of_T_Is_Removed()
+    {
+        var method = typeof(TypeMapper)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(m => m.Name == "GetTableName" && m.IsGenericMethod);
+
+        await Assert.That(method).IsNull();
+    }
+
     [Test]
     public async Task ToSnakeCase_PascalCase_ConvertsCorrectly()
     {
@@ -61,24 +84,10 @@ public class TypeMapperTests
         await Assert.That(result).IsEqualTo("xmlhttp_request");
     }
 
-    [Test]
-    public async Task GetTableName_ReturnsSnakeCasedTypeName()
-    {
-        var result = TypeMapper.GetTableName<TestDocument>();
-        await Assert.That(result).IsEqualTo("test_document");
-    }
-
-    [Test]
-    public async Task GetTableName_SimpleType_ReturnsLowered()
-    {
-        var result = TypeMapper.GetTableName<string>();
-        await Assert.That(result).IsEqualTo("string");
-    }
-
-    private sealed class TestDocument
-    {
-        public Guid Id { get; set; }
-
-        public string Name { get; set; } = string.Empty;
-    }
+    // Note: the prior GetTableName_ReturnsSnakeCasedTypeName /
+    // GetTableName_SimpleType_ReturnsLowered tests were removed alongside
+    // TypeMapper.GetTableName<T>() itself (E5). Callers now route through
+    // PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<T>
+    // (graph-backed with a typeof(T).Name fallback) or
+    // ResolveTableNameForDescriptor (explicit-name writes).
 }
