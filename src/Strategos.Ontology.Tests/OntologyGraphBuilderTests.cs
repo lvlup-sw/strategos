@@ -226,6 +226,93 @@ public class TrackCMultiRegLeafOnlyOntology : DomainOntology
     }
 }
 
+// C3 (cross-domain): multi-registered type declared as a cross-domain link SOURCE.
+// SourceDomain registers TrackCSemanticDocument under "a" and "b" and then declares
+// CrossDomainLink("doc_to_target").From<TrackCSemanticDocument>().ToExternal("xd-target", "Target").
+// AONT041 must fire because the From<T>() resolution would have to silently bind to one of two
+// registered descriptors.
+public class TrackCMultiRegCrossDomainSourceOntology : DomainOntology
+{
+    public override string DomainName => "xd-source";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackCSemanticDocument>("a", obj =>
+        {
+            obj.Key(d => d.Id);
+        });
+
+        builder.Object<TrackCSemanticDocument>("b", obj =>
+        {
+            obj.Key(d => d.Id);
+        });
+
+        builder.CrossDomainLink("doc_to_target")
+            .From<TrackCSemanticDocument>()
+            .ToExternal("xd-target", "Target")
+            .ManyToMany();
+    }
+}
+
+// Companion target domain for the cross-domain SOURCE test. Registers a single-registration
+// target type so the cross-domain link can resolve its target half successfully.
+public class TrackCCrossDomainTargetOnlyOntology : DomainOntology
+{
+    public override string DomainName => "xd-target";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackCCollection>("Target", obj =>
+        {
+            obj.Key(c => c.Id);
+        });
+    }
+}
+
+// C3 (cross-domain): multi-registered type declared as a cross-domain link TARGET.
+// TargetDomain registers TrackCSemanticDocument under "x" and "y" — both names are unique
+// within the target domain (AONT040 satisfied) but the underlying CLR type is multi-registered.
+// SourceDomain declares CrossDomainLink("source_to_doc").From<NormalSource>().ToExternal("xd-mr-target", "x").
+// AONT041 must fire because the resolved target descriptor's CLR type appears multiple times
+// in the reverse index.
+public class TrackCMultiRegCrossDomainTargetOntology : DomainOntology
+{
+    public override string DomainName => "xd-mr-target";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackCSemanticDocument>("x", obj =>
+        {
+            obj.Key(d => d.Id);
+        });
+
+        builder.Object<TrackCSemanticDocument>("y", obj =>
+        {
+            obj.Key(d => d.Id);
+        });
+    }
+}
+
+// Companion source domain for the cross-domain TARGET test. Registers a normal,
+// single-registration source and declares the cross-domain link pointing at "x".
+public class TrackCCrossDomainSourceOnlyOntology : DomainOntology
+{
+    public override string DomainName => "xd-mr-source";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TrackCCollection>("Collection", obj =>
+        {
+            obj.Key(c => c.Id);
+        });
+
+        builder.CrossDomainLink("source_to_doc")
+            .From<TrackCCollection>()
+            .ToExternal("xd-mr-target", "x")
+            .ManyToMany();
+    }
+}
+
 public class OntologyGraphBuilderTests
 {
     [Test]
@@ -446,5 +533,73 @@ public class OntologyGraphBuilderTests
         await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
         await Assert.That(graph.ObjectTypeNamesByType[typeof(TrackCSemanticDocument)])
             .HasCount().EqualTo(2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Track C3 — AONT041 cross-domain coverage (closes finding #6 on PR #34)
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task GraphBuilder_WithMultiRegisteredTypeAsCrossDomainLinkSource_ThrowsAONT041()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCMultiRegCrossDomainSourceOntology>();
+        graphBuilder.AddDomain<TrackCCrossDomainTargetOnlyOntology>();
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithExceptionType(typeof(OntologyCompositionException));
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("AONT041");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining(typeof(TrackCSemanticDocument).FullName!);
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("doc_to_target");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("xd-source");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("#32");
+    }
+
+    [Test]
+    public async Task GraphBuilder_WithMultiRegisteredTypeAsCrossDomainLinkTarget_ThrowsAONT041()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TrackCCrossDomainSourceOnlyOntology>();
+        graphBuilder.AddDomain<TrackCMultiRegCrossDomainTargetOntology>();
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithExceptionType(typeof(OntologyCompositionException));
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("AONT041");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining(typeof(TrackCSemanticDocument).FullName!);
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("source_to_doc");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("xd-mr-target");
+
+        await Assert.That(() => graphBuilder.Build())
+            .ThrowsException()
+            .WithMessageContaining("#32");
     }
 }

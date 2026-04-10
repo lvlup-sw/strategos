@@ -350,7 +350,7 @@ public class PgVectorObjectSetProviderTests
 // can instantiate them (requires a public parameterless constructor).
 // ---------------------------------------------------------------------------
 
-public class F4Foo
+public sealed class F4Foo
 {
     public string Id { get; set; } = string.Empty;
 }

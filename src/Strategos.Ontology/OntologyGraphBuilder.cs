@@ -91,6 +91,14 @@ public sealed class OntologyGraphBuilder
                 g => g.Key,
                 g => (IReadOnlyList<string>)g.Select(ot => ot.Name).ToList().AsReadOnly());
 
+        // AONT041 must run before ResolveCrossDomainLinks: that resolver does a
+        // first-wins ClrType match on (sourceDomain, ClrType) which would silently
+        // bind a multi-registered source type to one descriptor without surfacing
+        // the violation. Fail fast here so the diagnostic points at the original
+        // multi-registration rather than a downstream "unresolvable" error.
+        ValidateMultiRegisteredTypesNotInLinks(
+            allObjectTypes, allCrossDomainLinkDescriptors, namesByType);
+
         var resolvedLinks = ResolveCrossDomainLinks(
             allCrossDomainLinkDescriptors, domainLookup, objectTypeLookup, allObjectTypes);
 
@@ -101,7 +109,6 @@ public sealed class OntologyGraphBuilder
         ComputeTransitiveDerivationChains(allObjectTypes);
         InferPropertyKinds(allObjectTypes);
         ValidateInverseLinks(allObjectTypes);
-        ValidateMultiRegisteredTypesNotInLinks(allObjectTypes, namesByType);
 
         var warnings = new List<string>();
         MatchExtensionPoints(allObjectTypes, resolvedLinks, warnings);
@@ -572,20 +579,24 @@ public sealed class OntologyGraphBuilder
     /// <summary>
     /// AONT041 — MultiRegisteredTypeInLink (Track C3).
     /// Enforces the Option X freeze invariant that a CLR type registered under more than
-    /// one descriptor name cannot participate in structural links (neither as a link
-    /// target nor as a link source). The Basileus happy path is a multi-registered leaf
-    /// type with no links anywhere — that remains legal.
+    /// one descriptor name cannot participate in structural links — neither as a link
+    /// target nor as a link source, and neither in intra-domain <see cref="LinkDescriptor"/>s
+    /// nor in <see cref="CrossDomainLinkDescriptor"/>s. The Basileus happy path is a
+    /// multi-registered leaf type with no links anywhere — that remains legal.
     /// </summary>
     /// <remarks>
-    /// Link targets carry only a <see cref="LinkDescriptor.TargetTypeName"/> string. Under
-    /// the Track B builder, <c>HasMany&lt;TLinked&gt;(name)</c> writes
-    /// <c>typeof(TLinked).Name</c> into that field. We therefore match multi-registered
-    /// CLR types against the link target by the simple type name — consistent with how
-    /// the rest of the builder resolves link targets. Future relaxation (see #32) can
-    /// carry the source CLR <see cref="Type"/> directly instead.
+    /// Intra-domain link targets carry only a <see cref="LinkDescriptor.TargetTypeName"/>
+    /// string. Under the Track B builder, <c>HasMany&lt;TLinked&gt;(name)</c> writes
+    /// <c>typeof(TLinked).Name</c> into that field, so we match multi-registered CLR types
+    /// against the link target by simple type name. Cross-domain links carry the source
+    /// CLR <see cref="Type"/> directly on the descriptor and identify their target by
+    /// <c>(TargetDomain, TargetTypeName)</c>, so we resolve those positionally. Future
+    /// relaxation (see #32) can carry the source CLR <see cref="Type"/> on intra-domain
+    /// links too.
     /// </remarks>
     private static void ValidateMultiRegisteredTypesNotInLinks(
         IReadOnlyList<ObjectTypeDescriptor> allObjectTypes,
+        IReadOnlyList<(string SourceDomain, CrossDomainLinkDescriptor Descriptor)> crossDomainLinks,
         IReadOnlyDictionary<Type, IReadOnlyList<string>> namesByType)
     {
         var multiRegistered = namesByType
@@ -629,6 +640,40 @@ public sealed class OntologyGraphBuilder
                     $"({string.Join(", ", ownNames.Select(n => $"'{n}'"))}) but also declares outgoing links " +
                     $"({string.Join(", ", descriptor.Links.Select(l => $"'{l.Name}'"))}). Multi-registered types cannot " +
                     $"participate in structural links. See #32 for a future relaxation path.");
+            }
+        }
+
+        // Cross-domain link checks. Carries the source CLR type on the descriptor and
+        // identifies the target by (TargetDomain, TargetTypeName). We deliberately reject
+        // ANY cross-domain link whose source or target CLR type appears more than once
+        // in the reverse index, even if the (sourceDomain, ClrType) lookup would itself
+        // be unambiguous — Option X says multi-registered types are leaf-only, full stop.
+        foreach (var (sourceDomain, link) in crossDomainLinks)
+        {
+            // Source side: descriptor.SourceType is the CLR type the From<T>() builder set.
+            if (multiRegistered.TryGetValue(link.SourceType, out var srcNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{link.SourceType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", srcNames.Select(n => $"'{n}'"))}) but is declared as the source " +
+                    $"of cross-domain link '{link.Name}' in domain '{sourceDomain}'. Multi-registered " +
+                    $"types cannot participate in structural links. See #32 for a future relaxation path.");
+            }
+
+            // Target side: resolve the target descriptor by (TargetDomain, TargetTypeName)
+            // and check whether its CLR type is multi-registered. If the target is
+            // unresolvable here, leave the diagnostic to ResolveCrossDomainLinks below.
+            var targetDescriptor = allObjectTypes.FirstOrDefault(
+                ot => ot.DomainName == link.TargetDomain && ot.Name == link.TargetTypeName);
+
+            if (targetDescriptor is not null
+                && multiRegistered.TryGetValue(targetDescriptor.ClrType, out var tgtNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{targetDescriptor.ClrType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", tgtNames.Select(n => $"'{n}'"))}) but is the target of cross-domain link " +
+                    $"'{link.Name}' from domain '{sourceDomain}' to '{link.TargetDomain}.{link.TargetTypeName}'. " +
+                    $"Multi-registered types cannot participate in structural links. See #32 for a future relaxation path.");
             }
         }
     }

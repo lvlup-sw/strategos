@@ -834,7 +834,7 @@ All Track A tasks operate on these files. They are sequenced within the track (A
 
 ## Parallelization Graph
 
-```
+```text
 Group 1 (start in parallel):
     ├── A1 → A2 → A3                (expression tree foundation)
     ├── B1 → B2 → B3                (builder layer)

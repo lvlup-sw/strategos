@@ -119,17 +119,20 @@ public sealed class ObjectSet<T> where T : class
 
     /// <summary>
     /// Applies an action to all objects in the set by first materializing the query,
-    /// then dispatching the action to each object.
+    /// then dispatching the action to each object. The dispatch routes against the
+    /// descriptor name carried on the expression's root, so a multi-registered CLR
+    /// type reaches the registration the caller selected.
     /// </summary>
     public async Task<IReadOnlyList<ActionResult>> ApplyAsync(string actionName, object request, CancellationToken ct = default)
     {
         var result = await _provider.ExecuteAsync<T>(Expression, ct).ConfigureAwait(false);
         var results = new List<ActionResult>(result.Items.Count);
+        var descriptorName = Expression.RootObjectTypeName;
 
         foreach (var item in result.Items)
         {
             var objectId = item?.ToString() ?? string.Empty;
-            var context = new ActionContext(typeof(T).Name, typeof(T).Name, objectId, actionName);
+            var context = new ActionContext(descriptorName, descriptorName, objectId, actionName);
             var actionResult = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
             results.Add(actionResult);
         }
@@ -138,12 +141,15 @@ public sealed class ObjectSet<T> where T : class
     }
 
     /// <summary>
-    /// Queries events for the object type represented by this set.
+    /// Queries events for the object type represented by this set. The query carries
+    /// the descriptor name from the expression root, so multi-registered CLR types
+    /// resolve against the caller-selected registration rather than the raw CLR name.
     /// </summary>
     public IAsyncEnumerable<OntologyEvent> EventsAsync(TimeSpan? since = null, IReadOnlyList<string>? eventTypes = null)
     {
         var sinceTimestamp = since.HasValue ? DateTimeOffset.UtcNow - since.Value : (DateTimeOffset?)null;
-        var query = new EventQuery(typeof(T).Name, typeof(T).Name, Since: sinceTimestamp, EventTypes: eventTypes);
+        var descriptorName = Expression.RootObjectTypeName;
+        var query = new EventQuery(descriptorName, descriptorName, Since: sinceTimestamp, EventTypes: eventTypes);
         return _eventStreamProvider.QueryEventsAsync(query);
     }
 }

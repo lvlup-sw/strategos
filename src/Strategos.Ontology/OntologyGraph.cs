@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology;
@@ -40,8 +41,15 @@ public sealed class OntologyGraph
         Interfaces = interfaces;
         CrossDomainLinks = crossDomainLinks;
         WorkflowChains = workflowChains;
-        ObjectTypeNamesByType = objectTypeNamesByType
-            ?? new Dictionary<Type, IReadOnlyList<string>>();
+        // Defensive snapshot: copy the outer dictionary and wrap each inner list as a
+        // ReadOnlyCollection so external callers cannot downcast and mutate the graph's
+        // reverse index after construction.
+        ObjectTypeNamesByType = objectTypeNamesByType is null
+            ? new ReadOnlyDictionary<Type, IReadOnlyList<string>>(new Dictionary<Type, IReadOnlyList<string>>())
+            : new ReadOnlyDictionary<Type, IReadOnlyList<string>>(
+                objectTypeNamesByType.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => (IReadOnlyList<string>)kvp.Value.ToList().AsReadOnly()));
         Warnings = warnings ?? [];
 
         _objectTypeLookup = BuildObjectTypeLookup(objectTypes);
