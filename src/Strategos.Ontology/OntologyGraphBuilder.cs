@@ -113,7 +113,7 @@ public sealed class OntologyGraphBuilder
         var warnings = new List<string>();
         MatchExtensionPoints(allObjectTypes, resolvedLinks, warnings);
 
-        var workflowChains = BuildWorkflowChains(allObjectTypes, _workflowMetadata);
+        var workflowChains = BuildWorkflowChains(allObjectTypes, _workflowMetadata, warnings);
 
         return new OntologyGraph(
             domains: domains.ToArray(),
@@ -754,31 +754,36 @@ public sealed class OntologyGraphBuilder
 
     private static List<WorkflowChain> BuildWorkflowChains(
         List<ObjectTypeDescriptor> allObjectTypes,
-        List<WorkflowMetadataBuilder> workflowMetadata)
+        List<WorkflowMetadataBuilder> workflowMetadata,
+        List<string> warnings)
     {
         var chains = new List<WorkflowChain>();
 
         // Workflow metadata uses unqualified type names; under the AONT040 invariant the
-        // same simple name can legitimately appear in two domains. Use GroupBy/First here
-        // so the lookup doesn't blow up on legal cross-domain name overlap. First-wins
-        // semantics match the pre-C1 behaviour for the single-domain common case.
-        var objectTypeByName = allObjectTypes
+        // same simple name can legitimately appear in two domains. Build a multi-valued
+        // index so we can detect ambiguity rather than silently first-wins-binding to
+        // one descriptor and producing a wrong workflow chain.
+        var objectTypesByName = allObjectTypes
             .GroupBy(ot => ot.Name)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         foreach (var metadata in workflowMetadata)
         {
             if (metadata.ConsumedTypeName is null || metadata.ProducedTypeName is null)
             {
+                warnings.Add(
+                    $"Workflow '{metadata.WorkflowName}' is missing consumed or produced type metadata; skipping.");
                 continue;
             }
 
-            if (!objectTypeByName.TryGetValue(metadata.ConsumedTypeName, out var consumedType))
+            if (!TryResolveUnambiguous(
+                    objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out var consumedType))
             {
                 continue;
             }
 
-            if (!objectTypeByName.TryGetValue(metadata.ProducedTypeName, out var producedType))
+            if (!TryResolveUnambiguous(
+                    objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out var producedType))
             {
                 continue;
             }
@@ -787,5 +792,34 @@ public sealed class OntologyGraphBuilder
         }
 
         return chains;
+    }
+
+    private static bool TryResolveUnambiguous(
+        Dictionary<string, List<ObjectTypeDescriptor>> objectTypesByName,
+        string typeName,
+        string workflowName,
+        string role,
+        List<string> warnings,
+        out ObjectTypeDescriptor resolved)
+    {
+        resolved = null!;
+
+        if (!objectTypesByName.TryGetValue(typeName, out var matches) || matches.Count == 0)
+        {
+            warnings.Add(
+                $"Workflow '{workflowName}' references unknown {role} type '{typeName}'; skipping.");
+            return false;
+        }
+
+        if (matches.Count > 1)
+        {
+            var domains = string.Join(", ", matches.Select(m => $"'{m.DomainName}'"));
+            warnings.Add(
+                $"Workflow '{workflowName}' references {role} type '{typeName}' which is ambiguous across domains ({domains}); skipping.");
+            return false;
+        }
+
+        resolved = matches[0];
+        return true;
     }
 }

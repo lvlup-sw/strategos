@@ -1,5 +1,6 @@
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Extensions;
 
 namespace Strategos.Ontology.Tests;
 
@@ -313,6 +314,54 @@ public class TrackCCrossDomainSourceOnlyOntology : DomainOntology
     }
 }
 
+// Workflow chain ambiguity fixtures: AmbiguousFoo is registered under its default
+// CLR-name in TWO different domains, so allObjectTypes has two entries with Name
+// "AmbiguousFoo". A workflow metadata that Consumes<AmbiguousFoo>() sets the
+// ConsumedTypeName to "AmbiguousFoo" — which now matches both descriptors. Under
+// the warn-and-skip semantics, BuildWorkflowChains must emit a warning naming
+// both domains and skip the chain rather than silently first-wins-binding.
+
+public class AmbiguousFoo
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public class AmbiguousBar
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public class AmbiguousDomainAOntology : DomainOntology
+{
+    public override string DomainName => "ambiguous-a";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<AmbiguousFoo>(obj => obj.Key(f => f.Id));
+    }
+}
+
+public class AmbiguousDomainBOntology : DomainOntology
+{
+    public override string DomainName => "ambiguous-b";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<AmbiguousFoo>(obj => obj.Key(f => f.Id));
+    }
+}
+
+public class UnambiguousDomainOntology : DomainOntology
+{
+    public override string DomainName => "unambiguous";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<AmbiguousFoo>(obj => obj.Key(f => f.Id));
+        builder.Object<AmbiguousBar>(obj => obj.Key(b => b.Id));
+    }
+}
+
 public class OntologyGraphBuilderTests
 {
     [Test]
@@ -569,6 +618,80 @@ public class OntologyGraphBuilderTests
         await Assert.That(() => graphBuilder.Build())
             .ThrowsException()
             .WithMessageContaining("#32");
+    }
+
+    // -----------------------------------------------------------------------
+    // BuildWorkflowChains — warn-and-skip on ambiguous workflow type names
+    // (closes follow-up review feedback on PR #34 finding #5)
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task GraphBuilder_WorkflowMetadata_WithAmbiguousConsumedType_EmitsWarningAndSkipsChain()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<AmbiguousDomainAOntology>();
+        graphBuilder.AddDomain<AmbiguousDomainBOntology>();
+        graphBuilder.AddWorkflowMetadata(new[]
+        {
+            new WorkflowMetadataBuilder("ambiguous-workflow")
+                .Consumes<AmbiguousFoo>()
+                .Produces<AmbiguousFoo>(),
+        });
+
+        var graph = graphBuilder.Build();
+
+        // Chain must NOT be silently first-wins bound — it must be skipped entirely.
+        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+
+        // A warning must name the workflow, the ambiguous type, and both domains.
+        var ambiguityWarnings = graph.Warnings
+            .Where(w => w.Contains("ambiguous-workflow") && w.Contains("AmbiguousFoo") && w.Contains("ambiguous"))
+            .ToList();
+        await Assert.That(ambiguityWarnings.Count).IsGreaterThanOrEqualTo(1);
+        await Assert.That(ambiguityWarnings[0]).Contains("ambiguous-a");
+        await Assert.That(ambiguityWarnings[0]).Contains("ambiguous-b");
+    }
+
+    [Test]
+    public async Task GraphBuilder_WorkflowMetadata_WithUnambiguousTypes_BuildsChainCleanly()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<UnambiguousDomainOntology>();
+        graphBuilder.AddWorkflowMetadata(new[]
+        {
+            new WorkflowMetadataBuilder("unambiguous-workflow")
+                .Consumes<AmbiguousFoo>()
+                .Produces<AmbiguousBar>(),
+        });
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(1);
+        await Assert.That(graph.WorkflowChains[0].WorkflowName).IsEqualTo("unambiguous-workflow");
+        await Assert.That(graph.WorkflowChains[0].ConsumedType.Name).IsEqualTo(nameof(AmbiguousFoo));
+        await Assert.That(graph.WorkflowChains[0].ProducedType.Name).IsEqualTo(nameof(AmbiguousBar));
+        await Assert.That(graph.Warnings.Where(w => w.Contains("unambiguous-workflow"))).HasCount().EqualTo(0);
+    }
+
+    [Test]
+    public async Task GraphBuilder_WorkflowMetadata_WithUnknownConsumedType_EmitsWarningAndSkipsChain()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<UnambiguousDomainOntology>();
+        graphBuilder.AddWorkflowMetadata(new[]
+        {
+            new WorkflowMetadataBuilder("unknown-consumed-workflow")
+                .Consumes<TrackCBar>() // not registered in UnambiguousDomainOntology
+                .Produces<AmbiguousBar>(),
+        });
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+        var unknownWarnings = graph.Warnings
+            .Where(w => w.Contains("unknown-consumed-workflow") && w.Contains("unknown") && w.Contains("TrackCBar"))
+            .ToList();
+        await Assert.That(unknownWarnings.Count).IsGreaterThanOrEqualTo(1);
     }
 
     [Test]
