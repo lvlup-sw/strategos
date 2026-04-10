@@ -369,7 +369,7 @@ public class ContextAssemblerEmitterTests
 
         // Assert
         await Assert.That(source).Contains("new SimilarityExpression(");
-        await Assert.That(source).Contains("new RootExpression(typeof(ProductCatalog))");
+        await Assert.That(source).Contains("new RootExpression(typeof(ProductCatalog), nameof(ProductCatalog))");
     }
 
     /// <summary>

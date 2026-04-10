@@ -56,9 +56,48 @@ public sealed class OntologyGraphBuilder
         }
 
         var domainLookup = domains.ToDictionary(d => d.DomainName);
+
+        // AONT040 — DuplicateObjectTypeName (Track C1)
+        // Enforce per-domain uniqueness of descriptor names with an explicit diagnostic,
+        // before the ToDictionary call below would otherwise throw a cryptic ArgumentException.
+        foreach (var group in allObjectTypes.GroupBy(ot => ot.DomainName))
+        {
+            var seen = new Dictionary<string, ObjectTypeDescriptor>();
+            foreach (var descriptor in group)
+            {
+                if (seen.TryGetValue(descriptor.Name, out var existing))
+                {
+                    throw new OntologyCompositionException(
+                        $"AONT040: Object type name '{descriptor.Name}' is registered twice in domain '{group.Key}'. " +
+                        $"First registration: CLR type '{existing.ClrType.FullName}'. " +
+                        $"Second registration: CLR type '{descriptor.ClrType.FullName}'. " +
+                        $"Either remove one registration, or specify distinct names via Object<T>(\"name\", ...).");
+                }
+
+                seen[descriptor.Name] = descriptor;
+            }
+        }
+
         var objectTypeLookup = allObjectTypes
             .GroupBy(ot => ot.DomainName)
             .ToDictionary(g => g.Key, g => g.ToDictionary(ot => ot.Name));
+
+        // Track C2 — reverse index from CLR type → descriptor names in registration order.
+        // Built after the AONT040 check so callers can trust name uniqueness-per-domain,
+        // and used by C3 below to detect multi-registered types in link positions.
+        var namesByType = allObjectTypes
+            .GroupBy(ot => ot.ClrType)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(ot => ot.Name).ToList().AsReadOnly());
+
+        // AONT041 must run before ResolveCrossDomainLinks: that resolver does a
+        // first-wins ClrType match on (sourceDomain, ClrType) which would silently
+        // bind a multi-registered source type to one descriptor without surfacing
+        // the violation. Fail fast here so the diagnostic points at the original
+        // multi-registration rather than a downstream "unresolvable" error.
+        ValidateMultiRegisteredTypesNotInLinks(
+            allObjectTypes, allCrossDomainLinkDescriptors, namesByType);
 
         var resolvedLinks = ResolveCrossDomainLinks(
             allCrossDomainLinkDescriptors, domainLookup, objectTypeLookup, allObjectTypes);
@@ -74,7 +113,7 @@ public sealed class OntologyGraphBuilder
         var warnings = new List<string>();
         MatchExtensionPoints(allObjectTypes, resolvedLinks, warnings);
 
-        var workflowChains = BuildWorkflowChains(allObjectTypes, _workflowMetadata);
+        var workflowChains = BuildWorkflowChains(allObjectTypes, _workflowMetadata, warnings);
 
         return new OntologyGraph(
             domains: domains.ToArray(),
@@ -82,6 +121,7 @@ public sealed class OntologyGraphBuilder
             interfaces: allInterfaces.ToArray(),
             crossDomainLinks: resolvedLinks.ToArray(),
             workflowChains: workflowChains.ToArray(),
+            objectTypeNamesByType: namesByType,
             warnings: warnings.AsReadOnly());
     }
 
@@ -216,7 +256,9 @@ public sealed class OntologyGraphBuilder
 
     private static void ValidateIsAHierarchy(List<ObjectTypeDescriptor> allObjectTypes)
     {
-        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+        // Keys are (DomainName, Name) so that two domains can legally host descriptors
+        // that share a simple name (enforced by the AONT040 per-domain check above).
+        var typesByKey = allObjectTypes.ToDictionary(ot => (ot.DomainName, ot.Name));
 
         foreach (var objectType in allObjectTypes)
         {
@@ -225,14 +267,14 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            if (!typesByName.ContainsKey(objectType.ParentTypeName))
+            if (!typesByKey.ContainsKey((objectType.DomainName, objectType.ParentTypeName)))
             {
                 throw new OntologyCompositionException(
                     $"Object type '{objectType.Name}' declares IS-A relationship with unregistered parent type '{objectType.ParentTypeName}'.");
             }
         }
 
-        // Detect cycles using DFS
+        // Detect cycles using DFS (domain-scoped)
         foreach (var objectType in allObjectTypes)
         {
             if (objectType.ParentTypeName is null)
@@ -241,19 +283,20 @@ public sealed class OntologyGraphBuilder
             }
 
             var visited = new HashSet<string>();
-            var current = objectType.Name;
+            var currentName = objectType.Name;
+            var currentDomain = objectType.DomainName;
 
-            while (current is not null)
+            while (currentName is not null)
             {
-                if (!visited.Add(current))
+                if (!visited.Add(currentName))
                 {
                     throw new OntologyCompositionException(
-                        $"IS-A hierarchy cycle detected involving type '{current}'.");
+                        $"IS-A hierarchy cycle detected involving type '{currentName}'.");
                 }
 
-                if (typesByName.TryGetValue(current, out var currentType))
+                if (typesByKey.TryGetValue((currentDomain, currentName), out var currentType))
                 {
-                    current = currentType.ParentTypeName;
+                    currentName = currentType.ParentTypeName;
                 }
                 else
                 {
@@ -498,7 +541,9 @@ public sealed class OntologyGraphBuilder
 
     private static void ValidateInverseLinks(List<ObjectTypeDescriptor> allObjectTypes)
     {
-        var typesByName = allObjectTypes.ToDictionary(ot => ot.Name);
+        // Keyed by (DomainName, Name) because descriptor names are unique only within a
+        // domain — cross-domain name collisions are legal under the AONT040 invariant.
+        var typesByKey = allObjectTypes.ToDictionary(ot => (ot.DomainName, ot.Name));
 
         foreach (var objectType in allObjectTypes)
         {
@@ -509,7 +554,7 @@ public sealed class OntologyGraphBuilder
                     continue;
                 }
 
-                if (!typesByName.TryGetValue(link.TargetTypeName, out var targetType))
+                if (!typesByKey.TryGetValue((objectType.DomainName, link.TargetTypeName), out var targetType))
                 {
                     continue; // Target type not found; other validations handle this
                 }
@@ -527,6 +572,108 @@ public sealed class OntologyGraphBuilder
                     throw new OntologyCompositionException(
                         $"Asymmetric inverse declaration: '{objectType.Name}.{link.Name}' declares inverse '{link.InverseLinkName}', but '{link.TargetTypeName}.{link.InverseLinkName}' declares inverse '{inverseLink.InverseLinkName}' instead of '{link.Name}'.");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// AONT041 — MultiRegisteredTypeInLink (Track C3).
+    /// Enforces the Option X freeze invariant that a CLR type registered under more than
+    /// one descriptor name cannot participate in structural links — neither as a link
+    /// target nor as a link source, and neither in intra-domain <see cref="LinkDescriptor"/>s
+    /// nor in <see cref="CrossDomainLinkDescriptor"/>s. The Basileus happy path is a
+    /// multi-registered leaf type with no links anywhere — that remains legal.
+    /// </summary>
+    /// <remarks>
+    /// Intra-domain link targets carry only a <see cref="LinkDescriptor.TargetTypeName"/>
+    /// string. Under the Track B builder, <c>HasMany&lt;TLinked&gt;(name)</c> writes
+    /// <c>typeof(TLinked).Name</c> into that field, so we match multi-registered CLR types
+    /// against the link target by simple type name. Cross-domain links carry the source
+    /// CLR <see cref="Type"/> directly on the descriptor and identify their target by
+    /// <c>(TargetDomain, TargetTypeName)</c>, so we resolve those positionally. Future
+    /// relaxation (see #32) can carry the source CLR <see cref="Type"/> on intra-domain
+    /// links too.
+    /// </remarks>
+    private static void ValidateMultiRegisteredTypesNotInLinks(
+        IReadOnlyList<ObjectTypeDescriptor> allObjectTypes,
+        IReadOnlyList<(string SourceDomain, CrossDomainLinkDescriptor Descriptor)> crossDomainLinks,
+        IReadOnlyDictionary<Type, IReadOnlyList<string>> namesByType)
+    {
+        var multiRegistered = namesByType
+            .Where(kvp => kvp.Value.Count > 1)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        if (multiRegistered.Count == 0)
+        {
+            return;
+        }
+
+        // Map simple CLR-type names → CLR Type, restricted to multi-registered types.
+        // Simple names match what HasMany<TLinked>(name) writes into LinkDescriptor.TargetTypeName.
+        var multiRegisteredByClrSimpleName = multiRegistered
+            .GroupBy(kvp => kvp.Key.Name)
+            .ToDictionary(g => g.Key, g => g.First().Key);
+
+        foreach (var descriptor in allObjectTypes)
+        {
+            // Check: does this descriptor declare an outgoing link whose target
+            // resolves to a multi-registered CLR type?
+            foreach (var link in descriptor.Links)
+            {
+                if (multiRegisteredByClrSimpleName.TryGetValue(link.TargetTypeName, out var targetClrType))
+                {
+                    var names = multiRegistered[targetClrType];
+                    throw new OntologyCompositionException(
+                        $"AONT041: CLR type '{targetClrType.FullName}' has multiple registrations " +
+                        $"({string.Join(", ", names.Select(n => $"'{n}'"))}) but is also referenced as a link target " +
+                        $"in '{descriptor.Name}.{link.Name}'. Multi-registered types cannot participate in structural " +
+                        $"links. See #32 for a future relaxation path.");
+                }
+            }
+
+            // Check: does this descriptor's own CLR type have multiple registrations
+            // AND declare outgoing links? The source side is just as invalid as the target side.
+            if (descriptor.Links.Count > 0 && multiRegistered.TryGetValue(descriptor.ClrType, out var ownNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{descriptor.ClrType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", ownNames.Select(n => $"'{n}'"))}) but also declares outgoing links " +
+                    $"({string.Join(", ", descriptor.Links.Select(l => $"'{l.Name}'"))}). Multi-registered types cannot " +
+                    $"participate in structural links. See #32 for a future relaxation path.");
+            }
+        }
+
+        // Cross-domain link checks. Carries the source CLR type on the descriptor and
+        // identifies the target by (TargetDomain, TargetTypeName). We deliberately reject
+        // ANY cross-domain link whose source or target CLR type appears more than once
+        // in the reverse index, even if the (sourceDomain, ClrType) lookup would itself
+        // be unambiguous — Option X says multi-registered types are leaf-only, full stop.
+        foreach (var (sourceDomain, link) in crossDomainLinks)
+        {
+            // Source side: descriptor.SourceType is the CLR type the From<T>() builder set.
+            if (multiRegistered.TryGetValue(link.SourceType, out var srcNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{link.SourceType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", srcNames.Select(n => $"'{n}'"))}) but is declared as the source " +
+                    $"of cross-domain link '{link.Name}' in domain '{sourceDomain}'. Multi-registered " +
+                    $"types cannot participate in structural links. See #32 for a future relaxation path.");
+            }
+
+            // Target side: resolve the target descriptor by (TargetDomain, TargetTypeName)
+            // and check whether its CLR type is multi-registered. If the target is
+            // unresolvable here, leave the diagnostic to ResolveCrossDomainLinks below.
+            var targetDescriptor = allObjectTypes.FirstOrDefault(
+                ot => ot.DomainName == link.TargetDomain && ot.Name == link.TargetTypeName);
+
+            if (targetDescriptor is not null
+                && multiRegistered.TryGetValue(targetDescriptor.ClrType, out var tgtNames))
+            {
+                throw new OntologyCompositionException(
+                    $"AONT041: CLR type '{targetDescriptor.ClrType.FullName}' has multiple registrations " +
+                    $"({string.Join(", ", tgtNames.Select(n => $"'{n}'"))}) but is the target of cross-domain link " +
+                    $"'{link.Name}' from domain '{sourceDomain}' to '{link.TargetDomain}.{link.TargetTypeName}'. " +
+                    $"Multi-registered types cannot participate in structural links. See #32 for a future relaxation path.");
             }
         }
     }
@@ -607,24 +754,36 @@ public sealed class OntologyGraphBuilder
 
     private static List<WorkflowChain> BuildWorkflowChains(
         List<ObjectTypeDescriptor> allObjectTypes,
-        List<WorkflowMetadataBuilder> workflowMetadata)
+        List<WorkflowMetadataBuilder> workflowMetadata,
+        List<string> warnings)
     {
         var chains = new List<WorkflowChain>();
-        var objectTypeByName = allObjectTypes.ToDictionary(ot => ot.Name);
+
+        // Workflow metadata uses unqualified type names; under the AONT040 invariant the
+        // same simple name can legitimately appear in two domains. Build a multi-valued
+        // index so we can detect ambiguity rather than silently first-wins-binding to
+        // one descriptor and producing a wrong workflow chain.
+        var objectTypesByName = allObjectTypes
+            .GroupBy(ot => ot.Name)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         foreach (var metadata in workflowMetadata)
         {
             if (metadata.ConsumedTypeName is null || metadata.ProducedTypeName is null)
             {
+                warnings.Add(
+                    $"Workflow '{metadata.WorkflowName}' is missing consumed or produced type metadata; skipping.");
                 continue;
             }
 
-            if (!objectTypeByName.TryGetValue(metadata.ConsumedTypeName, out var consumedType))
+            if (!TryResolveUnambiguous(
+                    objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out var consumedType))
             {
                 continue;
             }
 
-            if (!objectTypeByName.TryGetValue(metadata.ProducedTypeName, out var producedType))
+            if (!TryResolveUnambiguous(
+                    objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out var producedType))
             {
                 continue;
             }
@@ -633,5 +792,34 @@ public sealed class OntologyGraphBuilder
         }
 
         return chains;
+    }
+
+    private static bool TryResolveUnambiguous(
+        Dictionary<string, List<ObjectTypeDescriptor>> objectTypesByName,
+        string typeName,
+        string workflowName,
+        string role,
+        List<string> warnings,
+        out ObjectTypeDescriptor resolved)
+    {
+        resolved = null!;
+
+        if (!objectTypesByName.TryGetValue(typeName, out var matches) || matches.Count == 0)
+        {
+            warnings.Add(
+                $"Workflow '{workflowName}' references unknown {role} type '{typeName}'; skipping.");
+            return false;
+        }
+
+        if (matches.Count > 1)
+        {
+            var domains = string.Join(", ", matches.Select(m => $"'{m.DomainName}'"));
+            warnings.Add(
+                $"Workflow '{workflowName}' references {role} type '{typeName}' which is ambiguous across domains ({domains}); skipping.");
+            return false;
+        }
+
+        resolved = matches[0];
+        return true;
     }
 }

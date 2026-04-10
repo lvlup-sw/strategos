@@ -119,7 +119,11 @@ public sealed class OntologyActionTool
         CancellationToken ct)
     {
         var clrType = _graph.GetObjectType(domain, objectType)?.ClrType ?? typeof(object);
-        ObjectSetExpression expression = new RootExpression(clrType);
+        // The MCP protocol passes the ontology descriptor name as the objectType parameter,
+        // which is exactly what RootExpression needs to dispatch against the correct descriptor
+        // partition when the same CLR type is registered under multiple names. See D2 tests in
+        // OntologyActionToolTests.ExecuteAsync_BatchWithExplicitDescriptorName_*.
+        ObjectSetExpression expression = new RootExpression(clrType, objectType);
 
         if (filter is not null)
         {

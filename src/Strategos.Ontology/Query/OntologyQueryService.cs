@@ -64,7 +64,22 @@ internal sealed class OntologyQueryService : IOntologyQuery
                 "when constructing the OntologyQueryService.");
         }
 
-        return new ObjectSet<T>(_objectSetProvider, _actionDispatcher, _eventStreamProvider);
+        // Thread the resolved descriptor name (ot.Name) — which may differ from
+        // typeof(T).Name when the caller registered the type under an explicit
+        // name via Object<T>(name, ...) — into the RootExpression so providers
+        // dispatch against the correct descriptor partition.
+        return new ObjectSet<T>(
+            descriptorName: ot.Name,
+            _objectSetProvider,
+            _actionDispatcher,
+            _eventStreamProvider);
+    }
+
+    public IReadOnlyList<string> GetObjectTypeNames<T>() where T : class
+    {
+        return graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names)
+            ? names
+            : Array.Empty<string>();
     }
 
     public IReadOnlyList<ObjectTypeDescriptor> GetObjectTypes(

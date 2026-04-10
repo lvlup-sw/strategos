@@ -16,6 +16,7 @@ public sealed class IngestionPipelineBuilder<T>
     private IEmbeddingProvider? _embedder;
     private Func<TextChunk, float[], T>? _mapper;
     private IObjectSetWriter? _writer;
+    private string? _descriptorName;
     private IProgress<IngestionProgress>? _progress;
 
     /// <summary>
@@ -69,7 +70,9 @@ public sealed class IngestionPipelineBuilder<T>
     }
 
     /// <summary>
-    /// Sets the writer to use for storing mapped items.
+    /// Sets the writer to use for storing mapped items. The pipeline will dispatch
+    /// through the default <see cref="IObjectSetWriter.StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>
+    /// overload, which targets the descriptor resolved by convention for <typeparamref name="T"/>.
     /// </summary>
     /// <param name="writer">The object set writer implementation.</param>
     /// <returns>This builder for fluent chaining.</returns>
@@ -77,6 +80,30 @@ public sealed class IngestionPipelineBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(writer);
         _writer = writer;
+        _descriptorName = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the writer and the descriptor name to use for storing mapped items.
+    /// The pipeline will dispatch through the explicit-name
+    /// <see cref="IObjectSetWriter.StoreBatchAsync{T}(string, IReadOnlyList{T}, CancellationToken)"/>
+    /// overload, targeting the descriptor partition identified by
+    /// <paramref name="descriptorName"/>. Use this overload when <typeparamref name="T"/>
+    /// is registered against multiple descriptors and the target partition must
+    /// be chosen explicitly.
+    /// </summary>
+    /// <param name="writer">The object set writer implementation.</param>
+    /// <param name="descriptorName">
+    /// The descriptor name selecting which registered partition to write to.
+    /// </param>
+    /// <returns>This builder for fluent chaining.</returns>
+    public IngestionPipelineBuilder<T> WriteTo(IObjectSetWriter writer, string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentException.ThrowIfNullOrEmpty(descriptorName);
+        _writer = writer;
+        _descriptorName = descriptorName;
         return this;
     }
 
@@ -117,7 +144,7 @@ public sealed class IngestionPipelineBuilder<T>
         // When no chunker is set, use a default that returns the full text as a single chunk.
         var chunker = _chunker ?? new PassthroughChunker();
 
-        return new IngestionPipeline<T>(chunker, _chunkOptions, _embedder, _mapper, _writer, _progress);
+        return new IngestionPipeline<T>(chunker, _chunkOptions, _embedder, _mapper, _writer, _progress, _descriptorName);
     }
 
     /// <summary>

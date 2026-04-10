@@ -9,7 +9,7 @@ public class IObjectSetProviderTests
     {
         // Arrange
         var provider = Substitute.For<IObjectSetProvider>();
-        var expression = new RootExpression(typeof(string));
+        var expression = new RootExpression(typeof(string), typeof(string).Name);
         var expected = new ObjectSetResult<string>(["hello"], 1, ObjectSetInclusion.Properties);
         provider.ExecuteAsync<string>(expression, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(expected));
@@ -27,7 +27,7 @@ public class IObjectSetProviderTests
     {
         // Arrange
         var provider = Substitute.For<IObjectSetProvider>();
-        var expression = new RootExpression(typeof(string));
+        var expression = new RootExpression(typeof(string), typeof(string).Name);
 
         static async IAsyncEnumerable<string> CreateStream()
         {
@@ -55,7 +55,7 @@ public class IObjectSetProviderTests
     {
         // Arrange
         var provider = Substitute.For<IObjectSetProvider>();
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var similarity = new SimilarityExpression(root, "search query", 5, 0.7);
         var expected = new ScoredObjectSetResult<string>(
             ["match1", "match2"], 2, ObjectSetInclusion.Properties, [0.95, 0.80]);
@@ -77,7 +77,7 @@ public class IObjectSetProviderTests
     {
         // Arrange
         var provider = Substitute.For<IObjectSetProvider>();
-        var root = new RootExpression(typeof(string));
+        var root = new RootExpression(typeof(string), typeof(string).Name);
         var similarity = new SimilarityExpression(root, "no matches", 5, 0.9);
         var expected = new ScoredObjectSetResult<string>(
             [], 0, ObjectSetInclusion.Properties, []);

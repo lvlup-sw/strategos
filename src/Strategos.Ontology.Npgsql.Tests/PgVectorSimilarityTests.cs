@@ -38,7 +38,7 @@ public class PgVectorSimilarityTests
     {
         // Verify that when QueryVector is null, the provider would need to call EmbedAsync.
         // We test this indirectly through the SimilarityExpression construction.
-        var root = new RootExpression(typeof(TestDoc));
+        var root = new RootExpression(typeof(TestDoc), nameof(TestDoc));
         var expression = new SimilarityExpression(
             root,
             queryText: "search term",
@@ -64,7 +64,7 @@ public class PgVectorSimilarityTests
     public async Task ExecuteSimilarityAsync_WithQueryVector_BypassesEmbedding()
     {
         var queryVector = new float[] { 0.1f, 0.2f, 0.3f };
-        var root = new RootExpression(typeof(TestDoc));
+        var root = new RootExpression(typeof(TestDoc), nameof(TestDoc));
         var expression = new SimilarityExpression(
             root,
             queryText: "search term",
@@ -89,7 +89,7 @@ public class PgVectorSimilarityTests
     [Test]
     public async Task SimilarityExpression_DefaultMetric_IsCosine()
     {
-        var root = new RootExpression(typeof(TestDoc));
+        var root = new RootExpression(typeof(TestDoc), nameof(TestDoc));
         var expression = new SimilarityExpression(root, "query", 10, 0.5);
 
         await Assert.That(expression.Metric).IsEqualTo(DistanceMetric.Cosine);
@@ -98,7 +98,7 @@ public class PgVectorSimilarityTests
     [Test]
     public async Task SimilarityExpression_PreservesAllProperties()
     {
-        var root = new RootExpression(typeof(TestDoc));
+        var root = new RootExpression(typeof(TestDoc), nameof(TestDoc));
         var vector = new float[] { 1.0f, 2.0f };
         var filters = new Dictionary<string, object> { { "category", "test" } };
 

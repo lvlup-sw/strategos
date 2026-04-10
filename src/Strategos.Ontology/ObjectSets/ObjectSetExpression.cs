@@ -16,6 +16,27 @@ public abstract class ObjectSetExpression
     /// The CLR type this expression node produces.
     /// </summary>
     public Type ObjectType { get; }
+
+    /// <summary>
+    /// The ontology descriptor name this expression's query targets. Walks the
+    /// expression tree back to its <see cref="RootExpression"/> by following
+    /// <c>Source</c> references and returns the root's declared
+    /// <see cref="RootExpression.ObjectTypeName"/>. <see cref="TraverseLinkExpression"/>
+    /// overrides this to return the linked type's descriptor name (see A3).
+    /// </summary>
+    public virtual string RootObjectTypeName => WalkToRoot(this).ObjectTypeName;
+
+    private static RootExpression WalkToRoot(ObjectSetExpression expr) => expr switch
+    {
+        RootExpression root => root,
+        FilterExpression f => WalkToRoot(f.Source),
+        InterfaceNarrowExpression i => WalkToRoot(i.Source),
+        RawFilterExpression r => WalkToRoot(r.Source),
+        IncludeExpression inc => WalkToRoot(inc.Source),
+        SimilarityExpression s => WalkToRoot(s.Source),
+        TraverseLinkExpression t => WalkToRoot(t.Source),
+        _ => throw new InvalidOperationException($"Unknown expression type: {expr.GetType().Name}")
+    };
 }
 
 /// <summary>
@@ -23,7 +44,19 @@ public abstract class ObjectSetExpression
 /// </summary>
 public sealed class RootExpression : ObjectSetExpression
 {
-    public RootExpression(Type objectType) : base(objectType) { }
+    public RootExpression(Type objectType, string objectTypeName) : base(objectType)
+    {
+        ArgumentNullException.ThrowIfNull(objectTypeName);
+        ObjectTypeName = objectTypeName;
+    }
+
+    /// <summary>
+    /// The ontology descriptor name this root was dispatched against.
+    /// For a single-registered type this equals <c>ObjectType.Name</c>; for a
+    /// multi-registered type this is the explicit descriptor name supplied by
+    /// the caller (e.g., via <c>query.GetObjectSet&lt;T&gt;("trading_documents")</c>).
+    /// </summary>
+    public string ObjectTypeName { get; }
 }
 
 /// <summary>
@@ -56,6 +89,14 @@ public sealed class TraverseLinkExpression : ObjectSetExpression
 
     public ObjectSetExpression Source { get; }
     public string LinkName { get; }
+
+    /// <summary>
+    /// Traversal breaks the walk-to-root chain: once we've traversed a link,
+    /// the query targets the linked type's descriptor, not the source root's.
+    /// Under Option X (multi-registered types cannot be link targets — enforced
+    /// by AONT041), <c>ObjectType.Name</c> is always unambiguous here.
+    /// </summary>
+    public override string RootObjectTypeName => ObjectType.Name;
 }
 
 /// <summary>

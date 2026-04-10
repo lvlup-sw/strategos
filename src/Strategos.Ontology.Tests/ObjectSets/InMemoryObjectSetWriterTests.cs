@@ -22,7 +22,7 @@ public class InMemoryObjectSetWriterTests
 
         // Act
         await writer.StoreAsync(entity);
-        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity)));
+        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
         await Assert.That(result.Items).HasCount().EqualTo(1);
@@ -40,7 +40,7 @@ public class InMemoryObjectSetWriterTests
 
         // Act
         await writer.StoreAsync(entity);
-        var result = await provider.ExecuteAsync<WriterTestEntity>(new RootExpression(typeof(WriterTestEntity)));
+        var result = await provider.ExecuteAsync<WriterTestEntity>(new RootExpression(typeof(WriterTestEntity), nameof(WriterTestEntity)));
 
         // Assert
         await Assert.That(result.Items).HasCount().EqualTo(1);
@@ -63,7 +63,7 @@ public class InMemoryObjectSetWriterTests
 
         // Act
         await writer.StoreBatchAsync<SimpleEntity>(items);
-        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity)));
+        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
         await Assert.That(result.Items).HasCount().EqualTo(3);
@@ -88,7 +88,7 @@ public class InMemoryObjectSetWriterTests
         await writer.StoreAsync(far);
 
         var expression = new SimilarityExpression(
-            new RootExpression(typeof(WriterTestEntity)),
+            new RootExpression(typeof(WriterTestEntity), nameof(WriterTestEntity)),
             "search query",
             topK: 10,
             minRelevance: 0.0);
@@ -110,7 +110,7 @@ public class InMemoryObjectSetWriterTests
         provider.Seed(new WriterTestEntity("nomatch") { Embedding = [0f, 1f] }, "unrelated content");
 
         var expression = new SimilarityExpression(
-            new RootExpression(typeof(WriterTestEntity)),
+            new RootExpression(typeof(WriterTestEntity), nameof(WriterTestEntity)),
             "search query",
             topK: 10,
             minRelevance: 0.0);
@@ -131,7 +131,7 @@ public class InMemoryObjectSetWriterTests
         provider.Seed(new SimpleEntity("seeded"), "seeded content");
 
         // Act
-        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity)));
+        var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
         await Assert.That(result.Items).HasCount().EqualTo(1);

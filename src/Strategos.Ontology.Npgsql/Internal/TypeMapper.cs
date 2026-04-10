@@ -46,9 +46,4 @@ internal static class TypeMapper
 
         return sb.ToString();
     }
-
-    /// <summary>
-    /// Gets the snake_case table name for a CLR type.
-    /// </summary>
-    internal static string GetTableName<T>() => ToSnakeCase(typeof(T).Name);
 }

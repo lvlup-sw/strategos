@@ -23,15 +23,30 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly ILogger<PgVectorObjectSetProvider> _logger;
     private readonly PgVectorOptions _options;
+    private readonly OntologyGraph? _graph;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PgVectorObjectSetProvider"/> class.
     /// </summary>
+    /// <param name="dataSource">The PostgreSQL data source.</param>
+    /// <param name="embeddingProvider">The embedding provider used for vector generation.</param>
+    /// <param name="options">The pgvector provider options.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="graph">
+    /// Optional ontology graph used by the default-named write overloads
+    /// (<see cref="StoreAsync{T}(T, CancellationToken)"/>,
+    /// <see cref="StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>,
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/>) to look up
+    /// the registered descriptor name for a CLR type. When <c>null</c> (e.g. in
+    /// direct unit-test instantiation) the default-overload resolution falls back
+    /// to <c>typeof(T).Name</c> via <see cref="TypeMapper.ToSnakeCase(string)"/>.
+    /// </param>
     public PgVectorObjectSetProvider(
         NpgsqlDataSource dataSource,
         IEmbeddingProvider embeddingProvider,
         IOptions<PgVectorOptions> options,
-        ILogger<PgVectorObjectSetProvider> logger)
+        ILogger<PgVectorObjectSetProvider> logger,
+        OntologyGraph? graph = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
@@ -42,6 +57,97 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         _embeddingProvider = embeddingProvider;
         _options = options.Value;
         _logger = logger;
+        _graph = graph;
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a read-path expression
+    /// from the descriptor name declared on the expression's root, normalising
+    /// it via <see cref="TypeMapper.ToSnakeCase(string)"/>.
+    ///
+    /// Replaces the prior <c>TypeMapper.GetTableName&lt;T&gt;()</c> lookup,
+    /// which silently collapsed to <c>typeof(T).Name</c> and routed queries to
+    /// the wrong physical table when a CLR type was registered under multiple
+    /// ontology descriptors (bug #31 / Strategos 2.4.1).
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal</c> so the three read-path methods
+    /// (<see cref="ExecuteSimilarityAsync{T}"/>, <see cref="ExecuteAsync{T}"/>,
+    /// <see cref="StreamAsync{T}"/>) share a single dispatch step and unit tests
+    /// can pin its behavior without needing a live
+    /// <see cref="NpgsqlDataSource"/>.
+    /// </remarks>
+    internal static string ResolveTableName(ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return TypeMapper.ToSnakeCase(expression.RootObjectTypeName);
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a write-path call
+    /// from an explicit descriptor name supplied by the caller (typically
+    /// via the <see cref="IObjectSetWriter"/> explicit-name overloads).
+    /// </summary>
+    /// <remarks>
+    /// Symmetric write-path counterpart to <see cref="ResolveTableName(ObjectSetExpression)"/>.
+    /// Exposed as <c>internal</c> so the explicit-name <c>StoreAsync</c> /
+    /// <c>StoreBatchAsync</c> overloads share a single dispatch step and unit
+    /// tests can pin its behavior without needing a live
+    /// <see cref="NpgsqlDataSource"/>. The default-named write overloads
+    /// dispatch via <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>.
+    /// </remarks>
+    internal static string ResolveTableNameForDescriptor(string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        return TypeMapper.ToSnakeCase(descriptorName);
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for a write-path call
+    /// made via the default (no-name) overloads, using the ontology graph's
+    /// reverse index to look up the descriptor name registered for
+    /// <typeparamref name="T"/>. Falls back to <c>typeof(T).Name</c> when
+    /// <paramref name="graph"/> is <c>null</c> or the type is absent from
+    /// the graph.
+    /// </summary>
+    /// <remarks>
+    /// Symmetric write-path counterpart to <see cref="ResolveTableName(ObjectSetExpression)"/>
+    /// for callers that do not thread an <see cref="ObjectSetExpression"/>.
+    /// Replaces the prior <c>TypeMapper.GetTableName&lt;T&gt;()</c> lookup
+    /// which silently collapsed to <c>typeof(T).Name</c> and routed writes
+    /// to the wrong physical table when a CLR type was registered under
+    /// multiple ontology descriptors (bug #31 / Strategos 2.4.1). Throws
+    /// <see cref="InvalidOperationException"/> when the graph contains more
+    /// than one descriptor for the type — the default overload cannot
+    /// safely pick one and callers must use the explicit-name overload.
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior
+    /// without a live <see cref="NpgsqlDataSource"/>.
+    /// </remarks>
+    internal static string ResolveTableNameForDefaultOverload<T>(OntologyGraph? graph)
+    {
+        if (graph is not null && graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names))
+        {
+            if (names.Count == 1)
+            {
+                return TypeMapper.ToSnakeCase(names[0]);
+            }
+
+            if (names.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Type '{typeof(T).FullName}' has multiple registrations " +
+                    $"({string.Join(", ", names.Select(n => $"'{n}'"))}). " +
+                    $"Use StoreAsync<T>(string descriptorName, T item, ct) or " +
+                    $"StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, ct) " +
+                    $"to specify the target descriptor.");
+            }
+        }
+
+        // Graph absent, type unregistered, or empty name list — fall back to
+        // typeof(T).Name → snake_case for back-compat with direct unit-test
+        // instantiation and DI configurations that do not resolve an
+        // OntologyGraph.
+        return TypeMapper.ToSnakeCase(typeof(T).Name);
     }
 
     /// <inheritdoc />
@@ -56,8 +162,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         ValidateEmbedding<T>(queryVector);
 
-        // 2. Get table name from TypeMapper
-        var tableName = TypeMapper.GetTableName<T>();
+        // 2. Resolve table name from the expression's declared descriptor name
+        //    (honors explicit names supplied via GetObjectSet<T>(descriptorName);
+        //    see ResolveTableName docs / bug #31).
+        var tableName = ResolveTableName(expression);
 
         // 3. Translate Source expression (handles Filter, Include, Root transparently)
         var sourceTranslation = ExpressionTranslator.Translate(expression.Source);
@@ -119,7 +227,9 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        var tableName = TypeMapper.GetTableName<T>();
+        // Resolve table name from the expression's declared descriptor name
+        // via the shared read-path dispatch helper (bug #31).
+        var tableName = ResolveTableName(expression);
         var translation = ExpressionTranslator.Translate(expression);
         var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
 
@@ -154,7 +264,9 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        var tableName = TypeMapper.GetTableName<T>();
+        // Resolve table name from the expression's declared descriptor name
+        // via the shared read-path dispatch helper (bug #31).
+        var tableName = ResolveTableName(expression);
         var translation = ExpressionTranslator.Translate(expression);
         var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
 
@@ -180,11 +292,63 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <inheritdoc />
-    public async Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class
+    public Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        var tableName = TypeMapper.GetTableName<T>();
+        // Default overload: resolve via the ontology graph's reverse index
+        // (F4). Throws if the type is multi-registered — callers must use
+        // the explicit-name overload to disambiguate.
+        var tableName = ResolveTableNameForDefaultOverload<T>(_graph);
+        return StoreAsyncCore<T>(tableName, item, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        // Default overload: resolve via the ontology graph's reverse index
+        // (F4). Throws if the type is multi-registered — callers must use
+        // the explicit-name overload to disambiguate.
+        var tableName = ResolveTableNameForDefaultOverload<T>(_graph);
+        return StoreBatchAsyncCore<T>(tableName, items, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreAsync<T>(string descriptorName, T item, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(item);
+
+        // Explicit-name overload: dispatch via the shared write-path helper so
+        // the descriptor selects which physical partition to write to (bug #31).
+        var tableName = ResolveTableNameForDescriptor(descriptorName);
+        return StoreAsyncCore<T>(tableName, item, ct);
+    }
+
+    /// <inheritdoc />
+    public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(items);
+
+        // Explicit-name overload: dispatch via the shared write-path helper so
+        // the descriptor selects which physical partition to write to (bug #31).
+        var tableName = ResolveTableNameForDescriptor(descriptorName);
+        return StoreBatchAsyncCore<T>(tableName, items, ct);
+    }
+
+    /// <summary>
+    /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
+    /// so both the default <see cref="StoreAsync{T}(T, CancellationToken)"/> overload
+    /// (resolving via <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>)
+    /// and the explicit-name overload (resolving via
+    /// <see cref="ResolveTableNameForDescriptor"/>) share a single SQL /
+    /// parameter-binding code path.
+    /// </summary>
+    private async Task StoreAsyncCore<T>(string tableName, T item, CancellationToken ct) where T : class
+    {
         var hasEmbedding = item is ISearchable;
         var sql = SqlGenerator.BuildInsertSql(_options.Schema, tableName, hasEmbedding);
 
@@ -201,17 +365,18 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    public async Task StoreBatchAsync<T>(IReadOnlyList<T> items, CancellationToken ct = default) where T : class
+    /// <summary>
+    /// Core batch write helper. Takes a pre-resolved <paramref name="tableName"/>
+    /// so both the default <see cref="StoreBatchAsync{T}(IReadOnlyList{T}, CancellationToken)"/>
+    /// overload and the explicit-name overload share a single COPY pipeline.
+    /// </summary>
+    private async Task StoreBatchAsyncCore<T>(string tableName, IReadOnlyList<T> items, CancellationToken ct) where T : class
     {
-        ArgumentNullException.ThrowIfNull(items);
-
         if (items.Count == 0)
         {
             return;
         }
 
-        var tableName = TypeMapper.GetTableName<T>();
         var hasEmbedding = items[0] is ISearchable;
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -245,9 +410,19 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <summary>
     /// Ensures the database schema (extension, table, index) exists for the given type.
     /// </summary>
-    public async Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class
+    /// <typeparam name="T">The CLR type whose backing table should be created.</typeparam>
+    /// <param name="descriptorName">
+    /// Optional explicit descriptor name identifying the target table. When
+    /// <c>null</c>, the target is resolved via
+    /// <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>
+    /// using the provider's optional <see cref="OntologyGraph"/>; for
+    /// multi-registered types the resolution throws and callers must
+    /// specify the name explicitly (one call per descriptor).
+    /// </param>
+    /// <param name="ct">The cancellation token.</param>
+    public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
     {
-        var tableName = TypeMapper.GetTableName<T>();
+        var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,
@@ -256,6 +431,29 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         await using var cmd = _dataSource.CreateCommand(ddl);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the snake_case PostgreSQL table name for an
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> call.
+    /// Honours an explicit <paramref name="descriptorName"/> when supplied;
+    /// otherwise delegates to the shared default-overload resolution
+    /// (<see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>)
+    /// so schema creation and writes stay in lockstep.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior
+    /// without a live <see cref="NpgsqlDataSource"/>, matching the seam used
+    /// by the write-path helpers.
+    /// </remarks>
+    internal static string ResolveEnsureSchemaTableName<T>(string? descriptorName, OntologyGraph? graph)
+    {
+        if (descriptorName is not null)
+        {
+            return TypeMapper.ToSnakeCase(descriptorName);
+        }
+
+        return ResolveTableNameForDefaultOverload<T>(graph);
     }
 
     private static double ConvertDistanceToSimilarity(double distance, DistanceMetric metric) => metric switch

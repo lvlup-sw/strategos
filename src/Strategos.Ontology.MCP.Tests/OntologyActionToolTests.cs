@@ -1,5 +1,6 @@
 using Strategos.Ontology;
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.MCP.Tests;
@@ -164,5 +165,63 @@ public class OntologyActionToolTests
         await Assert.That(result.Results).HasCount().EqualTo(1);
         await Assert.That(result.Results[0].IsSuccess).IsFalse();
         await Assert.That(result.Results[0].Error).Contains("NonExistentType");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_BatchWithExplicitDescriptorName_ThreadsNameIntoRootExpression()
+    {
+        // Arrange — register TestPosition under an explicit descriptor name (differs
+        // from typeof(TestPosition).Name). The batch dispatch path must use the
+        // descriptor name on the root expression so the provider targets the correct
+        // partition, not the CLR type name.
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<ActionExplicitNameTestDomain>();
+        var graph = graphBuilder.Build();
+
+        var dispatcher = Substitute.For<IActionDispatcher>();
+        var provider = Substitute.For<IObjectSetProvider>();
+        var tool = new OntologyActionTool(graph, dispatcher, provider);
+
+        ObjectSetExpression? capturedExpression = null;
+        provider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<ObjectSetExpression>();
+                return new ObjectSetResult<object>([], 0, ObjectSetInclusion.Properties);
+            });
+
+        // Act — batch dispatch (no objectId, so DispatchBatchAsync is reached)
+        var result = await tool.ExecuteAsync(
+            objectType: "trading_documents",
+            action: "execute_trade",
+            request: new { },
+            domain: "explicit-name-test");
+
+        // Assert — the RootExpression must carry the explicit descriptor name,
+        // not typeof(TestPosition).Name.
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.RootObjectTypeName).IsEqualTo("trading_documents");
+
+        var root = capturedExpression as RootExpression;
+        await Assert.That(root).IsNotNull();
+        await Assert.That(root!.ObjectTypeName).IsEqualTo("trading_documents");
+        await Assert.That(root.ObjectType).IsEqualTo(typeof(TestPosition));
+    }
+}
+
+internal sealed class ActionExplicitNameTestDomain : DomainOntology
+{
+    public override string DomainName => "explicit-name-test";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestPosition>("trading_documents", obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Symbol).Required();
+            obj.Action("execute_trade")
+                .Description("Execute a trade on the position");
+        });
     }
 }

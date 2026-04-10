@@ -17,11 +17,26 @@ public sealed class ObjectSet<T> where T : class
     private readonly IEventStreamProvider _eventStreamProvider;
 
     /// <summary>
-    /// Creates a new root ObjectSet for the given type.
+    /// Creates a new root ObjectSet for the given type, carrying an explicit ontology
+    /// descriptor name on the root expression so the provider can dispatch against the
+    /// correct registration when the CLR type is registered under multiple names.
+    /// Callers constructing an <see cref="ObjectSet{T}"/> directly (rather than through
+    /// <see cref="Strategos.Ontology.Query.IOntologyQuery.GetObjectSet{T}"/>) must supply
+    /// the descriptor name they want dispatched.
     /// </summary>
-    public ObjectSet(IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)
-        : this(new RootExpression(typeof(T)), provider, actionDispatcher, eventStreamProvider)
+    /// <param name="descriptorName">
+    /// The ontology descriptor name registered for this type in the graph. For
+    /// single-registered types this is typically <c>typeof(T).Name</c>; for multi-registered
+    /// types this is the explicit name passed to <c>Object&lt;T&gt;(name, ...)</c>.
+    /// </param>
+    public ObjectSet(
+        string descriptorName,
+        IObjectSetProvider provider,
+        IActionDispatcher actionDispatcher,
+        IEventStreamProvider eventStreamProvider)
+        : this(new RootExpression(typeof(T), descriptorName), provider, actionDispatcher, eventStreamProvider)
     {
+        ArgumentNullException.ThrowIfNull(descriptorName);
     }
 
     internal ObjectSet(ObjectSetExpression expression, IObjectSetProvider provider, IActionDispatcher actionDispatcher, IEventStreamProvider eventStreamProvider)
@@ -104,17 +119,20 @@ public sealed class ObjectSet<T> where T : class
 
     /// <summary>
     /// Applies an action to all objects in the set by first materializing the query,
-    /// then dispatching the action to each object.
+    /// then dispatching the action to each object. The dispatch routes against the
+    /// descriptor name carried on the expression's root, so a multi-registered CLR
+    /// type reaches the registration the caller selected.
     /// </summary>
     public async Task<IReadOnlyList<ActionResult>> ApplyAsync(string actionName, object request, CancellationToken ct = default)
     {
         var result = await _provider.ExecuteAsync<T>(Expression, ct).ConfigureAwait(false);
         var results = new List<ActionResult>(result.Items.Count);
+        var descriptorName = Expression.RootObjectTypeName;
 
         foreach (var item in result.Items)
         {
             var objectId = item?.ToString() ?? string.Empty;
-            var context = new ActionContext(typeof(T).Name, typeof(T).Name, objectId, actionName);
+            var context = new ActionContext(descriptorName, descriptorName, objectId, actionName);
             var actionResult = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
             results.Add(actionResult);
         }
@@ -123,12 +141,15 @@ public sealed class ObjectSet<T> where T : class
     }
 
     /// <summary>
-    /// Queries events for the object type represented by this set.
+    /// Queries events for the object type represented by this set. The query carries
+    /// the descriptor name from the expression root, so multi-registered CLR types
+    /// resolve against the caller-selected registration rather than the raw CLR name.
     /// </summary>
     public IAsyncEnumerable<OntologyEvent> EventsAsync(TimeSpan? since = null, IReadOnlyList<string>? eventTypes = null)
     {
         var sinceTimestamp = since.HasValue ? DateTimeOffset.UtcNow - since.Value : (DateTimeOffset?)null;
-        var query = new EventQuery(typeof(T).Name, typeof(T).Name, Since: sinceTimestamp, EventTypes: eventTypes);
+        var descriptorName = Expression.RootObjectTypeName;
+        var query = new EventQuery(descriptorName, descriptorName, Since: sinceTimestamp, EventTypes: eventTypes);
         return _eventStreamProvider.QueryEventsAsync(query);
     }
 }

@@ -29,7 +29,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var results = await set.ApplyAsync("DoSomething", new { Value = 1 });
@@ -48,7 +48,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
         var request = new { To = "test@example.com" };
 
         // Act
@@ -69,7 +69,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(evt));
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         var events = new List<OntologyEvent>();
@@ -92,7 +92,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<OntologyEvent>());
-        var set = new ObjectSet<string>(_provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
         await foreach (var _ in set.EventsAsync(since, eventTypes))
@@ -102,6 +102,55 @@ public class ObjectSetActionEventTests
         // Assert
         _eventProvider.Received(1).QueryEventsAsync(
             Arg.Is<EventQuery>(q => q.EventTypes != null && q.EventTypes.Count == 2 && q.Since != null),
+            Arg.Any<CancellationToken>());
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: descriptor-name dispatch — ApplyAsync and EventsAsync must
+    // route against the descriptor name carried on the expression root, not
+    // typeof(T).Name. Guards against the bug CodeRabbit flagged on PR #34
+    // where multi-registered CLR types dispatched under the wrong descriptor.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ObjectSet_ApplyAsync_RoutesAgainstDescriptorName_NotClrTypeName()
+    {
+        // Arrange — construct with an explicit descriptor name that differs from typeof(T).Name
+        const string descriptorName = "trading_documents";
+        var items = new List<string> { "doc-1" };
+        _provider.ExecuteAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
+        _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ActionResult(true)));
+        var set = new ObjectSet<string>(descriptorName, _provider, _dispatcher, _eventProvider);
+
+        // Act
+        await set.ApplyAsync("Archive", new { });
+
+        // Assert — dispatcher receives the descriptor name, not "String"
+        await _dispatcher.Received(1).DispatchAsync(
+            Arg.Is<ActionContext>(c => c.ObjectType == descriptorName),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ObjectSet_EventsAsync_RoutesAgainstDescriptorName_NotClrTypeName()
+    {
+        // Arrange
+        const string descriptorName = "trading_documents";
+        _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<OntologyEvent>());
+        var set = new ObjectSet<string>(descriptorName, _provider, _dispatcher, _eventProvider);
+
+        // Act
+        await foreach (var _ in set.EventsAsync())
+        {
+        }
+
+        // Assert — event query carries the descriptor name, not "String"
+        _eventProvider.Received(1).QueryEventsAsync(
+            Arg.Is<EventQuery>(q => q.ObjectTypeName == descriptorName),
             Arg.Any<CancellationToken>());
     }
 
