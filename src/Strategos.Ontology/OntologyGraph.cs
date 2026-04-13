@@ -103,7 +103,7 @@ public sealed class OntologyGraph
                 }
 
                 visited.Add(targetKey);
-                results.Add(new LinkTraversalResult(targetType, link.Name, currentDepth + 1));
+                results.Add(new LinkTraversalResult(targetType, link.Name, currentDepth + 1, link.Description));
                 queue.Enqueue((targetType, currentDepth + 1));
             }
         }
