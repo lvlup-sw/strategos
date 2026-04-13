@@ -97,4 +97,76 @@ public class IObjectTypeBuilderTests
 
         await Assert.That(true).IsTrue();
     }
+
+    [Test]
+    public async Task HasMany_WithDescription_SetsDescriptorDescription()
+    {
+        // Arrange — build a real ontology with a described link
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new HasManyDescriptionTestOntology());
+        var graph = graphBuilder.Build();
+
+        // Act
+        var positionType = graph.ObjectTypes.First(t => t.Name == nameof(TestPosition));
+        var ordersLink = positionType.Links.First(l => l.Name == "Orders");
+
+        // Assert
+        await Assert.That(ordersLink.Description).IsEqualTo("Orders placed against this position");
+    }
+
+    [Test]
+    public async Task HasOne_WithDescription_SetsDescriptorDescription()
+    {
+        // Arrange — build a real ontology with a described HasOne link
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new HasOneDescriptionTestOntology());
+        var graph = graphBuilder.Build();
+
+        // Act
+        var orderType = graph.ObjectTypes.First(t => t.Name == nameof(TestTradeOrder));
+        var strategyLink = orderType.Links.First(l => l.Name == "Strategy");
+
+        // Assert
+        await Assert.That(strategyLink.Description).IsEqualTo("The strategy that generated this order");
+    }
+}
+
+public class HasManyDescriptionTestOntology : DomainOntology
+{
+    public override string DomainName => "test-link-desc";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestPosition>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasMany<TestTradeOrder>("Orders")
+                .Description("Orders placed against this position");
+        });
+
+        builder.Object<TestTradeOrder>(obj =>
+        {
+            obj.Key(o => o.Id);
+        });
+    }
+}
+
+public class HasOneDescriptionTestOntology : DomainOntology
+{
+    public override string DomainName => "test-link-desc";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestTradeOrder>(obj =>
+        {
+            obj.Key(o => o.Id);
+            obj.HasOne<TestStrategy>("Strategy")
+                .Description("The strategy that generated this order");
+        });
+
+        builder.Object<TestStrategy>(obj =>
+        {
+            obj.Key(s => s.Id);
+        });
+    }
 }

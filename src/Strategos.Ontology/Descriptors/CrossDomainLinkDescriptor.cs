@@ -8,4 +8,6 @@ public sealed record CrossDomainLinkDescriptor(
     LinkCardinality Cardinality)
 {
     public IReadOnlyList<PropertyDescriptor> EdgeProperties { get; init; } = [];
+
+    public string? Description { get; init; }
 }

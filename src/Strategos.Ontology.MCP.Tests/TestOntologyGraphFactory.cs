@@ -62,7 +62,8 @@ public class TestTradingDomainOntology : DomainOntology
             obj.Key(p => p.Id);
             obj.Property(p => p.Symbol).Required();
             obj.Property(p => p.Quantity);
-            obj.HasMany<TestOrder>("Orders");
+            obj.HasMany<TestOrder>("Orders")
+                .Description("Orders placed against this position");
             obj.Action("execute_trade")
                 .Description("Execute a trade on the position")
                 .Accepts<TestTradeExecutionRequest>()

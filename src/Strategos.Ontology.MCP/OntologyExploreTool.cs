@@ -109,6 +109,7 @@ public sealed class OntologyExploreTool
             ["targetTypeName"] = l.TargetTypeName,
             ["cardinality"] = l.Cardinality.ToString(),
             ["edgePropertyCount"] = l.EdgeProperties.Count,
+            ["description"] = l.Description,
         }).ToList();
 
         return new ExploreResult("links", items);
@@ -166,6 +167,7 @@ public sealed class OntologyExploreTool
             ["objectType"] = r.ObjectType.Name,
             ["linkName"] = r.LinkName,
             ["depth"] = r.Depth,
+            ["description"] = r.Description,
         }).ToList();
 
         return new ExploreResult("links", items);

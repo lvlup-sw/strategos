@@ -155,6 +155,20 @@ public class OntologyGraphTraversalTests
     }
 
     [Test]
+    public async Task TraverseLinks_ResultIncludesLinkDescription()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new TestDescribedLinkOntology());
+        var graph = graphBuilder.Build();
+
+        var results = graph.TraverseLinks("trading", "TestPosition", maxDepth: 1);
+
+        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results[0].LinkName).IsEqualTo("Orders");
+        await Assert.That(results[0].Description).IsEqualTo("Orders placed against this position");
+    }
+
+    [Test]
     public async Task OntologyGraph_FindWorkflowChains_UnknownWorkflow_ReturnsEmpty()
     {
         var graphBuilder = new OntologyGraphBuilder();
@@ -164,5 +178,26 @@ public class OntologyGraphTraversalTests
         var result = graph.FindWorkflowChains("NonExistent");
 
         await Assert.That(result).HasCount().EqualTo(0);
+    }
+}
+
+public class TestDescribedLinkOntology : DomainOntology
+{
+    public override string DomainName => "trading";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestPosition>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Symbol).Required();
+            obj.HasMany<TestOrder>("Orders")
+                .Description("Orders placed against this position");
+        });
+
+        builder.Object<TestOrder>(obj =>
+        {
+            obj.Key(o => o.OrderId);
+        });
     }
 }

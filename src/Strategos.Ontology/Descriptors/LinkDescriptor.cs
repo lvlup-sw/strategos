@@ -10,4 +10,6 @@ public sealed record LinkDescriptor(
         EdgeProperties ?? [];
 
     public string? InverseLinkName { get; init; }
+
+    public string? Description { get; init; }
 }
