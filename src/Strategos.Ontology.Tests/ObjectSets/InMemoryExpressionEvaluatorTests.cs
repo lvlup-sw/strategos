@@ -163,4 +163,52 @@ public class InMemoryExpressionEvaluatorTests
 
         await Assert.That(result).HasCount().EqualTo(0);
     }
+
+    // -----------------------------------------------------------------------
+    // Task 8 tests — TraverseLinkExpression
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Evaluate_TraverseLink_ReturnsTargetTypeItems()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(EvalTarget));
+        var resolver = BuildTestResolver();
+
+        var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
+
+        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result[0].Label).IsEqualTo("X");
+        await Assert.That(result[1].Label).IsEqualTo("Y");
+    }
+
+    [Test]
+    public async Task Evaluate_TraverseLink_ThenFilter_FiltersTargetItems()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(EvalTarget));
+        Expression<Func<EvalTarget, bool>> predicate = t => t.Label == "X";
+        var filter = new FilterExpression(traverse, predicate);
+        var resolver = BuildTestResolver();
+
+        var result = evaluator.Evaluate<EvalTarget>(filter, resolver);
+
+        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result[0].Label).IsEqualTo("X");
+    }
+
+    [Test]
+    public async Task Evaluate_TraverseLink_UnknownLink_Throws()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var traverse = new TraverseLinkExpression(root, "nonexistent", typeof(EvalTarget));
+        var resolver = BuildTestResolver();
+
+        await Assert.That(() => evaluator.Evaluate<EvalTarget>(traverse, resolver))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+    }
 }

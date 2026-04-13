@@ -62,6 +62,7 @@ public sealed class InMemoryExpressionEvaluator
             RootExpression root => EvaluateRoot<T>(root, itemResolver),
             FilterExpression filter => EvaluateFilter<T>(filter, itemResolver),
             IncludeExpression include => Evaluate<T>(include.Source, itemResolver),
+            TraverseLinkExpression traverse => EvaluateTraverseLink<T>(traverse, itemResolver),
             _ => throw new NotSupportedException(
                 $"Expression type '{expression.GetType().Name}' is not supported by InMemoryExpressionEvaluator.")
         };
@@ -90,4 +91,42 @@ public sealed class InMemoryExpressionEvaluator
         throw new InvalidOperationException(
             $"Filter predicate type '{compiled.GetType().Name}' is not compatible with Func<{typeof(T).Name}, bool>.");
     }
+
+    private List<T> EvaluateTraverseLink<T>(
+        TraverseLinkExpression traverse,
+        Func<string, IReadOnlyList<object>> itemResolver) where T : class
+    {
+        var sourceDescriptorName = ResolveSourceDescriptorName(traverse.Source);
+
+        if (!_descriptorIndex.TryGetValue(sourceDescriptorName, out var sourceDescriptor))
+        {
+            var available = string.Join(", ", _descriptorIndex.Keys);
+            throw new InvalidOperationException(
+                $"Object type '{sourceDescriptorName}' not found in ontology graph. Available types: {available}");
+        }
+
+        var link = sourceDescriptor.Links.FirstOrDefault(l => l.Name == traverse.LinkName);
+        if (link is null)
+        {
+            var available = string.Join(", ", sourceDescriptor.Links.Select(l => l.Name));
+            throw new InvalidOperationException(
+                $"Link '{traverse.LinkName}' not found on object type '{sourceDescriptorName}'. Available links: {available}");
+        }
+
+        var targetItems = itemResolver(link.TargetTypeName);
+        return targetItems.Cast<T>().ToList();
+    }
+
+    private static string ResolveSourceDescriptorName(ObjectSetExpression expression) =>
+        expression switch
+        {
+            RootExpression root => root.ObjectTypeName,
+            FilterExpression filter => ResolveSourceDescriptorName(filter.Source),
+            IncludeExpression include => ResolveSourceDescriptorName(include.Source),
+            TraverseLinkExpression traverse => ResolveSourceDescriptorName(traverse.Source),
+            InterfaceNarrowExpression narrow => ResolveSourceDescriptorName(narrow.Source),
+            RawFilterExpression raw => ResolveSourceDescriptorName(raw.Source),
+            _ => throw new NotSupportedException(
+                $"Cannot resolve source descriptor from {expression.GetType().Name}"),
+        };
 }
