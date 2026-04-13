@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
@@ -237,8 +238,196 @@ public class InMemoryObjectSetProviderTests
         await Assert.That(result.Items).HasCount().EqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Default");
     }
+
+    // ── Task 11: Graph-aware constructors + delegation ────────────────────
+
+    [Test]
+    public async Task ExecuteAsync_WithGraph_TraverseLink_Works()
+    {
+        // Arrange — build a graph with ProvSource -> "targets" -> ProvTarget
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
+        provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
+
+        // Act
+        var result = await provider.ExecuteAsync<ProvTarget>(traverse);
+
+        // Assert
+        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items[0].Label).IsEqualTo("T1");
+        await Assert.That(result.Items[1].Label).IsEqualTo("T2");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithGraph_InterfaceNarrow_Works()
+    {
+        // Arrange
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvSource("S2", 20), "source 2");
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var narrow = new InterfaceNarrowExpression(root, typeof(IProvInterface));
+
+        // Act
+        var result = await provider.ExecuteAsync<IProvInterface>(narrow);
+
+        // Assert — ProvSource implements IProvInterface
+        await Assert.That(result.Items).HasCount().EqualTo(2);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithoutGraph_LegacyBehavior()
+    {
+        // Arrange — parameterless constructor, no graph
+        var provider = new InMemoryObjectSetProvider();
+        provider.Seed(new TestEntity("Alice"), "alice");
+        provider.Seed(new TestEntity("Bob"), "bob");
+
+        Expression<Func<TestEntity, bool>> predicate = e => e.Name == "Alice";
+        var root = new RootExpression(typeof(TestEntity), nameof(TestEntity));
+        var filter = new FilterExpression(root, predicate);
+
+        // Act
+        var result = await provider.ExecuteAsync<TestEntity>(filter);
+
+        // Assert — backward compat: filter still works without graph
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0].Name).IsEqualTo("Alice");
+    }
+
+    [Test]
+    public async Task StreamAsync_WithGraph_DelegatesToEvaluator()
+    {
+        // Arrange
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
+        provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
+
+        // Act
+        var items = new List<ProvTarget>();
+        await foreach (var item in provider.StreamAsync<ProvTarget>(traverse))
+        {
+            items.Add(item);
+        }
+
+        // Assert
+        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items[0].Label).IsEqualTo("T1");
+    }
+
+    // ── Task 12: ExecuteSimilarityAsync source filtering + backward compat ─
+
+    [Test]
+    public async Task ExecuteSimilarityAsync_WithGraph_SourceFiltered()
+    {
+        // Arrange — graph-aware provider with filter on source
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("Alpha", 10), "alpha machine learning");
+        provider.Seed(new ProvSource("Beta", 3), "beta machine learning deep");
+        provider.Seed(new ProvSource("Gamma", 20), "gamma unrelated content");
+
+        // Source expression: root + filter (Value > 5 keeps Alpha and Gamma)
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        Expression<Func<ProvSource, bool>> predicate = s => s.Value > 5;
+        var filter = new FilterExpression(root, predicate);
+
+        // Similarity on filtered source — "machine learning" matches Alpha but not Gamma
+        var similarity = new SimilarityExpression(filter, "machine learning", 10, 0.0);
+
+        // Act
+        var result = await provider.ExecuteSimilarityAsync<ProvSource>(similarity);
+
+        // Assert — Beta (Value=3) is excluded by filter; Gamma has no keyword match
+        // Only Alpha (Value=10, "alpha machine learning") and Gamma (Value=20, but score=0.0 passes minRelevance=0.0)
+        // should be in the results. Alpha should rank highest.
+        await Assert.That(result.Items.Count).IsGreaterThanOrEqualTo(1);
+        await Assert.That(result.Items[0].Name).IsEqualTo("Alpha");
+
+        // Beta must NOT be in results (filtered out by Value > 5)
+        var betaItems = result.Items.Where(i => i.Name == "Beta").ToList();
+        await Assert.That(betaItems).HasCount().EqualTo(0);
+    }
+
+    [Test]
+    public async Task ExecuteSimilarityAsync_WithoutGraph_LegacyBehavior()
+    {
+        // Arrange — parameterless constructor, no graph, legacy path
+        var provider = new InMemoryObjectSetProvider();
+        provider.Seed(new TestEntity("Match"), "alpha beta gamma");
+        provider.Seed(new TestEntity("NoMatch"), "completely unrelated");
+
+        var root = new RootExpression(typeof(TestEntity), nameof(TestEntity));
+        var similarity = new SimilarityExpression(root, "alpha beta gamma", 10, 0.9);
+
+        // Act
+        var result = await provider.ExecuteSimilarityAsync<TestEntity>(similarity);
+
+        // Assert — "Match" should score 1.0 (all 3 terms match), "NoMatch" 0.0
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0].Name).IsEqualTo("Match");
+    }
 }
 
-// Test helpers
+// ── Test helpers ───────────────────────────────────────────────────────────
 public sealed record TestEntity(string Name);
 public sealed record OtherEntity(int Value);
+
+// ── Task 11 test domain types ──────────────────────────────────────────────
+public interface IProvInterface
+{
+    string Name { get; }
+}
+
+public sealed record ProvSource(string Name, int Value) : IProvInterface;
+public sealed record ProvTarget(string Label);
+
+public class ProviderTestOntology : DomainOntology
+{
+    public override string DomainName => "provider-test";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Interface<IProvInterface>("IProvInterface", iface =>
+        {
+            iface.Property(e => e.Name);
+        });
+
+        builder.Object<ProvSource>(obj =>
+        {
+            obj.Property(s => s.Name).Required();
+            obj.Property(s => s.Value);
+            obj.HasMany<ProvTarget>("targets");
+            obj.Implements<IProvInterface>(map => { });
+        });
+
+        builder.Object<ProvTarget>(obj =>
+        {
+            obj.Property(t => t.Label).Required();
+        });
+    }
+}
