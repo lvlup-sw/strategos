@@ -64,6 +64,12 @@ public sealed class InMemoryExpressionEvaluator
             IncludeExpression include => Evaluate<T>(include.Source, itemResolver),
             TraverseLinkExpression traverse => EvaluateTraverseLink<T>(traverse, itemResolver),
             InterfaceNarrowExpression narrow => EvaluateInterfaceNarrow<T>(narrow, itemResolver),
+            RawFilterExpression => throw new NotSupportedException(
+                "RawFilterExpression evaluation is not supported by InMemoryExpressionEvaluator. " +
+                "Use ObjectSet<T>.Where() with typed predicates instead of raw filter strings."),
+            SimilarityExpression => throw new NotSupportedException(
+                "SimilarityExpression evaluation is not supported by InMemoryExpressionEvaluator. " +
+                "Similarity scoring is provider-specific."),
             _ => throw new NotSupportedException(
                 $"Expression type '{expression.GetType().Name}' is not supported by InMemoryExpressionEvaluator.")
         };

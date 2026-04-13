@@ -253,4 +253,57 @@ public class InMemoryExpressionEvaluatorTests
 
         await Assert.That(result).HasCount().EqualTo(0);
     }
+
+    // -----------------------------------------------------------------------
+    // Task 10 tests — RawFilter, error handling, thread safety
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Evaluate_RawFilter_ThrowsNotSupported()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var rawFilter = new RawFilterExpression(root, "Value > 5");
+        var resolver = BuildTestResolver();
+
+        await Assert.That(() => evaluator.Evaluate<EvalSource>(rawFilter, resolver))
+            .ThrowsException()
+            .WithExceptionType(typeof(NotSupportedException));
+
+        await Assert.That(() => evaluator.Evaluate<EvalSource>(rawFilter, resolver))
+            .ThrowsException()
+            .WithMessageContaining("RawFilterExpression evaluation is not supported by InMemoryExpressionEvaluator");
+    }
+
+    [Test]
+    public async Task Evaluate_UnknownDescriptor_ReturnsEmpty()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        // Use a descriptor name that the resolver doesn't know about — returns empty
+        var root = new RootExpression(typeof(EvalSource), "UnknownType");
+        Func<string, IReadOnlyList<object>> resolver = _ => [];
+
+        var result = evaluator.Evaluate<EvalSource>(root, resolver);
+
+        await Assert.That(result).HasCount().EqualTo(0);
+    }
+
+    [Test]
+    public async Task Evaluate_ConcurrentCalls_ThreadSafe()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var resolver = BuildTestResolver();
+
+        var tasks = Enumerable.Range(0, 10)
+            .Select(_ => Task.Run(() => evaluator.Evaluate<EvalSource>(root, resolver)))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        foreach (var result in results)
+        {
+            await Assert.That(result).HasCount().EqualTo(2);
+        }
+    }
 }
