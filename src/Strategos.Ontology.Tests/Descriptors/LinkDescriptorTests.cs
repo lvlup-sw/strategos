@@ -35,4 +35,27 @@ public class LinkDescriptorTests
         await Assert.That(descriptor.EdgeProperties).IsNotNull();
         await Assert.That(descriptor.EdgeProperties.Count).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task LinkDescriptor_Description_DefaultsToNull()
+    {
+        // Arrange & Act
+        var descriptor = new LinkDescriptor("Orders", "TradeOrder", LinkCardinality.OneToMany);
+
+        // Assert
+        await Assert.That(descriptor.Description).IsNull();
+    }
+
+    [Test]
+    public async Task LinkDescriptor_WithDescription_StoresValue()
+    {
+        // Arrange & Act
+        var descriptor = new LinkDescriptor("Orders", "TradeOrder", LinkCardinality.OneToMany)
+        {
+            Description = "Orders placed against this position",
+        };
+
+        // Assert
+        await Assert.That(descriptor.Description).IsEqualTo("Orders placed against this position");
+    }
 }
