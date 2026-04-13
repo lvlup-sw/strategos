@@ -124,6 +124,38 @@ public class OntologyExploreToolTests
     }
 
     [Test]
+    public async Task OntologyExplore_Links_IncludesDescription()
+    {
+        // Act
+        var result = _tool.Explore(scope: "links", domain: "trading", objectType: "TestPosition");
+
+        // Assert
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0].ContainsKey("description")).IsTrue();
+        await Assert.That(result.Items[0]["description"]?.ToString())
+            .IsEqualTo("Orders placed against this position");
+    }
+
+    [Test]
+    public async Task OntologyExplore_Traversal_IncludesDescription()
+    {
+        // Act
+        var result = _tool.Explore(
+            scope: "links",
+            domain: "trading",
+            objectType: "TestPosition",
+            traverseFrom: "TestPosition",
+            maxDepth: 1);
+
+        // Assert — traversal from TestPosition should find TestOrder via "Orders" link
+        await Assert.That(result.Items.Count).IsGreaterThanOrEqualTo(1);
+        var orderResult = result.Items.First(i => i["objectType"]?.ToString() == "TestOrder");
+        await Assert.That(orderResult.ContainsKey("description")).IsTrue();
+        await Assert.That(orderResult["description"]?.ToString())
+            .IsEqualTo("Orders placed against this position");
+    }
+
+    [Test]
     public async Task Explore_ObjectTypes_IncludesIsSemanticSearchable()
     {
         // Arrange — use vector graph which has TestDocument (vector) and TestImage (no vector)
