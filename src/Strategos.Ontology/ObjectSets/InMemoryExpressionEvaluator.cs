@@ -20,7 +20,6 @@ namespace Strategos.Ontology.ObjectSets;
 /// </remarks>
 public sealed class InMemoryExpressionEvaluator
 {
-    private readonly OntologyGraph _graph;
     private readonly Dictionary<string, ObjectTypeDescriptor> _descriptorIndex;
 
     /// <summary>
@@ -29,10 +28,27 @@ public sealed class InMemoryExpressionEvaluator
     /// <param name="graph">
     /// The frozen ontology graph used to resolve link descriptors and interface implementors.
     /// </param>
+    /// <exception cref="ArgumentException">
+    /// Thrown if the graph contains multiple object types with the same descriptor name
+    /// across different domains. Use unique descriptor names or qualify with domain.
+    /// </exception>
     public InMemoryExpressionEvaluator(OntologyGraph graph)
     {
-        _graph = graph;
-        _descriptorIndex = graph.ObjectTypes.ToDictionary(t => t.Name);
+        ArgumentNullException.ThrowIfNull(graph);
+
+        _descriptorIndex = new Dictionary<string, ObjectTypeDescriptor>();
+        foreach (var ot in graph.ObjectTypes)
+        {
+            if (!_descriptorIndex.TryAdd(ot.Name, ot))
+            {
+                var existing = _descriptorIndex[ot.Name];
+                throw new ArgumentException(
+                    $"Descriptor name '{ot.Name}' is registered in both domain '{existing.DomainName}' " +
+                    $"and domain '{ot.DomainName}'. InMemoryExpressionEvaluator requires globally unique " +
+                    $"descriptor names. Rename one of the registrations to disambiguate.",
+                    nameof(graph));
+            }
+        }
     }
 
     /// <summary>

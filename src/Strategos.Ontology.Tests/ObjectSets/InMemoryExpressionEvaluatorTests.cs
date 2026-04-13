@@ -254,8 +254,44 @@ public class InMemoryExpressionEvaluatorTests
         await Assert.That(result).HasCount().EqualTo(0);
     }
 
+    [Test]
+    public async Task Evaluate_TraverseLink_WithFilterOnSource_IgnoresSourceFilter()
+    {
+        // Schema-level traversal: source filters don't affect target items.
+        // Even with a filter that eliminates all source items, traversal
+        // returns ALL target items because it follows the link schema.
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        Expression<Func<EvalSource, bool>> predicate = s => s.Value > 9999; // matches nothing
+        var filter = new FilterExpression(root, predicate);
+        var traverse = new TraverseLinkExpression(filter, "targets", typeof(EvalTarget));
+        var resolver = BuildTestResolver();
+
+        var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
+
+        // All target items returned despite source filter — schema-level traversal
+        await Assert.That(result).HasCount().EqualTo(2);
+    }
+
+    [Test]
+    public async Task Evaluate_TraverseLink_UnknownSourceDescriptor_Throws()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "NonexistentType");
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(EvalTarget));
+        var resolver = BuildTestResolver();
+
+        await Assert.That(() => evaluator.Evaluate<EvalTarget>(traverse, resolver))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+
+        await Assert.That(() => evaluator.Evaluate<EvalTarget>(traverse, resolver))
+            .ThrowsException()
+            .WithMessageContaining("not found in ontology graph");
+    }
+
     // -----------------------------------------------------------------------
-    // Task 10 tests — RawFilter, error handling, thread safety
+    // Task 10 tests — RawFilter, Similarity, error handling, thread safety
     // -----------------------------------------------------------------------
 
     [Test]
@@ -273,6 +309,23 @@ public class InMemoryExpressionEvaluatorTests
         await Assert.That(() => evaluator.Evaluate<EvalSource>(rawFilter, resolver))
             .ThrowsException()
             .WithMessageContaining("RawFilterExpression evaluation is not supported by InMemoryExpressionEvaluator");
+    }
+
+    [Test]
+    public async Task Evaluate_SimilarityExpression_ThrowsNotSupported()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var similarity = new SimilarityExpression(root, "test query", 5, 0.7);
+        var resolver = BuildTestResolver();
+
+        await Assert.That(() => evaluator.Evaluate<EvalSource>(similarity, resolver))
+            .ThrowsException()
+            .WithExceptionType(typeof(NotSupportedException));
+
+        await Assert.That(() => evaluator.Evaluate<EvalSource>(similarity, resolver))
+            .ThrowsException()
+            .WithMessageContaining("SimilarityExpression evaluation is not supported");
     }
 
     [Test]
