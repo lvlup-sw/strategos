@@ -9,4 +9,6 @@ namespace Strategos.Ontology.Builder;
 public interface ILinkBuilder
 {
     ILinkBuilder Inverse(string inverseLinkName);
+
+    ILinkBuilder Description(string description);
 }
