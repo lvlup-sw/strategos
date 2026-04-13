@@ -211,4 +211,46 @@ public class InMemoryExpressionEvaluatorTests
             .ThrowsException()
             .WithExceptionType(typeof(InvalidOperationException));
     }
+
+    // -----------------------------------------------------------------------
+    // Task 9 tests — InterfaceNarrowExpression
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Evaluate_InterfaceNarrow_FiltersToImplementors()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        // Seed both EvalSource (implements IEvalInterface) and EvalTarget (does not)
+        var sources = new List<EvalSource> { new() { Name = "S1", Value = 1 } };
+        var resolver = BuildTestResolver(sources: sources);
+
+        // Start from Root("EvalSource"), then narrow to IEvalInterface
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        var narrow = new InterfaceNarrowExpression(root, typeof(IEvalInterface));
+
+        var result = evaluator.Evaluate<IEvalInterface>(narrow, resolver);
+
+        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result[0]).IsTypeOf<EvalSource>();
+    }
+
+    [Test]
+    public async Task Evaluate_InterfaceNarrow_NoImplementors_ReturnsEmpty()
+    {
+        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        // EvalTarget does NOT implement IEvalInterface
+        var targets = new List<EvalTarget> { new() { Label = "T1" } };
+        Func<string, IReadOnlyList<object>> resolver = name => name switch
+        {
+            "EvalTarget" => targets.Cast<object>().ToList(),
+            _ => []
+        };
+
+        var root = new RootExpression(typeof(EvalTarget), "EvalTarget");
+        var narrow = new InterfaceNarrowExpression(root, typeof(IEvalInterface));
+
+        var result = evaluator.Evaluate<IEvalInterface>(narrow, resolver);
+
+        await Assert.That(result).HasCount().EqualTo(0);
+    }
 }

@@ -63,6 +63,7 @@ public sealed class InMemoryExpressionEvaluator
             FilterExpression filter => EvaluateFilter<T>(filter, itemResolver),
             IncludeExpression include => Evaluate<T>(include.Source, itemResolver),
             TraverseLinkExpression traverse => EvaluateTraverseLink<T>(traverse, itemResolver),
+            InterfaceNarrowExpression narrow => EvaluateInterfaceNarrow<T>(narrow, itemResolver),
             _ => throw new NotSupportedException(
                 $"Expression type '{expression.GetType().Name}' is not supported by InMemoryExpressionEvaluator.")
         };
@@ -115,6 +116,17 @@ public sealed class InMemoryExpressionEvaluator
 
         var targetItems = itemResolver(link.TargetTypeName);
         return targetItems.Cast<T>().ToList();
+    }
+
+    private List<T> EvaluateInterfaceNarrow<T>(
+        InterfaceNarrowExpression narrow,
+        Func<string, IReadOnlyList<object>> itemResolver) where T : class
+    {
+        var sourceItems = Evaluate<object>(narrow.Source, itemResolver);
+        return sourceItems
+            .Where(item => typeof(T).IsAssignableFrom(item.GetType()))
+            .Cast<T>()
+            .ToList();
     }
 
     private static string ResolveSourceDescriptorName(ObjectSetExpression expression) =>
