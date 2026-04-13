@@ -164,7 +164,8 @@ public sealed class OntologyGraphBuilder
                 TargetDomain: descriptor.TargetDomain,
                 TargetObjectType: targetObjectType,
                 Cardinality: descriptor.Cardinality,
-                EdgeProperties: descriptor.EdgeProperties));
+                EdgeProperties: descriptor.EdgeProperties,
+                Description: descriptor.Description));
         }
 
         return resolved;

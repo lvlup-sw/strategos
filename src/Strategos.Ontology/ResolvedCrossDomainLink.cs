@@ -9,4 +9,5 @@ public sealed record ResolvedCrossDomainLink(
     string TargetDomain,
     ObjectTypeDescriptor TargetObjectType,
     LinkCardinality Cardinality,
-    IReadOnlyList<PropertyDescriptor> EdgeProperties);
+    IReadOnlyList<PropertyDescriptor> EdgeProperties,
+    string? Description = null);

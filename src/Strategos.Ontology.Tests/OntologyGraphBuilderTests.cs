@@ -694,6 +694,23 @@ public class OntologyGraphBuilderTests
         await Assert.That(unknownWarnings.Count).IsGreaterThanOrEqualTo(1);
     }
 
+    // -----------------------------------------------------------------------
+    // Track A — CrossDomainLink.Description threading to ResolvedCrossDomainLink
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task CrossDomainLink_Description_ThreadedToResolved()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain(new CrossDomainDescriptionSourceOntology());
+        graphBuilder.AddDomain(new CrossDomainDescriptionTargetOntology());
+
+        var graph = graphBuilder.Build();
+
+        await Assert.That(graph.CrossDomainLinks).HasCount().EqualTo(1);
+        await Assert.That(graph.CrossDomainLinks[0].Description).IsEqualTo("Market data informs position pricing");
+    }
+
     [Test]
     public async Task GraphBuilder_WithMultiRegisteredTypeAsCrossDomainLinkTarget_ThrowsAONT041()
     {
@@ -724,5 +741,42 @@ public class OntologyGraphBuilderTests
         await Assert.That(() => graphBuilder.Build())
             .ThrowsException()
             .WithMessageContaining("#32");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Track A — cross-domain link description threading fixtures
+// ---------------------------------------------------------------------------
+
+public class CrossDomainDescriptionSourceOntology : DomainOntology
+{
+    public override string DomainName => "trading";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestPosition>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Symbol).Required();
+        });
+
+        builder.CrossDomainLink("market_data_informs")
+            .From<TestPosition>()
+            .ToExternal("market-data", "TestInstrument")
+            .Description("Market data informs position pricing");
+    }
+}
+
+public class CrossDomainDescriptionTargetOntology : DomainOntology
+{
+    public override string DomainName => "market-data";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestInstrument>(obj =>
+        {
+            obj.Key(i => i.Ticker);
+            obj.Property(i => i.Price).Required();
+        });
     }
 }
