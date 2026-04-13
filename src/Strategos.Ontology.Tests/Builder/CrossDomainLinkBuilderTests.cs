@@ -60,4 +60,28 @@ public class CrossDomainLinkBuilderTests
         await Assert.That(descriptor.EdgeProperties[0].Name).IsEqualTo("Relevance");
         await Assert.That(descriptor.EdgeProperties[1].Name).IsEqualTo("Rationale");
     }
+
+    [Test]
+    public async Task CrossDomainLinkBuilder_WithDescription_SetsDescription()
+    {
+        var builder = new CrossDomainLinkBuilder("KnowledgeInformsStrategy");
+
+        builder.From<TestAtomicNote>()
+            .ToExternal("trading", "Strategy")
+            .Description("Cross-domain knowledge-to-strategy link");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Description).IsEqualTo("Cross-domain knowledge-to-strategy link");
+    }
+
+    [Test]
+    public async Task CrossDomainLinkDescriptor_Description_DefaultsToNull()
+    {
+        var builder = new CrossDomainLinkBuilder("KnowledgeInformsStrategy");
+
+        builder.From<TestAtomicNote>().ToExternal("trading", "Strategy");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.Description).IsNull();
+    }
 }
