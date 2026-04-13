@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
@@ -237,8 +238,140 @@ public class InMemoryObjectSetProviderTests
         await Assert.That(result.Items).HasCount().EqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Default");
     }
+
+    // ── Task 11: Graph-aware constructors + delegation ────────────────────
+
+    [Test]
+    public async Task ExecuteAsync_WithGraph_TraverseLink_Works()
+    {
+        // Arrange — build a graph with ProvSource -> "targets" -> ProvTarget
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
+        provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
+
+        // Act
+        var result = await provider.ExecuteAsync<ProvTarget>(traverse);
+
+        // Assert
+        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items[0].Label).IsEqualTo("T1");
+        await Assert.That(result.Items[1].Label).IsEqualTo("T2");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithGraph_InterfaceNarrow_Works()
+    {
+        // Arrange
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvSource("S2", 20), "source 2");
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var narrow = new InterfaceNarrowExpression(root, typeof(IProvInterface));
+
+        // Act
+        var result = await provider.ExecuteAsync<IProvInterface>(narrow);
+
+        // Assert — ProvSource implements IProvInterface
+        await Assert.That(result.Items).HasCount().EqualTo(2);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithoutGraph_LegacyBehavior()
+    {
+        // Arrange — parameterless constructor, no graph
+        var provider = new InMemoryObjectSetProvider();
+        provider.Seed(new TestEntity("Alice"), "alice");
+        provider.Seed(new TestEntity("Bob"), "bob");
+
+        Expression<Func<TestEntity, bool>> predicate = e => e.Name == "Alice";
+        var root = new RootExpression(typeof(TestEntity), nameof(TestEntity));
+        var filter = new FilterExpression(root, predicate);
+
+        // Act
+        var result = await provider.ExecuteAsync<TestEntity>(filter);
+
+        // Assert — backward compat: filter still works without graph
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items[0].Name).IsEqualTo("Alice");
+    }
+
+    [Test]
+    public async Task StreamAsync_WithGraph_DelegatesToEvaluator()
+    {
+        // Arrange
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ProviderTestOntology>()
+            .Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
+        provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+
+        var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
+        var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
+
+        // Act
+        var items = new List<ProvTarget>();
+        await foreach (var item in provider.StreamAsync<ProvTarget>(traverse))
+        {
+            items.Add(item);
+        }
+
+        // Assert
+        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items[0].Label).IsEqualTo("T1");
+    }
 }
 
-// Test helpers
+// ── Test helpers ───────────────────────────────────────────────────────────
 public sealed record TestEntity(string Name);
 public sealed record OtherEntity(int Value);
+
+// ── Task 11 test domain types ──────────────────────────────────────────────
+public interface IProvInterface
+{
+    string Name { get; }
+}
+
+public sealed record ProvSource(string Name, int Value) : IProvInterface;
+public sealed record ProvTarget(string Label);
+
+public class ProviderTestOntology : DomainOntology
+{
+    public override string DomainName => "provider-test";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Interface<IProvInterface>("IProvInterface", iface =>
+        {
+            iface.Property(e => e.Name);
+        });
+
+        builder.Object<ProvSource>(obj =>
+        {
+            obj.Property(s => s.Name).Required();
+            obj.Property(s => s.Value);
+            obj.HasMany<ProvTarget>("targets");
+            obj.Implements<IProvInterface>(map => { });
+        });
+
+        builder.Object<ProvTarget>(obj =>
+        {
+            obj.Property(t => t.Label).Required();
+        });
+    }
+}

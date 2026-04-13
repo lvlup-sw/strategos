@@ -31,6 +31,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly ConcurrentDictionary<string, List<string>> _searchableContent = new();
     private readonly ConcurrentDictionary<string, List<float[]>> _embeddings = new();
     private readonly IEmbeddingProvider? _embeddingProvider;
+    private readonly InMemoryExpressionEvaluator? _evaluator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryObjectSetProvider"/> class.
@@ -49,6 +50,37 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// </param>
     public InMemoryObjectSetProvider(IEmbeddingProvider? embeddingProvider)
     {
+        _embeddingProvider = embeddingProvider;
+    }
+
+    /// <summary>
+    /// Initializes a new graph-aware instance of the <see cref="InMemoryObjectSetProvider"/> class.
+    /// Delegates expression evaluation to <see cref="InMemoryExpressionEvaluator"/>, gaining
+    /// TraverseLinkExpression and InterfaceNarrowExpression support.
+    /// </summary>
+    /// <param name="graph">
+    /// The frozen ontology graph used for link traversal and interface narrowing.
+    /// </param>
+    public InMemoryObjectSetProvider(OntologyGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        _evaluator = new InMemoryExpressionEvaluator(graph);
+    }
+
+    /// <summary>
+    /// Initializes a new graph-aware instance with an optional embedding provider.
+    /// </summary>
+    /// <param name="graph">
+    /// The frozen ontology graph used for link traversal and interface narrowing.
+    /// </param>
+    /// <param name="embeddingProvider">
+    /// When provided, <see cref="ExecuteSimilarityAsync{T}"/> will use real cosine similarity
+    /// against stored embeddings instead of keyword scoring.
+    /// </param>
+    public InMemoryObjectSetProvider(OntologyGraph graph, IEmbeddingProvider? embeddingProvider)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        _evaluator = new InMemoryExpressionEvaluator(graph);
         _embeddingProvider = embeddingProvider;
     }
 
@@ -130,9 +162,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
-        var items = GetSeededItems<T>(expression.RootObjectTypeName);
-        var filtered = ApplyExpression(items, expression);
-        var result = new ObjectSetResult<T>(filtered, filtered.Count, ObjectSetInclusion.Properties);
+
+        var items = _evaluator is not null
+            ? _evaluator.Evaluate<T>(expression, GetSeededItems)
+            : ApplyExpressionLegacy(GetSeededItems<T>(expression.RootObjectTypeName), expression);
+
+        var result = new ObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties);
         return Task.FromResult(result);
     }
 
@@ -142,10 +177,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         [EnumeratorCancellation] CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
-        var items = GetSeededItems<T>(expression.RootObjectTypeName);
-        var filtered = ApplyExpression(items, expression);
 
-        foreach (var item in filtered)
+        var items = _evaluator is not null
+            ? _evaluator.Evaluate<T>(expression, GetSeededItems)
+            : ApplyExpressionLegacy(GetSeededItems<T>(expression.RootObjectTypeName), expression);
+
+        foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
             yield return item;
@@ -175,7 +212,9 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         // Apply Source expression (filters, includes, etc.)
-        items = ApplyExpression(items, expression.Source);
+        items = _evaluator is not null
+            ? _evaluator.Evaluate<T>(expression.Source, GetSeededItems)
+            : ApplyExpressionLegacy(items, expression.Source);
 
         // When an embedding provider is available and non-placeholder embeddings exist, use cosine similarity
         if (_embeddingProvider is not null
@@ -279,6 +318,15 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return map;
     }
 
+    /// <summary>
+    /// Item resolver delegate for <see cref="InMemoryExpressionEvaluator"/>.
+    /// Returns raw (untyped) items from the internal partition by descriptor name.
+    /// </summary>
+    private IReadOnlyList<object> GetSeededItems(string descriptorName)
+    {
+        return _items.TryGetValue(descriptorName, out var items) ? items : [];
+    }
+
     private List<T> GetSeededItems<T>(string partitionKey) where T : class
     {
         if (!_items.TryGetValue(partitionKey, out var items))
@@ -299,12 +347,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return content;
     }
 
-    private static List<T> ApplyExpression<T>(List<T> items, ObjectSetExpression expression) where T : class
+    private static List<T> ApplyExpressionLegacy<T>(List<T> items, ObjectSetExpression expression) where T : class
     {
         if (expression is FilterExpression filter)
         {
             // Recursively apply the source expression first
-            var filtered = ApplyExpression(items, filter.Source);
+            var filtered = ApplyExpressionLegacy(items, filter.Source);
 
             var compiled = filter.Predicate.Compile();
             if (compiled is not Func<T, bool> func)
@@ -318,7 +366,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         if (expression is IncludeExpression include)
         {
-            return ApplyExpression(items, include.Source);
+            return ApplyExpressionLegacy(items, include.Source);
         }
 
         // RootExpression or other — return all items (base case)
