@@ -1,0 +1,20 @@
+{
+  "name": "@lvlup-sw/sdlc-contracts-spike",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeSpec spike: shared SDLC event contracts → JSON Schema → Zod + C# codegen",
+  "scripts": {
+    "compile": "tsp compile .",
+    "compile:json-schema": "tsp compile . --emit @typespec/json-schema",
+    "generate:zod": "node scripts/generate-zod.mjs",
+    "generate:all": "npm run compile:json-schema && npm run generate:zod",
+    "validate": "node scripts/validate.mjs"
+  },
+  "devDependencies": {
+    "@typespec/compiler": "^1.11.0",
+    "@typespec/json-schema": "^1.11.0",
+    "@typespec/events": "~0.81.0",
+    "json-schema-to-zod": "^2.6.0",
+    "zod": "^3.24.0"
+  }
+}

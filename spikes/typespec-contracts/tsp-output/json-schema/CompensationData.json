@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CompensationData.json",
+    "type": "object",
+    "properties": {
+        "featureId": {
+            "type": "string"
+        },
+        "actionId": {
+            "type": "string"
+        },
+        "status": {
+            "$ref": "CompensationStatus.json"
+        },
+        "message": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "featureId",
+        "actionId",
+        "status",
+        "message"
+    ],
+    "description": "Data payload for `workflow.compensation` events."
+}

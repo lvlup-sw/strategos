@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowType.json",
+    "type": "string",
+    "enum": [
+        "feature",
+        "debug",
+        "refactor",
+        "oneshot",
+        "hotfix",
+        "discovery"
+    ],
+    "description": "Workflow types supported by the SDLC pipeline."
+}

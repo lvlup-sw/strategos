@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FindingSeverity.json",
+    "type": "string",
+    "enum": [
+        "critical",
+        "major",
+        "minor",
+        "suggestion"
+    ],
+    "description": "Review finding severity levels."
+}

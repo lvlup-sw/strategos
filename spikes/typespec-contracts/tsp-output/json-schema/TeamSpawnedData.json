@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TeamSpawnedData.json",
+    "type": "object",
+    "properties": {
+        "teamSize": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "teammateNames": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "taskCount": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "dispatchMode": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "teamSize",
+        "teammateNames",
+        "taskCount",
+        "dispatchMode"
+    ],
+    "description": "Data payload for `team.spawned` events."
+}

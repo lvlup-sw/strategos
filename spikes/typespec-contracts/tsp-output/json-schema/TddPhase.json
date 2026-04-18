@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TddPhase.json",
+    "type": "string",
+    "enum": [
+        "red",
+        "green",
+        "refactor"
+    ],
+    "description": "TDD cycle phase for task progress tracking."
+}

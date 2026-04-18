@@ -1,0 +1,50 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskCompletedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "acceptanceTestRef": {
+            "type": "string"
+        },
+        "artifacts": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "duration": {
+            "type": "number"
+        },
+        "evidence": {
+            "$ref": "TestEvidence.json"
+        },
+        "verified": {
+            "type": "boolean"
+        },
+        "implements": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "tests": {
+            "type": "array",
+            "items": {
+                "$ref": "TestRef.json"
+            }
+        },
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": [
+        "taskId"
+    ],
+    "description": "Data payload for `task.completed` events."
+}

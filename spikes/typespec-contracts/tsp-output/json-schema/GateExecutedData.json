@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "GateExecutedData.json",
+    "type": "object",
+    "properties": {
+        "gateName": {
+            "type": "string"
+        },
+        "layer": {
+            "type": "string"
+        },
+        "passed": {
+            "type": "boolean"
+        },
+        "duration": {
+            "type": "number"
+        },
+        "details": {
+            "$ref": "RecordUnknown.json"
+        }
+    },
+    "required": [
+        "gateName",
+        "layer",
+        "passed"
+    ],
+    "description": "Data payload for `gate.executed` events."
+}

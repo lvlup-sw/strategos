@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskProgressedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "tddPhase": {
+            "$ref": "TddPhase.json"
+        },
+        "detail": {
+            "type": "string",
+            "maxLength": 500
+        }
+    },
+    "required": [
+        "taskId",
+        "tddPhase"
+    ],
+    "description": "Data payload for `task.progressed` events."
+}

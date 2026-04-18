@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskFailedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "error": {
+            "type": "string",
+            "maxLength": 500
+        },
+        "diagnostics": {
+            "$ref": "RecordUnknown.json"
+        }
+    },
+    "required": [
+        "taskId",
+        "error"
+    ],
+    "description": "Data payload for `task.failed` events."
+}

@@ -1,0 +1,68 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "SdlcEventEnvelope.json",
+    "type": "object",
+    "properties": {
+        "streamId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Stream identifier for event routing (typically the feature/workflow ID)."
+        },
+        "sequence": {
+            "type": "string",
+            "minimum": 1,
+            "description": "Monotonically increasing sequence number within the stream."
+        },
+        "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC timestamp when the event occurred."
+        },
+        "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Event type discriminator (dot-separated, lowercase)."
+        },
+        "correlationId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Correlation ID linking related events across workflows."
+        },
+        "causationId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Causation ID for event chain tracking."
+        },
+        "agentId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Agent identifier that produced this event."
+        },
+        "agentRole": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Agent role (e.g., \"orchestrator\", \"coder\", \"reviewer\")."
+        },
+        "source": {
+            "$ref": "EventSource.json",
+            "description": "Source system that emitted this event."
+        },
+        "schemaVersion": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Schema version for forward compatibility."
+        },
+        "data": {
+            "$ref": "RecordUnknown.json",
+            "description": "Event-specific data payload."
+        }
+    },
+    "required": [
+        "streamId",
+        "sequence",
+        "timestamp",
+        "type"
+    ],
+    "description": "Base envelope for all SDLC workflow events.\n\nBoth Exarchos (JSONL files) and Basileus (Marten streams)\nuse this envelope. The `type` field discriminates the `data` payload."
+}

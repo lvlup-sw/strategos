@@ -1,0 +1,21 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TeammateInfo.json",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "role": {
+            "type": "string"
+        },
+        "llmModel": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "name",
+        "role"
+    ],
+    "description": "Information about a teammate in an SDLC workflow team."
+}

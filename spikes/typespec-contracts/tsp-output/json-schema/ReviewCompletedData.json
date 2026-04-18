@@ -1,0 +1,41 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ReviewCompletedData.json",
+    "type": "object",
+    "properties": {
+        "stage": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "spec-review"
+                },
+                {
+                    "type": "string",
+                    "const": "quality-review"
+                },
+                {
+                    "type": "string",
+                    "const": "security-review"
+                }
+            ]
+        },
+        "verdict": {
+            "$ref": "ReviewVerdict.json"
+        },
+        "findingsCount": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "summary": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "stage",
+        "verdict",
+        "findingsCount",
+        "summary"
+    ],
+    "description": "Data payload for `review.completed` events."
+}

@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ShepherdIterationData.json",
+    "type": "object",
+    "properties": {
+        "iteration": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "prsAssessed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "fixesApplied": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "status": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "iteration",
+        "prsAssessed",
+        "fixesApplied",
+        "status"
+    ],
+    "description": "Data payload for `shepherd.iteration` events."
+}

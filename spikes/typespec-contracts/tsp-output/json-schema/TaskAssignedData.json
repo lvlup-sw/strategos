@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskAssignedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "title": {
+            "type": "string"
+        },
+        "branch": {
+            "type": "string"
+        },
+        "worktree": {
+            "type": "string"
+        },
+        "assignee": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "taskId",
+        "title"
+    ],
+    "description": "Data payload for `task.assigned` events."
+}

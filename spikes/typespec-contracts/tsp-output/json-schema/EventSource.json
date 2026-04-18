@@ -1,0 +1,10 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "EventSource.json",
+    "type": "string",
+    "enum": [
+        "exarchos",
+        "basileus"
+    ],
+    "description": "Source system that emitted the event."
+}

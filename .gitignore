@@ -71,3 +71,4 @@ docs/workflow-state/
 # Claude Code
 .claude/
 ~/.claude/
+.serena/

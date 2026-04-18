@@ -1,0 +1,52 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ReviewFindingData.json",
+    "type": "object",
+    "properties": {
+        "pr": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "source": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "coderabbit"
+                },
+                {
+                    "type": "string",
+                    "const": "self-hosted"
+                }
+            ]
+        },
+        "severity": {
+            "$ref": "FindingSeverity.json"
+        },
+        "filePath": {
+            "type": "string"
+        },
+        "lineRange": {
+            "type": "array",
+            "items": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+            }
+        },
+        "message": {
+            "type": "string"
+        },
+        "rule": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "pr",
+        "source",
+        "severity",
+        "filePath",
+        "message"
+    ],
+    "description": "Data payload for `review.finding` events."
+}

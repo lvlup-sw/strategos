@@ -1,0 +1,37 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TeamTaskCompletedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "teammateName": {
+            "type": "string"
+        },
+        "durationMs": {
+            "type": "number"
+        },
+        "filesChanged": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "testsPassed": {
+            "type": "boolean"
+        },
+        "qualityGateResults": {
+            "$ref": "RecordUnknown.json"
+        }
+    },
+    "required": [
+        "taskId",
+        "teammateName",
+        "durationMs",
+        "filesChanged",
+        "testsPassed",
+        "qualityGateResults"
+    ],
+    "description": "Data payload for `team.task.completed` events."
+}

@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TestEvidence.json",
+    "type": "object",
+    "properties": {
+        "type": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "test"
+                },
+                {
+                    "type": "string",
+                    "const": "build"
+                },
+                {
+                    "type": "string",
+                    "const": "typecheck"
+                },
+                {
+                    "type": "string",
+                    "const": "manual"
+                }
+            ]
+        },
+        "output": {
+            "type": "string"
+        },
+        "passed": {
+            "type": "boolean"
+        }
+    },
+    "required": [
+        "type",
+        "output",
+        "passed"
+    ],
+    "description": "Test evidence attached to task completion."
+}

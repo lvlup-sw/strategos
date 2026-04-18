@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowCancelData.json",
+    "type": "object",
+    "properties": {
+        "from": {
+            "type": "string"
+        },
+        "to": {
+            "type": "string"
+        },
+        "trigger": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "reason": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "from",
+        "to",
+        "trigger",
+        "featureId"
+    ],
+    "description": "Data payload for `workflow.cancel` events."
+}
