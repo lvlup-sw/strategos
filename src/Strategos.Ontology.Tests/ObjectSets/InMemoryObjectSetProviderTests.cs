@@ -20,7 +20,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteAsync<TestEntity>(expression);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
         await Assert.That(result.TotalCount).IsEqualTo(2);
         await Assert.That(result.Inclusion).IsEqualTo(ObjectSetInclusion.Properties);
     }
@@ -58,7 +58,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
 
         // Assert — "Match" has 4/4 = 1.0 score, "NoMatch" has 0/4 = 0.0 score
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Match");
     }
 
@@ -79,7 +79,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(0);
+        await Assert.That(result.Items).Count().IsEqualTo(0);
         await Assert.That(result.TotalCount).IsEqualTo(0);
     }
 
@@ -110,7 +110,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(expression);
 
         // Assert — all 3/3 terms should match case-insensitively
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Scores[0]).IsEqualTo(1.0);
     }
 
@@ -132,7 +132,7 @@ public class InMemoryObjectSetProviderTests
         }
 
         // Assert
-        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -152,7 +152,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteAsync<TestEntity>(filter);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Alice");
     }
 
@@ -189,8 +189,8 @@ public class InMemoryObjectSetProviderTests
         var otherResult = await provider.ExecuteAsync<OtherEntity>(otherExpression);
 
         // Assert
-        await Assert.That(entityResult.Items).HasCount().EqualTo(1);
-        await Assert.That(otherResult.Items).HasCount().EqualTo(1);
+        await Assert.That(entityResult.Items).Count().IsEqualTo(1);
+        await Assert.That(otherResult.Items).Count().IsEqualTo(1);
         await Assert.That(entityResult.Items[0].Name).IsEqualTo("Entity1");
         await Assert.That(otherResult.Items[0].Value).IsEqualTo(42);
     }
@@ -212,13 +212,13 @@ public class InMemoryObjectSetProviderTests
 
         // The item was seeded under "trading_documents" and must NOT be
         // visible from the "knowledge_documents" partition.
-        await Assert.That(wrongResult.Items).HasCount().EqualTo(0);
+        await Assert.That(wrongResult.Items).Count().IsEqualTo(0);
 
         // Querying the correct partition finds it.
         var rightPartition = new RootExpression(typeof(TestEntity), "trading_documents");
         var rightResult = await provider.ExecuteAsync<TestEntity>(rightPartition);
 
-        await Assert.That(rightResult.Items).HasCount().EqualTo(1);
+        await Assert.That(rightResult.Items).Count().IsEqualTo(1);
         await Assert.That(rightResult.Items[0].Name).IsEqualTo("TradingOnly");
     }
 
@@ -235,7 +235,7 @@ public class InMemoryObjectSetProviderTests
         var expression = new RootExpression(typeof(TestEntity), nameof(TestEntity));
         var result = await provider.ExecuteAsync<TestEntity>(expression);
 
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Default");
     }
 
@@ -261,7 +261,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteAsync<ProvTarget>(traverse);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
         await Assert.That(result.Items[0].Label).IsEqualTo("T1");
         await Assert.That(result.Items[1].Label).IsEqualTo("T2");
     }
@@ -285,7 +285,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteAsync<IProvInterface>(narrow);
 
         // Assert — ProvSource implements IProvInterface
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -304,7 +304,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteAsync<TestEntity>(filter);
 
         // Assert — backward compat: filter still works without graph
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Alice");
     }
 
@@ -332,7 +332,7 @@ public class InMemoryObjectSetProviderTests
         }
 
         // Assert
-        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items).Count().IsEqualTo(2);
         await Assert.That(items[0].Label).IsEqualTo("T1");
     }
 
@@ -370,7 +370,7 @@ public class InMemoryObjectSetProviderTests
 
         // Beta must NOT be in results (filtered out by Value > 5)
         var betaItems = result.Items.Where(i => i.Name == "Beta").ToList();
-        await Assert.That(betaItems).HasCount().EqualTo(0);
+        await Assert.That(betaItems).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -388,7 +388,7 @@ public class InMemoryObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<TestEntity>(similarity);
 
         // Assert — "Match" should score 1.0 (all 3 terms match), "NoMatch" 0.0
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("Match");
     }
 }

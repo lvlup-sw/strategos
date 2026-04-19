@@ -37,7 +37,7 @@ public class IEmbeddingProviderTests
 
         // Assert
         await Assert.That(result).IsNotNull();
-        await Assert.That(result).HasCount().EqualTo(128);
+        await Assert.That(result).Count().IsEqualTo(128);
         await Assert.That(result).IsTypeOf<float[]>();
     }
 
@@ -53,8 +53,8 @@ public class IEmbeddingProviderTests
 
         // Assert
         await Assert.That(result).IsNotNull();
-        await Assert.That(result).HasCount().EqualTo(3);
-        await Assert.That(result[0]).HasCount().EqualTo(64);
+        await Assert.That(result).Count().IsEqualTo(3);
+        await Assert.That(result[0]).Count().IsEqualTo(64);
     }
 
     [Test]

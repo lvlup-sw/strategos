@@ -107,7 +107,7 @@ public class HandlerContextTests
 
         // Assert
         await Assert.That(context.LoopsAtStep).IsNotNull();
-        await Assert.That(context.LoopsAtStep).HasCount(1);
+        await Assert.That(context.LoopsAtStep).Count().IsEqualTo(1);
     }
 
     /// <summary>

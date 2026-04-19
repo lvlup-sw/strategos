@@ -32,7 +32,7 @@ public class ObjectSetMaterializationTests
         var result = await set.ExecuteAsync();
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
         await _provider.Received(1).ExecuteAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>());
     }
 
@@ -59,7 +59,7 @@ public class ObjectSetMaterializationTests
         }
 
         // Assert
-        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items).Count().IsEqualTo(2);
         _provider.Received(1).StreamAsync<string>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>());
     }
 

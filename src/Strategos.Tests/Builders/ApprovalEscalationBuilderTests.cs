@@ -69,7 +69,7 @@ public class ApprovalEscalationBuilderTests
         builder.Then<NotifyAdminStep>();
 
         // Assert
-        await Assert.That(builder.Steps).HasCount().EqualTo(1);
+        await Assert.That(builder.Steps).Count().IsEqualTo(1);
         await Assert.That(builder.Steps[0].StepType).IsEqualTo(typeof(NotifyAdminStep));
     }
 
@@ -89,7 +89,7 @@ public class ApprovalEscalationBuilderTests
 
         // Assert
         await Assert.That(result).IsNotNull();
-        await Assert.That(builder.Steps).HasCount().EqualTo(2);
+        await Assert.That(builder.Steps).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -146,7 +146,7 @@ public class ApprovalEscalationBuilderTests
             approval.WithContext("Escalated for supervisor review"));
 
         // Assert
-        await Assert.That(builder.NestedApprovals).HasCount().EqualTo(1);
+        await Assert.That(builder.NestedApprovals).Count().IsEqualTo(1);
         await Assert.That(builder.NestedApprovals[0].ApproverType).IsEqualTo(typeof(SupervisorApprover));
     }
 
@@ -167,7 +167,7 @@ public class ApprovalEscalationBuilderTests
                 approval.WithContext("For manager"));
 
         // Assert
-        await Assert.That(builder.NestedApprovals).HasCount().EqualTo(2);
+        await Assert.That(builder.NestedApprovals).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -253,7 +253,7 @@ public class ApprovalEscalationBuilderTests
         var definition = builder.Build();
 
         // Assert
-        await Assert.That(definition.Steps).HasCount().EqualTo(1);
+        await Assert.That(definition.Steps).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -271,7 +271,7 @@ public class ApprovalEscalationBuilderTests
         var definition = builder.Build();
 
         // Assert
-        await Assert.That(definition.NestedApprovals).HasCount().EqualTo(1);
+        await Assert.That(definition.NestedApprovals).Count().IsEqualTo(1);
     }
 
     /// <summary>

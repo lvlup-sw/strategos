@@ -89,9 +89,9 @@ public class OntologyGraphBuilderInterfaceValidationTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(1);
-        await Assert.That(graph.Interfaces).HasCount().EqualTo(1);
-        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).HasCount().EqualTo(1);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(1);
+        await Assert.That(graph.Interfaces).Count().IsEqualTo(1);
+        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).Count().IsEqualTo(1);
         await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces[0].Name).IsEqualTo("IIdentifiable");
     }
 
@@ -117,7 +117,7 @@ public class OntologyGraphBuilderInterfaceValidationTests
         var graph = graphBuilder.Build();
 
         await Assert.That(graph.WorkflowChains).IsNotNull();
-        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+        await Assert.That(graph.WorkflowChains).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -131,6 +131,6 @@ public class OntologyGraphBuilderInterfaceValidationTests
         var graph = graphBuilder.Build();
 
         await Assert.That(graph).IsNotNull();
-        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+        await Assert.That(graph.WorkflowChains).Count().IsEqualTo(0);
     }
 }

@@ -69,8 +69,8 @@ public class LoopBuilderTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.Loops).HasCount().EqualTo(1);
-        await Assert.That(workflow.Loops[0].BodySteps).HasCount().EqualTo(1);
+        await Assert.That(workflow.Loops).Count().IsEqualTo(1);
+        await Assert.That(workflow.Loops[0].BodySteps).Count().IsEqualTo(1);
         await Assert.That(workflow.Loops[0].BodySteps[0].StepType).IsEqualTo(typeof(CritiqueStep));
     }
 
@@ -94,7 +94,7 @@ public class LoopBuilderTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.Loops[0].BodySteps).HasCount().EqualTo(2);
+        await Assert.That(workflow.Loops[0].BodySteps).Count().IsEqualTo(2);
     }
 
     /// <summary>

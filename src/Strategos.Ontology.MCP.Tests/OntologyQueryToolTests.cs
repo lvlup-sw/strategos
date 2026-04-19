@@ -37,7 +37,7 @@ public class OntologyQueryToolTests
 
         // Assert
         await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -58,7 +58,7 @@ public class OntologyQueryToolTests
         // Assert
         await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
         await Assert.That(result.Filter).IsEqualTo("Symbol == 'AAPL'");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class OntologyQueryToolTests
 
         // Assert
         await Assert.That(result.TraverseLink).IsEqualTo("Orders");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -98,7 +98,7 @@ public class OntologyQueryToolTests
 
         // Assert
         await Assert.That(result.InterfaceName).IsEqualTo("Searchable");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -118,7 +118,7 @@ public class OntologyQueryToolTests
 
         // Assert
         await Assert.That(result.Include).IsEqualTo("Full");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -235,7 +235,7 @@ public class OntologyQueryToolTests
             domain: "trading");
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].EventType).IsEqualTo("TradeExecuted");
     }
 
@@ -284,7 +284,7 @@ public class OntologyQueryToolTests
         // Assert
         await Assert.That(result).IsTypeOf<SemanticQueryResult>();
         var semanticResult = (SemanticQueryResult)result;
-        await Assert.That(semanticResult.Scores).HasCount().EqualTo(1);
+        await Assert.That(semanticResult.Scores).Count().IsEqualTo(1);
         await Assert.That(semanticResult.Scores[0]).IsEqualTo(0.92);
         await Assert.That(semanticResult.SemanticQuery).IsEqualTo("high-value tech stocks");
     }
@@ -333,7 +333,7 @@ public class OntologyQueryToolTests
         // Assert — without semanticQuery, should return plain QueryResult, not SemanticQueryResult
         await Assert.That(result).IsTypeOf<QueryResult>();
         await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
     }
 
     [Test]

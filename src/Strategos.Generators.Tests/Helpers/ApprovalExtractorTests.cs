@@ -58,7 +58,7 @@ public class CompleteStep : IWorkflowStep<TestState> { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 
     /// <summary>
@@ -94,7 +94,7 @@ public class ManagerApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -132,7 +132,7 @@ public class DirectorApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).Count().IsEqualTo(2);
     }
 
     // =============================================================================
@@ -372,10 +372,10 @@ public class ManagerApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].HasRejection).IsTrue();
         await Assert.That(result[0].RejectionSteps).IsNotNull();
-        await Assert.That(result[0].RejectionSteps!).HasCount().EqualTo(1);
+        await Assert.That(result[0].RejectionSteps!).Count().IsEqualTo(1);
         await Assert.That(result[0].RejectionSteps![0].StepName).IsEqualTo("LogRejectionStep");
     }
 
@@ -415,7 +415,7 @@ public class ManagerApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result[0].RejectionSteps!).HasCount().EqualTo(2);
+        await Assert.That(result[0].RejectionSteps!).Count().IsEqualTo(2);
         await Assert.That(result[0].RejectionSteps![0].StepName).IsEqualTo("LogRejectionStep");
         await Assert.That(result[0].RejectionSteps![1].StepName).IsEqualTo("NotifyRequesterStep");
     }
@@ -532,10 +532,10 @@ public class ManagerApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].HasEscalation).IsTrue();
         await Assert.That(result[0].EscalationSteps).IsNotNull();
-        await Assert.That(result[0].EscalationSteps!).HasCount().EqualTo(1);
+        await Assert.That(result[0].EscalationSteps!).Count().IsEqualTo(1);
         await Assert.That(result[0].EscalationSteps![0].StepName).IsEqualTo("NotifyEscalationStep");
     }
 
@@ -572,10 +572,10 @@ public class DirectorApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].HasEscalation).IsTrue();
         await Assert.That(result[0].NestedEscalationApprovals).IsNotNull();
-        await Assert.That(result[0].NestedEscalationApprovals!).HasCount().EqualTo(1);
+        await Assert.That(result[0].NestedEscalationApprovals!).Count().IsEqualTo(1);
         await Assert.That(result[0].NestedEscalationApprovals![0].ApproverTypeName).IsEqualTo("DirectorApprover");
     }
 
@@ -661,17 +661,17 @@ public class DirectorApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
 
         // Verify escalation
         await Assert.That(result[0].HasEscalation).IsTrue();
-        await Assert.That(result[0].EscalationSteps!).HasCount().EqualTo(1);
-        await Assert.That(result[0].NestedEscalationApprovals!).HasCount().EqualTo(1);
+        await Assert.That(result[0].EscalationSteps!).Count().IsEqualTo(1);
+        await Assert.That(result[0].NestedEscalationApprovals!).Count().IsEqualTo(1);
         await Assert.That(result[0].IsEscalationTerminal).IsFalse();
 
         // Verify rejection
         await Assert.That(result[0].HasRejection).IsTrue();
-        await Assert.That(result[0].RejectionSteps!).HasCount().EqualTo(1);
+        await Assert.That(result[0].RejectionSteps!).Count().IsEqualTo(1);
         await Assert.That(result[0].IsRejectionTerminal).IsTrue();
     }
 
@@ -713,10 +713,10 @@ public class DirectorApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result[0].EscalationSteps!).HasCount().EqualTo(2);
+        await Assert.That(result[0].EscalationSteps!).Count().IsEqualTo(2);
         await Assert.That(result[0].EscalationSteps![0].StepName).IsEqualTo("NotifyEscalationStep");
         await Assert.That(result[0].EscalationSteps![1].StepName).IsEqualTo("PrepareEscalationStep");
-        await Assert.That(result[0].NestedEscalationApprovals!).HasCount().EqualTo(1);
+        await Assert.That(result[0].NestedEscalationApprovals!).Count().IsEqualTo(1);
         await Assert.That(result[0].NestedEscalationApprovals![0].ApprovalPointName).IsEqualTo("Director");
     }
 
@@ -775,17 +775,17 @@ public class ManagerApprover { }
         var result = ApprovalExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].ApprovalPointName).IsEqualTo("Manager");
 
         // Verify rejection steps
         await Assert.That(result[0].HasRejection).IsTrue();
-        await Assert.That(result[0].RejectionSteps!).HasCount().EqualTo(1);
+        await Assert.That(result[0].RejectionSteps!).Count().IsEqualTo(1);
         await Assert.That(result[0].RejectionSteps![0].StepName).IsEqualTo("TerminateStep");
 
         // Verify escalation steps
         await Assert.That(result[0].HasEscalation).IsTrue();
-        await Assert.That(result[0].EscalationSteps!).HasCount().EqualTo(1);
+        await Assert.That(result[0].EscalationSteps!).Count().IsEqualTo(1);
         await Assert.That(result[0].EscalationSteps![0].StepName).IsEqualTo("AutoFailStep");
     }
 }

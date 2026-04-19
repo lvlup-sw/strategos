@@ -217,7 +217,7 @@ public class WorkflowBuilderTests
             .Finally<CompleteStep>();
 
         // Assert - 3 steps: Validate, Process, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(3);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(3);
     }
 
     /// <summary>
@@ -234,7 +234,7 @@ public class WorkflowBuilderTests
             .Finally<CompleteStep>();
 
         // Assert - 2 transitions: Validate->Process, Process->Complete
-        await Assert.That(workflow.Transitions).HasCount().EqualTo(2);
+        await Assert.That(workflow.Transitions).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -352,7 +352,7 @@ public class WorkflowBuilderTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.BranchPoints).HasCount().EqualTo(1);
+        await Assert.That(workflow.BranchPoints).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -375,7 +375,7 @@ public class WorkflowBuilderTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.BranchPoints[0].Paths).HasCount().EqualTo(2);
+        await Assert.That(workflow.BranchPoints[0].Paths).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -397,7 +397,7 @@ public class WorkflowBuilderTests
 
         // Assert
         var branchPath = workflow.BranchPoints[0].Paths[0];
-        await Assert.That(branchPath.Steps).HasCount().EqualTo(1);
+        await Assert.That(branchPath.Steps).Count().IsEqualTo(1);
         await Assert.That(branchPath.Steps[0].StepType).IsEqualTo(typeof(AutoProcessStep));
     }
 
@@ -421,7 +421,7 @@ public class WorkflowBuilderTests
             .Finally<CompleteStep>();
 
         // Assert - 4 steps: Validate, AutoProcess, ManualProcess, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(4);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(4);
     }
 
     /// <summary>
@@ -444,7 +444,7 @@ public class WorkflowBuilderTests
 
         // Assert - Branch should rejoin at NotifyStep
         // Steps: Validate, AutoProcess, Notify, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(4);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(4);
     }
 
     /// <summary>

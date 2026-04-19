@@ -154,7 +154,7 @@ public class ForkPathDefinitionTests
         var definition = ForkPathDefinition.Create(pathIndex: 0, steps: steps);
 
         // Assert
-        await Assert.That(definition.Steps).HasCount().EqualTo(2);
+        await Assert.That(definition.Steps).Count().IsEqualTo(2);
         await Assert.That(definition.Steps[0].StepType).IsEqualTo(typeof(ProcessStep));
         await Assert.That(definition.Steps[1].StepType).IsEqualTo(typeof(CompleteStep));
     }

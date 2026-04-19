@@ -12,8 +12,8 @@ public class ScoredObjectSetResultTests
             ["a", "b"], 2, ObjectSetInclusion.Properties, [0.9, 0.8]);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
-        await Assert.That(result.Scores).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
+        await Assert.That(result.Scores).Count().IsEqualTo(2);
         await Assert.That(result.TotalCount).IsEqualTo(2);
         await Assert.That(result.Inclusion).IsEqualTo(ObjectSetInclusion.Properties);
     }
@@ -50,7 +50,7 @@ public class ScoredObjectSetResultTests
             [], 0, ObjectSetInclusion.Properties, []);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(0);
-        await Assert.That(result.Scores).HasCount().EqualTo(0);
+        await Assert.That(result.Items).Count().IsEqualTo(0);
+        await Assert.That(result.Scores).Count().IsEqualTo(0);
     }
 }

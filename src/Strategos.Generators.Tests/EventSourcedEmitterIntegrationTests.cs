@@ -316,7 +316,7 @@ public class EventSourcedEmitterIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(source);
         var diagnostics = result.Diagnostics;
 
-        await Assert.That(diagnostics).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(diagnostics).Count().IsGreaterThanOrEqualTo(1);
         await Assert.That(diagnostics.Any(d => d.Id == "AGWF016")).IsTrue();
     }
 

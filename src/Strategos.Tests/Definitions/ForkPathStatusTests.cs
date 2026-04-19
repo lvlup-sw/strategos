@@ -83,6 +83,6 @@ public class ForkPathStatusTests
         var values = Enum.GetValues<ForkPathStatus>();
 
         // Assert
-        await Assert.That(values).HasCount().EqualTo(5);
+        await Assert.That(values).Count().IsEqualTo(5);
     }
 }

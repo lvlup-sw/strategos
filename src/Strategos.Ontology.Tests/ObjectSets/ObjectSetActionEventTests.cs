@@ -35,7 +35,7 @@ public class ObjectSetActionEventTests
         var results = await set.ApplyAsync("DoSomething", new { Value = 1 });
 
         // Assert
-        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].IsSuccess).IsTrue();
     }
 
@@ -79,7 +79,7 @@ public class ObjectSetActionEventTests
         }
 
         // Assert
-        await Assert.That(events).HasCount().EqualTo(1);
+        await Assert.That(events).Count().IsEqualTo(1);
         await Assert.That(events[0].EventType).IsEqualTo("Created");
     }
 

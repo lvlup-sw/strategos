@@ -174,9 +174,9 @@ public class LoopBuilderForkTests
             .Finally<TestFinalStep>();
 
         // Assert
-        await Assert.That(workflow.ForkPoints).HasCount().EqualTo(1);
-        await Assert.That(workflow.ForkPoints[0].Paths[0].Steps).HasCount().EqualTo(2);
-        await Assert.That(workflow.ForkPoints[0].Paths[1].Steps).HasCount().EqualTo(1);
+        await Assert.That(workflow.ForkPoints).Count().IsEqualTo(1);
+        await Assert.That(workflow.ForkPoints[0].Paths[0].Steps).Count().IsEqualTo(2);
+        await Assert.That(workflow.ForkPoints[0].Paths[1].Steps).Count().IsEqualTo(1);
     }
 
     // =============================================================================
@@ -237,11 +237,11 @@ public class LoopBuilderForkTests
             .Finally<TestFinalStep>();
 
         // Assert
-        await Assert.That(workflow.Loops).HasCount().EqualTo(1);
+        await Assert.That(workflow.Loops).Count().IsEqualTo(1);
         var bodySteps = workflow.Loops[0].BodySteps;
 
         // Should have: PreForkStep, ParallelStep1, ParallelStep2, JoinStep, PostJoinStep
-        await Assert.That(bodySteps).HasCount().EqualTo(5);
+        await Assert.That(bodySteps).Count().IsEqualTo(5);
         await Assert.That(bodySteps.Last().StepType).IsEqualTo(typeof(PostJoinStep));
     }
 
@@ -271,8 +271,8 @@ public class LoopBuilderForkTests
 
         // Assert
         await Assert.That(workflow.ForkPoints).IsNotNull();
-        await Assert.That(workflow.ForkPoints).HasCount().EqualTo(1);
-        await Assert.That(workflow.ForkPoints[0].Paths).HasCount().EqualTo(2);
+        await Assert.That(workflow.ForkPoints).Count().IsEqualTo(1);
+        await Assert.That(workflow.ForkPoints[0].Paths).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -384,7 +384,7 @@ public class LoopBuilderForkTests
             .Finally<TestFinalStep>();
 
         // Assert
-        await Assert.That(workflow.Loops[0].BodySteps).HasCount().EqualTo(4);
+        await Assert.That(workflow.Loops[0].BodySteps).Count().IsEqualTo(4);
         await Assert.That(workflow.Loops[0].BodySteps[0].StepType).IsEqualTo(typeof(PreForkStep));
     }
 
@@ -413,7 +413,7 @@ public class LoopBuilderForkTests
             .Finally<TestFinalStep>();
 
         // Assert
-        await Assert.That(workflow.ForkPoints).HasCount().EqualTo(2);
+        await Assert.That(workflow.ForkPoints).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -442,7 +442,7 @@ public class LoopBuilderForkTests
             .Finally<TestFinalStep>();
 
         // Assert
-        await Assert.That(workflow.ForkPoints).HasCount().EqualTo(2);
+        await Assert.That(workflow.ForkPoints).Count().IsEqualTo(2);
     }
 
     // =============================================================================

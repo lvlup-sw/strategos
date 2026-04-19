@@ -210,7 +210,7 @@ public class FailureHandlerDefinitionTests
             isTerminal: true);
 
         // Assert
-        await Assert.That(definition.Steps).HasCount().EqualTo(2);
+        await Assert.That(definition.Steps).Count().IsEqualTo(2);
         await Assert.That(definition.Steps[0].StepType).IsEqualTo(typeof(LogFailureStep));
         await Assert.That(definition.Steps[1].StepType).IsEqualTo(typeof(NotifyAdminStep));
     }

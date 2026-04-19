@@ -95,7 +95,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(expression, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).Count().IsEqualTo(2);
         await Assert.That(result[0].Name).IsEqualTo("A");
         await Assert.That(result[1].Name).IsEqualTo("B");
     }
@@ -111,7 +111,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(filter, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].Name).IsEqualTo("A");
     }
 
@@ -135,7 +135,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(filter2, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].Name).IsEqualTo("A");
     }
 
@@ -149,7 +149,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(include, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -161,7 +161,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(root, emptyResolver);
 
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 
     // -----------------------------------------------------------------------
@@ -178,7 +178,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).Count().IsEqualTo(2);
         await Assert.That(result[0].Label).IsEqualTo("X");
         await Assert.That(result[1].Label).IsEqualTo("Y");
     }
@@ -195,7 +195,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalTarget>(filter, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].Label).IsEqualTo("X");
     }
 
@@ -230,7 +230,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<IEvalInterface>(narrow, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0]).IsTypeOf<EvalSource>();
     }
 
@@ -251,7 +251,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<IEvalInterface>(narrow, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -270,7 +270,7 @@ public class InMemoryExpressionEvaluatorTests
         var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
 
         // All target items returned despite source filter — schema-level traversal
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -338,7 +338,7 @@ public class InMemoryExpressionEvaluatorTests
 
         var result = evaluator.Evaluate<EvalSource>(root, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -356,7 +356,7 @@ public class InMemoryExpressionEvaluatorTests
 
         foreach (var result in results)
         {
-            await Assert.That(result).HasCount().EqualTo(2);
+            await Assert.That(result).Count().IsEqualTo(2);
         }
     }
 }

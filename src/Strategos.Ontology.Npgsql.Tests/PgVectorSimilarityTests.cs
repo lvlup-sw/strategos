@@ -56,7 +56,7 @@ public class PgVectorSimilarityTests
             .Returns(Task.FromResult(new float[] { 0.1f, 0.2f, 0.3f }));
 
         var result = await embeddingProvider.EmbedAsync("search term");
-        await Assert.That(result).HasCount().EqualTo(3);
+        await Assert.That(result).Count().IsEqualTo(3);
         await embeddingProvider.Received(1).EmbedAsync("search term", Arg.Any<CancellationToken>());
     }
 

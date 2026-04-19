@@ -21,7 +21,7 @@ public class OntologyStubGeneratorTests
         var stubs = _generator.Generate();
 
         // Assert — should produce stubs for each object type
-        await Assert.That(stubs).HasCount().EqualTo(2); // TestPosition, TestOrder
+        await Assert.That(stubs).Count().IsEqualTo(2); // TestPosition, TestOrder
         await Assert.That(stubs[0]).Contains("class ");
         await Assert.That(stubs[0]).Contains("\"\"\"");
     }

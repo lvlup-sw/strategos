@@ -35,7 +35,7 @@ public class IContextAssemblerTests
 
         // Verify method parameters
         var parameters = assembleMethod!.GetParameters();
-        await Assert.That(parameters).HasCount(3);
+        await Assert.That(parameters).Count().IsEqualTo(3);
         await Assert.That(parameters[0].Name).IsEqualTo("state");
         await Assert.That(parameters[1].Name).IsEqualTo("stepContext");
         await Assert.That(parameters[1].ParameterType).IsEqualTo(typeof(StepContext));

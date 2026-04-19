@@ -94,7 +94,7 @@ public class OntologyActionToolResilienceTests
             filter: "Symbol == 'AAPL'");
 
         // Assert - should still return error result (not throw)
-        await Assert.That(result.Results).HasCount().EqualTo(1);
+        await Assert.That(result.Results).Count().IsEqualTo(1);
         await Assert.That(result.Results[0].IsSuccess).IsFalse();
         await Assert.That(result.Results[0].Error).Contains("Test exception");
 

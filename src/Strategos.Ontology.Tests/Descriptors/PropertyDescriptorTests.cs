@@ -22,7 +22,7 @@ public class PropertyDescriptorTests
         var descriptor = new PropertyDescriptor("Symbol", typeof(string));
 
         // Assert
-        await Assert.That(descriptor.IsRequired).IsEqualTo(false);
+        await Assert.That(descriptor.IsRequired).IsFalse();
     }
 
     [Test]
@@ -32,7 +32,7 @@ public class PropertyDescriptorTests
         var descriptor = new PropertyDescriptor("Symbol", typeof(string));
 
         // Assert
-        await Assert.That(descriptor.IsComputed).IsEqualTo(false);
+        await Assert.That(descriptor.IsComputed).IsFalse();
     }
 
     [Test]

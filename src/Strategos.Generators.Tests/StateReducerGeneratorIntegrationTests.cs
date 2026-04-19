@@ -28,7 +28,7 @@ public class StateReducerGeneratorIntegrationTests
         var result = GeneratorTestHelper.RunStateReducerGenerator(SourceTexts.StateWithStandardProperties);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>
@@ -54,7 +54,7 @@ public class StateReducerGeneratorIntegrationTests
         var result = GeneratorTestHelper.RunStateReducerGenerator(SourceTexts.StructWithWorkflowState);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>

@@ -61,6 +61,6 @@ public class EventQueryTests
 
         // Assert
         await Assert.That(query.EventTypes).IsNotNull();
-        await Assert.That(query.EventTypes!).HasCount().EqualTo(2);
+        await Assert.That(query.EventTypes!).Count().IsEqualTo(2);
     }
 }

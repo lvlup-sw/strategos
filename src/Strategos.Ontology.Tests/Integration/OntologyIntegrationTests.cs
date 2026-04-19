@@ -203,7 +203,7 @@ public class OntologyIntegrationTests
         var provider = services.BuildServiceProvider();
         var graph = provider.GetRequiredService<OntologyGraph>();
 
-        await Assert.That(graph.CrossDomainLinks).HasCount().EqualTo(1);
+        await Assert.That(graph.CrossDomainLinks).Count().IsEqualTo(1);
 
         var link = graph.CrossDomainLinks[0];
         await Assert.That(link.Name).IsEqualTo("PositionToArticle");
@@ -230,7 +230,7 @@ public class OntologyIntegrationTests
 
         var implementors = graph.GetImplementors("IHasSymbol");
 
-        await Assert.That(implementors).HasCount().EqualTo(2);
+        await Assert.That(implementors).Count().IsEqualTo(2);
 
         var names = implementors.Select(i => i.Name).OrderBy(n => n).ToList();
         await Assert.That(names[0]).IsEqualTo("Article");
@@ -263,12 +263,12 @@ public class OntologyIntegrationTests
         var result = await positionSet.ExecuteAsync();
 
         await Assert.That(result).IsNotNull();
-        await Assert.That(result.Items).HasCount().EqualTo(0);
+        await Assert.That(result.Items).Count().IsEqualTo(0);
 
         // Verify the graph has the Position type
         var positionType = graph.GetObjectType("trading", "Position");
         await Assert.That(positionType).IsNotNull();
-        await Assert.That(positionType!.Actions).HasCount().EqualTo(1);
+        await Assert.That(positionType!.Actions).Count().IsEqualTo(1);
         await Assert.That(positionType.Actions[0].Name).IsEqualTo("close-position");
     }
 

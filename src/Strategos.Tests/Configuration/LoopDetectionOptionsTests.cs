@@ -40,7 +40,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(LoopDetectionOptions.WindowSize));
     }
 
@@ -55,7 +55,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("WindowSize");
     }
 
@@ -70,7 +70,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("exceed 20");
     }
 
@@ -106,7 +106,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(LoopDetectionOptions.SimilarityThreshold));
     }
 
@@ -139,7 +139,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(LoopDetectionOptions.MaxResets));
     }
 
@@ -154,7 +154,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("MaxResets");
     }
 
@@ -169,7 +169,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(LoopDetectionOptions.MaxSpecialistRetries));
     }
 
@@ -184,7 +184,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("MaxSpecialistRetries");
     }
 
@@ -203,7 +203,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(LoopDetectionOptions.RecoveryThreshold));
     }
 
@@ -242,7 +242,7 @@ public sealed class LoopDetectionOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("sum to 1.0");
     }
 

@@ -84,9 +84,9 @@ public class AddOntologyTests
         var provider = services.BuildServiceProvider();
         var graph = provider.GetRequiredService<OntologyGraph>();
 
-        await Assert.That(graph.Domains).HasCount().EqualTo(1);
+        await Assert.That(graph.Domains).Count().IsEqualTo(1);
         await Assert.That(graph.Domains[0].DomainName).IsEqualTo("test-domain");
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(1);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -123,7 +123,7 @@ public class AddOntologyTests
         var provider = services.BuildServiceProvider();
         var graph = provider.GetRequiredService<OntologyGraph>();
 
-        await Assert.That(graph.Domains).HasCount().EqualTo(2);
+        await Assert.That(graph.Domains).Count().IsEqualTo(2);
     }
 
     [Test]

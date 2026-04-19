@@ -48,8 +48,8 @@ public class WorkflowAgentContextTests
         context.Messages.Add(new ChatMessage(ChatRole.User, "Hello"));
 
         // Assert
-        await Assert.That(context.Messages).HasCount(1);
-        await Assert.That(messages).HasCount(1); // Original list also updated
+        await Assert.That(context.Messages).Count().IsEqualTo(1);
+        await Assert.That(messages).Count().IsEqualTo(1); // Original list also updated
     }
 
     /// <summary>

@@ -160,7 +160,7 @@ public class ApprovalModelTests
             escalationSteps: escalationSteps);
 
         // Assert
-        await Assert.That(model.EscalationSteps).HasCount().EqualTo(1);
+        await Assert.That(model.EscalationSteps).Count().IsEqualTo(1);
         await Assert.That(model.EscalationSteps![0].StepName).IsEqualTo("NotifyAdmin");
     }
 
@@ -184,7 +184,7 @@ public class ApprovalModelTests
             rejectionSteps: rejectionSteps);
 
         // Assert
-        await Assert.That(model.RejectionSteps).HasCount().EqualTo(1);
+        await Assert.That(model.RejectionSteps).Count().IsEqualTo(1);
         await Assert.That(model.RejectionSteps![0].StepName).IsEqualTo("LogRejection");
     }
 
@@ -210,7 +210,7 @@ public class ApprovalModelTests
             nestedEscalationApprovals: nestedApprovals);
 
         // Assert
-        await Assert.That(model.NestedEscalationApprovals).HasCount().EqualTo(1);
+        await Assert.That(model.NestedEscalationApprovals).Count().IsEqualTo(1);
         await Assert.That(model.NestedEscalationApprovals![0].ApprovalPointName).IsEqualTo("DirectorReview");
     }
 

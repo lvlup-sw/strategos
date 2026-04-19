@@ -57,7 +57,7 @@ public class CompleteStep : IWorkflowStep<TestState> { }
         var result = FailureHandlerExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 
     /// <summary>
@@ -91,7 +91,7 @@ public class LogFailure : IWorkflowStep<TestState> { }
         var result = FailureHandlerExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].Scope).IsEqualTo(FailureHandlerScope.Workflow);
     }
 
@@ -130,7 +130,7 @@ public class NotifyAdmin : IWorkflowStep<TestState> { }
         var result = FailureHandlerExtractor.Extract(context);
 
         // Assert
-        await Assert.That(result[0].StepNames).HasCount().EqualTo(2);
+        await Assert.That(result[0].StepNames).Count().IsEqualTo(2);
         await Assert.That(result[0].StepNames[0]).IsEqualTo("LogFailure");
         await Assert.That(result[0].StepNames[1]).IsEqualTo("NotifyAdmin");
     }

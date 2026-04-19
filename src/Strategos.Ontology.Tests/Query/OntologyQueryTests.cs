@@ -995,7 +995,7 @@ public class OntologyQueryServiceGetObjectTypeNamesTests
         var names = query.GetObjectTypeNames<D3Foo>();
 
         await Assert.That(names).IsNotNull();
-        await Assert.That(names).HasCount().EqualTo(1);
+        await Assert.That(names).Count().IsEqualTo(1);
         await Assert.That(names[0]).IsEqualTo(nameof(D3Foo));
     }
 
@@ -1009,7 +1009,7 @@ public class OntologyQueryServiceGetObjectTypeNamesTests
 
         var names = query.GetObjectTypeNames<D3Foo>();
 
-        await Assert.That(names).HasCount().EqualTo(2);
+        await Assert.That(names).Count().IsEqualTo(2);
         await Assert.That(names[0]).IsEqualTo("a");
         await Assert.That(names[1]).IsEqualTo("b");
     }
@@ -1025,7 +1025,7 @@ public class OntologyQueryServiceGetObjectTypeNamesTests
         var names = query.GetObjectTypeNames<D3Bar>();
 
         await Assert.That(names).IsNotNull();
-        await Assert.That(names).HasCount().EqualTo(0);
+        await Assert.That(names).Count().IsEqualTo(0);
     }
 }
 

@@ -380,7 +380,7 @@ public sealed class InMemoryArtifactStoreTests
         // Assert
         await Assert.That(result.Id).IsEqualTo(42);
         await Assert.That(result.Name).IsEqualTo("Test Artifact");
-        await Assert.That(result.Tags).HasCount(3);
+        await Assert.That(result.Tags).Count().IsEqualTo(3);
         await Assert.That(result.Metadata).ContainsKey("key1");
         await Assert.That(result.Nested).IsNotNull();
         await Assert.That(result.Nested!.Level).IsEqualTo(1);

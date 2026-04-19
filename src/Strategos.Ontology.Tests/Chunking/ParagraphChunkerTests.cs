@@ -13,7 +13,7 @@ public class ParagraphChunkerTests
 
         var result = _sut.Chunk(text);
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].Content).IsEqualTo(text);
     }
 

@@ -74,7 +74,7 @@ public class WorkflowBuilderAwaitApprovalTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.ApprovalPoints).HasCount().EqualTo(1);
+        await Assert.That(workflow.ApprovalPoints).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -167,7 +167,7 @@ public class WorkflowBuilderAwaitApprovalTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.ApprovalPoints).HasCount().EqualTo(2);
+        await Assert.That(workflow.ApprovalPoints).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -255,7 +255,7 @@ public class WorkflowBuilderAwaitApprovalTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.ApprovalPoints[0].Configuration.Options).HasCount().EqualTo(2);
+        await Assert.That(workflow.ApprovalPoints[0].Configuration.Options).Count().IsEqualTo(2);
         await Assert.That(workflow.ApprovalPoints[0].Configuration.Options[0].OptionId).IsEqualTo("approve");
         await Assert.That(workflow.ApprovalPoints[0].Configuration.Options[1].OptionId).IsEqualTo("reject");
     }
@@ -299,7 +299,7 @@ public class WorkflowBuilderAwaitApprovalTests
 
         // Assert
         await Assert.That(workflow.ApprovalPoints[0].RejectionHandler).IsNotNull();
-        await Assert.That(workflow.ApprovalPoints[0].RejectionHandler!.Steps).HasCount().EqualTo(1);
+        await Assert.That(workflow.ApprovalPoints[0].RejectionHandler!.Steps).Count().IsEqualTo(1);
     }
 
     // =============================================================================
@@ -322,7 +322,7 @@ public class WorkflowBuilderAwaitApprovalTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.Steps).HasCount().EqualTo(3);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(3);
         await Assert.That(workflow.Steps[1].StepType).IsEqualTo(typeof(ProcessStep));
     }
 
@@ -348,6 +348,6 @@ public class WorkflowBuilderAwaitApprovalTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.BranchPoints).HasCount().EqualTo(1);
+        await Assert.That(workflow.BranchPoints).Count().IsEqualTo(1);
     }
 }

@@ -39,7 +39,7 @@ public class StepModelContextTests
 
         // Assert
         await Assert.That(model.Context).IsNotNull();
-        await Assert.That(model.Context!.Sources).HasCount(1);
+        await Assert.That(model.Context!.Sources).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -74,7 +74,7 @@ public class StepModelContextTests
         var context = new ContextModel(sources);
 
         // Assert
-        await Assert.That(context.Sources).HasCount(2);
+        await Assert.That(context.Sources).Count().IsEqualTo(2);
         await Assert.That(context.Sources[0]).IsTypeOf<LiteralContextSourceModel>();
         await Assert.That(context.Sources[1]).IsTypeOf<StateContextSourceModel>();
     }

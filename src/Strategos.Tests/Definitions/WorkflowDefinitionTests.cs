@@ -92,7 +92,7 @@ public class WorkflowDefinitionTests
         await Assert.That(original.Steps).IsEmpty();
 
         // Assert - Updated has the step
-        await Assert.That(updated.Steps).HasCount().EqualTo(1);
+        await Assert.That(updated.Steps).Count().IsEqualTo(1);
         await Assert.That(updated.Steps[0]).IsEqualTo(step);
     }
 
@@ -115,7 +115,7 @@ public class WorkflowDefinitionTests
             .WithStep(step3);
 
         // Assert
-        await Assert.That(result.Steps).HasCount().EqualTo(3);
+        await Assert.That(result.Steps).Count().IsEqualTo(3);
         await Assert.That(result.Steps[0]).IsEqualTo(step1);
         await Assert.That(result.Steps[1]).IsEqualTo(step2);
         await Assert.That(result.Steps[2]).IsEqualTo(step3);
@@ -265,7 +265,7 @@ public class WorkflowDefinitionTests
         var updated = definition.WithLoop(loop);
 
         // Assert
-        await Assert.That(updated.Loops).HasCount().EqualTo(1);
+        await Assert.That(updated.Loops).Count().IsEqualTo(1);
         await Assert.That(updated.Loops[0].LoopName).IsEqualTo("Refinement");
     }
 
@@ -285,7 +285,7 @@ public class WorkflowDefinitionTests
 
         // Assert
         await Assert.That(original.Loops).IsEmpty();
-        await Assert.That(updated.Loops).HasCount().EqualTo(1);
+        await Assert.That(updated.Loops).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -306,7 +306,7 @@ public class WorkflowDefinitionTests
             .WithLoop(loop2);
 
         // Assert
-        await Assert.That(updated.Loops).HasCount().EqualTo(2);
+        await Assert.That(updated.Loops).Count().IsEqualTo(2);
         await Assert.That(updated.Loops[0].LoopName).IsEqualTo("Refinement");
         await Assert.That(updated.Loops[1].LoopName).IsEqualTo("Validation");
     }
@@ -344,7 +344,7 @@ public class WorkflowDefinitionTests
         var updated = definition.WithLoops(loops);
 
         // Assert
-        await Assert.That(updated.Loops).HasCount().EqualTo(2);
+        await Assert.That(updated.Loops).Count().IsEqualTo(2);
     }
 
     /// <summary>

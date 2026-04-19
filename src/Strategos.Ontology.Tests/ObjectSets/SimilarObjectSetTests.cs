@@ -37,7 +37,7 @@ public class SimilarObjectSetTests
         var result = await similarSet.ExecuteAsync();
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
         await Assert.That(result.Scores[0]).IsEqualTo(0.9);
         await Assert.That(result.Scores[1]).IsEqualTo(0.8);
     }

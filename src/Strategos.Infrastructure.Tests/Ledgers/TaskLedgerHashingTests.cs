@@ -134,7 +134,7 @@ public sealed class TaskLedgerHashingTests
 
         // Assert - All hashes should be identical
         var firstHash = hashes[0];
-        await Assert.That(hashes).HasCount().EqualTo(10);
+        await Assert.That(hashes).Count().IsEqualTo(10);
         foreach (var hash in hashes)
         {
             await Assert.That(hash).IsEqualTo(firstHash);
@@ -166,7 +166,7 @@ public sealed class TaskLedgerHashingTests
         // Assert - Hash should be computed and valid
         await Assert.That(ledger.ContentHash).IsNotNull();
         await Assert.That(ledger.ContentHash.Length).IsEqualTo(64); // SHA-256 produces 64 hex characters
-        await Assert.That(ledger.Tasks).HasCount().EqualTo(1000);
+        await Assert.That(ledger.Tasks).Count().IsEqualTo(1000);
         await Assert.That(ledger.VerifyIntegrity()).IsTrue();
     }
 

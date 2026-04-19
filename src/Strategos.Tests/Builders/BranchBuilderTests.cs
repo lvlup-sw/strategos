@@ -70,7 +70,7 @@ public class BranchBuilderTests
 
         // Assert
         var branchPath = workflow.BranchPoints[0].Paths[0];
-        await Assert.That(branchPath.Steps).HasCount().EqualTo(1);
+        await Assert.That(branchPath.Steps).Count().IsEqualTo(1);
         await Assert.That(branchPath.Steps[0].StepType).IsEqualTo(typeof(AutoProcessStep));
     }
 
@@ -95,7 +95,7 @@ public class BranchBuilderTests
 
         // Assert
         var branchPath = workflow.BranchPoints[0].Paths[0];
-        await Assert.That(branchPath.Steps).HasCount().EqualTo(2);
+        await Assert.That(branchPath.Steps).Count().IsEqualTo(2);
     }
 
     /// <summary>

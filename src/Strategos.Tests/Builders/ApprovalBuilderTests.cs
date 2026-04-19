@@ -234,7 +234,7 @@ public class ApprovalBuilderTests
         var definition = builder.Build();
 
         // Assert
-        await Assert.That(definition.Configuration.Options).HasCount().EqualTo(1);
+        await Assert.That(definition.Configuration.Options).Count().IsEqualTo(1);
         await Assert.That(definition.Configuration.Options[0].OptionId).IsEqualTo("approve");
         await Assert.That(definition.Configuration.Options[0].Label).IsEqualTo("Approve");
         await Assert.That(definition.Configuration.Options[0].Description).IsEqualTo("Approve the request");
@@ -256,7 +256,7 @@ public class ApprovalBuilderTests
         var definition = builder.Build();
 
         // Assert
-        await Assert.That(definition.Configuration.Options).HasCount().EqualTo(2);
+        await Assert.That(definition.Configuration.Options).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -534,7 +534,7 @@ public class ApprovalBuilderTests
         await Assert.That(definition.ApproverType).IsEqualTo(typeof(TestApprover));
         await Assert.That(definition.Configuration.StaticContext).IsEqualTo("Review request");
         await Assert.That(definition.Configuration.Timeout).IsEqualTo(TimeSpan.FromHours(4));
-        await Assert.That(definition.Configuration.Options).HasCount().EqualTo(2);
+        await Assert.That(definition.Configuration.Options).Count().IsEqualTo(2);
         await Assert.That(definition.Configuration.StaticMetadata.ContainsKey("category")).IsTrue();
         await Assert.That(definition.EscalationHandler).IsNotNull();
         await Assert.That(definition.RejectionHandler).IsNotNull();

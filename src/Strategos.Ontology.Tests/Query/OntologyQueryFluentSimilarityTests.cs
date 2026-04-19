@@ -190,7 +190,7 @@ public class OntologyQueryFluentSimilarityTests
 
         // Assert — only items seeded under trading_documents are returned.
         var tradingContent = tradingResults.Items.Select(d => d.Content).ToList();
-        await Assert.That(tradingResults.Items).HasCount().EqualTo(2);
+        await Assert.That(tradingResults.Items).Count().IsEqualTo(2);
         await Assert.That(tradingContent).Contains("market data for AAPL");
         await Assert.That(tradingContent).Contains("bond yields");
         await Assert.That(tradingContent).DoesNotContain("how authentication works");
@@ -208,7 +208,7 @@ public class OntologyQueryFluentSimilarityTests
 
         // Assert — only items seeded under knowledge_documents are returned.
         var knowledgeContent = knowledgeResults.Items.Select(d => d.Content).ToList();
-        await Assert.That(knowledgeResults.Items).HasCount().EqualTo(2);
+        await Assert.That(knowledgeResults.Items).Count().IsEqualTo(2);
         await Assert.That(knowledgeContent).Contains("how authentication works");
         await Assert.That(knowledgeContent).Contains("kubernetes pod lifecycle");
         await Assert.That(knowledgeContent).DoesNotContain("market data for AAPL");
@@ -217,7 +217,7 @@ public class OntologyQueryFluentSimilarityTests
         // Assert — the public reverse-index API surfaces both registrations
         // in registration order (Track D3).
         var allNames = query.GetObjectTypeNames<SemanticDocument>();
-        await Assert.That(allNames).HasCount().EqualTo(2);
+        await Assert.That(allNames).Count().IsEqualTo(2);
         await Assert.That(allNames).Contains("trading_documents");
         await Assert.That(allNames).Contains("knowledge_documents");
     }
@@ -255,12 +255,12 @@ public class OntologyQueryFluentSimilarityTests
             .GetObjectSet<SemanticDocument>("knowledge_documents")
             .ExecuteAsync();
 
-        await Assert.That(tradingResult.Items).HasCount().EqualTo(2);
+        await Assert.That(tradingResult.Items).Count().IsEqualTo(2);
         await Assert.That(tradingResult.Items.Select(d => d.Id)).Contains("t-1");
         await Assert.That(tradingResult.Items.Select(d => d.Id)).Contains("t-2");
         await Assert.That(tradingResult.Items.Select(d => d.Id)).DoesNotContain("k-1");
 
-        await Assert.That(knowledgeResult.Items).HasCount().EqualTo(1);
+        await Assert.That(knowledgeResult.Items).Count().IsEqualTo(1);
         await Assert.That(knowledgeResult.Items.Select(d => d.Id)).Contains("k-1");
     }
 
@@ -317,9 +317,9 @@ public class OntologyQueryFluentSimilarityTests
             .GetObjectSet<SemanticDocument>("knowledge_documents")
             .ExecuteAsync();
 
-        await Assert.That(tradingResult.Items).HasCount().EqualTo(2);
+        await Assert.That(tradingResult.Items).Count().IsEqualTo(2);
         await Assert.That(tradingResult.Items.Select(d => d.Content)).Contains("AAPL spot price");
         await Assert.That(tradingResult.Items.Select(d => d.Content)).Contains("bond yield curve");
-        await Assert.That(knowledgeResult.Items).HasCount().EqualTo(0);
+        await Assert.That(knowledgeResult.Items).Count().IsEqualTo(0);
     }
 }

@@ -103,7 +103,7 @@ public class StateModelTests
         // Assert
         await Assert.That(model.TypeName).IsEqualTo("OrderState");
         await Assert.That(model.Namespace).IsEqualTo("TestNamespace");
-        await Assert.That(model.Properties).HasCount().EqualTo(1);
+        await Assert.That(model.Properties).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -137,7 +137,7 @@ public class StateModelTests
         var model = new StateModel("OrderState", "TestNamespace", properties);
 
         // Assert
-        await Assert.That(model.Properties).HasCount().EqualTo(3);
+        await Assert.That(model.Properties).Count().IsEqualTo(3);
         await Assert.That(model.Properties[0].Name).IsEqualTo("Status");
         await Assert.That(model.Properties[1].Kind).IsEqualTo(StatePropertyKind.Append);
         await Assert.That(model.Properties[2].Kind).IsEqualTo(StatePropertyKind.Merge);

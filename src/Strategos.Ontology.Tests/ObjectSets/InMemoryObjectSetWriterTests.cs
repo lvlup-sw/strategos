@@ -25,7 +25,7 @@ public class InMemoryObjectSetWriterTests
         var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("hello");
     }
 
@@ -43,7 +43,7 @@ public class InMemoryObjectSetWriterTests
         var result = await provider.ExecuteAsync<WriterTestEntity>(new RootExpression(typeof(WriterTestEntity), nameof(WriterTestEntity)));
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("test");
         await Assert.That(result.Items[0].Embedding).IsEqualTo(embedding);
     }
@@ -66,7 +66,7 @@ public class InMemoryObjectSetWriterTests
         var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(3);
+        await Assert.That(result.Items).Count().IsEqualTo(3);
     }
 
     [Test]
@@ -134,7 +134,7 @@ public class InMemoryObjectSetWriterTests
         var result = await provider.ExecuteAsync<SimpleEntity>(new RootExpression(typeof(SimpleEntity), nameof(SimpleEntity)));
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].Name).IsEqualTo("seeded");
     }
 }

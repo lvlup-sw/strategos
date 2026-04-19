@@ -7,7 +7,7 @@ public class DerivationSourceDescriptorTests
     [Test]
     public async Task DerivationSourceKind_HasExpectedValues()
     {
-        await Assert.That(Enum.GetValues<DerivationSourceKind>()).HasCount().EqualTo(2);
+        await Assert.That(Enum.GetValues<DerivationSourceKind>()).Count().IsEqualTo(2);
         await Assert.That(DerivationSourceKind.Local).IsEqualTo((DerivationSourceKind)0);
         await Assert.That(DerivationSourceKind.External).IsEqualTo((DerivationSourceKind)1);
     }

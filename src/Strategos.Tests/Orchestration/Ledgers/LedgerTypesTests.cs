@@ -142,7 +142,7 @@ public sealed class LedgerTypesTests
         await Assert.That(entry.Signal).IsEqualTo(signal);
         await Assert.That(entry.ExecutorState).IsEqualTo(ExecutorState.Signaling);
         await Assert.That(entry.Output).IsEqualTo("Task completed successfully");
-        await Assert.That(entry.Artifacts).HasCount(2);
+        await Assert.That(entry.Artifacts).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -394,7 +394,7 @@ public sealed class LedgerTypesTests
         // Assert
         await Assert.That(successData.Result).IsEqualTo("Completed successfully");
         await Assert.That(successData.Confidence).IsEqualTo(0.95);
-        await Assert.That(successData.Artifacts).HasCount(2);
+        await Assert.That(successData.Artifacts).Count().IsEqualTo(2);
         await Assert.That(successData.Artifacts).Contains("file1.txt");
     }
 

@@ -43,7 +43,7 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(0);
+        await Assert.That(stepContexts).Count().IsEqualTo(0);
     }
 
     /// <summary>
@@ -71,10 +71,10 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (stepName, contextModel) = stepContexts.First();
         await Assert.That(stepName).IsEqualTo("ValidateStep");
-        await Assert.That(contextModel.Sources).HasCount(1);
+        await Assert.That(contextModel.Sources).Count().IsEqualTo(1);
         await Assert.That(contextModel.Sources[0]).IsTypeOf<LiteralContextSourceModel>();
         var literal = (LiteralContextSourceModel)contextModel.Sources[0];
         await Assert.That(literal.Value).IsEqualTo("You are a helpful assistant.");
@@ -109,9 +109,9 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (stepName, contextModel) = stepContexts.First();
-        await Assert.That(contextModel.Sources).HasCount(1);
+        await Assert.That(contextModel.Sources).Count().IsEqualTo(1);
         await Assert.That(contextModel.Sources[0]).IsTypeOf<StateContextSourceModel>();
         var stateSource = (StateContextSourceModel)contextModel.Sources[0];
         await Assert.That(stateSource.PropertyPath).IsEqualTo("CustomerName");
@@ -143,7 +143,7 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (_, contextModel) = stepContexts.First();
         var stateSource = (StateContextSourceModel)contextModel.Sources[0];
         await Assert.That(stateSource.PropertyPath).IsEqualTo("Order.Summary");
@@ -179,9 +179,9 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (_, contextModel) = stepContexts.First();
-        await Assert.That(contextModel.Sources).HasCount(1);
+        await Assert.That(contextModel.Sources).Count().IsEqualTo(1);
         await Assert.That(contextModel.Sources[0]).IsTypeOf<RetrievalContextSourceModel>();
         var retrieval = (RetrievalContextSourceModel)contextModel.Sources[0];
         await Assert.That(retrieval.CollectionTypeName).IsEqualTo("ProductCatalog");
@@ -216,10 +216,10 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (_, contextModel) = stepContexts.First();
         var retrieval = (RetrievalContextSourceModel)contextModel.Sources[0];
-        await Assert.That(retrieval.Filters).HasCount(1);
+        await Assert.That(retrieval.Filters).Count().IsEqualTo(1);
         await Assert.That(retrieval.Filters[0].Key).IsEqualTo("category");
         await Assert.That(retrieval.Filters[0].IsStatic).IsTrue();
     }
@@ -250,7 +250,7 @@ public class ContextModelExtractorTests
         var stepContexts = ContextModelExtractor.Extract(context);
 
         // Assert
-        await Assert.That(stepContexts).HasCount(1);
+        await Assert.That(stepContexts).Count().IsEqualTo(1);
         var (_, contextModel) = stepContexts.First();
         var retrieval = (RetrievalContextSourceModel)contextModel.Sources[0];
         await Assert.That(retrieval.QueryExpression).IsNotNull();
