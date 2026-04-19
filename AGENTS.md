@@ -15,6 +15,10 @@ The library bridges agent frameworks and workflow engines by treating each agent
 - **Code Quality**: StyleCop Analyzers, .NET Analyzers
 - **Documentation**: VitePress (Node.js-based static site)
 
+## Build Requirements
+
+- **.NET SDK**: **10.0.202 or newer** (pinned in `global.json` with `rollForward: latestFeature`). Required because Roslyn 5.3 source generators produce `CS9057` under the .NET 10.0.1xx SDKs, which ship the C# compiler at 5.0.0.0. SDK 10.0.202 ships compiler 5.3.0, satisfying the analyzer floor. CI enforces this via `actions/setup-dotnet@v4` with `dotnet-version: '10.0.x'` (respects `global.json`).
+
 ## Key Dependencies
 
 - **Microsoft.Extensions.AI** - AI abstractions for LLM integration
