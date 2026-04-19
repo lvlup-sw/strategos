@@ -24,7 +24,7 @@
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
     <!-- PostgreSQL / pgvector -->
-    <PackageVersion Include="Npgsql" Version="9.0.3" />
+    <PackageVersion Include="Npgsql" Version="10.0.2" />
     <PackageVersion Include="Pgvector" Version="0.3.2" />
     <!-- Benchmark packages -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
