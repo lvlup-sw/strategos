@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Internal;
 
 namespace Strategos.Ontology;
 
@@ -15,6 +16,17 @@ public sealed class OntologyGraph
     public IReadOnlyList<ResolvedCrossDomainLink> CrossDomainLinks { get; }
     public IReadOnlyList<WorkflowChain> WorkflowChains { get; }
     public IReadOnlyList<string> Warnings { get; }
+
+    /// <summary>
+    /// SHA-256 of a stable serialization of the graph's structural fields,
+    /// returned as a 64-character lowercase hex string. Computed at construction;
+    /// identical DSL produces identical hash across processes and machines.
+    /// Surfaced in MCP responses as <c>_meta.ontologyVersion</c> so consumers
+    /// can invalidate cached schema views on mismatch.
+    ///
+    /// Design: docs/designs/2026-04-19-mcp-surface-conformance.md §4.1
+    /// </summary>
+    public string Version { get; }
 
     /// <summary>
     /// Reverse index from CLR type to the list of descriptor names it was registered
@@ -55,6 +67,8 @@ public sealed class OntologyGraph
         _objectTypeLookup = BuildObjectTypeLookup(objectTypes);
         _implementorsLookup = BuildImplementorsLookup(objectTypes);
         _workflowChainLookup = BuildWorkflowChainLookup(workflowChains);
+
+        Version = OntologyGraphHasher.ComputeVersion(this);
     }
 
     public ObjectTypeDescriptor? GetObjectType(string domain, string name) =>
