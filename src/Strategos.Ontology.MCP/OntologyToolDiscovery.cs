@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.MCP.Internal;
 
 namespace Strategos.Ontology.MCP;
 
