@@ -58,7 +58,7 @@ public sealed class OntologyQueryTool
 
         var result = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
 
-        return new QueryResult(objectType, result.Items)
+        return new QueryResult(objectType, result.Items, CurrentMeta())
         {
             Filter = filter,
             TraverseLink = traverseLink,
@@ -66,6 +66,8 @@ public sealed class OntologyQueryTool
             Include = include,
         };
     }
+
+    private ResponseMeta CurrentMeta() => ResponseMeta.ForGraph(_graph);
 
     /// <summary>
     /// Queries temporal events for an object type.
@@ -111,7 +113,7 @@ public sealed class OntologyQueryTool
             .ExecuteSimilarityAsync<object>(similarityExpression, ct)
             .ConfigureAwait(false);
 
-        return new SemanticQueryResult(objectType, result.Items)
+        return new SemanticQueryResult(objectType, result.Items, CurrentMeta())
         {
             Scores = result.Scores,
             SemanticQuery = semanticQuery,
