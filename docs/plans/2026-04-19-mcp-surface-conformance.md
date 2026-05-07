@@ -337,19 +337,22 @@ To filter to a single test/class: append `-- --treenode-filter "/*/*/ClassName/*
 
 ---
 
-### Task B9: `OntologyServerCapabilities` discovery method
+### Task B9: `OntologyServerCapabilitiesProvider`
 **Phase:** RED → GREEN → REFACTOR
 
 1. **[RED]** Write test: `GetServerCapabilities_ReturnsCurrentGraphVersion`
-   - File: `src/Strategos.Ontology.MCP.Tests/OntologyToolDiscoveryAnnotationTests.cs` (extend existing — added in B5)
-   - Build a graph, call `new OntologyToolDiscovery(graph).GetServerCapabilities()`, assert `result.OntologyVersion == graph.Version`
-   - Expected failure: `GetServerCapabilities` method doesn't exist
-
-2. **[GREEN]**
-   - File: `src/Strategos.Ontology.MCP/OntologyToolDiscovery.cs` — add `public OntologyServerCapabilities GetServerCapabilities() => new(_graph.Version);`
+   - File: `src/Strategos.Ontology.MCP.Tests/OntologyServerCapabilitiesProviderTests.cs` (new — see review-fix note below)
+   - Build a graph, call `new OntologyServerCapabilitiesProvider(graph).GetServerCapabilities()`, assert `result.OntologyVersion == graph.Version`
+   - Expected failure: `OntologyServerCapabilitiesProvider` type doesn't exist
+2. **[RED]** Write test: `OntologyServerCapabilitiesProvider_NullGraph_Throws`
+   - Same file. `await Assert.That(() => new OntologyServerCapabilitiesProvider(null!)).Throws<ArgumentNullException>()`.
+3. **[GREEN]**
+   - File: `src/Strategos.Ontology.MCP/OntologyServerCapabilitiesProvider.cs` (new) — `public sealed class OntologyServerCapabilitiesProvider` with `ArgumentNullException.ThrowIfNull(graph)` constructor and `GetServerCapabilities() => new(ResponseMeta.ForGraph(_graph).OntologyVersion)`.
    - File: `src/Strategos.Ontology.MCP/OntologyServerCapabilities.cs` (new) — `public sealed record OntologyServerCapabilities(string OntologyVersion);`
 
-3. **[REFACTOR]** None expected
+4. **[REFACTOR]** None expected
+
+**Review-fix note (M6, post-merge of initial PR #55 implementation):** Initial implementation placed `GetServerCapabilities()` on `OntologyToolDiscovery`. Review surfaced an SRP concern — discovery and server-capability exposure are different concerns sharing only `_graph`. Refactored into `OntologyServerCapabilitiesProvider`. The test moved from `OntologyToolDiscoveryAnnotationTests.cs` to `OntologyServerCapabilitiesProviderTests.cs`; a null-graph constructor test was added.
 
 **Dependencies:** A1, B5 (for file proximity)
 **Parallelizable:** Yes (small, isolated; can run alongside B6/B7/B8)
@@ -392,5 +395,5 @@ If we run Track B parallel-from-the-start, B1–B5 can land before A1 merges; B6
 - `OntologyToolDescriptor` constructed via the two-arg form has all-false `Annotations`, null `Title`, null `OutputSchema`
 - `OntologyToolDiscovery.Discover()` populates the annotation matrix per design §5 for the three currently-shipping tools
 - Every result type (`ExploreResult`, `QueryResult`, `SemanticQueryResult`, `ActionToolResult`) carries a non-null `Meta` with `OntologyVersion` matching the graph
-- `OntologyToolDiscovery.GetServerCapabilities()` returns the current graph version
+- `OntologyServerCapabilitiesProvider.GetServerCapabilities()` returns the current graph version (split out of `OntologyToolDiscovery` per M6 review fix)
 - No existing test in either project regresses (backward-compat verified)
