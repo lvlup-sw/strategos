@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Internal;
 
 namespace Strategos.Ontology.Tests;
 
@@ -596,6 +597,91 @@ public class OntologyGraphVersionTests
         var graph = BuildReferenceFixture();
 
         await Assert.That(graph.Version).IsEqualTo(ReferenceFixtureVersion);
+    }
+
+    // ------------------------------------------------------------------
+    // Permutation invariance — pins the canonicalization-via-sort guarantee
+    // across all four contribution surfaces: domain order, ObjectType order
+    // within a domain, CrossDomainLink order, and WorkflowChain order.
+    //
+    // CodeRabbit PR #49 nit: ensures shuffled registration order produces
+    // the same hash, which depends on the tie-breaker chain in
+    // OntologyGraphHasher being a *total* order over structural fields.
+    // Without complete tie-breakers, two equivalent collections can sort
+    // differently when their primary keys collide.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task Version_ShuffledRegistrationOrder_DoesNotChangeHash()
+    {
+        var graphA = BuildPermutationFixture(shuffled: false);
+        var graphB = BuildPermutationFixture(shuffled: true);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    private static OntologyGraph BuildPermutationFixture(bool shuffled)
+    {
+        // Two domains, each with two object types. Two cross-domain links share
+        // the same SourceDomain (forcing the tie-breaker on TargetDomain /
+        // TargetObjectType / Cardinality to be exercised). Two workflow chains
+        // share the same WorkflowName (forcing the tie-breaker on
+        // ConsumedType.ClrType.FullName / ProducedType.ClrType.FullName).
+        var alphaA = new ObjectTypeDescriptor("Alpha", typeof(int), "domA");
+        var betaA = new ObjectTypeDescriptor("Beta", typeof(long), "domA");
+        var gammaB = new ObjectTypeDescriptor("Gamma", typeof(string), "domB");
+        var deltaB = new ObjectTypeDescriptor("Delta", typeof(double), "domB");
+
+        var domA = new DomainDescriptor("domA")
+        {
+            ObjectTypes = shuffled ? [betaA, alphaA] : [alphaA, betaA],
+        };
+        var domB = new DomainDescriptor("domB")
+        {
+            ObjectTypes = shuffled ? [deltaB, gammaB] : [gammaB, deltaB],
+        };
+
+        // Two CDLs sharing SourceDomain = "domA" and SourceObjectType = alphaA.
+        // Their primary key (SourceDomain, SourceObjectType.Name, Name) DIFFERS
+        // by Name, but we deliberately also vary TargetDomain/TargetObjectType
+        // so the tie-breaker chain is the only thing that fully orders them
+        // when consumers register the same logical link with permutations.
+        var xdl1 = new ResolvedCrossDomainLink(
+            "linkOne", "domA", alphaA, "domB", gammaB, LinkCardinality.OneToOne, []);
+        var xdl2 = new ResolvedCrossDomainLink(
+            "linkTwo", "domA", alphaA, "domB", deltaB, LinkCardinality.OneToMany, []);
+
+        // Two workflow chains sharing WorkflowName = "Pipeline". Without the
+        // tie-breaker on ConsumedType / ProducedType, swapping their order
+        // would not be canonicalized.
+        var wf1 = new WorkflowChain("Pipeline", alphaA, gammaB);
+        var wf2 = new WorkflowChain("Pipeline", betaA, deltaB);
+
+        var domains = shuffled ? new[] { domB, domA } : new[] { domA, domB };
+        var objectTypes = shuffled
+            ? new[] { deltaB, gammaB, betaA, alphaA }
+            : new[] { alphaA, betaA, gammaB, deltaB };
+        var crossDomainLinks = shuffled ? new[] { xdl2, xdl1 } : new[] { xdl1, xdl2 };
+        var workflowChains = shuffled ? new[] { wf2, wf1 } : new[] { wf1, wf2 };
+
+        return new OntologyGraph(
+            domains,
+            objectTypes,
+            interfaces: [],
+            crossDomainLinks: crossDomainLinks,
+            workflowChains: workflowChains);
+    }
+
+    // ------------------------------------------------------------------
+    // ComputeVersion null-graph guard — defensive guard at the entry point.
+    // CodeRabbit PR #49 nit: ArgumentNullException.ThrowIfNull(graph).
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task ComputeVersion_NullGraph_Throws()
+    {
+        await Assert.That(() => OntologyGraphHasher.ComputeVersion(null!))
+            .Throws<ArgumentNullException>();
     }
 
     private static OntologyGraph BuildReferenceFixture()
