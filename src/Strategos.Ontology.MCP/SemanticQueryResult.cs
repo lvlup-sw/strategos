@@ -6,7 +6,8 @@ namespace Strategos.Ontology.MCP;
 /// </summary>
 public sealed record SemanticQueryResult(
     string ObjectType,
-    IReadOnlyList<object> Items) : QueryResult(ObjectType, Items)
+    IReadOnlyList<object> Items,
+    ResponseMeta Meta) : QueryResult(ObjectType, Items, Meta)
 {
     /// <summary>Relevance scores corresponding to each item in <see cref="QueryResult.Items"/>.</summary>
     public IReadOnlyList<double> Scores { get; init; } = [];

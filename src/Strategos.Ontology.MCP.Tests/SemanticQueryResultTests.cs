@@ -10,7 +10,7 @@ public class SemanticQueryResultTests
         var scores = new List<double> { 0.95 };
 
         // Act
-        var result = new SemanticQueryResult("TestDocument", items)
+        var result = new SemanticQueryResult("TestDocument", items, new ResponseMeta("sha256:test"))
         {
             Scores = scores,
             SemanticQuery = "find relevant documents",

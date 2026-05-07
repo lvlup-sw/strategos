@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
@@ -5,7 +7,8 @@ namespace Strategos.Ontology.MCP;
 /// </summary>
 public record QueryResult(
     string ObjectType,
-    IReadOnlyList<object> Items) : QueryResultUnion
+    IReadOnlyList<object> Items,
+    [property: JsonPropertyName("_meta")] ResponseMeta Meta) : QueryResultUnion
 {
     public string? Filter { get; init; }
     public string? TraverseLink { get; init; }
