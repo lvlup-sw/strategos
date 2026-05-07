@@ -19,6 +19,14 @@ public sealed class OntologyToolDiscovery
     }
 
     /// <summary>
+    /// Returns initialize-time capability metadata about the ontology layer.
+    /// MCP-server hosts surface this in their <c>initialize</c> response's
+    /// <c>capabilities._meta.ontologyVersion</c> field.
+    /// </summary>
+    public OntologyServerCapabilities GetServerCapabilities() =>
+        new(ResponseMeta.ForGraph(_graph).OntologyVersion);
+
+    /// <summary>
     /// Discovers the three ontology MCP tools, enriched with semantic metadata from the graph.
     /// </summary>
     [RequiresUnreferencedCode("OutputSchema generation reflects over result-record types; not safe under trimming.")]
