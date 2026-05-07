@@ -214,4 +214,63 @@ public class OntologyGraphVersionTests
 
         await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
     }
+
+    // ------------------------------------------------------------------
+    // A3: hasher must be sensitive to graph-level Interfaces,
+    // CrossDomainLinks, and WorkflowChains.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task Version_AddingInterface_ChangesHash()
+    {
+        var graphA = Graph(domains: [Domain("d")]);
+
+        var iface = new InterfaceDescriptor("ISearchable", typeof(IDisposable));
+        var graphB = Graph(domains: [Domain("d")], interfaces: [iface]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingCrossDomainLink_ChangesHash()
+    {
+        var src = ObjectType("Src", "a");
+        var tgt = ObjectType("Tgt", "b");
+        var graphA = Graph(
+            domains: [Domain("a", src), Domain("b", tgt)],
+            objectTypes: [src, tgt]);
+
+        var xdl = new ResolvedCrossDomainLink(
+            "Link",
+            "a",
+            src,
+            "b",
+            tgt,
+            LinkCardinality.OneToMany,
+            []);
+        var graphB = Graph(
+            domains: [Domain("a", src), Domain("b", tgt)],
+            objectTypes: [src, tgt],
+            crossDomainLinks: [xdl]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingWorkflowChain_ChangesHash()
+    {
+        var consumed = ObjectType("In", "d", clrType: typeof(int));
+        var produced = ObjectType("Out", "d", clrType: typeof(string));
+        var graphA = Graph(
+            domains: [Domain("d", consumed, produced)],
+            objectTypes: [consumed, produced]);
+
+        var chain = new WorkflowChain("WF", consumed, produced);
+        var graphB = Graph(
+            domains: [Domain("d", consumed, produced)],
+            objectTypes: [consumed, produced],
+            workflowChains: [chain]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
 }

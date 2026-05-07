@@ -29,6 +29,9 @@ internal static class OntologyGraphHasher
         {
             WriteStableHeader(writer, graph);
             WriteObjectTypes(writer, graph);
+            WriteInterfaces(writer, graph);
+            WriteCrossDomainLinks(writer, graph);
+            WriteWorkflowChains(writer, graph);
         }
 
         var hash = SHA256.HashData(ms.ToArray());
@@ -210,6 +213,65 @@ internal static class OntologyGraphHasher
             WriteString(writer, t.TriggerActionName ?? string.Empty);
             WriteString(writer, t.TriggerEventTypeName ?? string.Empty);
         }
+    }
+
+    private static void WriteInterfaces(BinaryWriter writer, OntologyGraph graph)
+    {
+        writer.Write("INTERFACES|");
+        foreach (var i in graph.Interfaces.OrderBy(i => i.Name, StringComparer.Ordinal))
+        {
+            writer.Write("I|");
+            WriteString(writer, i.Name);
+            writer.Write("|PROPS|");
+            foreach (var p in i.Properties.OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                WriteString(writer, p.Name);
+                WriteString(writer, p.Kind.ToString());
+                WriteString(writer, p.PropertyType.FullName ?? string.Empty);
+            }
+        }
+
+        writer.Write("|END_INTERFACES");
+    }
+
+    private static void WriteCrossDomainLinks(BinaryWriter writer, OntologyGraph graph)
+    {
+        writer.Write("XDL|");
+        foreach (var x in graph.CrossDomainLinks
+                              .OrderBy(x => x.SourceDomain, StringComparer.Ordinal)
+                              .ThenBy(x => x.SourceObjectType.Name, StringComparer.Ordinal)
+                              .ThenBy(x => x.Name, StringComparer.Ordinal))
+        {
+            writer.Write("X|");
+            WriteString(writer, x.SourceDomain);
+            WriteString(writer, x.SourceObjectType.Name);
+            WriteString(writer, x.Name);
+            WriteString(writer, x.TargetDomain);
+            WriteString(writer, x.TargetObjectType.Name);
+            WriteString(writer, x.Cardinality.ToString());
+            writer.Write("|EDGE|");
+            foreach (var ep in x.EdgeProperties.OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                WriteString(writer, ep.Name);
+                WriteString(writer, ep.Kind.ToString());
+            }
+        }
+
+        writer.Write("|END_XDL");
+    }
+
+    private static void WriteWorkflowChains(BinaryWriter writer, OntologyGraph graph)
+    {
+        writer.Write("WF|");
+        foreach (var w in graph.WorkflowChains.OrderBy(w => w.WorkflowName, StringComparer.Ordinal))
+        {
+            writer.Write("W|");
+            WriteString(writer, w.WorkflowName);
+            WriteString(writer, w.ConsumedType.ClrType.FullName ?? string.Empty);
+            WriteString(writer, w.ProducedType.ClrType.FullName ?? string.Empty);
+        }
+
+        writer.Write("|END_WF");
     }
 
     private static void WriteString(BinaryWriter writer, string s)
