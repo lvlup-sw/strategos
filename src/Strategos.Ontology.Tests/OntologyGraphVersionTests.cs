@@ -1,11 +1,63 @@
 using System.Text.RegularExpressions;
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests;
 
 public class OntologyGraphVersionTests
 {
     private static readonly Regex LowercaseHex64 = new("^[0-9a-f]{64}$", RegexOptions.Compiled);
+
+    // ------------------------------------------------------------------
+    // Helpers — construct OntologyGraph instances directly via the
+    // internal constructor so tests can isolate single structural deltas
+    // without going through the full DSL pipeline.
+    // ------------------------------------------------------------------
+
+    private static OntologyGraph Graph(
+        IReadOnlyList<DomainDescriptor>? domains = null,
+        IReadOnlyList<ObjectTypeDescriptor>? objectTypes = null,
+        IReadOnlyList<InterfaceDescriptor>? interfaces = null,
+        IReadOnlyList<ResolvedCrossDomainLink>? crossDomainLinks = null,
+        IReadOnlyList<WorkflowChain>? workflowChains = null,
+        IReadOnlyList<string>? warnings = null)
+    {
+        return new OntologyGraph(
+            domains ?? [],
+            objectTypes ?? [],
+            interfaces ?? [],
+            crossDomainLinks ?? [],
+            workflowChains ?? [],
+            objectTypeNamesByType: null,
+            warnings: warnings);
+    }
+
+    private static DomainDescriptor Domain(string name, params ObjectTypeDescriptor[] objectTypes) =>
+        new(name) { ObjectTypes = objectTypes };
+
+    private static ObjectTypeDescriptor ObjectType(
+        string name,
+        string domain,
+        Type? clrType = null,
+        PropertyDescriptor[]? properties = null,
+        ActionDescriptor[]? actions = null,
+        LinkDescriptor[]? links = null,
+        EventDescriptor[]? events = null,
+        InterfaceDescriptor[]? implementedInterfaces = null,
+        LifecycleDescriptor? lifecycle = null,
+        string? parentTypeName = null)
+    {
+        return new ObjectTypeDescriptor(name, clrType ?? typeof(object), domain)
+        {
+            Properties = properties ?? [],
+            Actions = actions ?? [],
+            Links = links ?? [],
+            Events = events ?? [],
+            ImplementedInterfaces = implementedInterfaces ?? [],
+            Lifecycle = lifecycle,
+            ParentTypeName = parentTypeName,
+        };
+    }
 
     [Test]
     public async Task Version_OnEmptyGraph_ReturnsLowercaseSha256Hex()
@@ -35,5 +87,131 @@ public class OntologyGraphVersionTests
         var graphB = new OntologyGraphBuilder().Build();
 
         await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    // ------------------------------------------------------------------
+    // A2: hasher must be sensitive to ObjectType structural changes.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task Version_AddingObjectType_ChangesHash()
+    {
+        var graphA = Graph(domains: [Domain("d")]);
+
+        var t = ObjectType("T", "d");
+        var graphB = Graph(domains: [Domain("d", t)], objectTypes: [t]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingProperty_ChangesHash()
+    {
+        var tA = ObjectType("T", "d");
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+
+        var tB = ObjectType("T", "d", properties:
+        [
+            new PropertyDescriptor("X", typeof(string)),
+        ]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_RenamingAction_ChangesHash()
+    {
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "desc"),
+        ]);
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoItRenamed", "desc"),
+        ]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingLink_ChangesHash()
+    {
+        var tA = ObjectType("T", "d");
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+
+        var tB = ObjectType("T", "d", links:
+        [
+            new LinkDescriptor("ToOther", "Other", LinkCardinality.OneToMany),
+        ]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingEvent_ChangesHash()
+    {
+        var tA = ObjectType("T", "d");
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+
+        var tB = ObjectType("T", "d", events:
+        [
+            new EventDescriptor(typeof(int), "evt"),
+        ]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_LifecycleStateAddition_ChangesHash()
+    {
+        var lcA = new LifecycleDescriptor
+        {
+            PropertyName = "Status",
+            StateEnumTypeName = "S",
+            States =
+            [
+                new LifecycleStateDescriptor { Name = "Open", IsInitial = true },
+            ],
+            Transitions = [],
+        };
+        var lcB = new LifecycleDescriptor
+        {
+            PropertyName = "Status",
+            StateEnumTypeName = "S",
+            States =
+            [
+                new LifecycleStateDescriptor { Name = "Open", IsInitial = true },
+                new LifecycleStateDescriptor { Name = "Closed", IsTerminal = true },
+            ],
+            Transitions = [],
+        };
+
+        var tA = ObjectType("T", "d", lifecycle: lcA);
+        var tB = ObjectType("T", "d", lifecycle: lcB);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ImplementedInterface_ChangesHash()
+    {
+        var iface = new InterfaceDescriptor("ISearchable", typeof(IDisposable));
+
+        var tA = ObjectType("T", "d");
+        var tB = ObjectType("T", "d", implementedInterfaces: [iface]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB], interfaces: [iface]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
     }
 }
