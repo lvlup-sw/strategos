@@ -6,10 +6,11 @@ namespace Strategos.Ontology.MCP.Tests.Internal;
 public class QueryResultUnionSchemaTests
 {
     [Test]
-    public async Task JsonSchemaFor_QueryResultUnion_EmitsOneOfWithResultKindDiscriminator()
+    public async Task JsonSchemaForUnion_QueryResultUnion_EmitsOneOfWithResultKindDiscriminator()
     {
-        // Act
-        var schema = JsonSchemaHelper.JsonSchemaFor<QueryResultUnion>();
+        // Act — use the union-aware overload (the plain JsonSchemaFor passthrough
+        // intentionally preserves anyOf and would fail this assertion).
+        var schema = JsonSchemaHelper.JsonSchemaForUnion<QueryResultUnion>();
         var raw = schema.GetRawText();
 
         // Parse to JSON and assert that oneOf is at the root and that

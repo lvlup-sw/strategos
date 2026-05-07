@@ -71,7 +71,9 @@ public sealed class OntologyToolDiscovery
             Title = "Query Ontology Objects",
             // QueryResultUnion's [JsonPolymorphic] attributes drive a oneOf schema
             // covering both QueryResult ("filter") and SemanticQueryResult ("semantic").
-            OutputSchema = JsonSchemaHelper.JsonSchemaFor<QueryResultUnion>(),
+            // JsonSchemaForUnion validates polymorphism and asserts the rewrite produced
+            // a top-level oneOf, so a JsonSchemaExporter output-shape regression fails loudly.
+            OutputSchema = JsonSchemaHelper.JsonSchemaForUnion<QueryResultUnion>(),
             Annotations = new ToolAnnotations(
                 ReadOnlyHint: true,
                 DestructiveHint: false,
