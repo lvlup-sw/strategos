@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
+
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.MCP.Internal;
 
 namespace Strategos.Ontology.MCP;
 
@@ -18,6 +21,8 @@ public sealed class OntologyToolDiscovery
     /// <summary>
     /// Discovers the three ontology MCP tools, enriched with semantic metadata from the graph.
     /// </summary>
+    [RequiresUnreferencedCode("OutputSchema generation reflects over result-record types; not safe under trimming.")]
+    [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
     public IReadOnlyList<OntologyToolDescriptor> Discover()
     {
         var domainNames = string.Join(", ", _graph.Domains.Select(d => d.DomainName));
@@ -26,20 +31,65 @@ public sealed class OntologyToolDiscovery
 
         return
         [
-            new OntologyToolDescriptor(
-                "ontology_explore",
-                BuildExploreDescription(domainNames, objectTypeCount)),
-            new OntologyToolDescriptor(
-                "ontology_query",
-                BuildQueryDescription(domainNames, objectTypeCount)),
-            new OntologyToolDescriptor(
-                "ontology_action",
-                BuildActionDescription(domainNames, objectTypeCount, constraintSummaries))
-            {
-                ConstraintSummaries = constraintSummaries,
-            },
+            BuildExploreDescriptor(domainNames, objectTypeCount),
+            BuildQueryDescriptor(domainNames, objectTypeCount),
+            BuildActionDescriptor(domainNames, objectTypeCount, constraintSummaries),
         ];
     }
+
+    [RequiresUnreferencedCode("OutputSchema generation reflects over ExploreResult.")]
+    [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
+    private static OntologyToolDescriptor BuildExploreDescriptor(string domainNames, int objectTypeCount) =>
+        new(
+            "ontology_explore",
+            BuildExploreDescription(domainNames, objectTypeCount))
+        {
+            Title = "Explore Ontology Schema",
+            OutputSchema = JsonSchemaHelper.JsonSchemaFor<ExploreResult>(),
+            Annotations = new ToolAnnotations(
+                ReadOnlyHint: true,
+                DestructiveHint: false,
+                IdempotentHint: true,
+                OpenWorldHint: false),
+        };
+
+    [RequiresUnreferencedCode("OutputSchema generation reflects over QueryResultUnion.")]
+    [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
+    private static OntologyToolDescriptor BuildQueryDescriptor(string domainNames, int objectTypeCount) =>
+        new(
+            "ontology_query",
+            BuildQueryDescription(domainNames, objectTypeCount))
+        {
+            Title = "Query Ontology Objects",
+            // QueryResultUnion's [JsonPolymorphic] attributes drive a oneOf schema
+            // covering both QueryResult ("filter") and SemanticQueryResult ("semantic").
+            OutputSchema = JsonSchemaHelper.JsonSchemaFor<QueryResultUnion>(),
+            Annotations = new ToolAnnotations(
+                ReadOnlyHint: true,
+                DestructiveHint: false,
+                IdempotentHint: true,
+                OpenWorldHint: false),
+        };
+
+    [RequiresUnreferencedCode("OutputSchema generation reflects over ActionToolResult.")]
+    [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
+    private static OntologyToolDescriptor BuildActionDescriptor(
+        string domainNames,
+        int objectTypeCount,
+        IReadOnlyList<ActionConstraintSummary> constraintSummaries) =>
+        new(
+            "ontology_action",
+            BuildActionDescription(domainNames, objectTypeCount, constraintSummaries))
+        {
+            Title = "Execute Ontology Action",
+            OutputSchema = JsonSchemaHelper.JsonSchemaFor<ActionToolResult>(),
+            Annotations = new ToolAnnotations(
+                ReadOnlyHint: false,
+                DestructiveHint: true,
+                IdempotentHint: false,
+                OpenWorldHint: false),
+            ConstraintSummaries = constraintSummaries,
+        };
 
     private IReadOnlyList<ActionConstraintSummary> BuildConstraintSummaries()
     {
