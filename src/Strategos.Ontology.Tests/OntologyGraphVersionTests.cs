@@ -333,4 +333,72 @@ public class OntologyGraphVersionTests
 
         await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
     }
+
+    // ------------------------------------------------------------------
+    // A5: reference fixture pins a known hash so any future drift in
+    // OntologyGraphHasher serialization shape (field order, framing,
+    // included fields) becomes a visible failure in CI.
+    // ------------------------------------------------------------------
+
+    // Pinned hash for the reference fixture. If this changes, the
+    // OntologyGraphHasher serialization shape has drifted — review the diff
+    // before updating.
+    private const string ReferenceFixtureVersion =
+        "9b3e82f07bd553bf5c71ccd222cc9f814082f677a1572c629d927e06d12698ca";
+
+    [Test]
+    public async Task Version_ReferenceFixture_MatchesPinnedConstant()
+    {
+        var graph = BuildReferenceFixture();
+
+        await Assert.That(graph.Version).IsEqualTo(ReferenceFixtureVersion);
+    }
+
+    private static OntologyGraph BuildReferenceFixture()
+    {
+        // Two domains, one ObjectType with a property + an action + a link,
+        // one cross-domain link, one workflow chain. Small enough that the
+        // pinned constant is easy to recompute by hand if needed; large
+        // enough to exercise every section of the hasher.
+        var orderType = new ObjectTypeDescriptor("Order", typeof(int), "trading")
+        {
+            Properties =
+            [
+                new PropertyDescriptor("Id", typeof(string), IsRequired: true),
+            ],
+            Actions =
+            [
+                new ActionDescriptor("Submit", "submit the order"),
+            ],
+            Links =
+            [
+                new LinkDescriptor("ForInstrument", "Instrument", LinkCardinality.OneToOne),
+            ],
+        };
+        var instrumentType = new ObjectTypeDescriptor("Instrument", typeof(string), "market-data");
+
+        var domains = new[]
+        {
+            new DomainDescriptor("trading") { ObjectTypes = [orderType] },
+            new DomainDescriptor("market-data") { ObjectTypes = [instrumentType] },
+        };
+
+        var xdl = new ResolvedCrossDomainLink(
+            "OrderToInstrument",
+            "trading",
+            orderType,
+            "market-data",
+            instrumentType,
+            LinkCardinality.OneToOne,
+            []);
+
+        var chain = new WorkflowChain("OrderFlow", orderType, instrumentType);
+
+        return new OntologyGraph(
+            domains,
+            [orderType, instrumentType],
+            interfaces: [],
+            crossDomainLinks: [xdl],
+            workflowChains: [chain]);
+    }
 }
