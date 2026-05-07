@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
@@ -5,4 +7,5 @@ namespace Strategos.Ontology.MCP;
 /// </summary>
 public sealed record ExploreResult(
     string Scope,
-    IReadOnlyList<Dictionary<string, object?>> Items);
+    IReadOnlyList<Dictionary<string, object?>> Items,
+    [property: JsonPropertyName("_meta")] ResponseMeta Meta);
