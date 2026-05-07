@@ -157,7 +157,7 @@ public class IngestionPipelineIntegrationTests
 
         // Verify graph was built with our domain
         var graph = provider.GetRequiredService<OntologyGraph>();
-        await Assert.That(graph.Domains).HasCount().EqualTo(1);
+        await Assert.That(graph.Domains).Count().IsEqualTo(1);
 
         var domain = graph.Domains[0];
         await Assert.That(domain.DomainName).IsEqualTo("documents");

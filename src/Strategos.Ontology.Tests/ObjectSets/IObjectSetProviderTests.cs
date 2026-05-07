@@ -18,7 +18,7 @@ public class IObjectSetProviderTests
         var result = await provider.ExecuteAsync<string>(expression, CancellationToken.None);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.TotalCount).IsEqualTo(1);
     }
 
@@ -47,7 +47,7 @@ public class IObjectSetProviderTests
         }
 
         // Assert
-        await Assert.That(items).HasCount().EqualTo(2);
+        await Assert.That(items).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -67,8 +67,8 @@ public class IObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<string>(similarity, CancellationToken.None);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(2);
-        await Assert.That(result.Scores).HasCount().EqualTo(2);
+        await Assert.That(result.Items).Count().IsEqualTo(2);
+        await Assert.That(result.Scores).Count().IsEqualTo(2);
         await Assert.That(result.TotalCount).IsEqualTo(2);
     }
 
@@ -89,7 +89,7 @@ public class IObjectSetProviderTests
         var result = await provider.ExecuteSimilarityAsync<string>(similarity, CancellationToken.None);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(0);
-        await Assert.That(result.Scores).HasCount().EqualTo(0);
+        await Assert.That(result.Items).Count().IsEqualTo(0);
+        await Assert.That(result.Scores).Count().IsEqualTo(0);
     }
 }

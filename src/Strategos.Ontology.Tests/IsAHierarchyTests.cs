@@ -196,7 +196,7 @@ public class IsAHierarchyTests
         var graph = graphBuilder.Build();
         var subtypes = graph.GetSubtypes("IsAFinancialTransaction");
 
-        await Assert.That(subtypes).HasCount().EqualTo(2);
+        await Assert.That(subtypes).Count().IsEqualTo(2);
         var names = subtypes.Select(s => s.Name).OrderBy(n => n).ToList();
         await Assert.That(names[0]).IsEqualTo("IsAPayment");
         await Assert.That(names[1]).IsEqualTo("IsARefund");
@@ -213,7 +213,7 @@ public class IsAHierarchyTests
         var types = query.GetObjectTypes(includeSubtypes: true);
 
         // Should return all 3 types
-        await Assert.That(types).HasCount().EqualTo(3);
+        await Assert.That(types).Count().IsEqualTo(3);
     }
 
     [Test]
@@ -227,7 +227,7 @@ public class IsAHierarchyTests
         var types = query.GetObjectTypes(includeSubtypes: false);
 
         // Should return all 3 types (no filtering without specific type filter)
-        await Assert.That(types).HasCount().EqualTo(3);
+        await Assert.That(types).Count().IsEqualTo(3);
     }
 
     [Test]

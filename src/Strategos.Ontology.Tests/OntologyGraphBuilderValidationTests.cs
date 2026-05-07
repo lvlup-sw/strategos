@@ -67,7 +67,7 @@ public class OntologyGraphBuilderValidationTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.CrossDomainLinks).HasCount().EqualTo(1);
+        await Assert.That(graph.CrossDomainLinks).Count().IsEqualTo(1);
         await Assert.That(graph.CrossDomainLinks[0].Name).IsEqualTo("PositionToInstrument");
         await Assert.That(graph.CrossDomainLinks[0].SourceDomain).IsEqualTo("trading");
         await Assert.That(graph.CrossDomainLinks[0].TargetDomain).IsEqualTo("market-data");

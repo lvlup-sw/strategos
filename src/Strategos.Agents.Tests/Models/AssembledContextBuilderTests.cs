@@ -30,7 +30,7 @@ public class AssembledContextBuilderTests
         var context = builder.Build();
 
         // Assert
-        await Assert.That(context.Segments).HasCount(1);
+        await Assert.That(context.Segments).Count().IsEqualTo(1);
         await Assert.That(context.Segments[0]).IsTypeOf<StateContextSegment>();
 
         var segment = (StateContextSegment)context.Segments[0];
@@ -61,12 +61,12 @@ public class AssembledContextBuilderTests
         var context = builder.Build();
 
         // Assert
-        await Assert.That(context.Segments).HasCount(1);
+        await Assert.That(context.Segments).Count().IsEqualTo(1);
         await Assert.That(context.Segments[0]).IsTypeOf<RetrievalContextSegment>();
 
         var segment = (RetrievalContextSegment)context.Segments[0];
         await Assert.That(segment.CollectionName).IsEqualTo("knowledge-base");
-        await Assert.That(segment.Results).HasCount(2);
+        await Assert.That(segment.Results).Count().IsEqualTo(2);
     }
 
     // =============================================================================
@@ -88,7 +88,7 @@ public class AssembledContextBuilderTests
         var context = builder.Build();
 
         // Assert
-        await Assert.That(context.Segments).HasCount(1);
+        await Assert.That(context.Segments).Count().IsEqualTo(1);
         await Assert.That(context.Segments[0]).IsTypeOf<LiteralContextSegment>();
 
         var segment = (LiteralContextSegment)context.Segments[0];
@@ -121,7 +121,7 @@ public class AssembledContextBuilderTests
         var context = builder.Build();
 
         // Assert
-        await Assert.That(context.Segments).HasCount(4);
+        await Assert.That(context.Segments).Count().IsEqualTo(4);
         await Assert.That(context.Segments[0]).IsTypeOf<LiteralContextSegment>();
         await Assert.That(context.Segments[1]).IsTypeOf<StateContextSegment>();
         await Assert.That(context.Segments[2]).IsTypeOf<RetrievalContextSegment>();
@@ -184,8 +184,8 @@ public class AssembledContextBuilderTests
         var context2 = builder.Build();
 
         // Assert
-        await Assert.That(context1.Segments).HasCount(1);
-        await Assert.That(context2.Segments).HasCount(1);
+        await Assert.That(context1.Segments).Count().IsEqualTo(1);
+        await Assert.That(context2.Segments).Count().IsEqualTo(1);
         await Assert.That(context1.ToPromptString()).IsEqualTo(context2.ToPromptString());
     }
 }

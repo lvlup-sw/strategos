@@ -372,7 +372,7 @@ public class OntologyGraphBuilderTests
         graphBuilder.AddDomain<TestTradingOntology>();
 
         var graph = graphBuilder.Build();
-        await Assert.That(graph.Domains).HasCount().EqualTo(1);
+        await Assert.That(graph.Domains).Count().IsEqualTo(1);
         await Assert.That(graph.Domains[0].DomainName).IsEqualTo("trading");
     }
 
@@ -385,7 +385,7 @@ public class OntologyGraphBuilderTests
         graphBuilder.AddDomain<TestMarketDataOntology>();
 
         var graph = graphBuilder.Build();
-        await Assert.That(graph.Domains).HasCount().EqualTo(2);
+        await Assert.That(graph.Domains).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -408,9 +408,9 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.Domains[0].ObjectTypes).HasCount().EqualTo(1);
+        await Assert.That(graph.Domains[0].ObjectTypes).Count().IsEqualTo(1);
         await Assert.That(graph.Domains[0].ObjectTypes[0].Name).IsEqualTo("TestPosition");
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(1);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(1);
         await Assert.That(graph.ObjectTypes[0].Name).IsEqualTo("TestPosition");
     }
 
@@ -454,8 +454,8 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.Domains).HasCount().EqualTo(2);
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
+        await Assert.That(graph.Domains).Count().IsEqualTo(2);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(2);
         await Assert.That(graph.ObjectTypes.Count(ot => ot.Name == "shared_name")).IsEqualTo(2);
     }
 
@@ -475,7 +475,7 @@ public class OntologyGraphBuilderTests
         await Assert.That(graph.ObjectTypeNamesByType.ContainsKey(typeof(TrackCFoo))).IsTrue();
 
         var names = graph.ObjectTypeNamesByType[typeof(TrackCFoo)];
-        await Assert.That(names).HasCount().EqualTo(1);
+        await Assert.That(names).Count().IsEqualTo(1);
         await Assert.That(names[0]).IsEqualTo(nameof(TrackCFoo));
     }
 
@@ -490,7 +490,7 @@ public class OntologyGraphBuilderTests
         await Assert.That(graph.ObjectTypeNamesByType.ContainsKey(typeof(TrackCFoo))).IsTrue();
 
         var names = graph.ObjectTypeNamesByType[typeof(TrackCFoo)];
-        await Assert.That(names).HasCount().EqualTo(2);
+        await Assert.That(names).Count().IsEqualTo(2);
         await Assert.That(names[0]).IsEqualTo("a");
         await Assert.That(names[1]).IsEqualTo("b");
     }
@@ -506,7 +506,7 @@ public class OntologyGraphBuilderTests
         IReadOnlyList<string> names = graph.ObjectTypeNamesByType
             .GetValueOrDefault(typeof(TrackCBar), Array.Empty<string>());
 
-        await Assert.That(names).HasCount().EqualTo(0);
+        await Assert.That(names).Count().IsEqualTo(0);
     }
 
     // -----------------------------------------------------------------------
@@ -579,9 +579,9 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(2);
         await Assert.That(graph.ObjectTypeNamesByType[typeof(TrackCSemanticDocument)])
-            .HasCount().EqualTo(2);
+            .Count().IsEqualTo(2);
     }
 
     // -----------------------------------------------------------------------
@@ -641,7 +641,7 @@ public class OntologyGraphBuilderTests
         var graph = graphBuilder.Build();
 
         // Chain must NOT be silently first-wins bound — it must be skipped entirely.
-        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+        await Assert.That(graph.WorkflowChains).Count().IsEqualTo(0);
 
         // A warning must name the workflow, the ambiguous type, and both domains.
         var ambiguityWarnings = graph.Warnings
@@ -666,11 +666,11 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(1);
+        await Assert.That(graph.WorkflowChains).Count().IsEqualTo(1);
         await Assert.That(graph.WorkflowChains[0].WorkflowName).IsEqualTo("unambiguous-workflow");
         await Assert.That(graph.WorkflowChains[0].ConsumedType.Name).IsEqualTo(nameof(AmbiguousFoo));
         await Assert.That(graph.WorkflowChains[0].ProducedType.Name).IsEqualTo(nameof(AmbiguousBar));
-        await Assert.That(graph.Warnings.Where(w => w.Contains("unambiguous-workflow"))).HasCount().EqualTo(0);
+        await Assert.That(graph.Warnings.Where(w => w.Contains("unambiguous-workflow"))).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -687,7 +687,7 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.WorkflowChains).HasCount().EqualTo(0);
+        await Assert.That(graph.WorkflowChains).Count().IsEqualTo(0);
         var unknownWarnings = graph.Warnings
             .Where(w => w.Contains("unknown-consumed-workflow") && w.Contains("unknown") && w.Contains("TrackCBar"))
             .ToList();
@@ -707,7 +707,7 @@ public class OntologyGraphBuilderTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.CrossDomainLinks).HasCount().EqualTo(1);
+        await Assert.That(graph.CrossDomainLinks).Count().IsEqualTo(1);
         await Assert.That(graph.CrossDomainLinks[0].Description).IsEqualTo("Market data informs position pricing");
     }
 

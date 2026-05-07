@@ -22,7 +22,7 @@ public class OntologyExploreToolTests
 
         // Assert
         await Assert.That(result.Scope).IsEqualTo("domains");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
 
         var domain = result.Items[0];
         await Assert.That(domain.ContainsKey("domainName")).IsTrue();
@@ -52,7 +52,7 @@ public class OntologyExploreToolTests
 
         // Assert
         await Assert.That(result.Scope).IsEqualTo("actions");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0]["name"]?.ToString()).IsEqualTo("execute_trade");
         await Assert.That(result.Items[0]["description"]?.ToString()).IsEqualTo("Execute a trade on the position");
     }
@@ -65,7 +65,7 @@ public class OntologyExploreToolTests
 
         // Assert
         await Assert.That(result.Scope).IsEqualTo("links");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0]["name"]?.ToString()).IsEqualTo("Orders");
         await Assert.That(result.Items[0]["targetTypeName"]?.ToString()).IsEqualTo("TestOrder");
     }
@@ -78,7 +78,7 @@ public class OntologyExploreToolTests
 
         // Assert
         await Assert.That(result.Scope).IsEqualTo("events");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0]["description"]?.ToString()).IsEqualTo("Trade was executed");
     }
 
@@ -112,13 +112,13 @@ public class OntologyExploreToolTests
 
         // Assert — should return only types with vector properties
         await Assert.That(result.Scope).IsEqualTo("vectorProperties");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0]["name"]?.ToString()).IsEqualTo("TestDocument");
         await Assert.That(result.Items[0]["domain"]?.ToString()).IsEqualTo("content");
 
         var vectorProps = result.Items[0]["vectorProperties"] as IReadOnlyList<Dictionary<string, object?>>;
         await Assert.That(vectorProps).IsNotNull();
-        await Assert.That(vectorProps!).HasCount().EqualTo(1);
+        await Assert.That(vectorProps!).Count().IsEqualTo(1);
         await Assert.That(vectorProps[0]["name"]?.ToString()).IsEqualTo("Embedding");
         await Assert.That(vectorProps[0]["dimensions"]).IsEqualTo(1536);
     }
@@ -130,7 +130,7 @@ public class OntologyExploreToolTests
         var result = _tool.Explore(scope: "links", domain: "trading", objectType: "TestPosition");
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
         await Assert.That(result.Items[0].ContainsKey("description")).IsTrue();
         await Assert.That(result.Items[0]["description"]?.ToString())
             .IsEqualTo("Orders placed against this position");
@@ -169,7 +169,7 @@ public class OntologyExploreToolTests
         var docType = result.Items.First(i => i["name"]?.ToString() == "TestDocument");
         var imgType = result.Items.First(i => i["name"]?.ToString() == "TestImage");
 
-        await Assert.That(docType["isSemanticSearchable"]).IsEqualTo(true);
-        await Assert.That(imgType["isSemanticSearchable"]).IsEqualTo(false);
+        await Assert.That((bool)docType["isSemanticSearchable"]!).IsTrue();
+        await Assert.That((bool)imgType["isSemanticSearchable"]!).IsFalse();
     }
 }

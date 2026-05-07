@@ -227,7 +227,7 @@ public class ForkPointDefinitionTests
             joinStepId: "join-step");
 
         // Assert
-        await Assert.That(definition.Paths).HasCount().EqualTo(3);
+        await Assert.That(definition.Paths).Count().IsEqualTo(3);
         await Assert.That(definition.Paths[0].PathIndex).IsEqualTo(0);
         await Assert.That(definition.Paths[1].PathIndex).IsEqualTo(1);
         await Assert.That(definition.Paths[2].PathIndex).IsEqualTo(2);

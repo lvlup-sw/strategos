@@ -183,7 +183,7 @@ public sealed class LoopDetectorSemanticAllocationTests
         await detector.DetectAsync(ledger).ConfigureAwait(false);
 
         // Assert
-        await Assert.That(capturedOutputs).HasCount(5);
+        await Assert.That(capturedOutputs).Count().IsEqualTo(5);
         await Assert.That(capturedOutputs).Contains("Output A");
         await Assert.That(capturedOutputs).Contains("Output B");
         await Assert.That(capturedOutputs).Contains("Output C");
@@ -221,7 +221,7 @@ public sealed class LoopDetectorSemanticAllocationTests
         await detector.DetectAsync(ledger).ConfigureAwait(false);
 
         // Assert
-        await Assert.That(capturedOutputs).HasCount(5);
+        await Assert.That(capturedOutputs).Count().IsEqualTo(5);
         // Verify null values are preserved
         var nullCount = capturedOutputs.Count(o => o is null);
         await Assert.That(nullCount).IsEqualTo(3);

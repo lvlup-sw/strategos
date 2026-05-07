@@ -22,8 +22,8 @@ public class SemanticQueryResultTests
         QueryResult queryResult = result;
         await Assert.That(queryResult).IsNotNull();
         await Assert.That(result.ObjectType).IsEqualTo("TestDocument");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
-        await Assert.That(result.Scores).HasCount().EqualTo(1);
+        await Assert.That(result.Items).Count().IsEqualTo(1);
+        await Assert.That(result.Scores).Count().IsEqualTo(1);
         await Assert.That(result.Scores[0]).IsEqualTo(0.95);
         await Assert.That(result.SemanticQuery).IsEqualTo("find relevant documents");
         await Assert.That(result.TopK).IsEqualTo(5);

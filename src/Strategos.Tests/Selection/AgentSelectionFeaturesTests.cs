@@ -133,7 +133,7 @@ public class AgentSelectionFeaturesTests
         };
 
         // Assert
-        await Assert.That(selection.Features!.MatchedKeywords).HasCount(3);
+        await Assert.That(selection.Features!.MatchedKeywords).Count().IsEqualTo(3);
         await Assert.That(selection.Features.MatchedKeywords).Contains("search");
     }
 

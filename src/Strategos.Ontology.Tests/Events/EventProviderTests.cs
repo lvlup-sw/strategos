@@ -29,7 +29,7 @@ public class EventProviderTests
         }
 
         // Assert
-        await Assert.That(events).HasCount().EqualTo(1);
+        await Assert.That(events).Count().IsEqualTo(1);
         await Assert.That(events[0].Domain).IsEqualTo("CRM");
     }
 

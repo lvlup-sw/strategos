@@ -7,7 +7,7 @@ public class PreconditionPostconditionDescriptorTests
     [Test]
     public async Task PreconditionKind_HasExpectedValues()
     {
-        await Assert.That(Enum.GetValues<PreconditionKind>()).HasCount().EqualTo(3);
+        await Assert.That(Enum.GetValues<PreconditionKind>()).Count().IsEqualTo(3);
         await Assert.That(PreconditionKind.PropertyPredicate).IsEqualTo((PreconditionKind)0);
         await Assert.That(PreconditionKind.LinkExists).IsEqualTo((PreconditionKind)1);
         await Assert.That(PreconditionKind.Custom).IsEqualTo((PreconditionKind)2);
@@ -16,7 +16,7 @@ public class PreconditionPostconditionDescriptorTests
     [Test]
     public async Task PostconditionKind_HasExpectedValues()
     {
-        await Assert.That(Enum.GetValues<PostconditionKind>()).HasCount().EqualTo(3);
+        await Assert.That(Enum.GetValues<PostconditionKind>()).Count().IsEqualTo(3);
         await Assert.That(PostconditionKind.ModifiesProperty).IsEqualTo((PostconditionKind)0);
         await Assert.That(PostconditionKind.CreatesLink).IsEqualTo((PostconditionKind)1);
         await Assert.That(PostconditionKind.EmitsEvent).IsEqualTo((PostconditionKind)2);

@@ -429,7 +429,7 @@ public sealed class FileSystemArtifactStoreTests : IAsyncDisposable
 
         // Assert - All URIs should be unique
         var uniqueUris = uris.Distinct().ToList();
-        await Assert.That(uniqueUris).HasCount(concurrentCount);
+        await Assert.That(uniqueUris).Count().IsEqualTo(concurrentCount);
     }
 
     /// <summary>
@@ -507,7 +507,7 @@ public sealed class FileSystemArtifactStoreTests : IAsyncDisposable
 
         // Assert
         await Assert.That(retrieved.Name).IsEqualTo("root");
-        await Assert.That(retrieved.Tags).HasCount(3);
+        await Assert.That(retrieved.Tags).Count().IsEqualTo(3);
         await Assert.That(retrieved.Tags).Contains("tag2");
         await Assert.That(retrieved.Nested).IsNotNull();
         await Assert.That(retrieved.Nested!.Value).IsEqualTo(42);

@@ -40,7 +40,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.StepsPerComplexityUnit));
     }
 
@@ -55,7 +55,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("StepsPerComplexityUnit");
     }
 
@@ -70,7 +70,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.AverageTokensPerStep));
     }
 
@@ -85,7 +85,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("AverageTokensPerStep");
     }
 
@@ -103,7 +103,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.ExecutionRatio));
     }
 
@@ -135,7 +135,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.ToolCallRatio));
     }
 
@@ -170,7 +170,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.RetryMargin));
     }
 
@@ -202,7 +202,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.DefaultStepBudget));
     }
 
@@ -217,7 +217,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.DefaultTokenBudget));
     }
 
@@ -232,7 +232,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.DefaultWallTimeSeconds));
     }
 
@@ -253,7 +253,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ErrorMessage).Contains("increasing order");
     }
 
@@ -274,7 +274,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.AbundantMultiplier));
     }
 
@@ -295,7 +295,7 @@ public sealed class BudgetOptionsTests
         var results = options.Validate(context).ToList();
 
         // Assert
-        await Assert.That(results).HasCount(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].MemberNames).Contains(nameof(BudgetOptions.ScarceMultiplier));
     }
 

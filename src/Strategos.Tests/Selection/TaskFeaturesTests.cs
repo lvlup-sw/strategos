@@ -233,7 +233,7 @@ public class TaskFeaturesTests
         var features = new TaskFeatures { MatchedKeywords = keywords };
 
         // Assert
-        await Assert.That(features.MatchedKeywords).HasCount(3);
+        await Assert.That(features.MatchedKeywords).Count().IsEqualTo(3);
         await Assert.That(features.MatchedKeywords).Contains("code");
         await Assert.That(features.MatchedKeywords).Contains("implement");
     }

@@ -58,7 +58,7 @@ public class OntologyGraphLookupTests
 
         var implementors = graph.GetImplementors("IIdentifiable");
 
-        await Assert.That(implementors).HasCount().EqualTo(1);
+        await Assert.That(implementors).Count().IsEqualTo(1);
         await Assert.That(implementors[0].Name).IsEqualTo("IdentifiablePosition");
     }
 
@@ -69,6 +69,6 @@ public class OntologyGraphLookupTests
 
         var implementors = graph.GetImplementors("INonExistent");
 
-        await Assert.That(implementors).HasCount().EqualTo(0);
+        await Assert.That(implementors).Count().IsEqualTo(0);
     }
 }

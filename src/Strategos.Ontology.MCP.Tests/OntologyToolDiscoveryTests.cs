@@ -16,7 +16,7 @@ public class OntologyToolDiscoveryTests
         var tools = discovery.Discover();
 
         // Assert — should return exactly 3 tools
-        await Assert.That(tools).HasCount().EqualTo(3);
+        await Assert.That(tools).Count().IsEqualTo(3);
     }
 
     [Test]
@@ -64,7 +64,7 @@ public class OntologyToolDiscoveryTests
         var actionTool = tools.First(t => t.Name == "ontology_action");
 
         // Assert — should have constraint summaries for the constrained action
-        await Assert.That(actionTool.ConstraintSummaries).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(actionTool.ConstraintSummaries).Count().IsGreaterThanOrEqualTo(1);
         await Assert.That(actionTool.ConstraintSummaries.Select(s => s.ActionName))
             .Contains("close_account");
     }
@@ -101,7 +101,7 @@ public class OntologyToolDiscoveryTests
             .First(s => s.ActionName == "close_account");
 
         // Assert — descriptions should be populated and non-empty
-        await Assert.That(summary.ConstraintDescriptions).HasCount().EqualTo(3);
+        await Assert.That(summary.ConstraintDescriptions).Count().IsEqualTo(3);
         await Assert.That(summary.ConstraintDescriptions.All(d => !string.IsNullOrWhiteSpace(d)))
             .IsTrue();
     }
@@ -118,7 +118,7 @@ public class OntologyToolDiscoveryTests
         var actionTool = tools.First(t => t.Name == "ontology_action");
 
         // Assert
-        await Assert.That(actionTool.ConstraintSummaries).HasCount().EqualTo(0);
+        await Assert.That(actionTool.ConstraintSummaries).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -133,7 +133,7 @@ public class OntologyToolDiscoveryTests
         var exploreTool = tools.First(t => t.Name == "ontology_explore");
 
         // Assert — constraint summaries are only attached to ontology_action, not explore
-        await Assert.That(exploreTool.ConstraintSummaries).HasCount().EqualTo(0);
+        await Assert.That(exploreTool.ConstraintSummaries).Count().IsEqualTo(0);
     }
 
     [Test]

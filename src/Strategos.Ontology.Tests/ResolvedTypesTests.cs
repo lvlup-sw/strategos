@@ -50,7 +50,7 @@ public class ResolvedTypesTests
 
         await Assert.That(link.SourceObjectType).IsEqualTo(sourceType);
         await Assert.That(link.TargetObjectType).IsEqualTo(targetType);
-        await Assert.That(link.EdgeProperties).HasCount().EqualTo(1);
+        await Assert.That(link.EdgeProperties).Count().IsEqualTo(1);
         await Assert.That(link.EdgeProperties[0].Name).IsEqualTo("Weight");
     }
 

@@ -72,7 +72,7 @@ public class OntologyGraphTraversalTests
 
         var results = graph.TraverseLinks("trading", "TestPosition", maxDepth: 1);
 
-        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ObjectType.Name).IsEqualTo("TestOrder");
         await Assert.That(results[0].LinkName).IsEqualTo("Orders");
         await Assert.That(results[0].Depth).IsEqualTo(1);
@@ -94,9 +94,9 @@ public class OntologyGraphTraversalTests
         var depth1 = results.Where(r => r.Depth == 1).ToList();
         var depth2 = results.Where(r => r.Depth == 2).ToList();
 
-        await Assert.That(depth1).HasCount().EqualTo(1);
+        await Assert.That(depth1).Count().IsEqualTo(1);
         await Assert.That(depth1[0].ObjectType.Name).IsEqualTo("TestPosition");
-        await Assert.That(depth2).HasCount().EqualTo(1);
+        await Assert.That(depth2).Count().IsEqualTo(1);
         await Assert.That(depth2[0].ObjectType.Name).IsEqualTo("TestOrder");
     }
 
@@ -110,7 +110,7 @@ public class OntologyGraphTraversalTests
         var results = graph.TraverseLinks("trading", "TestAccount", maxDepth: 1);
 
         // Should only include depth 1 (TestPosition), not depth 2 (TestOrder)
-        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].ObjectType.Name).IsEqualTo("TestPosition");
     }
 
@@ -148,7 +148,7 @@ public class OntologyGraphTraversalTests
 
         var result = graph.FindWorkflowChains("OrderExecution");
 
-        await Assert.That(result).HasCount().EqualTo(1);
+        await Assert.That(result).Count().IsEqualTo(1);
         await Assert.That(result[0].WorkflowName).IsEqualTo("OrderExecution");
         await Assert.That(result[0].ConsumedType.Name).IsEqualTo("Order");
         await Assert.That(result[0].ProducedType.Name).IsEqualTo("Position");
@@ -163,7 +163,7 @@ public class OntologyGraphTraversalTests
 
         var results = graph.TraverseLinks("trading", "TestPosition", maxDepth: 1);
 
-        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results).Count().IsEqualTo(1);
         await Assert.That(results[0].LinkName).IsEqualTo("Orders");
         await Assert.That(results[0].Description).IsEqualTo("Orders placed against this position");
     }
@@ -177,7 +177,7 @@ public class OntologyGraphTraversalTests
 
         var result = graph.FindWorkflowChains("NonExistent");
 
-        await Assert.That(result).HasCount().EqualTo(0);
+        await Assert.That(result).Count().IsEqualTo(0);
     }
 }
 

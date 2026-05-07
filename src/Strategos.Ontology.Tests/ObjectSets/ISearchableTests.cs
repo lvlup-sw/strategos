@@ -26,7 +26,7 @@ public class ISearchableTests
         var embedding = searchable.Embedding;
 
         // Assert
-        await Assert.That(embedding).HasCount().EqualTo(3);
+        await Assert.That(embedding).Count().IsEqualTo(3);
         await Assert.That(embedding[0]).IsEqualTo(0.5f);
         await Assert.That(embedding[1]).IsEqualTo(0.3f);
         await Assert.That(embedding[2]).IsEqualTo(0.8f);

@@ -54,7 +54,7 @@ public class IObjectSetWriterTests
         // Act & Assert — no exception thrown
         await writer.StoreAsync("test item");
 
-        await Assert.That(writer.StoredItems).HasCount().EqualTo(1);
+        await Assert.That(writer.StoredItems).Count().IsEqualTo(1);
         await Assert.That(writer.StoredItems[0]).IsEqualTo("test item");
     }
 
@@ -68,7 +68,7 @@ public class IObjectSetWriterTests
         // Act & Assert — no exception thrown
         await writer.StoreBatchAsync(items);
 
-        await Assert.That(writer.StoredItems).HasCount().EqualTo(3);
+        await Assert.That(writer.StoredItems).Count().IsEqualTo(3);
     }
 
     /// <summary>
@@ -142,7 +142,7 @@ public class IObjectSetWriterTests
         // Assert — query under "my_partition" finds the item
         var hit = await provider.ExecuteAsync<Foo>(
             new RootExpression(typeof(Foo), "my_partition"));
-        await Assert.That(hit.Items).HasCount().EqualTo(1);
+        await Assert.That(hit.Items).Count().IsEqualTo(1);
         await Assert.That(hit.Items[0].Name).IsEqualTo("alpha");
 
         // Assert — query under a different descriptor name returns nothing
@@ -169,7 +169,7 @@ public class IObjectSetWriterTests
         // Assert — both items found under "my_partition"
         var hit = await provider.ExecuteAsync<Foo>(
             new RootExpression(typeof(Foo), "my_partition"));
-        await Assert.That(hit.Items).HasCount().EqualTo(2);
+        await Assert.That(hit.Items).Count().IsEqualTo(2);
 
         // Assert — nothing leaked into "other"
         var miss = await provider.ExecuteAsync<Foo>(
@@ -201,13 +201,13 @@ public class IObjectSetWriterTests
         // Assert — default partition (typeof(Foo).Name == "Foo") sees only the default-stored item
         var defaultHit = await provider.ExecuteAsync<Foo>(
             new RootExpression(typeof(Foo), nameof(Foo)));
-        await Assert.That(defaultHit.Items).HasCount().EqualTo(1);
+        await Assert.That(defaultHit.Items).Count().IsEqualTo(1);
         await Assert.That(defaultHit.Items[0].Name).IsEqualTo("default");
 
         // Assert — "other_partition" still sees only the explicitly-seeded item
         var otherHit = await provider.ExecuteAsync<Foo>(
             new RootExpression(typeof(Foo), "other_partition"));
-        await Assert.That(otherHit.Items).HasCount().EqualTo(1);
+        await Assert.That(otherHit.Items).Count().IsEqualTo(1);
         await Assert.That(otherHit.Items[0].Name).IsEqualTo("seeded");
     }
 

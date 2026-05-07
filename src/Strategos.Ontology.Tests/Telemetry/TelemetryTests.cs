@@ -26,8 +26,8 @@ public class TelemetryTests
         await Assert.That(context.Domain).IsEqualTo("CRM");
         await Assert.That(context.ObjectType).IsEqualTo("Deal");
         await Assert.That(context.ActionName).IsEqualTo("Close");
-        await Assert.That(context.TraversedLinks).HasCount().EqualTo(1);
-        await Assert.That(context.ProducedEvents).HasCount().EqualTo(1);
+        await Assert.That(context.TraversedLinks).Count().IsEqualTo(1);
+        await Assert.That(context.ProducedEvents).Count().IsEqualTo(1);
         await Assert.That(context.QueryDepth).IsEqualTo(2);
         await Assert.That(context.InclusionLevel).IsEqualTo(ObjectSetInclusion.Full);
     }
@@ -41,7 +41,7 @@ public class TelemetryTests
             ObjectType: "Contact");
 
         // Assert
-        await Assert.That(context.TraversedLinks).HasCount().EqualTo(0);
+        await Assert.That(context.TraversedLinks).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -53,7 +53,7 @@ public class TelemetryTests
             ObjectType: "Contact");
 
         // Assert
-        await Assert.That(context.ProducedEvents).HasCount().EqualTo(0);
+        await Assert.That(context.ProducedEvents).Count().IsEqualTo(0);
     }
 
     [Test]

@@ -34,7 +34,7 @@ public class BranchModelTests
         // Assert
         await Assert.That(model.CaseValueLiteral).IsEqualTo("OrderStatus.Approved");
         await Assert.That(model.BranchPathPrefix).IsEqualTo("Approved");
-        await Assert.That(model.StepNames).HasCount().EqualTo(2);
+        await Assert.That(model.StepNames).Count().IsEqualTo(2);
         await Assert.That(model.IsTerminal).IsFalse();
     }
 
@@ -232,7 +232,7 @@ public class BranchModelTests
         await Assert.That(model.DiscriminatorPropertyPath).IsEqualTo("Status");
         await Assert.That(model.DiscriminatorTypeName).IsEqualTo("OrderStatus");
         await Assert.That(model.IsEnumDiscriminator).IsTrue();
-        await Assert.That(model.Cases).HasCount().EqualTo(2);
+        await Assert.That(model.Cases).Count().IsEqualTo(2);
         await Assert.That(model.RejoinStepName).IsEqualTo("Complete");
     }
 

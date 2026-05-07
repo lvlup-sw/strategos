@@ -28,7 +28,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.ClassWithWorkflowAttribute);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.StructWithWorkflowAttribute);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>
@@ -255,7 +255,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.VersionedWorkflowV2);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>
@@ -394,7 +394,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow);
 
         // Assert - Phase, Commands, Events, Transitions, Saga, Handlers, Extensions, Diagram = 8 files
-        await Assert.That(result.GeneratedTrees).HasCount().EqualTo(8);
+        await Assert.That(result.GeneratedTrees).Count().IsEqualTo(8);
     }
 
     // =============================================================================
@@ -411,7 +411,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.WorkflowWithFork);
 
         // Assert - Phase, Commands, Events, Transitions, Saga, Handlers, Extensions, Diagram = 8 files
-        await Assert.That(result.GeneratedTrees).HasCount().EqualTo(8);
+        await Assert.That(result.GeneratedTrees).Count().IsEqualTo(8);
     }
 
     /// <summary>
@@ -603,7 +603,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.WorkflowWithOnFailure);
 
         // Assert
-        await Assert.That(result.GeneratedTrees).HasCount().GreaterThanOrEqualTo(1);
+        await Assert.That(result.GeneratedTrees).Count().IsGreaterThanOrEqualTo(1);
     }
 
     /// <summary>
@@ -731,7 +731,7 @@ public class GeneratorIntegrationTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.WorkflowWithInstanceNames);
 
         // Assert - Should generate 8 files
-        await Assert.That(result.GeneratedTrees).HasCount().EqualTo(8);
+        await Assert.That(result.GeneratedTrees).Count().IsEqualTo(8);
     }
 
     /// <summary>

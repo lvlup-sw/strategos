@@ -164,7 +164,7 @@ public class InverseLinkTests
 
         var inverseLinks = query.GetInverseLinks("InvDepartment", "Employees");
 
-        await Assert.That(inverseLinks).HasCount().EqualTo(1);
+        await Assert.That(inverseLinks).Count().IsEqualTo(1);
         await Assert.That(inverseLinks[0].Name).IsEqualTo("Department");
     }
 
@@ -178,6 +178,6 @@ public class InverseLinkTests
 
         var inverseLinks = query.GetInverseLinks("InvDepartment", "NonExistentLink");
 
-        await Assert.That(inverseLinks).HasCount().EqualTo(0);
+        await Assert.That(inverseLinks).Count().IsEqualTo(0);
     }
 }

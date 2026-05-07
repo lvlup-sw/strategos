@@ -13,7 +13,7 @@ public class ExpressionTranslatorTests
         var result = ExpressionTranslator.Translate(root);
 
         await Assert.That(result.WhereClause).IsNull();
-        await Assert.That(result.Parameters).HasCount().EqualTo(0);
+        await Assert.That(result.Parameters).Count().IsEqualTo(0);
     }
 
     [Test]
@@ -26,7 +26,7 @@ public class ExpressionTranslatorTests
         var result = ExpressionTranslator.Translate(filter);
 
         await Assert.That(result.WhereClause).IsEqualTo("data->>'Name' = @p0");
-        await Assert.That(result.Parameters).HasCount().EqualTo(1);
+        await Assert.That(result.Parameters).Count().IsEqualTo(1);
         await Assert.That(result.Parameters[0].Name).IsEqualTo("@p0");
         await Assert.That(result.Parameters[0].Value).IsEqualTo("foo");
     }
@@ -69,7 +69,7 @@ public class ExpressionTranslatorTests
         var result = ExpressionTranslator.Translate(filter2);
 
         await Assert.That(result.WhereClause).IsEqualTo("data->>'Name' = @p0 AND (data->>'Age')::numeric > @p1");
-        await Assert.That(result.Parameters).HasCount().EqualTo(2);
+        await Assert.That(result.Parameters).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -82,7 +82,7 @@ public class ExpressionTranslatorTests
         var result = ExpressionTranslator.Translate(filter);
 
         await Assert.That(result.WhereClause).Contains("AND");
-        await Assert.That(result.Parameters).HasCount().EqualTo(2);
+        await Assert.That(result.Parameters).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -95,7 +95,7 @@ public class ExpressionTranslatorTests
         var result = ExpressionTranslator.Translate(filter);
 
         await Assert.That(result.WhereClause).Contains("OR");
-        await Assert.That(result.Parameters).HasCount().EqualTo(2);
+        await Assert.That(result.Parameters).Count().IsEqualTo(2);
     }
 
     [Test]

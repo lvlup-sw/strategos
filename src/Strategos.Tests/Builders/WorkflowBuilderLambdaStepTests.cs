@@ -66,7 +66,7 @@ public class WorkflowBuilderLambdaStepTests
             .Finally<CompleteStep>();
 
         // Assert - 3 steps: Validate, ProcessData (lambda), Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(3);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(3);
     }
 
     /// <summary>
@@ -186,7 +186,7 @@ public class WorkflowBuilderLambdaStepTests
             .Finally<CompleteStep>();
 
         // Assert - 4 steps: Validate, Step1, Step2, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(4);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(4);
         await Assert.That(workflow.Steps[1].StepName).IsEqualTo("Step1");
         await Assert.That(workflow.Steps[2].StepName).IsEqualTo("Step2");
     }
@@ -210,7 +210,7 @@ public class WorkflowBuilderLambdaStepTests
             .Finally<CompleteStep>();
 
         // Assert - 5 steps: Validate, Process, CustomLogic, Process, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(5);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(5);
         await Assert.That(workflow.Steps[0].IsLambdaStep).IsFalse();
         await Assert.That(workflow.Steps[2].IsLambdaStep).IsTrue();
         await Assert.That(workflow.Steps[2].StepName).IsEqualTo("CustomLogic");

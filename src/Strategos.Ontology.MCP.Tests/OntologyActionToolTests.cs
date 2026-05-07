@@ -41,7 +41,7 @@ public class OntologyActionToolTests
             objectId: "p1");
 
         // Assert
-        await Assert.That(result.Results).HasCount().EqualTo(1);
+        await Assert.That(result.Results).Count().IsEqualTo(1);
         await Assert.That(result.Results[0].IsSuccess).IsTrue();
 
         // Verify dispatcher was called with the correct context
@@ -84,7 +84,7 @@ public class OntologyActionToolTests
             filter: "Symbol == 'AAPL'");
 
         // Assert — should dispatch to each matched object
-        await Assert.That(result.Results).HasCount().EqualTo(2);
+        await Assert.That(result.Results).Count().IsEqualTo(2);
         await _actionDispatcher.Received(2).DispatchAsync(
             Arg.Any<ActionContext>(),
             Arg.Any<object>(),
@@ -145,7 +145,7 @@ public class OntologyActionToolTests
             objectId: "p1");
 
         // Assert
-        await Assert.That(result.Results).HasCount().EqualTo(1);
+        await Assert.That(result.Results).Count().IsEqualTo(1);
         await Assert.That(result.Results[0].IsSuccess).IsFalse();
         await Assert.That(result.Results[0].Error).Contains("nonexistent_action");
     }
@@ -162,7 +162,7 @@ public class OntologyActionToolTests
             objectId: "p1");
 
         // Assert
-        await Assert.That(result.Results).HasCount().EqualTo(1);
+        await Assert.That(result.Results).Count().IsEqualTo(1);
         await Assert.That(result.Results[0].IsSuccess).IsFalse();
         await Assert.That(result.Results[0].Error).Contains("NonExistentType");
     }

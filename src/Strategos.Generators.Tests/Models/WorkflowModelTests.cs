@@ -467,7 +467,7 @@ public class WorkflowModelTests
         await Assert.That(model.Branches).IsNotNull();
         await Assert.That(model.Branches!.Count).IsEqualTo(1);
         await Assert.That(model.Branches[0].BranchId).IsEqualTo("ProcessOrder-Status");
-        await Assert.That(model.Branches[0].Cases).HasCount().EqualTo(2);
+        await Assert.That(model.Branches[0].Cases).Count().IsEqualTo(2);
     }
 
     /// <summary>

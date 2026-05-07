@@ -108,7 +108,7 @@ public class WorkflowBuilderOnFailureTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.FailureHandlers).HasCount().EqualTo(1);
+        await Assert.That(workflow.FailureHandlers).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -145,7 +145,7 @@ public class WorkflowBuilderOnFailureTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.FailureHandlers[0].Steps).HasCount().EqualTo(2);
+        await Assert.That(workflow.FailureHandlers[0].Steps).Count().IsEqualTo(2);
         await Assert.That(workflow.FailureHandlers[0].Steps[0].StepType).IsEqualTo(typeof(LogFailureStep));
         await Assert.That(workflow.FailureHandlers[0].Steps[1].StepType).IsEqualTo(typeof(NotifyAdminStep));
     }
@@ -198,7 +198,7 @@ public class WorkflowBuilderOnFailureTests
             .Finally<CompleteStep>();
 
         // Assert - 3 steps: Validate, LogFailure, Complete
-        await Assert.That(workflow.Steps).HasCount().EqualTo(3);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(3);
     }
 
     // =============================================================================
@@ -220,8 +220,8 @@ public class WorkflowBuilderOnFailureTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.Steps).HasCount().EqualTo(4);
-        await Assert.That(workflow.FailureHandlers).HasCount().EqualTo(1);
+        await Assert.That(workflow.Steps).Count().IsEqualTo(4);
+        await Assert.That(workflow.FailureHandlers).Count().IsEqualTo(1);
     }
 
     /// <summary>
@@ -243,6 +243,6 @@ public class WorkflowBuilderOnFailureTests
             .Finally<CompleteStep>();
 
         // Assert
-        await Assert.That(workflow.FailureHandlers).HasCount().EqualTo(1);
+        await Assert.That(workflow.FailureHandlers).Count().IsEqualTo(1);
     }
 }

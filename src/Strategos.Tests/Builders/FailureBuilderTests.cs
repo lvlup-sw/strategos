@@ -54,7 +54,7 @@ public class FailureBuilderTests
         builder.Then<LogFailureStep>();
 
         // Assert
-        await Assert.That(builder.Steps).HasCount().EqualTo(1);
+        await Assert.That(builder.Steps).Count().IsEqualTo(1);
         await Assert.That(builder.Steps[0].StepType).IsEqualTo(typeof(LogFailureStep));
     }
 
@@ -74,7 +74,7 @@ public class FailureBuilderTests
 
         // Assert
         await Assert.That(result).IsNotNull();
-        await Assert.That(builder.Steps).HasCount().EqualTo(2);
+        await Assert.That(builder.Steps).Count().IsEqualTo(2);
     }
 
     /// <summary>
@@ -147,7 +147,7 @@ public class FailureBuilderTests
 
         // Assert
         await Assert.That(builder.IsTerminal).IsTrue();
-        await Assert.That(builder.Steps).HasCount().EqualTo(2);
+        await Assert.That(builder.Steps).Count().IsEqualTo(2);
     }
 
     // =============================================================================

@@ -41,7 +41,7 @@ public class ObjectSetTypesTests
         var result = new ObjectSetResult<string>(items, 3, ObjectSetInclusion.Properties);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(3);
+        await Assert.That(result.Items).Count().IsEqualTo(3);
         await Assert.That(result.TotalCount).IsEqualTo(3);
         await Assert.That(result.Inclusion).IsEqualTo(ObjectSetInclusion.Properties);
     }
@@ -53,7 +53,7 @@ public class ObjectSetTypesTests
         var result = new ObjectSetResult<string>([], 0, ObjectSetInclusion.Properties);
 
         // Assert
-        await Assert.That(result.Items).HasCount().EqualTo(0);
+        await Assert.That(result.Items).Count().IsEqualTo(0);
         await Assert.That(result.TotalCount).IsEqualTo(0);
     }
 }

@@ -18,7 +18,7 @@ public class OntologyGraphTests
     {
         var graph = BuildGraphWithTwoDomains();
 
-        await Assert.That(graph.Domains).HasCount().EqualTo(2);
+        await Assert.That(graph.Domains).Count().IsEqualTo(2);
         await Assert.That(graph.Domains[0].DomainName).IsEqualTo("trading");
         await Assert.That(graph.Domains[1].DomainName).IsEqualTo("market-data");
     }
@@ -28,7 +28,7 @@ public class OntologyGraphTests
     {
         var graph = BuildGraphWithTwoDomains();
 
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(2);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(2);
     }
 
     [Test]
@@ -39,7 +39,7 @@ public class OntologyGraphTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.Interfaces).HasCount().EqualTo(1);
+        await Assert.That(graph.Interfaces).Count().IsEqualTo(1);
         await Assert.That(graph.Interfaces[0].Name).IsEqualTo("IIdentifiable");
     }
 
@@ -48,7 +48,7 @@ public class OntologyGraphTests
     {
         var graph = BuildGraphWithTwoDomains();
 
-        await Assert.That(graph.CrossDomainLinks).HasCount().EqualTo(1);
+        await Assert.That(graph.CrossDomainLinks).Count().IsEqualTo(1);
         await Assert.That(graph.CrossDomainLinks[0].Name).IsEqualTo("PositionToInstrument");
     }
 

@@ -26,7 +26,7 @@ public class AssembledContextTests
         var context = AssembledContext.Empty;
 
         // Assert
-        await Assert.That(context.Segments).HasCount(0);
+        await Assert.That(context.Segments).Count().IsEqualTo(0);
     }
 
     /// <summary>
@@ -63,7 +63,7 @@ public class AssembledContextTests
         var context = new AssembledContext(segments);
 
         // Assert
-        await Assert.That(context.Segments).HasCount(2);
+        await Assert.That(context.Segments).Count().IsEqualTo(2);
         await Assert.That(context.Segments[0]).IsTypeOf<LiteralContextSegment>();
         await Assert.That(context.Segments[1]).IsTypeOf<StateContextSegment>();
     }

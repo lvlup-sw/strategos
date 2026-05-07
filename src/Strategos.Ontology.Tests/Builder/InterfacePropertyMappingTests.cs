@@ -105,8 +105,8 @@ public class InterfacePropertyMappingTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(1);
-        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).HasCount().EqualTo(1);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(1);
+        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -128,8 +128,8 @@ public class InterfacePropertyMappingTests
 
         var graph = graphBuilder.Build();
 
-        await Assert.That(graph.ObjectTypes).HasCount().EqualTo(1);
-        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).HasCount().EqualTo(1);
+        await Assert.That(graph.ObjectTypes).Count().IsEqualTo(1);
+        await Assert.That(graph.ObjectTypes[0].ImplementedInterfaces).Count().IsEqualTo(1);
     }
 
     [Test]
@@ -146,7 +146,7 @@ public class InterfacePropertyMappingTests
 
         var descriptor = builder.Build();
 
-        await Assert.That(descriptor.InterfacePropertyMappings).HasCount().EqualTo(2);
+        await Assert.That(descriptor.InterfacePropertyMappings).Count().IsEqualTo(2);
         await Assert.That(descriptor.InterfacePropertyMappings[0].SourcePropertyName).IsEqualTo("Name");
         await Assert.That(descriptor.InterfacePropertyMappings[0].TargetPropertyName).IsEqualTo("DisplayName");
         await Assert.That(descriptor.InterfacePropertyMappings[0].InterfaceName).IsEqualTo("IMappableInterface");
