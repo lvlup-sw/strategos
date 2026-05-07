@@ -216,6 +216,219 @@ public class OntologyGraphVersionTests
     }
 
     // ------------------------------------------------------------------
+    // MEDIUM-4: hasher must be sensitive to additional structural fields
+    // (KeyProperty, ObjectKind, action dispatch routing, interface action
+    // declarations, interface mappings) — design §4.1.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task Version_RenamingKeyProperty_ChangesHash()
+    {
+        // Renaming the key property is a primary-key / dispatch-routing change
+        // that must bust schema caches, even though property shape is unchanged.
+        var tA = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            KeyProperty = new PropertyDescriptor("Id", typeof(string)),
+            Properties = [new PropertyDescriptor("Id", typeof(string))],
+        };
+        var tB = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            KeyProperty = new PropertyDescriptor("Key", typeof(string)),
+            Properties = [new PropertyDescriptor("Key", typeof(string))],
+        };
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingObjectKind_ChangesHash()
+    {
+        // ObjectKind (Entity vs Process) is a semantic shape designation that
+        // changes how consumers reason about the type.
+        var tA = new ObjectTypeDescriptor("T", typeof(object), "d") { Kind = ObjectKind.Entity };
+        var tB = new ObjectTypeDescriptor("T", typeof(object), "d") { Kind = ObjectKind.Process };
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_RebindingActionWorkflow_ChangesHash()
+    {
+        // Rebinding an action's BoundWorkflowName changes dispatch routing
+        // even though the action's surface (Name/Accepts/Returns) is identical.
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "desc")
+            {
+                BindingType = ActionBindingType.Workflow,
+                BoundWorkflowName = "WorkflowA",
+            },
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "desc")
+            {
+                BindingType = ActionBindingType.Workflow,
+                BoundWorkflowName = "WorkflowB",
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_RebindingActionTool_ChangesHash()
+    {
+        // Rebinding BoundToolName / BoundToolMethod is also dispatch routing.
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "desc")
+            {
+                BindingType = ActionBindingType.Tool,
+                BoundToolName = "ToolA",
+                BoundToolMethod = "Method1",
+            },
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "desc")
+            {
+                BindingType = ActionBindingType.Tool,
+                BoundToolName = "ToolB",
+                BoundToolMethod = "Method1",
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_AddingInterfaceAction_ChangesHash()
+    {
+        // Interface actions are part of the schema agents reason about; adding
+        // one must bust caches that exist for structural invalidation.
+        var ifaceA = new InterfaceDescriptor("ISearchable", typeof(IDisposable));
+        var ifaceB = new InterfaceDescriptor("ISearchable", typeof(IDisposable))
+        {
+            Actions =
+            [
+                new InterfaceActionDescriptor { Name = "Search" },
+            ],
+        };
+
+        var graphA = Graph(domains: [Domain("d")], interfaces: [ifaceA]);
+        var graphB = Graph(domains: [Domain("d")], interfaces: [ifaceB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingInterfaceActionAcceptsType_ChangesHash()
+    {
+        // InterfaceActionDescriptor.AcceptsTypeName is part of the action's
+        // structural shape — changing it changes the contract.
+        var ifaceA = new InterfaceDescriptor("ISearchable", typeof(IDisposable))
+        {
+            Actions =
+            [
+                new InterfaceActionDescriptor { Name = "Search", AcceptsTypeName = "QueryA" },
+            ],
+        };
+        var ifaceB = new InterfaceDescriptor("ISearchable", typeof(IDisposable))
+        {
+            Actions =
+            [
+                new InterfaceActionDescriptor { Name = "Search", AcceptsTypeName = "QueryB" },
+            ],
+        };
+
+        var graphA = Graph(domains: [Domain("d")], interfaces: [ifaceA]);
+        var graphB = Graph(domains: [Domain("d")], interfaces: [ifaceB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingInterfacePropertyMapping_ChangesHash()
+    {
+        // InterfacePropertyMappings are user-authored Via() bindings — rebinding
+        // an interface property to a different local property is a dispatch
+        // change, even though the type's local properties are unchanged.
+        var iface = new InterfaceDescriptor("ISearchable", typeof(IDisposable));
+        var tA = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            ImplementedInterfaces = [iface],
+            InterfacePropertyMappings =
+            [
+                new InterfacePropertyMapping("LocalA", "InterfaceProp", "ISearchable"),
+            ],
+        };
+        var tB = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            ImplementedInterfaces = [iface],
+            InterfacePropertyMappings =
+            [
+                new InterfacePropertyMapping("LocalB", "InterfaceProp", "ISearchable"),
+            ],
+        };
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA], interfaces: [iface]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB], interfaces: [iface]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingInterfaceActionMapping_ChangesHash()
+    {
+        // InterfaceActionMappings record which concrete action implements each
+        // interface action. Source-of-truth user input; rebinding changes
+        // dispatch.
+        var iface = new InterfaceDescriptor("ISearchable", typeof(IDisposable));
+        var tA = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            ImplementedInterfaces = [iface],
+            InterfaceActionMappings =
+            [
+                new InterfaceActionMapping
+                {
+                    InterfaceActionName = "Search",
+                    ConcreteActionName = "SearchAlpha",
+                },
+            ],
+        };
+        var tB = new ObjectTypeDescriptor("T", typeof(object), "d")
+        {
+            ImplementedInterfaces = [iface],
+            InterfaceActionMappings =
+            [
+                new InterfaceActionMapping
+                {
+                    InterfaceActionName = "Search",
+                    ConcreteActionName = "SearchBeta",
+                },
+            ],
+        };
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA], interfaces: [iface]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB], interfaces: [iface]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    // ------------------------------------------------------------------
     // A3: hasher must be sensitive to graph-level Interfaces,
     // CrossDomainLinks, and WorkflowChains.
     // ------------------------------------------------------------------
@@ -323,6 +536,32 @@ public class OntologyGraphVersionTests
     }
 
     [Test]
+    public async Task Version_ChangingInterfaceActionDescription_DoesNotChangeHash()
+    {
+        // InterfaceActionDescriptor.Description is free-form documentation,
+        // matching the broader exclusion of Description fields from the hash.
+        var ifaceA = new InterfaceDescriptor("ISearchable", typeof(IDisposable))
+        {
+            Actions =
+            [
+                new InterfaceActionDescriptor { Name = "Search", Description = "Original prose" },
+            ],
+        };
+        var ifaceB = new InterfaceDescriptor("ISearchable", typeof(IDisposable))
+        {
+            Actions =
+            [
+                new InterfaceActionDescriptor { Name = "Search", Description = "Different prose" },
+            ],
+        };
+
+        var graphA = Graph(domains: [Domain("d")], interfaces: [ifaceA]);
+        var graphB = Graph(domains: [Domain("d")], interfaces: [ifaceB]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    [Test]
     public async Task Version_DifferingWarnings_DoesNotChangeHash()
     {
         // Graphs with identical structural shape but different Warnings lists.
@@ -343,8 +582,13 @@ public class OntologyGraphVersionTests
     // Pinned hash for the reference fixture. If this changes, the
     // OntologyGraphHasher serialization shape has drifted — review the diff
     // before updating.
+    //
+    // Regeneration: when intentionally adding a field to the hash, run this test
+    // once with the old constant, capture the new hash from the assertion failure
+    // message, and replace the constant. Confirm the diff matches the intended
+    // hasher change before committing.
     private const string ReferenceFixtureVersion =
-        "9b3e82f07bd553bf5c71ccd222cc9f814082f677a1572c629d927e06d12698ca";
+        "2095a57833d35ce0ee1dba1def232c79ab4b960631f2508955936c2b485e26d6";
 
     [Test]
     public async Task Version_ReferenceFixture_MatchesPinnedConstant()

@@ -15,13 +15,37 @@ internal static class OntologyGraphHasher
 {
     public static string ComputeVersion(OntologyGraph graph)
     {
-        // Excluded from the hash by design (see design 2026-04-19-mcp-surface-conformance.md §4.1):
+        // What is hashed (per design 2026-04-19-mcp-surface-conformance.md §4.1):
+        //   - Domain names (sorted).
+        //   - For each ObjectType (sorted by domain, name): Name, DomainName,
+        //     ParentTypeName, Kind (ObjectKind enum), KeyProperty name,
+        //     Properties (Name/Kind/PropertyType/IsRequired/VectorDimensions),
+        //     Actions (Name/AcceptsType/ReturnsType/BindingType/BoundWorkflowName/
+        //     BoundToolName/BoundToolMethod/Preconditions/Postconditions),
+        //     Links (Name/TargetTypeName/Cardinality/EdgeProperties),
+        //     Events (EventType/Severity/MaterializedLinks/UpdatedProperties),
+        //     Lifecycle (PropertyName/StateEnumTypeName/States/Transitions),
+        //     ImplementedInterfaces (Name only — full interface definition lives
+        //     in the graph-level Interfaces section), InterfacePropertyMappings
+        //     (Source/Target/InterfaceName), InterfaceActionMappings
+        //     (InterfaceActionName/ConcreteActionName).
+        //   - For each Interface (sorted by name): Name, Properties, Actions
+        //     (Name/AcceptsTypeName/ReturnsTypeName).
+        //   - CrossDomainLinks (Source/Target/Cardinality/EdgeProperties).
+        //   - WorkflowChains (Name/Consumed/Produced).
+        //
+        // What is deliberately NOT hashed (rationale):
         //   - Free-form Description text on actions, links, properties, lifecycle
-        //     states/transitions, events, and cross-domain links — documentation
-        //     churn must NOT bust structural caches that exist to invalidate when
-        //     the schema agents reason about actually changes shape.
+        //     states/transitions, events, cross-domain links, and interface actions —
+        //     documentation churn must NOT bust structural caches that exist to
+        //     invalidate when the schema agents reason about actually changes shape.
         //   - OntologyGraph.Warnings — advisory, non-structural.
-        //   - OntologyGraph.ObjectTypeNamesByType — derived index, not source.
+        //   - OntologyGraph.ObjectTypeNamesByType — derived index from ObjectTypes;
+        //     mutating it without mutating the underlying ObjectTypes is impossible.
+        //   - PropertyDescriptor.IsComputed / DerivedFrom / TransitiveDerivedFrom —
+        //     captured implicitly via PropertyKind (Computed) and the derivation
+        //     chain is reconstructable from Properties.
+        //   - ExternalLinkExtensionPoints.MatchedLinkNames — derived during build.
         // ActionPrecondition.Description IS included because it is the precondition's
         // identity / sort key, distinct from per-action free-form documentation prose.
         using var ms = new MemoryStream();
@@ -71,6 +95,14 @@ internal static class OntologyGraphHasher
         WriteString(writer, ot.Name);
         WriteString(writer, ot.ParentTypeName ?? string.Empty);
 
+        // Kind is structural: an Entity-vs-Process designation changes how
+        // consumers reason about the type, even with identical shape.
+        writer.Write((byte)ot.Kind);
+
+        // Key property name (or empty if absent). Renaming the key property
+        // is a dispatch-routing change, not a documentation change.
+        WriteString(writer, ot.KeyProperty?.Name ?? string.Empty);
+
         writer.Write("|PROPS|");
         foreach (var p in ot.Properties.OrderBy(p => p.Name, StringComparer.Ordinal))
         {
@@ -107,6 +139,33 @@ internal static class OntologyGraphHasher
             WriteString(writer, i.Name);
         }
 
+        // InterfacePropertyMappings record how a type's local properties satisfy
+        // each declared interface (Via() bindings). They are user-authored, not
+        // derived from other fields — rebinding interface property X from local
+        // property A to local property B is a structural change to dispatch.
+        writer.Write("|IPM|");
+        foreach (var m in ot.InterfacePropertyMappings
+                              .OrderBy(m => m.InterfaceName, StringComparer.Ordinal)
+                              .ThenBy(m => m.TargetPropertyName, StringComparer.Ordinal)
+                              .ThenBy(m => m.SourcePropertyName, StringComparer.Ordinal))
+        {
+            WriteString(writer, m.InterfaceName);
+            WriteString(writer, m.TargetPropertyName);
+            WriteString(writer, m.SourcePropertyName);
+        }
+
+        // InterfaceActionMappings record how a type's concrete actions satisfy
+        // each declared interface action. Source-of-truth user input; rebinding
+        // changes which concrete action the interface call routes to.
+        writer.Write("|IAM|");
+        foreach (var m in ot.InterfaceActionMappings
+                              .OrderBy(m => m.InterfaceActionName, StringComparer.Ordinal)
+                              .ThenBy(m => m.ConcreteActionName, StringComparer.Ordinal))
+        {
+            WriteString(writer, m.InterfaceActionName);
+            WriteString(writer, m.ConcreteActionName);
+        }
+
         writer.Write("|END_OT");
     }
 
@@ -130,6 +189,13 @@ internal static class OntologyGraphHasher
         WriteString(writer, a.AcceptsType?.FullName ?? string.Empty);
         WriteString(writer, a.ReturnsType?.FullName ?? string.Empty);
         WriteString(writer, a.BindingType.ToString());
+
+        // Action dispatch routing: rebinding from one workflow/tool to another
+        // is a structural behavior change for cache invalidation, even if the
+        // surface shape (Name/Accepts/Returns) is unchanged.
+        WriteString(writer, a.BoundWorkflowName ?? string.Empty);
+        WriteString(writer, a.BoundToolName ?? string.Empty);
+        WriteString(writer, a.BoundToolMethod ?? string.Empty);
 
         writer.Write("|PRE|");
         foreach (var pc in a.Preconditions.OrderBy(x => x.Description, StringComparer.Ordinal))
@@ -228,6 +294,17 @@ internal static class OntologyGraphHasher
                 WriteString(writer, p.Name);
                 WriteString(writer, p.Kind.ToString());
                 WriteString(writer, p.PropertyType.FullName ?? string.Empty);
+            }
+
+            // Interfaces can declare actions (InterfaceActionDescriptor); these
+            // are part of the schema agents reason about and must influence the
+            // hash. Free-form Description on each action is excluded.
+            writer.Write("|IACTIONS|");
+            foreach (var a in i.Actions.OrderBy(a => a.Name, StringComparer.Ordinal))
+            {
+                WriteString(writer, a.Name);
+                WriteString(writer, a.AcceptsTypeName ?? string.Empty);
+                WriteString(writer, a.ReturnsTypeName ?? string.Empty);
             }
         }
 
