@@ -5,7 +5,7 @@ namespace Strategos.Ontology.MCP;
 /// </summary>
 public record QueryResult(
     string ObjectType,
-    IReadOnlyList<object> Items)
+    IReadOnlyList<object> Items) : QueryResultUnion
 {
     public string? Filter { get; init; }
     public string? TraverseLink { get; init; }
