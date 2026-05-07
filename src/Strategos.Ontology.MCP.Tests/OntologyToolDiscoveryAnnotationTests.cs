@@ -68,20 +68,6 @@ public class OntologyToolDiscoveryAnnotationTests
     }
 
     [Test]
-    public async Task GetServerCapabilities_ReturnsCurrentGraphVersion()
-    {
-        // Arrange
-        var graph = TestOntologyGraphFactory.CreateTradingGraph();
-        var discovery = new OntologyToolDiscovery(graph);
-
-        // Act
-        var capabilities = discovery.GetServerCapabilities();
-
-        // Assert — wire-format prefixed version, same envelope as ResponseMeta
-        await Assert.That(capabilities.OntologyVersion).IsEqualTo("sha256:" + graph.Version);
-    }
-
-    [Test]
     public async Task Discover_OntologyQuery_OutputSchemaIsOneOfUnion()
     {
         // The query tool returns a discriminated union of QueryResult / SemanticQueryResult;

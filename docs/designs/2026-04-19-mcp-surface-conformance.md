@@ -269,18 +269,29 @@ return new ExploreResult(scope, items, new ResponseMeta(_graph.Version));
 
 No new abstractions, no helper class. The `_graph.Version` access is O(1) (computed once at graph construction).
 
-### 4.8 Discovery enhancement — surface Version on initialize-style metadata
+### 4.8 Server-capability provider — surface Version on initialize-style metadata
 
-`OntologyToolDiscovery.Discover()` already returns the descriptor list. Add a sibling method:
+Server-capability exposure is a separate concern from tool discovery. `OntologyToolDiscovery` stays focused on building the descriptor list; a sibling type owns initialize-time metadata:
 
 ```csharp
-public OntologyServerCapabilities GetServerCapabilities() =>
-    new(OntologyVersion: _graph.Version);
+public sealed class OntologyServerCapabilitiesProvider
+{
+    private readonly OntologyGraph _graph;
+
+    public OntologyServerCapabilitiesProvider(OntologyGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        _graph = graph;
+    }
+
+    public OntologyServerCapabilities GetServerCapabilities() =>
+        new(ResponseMeta.ForGraph(_graph).OntologyVersion);
+}
 
 public sealed record OntologyServerCapabilities(string OntologyVersion);
 ```
 
-This is the affordance MCP-server hosts (Basileus AgentHost) consume to populate the `initialize` response's `capabilities._meta.ontologyVersion` field. Strategos ships the data; the host wires it into its MCP transport.
+This is the affordance MCP-server hosts (Basileus AgentHost) consume to populate the `initialize` response's `capabilities._meta.ontologyVersion` field. Strategos ships the data; the host wires it into its MCP transport. Splitting it out of `OntologyToolDiscovery` keeps the SRP boundary clean as the v1 capability surface (`OntologyVersion`) grows in later slices (per §6 future additions).
 
 ---
 
@@ -369,7 +380,7 @@ Net new tests (TUnit, in `Strategos.Ontology.Tests` and `Strategos.Ontology.MCP.
 | both | `ResponseMeta` record | `src/Strategos.Ontology.MCP/ResponseMeta.cs` (new) |
 | both | Result records gain `Meta` | `ExploreResult.cs`, `QueryResult.cs`, `SemanticQueryResult.cs`, `ActionToolResult.cs` |
 | both | Tool stamping calls | `OntologyExploreTool.cs`, `OntologyQueryTool.cs`, `OntologyActionTool.cs` |
-| #44 | `OntologyServerCapabilities` discovery | `src/Strategos.Ontology.MCP/OntologyToolDiscovery.cs` |
+| #44 | `OntologyServerCapabilitiesProvider` | `src/Strategos.Ontology.MCP/OntologyServerCapabilitiesProvider.cs` (new) |
 | both | Descriptor + annotation tests | `src/Strategos.Ontology.MCP.Tests/OntologyToolDescriptorTests.cs` (new), `OntologyToolDiscoveryAnnotationTests.cs` (new) |
 | both | Meta envelope tests | `OntologyExploreToolMetaTests.cs`, `OntologyQueryToolMetaTests.cs`, `OntologyActionToolMetaTests.cs` (all new) |
 
