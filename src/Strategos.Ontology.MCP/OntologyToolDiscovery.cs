@@ -29,6 +29,11 @@ public sealed class OntologyToolDiscovery
     /// <summary>
     /// Discovers the three ontology MCP tools, enriched with semantic metadata from the graph.
     /// </summary>
+    /// <remarks>
+    /// Reflective schema generation via JsonSchemaExporter requires unreferenced code
+    /// and dynamic code; consumers calling Discover() from trim/AOT-published projects
+    /// will see IL2026/IL3050 warnings. Suppress at call site or precompute schemas.
+    /// </remarks>
     [RequiresUnreferencedCode("OutputSchema generation reflects over result-record types; not safe under trimming.")]
     [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
     public IReadOnlyList<OntologyToolDescriptor> Discover()
