@@ -15,6 +15,8 @@ internal static class OntologyGraphHasher
 {
     public static string ComputeVersion(OntologyGraph graph)
     {
+        ArgumentNullException.ThrowIfNull(graph);
+
         // What is hashed (per design 2026-04-19-mcp-surface-conformance.md §4.1):
         //   - Domain names (sorted).
         //   - For each ObjectType (sorted by domain, name): Name, DomainName,
@@ -314,10 +316,18 @@ internal static class OntologyGraphHasher
     private static void WriteCrossDomainLinks(BinaryWriter writer, OntologyGraph graph)
     {
         writer.Write("XDL|");
+        // Tie-breaker chain covers every structurally-significant field of
+        // ResolvedCrossDomainLink so that two collections with the same logical
+        // content always sort identically regardless of registration order.
+        // CodeRabbit PR #49 Major: an incomplete sort key falls back to input
+        // order for ties, which is not a stable canonicalization across builders.
         foreach (var x in graph.CrossDomainLinks
                               .OrderBy(x => x.SourceDomain, StringComparer.Ordinal)
                               .ThenBy(x => x.SourceObjectType.Name, StringComparer.Ordinal)
-                              .ThenBy(x => x.Name, StringComparer.Ordinal))
+                              .ThenBy(x => x.Name, StringComparer.Ordinal)
+                              .ThenBy(x => x.TargetDomain, StringComparer.Ordinal)
+                              .ThenBy(x => x.TargetObjectType.Name, StringComparer.Ordinal)
+                              .ThenBy(x => x.Cardinality.ToString(), StringComparer.Ordinal))
         {
             writer.Write("X|");
             WriteString(writer, x.SourceDomain);
@@ -340,7 +350,15 @@ internal static class OntologyGraphHasher
     private static void WriteWorkflowChains(BinaryWriter writer, OntologyGraph graph)
     {
         writer.Write("WF|");
-        foreach (var w in graph.WorkflowChains.OrderBy(w => w.WorkflowName, StringComparer.Ordinal))
+        // Tie-breaker chain covers every structurally-significant field of
+        // WorkflowChain (WorkflowName / ConsumedType / ProducedType) so chains
+        // sharing a workflow name still sort deterministically. CodeRabbit
+        // PR #49 Major: WorkflowName uniqueness is not enforced by the
+        // descriptor, so the tie-breaker is required for canonicalization.
+        foreach (var w in graph.WorkflowChains
+                              .OrderBy(w => w.WorkflowName, StringComparer.Ordinal)
+                              .ThenBy(w => w.ConsumedType.ClrType.FullName ?? string.Empty, StringComparer.Ordinal)
+                              .ThenBy(w => w.ProducedType.ClrType.FullName ?? string.Empty, StringComparer.Ordinal))
         {
             writer.Write("W|");
             WriteString(writer, w.WorkflowName);
