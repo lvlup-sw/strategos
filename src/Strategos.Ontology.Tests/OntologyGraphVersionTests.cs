@@ -273,4 +273,64 @@ public class OntologyGraphVersionTests
 
         await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
     }
+
+    // ------------------------------------------------------------------
+    // A4: hasher must be INSENSITIVE to free-form Description text and
+    // to OntologyGraph.Warnings — design §4.1. Documentation churn must
+    // not bust caches that exist for structural invalidation.
+    // ------------------------------------------------------------------
+
+    [Test]
+    public async Task Version_ChangingActionDescription_DoesNotChangeHash()
+    {
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "Original description"),
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor("DoIt", "Completely different prose"),
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingLinkDescription_DoesNotChangeHash()
+    {
+        var tA = ObjectType("T", "d", links:
+        [
+            new LinkDescriptor("ToOther", "Other", LinkCardinality.OneToMany)
+            {
+                Description = "Original",
+            },
+        ]);
+        var tB = ObjectType("T", "d", links:
+        [
+            new LinkDescriptor("ToOther", "Other", LinkCardinality.OneToMany)
+            {
+                Description = "Different",
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_DifferingWarnings_DoesNotChangeHash()
+    {
+        // Graphs with identical structural shape but different Warnings lists.
+        // Warnings are advisory diagnostic output; they must not influence the
+        // structural cache key.
+        var graphA = Graph(domains: [Domain("d")], warnings: []);
+        var graphB = Graph(domains: [Domain("d")], warnings: ["orphan interface"]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
 }
