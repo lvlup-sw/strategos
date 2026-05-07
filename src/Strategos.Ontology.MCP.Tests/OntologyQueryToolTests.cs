@@ -32,8 +32,10 @@ public class OntologyQueryToolTests
             .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
             .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties));
 
-        // Act
-        var result = await _tool.QueryAsync(objectType: "TestPosition", domain: "trading");
+        // Act — QueryAsync returns the polymorphic union type; cast to the concrete
+        // QueryResult branch for property assertions (the non-semantic path always
+        // produces a QueryResult, never a SemanticQueryResult).
+        var result = (QueryResult)await _tool.QueryAsync(objectType: "TestPosition", domain: "trading");
 
         // Assert
         await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
@@ -50,7 +52,7 @@ public class OntologyQueryToolTests
             .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties));
 
         // Act
-        var result = await _tool.QueryAsync(
+        var result = (QueryResult)await _tool.QueryAsync(
             objectType: "TestPosition",
             domain: "trading",
             filter: "Symbol == 'AAPL'");
@@ -71,7 +73,7 @@ public class OntologyQueryToolTests
             .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties));
 
         // Act
-        var result = await _tool.QueryAsync(
+        var result = (QueryResult)await _tool.QueryAsync(
             objectType: "TestPosition",
             domain: "trading",
             traverseLink: "Orders");
@@ -91,7 +93,7 @@ public class OntologyQueryToolTests
             .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties));
 
         // Act
-        var result = await _tool.QueryAsync(
+        var result = (QueryResult)await _tool.QueryAsync(
             objectType: "TestPosition",
             domain: "trading",
             interfaceName: "Searchable");
@@ -111,7 +113,7 @@ public class OntologyQueryToolTests
             .Returns(new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Full));
 
         // Act
-        var result = await _tool.QueryAsync(
+        var result = (QueryResult)await _tool.QueryAsync(
             objectType: "TestPosition",
             domain: "trading",
             include: "Full");
@@ -332,8 +334,9 @@ public class OntologyQueryToolTests
 
         // Assert — without semanticQuery, should return plain QueryResult, not SemanticQueryResult
         await Assert.That(result).IsTypeOf<QueryResult>();
-        await Assert.That(result.ObjectType).IsEqualTo("TestPosition");
-        await Assert.That(result.Items).HasCount().EqualTo(1);
+        var queryResult = (QueryResult)result;
+        await Assert.That(queryResult.ObjectType).IsEqualTo("TestPosition");
+        await Assert.That(queryResult.Items).HasCount().EqualTo(1);
     }
 
     [Test]

@@ -33,7 +33,16 @@ public sealed class OntologyQueryTool
     /// Queries ontology objects by type with optional filtering, link traversal,
     /// interface narrowing, inclusion control, and semantic search.
     /// </summary>
-    public async Task<QueryResult> QueryAsync(
+    /// <remarks>
+    /// The return type is the polymorphic union <see cref="QueryResultUnion"/> so that
+    /// <c>System.Text.Json</c>'s <c>[JsonPolymorphic]</c> machinery emits the
+    /// <c>resultKind</c> discriminator on the wire — matching the <c>oneOf</c>
+    /// schema advertised by <see cref="OntologyToolDiscovery.Discover"/>. If the
+    /// static return type were a concrete branch (e.g. <see cref="QueryResult"/>),
+    /// callers serializing through that static type would silently drop the
+    /// discriminator and the schema↔runtime contract would diverge.
+    /// </remarks>
+    public async Task<QueryResultUnion> QueryAsync(
         string objectType,
         string? domain = null,
         string? filter = null,
