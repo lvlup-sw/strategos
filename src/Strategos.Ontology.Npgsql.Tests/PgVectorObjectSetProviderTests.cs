@@ -273,6 +273,67 @@ public class PgVectorObjectSetProviderTests
     }
 
     // ---------------------------------------------------------------------
+    // Task F2 (#33 Finding 2) — strict graph check: unregistered type must
+    // throw when a graph is present rather than silently falling back to
+    // typeof(T).Name. The null-graph (test-mode) fallback is preserved.
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task ResolveTableNameForDefaultOverload_GraphPresentTypeUnregistered_Throws()
+    {
+        // Arrange — a graph that contains no registration for F2Unregistered.
+        // The graph IS present, so the silent typeof(T).Name fallback is
+        // a misconfiguration, not a valid test-mode scenario.
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<F2RegisteredOnlyOntology>()
+            .Build();
+
+        // Act + Assert — must throw InvalidOperationException naming the
+        // unregistered type's full name and pointing at Object<T>(...).
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F2Unregistered>(graph))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F2Unregistered>(graph))
+            .ThrowsException()
+            .WithMessageContaining(typeof(F2Unregistered).FullName!);
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveTableNameForDefaultOverload<F2Unregistered>(graph))
+            .ThrowsException()
+            .WithMessageContaining("Object<T>");
+    }
+
+    [Test]
+    public async Task ResolveTableNameForDefaultOverload_GraphAbsent_FallsBackToCamelCase()
+    {
+        // Arrange — no graph (graph is null). Test-mode instantiation path
+        // must continue to fall back to typeof(T).Name → snake_case so
+        // direct unit-test construction without DI wiring keeps working.
+        var tableName = PgVectorObjectSetProvider
+            .ResolveTableNameForDefaultOverload<F2Unregistered>(graph: null);
+
+        // Assert — snake_case of "F2Unregistered".
+        await Assert.That(tableName).IsEqualTo(TypeMapper.ToSnakeCase(nameof(F2Unregistered)));
+    }
+
+    [Test]
+    public async Task ResolveTableNameForDefaultOverload_GraphPresentTypeRegistered_ReturnsRegisteredName()
+    {
+        // Arrange — a graph with a single Object<F2Registered>("f2_registered_table")
+        // entry. The positive-control: registered type must resolve to the
+        // declared descriptor name, not typeof(T).Name.
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<F2RegisteredOnlyOntology>()
+            .Build();
+
+        var tableName = PgVectorObjectSetProvider
+            .ResolveTableNameForDefaultOverload<F2Registered>(graph);
+
+        await Assert.That(tableName).IsEqualTo("f2_registered_table");
+        await Assert.That(tableName).IsNotEqualTo(TypeMapper.ToSnakeCase(nameof(F2Registered)));
+    }
+
+    // ---------------------------------------------------------------------
     // Track F5 — EnsureSchemaAsync descriptor-name overload tests.
     //
     // EnsureSchemaAsync<T>(string? descriptorName = null, ct) must resolve
@@ -380,6 +441,34 @@ public class F4MultiRegistrationOntology : DomainOntology
         });
 
         builder.Object<F4Foo>("b", obj =>
+        {
+            obj.Key(f => f.Id);
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task F2 test fixtures — top-level so OntologyGraphBuilder.AddDomain<T>()
+// can instantiate them (requires a public parameterless constructor).
+// ---------------------------------------------------------------------------
+
+public sealed class F2Registered
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public sealed class F2Unregistered
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public class F2RegisteredOnlyOntology : DomainOntology
+{
+    public override string DomainName => "f2-registered-only";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<F2Registered>("f2_registered_table", obj =>
         {
             obj.Key(f => f.Id);
         });

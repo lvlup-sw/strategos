@@ -125,28 +125,32 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// </remarks>
     internal static string ResolveTableNameForDefaultOverload<T>(OntologyGraph? graph)
     {
-        if (graph is not null && graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names))
+        if (graph is not null)
         {
+            if (!graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names))
+            {
+                throw new InvalidOperationException(
+                    $"Type '{typeof(T).FullName}' is not registered in the ontology graph. " +
+                    $"Register it via Object<T>(...) in a DomainOntology, or use the explicit-name " +
+                    $"StoreAsync<T>(string descriptorName, T item, ct) overload.");
+            }
+
             if (names.Count == 1)
             {
                 return TypeMapper.ToSnakeCase(names[0]);
             }
 
-            if (names.Count > 1)
-            {
-                throw new InvalidOperationException(
-                    $"Type '{typeof(T).FullName}' has multiple registrations " +
-                    $"({string.Join(", ", names.Select(n => $"'{n}'"))}). " +
-                    $"Use StoreAsync<T>(string descriptorName, T item, ct) or " +
-                    $"StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, ct) " +
-                    $"to specify the target descriptor.");
-            }
+            throw new InvalidOperationException(
+                $"Type '{typeof(T).FullName}' has multiple registrations " +
+                $"({string.Join(", ", names.Select(n => $"'{n}'"))}). " +
+                $"Use StoreAsync<T>(string descriptorName, T item, ct) or " +
+                $"StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, ct) " +
+                $"to specify the target descriptor.");
         }
 
-        // Graph absent, type unregistered, or empty name list — fall back to
-        // typeof(T).Name → snake_case for back-compat with direct unit-test
-        // instantiation and DI configurations that do not resolve an
-        // OntologyGraph.
+        // Graph absent — fall back to typeof(T).Name → snake_case for
+        // back-compat with direct unit-test instantiation and DI
+        // configurations that do not resolve an OntologyGraph.
         return TypeMapper.ToSnakeCase(typeof(T).Name);
     }
 
