@@ -6,4 +6,5 @@ namespace Strategos.Ontology.Actions;
 public sealed record ActionResult(
     bool IsSuccess,
     object? Result = null,
-    string? Error = null);
+    string? Error = null,
+    ConstraintViolationReport? Violations = null);
