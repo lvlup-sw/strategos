@@ -395,5 +395,5 @@ If we run Track B parallel-from-the-start, B1–B5 can land before A1 merges; B6
 - `OntologyToolDescriptor` constructed via the two-arg form has all-false `Annotations`, null `Title`, null `OutputSchema`
 - `OntologyToolDiscovery.Discover()` populates the annotation matrix per design §5 for the three currently-shipping tools
 - Every result type (`ExploreResult`, `QueryResult`, `SemanticQueryResult`, `ActionToolResult`) carries a non-null `Meta` with `OntologyVersion` matching the graph
-- `OntologyServerCapabilitiesProvider.GetServerCapabilities()` returns the current graph version (split out of `OntologyToolDiscovery` per M6 review fix)
+- `OntologyServerCapabilitiesProvider.GetServerCapabilities()` returns the current graph version in wire format (`"sha256:" + graph.Version`) (split out of `OntologyToolDiscovery` per M6 review fix)
 - No existing test in either project regresses (backward-compat verified)
