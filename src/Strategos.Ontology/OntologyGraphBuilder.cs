@@ -789,6 +789,15 @@ public sealed class OntologyGraphBuilder
             .GroupBy(ot => ot.Name)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Domain-keyed index for metadata that carries a DomainName via InDomain().
+        // Keyed by (DomainName, ClrType.Name) so that Consumes<T>()/Produces<T>() — which
+        // store typeof(T).Name — resolve to the right descriptor in the specified domain
+        // even when the descriptor was registered with an explicit (non-CLR) name.
+        // See #33 Finding 4.
+        var objectTypesByDomainAndClrName = allObjectTypes
+            .GroupBy(ot => (ot.DomainName, ot.ClrType.Name))
+            .ToDictionary(g => g.Key, g => g.First());
+
         foreach (var metadata in workflowMetadata)
         {
             if (metadata.ConsumedTypeName is null || metadata.ProducedTypeName is null)
@@ -798,22 +807,65 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            if (!TryResolveUnambiguous(
-                    objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out var consumedType))
-            {
-                continue;
-            }
+            ObjectTypeDescriptor consumedType;
+            ObjectTypeDescriptor producedType;
 
-            if (!TryResolveUnambiguous(
-                    objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out var producedType))
+            if (metadata.DomainName is not null)
             {
-                continue;
+                if (!TryResolveDomainKeyed(
+                        objectTypesByDomainAndClrName, metadata.DomainName, metadata.ConsumedTypeName,
+                        metadata.WorkflowName, "consumed", warnings, out consumedType))
+                {
+                    continue;
+                }
+
+                if (!TryResolveDomainKeyed(
+                        objectTypesByDomainAndClrName, metadata.DomainName, metadata.ProducedTypeName,
+                        metadata.WorkflowName, "produced", warnings, out producedType))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!TryResolveUnambiguous(
+                        objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out consumedType))
+                {
+                    continue;
+                }
+
+                if (!TryResolveUnambiguous(
+                        objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out producedType))
+                {
+                    continue;
+                }
             }
 
             chains.Add(new WorkflowChain(metadata.WorkflowName, consumedType, producedType));
         }
 
         return chains;
+    }
+
+    private static bool TryResolveDomainKeyed(
+        Dictionary<(string DomainName, string ClrName), ObjectTypeDescriptor> objectTypesByDomainAndClrName,
+        string domainName,
+        string typeName,
+        string workflowName,
+        string role,
+        List<string> warnings,
+        out ObjectTypeDescriptor resolved)
+    {
+        resolved = null!;
+
+        if (!objectTypesByDomainAndClrName.TryGetValue((domainName, typeName), out resolved!))
+        {
+            warnings.Add(
+                $"Workflow '{workflowName}' references unknown {role} type '{typeName}' in domain '{domainName}'; skipping.");
+            return false;
+        }
+
+        return true;
     }
 
     private static bool TryResolveUnambiguous(
