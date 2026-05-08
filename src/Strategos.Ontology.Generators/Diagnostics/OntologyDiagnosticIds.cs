@@ -48,4 +48,7 @@ internal static class OntologyDiagnosticIds
     public const string ExtensionPointEdgeMissing = "AONT033";
     public const string ExtensionPointNoLinks = "AONT034";
     public const string ExtensionPointMaxLinksExceeded = "AONT035";
+
+    // ReadOnly (AONT036)
+    public const string ReadOnlyConflictsWithMutation = "AONT036";
 }

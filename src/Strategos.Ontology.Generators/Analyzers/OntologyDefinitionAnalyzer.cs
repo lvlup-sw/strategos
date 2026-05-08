@@ -49,7 +49,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointInterfaceUnsatisfied,
             OntologyDiagnostics.ExtensionPointEdgeMissing,
             OntologyDiagnostics.ExtensionPointNoLinks,
-            OntologyDiagnostics.ExtensionPointMaxLinksExceeded);
+            OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
+            OntologyDiagnostics.ReadOnlyConflictsWithMutation);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -227,6 +228,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     CollectBoundActionInfo(invocation, model, info);
                     break;
 
+                case "ReadOnly":
+                    CollectReadOnlyActionInfo(invocation, model, info);
+                    break;
+
                 case "Modifies":
                     CollectModifiesInfo(invocation, model, info);
                     break;
@@ -389,6 +394,16 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         if (boundActionName != null)
         {
             info.BoundActions.Add(boundActionName);
+        }
+    }
+
+    private static void CollectReadOnlyActionInfo(
+        InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
+    {
+        var actionName = FindActionNameInChain(invocation, model);
+        if (actionName != null)
+        {
+            info.ReadOnlyActions.Add(actionName);
         }
     }
 
@@ -990,6 +1005,34 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     OntologyDiagnostics.RequiresLinkUndeclared, location, actionName, ot.Name, linkName));
+            }
+        }
+
+        // AONT036: ReadOnly action declares mutating chain call
+        foreach (var (actionName, _, location) in ot.ActionModifiesProperties)
+        {
+            if (ot.ReadOnlyActions.Contains(actionName))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.ReadOnlyConflictsWithMutation, location, actionName, ot.Name, "Modifies"));
+            }
+        }
+
+        foreach (var (actionName, _, location) in ot.ActionCreatesLinked)
+        {
+            if (ot.ReadOnlyActions.Contains(actionName))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.ReadOnlyConflictsWithMutation, location, actionName, ot.Name, "CreatesLinked"));
+            }
+        }
+
+        foreach (var (actionName, _, location) in ot.ActionEmitsEvents)
+        {
+            if (ot.ReadOnlyActions.Contains(actionName))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.ReadOnlyConflictsWithMutation, location, actionName, ot.Name, "EmitsEvent"));
             }
         }
     }
@@ -1660,6 +1703,17 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
+    private static bool IsMutatingChainCall(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            var name = memberAccess.Name.Identifier.Text;
+            return name is "Modifies" or "CreatesLinked" or "EmitsEvent";
+        }
+
+        return false;
+    }
+
     private static bool IsOntologyBuilderType(string typeName)
     {
         return typeName == "IOntologyBuilder" || typeName == "OntologyBuilder";
@@ -1698,6 +1752,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public HashSet<string> DeclaredActions { get; } = new HashSet<string>();
         public HashSet<string> DeclaredEvents { get; } = new HashSet<string>();
         public HashSet<string> BoundActions { get; } = new HashSet<string>();
+        public HashSet<string> ReadOnlyActions { get; } = new HashSet<string>();
         public HashSet<string> ComputedProperties { get; } = new HashSet<string>();
         public HashSet<string> PropertiesWithDerivedFrom { get; } = new HashSet<string>();
         public HashSet<string> ImplementedInterfaces { get; } = new HashSet<string>();
@@ -1724,6 +1779,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionRequiresLinks { get; } =
+            new List<(string, string, Location)>();
+
+        public List<(string ActionName, string MutatingCallName, Location Location)> ReadOnlyMutatingConflicts { get; } =
             new List<(string, string, Location)>();
 
         public List<(string EventType, string PropertyName, Location Location)> EventUpdatesProperties { get; } =

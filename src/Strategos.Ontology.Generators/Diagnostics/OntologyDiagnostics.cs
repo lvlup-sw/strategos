@@ -297,4 +297,14 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    // --- ReadOnly (AONT036) ---
+
+    public static readonly DiagnosticDescriptor ReadOnlyConflictsWithMutation = new(
+        OntologyDiagnosticIds.ReadOnlyConflictsWithMutation,
+        "Read-only action declares mutating chain call",
+        "Action '{0}' on '{1}' is marked ReadOnly but also calls '{2}' which mutates state",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
