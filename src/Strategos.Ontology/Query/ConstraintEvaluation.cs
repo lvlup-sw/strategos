@@ -1,12 +1,4 @@
-// Copyright (c) Levelup Software. All rights reserved.
-
-using Strategos.Ontology.Descriptors;
-
-namespace Strategos.Ontology.Query;
-
-public sealed record ConstraintEvaluation(
-    ActionPrecondition Precondition,
-    bool IsSatisfied,
-    ConstraintStrength Strength,
-    string? FailureReason,
-    IReadOnlyDictionary<string, object?>? ExpectedShape);
+// Backward-compat re-export — see plan A1
+// TypeForwardedTo only works across assemblies; Query-namespace consumers use
+// the 'using Strategos.Ontology.Actions;' directive added to their files instead.
+// This file is intentionally empty: the type now lives in Strategos.Ontology.Actions.
