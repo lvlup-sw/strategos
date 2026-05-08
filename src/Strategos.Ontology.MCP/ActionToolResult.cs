@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 using Strategos.Ontology.Actions;
 
 namespace Strategos.Ontology.MCP;
@@ -6,4 +8,5 @@ namespace Strategos.Ontology.MCP;
 /// Result of an ontology action execution.
 /// </summary>
 public sealed record ActionToolResult(
-    IReadOnlyList<ActionResult> Results);
+    IReadOnlyList<ActionResult> Results,
+    [property: JsonPropertyName("_meta")] ResponseMeta Meta);

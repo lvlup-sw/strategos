@@ -69,18 +69,20 @@ public sealed class OntologyActionTool
         {
             var availableDomains = string.Join(", ", _graph.Domains.Select(d => d.DomainName));
             return new ActionToolResult(
-            [
-                new ActionResult(false, Error: $"Object type '{objectType}' not found in domain '{resolvedDomain ?? "any"}'. Available domains: [{availableDomains}]"),
-            ]);
+                [
+                    new ActionResult(false, Error: $"Object type '{objectType}' not found in domain '{resolvedDomain ?? "any"}'. Available domains: [{availableDomains}]"),
+                ],
+                CurrentMeta());
         }
 
         if (!HasAction(objectTypeDescriptor, action))
         {
             var availableActions = string.Join(", ", objectTypeDescriptor.Actions.Select(a => a.Name));
             return new ActionToolResult(
-            [
-                new ActionResult(false, Error: $"Action '{action}' not found on object type '{objectType}'. Available actions: [{availableActions}]"),
-            ]);
+                [
+                    new ActionResult(false, Error: $"Action '{action}' not found on object type '{objectType}'. Available actions: [{availableActions}]"),
+                ],
+                CurrentMeta());
         }
 
         // Safe: resolvedDomain is non-null here because objectTypeDescriptor is non-null,
@@ -107,8 +109,10 @@ public sealed class OntologyActionTool
     {
         var context = new ActionContext(domain, objectType, objectId, action);
         var result = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
-        return new ActionToolResult([result]);
+        return new ActionToolResult([result], CurrentMeta());
     }
+
+    private ResponseMeta CurrentMeta() => ResponseMeta.ForGraph(_graph);
 
     private async Task<ActionToolResult> DispatchBatchAsync(
         string domain,
@@ -149,7 +153,7 @@ public sealed class OntologyActionTool
             }
         }
 
-        return new ActionToolResult(results);
+        return new ActionToolResult(results, CurrentMeta());
     }
 
     private static bool HasAction(ObjectTypeDescriptor objectType, string actionName) =>

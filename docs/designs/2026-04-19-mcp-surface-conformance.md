@@ -269,18 +269,29 @@ return new ExploreResult(scope, items, new ResponseMeta(_graph.Version));
 
 No new abstractions, no helper class. The `_graph.Version` access is O(1) (computed once at graph construction).
 
-### 4.8 Discovery enhancement — surface Version on initialize-style metadata
+### 4.8 Server-capability provider — surface Version on initialize-style metadata
 
-`OntologyToolDiscovery.Discover()` already returns the descriptor list. Add a sibling method:
+Server-capability exposure is a separate concern from tool discovery. `OntologyToolDiscovery` stays focused on building the descriptor list; a sibling type owns initialize-time metadata:
 
 ```csharp
-public OntologyServerCapabilities GetServerCapabilities() =>
-    new(OntologyVersion: _graph.Version);
+public sealed class OntologyServerCapabilitiesProvider
+{
+    private readonly OntologyGraph _graph;
+
+    public OntologyServerCapabilitiesProvider(OntologyGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        _graph = graph;
+    }
+
+    public OntologyServerCapabilities GetServerCapabilities() =>
+        new(ResponseMeta.ForGraph(_graph).OntologyVersion);
+}
 
 public sealed record OntologyServerCapabilities(string OntologyVersion);
 ```
 
-This is the affordance MCP-server hosts (Basileus AgentHost) consume to populate the `initialize` response's `capabilities._meta.ontologyVersion` field. Strategos ships the data; the host wires it into its MCP transport.
+This is the affordance MCP-server hosts (Basileus AgentHost) consume to populate the `initialize` response's `capabilities._meta.ontologyVersion` field. Strategos ships the data; the host wires it into its MCP transport. Splitting it out of `OntologyToolDiscovery` keeps the SRP boundary clean as the v1 capability surface (`OntologyVersion`) grows in later slices (per §6 future additions).
 
 ---
 
@@ -369,7 +380,7 @@ Net new tests (TUnit, in `Strategos.Ontology.Tests` and `Strategos.Ontology.MCP.
 | both | `ResponseMeta` record | `src/Strategos.Ontology.MCP/ResponseMeta.cs` (new) |
 | both | Result records gain `Meta` | `ExploreResult.cs`, `QueryResult.cs`, `SemanticQueryResult.cs`, `ActionToolResult.cs` |
 | both | Tool stamping calls | `OntologyExploreTool.cs`, `OntologyQueryTool.cs`, `OntologyActionTool.cs` |
-| #44 | `OntologyServerCapabilities` discovery | `src/Strategos.Ontology.MCP/OntologyToolDiscovery.cs` |
+| #44 | `OntologyServerCapabilitiesProvider` | `src/Strategos.Ontology.MCP/OntologyServerCapabilitiesProvider.cs` (new) |
 | both | Descriptor + annotation tests | `src/Strategos.Ontology.MCP.Tests/OntologyToolDescriptorTests.cs` (new), `OntologyToolDiscoveryAnnotationTests.cs` (new) |
 | both | Meta envelope tests | `OntologyExploreToolMetaTests.cs`, `OntologyQueryToolMetaTests.cs`, `OntologyActionToolMetaTests.cs` (all new) |
 
@@ -397,6 +408,7 @@ No work in this slice. Consumed downstream:
 - **Breaking change to internal result record constructors.** `ExploreResult`, `QueryResult`, `SemanticQueryResult`, `ActionToolResult` gain a required `Meta` parameter. Mitigated by §4.5 — the breakage is bounded to Strategos.Ontology.MCP's own tests; no external consumers construct these directly.
 - **One-time hash-algorithm decision.** SHA-256 is the right v1 default (collision-resistant, fast, ubiquitous). The `"sha256:"` prefix in the wire format leaves room for future migration; the `OntologyGraph.Version` property does not (it returns the hex). If we ever need pluggable hashing, that's a v2.
 - **JSON-schema generation cost at startup.** `JsonSchemaExporter` runs once per tool discovery. ~1ms per type on the reference shapes; not in any hot path.
+- **Trim/AOT propagation through `OntologyToolDiscovery.Discover()`.** `JsonSchemaExporter` (used to populate each tool's `OutputSchema`) is reflection-based, so `JsonSchemaHelper.JsonSchemaFor<T>()` carries `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. These annotations propagate to `OntologyToolDiscovery.Discover()` and the three private descriptor builders. Downstream consumers (Basileus AgentHost, custom MCP host integrations) calling `Discover()` from trim/AOT-published projects will see IL2026 / IL3050 analyzer warnings they must suppress at their call site or via `<TrimmerRootDescriptor>` config. The package itself remains `<IsAotCompatible>true</IsAotCompatible>` — the constraint is on the schema-generation surface, not the package's other code paths. Future work: precompute schemas at package-build time via a source generator (deferred; out of scope for 2.5.0).
 
 ### Neutral
 

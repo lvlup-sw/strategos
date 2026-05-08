@@ -40,9 +40,11 @@ public sealed class OntologyExploreTool
             "interfaces" => ExploreInterfaces(),
             "workflowChains" => ExploreWorkflowChains(),
             "vectorProperties" => ExploreVectorProperties(domain),
-            _ => new ExploreResult(scope, []),
+            _ => new ExploreResult(scope, [], CurrentMeta()),
         };
     }
+
+    private ResponseMeta CurrentMeta() => ResponseMeta.ForGraph(_graph);
 
     private ExploreResult ExploreDomains()
     {
@@ -52,7 +54,7 @@ public sealed class OntologyExploreTool
             ["objectTypeCount"] = d.ObjectTypes.Count,
         }).ToList();
 
-        return new ExploreResult("domains", items);
+        return new ExploreResult("domains", items, CurrentMeta());
     }
 
     private ExploreResult ExploreObjectTypes(string? domain)
@@ -72,7 +74,7 @@ public sealed class OntologyExploreTool
             ["isSemanticSearchable"] = t.Properties.Any(p => p.Kind == PropertyKind.Vector),
         }).ToList();
 
-        return new ExploreResult("objectTypes", items);
+        return new ExploreResult("objectTypes", items, CurrentMeta());
     }
 
     private ExploreResult ExploreActions(string? domain, string? objectType)
@@ -80,7 +82,7 @@ public sealed class OntologyExploreTool
         var type = ResolveObjectType(domain, objectType);
         if (type is null)
         {
-            return new ExploreResult("actions", []);
+            return new ExploreResult("actions", [], CurrentMeta());
         }
 
         var items = type.Actions.Select(a => new Dictionary<string, object?>
@@ -92,7 +94,7 @@ public sealed class OntologyExploreTool
             ["bindingType"] = a.BindingType.ToString(),
         }).ToList();
 
-        return new ExploreResult("actions", items);
+        return new ExploreResult("actions", items, CurrentMeta());
     }
 
     private ExploreResult ExploreLinks(string? domain, string? objectType)
@@ -100,7 +102,7 @@ public sealed class OntologyExploreTool
         var type = ResolveObjectType(domain, objectType);
         if (type is null)
         {
-            return new ExploreResult("links", []);
+            return new ExploreResult("links", [], CurrentMeta());
         }
 
         var items = type.Links.Select(l => new Dictionary<string, object?>
@@ -112,7 +114,7 @@ public sealed class OntologyExploreTool
             ["description"] = l.Description,
         }).ToList();
 
-        return new ExploreResult("links", items);
+        return new ExploreResult("links", items, CurrentMeta());
     }
 
     private ExploreResult ExploreEvents(string? domain, string? objectType)
@@ -120,7 +122,7 @@ public sealed class OntologyExploreTool
         var type = ResolveObjectType(domain, objectType);
         if (type is null)
         {
-            return new ExploreResult("events", []);
+            return new ExploreResult("events", [], CurrentMeta());
         }
 
         var items = type.Events.Select(e => new Dictionary<string, object?>
@@ -132,7 +134,7 @@ public sealed class OntologyExploreTool
             ["updatedProperties"] = e.UpdatedProperties,
         }).ToList();
 
-        return new ExploreResult("events", items);
+        return new ExploreResult("events", items, CurrentMeta());
     }
 
     private ExploreResult ExploreInterfaces()
@@ -143,7 +145,7 @@ public sealed class OntologyExploreTool
             ["propertyCount"] = i.Properties.Count,
         }).ToList();
 
-        return new ExploreResult("interfaces", items);
+        return new ExploreResult("interfaces", items, CurrentMeta());
     }
 
     private ExploreResult ExploreWorkflowChains()
@@ -155,7 +157,7 @@ public sealed class OntologyExploreTool
             ["producedType"] = w.ProducedType.Name,
         }).ToList();
 
-        return new ExploreResult("workflowChains", items);
+        return new ExploreResult("workflowChains", items, CurrentMeta());
     }
 
     private ExploreResult ExploreTraversal(string domain, string traverseFrom, int maxDepth)
@@ -170,7 +172,7 @@ public sealed class OntologyExploreTool
             ["description"] = r.Description,
         }).ToList();
 
-        return new ExploreResult("links", items);
+        return new ExploreResult("links", items, CurrentMeta());
     }
 
     private ExploreResult ExploreVectorProperties(string? domain)
@@ -196,7 +198,7 @@ public sealed class OntologyExploreTool
             })
             .ToList();
 
-        return new ExploreResult("vectorProperties", items);
+        return new ExploreResult("vectorProperties", items, CurrentMeta());
     }
 
     private ObjectTypeDescriptor? ResolveObjectType(string? domain, string? objectType)
