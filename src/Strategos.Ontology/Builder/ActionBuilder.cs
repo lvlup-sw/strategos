@@ -11,6 +11,7 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
     private string? _boundWorkflowName;
     private string? _boundToolName;
     private string? _boundToolMethod;
+    private bool _isReadOnly;
 
     public IActionBuilder Description(string description)
     {
@@ -45,6 +46,12 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
         return this;
     }
 
+    public IActionBuilder ReadOnly()
+    {
+        _isReadOnly = true;
+        return this;
+    }
+
     public ActionDescriptor Build() =>
         new(name, _description)
         {
@@ -54,5 +61,6 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
             BoundWorkflowName = _boundWorkflowName,
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
+            IsReadOnly = _isReadOnly,
         };
 }

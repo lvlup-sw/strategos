@@ -11,4 +11,6 @@ public interface IActionBuilder
     IActionBuilder BoundToWorkflow(string workflowName);
 
     IActionBuilder BoundToTool(string toolName, string methodName);
+
+    IActionBuilder ReadOnly();
 }

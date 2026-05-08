@@ -15,6 +15,8 @@ public interface IActionBuilder<T> : IActionBuilder
 
     new IActionBuilder<T> BoundToTool(string toolName, string methodName);
 
+    new IActionBuilder<T> ReadOnly();
+
     IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector);
 
     IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate);
