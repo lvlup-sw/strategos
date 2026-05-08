@@ -16,6 +16,8 @@ public sealed record ActionDescriptor(
 
     public string? BoundToolMethod { get; init; }
 
+    public bool IsReadOnly { get; init; }
+
     public IReadOnlyList<ActionPrecondition> Preconditions { get; init; } = [];
 
     public IReadOnlyList<ActionPostcondition> Postconditions { get; init; } = [];
