@@ -19,16 +19,18 @@ public class ResponseMetaTests
     [Test]
     public async Task ResponseMeta_JsonSerialization_EmitsOntologyVersionPropertyName()
     {
-        // Arrange — wire-format mapping at the result-record level (B6/B7/B8)
-        // uses [JsonPropertyName("_meta")] on the Meta member; the inner
-        // ResponseMeta property keeps its PascalCase JSON name.
+        // The inner `OntologyVersion` field is pinned via [JsonPropertyName]
+        // so the wire form is "ontologyVersion" regardless of naming policy —
+        // the MCP SDK applies JsonSerializerDefaults.Web (camelCase) but other
+        // hosts may not, so we lock the contract here.
         var wrap = new Wrap(new ResponseMeta("sha256:abc"));
 
-        // Act
+        // Act — bare serializer (no naming policy); the attribute still wins.
         var json = JsonSerializer.Serialize(wrap);
 
         // Assert
-        await Assert.That(json).Contains("\"OntologyVersion\"");
+        await Assert.That(json).Contains("\"ontologyVersion\"");
+        await Assert.That(json).DoesNotContain("\"OntologyVersion\"");
         await Assert.That(json).Contains("sha256:abc");
     }
 

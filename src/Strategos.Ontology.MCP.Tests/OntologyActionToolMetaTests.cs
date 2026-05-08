@@ -75,6 +75,7 @@ public class OntologyActionToolMetaTests
             action: "noop",
             request: new { },
             domain: "trading");
+        await Assert.That(r1.Meta).IsNotNull();
         await Assert.That(r1.Meta.OntologyVersion).IsEqualTo(expected);
 
         // Unknown action on a real type
@@ -83,6 +84,7 @@ public class OntologyActionToolMetaTests
             action: "no_such_action",
             request: new { },
             domain: "trading");
+        await Assert.That(r2.Meta).IsNotNull();
         await Assert.That(r2.Meta.OntologyVersion).IsEqualTo(expected);
     }
 

@@ -62,6 +62,6 @@ public class OntologyExploreToolMetaTests
         var json = JsonSerializer.Serialize(result);
 
         await Assert.That(json).Contains("\"_meta\"");
-        await Assert.That(json).Contains("\"OntologyVersion\"");
+        await Assert.That(json).Contains("\"ontologyVersion\"");
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
@@ -10,9 +12,13 @@ namespace Strategos.Ontology.MCP;
 /// Wire-format version identifier — hash digest prefixed with the algorithm
 /// (e.g. <c>"sha256:..."</c>). Constructed via <see cref="ForGraph"/> so the
 /// prefix is applied uniformly at the meta-envelope boundary; the underlying
-/// <c>OntologyGraph.Version</c> property returns bare hex.
+/// <c>OntologyGraph.Version</c> property returns bare hex. The wire-format key
+/// is pinned to <c>"ontologyVersion"</c> so the contract is stable regardless
+/// of the surrounding <see cref="System.Text.Json.JsonSerializerOptions"/>
+/// (the MCP SDK applies <c>JsonSerializerDefaults.Web</c> by default).
 /// </param>
-public sealed record ResponseMeta(string OntologyVersion)
+public sealed record ResponseMeta(
+    [property: JsonPropertyName("ontologyVersion")] string OntologyVersion)
 {
     /// <summary>
     /// Builds a <see cref="ResponseMeta"/> from the supplied graph, stamping

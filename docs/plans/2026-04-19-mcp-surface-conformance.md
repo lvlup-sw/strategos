@@ -342,7 +342,7 @@ To filter to a single test/class: append `-- --treenode-filter "/*/*/ClassName/*
 
 1. **[RED]** Write test: `GetServerCapabilities_ReturnsCurrentGraphVersion`
    - File: `src/Strategos.Ontology.MCP.Tests/OntologyServerCapabilitiesProviderTests.cs` (new — see review-fix note below)
-   - Build a graph, call `new OntologyServerCapabilitiesProvider(graph).GetServerCapabilities()`, assert `result.OntologyVersion == graph.Version`
+   - Build a graph, call `new OntologyServerCapabilitiesProvider(graph).GetServerCapabilities()`, assert `result.OntologyVersion == "sha256:" + graph.Version` (provider routes through `ResponseMeta.ForGraph(...)` which prepends the wire-format prefix)
    - Expected failure: `OntologyServerCapabilitiesProvider` type doesn't exist
 2. **[RED]** Write test: `OntologyServerCapabilitiesProvider_NullGraph_Throws`
    - Same file. `await Assert.That(() => new OntologyServerCapabilitiesProvider(null!)).Throws<ArgumentNullException>()`.
