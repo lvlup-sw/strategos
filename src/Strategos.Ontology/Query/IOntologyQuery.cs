@@ -71,4 +71,10 @@ public interface IOntologyQuery
     /// without hardcoding descriptor names at call sites.
     /// </summary>
     IReadOnlyList<string> GetObjectTypeNames<T>() where T : class;
+
+    BlastRadius EstimateBlastRadius(
+        IReadOnlyList<OntologyNodeRef> touchedNodes,
+        BlastRadiusOptions? options = null)
+        => throw new NotSupportedException(
+            "EstimateBlastRadius is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
 }
