@@ -60,6 +60,8 @@ public static class OntologyServiceCollectionExtensions
             registration(services);
         }
 
+        ApplyDispatcherDecorators(services, options);
+
         // Auto-detect: if the registered IObjectSetProvider also implements IObjectSetWriter,
         // register IObjectSetWriter to resolve to the same instance.
         var providerDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IObjectSetProvider));
@@ -72,5 +74,58 @@ public static class OntologyServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    private static void ApplyDispatcherDecorators(IServiceCollection services, OntologyOptions options)
+    {
+        if (options.DispatcherDecorators.Count == 0)
+        {
+            return;
+        }
+
+        var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(IActionDispatcher));
+        if (descriptor is null)
+        {
+            return;
+        }
+
+        services.Remove(descriptor);
+
+        Func<IServiceProvider, IActionDispatcher> innerFactory;
+        if (descriptor.ImplementationType is { } implType)
+        {
+            services.AddSingleton(implType);
+            innerFactory = sp => (IActionDispatcher)sp.GetRequiredService(implType);
+        }
+        else if (descriptor.ImplementationFactory is { } factory)
+        {
+            innerFactory = sp => (IActionDispatcher)factory(sp);
+        }
+        else if (descriptor.ImplementationInstance is IActionDispatcher instance)
+        {
+            innerFactory = _ => instance;
+        }
+        else
+        {
+            // Unsupported descriptor shape — restore original registration.
+            services.Add(descriptor);
+            return;
+        }
+
+        var orderedFactories = options.DispatcherDecorators
+            .OrderBy(d => d.Order)
+            .Select(d => d.Factory)
+            .ToArray();
+
+        services.AddSingleton<IActionDispatcher>(sp =>
+        {
+            var dispatcher = innerFactory(sp);
+            foreach (var factory in orderedFactories)
+            {
+                dispatcher = factory(sp, dispatcher);
+            }
+
+            return dispatcher;
+        });
     }
 }

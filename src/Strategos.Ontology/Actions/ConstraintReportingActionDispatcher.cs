@@ -14,7 +14,7 @@ namespace Strategos.Ontology.Actions;
 public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
 {
     private readonly IActionDispatcher _inner;
-    private readonly IOntologyQuery _query;
+    private readonly Func<IOntologyQuery> _queryAccessor;
     private readonly ILogger<ConstraintReportingActionDispatcher> _logger;
 
     public ConstraintReportingActionDispatcher(
@@ -27,8 +27,35 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         ArgumentNullException.ThrowIfNull(logger);
 
         _inner = inner;
-        _query = query;
+        _queryAccessor = () => query;
         _logger = logger;
+    }
+
+    private ConstraintReportingActionDispatcher(
+        IActionDispatcher inner,
+        Func<IOntologyQuery> queryAccessor,
+        ILogger<ConstraintReportingActionDispatcher> logger)
+    {
+        _inner = inner;
+        _queryAccessor = queryAccessor;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Creates an instance that resolves <see cref="IOntologyQuery"/> lazily on first
+    /// dispatch. Used by DI to break the cycle between the dispatcher chain factory
+    /// and the query factory (which itself injects <see cref="IActionDispatcher"/>).
+    /// </summary>
+    internal static ConstraintReportingActionDispatcher CreateDeferred(
+        IActionDispatcher inner,
+        Lazy<IOntologyQuery> query,
+        ILogger<ConstraintReportingActionDispatcher> logger)
+    {
+        ArgumentNullException.ThrowIfNull(inner);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        return new ConstraintReportingActionDispatcher(inner, () => query.Value, logger);
     }
 
     public async Task<ActionResult> DispatchAsync(
@@ -51,7 +78,7 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         IReadOnlyList<ActionConstraintReport> reports;
         try
         {
-            reports = _query.GetActionConstraintReport(context.ObjectType, knownProperties: null);
+            reports = _queryAccessor().GetActionConstraintReport(context.ObjectType, knownProperties: null);
         }
         catch (Exception ex)
         {
