@@ -20,6 +20,7 @@ public interface IActionDispatcher
         ActionContext context, object request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
 
         if (context.ActionDescriptor?.IsReadOnly is not true)
         {

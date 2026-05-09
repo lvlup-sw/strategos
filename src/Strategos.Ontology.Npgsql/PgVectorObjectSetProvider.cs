@@ -106,9 +106,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// Resolves the snake_case PostgreSQL table name for a write-path call
     /// made via the default (no-name) overloads, using the ontology graph's
     /// reverse index to look up the descriptor name registered for
-    /// <typeparamref name="T"/>. Falls back to <c>typeof(T).Name</c> when
-    /// <paramref name="graph"/> is <c>null</c> or the type is absent from
-    /// the graph.
+    /// <typeparamref name="T"/>. Falls back to <c>typeof(T).Name</c> only
+    /// when <paramref name="graph"/> is <c>null</c>; throws
+    /// <see cref="InvalidOperationException"/> when the graph is present
+    /// but the type is not registered.
     /// </summary>
     /// <remarks>
     /// Symmetric write-path counterpart to <see cref="ResolveTableName(ObjectSetExpression)"/>

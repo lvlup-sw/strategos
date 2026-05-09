@@ -304,7 +304,7 @@ public class PgVectorObjectSetProviderTests
     }
 
     [Test]
-    public async Task ResolveTableNameForDefaultOverload_GraphAbsent_FallsBackToCamelCase()
+    public async Task ResolveTableNameForDefaultOverload_GraphAbsent_FallsBackToSnakeCase()
     {
         // Arrange — no graph (graph is null). Test-mode instantiation path
         // must continue to fall back to typeof(T).Name → snake_case so

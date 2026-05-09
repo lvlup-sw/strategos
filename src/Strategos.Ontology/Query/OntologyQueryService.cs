@@ -386,6 +386,12 @@ internal sealed class OntologyQueryService : IOntologyQuery
         BlastRadiusOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(touchedNodes);
+
+        if (touchedNodes.Count == 0)
+        {
+            return new BlastRadius([], [], [], BlastRadiusScope.Local);
+        }
+
         var opts = options ?? new BlastRadiusOptions();
 
         var directlyAffected = touchedNodes.ToArray();
@@ -436,8 +442,20 @@ internal sealed class OntologyQueryService : IOntologyQuery
             .ThenBy(n => n.Key ?? string.Empty, StringComparer.Ordinal)
             .ToArray();
 
-        var scope = ClassifyScope(directlyOrdered, transitivelyOrdered, crossHops);
-        return new BlastRadius(directlyOrdered, transitivelyOrdered, crossHops, scope);
+        // Normalize crossHops too — leaving BFS discovery order makes the
+        // result vary with seed ordering and graph registration order, which
+        // breaks the determinism contract documented on EstimateBlastRadius.
+        var crossHopsOrdered = crossHops
+            .OrderBy(h => h.FromDomain, StringComparer.Ordinal)
+            .ThenBy(h => h.ToDomain, StringComparer.Ordinal)
+            .ThenBy(h => h.SourceNode.ObjectTypeName, StringComparer.Ordinal)
+            .ThenBy(h => h.SourceNode.Key ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(h => h.TargetNode.ObjectTypeName, StringComparer.Ordinal)
+            .ThenBy(h => h.TargetNode.Key ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+
+        var scope = ClassifyScope(directlyOrdered, transitivelyOrdered, crossHopsOrdered);
+        return new BlastRadius(directlyOrdered, transitivelyOrdered, crossHopsOrdered, scope);
     }
 
     private IEnumerable<(OntologyNodeRef Neighbor, CrossDomainHop? Hop)> ExpandNeighbors(
@@ -454,6 +472,56 @@ internal sealed class OntologyQueryService : IOntologyQuery
             foreach (var link in ot.Links)
             {
                 yield return (new OntologyNodeRef(ot.DomainName, link.TargetTypeName), null);
+            }
+
+            // Derivation edges (design §4.6 step 2): for each property on the
+            // current type, every external derivation source is a neighbor.
+            // Local sources stay within the current ObjectType so they don't
+            // produce a node-level neighbor.
+            foreach (var prop in ot.Properties)
+            {
+                var sources = prop.TransitiveDerivedFrom.Count > 0
+                    ? prop.TransitiveDerivedFrom
+                    : prop.DerivedFrom;
+
+                foreach (var src in sources)
+                {
+                    if (src.Kind != DerivationSourceKind.External
+                        || src.ExternalDomain is null
+                        || src.ExternalObjectType is null)
+                    {
+                        continue;
+                    }
+
+                    var derivedNeighbor = new OntologyNodeRef(src.ExternalDomain, src.ExternalObjectType);
+                    var hop = !string.Equals(src.ExternalDomain, current.Domain, StringComparison.Ordinal)
+                        ? new CrossDomainHop(
+                            FromDomain: current.Domain,
+                            ToDomain: src.ExternalDomain,
+                            SourceNode: new OntologyNodeRef(current.Domain, current.ObjectTypeName),
+                            TargetNode: derivedNeighbor)
+                        : null;
+                    yield return (derivedNeighbor, hop);
+                }
+            }
+
+            // Postcondition edges (design §4.6 step 3): each action's
+            // postconditions that name a TargetTypeName produce an
+            // intra-domain neighbor (cross-domain postcondition propagation
+            // is already covered by the CrossDomainLinks pass below).
+            foreach (var action in ot.Actions)
+            {
+                foreach (var post in action.Postconditions)
+                {
+                    if (string.IsNullOrEmpty(post.TargetTypeName))
+                    {
+                        continue;
+                    }
+
+                    yield return (
+                        new OntologyNodeRef(ot.DomainName, post.TargetTypeName),
+                        null);
+                }
             }
         }
 
@@ -1050,7 +1118,9 @@ internal sealed class OntologyQueryService : IOntologyQuery
     }
 
     private static ObjectTypeDescriptor? ResolveSubject(OntologyGraph graph, OntologyNodeRef subject)
-        => graph.GetObjectType(subject.Domain, subject.ObjectTypeName)
-            ?? graph.ObjectTypes.FirstOrDefault(o =>
-                string.Equals(o.Name, subject.ObjectTypeName, StringComparison.Ordinal));
+        // Strict domain-qualified lookup only. A simple-name fallback would
+        // reintroduce the same multi-domain ambiguity that was removed from
+        // ExpandNeighbors — running detectors against the wrong descriptor
+        // is worse than returning null and skipping the subject.
+        => graph.GetObjectType(subject.Domain, subject.ObjectTypeName);
 }

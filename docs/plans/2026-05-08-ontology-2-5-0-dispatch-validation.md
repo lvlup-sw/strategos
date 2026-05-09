@@ -521,7 +521,7 @@ To filter to a single test/class: append `-- --treenode-filter "/*/*/ClassName/*
 
 ## Suggested execution order (when parallelization is available)
 
-```
+```text
 ┌─ Wave 1 (parallel) ──────────────────────────────────────────────┐
 │  Track A: A1, A2, A3 (chained), A4, A5, A6                       │
 │  Track B: B1, B3                                                 │

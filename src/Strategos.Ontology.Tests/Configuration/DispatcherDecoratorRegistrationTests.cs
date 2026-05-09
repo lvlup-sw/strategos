@@ -86,6 +86,12 @@ public class DispatcherDecoratorRegistrationTests
         var outer = provider.GetRequiredService<IActionDispatcher>();
 
         await Assert.That(outer).IsTypeOf<ObservableActionDispatcher>();
+        // Verify the full chain so a regression that drops the constraint
+        // layer entirely is caught: Observable → ConstraintReporting → Stub.
+        var observable = (ObservableActionDispatcher)outer;
+        await Assert.That(observable.Inner).IsTypeOf<ConstraintReportingActionDispatcher>();
+        var constraintReporting = (ConstraintReportingActionDispatcher)observable.Inner;
+        await Assert.That(constraintReporting.Inner).IsTypeOf<StubActionDispatcher>();
     }
 
     [Test]
@@ -105,6 +111,10 @@ public class DispatcherDecoratorRegistrationTests
         var outer = provider.GetRequiredService<IActionDispatcher>();
 
         await Assert.That(outer).IsTypeOf<ObservableActionDispatcher>();
+        var observable = (ObservableActionDispatcher)outer;
+        await Assert.That(observable.Inner).IsTypeOf<ConstraintReportingActionDispatcher>();
+        var constraintReporting = (ConstraintReportingActionDispatcher)observable.Inner;
+        await Assert.That(constraintReporting.Inner).IsTypeOf<StubActionDispatcher>();
     }
 
     [Test]

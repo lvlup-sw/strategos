@@ -3,27 +3,27 @@ using Strategos.Ontology.Extensions;
 
 namespace Strategos.Ontology.Tests;
 
-public class AlphaOrder
+internal sealed class AlphaOrder
 {
     public string Id { get; set; } = "";
 }
 
-public class AlphaResult
+internal sealed class AlphaResult
 {
     public string Id { get; set; } = "";
 }
 
-public class BetaOrder
+internal sealed class BetaOrder
 {
     public string Id { get; set; } = "";
 }
 
-public class BetaResult
+internal sealed class BetaResult
 {
     public string Id { get; set; } = "";
 }
 
-public class AlphaDomainOntology : DomainOntology
+internal sealed class AlphaDomainOntology : DomainOntology
 {
     public override string DomainName => "domain-alpha";
 
@@ -34,7 +34,7 @@ public class AlphaDomainOntology : DomainOntology
     }
 }
 
-public class BetaDomainOntology : DomainOntology
+internal sealed class BetaDomainOntology : DomainOntology
 {
     public override string DomainName => "domain-beta";
 
@@ -45,7 +45,7 @@ public class BetaDomainOntology : DomainOntology
     }
 }
 
-public class GammaDomainOntology : DomainOntology
+internal sealed class GammaDomainOntology : DomainOntology
 {
     public override string DomainName => "domain-gamma";
 

@@ -17,6 +17,8 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
     private readonly Func<IOntologyQuery> _queryAccessor;
     private readonly ILogger<ConstraintReportingActionDispatcher> _logger;
 
+    internal IActionDispatcher Inner => _inner;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="ConstraintReportingActionDispatcher"/> class.
     /// </summary>

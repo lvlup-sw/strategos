@@ -93,6 +93,96 @@ public class TestDomain : DomainOntology
     }
 
     [Test]
+    public async Task AONT036_ModifiesThenReadOnly_FiresDiagnostic()
+    {
+        // Reverse-order mirror: Modifies(...).ReadOnly() must also fire so
+        // the analyzer doesn't depend on the chaining direction.
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } public decimal Balance { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Balance);
+            obj.Action(""GetBalance"").Modifies(p => p.Balance).ReadOnly();
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.ReadOnlyConflictsWithMutation);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT036_CreatesLinkedThenReadOnly_FiresDiagnostic()
+    {
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public System.Guid Id { get; set; } }
+public class Order { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.HasMany<Order>(""Orders"");
+            obj.Action(""GetOrders"").CreatesLinked<Order>(""Orders"").ReadOnly();
+        });
+        builder.Object<Order>(obj => { obj.Key(p => p.Id); });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.ReadOnlyConflictsWithMutation);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AONT036_EmitsEventThenReadOnly_FiresDiagnostic()
+    {
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TestModel { public Guid Id { get; set; } }
+public record BalanceRead(Guid Id);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""test"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestModel>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Event<BalanceRead>(e => { });
+            obj.Action(""GetBalance"").EmitsEvent<BalanceRead>().ReadOnly();
+        });
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.ReadOnlyConflictsWithMutation);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task AONT036_ReadOnlyAlone_NoDiagnostic()
     {
         var source = @"

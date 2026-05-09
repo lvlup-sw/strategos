@@ -72,12 +72,41 @@ public interface IOntologyQuery
     /// </summary>
     IReadOnlyList<string> GetObjectTypeNames<T>() where T : class;
 
+    /// <summary>
+    /// Estimates the downstream blast radius for the supplied seed nodes by
+    /// walking links, derivation chains, postconditions, and cross-domain
+    /// links until <see cref="BlastRadiusOptions.MaxExpansionDegree"/> is
+    /// reached.
+    /// </summary>
+    /// <param name="touchedNodes">Seed nodes to begin expansion from.</param>
+    /// <param name="options">
+    /// Traversal options controlling depth limits; defaults are applied when null.
+    /// </param>
+    /// <returns>
+    /// A <see cref="BlastRadius"/> with deterministically ordered affected
+    /// nodes, cross-domain hops, and a classified scope.
+    /// </returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown by the default interface implementation; concrete query types
+    /// (e.g. <c>OntologyQueryService</c>) must override.
+    /// </exception>
     BlastRadius EstimateBlastRadius(
         IReadOnlyList<OntologyNodeRef> touchedNodes,
         BlastRadiusOptions? options = null)
         => throw new NotSupportedException(
             "EstimateBlastRadius is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
 
+    /// <summary>
+    /// Detects ontology pattern violations for the supplied affected nodes
+    /// and design intent.
+    /// </summary>
+    /// <param name="affectedNodes">Nodes within scope of validation.</param>
+    /// <param name="intent">The design intent driving validation.</param>
+    /// <returns>Detected violations; empty when no patterns fire.</returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown by the default interface implementation; concrete query types
+    /// (e.g. <c>OntologyQueryService</c>) must override.
+    /// </exception>
     IReadOnlyList<PatternViolation> DetectPatternViolations(
         IReadOnlyList<OntologyNodeRef> affectedNodes,
         DesignIntent intent)

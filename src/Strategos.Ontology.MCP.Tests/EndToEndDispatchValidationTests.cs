@@ -189,7 +189,9 @@ public class EndToEndDispatchValidationTests
 
         await Assert.That(verdict.BlastRadius).IsNotNull();
         var scope = verdict.BlastRadius.Scope;
-        await Assert.That(scope == BlastRadiusScope.CrossDomain || scope == BlastRadiusScope.Global || scope == BlastRadiusScope.Domain)
+        // Tightened (was: CrossDomain || Global || Domain) — Domain would
+        // mean cross-domain classification regressed silently.
+        await Assert.That(scope == BlastRadiusScope.CrossDomain || scope == BlastRadiusScope.Global)
             .IsTrue();
     }
 

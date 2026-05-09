@@ -17,6 +17,7 @@ public class OntologyToolDiscoveryTests
 
         // Assert — should return exactly 4 tools (explore, query, action, validate)
         await Assert.That(tools).HasCount().EqualTo(4);
+        await Assert.That(tools.Select(t => t.Name)).Contains("ontology_validate");
     }
 
     [Test]
