@@ -79,7 +79,11 @@ public sealed class OntologyValidateTool
             // than the prior subject state.
             var lookup = MergeKnownPropsAndArgs(intent.KnownProperties, action.Arguments);
 
+            // Domain-qualified lookup so a graph with two same-named types in
+            // different domains (e.g. trading.Order vs fulfillment.Order)
+            // returns the constraint set for the actual subject's type.
             var reports = _query.GetActionConstraintReport(
+                action.Subject.Domain,
                 action.Subject.ObjectTypeName,
                 lookup);
 
@@ -89,6 +93,10 @@ public sealed class OntologyValidateTool
             var report = reports.FirstOrDefault(r => r.Action.Name == action.ActionName);
             if (report is null)
             {
+                // Don't silently swallow unknown/misspelled actions — that
+                // would let a typo produce Passed=true on what is actually
+                // an invalid intent. Surface as a hard violation.
+                hard.Add(BuildUnknownActionViolation(action));
                 continue;
             }
 
@@ -111,6 +119,28 @@ public sealed class OntologyValidateTool
         }
 
         return (hard, soft);
+    }
+
+    private static ConstraintEvaluation BuildUnknownActionViolation(ProposedAction action)
+    {
+        var synthetic = new ActionPrecondition
+        {
+            Expression = $"action_registered('{action.ActionName}')",
+            Description =
+                $"Action '{action.ActionName}' must be registered on " +
+                $"'{action.Subject.Domain}.{action.Subject.ObjectTypeName}'.",
+            Kind = PreconditionKind.Custom,
+            Strength = ConstraintStrength.Hard,
+        };
+
+        return new ConstraintEvaluation(
+            Precondition: synthetic,
+            IsSatisfied: false,
+            Strength: ConstraintStrength.Hard,
+            FailureReason:
+                $"Action '{action.ActionName}' is not registered on " +
+                $"'{action.Subject.Domain}.{action.Subject.ObjectTypeName}'.",
+            ExpectedShape: null);
     }
 
     private static IReadOnlyDictionary<string, object?>? MergeKnownPropsAndArgs(

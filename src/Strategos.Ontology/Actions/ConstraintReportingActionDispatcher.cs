@@ -72,6 +72,7 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         ActionContext context, object request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
 
         var result = await _inner.DispatchAsync(context, request, ct).ConfigureAwait(false);
         return AppendViolationsIfAny(context, result);

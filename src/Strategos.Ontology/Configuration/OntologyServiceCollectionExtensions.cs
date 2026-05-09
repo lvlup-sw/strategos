@@ -120,15 +120,22 @@ public static class OntologyServiceCollectionExtensions
             .Select(d => d.Factory)
             .ToArray();
 
-        services.AddSingleton<IActionDispatcher>(sp =>
-        {
-            var dispatcher = innerFactory(sp);
-            foreach (var factory in orderedFactories)
+        // Honor the original IActionDispatcher lifetime when registering the
+        // decorated dispatcher — using AddSingleton unconditionally would
+        // resolve a Scoped inner from the root scope and create a captive
+        // dependency.
+        services.Add(new ServiceDescriptor(
+            typeof(IActionDispatcher),
+            sp =>
             {
-                dispatcher = factory(sp, dispatcher);
-            }
+                var dispatcher = innerFactory(sp);
+                foreach (var factory in orderedFactories)
+                {
+                    dispatcher = factory(sp, dispatcher);
+                }
 
-            return dispatcher;
-        });
+                return dispatcher;
+            },
+            descriptor.Lifetime));
     }
 }

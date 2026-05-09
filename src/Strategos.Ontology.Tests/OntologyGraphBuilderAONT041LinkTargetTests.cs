@@ -60,17 +60,12 @@ public class OntologyGraphBuilderAONT041LinkTargetTests
         var graphBuilder = new OntologyGraphBuilder();
         graphBuilder.AddDomain<TradeOrderExplicitNameOntology>();
 
-        await Assert.That(() => graphBuilder.Build())
+        var exception = await Assert.That(() => graphBuilder.Build())
             .ThrowsException()
             .WithExceptionType(typeof(OntologyCompositionException));
 
-        await Assert.That(() => graphBuilder.Build())
-            .ThrowsException()
-            .WithMessageContaining("AONT041");
-
-        await Assert.That(() => graphBuilder.Build())
-            .ThrowsException()
-            .WithMessageContaining("open_orders");
+        await Assert.That(exception!.Message).Contains("AONT041");
+        await Assert.That(exception.Message).Contains("open_orders");
     }
 
     [Test]

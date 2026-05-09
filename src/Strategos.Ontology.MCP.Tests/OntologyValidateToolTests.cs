@@ -29,6 +29,15 @@ public class OntologyValidateToolTests
 
     private static ActionDescriptor MakeDescriptor(string name) => new(name, $"{name} description");
 
+    /// <summary>
+    /// Returns a constraint report that recognizes <paramref name="name"/> as a
+    /// known action with no failing preconditions. Use when a test wants to
+    /// assert verdict.Passed=true on an intent whose action would otherwise
+    /// be flagged as "unknown action" by OntologyValidateTool.
+    /// </summary>
+    private static ActionConstraintReport KnownActionReport(string name = "Ship") =>
+        new(MakeDescriptor(name), IsAvailable: true, Constraints: Array.Empty<ConstraintEvaluation>());
+
     private static ConstraintEvaluation MakeEvaluation(
         bool isSatisfied,
         ConstraintStrength strength,
@@ -53,6 +62,12 @@ public class OntologyValidateToolTests
         query
             .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
             .Returns(constraintReports ?? Array.Empty<ActionConstraintReport>());
+        // OntologyValidateTool calls the domain-qualified overload — stub
+        // both paths so test doubles return the same constraint reports
+        // regardless of which overload the production code chooses.
+        query
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .Returns(constraintReports ?? Array.Empty<ActionConstraintReport>());
         query
             .EstimateBlastRadius(Arg.Any<IReadOnlyList<OntologyNodeRef>>(), Arg.Any<BlastRadiusOptions?>())
             .Returns(blastRadius ?? EmptyBlastRadius());
@@ -65,7 +80,9 @@ public class OntologyValidateToolTests
     [Test]
     public async Task Validate_NoViolations_ReturnsPassedTrue()
     {
-        var query = MakeQuery();
+        // Stub the default fixture action ("Ship") as known-with-no-failures
+        // so OntologyValidateTool doesn't add an unknown-action hard violation.
+        var query = MakeQuery(constraintReports: new[] { KnownActionReport() });
         var tool = new OntologyValidateTool(query);
 
         var verdict = tool.Validate(Intent());
@@ -130,7 +147,9 @@ public class OntologyValidateToolTests
     {
         var warning = new PatternViolation(
             "Style", "advisory", Node(), ViolationSeverity.Warning);
-        var query = MakeQuery(patternViolations: new[] { warning });
+        var query = MakeQuery(
+            constraintReports: new[] { KnownActionReport() },
+            patternViolations: new[] { warning });
         var tool = new OntologyValidateTool(query);
 
         var verdict = tool.Validate(Intent());
@@ -206,6 +225,29 @@ public class OntologyValidateToolTests
     }
 
     [Test]
+    public async Task Validate_UnknownAction_SurfacesAsHardViolation()
+    {
+        // Regression: when ProposedAction.ActionName is misspelled or not
+        // registered on the subject type, the tool must surface a hard
+        // violation instead of silently skipping (which previously let an
+        // invalid intent produce Passed=true).
+        var query = MakeQuery(); // empty reports → action is "unknown"
+        var tool = new OntologyValidateTool(query);
+
+        var verdict = tool.Validate(Intent(actions: new List<ProposedAction>
+        {
+            new("not_a_real_action", Node(), null),
+        }));
+
+        await Assert.That(verdict.Passed).IsFalse();
+        await Assert.That(verdict.HardViolations).HasCount().EqualTo(1);
+        await Assert.That(verdict.HardViolations[0].FailureReason)
+            .Contains("not_a_real_action");
+        await Assert.That(verdict.HardViolations[0].FailureReason)
+            .Contains("not registered");
+    }
+
+    [Test]
     public async Task Validate_MergesActionArgumentsIntoConstraintLookup()
     {
         // Regression: ProposedAction.Arguments must flow into the per-action
@@ -219,6 +261,40 @@ public class OntologyValidateToolTests
             {
                 captured = call.ArgAt<IReadOnlyDictionary<string, object?>?>(1);
                 return Array.Empty<ActionConstraintReport>();
+            });
+        // OntologyValidateTool now calls the domain-qualified overload first;
+        // capture from there too so this regression test works whichever
+        // overload OntologyValidateTool decides to invoke.
+        query
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .Returns(call =>
+            {
+                captured = call.ArgAt<IReadOnlyDictionary<string, object?>?>(2);
+                // Return a non-empty report keyed to the action name so the
+                // tool doesn't surface an unknown-action hard violation that
+                // would interfere with the merge assertion.
+                var precond = new ActionPrecondition
+                {
+                    Expression = "true",
+                    Description = "always-satisfied",
+                    Kind = PreconditionKind.PropertyPredicate,
+                    Strength = ConstraintStrength.Hard,
+                };
+                return new[]
+                {
+                    new ActionConstraintReport(
+                        new ActionDescriptor("Ship", "Ship description"),
+                        IsAvailable: true,
+                        Constraints: new[]
+                        {
+                            new ConstraintEvaluation(
+                                precond,
+                                IsSatisfied: true,
+                                Strength: ConstraintStrength.Hard,
+                                FailureReason: null,
+                                ExpectedShape: null),
+                        }),
+                };
             });
         query
             .EstimateBlastRadius(Arg.Any<IReadOnlyList<OntologyNodeRef>>(), Arg.Any<BlastRadiusOptions?>())

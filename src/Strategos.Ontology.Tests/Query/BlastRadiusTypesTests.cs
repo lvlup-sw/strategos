@@ -9,6 +9,10 @@ public class BlastRadiusTypesTests
     {
         var values = Enum.GetValues<BlastRadiusScope>();
 
+        // Lock the public surface — adding a new BlastRadiusScope member
+        // without updating consumers (Validate verdict serialization,
+        // ClassifyScope, agent contracts) silently changes API behavior.
+        await Assert.That(values).HasCount().EqualTo(4);
         await Assert.That(values).Contains(BlastRadiusScope.Local);
         await Assert.That(values).Contains(BlastRadiusScope.Domain);
         await Assert.That(values).Contains(BlastRadiusScope.CrossDomain);

@@ -169,9 +169,19 @@ internal sealed class OntologyQueryService : IOntologyQuery
 
     public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null)
+        IReadOnlyDictionary<string, object?>? knownProperties = null) =>
+        BuildConstraintReportsFor(FindObjectType(objectType), knownProperties);
+
+    public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
+        string domain,
+        string objectType,
+        IReadOnlyDictionary<string, object?>? knownProperties = null) =>
+        BuildConstraintReportsFor(graph.GetObjectType(domain, objectType), knownProperties);
+
+    private static IReadOnlyList<ActionConstraintReport> BuildConstraintReportsFor(
+        ObjectTypeDescriptor? ot,
+        IReadOnlyDictionary<string, object?>? knownProperties)
     {
-        var ot = FindObjectType(objectType);
         if (ot is null)
         {
             return [];
@@ -961,8 +971,12 @@ internal sealed class OntologyQueryService : IOntologyQuery
                         continue;
                     }
 
-                    var target = graph.ObjectTypes.FirstOrDefault(t =>
-                        string.Equals(t.Name, targetTypeName, StringComparison.Ordinal));
+                    // Domain-qualified lookup. A global simple-name match
+                    // would inspect the wrong descriptor when the target
+                    // type name appears in multiple domains. The link
+                    // postcondition is owned by `ot`, so the target lives
+                    // in the same domain.
+                    var target = graph.GetObjectType(ot.DomainName, targetTypeName);
 
                     if (target is null || target.ExternalLinkExtensionPoints.Count == 0)
                     {
