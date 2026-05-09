@@ -13,6 +13,12 @@ public sealed class ObservableActionDispatcher : IActionDispatcher
     private readonly IReadOnlyList<IActionDispatchObserver> _observers;
     private readonly ILogger<ObservableActionDispatcher> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ObservableActionDispatcher"/> class.
+    /// </summary>
+    /// <param name="inner">Inner dispatcher to delegate dispatch to.</param>
+    /// <param name="observers">Observers notified after each dispatch.</param>
+    /// <param name="logger">Logger used to record observer failures.</param>
     public ObservableActionDispatcher(
         IActionDispatcher inner,
         IEnumerable<IActionDispatchObserver> observers,

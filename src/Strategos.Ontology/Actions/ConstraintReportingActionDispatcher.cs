@@ -17,6 +17,14 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
     private readonly Func<IOntologyQuery> _queryAccessor;
     private readonly ILogger<ConstraintReportingActionDispatcher> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ConstraintReportingActionDispatcher"/> class.
+    /// </summary>
+    /// <param name="inner">Inner dispatcher to delegate dispatch to.</param>
+    /// <param name="query">
+    /// Ontology query used to resolve constraint reports for the dispatched action.
+    /// </param>
+    /// <param name="logger">Logger used to record query lookup failures.</param>
     public ConstraintReportingActionDispatcher(
         IActionDispatcher inner,
         IOntologyQuery query,

@@ -94,7 +94,10 @@ public static class OntologyServiceCollectionExtensions
         Func<IServiceProvider, IActionDispatcher> innerFactory;
         if (descriptor.ImplementationType is { } implType)
         {
-            services.AddSingleton(implType);
+            // Preserve the original lifetime so callers that registered the
+            // dispatcher as Scoped or Transient don't have it silently
+            // promoted to Singleton when decorators are wrapped around it.
+            services.Add(new ServiceDescriptor(implType, implType, descriptor.Lifetime));
             innerFactory = sp => (IActionDispatcher)sp.GetRequiredService(implType);
         }
         else if (descriptor.ImplementationFactory is { } factory)

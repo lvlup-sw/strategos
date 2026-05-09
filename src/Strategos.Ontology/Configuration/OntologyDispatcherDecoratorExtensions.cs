@@ -26,6 +26,11 @@ public static class OntologyDispatcherDecoratorExtensions
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        if (options.DispatcherDecorators.Any(d => d.Order == ConstraintReportingOrder))
+        {
+            return options;
+        }
+
         options.DispatcherDecorators.Add((
             ConstraintReportingOrder,
             (sp, inner) =>
@@ -50,6 +55,11 @@ public static class OntologyDispatcherDecoratorExtensions
     public static OntologyOptions AddDispatchObservation(this OntologyOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+
+        if (options.DispatcherDecorators.Any(d => d.Order == DispatchObservationOrder))
+        {
+            return options;
+        }
 
         options.DispatcherDecorators.Add((
             DispatchObservationOrder,

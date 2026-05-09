@@ -1703,17 +1703,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
-    private static bool IsMutatingChainCall(InvocationExpressionSyntax invocation)
-    {
-        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
-        {
-            var name = memberAccess.Name.Identifier.Text;
-            return name is "Modifies" or "CreatesLinked" or "EmitsEvent";
-        }
-
-        return false;
-    }
-
     private static bool IsOntologyBuilderType(string typeName)
     {
         return typeName == "IOntologyBuilder" || typeName == "OntologyBuilder";
@@ -1779,9 +1768,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionRequiresLinks { get; } =
-            new List<(string, string, Location)>();
-
-        public List<(string ActionName, string MutatingCallName, Location Location)> ReadOnlyMutatingConflicts { get; } =
             new List<(string, string, Location)>();
 
         public List<(string EventType, string PropertyName, Location Location)> EventUpdatesProperties { get; } =

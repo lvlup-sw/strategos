@@ -55,7 +55,7 @@ The unit also folds three of the four MEDIUM findings from #33 (the 2.4.1 qualit
 
 ## 3. Architecture overview
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────┐
 │  Strategos.Ontology (existing)                                     │
 │    Actions/                                                        │
@@ -390,4 +390,4 @@ Consumers seeking deterministic verdicts on property predicates must populate `K
 
 ### 10.7 `WorkflowMetadataBuilder.InDomain(string)` (new public DSL surface)
 
-#33 Finding 4 (§4.11) keys `DiscoverWorkflowChains` lookup by `(DomainName, Name)`. The implementation added a new fluent setter `WorkflowMetadataBuilder.InDomain(string domainName)` so workflow metadata can carry the qualifying domain. This is a new public DSL surface; it is documented inline and exercised by `DiscoverWorkflowChainsDomainKeyedTests`.
+`#33` Finding 4 (§4.11) keys `DiscoverWorkflowChains` lookup by `(DomainName, Name)`. The implementation added a new fluent setter `WorkflowMetadataBuilder.InDomain(string domainName)` so workflow metadata can carry the qualifying domain. This is a new public DSL surface; it is documented inline and exercised by `DiscoverWorkflowChainsDomainKeyedTests`.

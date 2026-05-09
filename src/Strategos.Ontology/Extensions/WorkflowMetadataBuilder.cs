@@ -25,6 +25,16 @@ public sealed class WorkflowMetadataBuilder
         WorkflowName = workflowName;
     }
 
+    /// <summary>
+    /// Sets the <see cref="DomainName"/> used to resolve consumed and produced
+    /// types via a <c>(DomainName, Name)</c> lookup, disambiguating two domains
+    /// that share a simple type name.
+    /// </summary>
+    /// <param name="domainName">Domain that owns the consumed/produced types.</param>
+    /// <returns>The same builder instance for fluent chaining.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="domainName"/> is null, empty, or whitespace.
+    /// </exception>
     public WorkflowMetadataBuilder InDomain(string domainName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(domainName);

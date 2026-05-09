@@ -17,6 +17,14 @@ public sealed class OntologyValidateTool
     private readonly IOntologyQuery _query;
     private readonly IOntologyCoverageProvider? _coverage;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OntologyValidateTool"/> class.
+    /// </summary>
+    /// <param name="query">Ontology query surface used to evaluate the design intent.</param>
+    /// <param name="coverage">
+    /// Optional coverage provider; when null, the resulting verdict's
+    /// <see cref="ValidationVerdict.Coverage"/> is also null.
+    /// </param>
     public OntologyValidateTool(IOntologyQuery query, IOntologyCoverageProvider? coverage = null)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -24,6 +32,16 @@ public sealed class OntologyValidateTool
         _coverage = coverage;
     }
 
+    /// <summary>
+    /// Validates a <paramref name="intent"/> against the ontology graph and
+    /// returns a verdict aggregating constraint violations, blast radius,
+    /// pattern violations, and (if available) coverage.
+    /// </summary>
+    /// <param name="intent">The design intent to validate.</param>
+    /// <returns>A <see cref="ValidationVerdict"/> describing the validation outcome.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="intent"/> is null.
+    /// </exception>
     public ValidationVerdict Validate(DesignIntent intent)
     {
         ArgumentNullException.ThrowIfNull(intent);

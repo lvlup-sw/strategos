@@ -178,7 +178,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
             IsReadOnly = _isReadOnly,
-            Preconditions = _preconditions.AsReadOnly(),
-            Postconditions = _postconditions.AsReadOnly(),
+            Preconditions = _preconditions.ToList().AsReadOnly(),
+            Postconditions = _postconditions.ToList().AsReadOnly(),
         };
 }

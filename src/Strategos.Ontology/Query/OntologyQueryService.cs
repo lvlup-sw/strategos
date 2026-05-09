@@ -443,8 +443,11 @@ internal sealed class OntologyQueryService : IOntologyQuery
     private IEnumerable<(OntologyNodeRef Neighbor, CrossDomainHop? Hop)> ExpandNeighbors(
         OntologyNodeRef current)
     {
-        var ot = graph.GetObjectType(current.Domain, current.ObjectTypeName)
-            ?? graph.ObjectTypes.FirstOrDefault(o => o.Name == current.ObjectTypeName);
+        // Strict domain-qualified lookup only: a domain-agnostic fallback can
+        // resolve to an object type from a different domain that happens to
+        // share a simple name, corrupting blast-radius traversal across
+        // multi-domain graphs.
+        var ot = graph.GetObjectType(current.Domain, current.ObjectTypeName);
 
         if (ot is not null)
         {
@@ -1005,8 +1008,21 @@ internal sealed class OntologyQueryService : IOntologyQuery
             DesignIntent intent,
             IReadOnlyList<OntologyNodeRef> affectedNodes)
         {
+            // Scope to the affected node set so we don't surface lifecycle
+            // violations for object types that are unrelated to the design
+            // intent being validated. Other detectors (ComputedWrite,
+            // MissingExtensionPoint, MissingPrecondition) follow the same
+            // contract.
+            var inScope = new HashSet<(string Domain, string Name)>(affectedNodes
+                .Select(n => (n.Domain, n.ObjectTypeName)));
+
             foreach (var ot in graph.ObjectTypes)
             {
+                if (!inScope.Contains((ot.DomainName, ot.Name)))
+                {
+                    continue;
+                }
+
                 if (ot.Lifecycle is null)
                 {
                     continue;
