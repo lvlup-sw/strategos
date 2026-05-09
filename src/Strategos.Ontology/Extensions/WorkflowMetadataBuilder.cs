@@ -11,10 +11,35 @@ public sealed class WorkflowMetadataBuilder
 
     public string? ProducedTypeName { get; private set; }
 
+    /// <summary>
+    /// The domain name to use for resolving consumed and produced types. When set,
+    /// <c>BuildWorkflowChains</c> performs a domain-keyed <c>(DomainName, Name)</c> lookup
+    /// instead of a simple-name lookup. This allows two domains that share a simple type name
+    /// to each have workflow chains resolved unambiguously. See #33 Finding 4.
+    /// </summary>
+    public string? DomainName { get; private set; }
+
     public WorkflowMetadataBuilder(string workflowName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowName);
         WorkflowName = workflowName;
+    }
+
+    /// <summary>
+    /// Sets the <see cref="DomainName"/> used to resolve consumed and produced
+    /// types via a <c>(DomainName, Name)</c> lookup, disambiguating two domains
+    /// that share a simple type name.
+    /// </summary>
+    /// <param name="domainName">Domain that owns the consumed/produced types.</param>
+    /// <returns>The same builder instance for fluent chaining.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="domainName"/> is null, empty, or whitespace.
+    /// </exception>
+    public WorkflowMetadataBuilder InDomain(string domainName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domainName);
+        DomainName = domainName;
+        return this;
     }
 
     public WorkflowMetadataBuilder Consumes<T>()

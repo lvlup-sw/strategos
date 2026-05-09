@@ -16,12 +16,15 @@ public sealed class OntologyOptions
     private readonly List<DomainOntology> _domains = [];
     private readonly List<WorkflowMetadataBuilder> _workflowMetadata = [];
     private readonly List<Action<IServiceCollection>> _serviceRegistrations = [];
+    private readonly List<(int Order, Func<IServiceProvider, IActionDispatcher, IActionDispatcher> Factory)> _dispatcherDecorators = [];
 
     internal IReadOnlyList<DomainOntology> Domains => _domains;
 
     internal IReadOnlyList<WorkflowMetadataBuilder> WorkflowMetadata => _workflowMetadata;
 
     internal IReadOnlyList<Action<IServiceCollection>> ServiceRegistrations => _serviceRegistrations;
+
+    internal List<(int Order, Func<IServiceProvider, IActionDispatcher, IActionDispatcher> Factory)> DispatcherDecorators => _dispatcherDecorators;
 
     public OntologyOptions AddDomain<T>()
         where T : DomainOntology, new()

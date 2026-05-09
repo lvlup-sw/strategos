@@ -26,6 +26,33 @@ public interface IOntologyQuery
         string objectType,
         IReadOnlyDictionary<string, object?>? knownProperties = null);
 
+    /// <summary>
+    /// Domain-qualified overload of <see cref="GetActionConstraintReport(string, IReadOnlyDictionary{string, object?}?)"/>.
+    /// Implementations that walk multiple domains should resolve the
+    /// descriptor by <c>(domain, objectType)</c> to avoid returning
+    /// constraints from a same-named type in a different domain.
+    /// </summary>
+    /// <param name="domain">Domain that owns <paramref name="objectType"/>.</param>
+    /// <param name="objectType">Simple object type name within <paramref name="domain"/>.</param>
+    /// <param name="knownProperties">
+    /// Optional known property values consumed by precondition evaluation.
+    /// </param>
+    /// <returns>
+    /// One <see cref="ActionConstraintReport"/> per registered action on the
+    /// resolved type; empty when the <c>(domain, objectType)</c> pair is
+    /// unknown.
+    /// </returns>
+    /// <remarks>
+    /// Default implementation falls back to the simple-name overload for
+    /// backwards compatibility with test doubles that have not been updated;
+    /// concrete implementations should override to honor the domain context.
+    /// </remarks>
+    IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
+        string domain,
+        string objectType,
+        IReadOnlyDictionary<string, object?>? knownProperties = null)
+        => GetActionConstraintReport(objectType, knownProperties);
+
     IReadOnlyList<PostconditionTrace> TracePostconditions(
         string objectType, string actionName, int maxDepth = 1);
 
@@ -71,4 +98,45 @@ public interface IOntologyQuery
     /// without hardcoding descriptor names at call sites.
     /// </summary>
     IReadOnlyList<string> GetObjectTypeNames<T>() where T : class;
+
+    /// <summary>
+    /// Estimates the downstream blast radius for the supplied seed nodes by
+    /// walking links, derivation chains, postconditions, and cross-domain
+    /// links until <see cref="BlastRadiusOptions.MaxExpansionDegree"/> is
+    /// reached.
+    /// </summary>
+    /// <param name="touchedNodes">Seed nodes to begin expansion from.</param>
+    /// <param name="options">
+    /// Traversal options controlling depth limits; defaults are applied when null.
+    /// </param>
+    /// <returns>
+    /// A <see cref="BlastRadius"/> with deterministically ordered affected
+    /// nodes, cross-domain hops, and a classified scope.
+    /// </returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown by the default interface implementation; concrete query types
+    /// (e.g. <c>OntologyQueryService</c>) must override.
+    /// </exception>
+    BlastRadius EstimateBlastRadius(
+        IReadOnlyList<OntologyNodeRef> touchedNodes,
+        BlastRadiusOptions? options = null)
+        => throw new NotSupportedException(
+            "EstimateBlastRadius is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
+
+    /// <summary>
+    /// Detects ontology pattern violations for the supplied affected nodes
+    /// and design intent.
+    /// </summary>
+    /// <param name="affectedNodes">Nodes within scope of validation.</param>
+    /// <param name="intent">The design intent driving validation.</param>
+    /// <returns>Detected violations; empty when no patterns fire.</returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown by the default interface implementation; concrete query types
+    /// (e.g. <c>OntologyQueryService</c>) must override.
+    /// </exception>
+    IReadOnlyList<PatternViolation> DetectPatternViolations(
+        IReadOnlyList<OntologyNodeRef> affectedNodes,
+        DesignIntent intent)
+        => throw new NotSupportedException(
+            "DetectPatternViolations is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
 }

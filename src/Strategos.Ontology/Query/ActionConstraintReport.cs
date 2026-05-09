@@ -1,5 +1,6 @@
 // Copyright (c) Levelup Software. All rights reserved.
 
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Query;

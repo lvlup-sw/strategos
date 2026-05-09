@@ -13,6 +13,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     private string? _boundWorkflowName;
     private string? _boundToolName;
     private string? _boundToolMethod;
+    private bool _isReadOnly;
     private readonly List<ActionPrecondition> _preconditions = [];
     private readonly List<ActionPostcondition> _postconditions = [];
     private readonly List<string> _validFromStates = [];
@@ -26,6 +27,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     IActionBuilder IActionBuilder.Returns<TReturns>() => Returns<TReturns>();
     IActionBuilder IActionBuilder.BoundToWorkflow(string workflowName) => BoundToWorkflow(workflowName);
     IActionBuilder IActionBuilder.BoundToTool(string toolName, string methodName) => BoundToTool(toolName, methodName);
+    IActionBuilder IActionBuilder.ReadOnly() => ReadOnly();
 
     public IActionBuilder<T> Description(string description)
     {
@@ -57,6 +59,12 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         _bindingType = ActionBindingType.Tool;
         _boundToolName = toolName;
         _boundToolMethod = methodName;
+        return this;
+    }
+
+    public IActionBuilder<T> ReadOnly()
+    {
+        _isReadOnly = true;
         return this;
     }
 
@@ -139,6 +147,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         {
             Kind = PostconditionKind.CreatesLink,
             LinkName = linkName,
+            TargetTypeName = typeof(TTarget).Name,
         });
         return this;
     }
@@ -168,7 +177,8 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             BoundWorkflowName = _boundWorkflowName,
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
-            Preconditions = _preconditions.AsReadOnly(),
-            Postconditions = _postconditions.AsReadOnly(),
+            IsReadOnly = _isReadOnly,
+            Preconditions = _preconditions.ToList().AsReadOnly(),
+            Postconditions = _postconditions.ToList().AsReadOnly(),
         };
 }

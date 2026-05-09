@@ -49,7 +49,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointInterfaceUnsatisfied,
             OntologyDiagnostics.ExtensionPointEdgeMissing,
             OntologyDiagnostics.ExtensionPointNoLinks,
-            OntologyDiagnostics.ExtensionPointMaxLinksExceeded);
+            OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
+            OntologyDiagnostics.ReadOnlyConflictsWithMutation);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -227,6 +228,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     CollectBoundActionInfo(invocation, model, info);
                     break;
 
+                case "ReadOnly":
+                    CollectReadOnlyActionInfo(invocation, model, info);
+                    break;
+
                 case "Modifies":
                     CollectModifiesInfo(invocation, model, info);
                     break;
@@ -392,10 +397,28 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    private static void CollectReadOnlyActionInfo(
+        InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
+    {
+        var actionName = FindActionNameInChain(invocation, model);
+        if (actionName != null)
+        {
+            info.ReadOnlyActions.Add(actionName);
+        }
+    }
+
     private static void CollectModifiesInfo(
         InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
     {
         var modifiesActionName = FindActionNameInChain(invocation, model);
+        if (modifiesActionName != null)
+        {
+            // Always record the mutating call presence so AONT036 can flag a
+            // ReadOnly+mutate conflict even when the property argument is
+            // non-literal and ExtractPropertyNameFromExpression returns null.
+            info.ActionMutationCalls.Add((modifiesActionName, "Modifies", invocation.GetLocation()));
+        }
+
         var modifiesProp = ExtractPropertyNameFromExpression(invocation);
         if (modifiesActionName != null && modifiesProp != null)
         {
@@ -410,6 +433,11 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         ObjectTypeInfo info)
     {
         var emitsActionName = FindActionNameInChain(invocation, model);
+        if (emitsActionName != null)
+        {
+            info.ActionMutationCalls.Add((emitsActionName, "EmitsEvent", invocation.GetLocation()));
+        }
+
         if (emitsActionName != null && calledMethod.TypeArguments.Length > 0)
         {
             var eventTypeName = calledMethod.TypeArguments[0].Name;
@@ -421,6 +449,11 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
     {
         var createsActionName = FindActionNameInChain(invocation, model);
+        if (createsActionName != null)
+        {
+            info.ActionMutationCalls.Add((createsActionName, "CreatesLinked", invocation.GetLocation()));
+        }
+
         var createsLinkName = ExtractStringArg(invocation, 0);
         if (createsActionName != null && createsLinkName != null)
         {
@@ -990,6 +1023,19 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     OntologyDiagnostics.RequiresLinkUndeclared, location, actionName, ot.Name, linkName));
+            }
+        }
+
+        // AONT036: ReadOnly action declares mutating chain call. Keyed on
+        // mutating-call presence (not on parsed payload), so non-literal
+        // Modifies(...) / CreatesLinked(...) shapes still trigger the
+        // diagnostic when chained with ReadOnly().
+        foreach (var (actionName, mutator, location) in ot.ActionMutationCalls)
+        {
+            if (ot.ReadOnlyActions.Contains(actionName))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.ReadOnlyConflictsWithMutation, location, actionName, ot.Name, mutator));
             }
         }
     }
@@ -1698,6 +1744,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public HashSet<string> DeclaredActions { get; } = new HashSet<string>();
         public HashSet<string> DeclaredEvents { get; } = new HashSet<string>();
         public HashSet<string> BoundActions { get; } = new HashSet<string>();
+        public HashSet<string> ReadOnlyActions { get; } = new HashSet<string>();
         public HashSet<string> ComputedProperties { get; } = new HashSet<string>();
         public HashSet<string> PropertiesWithDerivedFrom { get; } = new HashSet<string>();
         public HashSet<string> ImplementedInterfaces { get; } = new HashSet<string>();
@@ -1721,6 +1768,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionCreatesLinked { get; } =
+            new List<(string, string, Location)>();
+
+        public List<(string ActionName, string Mutator, Location Location)> ActionMutationCalls { get; } =
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionRequiresLinks { get; } =

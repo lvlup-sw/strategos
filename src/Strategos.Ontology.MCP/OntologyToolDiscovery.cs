@@ -19,7 +19,7 @@ public sealed class OntologyToolDiscovery
     }
 
     /// <summary>
-    /// Discovers the three ontology MCP tools, enriched with semantic metadata from the graph.
+    /// Discovers the four ontology MCP tools, enriched with semantic metadata from the graph.
     /// </summary>
     /// <remarks>
     /// Reflective schema generation via JsonSchemaExporter requires unreferenced code
@@ -39,6 +39,7 @@ public sealed class OntologyToolDiscovery
             BuildExploreDescriptor(domainNames, objectTypeCount),
             BuildQueryDescriptor(domainNames, objectTypeCount),
             BuildActionDescriptor(domainNames, objectTypeCount, constraintSummaries),
+            BuildValidateDescriptor(domainNames, objectTypeCount),
         ];
     }
 
@@ -98,6 +99,22 @@ public sealed class OntologyToolDiscovery
             ConstraintSummaries = constraintSummaries,
         };
 
+    [RequiresUnreferencedCode("OutputSchema generation reflects over ValidationVerdict.")]
+    [RequiresDynamicCode("OutputSchema generation may require runtime code generation.")]
+    private static OntologyToolDescriptor BuildValidateDescriptor(string domainNames, int objectTypeCount) =>
+        new(
+            "ontology_validate",
+            BuildValidateDescription(domainNames, objectTypeCount))
+        {
+            Title = "Validate design intent",
+            OutputSchema = JsonSchemaHelper.JsonSchemaFor<ValidationVerdict>(),
+            Annotations = new ToolAnnotations(
+                ReadOnlyHint: true,
+                DestructiveHint: false,
+                IdempotentHint: true,
+                OpenWorldHint: false),
+        };
+
     private IReadOnlyList<ActionConstraintSummary> BuildConstraintSummaries()
     {
         var summaries = new List<ActionConstraintSummary>();
@@ -149,6 +166,16 @@ public sealed class OntologyToolDiscovery
         sb.Append($"Domains: {domainNames}. ");
         sb.Append($"{objectTypeCount} object type(s) available. ");
         sb.Append("Supports filter, traverseLink, interface narrowing, include, and semantic search (semanticQuery, topK, minRelevance, distanceMetric).");
+        return sb.ToString();
+    }
+
+    private static string BuildValidateDescription(string domainNames, int objectTypeCount)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Validate a design intent against the ontology graph. ");
+        sb.Append($"Domains: {domainNames}. ");
+        sb.Append($"{objectTypeCount} object type(s) available. ");
+        sb.Append("Returns hard violations, soft warnings, blast radius, pattern violations, and (optional) coverage report.");
         return sb.ToString();
     }
 

@@ -604,16 +604,18 @@ public sealed class OntologyGraphBuilder
             .Where(kvp => kvp.Value.Count > 1)
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-        if (multiRegistered.Count == 0)
-        {
-            return;
-        }
-
         // Map simple CLR-type names → CLR Type, restricted to multi-registered types.
         // Simple names match what HasMany<TLinked>(name) writes into LinkDescriptor.TargetTypeName.
         var multiRegisteredByClrSimpleName = multiRegistered
             .GroupBy(kvp => kvp.Key.Name)
             .ToDictionary(g => g.Key, g => g.First().Key);
+
+        // Index descriptors by (DomainName, ClrSimpleName) for the explicit-name check below.
+        // A link's TargetTypeName carries the CLR simple name of the linked type — use this
+        // to find the registered descriptor and verify its name matches the CLR simple name.
+        var descriptorByDomainAndClrSimpleName = allObjectTypes
+            .GroupBy(ot => (ot.DomainName, ot.ClrType.Name))
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var descriptor in allObjectTypes)
         {
@@ -629,6 +631,25 @@ public sealed class OntologyGraphBuilder
                         $"({string.Join(", ", names.Select(n => $"'{n}'"))}) but is also referenced as a link target " +
                         $"in '{descriptor.Name}.{link.Name}'. Multi-registered types cannot participate in structural " +
                         $"links. See #32 for a future relaxation path.");
+                }
+
+                // AONT041 extension: reject a link whose target type is registered with an
+                // explicit (non-default) descriptor name. HasMany<TLinked> writes the CLR
+                // simple name into TargetTypeName, so if the registered descriptor name
+                // differs from the CLR simple name, reads and writes would diverge silently
+                // across two table names. Enforcing single-registration with default name
+                // is the Option X minimum-invasiveness fix (see #33 Finding 1).
+                if (descriptorByDomainAndClrSimpleName.TryGetValue(
+                        (descriptor.DomainName, link.TargetTypeName), out var targetDescriptor)
+                    && targetDescriptor.Name != targetDescriptor.ClrType.Name)
+                {
+                    throw new OntologyCompositionException(
+                        $"AONT041: Link '{descriptor.Name}.{link.Name}' targets CLR type " +
+                        $"'{targetDescriptor.ClrType.FullName}' which is registered with explicit " +
+                        $"descriptor name '{targetDescriptor.Name}' (default would be '{targetDescriptor.ClrType.Name}'). " +
+                        $"A link target registered under a non-default name causes read/write table-name " +
+                        $"divergence. Either remove the explicit name or use the default registration. " +
+                        $"See #33 Finding 1.");
                 }
             }
 
@@ -768,6 +789,15 @@ public sealed class OntologyGraphBuilder
             .GroupBy(ot => ot.Name)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Domain-keyed index for metadata that carries a DomainName via InDomain().
+        // Keyed by (DomainName, ClrType.Name) so that Consumes<T>()/Produces<T>() — which
+        // store typeof(T).Name — resolve to the right descriptor in the specified domain
+        // even when the descriptor was registered with an explicit (non-CLR) name.
+        // See #33 Finding 4.
+        var objectTypesByDomainAndClrName = allObjectTypes
+            .GroupBy(ot => (ot.DomainName, ot.ClrType.Name))
+            .ToDictionary(g => g.Key, g => g.First());
+
         foreach (var metadata in workflowMetadata)
         {
             if (metadata.ConsumedTypeName is null || metadata.ProducedTypeName is null)
@@ -777,22 +807,65 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            if (!TryResolveUnambiguous(
-                    objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out var consumedType))
-            {
-                continue;
-            }
+            ObjectTypeDescriptor consumedType;
+            ObjectTypeDescriptor producedType;
 
-            if (!TryResolveUnambiguous(
-                    objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out var producedType))
+            if (metadata.DomainName is not null)
             {
-                continue;
+                if (!TryResolveDomainKeyed(
+                        objectTypesByDomainAndClrName, metadata.DomainName, metadata.ConsumedTypeName,
+                        metadata.WorkflowName, "consumed", warnings, out consumedType))
+                {
+                    continue;
+                }
+
+                if (!TryResolveDomainKeyed(
+                        objectTypesByDomainAndClrName, metadata.DomainName, metadata.ProducedTypeName,
+                        metadata.WorkflowName, "produced", warnings, out producedType))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!TryResolveUnambiguous(
+                        objectTypesByName, metadata.ConsumedTypeName, metadata.WorkflowName, "consumed", warnings, out consumedType))
+                {
+                    continue;
+                }
+
+                if (!TryResolveUnambiguous(
+                        objectTypesByName, metadata.ProducedTypeName, metadata.WorkflowName, "produced", warnings, out producedType))
+                {
+                    continue;
+                }
             }
 
             chains.Add(new WorkflowChain(metadata.WorkflowName, consumedType, producedType));
         }
 
         return chains;
+    }
+
+    private static bool TryResolveDomainKeyed(
+        Dictionary<(string DomainName, string ClrName), ObjectTypeDescriptor> objectTypesByDomainAndClrName,
+        string domainName,
+        string typeName,
+        string workflowName,
+        string role,
+        List<string> warnings,
+        out ObjectTypeDescriptor resolved)
+    {
+        resolved = null!;
+
+        if (!objectTypesByDomainAndClrName.TryGetValue((domainName, typeName), out resolved!))
+        {
+            warnings.Add(
+                $"Workflow '{workflowName}' references unknown {role} type '{typeName}' in domain '{domainName}'; skipping.");
+            return false;
+        }
+
+        return true;
     }
 
     private static bool TryResolveUnambiguous(
