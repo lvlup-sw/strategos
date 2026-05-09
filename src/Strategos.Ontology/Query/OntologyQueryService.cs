@@ -368,6 +368,137 @@ internal sealed class OntologyQueryService : IOntologyQuery
             .AsReadOnly();
     }
 
+    public BlastRadius EstimateBlastRadius(
+        IReadOnlyList<OntologyNodeRef> touchedNodes,
+        BlastRadiusOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(touchedNodes);
+        var opts = options ?? new BlastRadiusOptions();
+
+        var directlyAffected = touchedNodes.ToArray();
+        var seen = new HashSet<OntologyNodeRef>(directlyAffected);
+        var frontier = new Queue<(OntologyNodeRef Node, int Depth)>();
+        foreach (var node in directlyAffected)
+        {
+            frontier.Enqueue((node, 0));
+        }
+
+        var transitivelyAffected = new List<OntologyNodeRef>();
+        var crossHops = new List<CrossDomainHop>();
+
+        while (frontier.Count > 0)
+        {
+            var (current, depth) = frontier.Dequeue();
+            if (depth >= opts.MaxExpansionDegree)
+            {
+                continue;
+            }
+
+            foreach (var (neighbor, hop) in ExpandNeighbors(current))
+            {
+                if (!seen.Add(neighbor))
+                {
+                    continue;
+                }
+
+                transitivelyAffected.Add(neighbor);
+                if (hop is not null)
+                {
+                    crossHops.Add(hop);
+                }
+
+                frontier.Enqueue((neighbor, depth + 1));
+            }
+        }
+
+        var directlyOrdered = directlyAffected
+            .OrderBy(n => n.Domain, StringComparer.Ordinal)
+            .ThenBy(n => n.ObjectTypeName, StringComparer.Ordinal)
+            .ThenBy(n => n.Key ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+
+        var transitivelyOrdered = transitivelyAffected
+            .OrderBy(n => n.Domain, StringComparer.Ordinal)
+            .ThenBy(n => n.ObjectTypeName, StringComparer.Ordinal)
+            .ThenBy(n => n.Key ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+
+        var scope = ClassifyScope(directlyOrdered, transitivelyOrdered, crossHops);
+        return new BlastRadius(directlyOrdered, transitivelyOrdered, crossHops, scope);
+    }
+
+    private IEnumerable<(OntologyNodeRef Neighbor, CrossDomainHop? Hop)> ExpandNeighbors(
+        OntologyNodeRef current)
+    {
+        var ot = graph.GetObjectType(current.Domain, current.ObjectTypeName)
+            ?? graph.ObjectTypes.FirstOrDefault(o => o.Name == current.ObjectTypeName);
+
+        if (ot is not null)
+        {
+            foreach (var link in ot.Links)
+            {
+                yield return (new OntologyNodeRef(ot.DomainName, link.TargetTypeName), null);
+            }
+        }
+
+        foreach (var link in graph.CrossDomainLinks)
+        {
+            if (link.SourceDomain == current.Domain
+                && link.SourceObjectType.Name == current.ObjectTypeName)
+            {
+                var target = new OntologyNodeRef(link.TargetDomain, link.TargetObjectType.Name);
+                yield return (target, new CrossDomainHop(
+                    FromDomain: link.SourceDomain,
+                    ToDomain: link.TargetDomain,
+                    SourceNode: new OntologyNodeRef(link.SourceDomain, link.SourceObjectType.Name),
+                    TargetNode: target));
+            }
+
+            if (link.TargetDomain == current.Domain
+                && link.TargetObjectType.Name == current.ObjectTypeName)
+            {
+                var source = new OntologyNodeRef(link.SourceDomain, link.SourceObjectType.Name);
+                yield return (source, new CrossDomainHop(
+                    FromDomain: link.TargetDomain,
+                    ToDomain: link.SourceDomain,
+                    SourceNode: new OntologyNodeRef(link.TargetDomain, link.TargetObjectType.Name),
+                    TargetNode: source));
+            }
+        }
+    }
+
+    // Classification follows plan §C1 test expectations: a single-seed/single-domain
+    // call is "Local" even when expansion reaches a 2nd type (test 1), but a multi-type
+    // SEED set in one domain is "Domain" (test 2). Cross-domain and Global thresholds
+    // include all affected nodes plus crossHop endpoints to capture the full reach.
+    private static BlastRadiusScope ClassifyScope(
+        IReadOnlyList<OntologyNodeRef> directlyAffected,
+        IReadOnlyList<OntologyNodeRef> transitivelyAffected,
+        IReadOnlyList<CrossDomainHop> crossHops)
+    {
+        var seedDomains = directlyAffected.Select(n => n.Domain).Distinct().Count();
+        var seedTypes = directlyAffected.Select(n => n.ObjectTypeName).Distinct().Count();
+
+        if (crossHops.Count > 0)
+        {
+            var allDomains = directlyAffected.Select(n => n.Domain)
+                .Concat(transitivelyAffected.Select(n => n.Domain))
+                .Concat(crossHops.Select(h => h.FromDomain))
+                .Concat(crossHops.Select(h => h.ToDomain))
+                .Distinct()
+                .Count();
+
+            return allDomains > 3 ? BlastRadiusScope.Global : BlastRadiusScope.CrossDomain;
+        }
+
+        if (seedDomains == 1 && seedTypes == 1)
+        {
+            return BlastRadiusScope.Local;
+        }
+
+        return BlastRadiusScope.Domain;
+    }
+
     private ObjectTypeDescriptor? FindObjectType(string objectType) =>
         graph.ObjectTypes.FirstOrDefault(ot => ot.Name == objectType);
 
