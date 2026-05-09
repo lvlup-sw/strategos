@@ -565,4 +565,4 @@ Solo execution (no worktrees): follow alphabetical order within each track, fini
 - Design — `docs/designs/2026-05-08-ontology-2-5-0-dispatch-validation.md`
 - Issues — strategos#39, #38, #42, #41, #33
 - Predecessor plan — `docs/plans/2026-04-19-mcp-surface-conformance.md` (Slice A)
-- TUnit invocation memo — `~/.claude/projects/-home-reedsalus-Documents-code-lvlup-sw-strategos/memory/feedback_tunit_test_invocation.md`
+- TUnit invocation memo — internal team note (non-repo artifact). Authoritative test-invocation examples live in this plan and in `CONTRIBUTING.md`; `dotnet test --filter` does not work in Strategos — use `dotnet run -c Release --no-build -- --treenode-filter "/*/*/*/Name"`.

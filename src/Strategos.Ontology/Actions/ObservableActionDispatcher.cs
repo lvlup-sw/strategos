@@ -38,6 +38,9 @@ public sealed class ObservableActionDispatcher : IActionDispatcher
     public async Task<ActionResult> DispatchAsync(
         ActionContext context, object request, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+
         var result = await _inner.DispatchAsync(context, request, ct).ConfigureAwait(false);
         await NotifyObserversIsolatedAsync(context, result, ct).ConfigureAwait(false);
         return result;
