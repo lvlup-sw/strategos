@@ -12,6 +12,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
     private readonly IObjectSetProvider? _objectSetProvider;
     private readonly IActionDispatcher? _actionDispatcher;
     private readonly IEventStreamProvider? _eventStreamProvider;
+    private readonly IReadOnlyList<IPatternDetector> _patternDetectors;
 
     /// <summary>
     /// Creates an <see cref="OntologyQueryService"/> for read-only graph queries.
@@ -22,6 +23,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
     {
         ArgumentNullException.ThrowIfNull(graph);
         this.graph = graph;
+        _patternDetectors = BuildPatternDetectors();
     }
 
     /// <summary>
@@ -44,7 +46,18 @@ internal sealed class OntologyQueryService : IOntologyQuery
         _objectSetProvider = objectSetProvider;
         _actionDispatcher = actionDispatcher;
         _eventStreamProvider = eventStreamProvider;
+        _patternDetectors = BuildPatternDetectors();
     }
+
+    // Detectors are registered internally so future v2 patterns can extend the
+    // surface without changing the public IOntologyQuery contract.
+    private static IReadOnlyList<IPatternDetector> BuildPatternDetectors() =>
+        [
+            new ComputedWritePatternDetector(),
+            new MissingExtensionPointPatternDetector(),
+            new MissingPreconditionPropertyPatternDetector(),
+            new UnreachableInitialPatternDetector(),
+        ];
 
     public ObjectSet<T> GetObjectSet<T>(string objectType) where T : class
     {
@@ -467,6 +480,27 @@ internal sealed class OntologyQueryService : IOntologyQuery
         }
     }
 
+    public IReadOnlyList<PatternViolation> DetectPatternViolations(
+        IReadOnlyList<OntologyNodeRef> affectedNodes,
+        DesignIntent intent)
+    {
+        ArgumentNullException.ThrowIfNull(affectedNodes);
+        ArgumentNullException.ThrowIfNull(intent);
+
+        var collected = new List<PatternViolation>();
+        foreach (var detector in _patternDetectors)
+        {
+            collected.AddRange(detector.Detect(graph, intent, affectedNodes));
+        }
+
+        return collected
+            .OrderBy(v => v.PatternName, StringComparer.Ordinal)
+            .ThenBy(v => v.Subject.Domain, StringComparer.Ordinal)
+            .ThenBy(v => v.Subject.ObjectTypeName, StringComparer.Ordinal)
+            .ThenBy(v => v.Subject.Key ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     // Classification follows plan §C1 test expectations: a single-seed/single-domain
     // call is "Local" even when expansion reaches a 2nd type (test 1), but a multi-type
     // SEED set in one domain is "Domain" (test 2). Cross-domain and Global thresholds
@@ -763,4 +797,243 @@ internal sealed class OntologyQueryService : IOntologyQuery
         result = 0;
         return false;
     }
+
+    private interface IPatternDetector
+    {
+        IEnumerable<PatternViolation> Detect(
+            OntologyGraph graph,
+            DesignIntent intent,
+            IReadOnlyList<OntologyNodeRef> affectedNodes);
+    }
+
+    // Computed.Write — Error. AONT023 catches the build-time conflict; this is
+    // runtime defense-in-depth for ProposedActions whose Arguments name a
+    // computed property on the subject's ObjectType.
+    private sealed class ComputedWritePatternDetector : IPatternDetector
+    {
+        public IEnumerable<PatternViolation> Detect(
+            OntologyGraph graph,
+            DesignIntent intent,
+            IReadOnlyList<OntologyNodeRef> affectedNodes)
+        {
+            foreach (var action in intent.Actions)
+            {
+                if (action.Arguments is null || action.Arguments.Count == 0)
+                {
+                    continue;
+                }
+
+                var ot = ResolveSubject(graph, action.Subject);
+                if (ot is null)
+                {
+                    continue;
+                }
+
+                foreach (var argName in action.Arguments.Keys)
+                {
+                    var prop = ot.Properties.FirstOrDefault(p =>
+                        string.Equals(p.Name, argName, StringComparison.Ordinal));
+
+                    if (prop is { IsComputed: true })
+                    {
+                        yield return new PatternViolation(
+                            PatternName: "Computed.Write",
+                            Description: $"Action '{action.ActionName}' on '{ot.Name}' attempts to write computed property '{prop.Name}'.",
+                            Subject: action.Subject,
+                            Severity: ViolationSeverity.Error);
+                    }
+                }
+            }
+        }
+    }
+
+    // Link.MissingExtensionPoint — Error. A ProposedAction whose underlying
+    // ActionDescriptor declares a CreatesLink postcondition pointing at a
+    // target ObjectType which advertises ExternalLinkExtensionPoints requiring
+    // a source interface that the action's Subject does not implement.
+    private sealed class MissingExtensionPointPatternDetector : IPatternDetector
+    {
+        public IEnumerable<PatternViolation> Detect(
+            OntologyGraph graph,
+            DesignIntent intent,
+            IReadOnlyList<OntologyNodeRef> affectedNodes)
+        {
+            foreach (var action in intent.Actions)
+            {
+                var ot = ResolveSubject(graph, action.Subject);
+                if (ot is null)
+                {
+                    continue;
+                }
+
+                var descriptor = ot.Actions.FirstOrDefault(a =>
+                    string.Equals(a.Name, action.ActionName, StringComparison.Ordinal));
+
+                if (descriptor is null)
+                {
+                    continue;
+                }
+
+                foreach (var post in descriptor.Postconditions)
+                {
+                    if (post.Kind != PostconditionKind.CreatesLink || post.LinkName is null)
+                    {
+                        continue;
+                    }
+
+                    var link = ot.Links.FirstOrDefault(l =>
+                        string.Equals(l.Name, post.LinkName, StringComparison.Ordinal));
+
+                    if (link is null)
+                    {
+                        continue;
+                    }
+
+                    var target = graph.ObjectTypes.FirstOrDefault(t =>
+                        string.Equals(t.Name, link.TargetTypeName, StringComparison.Ordinal));
+
+                    if (target is null || target.ExternalLinkExtensionPoints.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var sourceInterfaces = ot.ImplementedInterfaces
+                        .Select(i => i.Name)
+                        .ToHashSet(StringComparer.Ordinal);
+
+                    var matches = target.ExternalLinkExtensionPoints.Any(ep =>
+                        ep.RequiredSourceInterface is null
+                        || sourceInterfaces.Contains(ep.RequiredSourceInterface));
+
+                    if (!matches)
+                    {
+                        yield return new PatternViolation(
+                            PatternName: "Link.MissingExtensionPoint",
+                            Description: $"Action '{action.ActionName}' creates link '{link.Name}' to '{target.Name}' but source '{ot.Name}' does not satisfy any ExternalLinkExtensionPoint.",
+                            Subject: action.Subject,
+                            Severity: ViolationSeverity.Error);
+                    }
+                }
+            }
+        }
+    }
+
+    // Action.PreconditionPropertyMissing — Error. The action descriptor's
+    // precondition Expression names a property that is not on AcceptsType.
+    private sealed class MissingPreconditionPropertyPatternDetector : IPatternDetector
+    {
+        // Reflection on AcceptsType is bounded to public properties of a user-supplied
+        // type. AOT consumers register their AcceptsType via the DSL builder, so the
+        // type's properties are always preserved as part of the user's compiled code.
+        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+            "Trimming",
+            "IL2075:DynamicallyAccessedMembers",
+            Justification = "AcceptsType is user-registered and always present in the trimmed graph.")]
+        public IEnumerable<PatternViolation> Detect(
+            OntologyGraph graph,
+            DesignIntent intent,
+            IReadOnlyList<OntologyNodeRef> affectedNodes)
+        {
+            foreach (var action in intent.Actions)
+            {
+                var ot = ResolveSubject(graph, action.Subject);
+                if (ot is null)
+                {
+                    continue;
+                }
+
+                var descriptor = ot.Actions.FirstOrDefault(a =>
+                    string.Equals(a.Name, action.ActionName, StringComparison.Ordinal));
+
+                if (descriptor is null || descriptor.AcceptsType is null)
+                {
+                    continue;
+                }
+
+                var acceptsProps = descriptor.AcceptsType
+                    .GetProperties()
+                    .Select(p => p.Name)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                foreach (var pre in descriptor.Preconditions)
+                {
+                    var propName = ExtractPropertyName(pre);
+                    if (propName is null)
+                    {
+                        continue;
+                    }
+
+                    if (!acceptsProps.Contains(propName))
+                    {
+                        yield return new PatternViolation(
+                            PatternName: "Action.PreconditionPropertyMissing",
+                            Description: $"Action '{action.ActionName}' precondition references property '{propName}' which is not present on AcceptsType '{descriptor.AcceptsType.Name}'.",
+                            Subject: action.Subject,
+                            Severity: ViolationSeverity.Error);
+                    }
+                }
+            }
+        }
+
+        private static string? ExtractPropertyName(ActionPrecondition pre)
+        {
+            if (pre.Kind == PreconditionKind.LinkExists)
+            {
+                return pre.LinkName;
+            }
+
+            if (pre.Kind != PreconditionKind.PropertyPredicate)
+            {
+                return null;
+            }
+
+            var parsed = TryParseComparison(pre.Expression);
+            return parsed?.PropertyName;
+        }
+    }
+
+    // Lifecycle.UnreachableInitial — Warning. The descriptor declares an
+    // Initial state but no transition produces it. Severity is Warning rather
+    // than Error because an unreachable Initial may be intentional (e.g. seed
+    // state for newly constructed entities) — the agent should be warned but
+    // not blocked.
+    private sealed class UnreachableInitialPatternDetector : IPatternDetector
+    {
+        public IEnumerable<PatternViolation> Detect(
+            OntologyGraph graph,
+            DesignIntent intent,
+            IReadOnlyList<OntologyNodeRef> affectedNodes)
+        {
+            foreach (var ot in graph.ObjectTypes)
+            {
+                if (ot.Lifecycle is null)
+                {
+                    continue;
+                }
+
+                var initial = ot.Lifecycle.States.FirstOrDefault(s => s.IsInitial);
+                if (initial is null)
+                {
+                    continue;
+                }
+
+                var hasIncoming = ot.Lifecycle.Transitions.Any(t =>
+                    string.Equals(t.ToState, initial.Name, StringComparison.Ordinal));
+
+                if (!hasIncoming)
+                {
+                    yield return new PatternViolation(
+                        PatternName: "Lifecycle.UnreachableInitial",
+                        Description: $"Lifecycle '{ot.Name}' declares initial state '{initial.Name}' but no transition produces it.",
+                        Subject: new OntologyNodeRef(ot.DomainName, ot.Name),
+                        Severity: ViolationSeverity.Warning);
+                }
+            }
+        }
+    }
+
+    private static ObjectTypeDescriptor? ResolveSubject(OntologyGraph graph, OntologyNodeRef subject)
+        => graph.GetObjectType(subject.Domain, subject.ObjectTypeName)
+            ?? graph.ObjectTypes.FirstOrDefault(o =>
+                string.Equals(o.Name, subject.ObjectTypeName, StringComparison.Ordinal));
 }
