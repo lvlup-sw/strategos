@@ -204,4 +204,53 @@ public class OntologyValidateToolTests
         await Assert.That(() => tool.Validate(null!))
             .Throws<ArgumentNullException>();
     }
+
+    [Test]
+    public async Task Validate_MergesActionArgumentsIntoConstraintLookup()
+    {
+        // Regression: ProposedAction.Arguments must flow into the per-action
+        // constraint evaluation so preconditions that reference action
+        // arguments (e.g. "quantity > 0") are evaluated correctly.
+        IReadOnlyDictionary<string, object?>? captured = null;
+        var query = Substitute.For<IOntologyQuery>();
+        query
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .Returns(call =>
+            {
+                captured = call.ArgAt<IReadOnlyDictionary<string, object?>?>(1);
+                return Array.Empty<ActionConstraintReport>();
+            });
+        query
+            .EstimateBlastRadius(Arg.Any<IReadOnlyList<OntologyNodeRef>>(), Arg.Any<BlastRadiusOptions?>())
+            .Returns(EmptyBlastRadius());
+        query
+            .DetectPatternViolations(Arg.Any<IReadOnlyList<OntologyNodeRef>>(), Arg.Any<DesignIntent>())
+            .Returns(Array.Empty<PatternViolation>());
+
+        var tool = new OntologyValidateTool(query);
+        var arguments = new Dictionary<string, object?>
+        {
+            ["quantity"] = 5,
+            ["status"] = "OverriddenByArg",
+        };
+        var knownProperties = new Dictionary<string, object?>
+        {
+            ["status"] = "Pending",
+            ["region"] = "EU",
+        };
+        var intent = new DesignIntent(
+            new List<OntologyNodeRef> { Node() },
+            new List<ProposedAction> { new("Ship", Node(), arguments) },
+            knownProperties);
+
+        tool.Validate(intent);
+
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.ContainsKey("quantity")).IsTrue();
+        await Assert.That(captured["quantity"]).IsEqualTo(5);
+        // Subject property the action does not override is still present.
+        await Assert.That(captured["region"]).IsEqualTo("EU");
+        // Action arguments win on key collisions.
+        await Assert.That(captured["status"]).IsEqualTo("OverriddenByArg");
+    }
 }

@@ -71,9 +71,17 @@ public sealed class OntologyValidateTool
 
         foreach (var action in intent.Actions)
         {
+            // Merge intent.KnownProperties with this action's Arguments so
+            // preconditions that read argument values (e.g. "quantity > 0")
+            // are evaluated. Both fields share the same key/value shape
+            // expected by the constraint evaluator; action arguments win on
+            // key collisions because they describe the *invocation* rather
+            // than the prior subject state.
+            var lookup = MergeKnownPropsAndArgs(intent.KnownProperties, action.Arguments);
+
             var reports = _query.GetActionConstraintReport(
                 action.Subject.ObjectTypeName,
-                intent.KnownProperties);
+                lookup);
 
             // The query returns a report per registered action on the object type.
             // Narrow to the proposed action so we don't report constraints from
@@ -103,5 +111,33 @@ public sealed class OntologyValidateTool
         }
 
         return (hard, soft);
+    }
+
+    private static IReadOnlyDictionary<string, object?>? MergeKnownPropsAndArgs(
+        IReadOnlyDictionary<string, object?>? knownProperties,
+        IReadOnlyDictionary<string, object?>? actionArguments)
+    {
+        if (actionArguments is null || actionArguments.Count == 0)
+        {
+            return knownProperties;
+        }
+
+        if (knownProperties is null || knownProperties.Count == 0)
+        {
+            return actionArguments;
+        }
+
+        var merged = new Dictionary<string, object?>(knownProperties.Count + actionArguments.Count);
+        foreach (var kvp in knownProperties)
+        {
+            merged[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var kvp in actionArguments)
+        {
+            merged[kvp.Key] = kvp.Value;
+        }
+
+        return merged;
     }
 }
