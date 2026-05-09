@@ -105,6 +105,43 @@ public sealed class PvExtensionPointOntology : DomainOntology
     }
 }
 
+// 2b) Link.MissingExtensionPoint fixture without a sibling HasOne declaration —
+//     source declares only .CreatesLinked<TTarget>("X") in the action; no link
+//     descriptor exists on the source. Detector must still resolve the target
+//     via post.TargetTypeName (set by the DSL) and flag the missing extension-
+//     point match.
+public sealed class PvCreatesLinkedNoHasOneOntology : DomainOntology
+{
+    public override string DomainName => "trading";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Interface<IPvAuditable>("Auditable", iface =>
+        {
+            iface.Property(a => a.Id);
+        });
+
+        builder.Object<PvLinkSource>(o =>
+        {
+            o.Key(s => s.Id);
+            // NOTE: no o.HasOne<PvLinkTarget>("Out") here — only the postcondition.
+            o.Action("CreateLink")
+                .Description("Create a link to a target")
+                .CreatesLinked<PvLinkTarget>("Out");
+        });
+
+        builder.Object<PvLinkTarget>(o =>
+        {
+            o.Key(t => t.Id);
+            o.AcceptsExternalLinks("AuditedFrom", ext =>
+            {
+                ext.FromInterface<IPvAuditable>();
+                ext.Description("Sources must be auditable");
+            });
+        });
+    }
+}
+
 // 3) Action.PreconditionPropertyMissing fixture: precondition references a
 //    property that DOES exist on AcceptsType (clean case). The positive case
 //    uses PvPreconditionMissingFixture defined at the bottom of this file.
@@ -292,6 +329,28 @@ public class DetectPatternViolationsTests
         var violations = query.DetectPatternViolations([subject], intent);
 
         await Assert.That(violations.Any(v => v.PatternName == "Link.MissingExtensionPoint")).IsFalse();
+    }
+
+    [Test]
+    public async Task DetectPatternViolations_CreatesLinkedWithoutSiblingHasOne_StillFlagsMissingExtensionPoint()
+    {
+        // Regression: the detector previously skipped silently when the source
+        // type's Links collection lacked a matching LinkDescriptor. The DSL
+        // .CreatesLinked<TTarget>(name) records TargetTypeName on the postcondition,
+        // so the detector resolves the target without a sibling .HasOne<TTarget>().
+        var query = CreateQuery(new PvCreatesLinkedNoHasOneOntology());
+        var subject = new OntologyNodeRef("trading", "PvLinkSource", "src-1");
+        var action = new ProposedAction(
+            ActionName: "CreateLink",
+            Subject: subject,
+            Arguments: null);
+        var intent = new DesignIntent([subject], [action], null);
+
+        var violations = query.DetectPatternViolations([subject], intent);
+
+        var violation = violations.FirstOrDefault(v => v.PatternName == "Link.MissingExtensionPoint");
+        await Assert.That(violation).IsNotNull();
+        await Assert.That(violation!.Severity).IsEqualTo(ViolationSeverity.Error);
     }
 
     // === Action.PreconditionPropertyMissing ===

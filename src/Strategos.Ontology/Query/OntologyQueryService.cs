@@ -884,13 +884,14 @@ internal sealed class OntologyQueryService : IOntologyQuery
                     var link = ot.Links.FirstOrDefault(l =>
                         string.Equals(l.Name, post.LinkName, StringComparison.Ordinal));
 
-                    if (link is null)
+                    var targetTypeName = link?.TargetTypeName ?? post.TargetTypeName;
+                    if (targetTypeName is null)
                     {
                         continue;
                     }
 
                     var target = graph.ObjectTypes.FirstOrDefault(t =>
-                        string.Equals(t.Name, link.TargetTypeName, StringComparison.Ordinal));
+                        string.Equals(t.Name, targetTypeName, StringComparison.Ordinal));
 
                     if (target is null || target.ExternalLinkExtensionPoints.Count == 0)
                     {
@@ -909,7 +910,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
                     {
                         yield return new PatternViolation(
                             PatternName: "Link.MissingExtensionPoint",
-                            Description: $"Action '{action.ActionName}' creates link '{link.Name}' to '{target.Name}' but source '{ot.Name}' does not satisfy any ExternalLinkExtensionPoint.",
+                            Description: $"Action '{action.ActionName}' creates link '{post.LinkName}' to '{target.Name}' but source '{ot.Name}' does not satisfy any ExternalLinkExtensionPoint.",
                             Subject: action.Subject,
                             Severity: ViolationSeverity.Error);
                     }

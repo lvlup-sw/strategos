@@ -147,6 +147,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         {
             Kind = PostconditionKind.CreatesLink,
             LinkName = linkName,
+            TargetTypeName = typeof(TTarget).Name,
         });
         return this;
     }

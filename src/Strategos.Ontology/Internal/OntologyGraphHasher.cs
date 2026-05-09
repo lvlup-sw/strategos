@@ -214,12 +214,14 @@ internal static class OntologyGraphHasher
                               .OrderBy(x => x.Kind.ToString(), StringComparer.Ordinal)
                               .ThenBy(x => x.PropertyName ?? string.Empty, StringComparer.Ordinal)
                               .ThenBy(x => x.LinkName ?? string.Empty, StringComparer.Ordinal)
-                              .ThenBy(x => x.EventTypeName ?? string.Empty, StringComparer.Ordinal))
+                              .ThenBy(x => x.EventTypeName ?? string.Empty, StringComparer.Ordinal)
+                              .ThenBy(x => x.TargetTypeName ?? string.Empty, StringComparer.Ordinal))
         {
             WriteString(writer, pc.Kind.ToString());
             WriteString(writer, pc.PropertyName ?? string.Empty);
             WriteString(writer, pc.LinkName ?? string.Empty);
             WriteString(writer, pc.EventTypeName ?? string.Empty);
+            WriteString(writer, pc.TargetTypeName ?? string.Empty);
         }
     }
 

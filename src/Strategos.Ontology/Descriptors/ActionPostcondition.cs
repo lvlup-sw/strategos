@@ -9,4 +9,6 @@ public sealed record ActionPostcondition
     public string? LinkName { get; init; }
 
     public string? EventTypeName { get; init; }
+
+    public string? TargetTypeName { get; init; }
 }
