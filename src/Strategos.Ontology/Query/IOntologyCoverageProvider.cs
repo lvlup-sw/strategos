@@ -1,4 +1,4 @@
-namespace Strategos.Ontology.MCP;
+namespace Strategos.Ontology.Query;
 
 public interface IOntologyCoverageProvider
 {

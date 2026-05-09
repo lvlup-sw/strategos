@@ -77,4 +77,10 @@ public interface IOntologyQuery
         BlastRadiusOptions? options = null)
         => throw new NotSupportedException(
             "EstimateBlastRadius is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
+
+    IReadOnlyList<PatternViolation> DetectPatternViolations(
+        IReadOnlyList<OntologyNodeRef> affectedNodes,
+        DesignIntent intent)
+        => throw new NotSupportedException(
+            "DetectPatternViolations is not implemented by this IOntologyQuery; consult the design ADR for the reference algorithm.");
 }

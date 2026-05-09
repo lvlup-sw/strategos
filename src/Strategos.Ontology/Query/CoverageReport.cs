@@ -1,6 +1,4 @@
-using Strategos.Ontology.Query;
-
-namespace Strategos.Ontology.MCP;
+namespace Strategos.Ontology.Query;
 
 public sealed record CoverageReport(
     int CoveredNodes,

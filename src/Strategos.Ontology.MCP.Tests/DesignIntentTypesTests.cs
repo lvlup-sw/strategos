@@ -1,4 +1,3 @@
-using Strategos.Ontology.MCP;
 using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.MCP.Tests;

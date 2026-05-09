@@ -24,6 +24,25 @@ public class IOntologyQueryDefaultsTests
             .WithMessageContaining("EstimateBlastRadius");
     }
 
+    [Test]
+    public async Task DetectPatternViolations_OnNonImplementingQuery_ThrowsNotSupported()
+    {
+        IOntologyQuery query = new MinimalOntologyQueryStub();
+        var node = new OntologyNodeRef("trading", "Order", "ord-1");
+        var intent = new DesignIntent(
+            AffectedNodes: [node],
+            Actions: [],
+            KnownProperties: null);
+
+        await Assert.That(() => query.DetectPatternViolations([node], intent))
+            .ThrowsException()
+            .WithExceptionType(typeof(NotSupportedException));
+
+        await Assert.That(() => query.DetectPatternViolations([node], intent))
+            .ThrowsException()
+            .WithMessageContaining("DetectPatternViolations");
+    }
+
     // Hand-written stub: implements every non-default member of IOntologyQuery
     // and explicitly does NOT override EstimateBlastRadius / DetectPatternViolations,
     // so the interface's default body is exercised. NSubstitute is unsuitable here —
