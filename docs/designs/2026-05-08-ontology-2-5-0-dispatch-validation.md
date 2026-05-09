@@ -341,3 +341,53 @@ In `ResolveTableNameForDefaultOverload<T>`, when `graph is not null` and `TryGet
 - Issues — strategos#39, #38, #42, #41, #33.
 - Gap analysis — `lvlup-sw/basileus:docs/research/2026-04-18-strategos-ontology-gap-analysis.md` Gaps 2, 3, 4, 11.
 - Slice A merge commits — bdd0fa0 (#55, closes #40), eab19c2 (#49, closes #44).
+
+---
+
+## 10. Implementation deltas (post-implementation erratum, 2026-05-08)
+
+The following deviations from §§3, 4.1, 4.2, 4.5, 4.7, 4.8 were applied during implementation. The originating sections above are kept as written for design-review history; this section is the binding record of what shipped.
+
+### 10.1 `DesignIntent` and friends live in `Strategos.Ontology.Query`, not `MCP`
+
+Original §3 architecture box and §4.8 placed `DesignIntent`, `ProposedAction`, `CoverageReport`, and `IOntologyCoverageProvider` in `Strategos.Ontology.MCP`. Implementation moved them to `Strategos.Ontology.Query` because `IOntologyQuery.DetectPatternViolations(IReadOnlyList<OntologyNodeRef>, DesignIntent)` (§4.7) takes `DesignIntent` as a parameter — and `IOntologyQuery` lives in `Strategos.Ontology` core, which does not (and must not) reference `Strategos.Ontology.MCP`. Co-locating the records with `IOntologyQuery` avoids a cycle.
+
+`ValidationVerdict` and `OntologyValidateTool` remain in `Strategos.Ontology.MCP` since they are MCP-tool surface.
+
+### 10.2 `ConstraintEvaluation` source compat uses `using` directives, not `[TypeForwardedTo]`
+
+§4.1 specified `[assembly: TypeForwardedTo(typeof(ConstraintEvaluation))]` from the old `Strategos.Ontology.Query` namespace. That attribute only forwards across assemblies; intra-assembly namespace moves rely on standard C# resolution. Implementation moved the type to `Strategos.Ontology.Actions` and updated touched consumers (`ActionConstraintReport.cs`, `OntologyQueryService.cs`) to add `using Strategos.Ontology.Actions;`. `Query/ConstraintEvaluation.cs` is retained as a comment-only stub explaining the substitution.
+
+### 10.3 No "OntologyActionDispatcher"; cross-cutting concerns ship as opt-in decorators
+
+§4.2 and §4.5 referred to a "reference dispatcher implementation (`OntologyActionDispatcher`)" that would populate `ActionResult.Violations` and fan out to `IActionDispatchObserver`. Strategos does not ship a concrete dispatcher (each consumer registers their own via `OntologyOptions.UseActionDispatcher<T>()`). The cross-cutting behavior was instead delivered as two per-concern decorators in `Strategos.Ontology.Actions`:
+
+- `ConstraintReportingActionDispatcher` — wraps any `IActionDispatcher`; reads `IOntologyQuery.GetActionConstraintReport` after dispatch and attaches `ConstraintViolationReport` to `ActionResult.Violations`.
+- `ObservableActionDispatcher` — wraps any `IActionDispatcher`; fans out to `IEnumerable<IActionDispatchObserver>` with try/catch isolation per observer.
+
+Consumers opt in via `OntologyOptions.AddConstraintReporting()` (order 25, closer to inner) and `OntologyOptions.AddDispatchObservation()` (order 75, closer to caller). Both are non-breaking — without these calls, the user's dispatcher is registered as-is. The pattern matches the bifrost decorator idiom (`Bifrost.Resilience.ResilientOrchestrator`, etc.).
+
+`ConstraintReportingActionDispatcher` uses an internal `Lazy<IOntologyQuery>` factory to break a DI cycle (the registered `IOntologyQuery` factory itself resolves `IActionDispatcher`).
+
+### 10.4 `Link.MissingExtensionPoint` resolves target via postcondition `TargetTypeName`
+
+§4.7 says the detector flags "creating a link to an object type without a matching ExtensionPoint." The original implementation resolved the target via the source type's `Links` collection, which silently skipped when the user declared `.CreatesLinked<TTarget>("X")` without a sibling `.HasOne<TTarget>("X")` declaration on the source. Fix:
+
+- `ActionPostcondition` gains `TargetTypeName` (set by `ActionBuilderOfT.CreatesLinked<TTarget>` from `typeof(TTarget).Name`).
+- The detector falls back to `post.TargetTypeName` when `ot.Links` lookup fails, allowing target resolution without a sibling link descriptor.
+- `OntologyGraphHasher` includes the new `TargetTypeName` field so `OntologyGraph.Version` reflects this dimension.
+- Regression test: `DetectPatternViolations_CreatesLinkedWithoutSiblingHasOne_StillFlagsMissingExtensionPoint`.
+
+### 10.5 Optimistic constraint evaluation when `KnownProperties` is null
+
+`OntologyQueryService.GetActionConstraintReport` evaluates expression-based preconditions (e.g., `.Requires(o => o.Quantity > 0)`) against `DesignIntent.KnownProperties`. When `KnownProperties` is null or omits the referenced property, the evaluator returns `IsSatisfied=true` (optimistic) rather than failing closed. Link-existence preconditions (`.RequiresLink(name)`) remain deterministic and fail closed when the link is absent.
+
+Consumers seeking deterministic verdicts on property predicates must populate `KnownProperties` at intent construction. v2.5.0 preserves the optimistic behavior; tightening to fail-closed on missing properties is deferred to a follow-up after the Basileus integration pins the contract.
+
+### 10.6 `ActionContext.ActionDescriptor` optional init property
+
+§4.3's snippet for `IActionDispatcher.DispatchReadOnlyAsync` referenced `context.ActionDescriptor.IsReadOnly`. The original `ActionContext` record carried `(Domain, ObjectType, ObjectId, ActionName, Options?)` — no descriptor. Implementation added `ActionDescriptor? ActionDescriptor { get; init; }` (default null) as a non-breaking record extension. The DIM uses `context.ActionDescriptor?.IsReadOnly is true` and `context.ActionName` (not `context.ActionDescriptor.Name`) so a null descriptor produces a controlled failure rather than a NullReferenceException.
+
+### 10.7 `WorkflowMetadataBuilder.InDomain(string)` (new public DSL surface)
+
+#33 Finding 4 (§4.11) keys `DiscoverWorkflowChains` lookup by `(DomainName, Name)`. The implementation added a new fluent setter `WorkflowMetadataBuilder.InDomain(string domainName)` so workflow metadata can carry the qualifying domain. This is a new public DSL surface; it is documented inline and exercised by `DiscoverWorkflowChainsDomainKeyedTests`.
