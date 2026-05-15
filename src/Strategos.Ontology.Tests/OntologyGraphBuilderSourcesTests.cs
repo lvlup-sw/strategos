@@ -77,6 +77,115 @@ public class OntologyGraphBuilderSourcesTests
             .IsTrue();
     }
 
-    // Task 17 (Build_SourceThrowsDuringLoadAsync_ExceptionMessageContainsSourceId)
-    // is appended to this file at task time per the implementer instructions.
+    // ----- Task 17: source-error propagation -----
+
+    [Test]
+    public async Task Build_SourceThrowsDuringLoadAsync_ExceptionMessageContainsSourceId()
+    {
+        // DR-10 failure mode 1: source raises during LoadAsync ⇒
+        // OntologyGraphBuilder.Build() propagates the exception as an
+        // OntologyCompositionException whose message contains the
+        // offending source's SourceId so logs/incident reports attribute
+        // the failure to the right ingester.
+        var throwingSource = new ThrowingSource("flaky-typescript");
+
+        var graphBuilder = new OntologyGraphBuilder()
+            .AddSources(new IOntologySource[] { throwingSource });
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            graphBuilder.Build();
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).Contains("flaky-typescript");
+    }
+
+    [Test]
+    public async Task Build_SourceThrowsAfterFirstDelta_ExceptionContainsSourceId()
+    {
+        // Variant: the source yields one delta and then raises; the wrap
+        // still catches the post-yield exception and surfaces SourceId.
+        var source = new PartialDrainThrowingSource("partial-typescript", Timestamp);
+
+        var graphBuilder = new OntologyGraphBuilder()
+            .AddSources(new IOntologySource[] { source });
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            graphBuilder.Build();
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).Contains("partial-typescript");
+        // Inner exception preserves the original failure for diagnostics.
+        await Assert.That(caught.InnerException).IsNotNull();
+    }
+
+    private sealed class ThrowingSource(string sourceId) : IOntologySource
+    {
+        public string SourceId { get; } = sourceId;
+
+        public async IAsyncEnumerable<OntologyDelta> LoadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("synthetic source failure");
+#pragma warning disable CS0162 // Unreachable code detected
+            yield break;
+#pragma warning restore CS0162
+        }
+
+        public async IAsyncEnumerable<OntologyDelta> SubscribeAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield break;
+        }
+    }
+
+    private sealed class PartialDrainThrowingSource(string sourceId, DateTimeOffset timestamp)
+        : IOntologySource
+    {
+        public string SourceId { get; } = sourceId;
+
+        public async IAsyncEnumerable<OntologyDelta> LoadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+
+            yield return new OntologyDelta.AddObjectType(
+                new ObjectTypeDescriptor
+                {
+                    Name = "Half",
+                    DomainName = "Trading",
+                    SymbolKey = "scip ./half#Half",
+                    Source = DescriptorSource.Ingested,
+                    SourceId = SourceId,
+                })
+            {
+                SourceId = SourceId,
+                Timestamp = timestamp,
+            };
+
+            throw new InvalidOperationException("synthetic mid-stream failure");
+        }
+
+        public async IAsyncEnumerable<OntologyDelta> SubscribeAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield break;
+        }
+    }
 }
