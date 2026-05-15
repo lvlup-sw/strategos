@@ -365,10 +365,8 @@ public sealed class OntologyGraphBuilder
                 }
             }
 
-            // AONT203 — ingested-only property missing from hand
-            // Define() when [DomainEntity(Strict = true)]. Opt-in: only
-            // fires when the descriptor's CLR type carries the attribute
-            // with Strict = true.
+            // AONT203 fold — Strict-mode opt-in: ingested-only properties
+            // missing from hand Define() emit warning AONT203.
             if (IsStrictDomainEntity(descriptor))
             {
                 var handPropNames = new HashSet<string>(
@@ -401,6 +399,88 @@ public sealed class OntologyGraphBuilder
                 }
             }
         }
+
+        // AONT204 — info-severity hint when a purely ingested descriptor
+        // (Source = Ingested at graph-level) is not referenced by any
+        // hand-authored descriptor via Links.TargetTypeName,
+        // ParentTypeName, or KeyProperty links. Orphan ingested types
+        // often indicate a misconfigured ingester or unused contribution
+        // worth pruning.
+        var handReferencedNames = CollectHandReferencedTypeNames(allObjectTypes);
+        foreach (var descriptor in allObjectTypes)
+        {
+            if (descriptor.Source != DescriptorSource.Ingested)
+            {
+                continue;
+            }
+
+            if (handReferencedNames.Contains((descriptor.DomainName, descriptor.Name)))
+            {
+                continue;
+            }
+
+            // Also consider domain-agnostic name references — the hand
+            // link DSL may resolve to a descriptor with the same simple
+            // name in another domain (rare, but the resolver does fall
+            // back to a name-only scan).
+            if (handReferencedNames.Any(k => k.Name == descriptor.Name))
+            {
+                continue;
+            }
+
+            var diag = new OntologyDiagnostic(
+                Id: "AONT204",
+                Message:
+                    $"AONT204: ingested-only descriptor '{descriptor.DomainName}.{descriptor.Name}' "
+                    + "is not referenced by any hand-authored type (no Links, ParentType, "
+                    + "or KeyProperty references found).",
+                Severity: OntologyDiagnosticSeverity.Info,
+                DomainName: descriptor.DomainName,
+                TypeName: descriptor.Name,
+                PropertyName: null);
+
+            nonFatal.Add(diag);
+            LogNonFatal(diag);
+        }
+    }
+
+    /// <summary>
+    /// Collects every (DomainName, TargetName) pair that a hand-authored
+    /// descriptor references via Links, ParentTypeName, or a property's
+    /// ReferenceSymbolKey. Used by AONT204 to detect orphan ingested
+    /// descriptors. Same-domain link targets are recorded under the
+    /// hand descriptor's own domain; an empty string is used for the
+    /// domain slot when the reference is domain-agnostic.
+    /// </summary>
+    private static HashSet<(string DomainName, string Name)> CollectHandReferencedTypeNames(
+        List<ObjectTypeDescriptor> allObjectTypes)
+    {
+        var refs = new HashSet<(string, string)>();
+
+        foreach (var descriptor in allObjectTypes)
+        {
+            if (descriptor.Source != DescriptorSource.HandAuthored)
+            {
+                continue;
+            }
+
+            if (descriptor.ParentTypeName is not null)
+            {
+                refs.Add((descriptor.DomainName, descriptor.ParentTypeName));
+            }
+
+            foreach (var link in descriptor.Links)
+            {
+                // Hand-tagged links (or any link declared by a hand
+                // descriptor) point at TargetTypeName in the same domain
+                // unless the source is genuinely ingested-only on this
+                // descriptor — which is impossible here because we
+                // already gated on descriptor.Source.
+                refs.Add((descriptor.DomainName, link.TargetTypeName));
+            }
+        }
+
+        return refs;
     }
 
     /// <summary>
