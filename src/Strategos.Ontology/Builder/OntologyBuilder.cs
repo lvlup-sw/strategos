@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
+
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Diagnostics;
 
 namespace Strategos.Ontology.Builder;
 
@@ -71,10 +74,12 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         switch (delta)
         {
             case OntologyDelta.AddObjectType add:
+                ValidateIngestedIntentInvariant(add.Descriptor);
                 ObjectTypeFromDescriptor(add.Descriptor);
                 break;
 
             case OntologyDelta.UpdateObjectType update:
+                ValidateIngestedIntentInvariant(update.Descriptor);
                 ApplyUpdateObjectType(update);
                 break;
 
@@ -106,6 +111,57 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
                 throw new NotSupportedException(
                     $"Unknown delta variant: {delta.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// DR-6 + DR-10 (Task 16): AONT205 invariant — a mechanical ingester
+    /// (descriptor with <see cref="DescriptorSource.Ingested"/>) cannot
+    /// contribute to the intent-only fields <see cref="ObjectTypeDescriptor.Actions"/>,
+    /// <see cref="ObjectTypeDescriptor.Events"/>, or
+    /// <see cref="ObjectTypeDescriptor.Lifecycle"/>. Hand-authored
+    /// descriptors pass through unchanged. On violation, throws
+    /// <see cref="OntologyCompositionException"/> with an AONT205
+    /// diagnostic naming the offending field, the domain, and the type.
+    /// </summary>
+    private static void ValidateIngestedIntentInvariant(ObjectTypeDescriptor descriptor)
+    {
+        if (descriptor.Source != DescriptorSource.Ingested)
+        {
+            return;
+        }
+
+        string? offendingField = null;
+        if (descriptor.Actions.Count > 0)
+        {
+            offendingField = "Actions";
+        }
+        else if (descriptor.Events.Count > 0)
+        {
+            offendingField = "Events";
+        }
+        else if (descriptor.Lifecycle is not null)
+        {
+            offendingField = "Lifecycle";
+        }
+
+        if (offendingField is null)
+        {
+            return;
+        }
+
+        var diagnostic = new OntologyDiagnostic(
+            Id: "AONT205",
+            Message:
+                $"AONT205: ingested descriptor '{descriptor.DomainName}.{descriptor.Name}' "
+                + $"contributes to intent-only field '{offendingField}'. "
+                + $"Mechanical ingesters (Source = Ingested, SourceId = '{descriptor.SourceId ?? "<unknown>"}') "
+                + $"must leave Actions, Events, and Lifecycle empty — those are hand-authored intent.",
+            Severity: OntologyDiagnosticSeverity.Error,
+            DomainName: descriptor.DomainName,
+            TypeName: descriptor.Name,
+            PropertyName: offendingField);
+
+        throw new OntologyCompositionException(ImmutableArray.Create(diagnostic));
     }
 
     private void ApplyUpdateObjectType(OntologyDelta.UpdateObjectType delta)
