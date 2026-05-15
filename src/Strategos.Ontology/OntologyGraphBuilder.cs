@@ -399,6 +399,45 @@ public sealed class OntologyGraphBuilder
             }
         }
 
+        // AONT208 — LanguageId disagreement between MergeTwo origins.
+        // After merge, the descriptor's LanguageId mirrors the hand-side
+        // value. We compare that against the pre-merge ingested
+        // original. The diagnostic fires only when the hand-side opted
+        // into a non-default LanguageId (i.e. value != "dotnet"); the
+        // common dotnet/typescript polyglot path is the expected
+        // composition mode and does not trip.
+        foreach (var descriptor in allObjectTypes)
+        {
+            if (!ingestedOriginals.TryGetValue((descriptor.DomainName, descriptor.Name), out var ingested))
+            {
+                continue;
+            }
+
+            var handLanguage = descriptor.LanguageId;
+            var ingestedLanguage = ingested.LanguageId;
+
+            if (string.Equals(handLanguage, "dotnet", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (string.Equals(handLanguage, ingestedLanguage, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            fatal.Add(new OntologyDiagnostic(
+                Id: "AONT208",
+                Message:
+                    $"AONT208: descriptor '{descriptor.DomainName}.{descriptor.Name}' has "
+                    + $"LanguageId disagreement between hand ('{handLanguage}') and ingested "
+                    + $"('{ingestedLanguage}') contributions.",
+                Severity: OntologyDiagnosticSeverity.Error,
+                DomainName: descriptor.DomainName,
+                TypeName: descriptor.Name,
+                PropertyName: null));
+        }
+
         // AONT205 (defensive freeze-time surface) — Task 16 catches the
         // common case at delta-apply, but a stress scenario where two
         // ingested sources race intent fields could land a defective
