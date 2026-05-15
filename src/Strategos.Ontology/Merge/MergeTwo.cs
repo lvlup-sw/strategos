@@ -62,8 +62,8 @@ public static class MergeTwo
             SourceId = hand.SourceId,
             IngestedAt = hand.IngestedAt,
             KeyProperty = hand.KeyProperty,
-            Properties = hand.Properties,
-            Links = hand.Links,
+            Properties = MergeProperties(hand.Properties, ingested.Properties),
+            Links = MergeLinks(hand.Links, ingested.Links),
             Actions = hand.Actions,
             Events = hand.Events,
             ImplementedInterfaces = hand.ImplementedInterfaces,
@@ -75,5 +75,80 @@ public static class MergeTwo
             ParentType = hand.ParentType,
             ParentTypeName = hand.ParentTypeName,
         };
+    }
+
+    /// <summary>
+    /// Per-name union of <see cref="PropertyDescriptor"/> collections.
+    /// Hand wins on conflict; ingested-only entries are restamped with
+    /// <see cref="DescriptorSource.Ingested"/> so downstream consumers
+    /// can distinguish origin.
+    /// </summary>
+    /// <param name="hand">Hand-authored properties.</param>
+    /// <param name="ingested">Ingested properties.</param>
+    /// <returns>Merged property list (deterministic order: hand first, then ingested-only).</returns>
+    public static IReadOnlyList<PropertyDescriptor> MergeProperties(
+        IReadOnlyList<PropertyDescriptor> hand,
+        IReadOnlyList<PropertyDescriptor> ingested)
+    {
+        ArgumentNullException.ThrowIfNull(hand);
+        ArgumentNullException.ThrowIfNull(ingested);
+
+        // Hand entries pass through untouched (preserving their original Source).
+        var result = new List<PropertyDescriptor>(hand.Count + ingested.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in hand)
+        {
+            result.Add(p);
+            seen.Add(p.Name);
+        }
+
+        // Ingested-only entries are appended, restamped with Source = Ingested.
+        foreach (var p in ingested)
+        {
+            if (seen.Contains(p.Name))
+            {
+                continue;
+            }
+
+            result.Add(p with { Source = DescriptorSource.Ingested });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Per-name union of <see cref="LinkDescriptor"/> collections.
+    /// Hand wins on conflict; ingested-only entries are restamped with
+    /// <see cref="DescriptorSource.Ingested"/>.
+    /// </summary>
+    /// <param name="hand">Hand-authored links.</param>
+    /// <param name="ingested">Ingested links.</param>
+    /// <returns>Merged link list (deterministic order: hand first, then ingested-only).</returns>
+    public static IReadOnlyList<LinkDescriptor> MergeLinks(
+        IReadOnlyList<LinkDescriptor> hand,
+        IReadOnlyList<LinkDescriptor> ingested)
+    {
+        ArgumentNullException.ThrowIfNull(hand);
+        ArgumentNullException.ThrowIfNull(ingested);
+
+        var result = new List<LinkDescriptor>(hand.Count + ingested.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var l in hand)
+        {
+            result.Add(l);
+            seen.Add(l.Name);
+        }
+
+        foreach (var l in ingested)
+        {
+            if (seen.Contains(l.Name))
+            {
+                continue;
+            }
+
+            result.Add(l with { Source = DescriptorSource.Ingested });
+        }
+
+        return result;
     }
 }
