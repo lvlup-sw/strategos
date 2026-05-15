@@ -12,6 +12,27 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     private readonly List<InterfaceDescriptor> _interfaces = [];
     private readonly List<CrossDomainLinkBuilder> _crossDomainLinkBuilders = [];
 
+    // DR-7 (Tasks 23-30): retain a snapshot of the original ingested
+    // descriptor (pre-merge) per (DomainName, Name). The graph-freeze
+    // checks need to compare the hand-declared property set against the
+    // pre-merge ingested set: by the time MergeTwo has run, hand-only
+    // properties have been merged in alongside ingested-only ones, so a
+    // direct inspection of the merged descriptor cannot tell which side
+    // each property came from "originally". Keyed by
+    // (DomainName, Name); only the most recent ingested original is kept
+    // when the same (Domain, Name) collides (deltas are
+    // last-write-wins on the merged side, this snapshot follows that).
+    private readonly Dictionary<(string DomainName, string Name), ObjectTypeDescriptor> _ingestedOriginals = new();
+
+    /// <summary>
+    /// DR-7 graph-freeze: pre-merge ingested originals keyed by
+    /// (DomainName, Name). Surfaces to <see cref="OntologyGraphBuilder"/>
+    /// so AONT201–AONT208 can compare hand vs ingested without losing
+    /// provenance after MergeTwo's per-name union.
+    /// </summary>
+    internal IReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor> IngestedOriginals
+        => _ingestedOriginals;
+
     public IReadOnlyList<ObjectTypeDescriptor> ObjectTypes => _objectTypes.AsReadOnly();
 
     public IReadOnlyList<InterfaceDescriptor> Interfaces => _interfaces.AsReadOnly();
@@ -66,6 +87,14 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     public void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
+
+        // DR-7 (Tasks 23-30): snapshot the pre-merge ingested original so
+        // graph-freeze diagnostics can compare hand vs ingested property
+        // sets after MergeTwo collapses provenance into a single list.
+        if (descriptor.Source == DescriptorSource.Ingested)
+        {
+            _ingestedOriginals[(descriptor.DomainName, descriptor.Name)] = descriptor;
+        }
 
         var existingIdx = FindObjectTypeIndex(descriptor.DomainName, descriptor.Name);
         if (existingIdx >= 0)
