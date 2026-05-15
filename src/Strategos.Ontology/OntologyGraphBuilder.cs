@@ -645,61 +645,136 @@ public sealed class OntologyGraphBuilder
 
     /// <summary>
     /// AONT041 — MultiRegisteredTypeInLink (Track C3).
-    /// Enforces the Option X freeze invariant that a CLR type registered under more than
-    /// one descriptor name cannot participate in structural links — neither as a link
-    /// target nor as a link source, and neither in intra-domain <see cref="LinkDescriptor"/>s
-    /// nor in <see cref="CrossDomainLinkDescriptor"/>s. The Basileus happy path is a
-    /// multi-registered leaf type with no links anywhere — that remains legal.
+    /// Enforces the Option X freeze invariant that a descriptor identity (CLR type or
+    /// SCIP SymbolKey) registered under more than one descriptor name cannot participate
+    /// in structural links — neither as a link target nor as a link source, and neither
+    /// in intra-domain <see cref="LinkDescriptor"/>s nor in <see cref="CrossDomainLinkDescriptor"/>s.
+    /// The Basileus happy path is a multi-registered leaf type with no links anywhere —
+    /// that remains legal.
     /// </summary>
     /// <remarks>
-    /// Intra-domain link targets carry only a <see cref="LinkDescriptor.TargetTypeName"/>
-    /// string. Under the Track B builder, <c>HasMany&lt;TLinked&gt;(name)</c> writes
-    /// <c>typeof(TLinked).Name</c> into that field, so we match multi-registered CLR types
-    /// against the link target by simple type name. Cross-domain links carry the source
-    /// CLR <see cref="Type"/> directly on the descriptor and identify their target by
-    /// <c>(TargetDomain, TargetTypeName)</c>, so we resolve those positionally. Future
-    /// relaxation (see #32) can carry the source CLR <see cref="Type"/> on intra-domain
-    /// links too.
+    /// DR-8 (Task 31) retarget: the lookup is now polyglot-aware. The "identity" of a
+    /// descriptor is its <see cref="ObjectTypeDescriptor.ClrType"/> when non-null, else
+    /// its <see cref="ObjectTypeDescriptor.SymbolKey"/>. Link targets resolve by
+    /// <c>(DomainName, Name)</c> directly — the previous CLR-simple-name pre-filter
+    /// produced false negatives for ingested-only descriptors. Cross-domain links keep
+    /// their CLR source-type wiring because the From&lt;T&gt;() builder requires a CLR
+    /// type, but the target-side scan is now polyglot.
     /// </remarks>
     private static void ValidateMultiRegisteredTypesNotInLinks(
         IReadOnlyList<ObjectTypeDescriptor> allObjectTypes,
         IReadOnlyList<(string SourceDomain, CrossDomainLinkDescriptor Descriptor)> crossDomainLinks,
         IReadOnlyDictionary<Type, IReadOnlyList<string>> namesByType)
     {
-        var multiRegistered = namesByType
-            .Where(kvp => kvp.Value.Count > 1)
-            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        // Polyglot identity reverse index: identity (ClrType-or-SymbolKey, as object) →
+        // list of (DomainName, Name) registrations. A descriptor is "multi-registered"
+        // when its identity bucket holds more than one entry. Ingested-only descriptors
+        // (ClrType == null) participate via SymbolKey identity; descriptors with neither
+        // a ClrType nor a SymbolKey are skipped — there is nothing to key against.
+        var identityByDescriptor = new Dictionary<(string DomainName, string Name), object>();
+        var registrationsByIdentity = new Dictionary<object, List<(string DomainName, string Name)>>();
+        foreach (var ot in allObjectTypes)
+        {
+            object? identity = ot.ClrType is not null ? ot.ClrType : ot.SymbolKey;
+            if (identity is null)
+            {
+                continue;
+            }
 
-        // Map simple CLR-type names → CLR Type, restricted to multi-registered types.
-        // Simple names match what HasMany<TLinked>(name) writes into LinkDescriptor.TargetTypeName.
-        var multiRegisteredByClrSimpleName = multiRegistered
+            identityByDescriptor[(ot.DomainName, ot.Name)] = identity;
+            if (!registrationsByIdentity.TryGetValue(identity, out var list))
+            {
+                list = new List<(string DomainName, string Name)>();
+                registrationsByIdentity[identity] = list;
+            }
+
+            list.Add((ot.DomainName, ot.Name));
+        }
+
+        // Direct (DomainName, Name) → descriptor index. Replaces the prior
+        // (DomainName, ClrSimpleName) map and covers polyglot descriptors. Includes
+        // every descriptor regardless of whether ClrType is set.
+        var descriptorByDomainAndName = allObjectTypes
+            .GroupBy(ot => (ot.DomainName, ot.Name))
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // CLR-simple-name fallback: HasMany<TLinked>(name) writes typeof(TLinked).Name
+        // into LinkDescriptor.TargetTypeName, which need not match any registered
+        // descriptor name when the underlying type was registered under one or more
+        // explicit names (e.g., "orders" / "open_orders" for TradeOrder). To preserve
+        // the legacy multi-registered-CLR-type-as-link-target diagnostic we keep a
+        // sidecar index from CLR simple name → registered CLR type for types whose
+        // identity bucket holds more than one (Domain, Name) registration.
+        var multiRegisteredClrByName = namesByType
+            .Where(kvp => kvp.Value.Count > 1)
             .GroupBy(kvp => kvp.Key.Name)
             .ToDictionary(g => g.Key, g => g.First().Key);
 
-        // Index descriptors by (DomainName, ClrSimpleName) for the explicit-name check below.
-        // A link's TargetTypeName carries the CLR simple name of the linked type — use this
-        // to find the registered descriptor and verify its name matches the CLR simple name.
-        // DR-1 polyglot: skip ingested-only descriptors (null ClrType); the (DomainName, Name)
-        // retarget covers them when DR-8 lands.
+        // Sidecar index for the explicit-name sub-rule: a link whose TargetTypeName is a
+        // CLR simple name that resolves to a descriptor registered under an *explicit*
+        // (non-default) name. The descriptor identity is keyed under its registered name
+        // in descriptorByDomainAndName above, but the link target — which carries the CLR
+        // simple name from HasMany<TLinked> — needs (DomainName, ClrSimpleName) to find
+        // it. Only descriptors with a non-null ClrType participate.
         var descriptorByDomainAndClrSimpleName = allObjectTypes
             .Where(ot => ot.ClrType is not null)
             .GroupBy(ot => (ot.DomainName, ot.ClrType!.Name))
             .ToDictionary(g => g.Key, g => g.First());
 
+        bool IsMultiRegistered(string domain, string name)
+        {
+            return identityByDescriptor.TryGetValue((domain, name), out var identity)
+                && registrationsByIdentity.TryGetValue(identity, out var regs)
+                && regs.Count > 1;
+        }
+
+        IReadOnlyList<(string DomainName, string Name)> RegistrationsFor(string domain, string name)
+        {
+            if (identityByDescriptor.TryGetValue((domain, name), out var identity)
+                && registrationsByIdentity.TryGetValue(identity, out var regs))
+            {
+                return regs;
+            }
+
+            return Array.Empty<(string, string)>();
+        }
+
         foreach (var descriptor in allObjectTypes)
         {
-            // Check: does this descriptor declare an outgoing link whose target
-            // resolves to a multi-registered CLR type?
+            // Check: does this descriptor declare an outgoing link whose target resolves
+            // (within the same domain) to a multi-registered identity? Intra-domain links
+            // identify their target by simple name, so we resolve (descriptor.DomainName,
+            // link.TargetTypeName) and consult the polyglot identity index.
             foreach (var link in descriptor.Links)
             {
-                if (multiRegisteredByClrSimpleName.TryGetValue(link.TargetTypeName, out var targetClrType))
+                // CLR-simple-name fallback first: when no descriptor is registered under
+                // link.TargetTypeName in this domain, but the CLR simple name matches a
+                // multi-registered CLR type, the HasMany<TLinked>() target would resolve
+                // ambiguously at runtime — surface AONT041 instead.
+                if (!descriptorByDomainAndName.ContainsKey((descriptor.DomainName, link.TargetTypeName))
+                    && multiRegisteredClrByName.TryGetValue(link.TargetTypeName, out var multiClrType))
                 {
-                    var names = multiRegistered[targetClrType];
+                    var names = namesByType[multiClrType];
                     throw new OntologyCompositionException(
-                        $"AONT041: CLR type '{targetClrType.FullName}' has multiple registrations " +
+                        $"AONT041: CLR type '{multiClrType.FullName}' has multiple registrations " +
                         $"({string.Join(", ", names.Select(n => $"'{n}'"))}) but is also referenced as a link target " +
                         $"in '{descriptor.Name}.{link.Name}'. Multi-registered types cannot participate in structural " +
                         $"links. See #32 for a future relaxation path.");
+                }
+
+                if (descriptorByDomainAndName.TryGetValue(
+                        (descriptor.DomainName, link.TargetTypeName), out var targetDescriptor)
+                    && IsMultiRegistered(targetDescriptor.DomainName, targetDescriptor.Name))
+                {
+                    var regs = RegistrationsFor(targetDescriptor.DomainName, targetDescriptor.Name);
+                    var identityLabel = targetDescriptor.ClrType?.FullName
+                        ?? $"SymbolKey '{targetDescriptor.SymbolKey}'";
+                    throw new OntologyCompositionException(
+                        $"AONT041: descriptor identity '{identityLabel}' has multiple registrations " +
+                        $"({string.Join(", ", regs.Select(r => $"'{r.DomainName}.{r.Name}'"))}) but is also " +
+                        $"referenced as a link target in '{descriptor.Name}.{link.Name}'. " +
+                        $"Multi-registered types cannot participate in structural links. " +
+                        $"See #32 for a future relaxation path.");
                 }
 
                 // AONT041 extension: reject a link whose target type is registered with an
@@ -708,45 +783,56 @@ public sealed class OntologyGraphBuilder
                 // differs from the CLR simple name, reads and writes would diverge silently
                 // across two table names. Enforcing single-registration with default name
                 // is the Option X minimum-invasiveness fix (see #33 Finding 1).
+                // Polyglot note: only meaningful for CLR-typed descriptors — ingested-only
+                // descriptors have no CLR-simple-name baseline to diverge from.
+                // We consult the CLR-simple-name index here because link.TargetTypeName
+                // is the CLR simple name; the explicit-name divergence shows up precisely
+                // when that name does not match any registered descriptor by name.
                 if (descriptorByDomainAndClrSimpleName.TryGetValue(
-                        (descriptor.DomainName, link.TargetTypeName), out var targetDescriptor)
-                    && targetDescriptor.ClrType is not null
-                    && targetDescriptor.Name != targetDescriptor.ClrType.Name)
+                        (descriptor.DomainName, link.TargetTypeName), out var explicitNameTarget)
+                    && explicitNameTarget.ClrType is not null
+                    && explicitNameTarget.Name != explicitNameTarget.ClrType.Name)
                 {
                     throw new OntologyCompositionException(
                         $"AONT041: Link '{descriptor.Name}.{link.Name}' targets CLR type " +
-                        $"'{targetDescriptor.ClrType.FullName}' which is registered with explicit " +
-                        $"descriptor name '{targetDescriptor.Name}' (default would be '{targetDescriptor.ClrType.Name}'). " +
+                        $"'{explicitNameTarget.ClrType.FullName}' which is registered with explicit " +
+                        $"descriptor name '{explicitNameTarget.Name}' (default would be '{explicitNameTarget.ClrType.Name}'). " +
                         $"A link target registered under a non-default name causes read/write table-name " +
                         $"divergence. Either remove the explicit name or use the default registration. " +
                         $"See #33 Finding 1.");
                 }
             }
 
-            // Check: does this descriptor's own CLR type have multiple registrations
-            // AND declare outgoing links? The source side is just as invalid as the target side.
-            // DR-1 polyglot: skip when ClrType is null (ingested-only); DR-8 covers this path.
-            if (descriptor.ClrType is not null
-                && descriptor.Links.Count > 0
-                && multiRegistered.TryGetValue(descriptor.ClrType, out var ownNames))
+            // Check: does this descriptor's own identity have multiple registrations AND
+            // declare outgoing links? The source side is just as invalid as the target side.
+            // Polyglot: works for both CLR-typed and ingested-only descriptors.
+            if (descriptor.Links.Count > 0
+                && IsMultiRegistered(descriptor.DomainName, descriptor.Name))
             {
+                var regs = RegistrationsFor(descriptor.DomainName, descriptor.Name);
+                var identityLabel = descriptor.ClrType?.FullName
+                    ?? $"SymbolKey '{descriptor.SymbolKey}'";
                 throw new OntologyCompositionException(
-                    $"AONT041: CLR type '{descriptor.ClrType.FullName}' has multiple registrations " +
-                    $"({string.Join(", ", ownNames.Select(n => $"'{n}'"))}) but also declares outgoing links " +
-                    $"({string.Join(", ", descriptor.Links.Select(l => $"'{l.Name}'"))}). Multi-registered types cannot " +
-                    $"participate in structural links. See #32 for a future relaxation path.");
+                    $"AONT041: descriptor identity '{identityLabel}' has multiple registrations " +
+                    $"({string.Join(", ", regs.Select(r => $"'{r.DomainName}.{r.Name}'"))}) but also " +
+                    $"declares outgoing links ({string.Join(", ", descriptor.Links.Select(l => $"'{l.Name}'"))}). " +
+                    $"Multi-registered types cannot participate in structural links. " +
+                    $"See #32 for a future relaxation path.");
             }
         }
 
         // Cross-domain link checks. Carries the source CLR type on the descriptor and
         // identifies the target by (TargetDomain, TargetTypeName). We deliberately reject
-        // ANY cross-domain link whose source or target CLR type appears more than once
-        // in the reverse index, even if the (sourceDomain, ClrType) lookup would itself
-        // be unambiguous — Option X says multi-registered types are leaf-only, full stop.
+        // ANY cross-domain link whose source or target identity appears more than once
+        // in the polyglot reverse index, even if the (sourceDomain, ClrType) lookup would
+        // itself be unambiguous — Option X says multi-registered types are leaf-only,
+        // full stop.
         foreach (var (sourceDomain, link) in crossDomainLinks)
         {
-            // Source side: descriptor.SourceType is the CLR type the From<T>() builder set.
-            if (multiRegistered.TryGetValue(link.SourceType, out var srcNames))
+            // Source side: link.SourceType is the CLR type the From<T>() builder set.
+            // Cross-domain link sources are still strictly CLR-typed (the From<T>() API
+            // requires it), so the source check stays CLR-keyed via namesByType.
+            if (namesByType.TryGetValue(link.SourceType, out var srcNames) && srcNames.Count > 1)
             {
                 throw new OntologyCompositionException(
                     $"AONT041: CLR type '{link.SourceType.FullName}' has multiple registrations " +
@@ -756,18 +842,21 @@ public sealed class OntologyGraphBuilder
             }
 
             // Target side: resolve the target descriptor by (TargetDomain, TargetTypeName)
-            // and check whether its CLR type is multi-registered. If the target is
-            // unresolvable here, leave the diagnostic to ResolveCrossDomainLinks below.
+            // and check whether its identity (CLR or SymbolKey) is multi-registered. If
+            // the target is unresolvable here, leave the diagnostic to
+            // ResolveCrossDomainLinks below.
             var targetDescriptor = allObjectTypes.FirstOrDefault(
                 ot => ot.DomainName == link.TargetDomain && ot.Name == link.TargetTypeName);
 
             if (targetDescriptor is not null
-                && targetDescriptor.ClrType is not null
-                && multiRegistered.TryGetValue(targetDescriptor.ClrType, out var tgtNames))
+                && IsMultiRegistered(targetDescriptor.DomainName, targetDescriptor.Name))
             {
+                var tgtRegs = RegistrationsFor(targetDescriptor.DomainName, targetDescriptor.Name);
+                var identityLabel = targetDescriptor.ClrType?.FullName
+                    ?? $"SymbolKey '{targetDescriptor.SymbolKey}'";
                 throw new OntologyCompositionException(
-                    $"AONT041: CLR type '{targetDescriptor.ClrType.FullName}' has multiple registrations " +
-                    $"({string.Join(", ", tgtNames.Select(n => $"'{n}'"))}) but is the target of cross-domain link " +
+                    $"AONT041: descriptor identity '{identityLabel}' has multiple registrations " +
+                    $"({string.Join(", ", tgtRegs.Select(r => $"'{r.DomainName}.{r.Name}'"))}) but is the target of cross-domain link " +
                     $"'{link.Name}' from domain '{sourceDomain}' to '{link.TargetDomain}.{link.TargetTypeName}'. " +
                     $"Multi-registered types cannot participate in structural links. See #32 for a future relaxation path.");
             }
