@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Diagnostics;
+using Strategos.Ontology.Merge;
 
 namespace Strategos.Ontology.Builder;
 
@@ -52,9 +53,41 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     /// expression-tree DSL. Source provenance is preserved so ingested
     /// descriptors flow through to graph-freeze tagged as such.
     /// </summary>
+    /// <remarks>
+    /// DR-6 + Task 21: when an existing descriptor already occupies the
+    /// incoming <c>(DomainName, Name)</c> slot with opposite provenance
+    /// (one hand, one ingested), the two are folded through
+    /// <see cref="MergeTwo.Merge"/> in place. This is what makes
+    /// hand-authored intent and mechanical ingest meet without tripping
+    /// AONT040 on duplicate names. Same-provenance collisions continue
+    /// to surface as duplicates (the dup-name diagnostic handles that
+    /// case downstream).
+    /// </remarks>
     public void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
+
+        var existingIdx = FindObjectTypeIndex(descriptor.DomainName, descriptor.Name);
+        if (existingIdx >= 0)
+        {
+            var existing = _objectTypes[existingIdx];
+            // Cross-provenance fold: hand ↔ ingested. Identify the hand
+            // side regardless of arrival order so the merge contract
+            // (hand, ingested) is satisfied either way.
+            if (existing.Source == DescriptorSource.HandAuthored
+                && descriptor.Source == DescriptorSource.Ingested)
+            {
+                _objectTypes[existingIdx] = MergeTwo.Merge(hand: existing, ingested: descriptor);
+                return;
+            }
+
+            if (existing.Source == DescriptorSource.Ingested
+                && descriptor.Source == DescriptorSource.HandAuthored)
+            {
+                _objectTypes[existingIdx] = MergeTwo.Merge(hand: descriptor, ingested: existing);
+                return;
+            }
+        }
 
         _objectTypes.Add(descriptor);
     }
