@@ -43,4 +43,16 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         _crossDomainLinkBuilders.Add(builder);
         return builder;
     }
+
+    /// <summary>
+    /// DR-5 (Task 9): registers a fully-specified descriptor without the
+    /// expression-tree DSL. Source provenance is preserved so ingested
+    /// descriptors flow through to graph-freeze tagged as such.
+    /// </summary>
+    public void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        _objectTypes.Add(descriptor);
+    }
 }
