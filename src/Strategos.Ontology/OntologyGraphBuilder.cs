@@ -69,8 +69,8 @@ public sealed class OntologyGraphBuilder
                 {
                     throw new OntologyCompositionException(
                         $"AONT040: Object type name '{descriptor.Name}' is registered twice in domain '{group.Key}'. " +
-                        $"First registration: CLR type '{existing.ClrType.FullName}'. " +
-                        $"Second registration: CLR type '{descriptor.ClrType.FullName}'. " +
+                        $"First registration: CLR type '{existing.ClrType?.FullName ?? existing.SymbolKey ?? "<unknown>"}'. " +
+                        $"Second registration: CLR type '{descriptor.ClrType?.FullName ?? descriptor.SymbolKey ?? "<unknown>"}'. " +
                         $"Either remove one registration, or specify distinct names via Object<T>(\"name\", ...).");
                 }
 
@@ -85,8 +85,12 @@ public sealed class OntologyGraphBuilder
         // Track C2 — reverse index from CLR type → descriptor names in registration order.
         // Built after the AONT040 check so callers can trust name uniqueness-per-domain,
         // and used by C3 below to detect multi-registered types in link positions.
+        // DR-1 polyglot: descriptors with null ClrType (ingested-only) are excluded
+        // from this CLR-keyed index; the (DomainName, Name)-keyed retarget arrives
+        // with DR-8 (AONT041 retarget) in a later task.
         var namesByType = allObjectTypes
-            .GroupBy(ot => ot.ClrType)
+            .Where(ot => ot.ClrType is not null)
+            .GroupBy(ot => ot.ClrType!)
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<string>)g.Select(ot => ot.Name).ToList().AsReadOnly());
@@ -613,8 +617,11 @@ public sealed class OntologyGraphBuilder
         // Index descriptors by (DomainName, ClrSimpleName) for the explicit-name check below.
         // A link's TargetTypeName carries the CLR simple name of the linked type — use this
         // to find the registered descriptor and verify its name matches the CLR simple name.
+        // DR-1 polyglot: skip ingested-only descriptors (null ClrType); the (DomainName, Name)
+        // retarget covers them when DR-8 lands.
         var descriptorByDomainAndClrSimpleName = allObjectTypes
-            .GroupBy(ot => (ot.DomainName, ot.ClrType.Name))
+            .Where(ot => ot.ClrType is not null)
+            .GroupBy(ot => (ot.DomainName, ot.ClrType!.Name))
             .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var descriptor in allObjectTypes)
@@ -641,6 +648,7 @@ public sealed class OntologyGraphBuilder
                 // is the Option X minimum-invasiveness fix (see #33 Finding 1).
                 if (descriptorByDomainAndClrSimpleName.TryGetValue(
                         (descriptor.DomainName, link.TargetTypeName), out var targetDescriptor)
+                    && targetDescriptor.ClrType is not null
                     && targetDescriptor.Name != targetDescriptor.ClrType.Name)
                 {
                     throw new OntologyCompositionException(
@@ -655,7 +663,10 @@ public sealed class OntologyGraphBuilder
 
             // Check: does this descriptor's own CLR type have multiple registrations
             // AND declare outgoing links? The source side is just as invalid as the target side.
-            if (descriptor.Links.Count > 0 && multiRegistered.TryGetValue(descriptor.ClrType, out var ownNames))
+            // DR-1 polyglot: skip when ClrType is null (ingested-only); DR-8 covers this path.
+            if (descriptor.ClrType is not null
+                && descriptor.Links.Count > 0
+                && multiRegistered.TryGetValue(descriptor.ClrType, out var ownNames))
             {
                 throw new OntologyCompositionException(
                     $"AONT041: CLR type '{descriptor.ClrType.FullName}' has multiple registrations " +
@@ -689,6 +700,7 @@ public sealed class OntologyGraphBuilder
                 ot => ot.DomainName == link.TargetDomain && ot.Name == link.TargetTypeName);
 
             if (targetDescriptor is not null
+                && targetDescriptor.ClrType is not null
                 && multiRegistered.TryGetValue(targetDescriptor.ClrType, out var tgtNames))
             {
                 throw new OntologyCompositionException(
@@ -702,8 +714,13 @@ public sealed class OntologyGraphBuilder
 
     private static void InferPropertyKinds(List<ObjectTypeDescriptor> allObjectTypes)
     {
+        // DR-1 polyglot: ingested-only descriptors (null ClrType) don't participate
+        // in CLR-keyed reference-property inference; they reach reference kinds via
+        // PropertyDescriptor.ReferenceSymbolKey instead (DR-1, Task 4+).
         var registeredClrTypes = allObjectTypes
             .Select(ot => ot.ClrType)
+            .Where(t => t is not null)
+            .Select(t => t!)
             .ToHashSet();
 
         for (var i = 0; i < allObjectTypes.Count; i++)
@@ -793,9 +810,10 @@ public sealed class OntologyGraphBuilder
         // Keyed by (DomainName, ClrType.Name) so that Consumes<T>()/Produces<T>() — which
         // store typeof(T).Name — resolve to the right descriptor in the specified domain
         // even when the descriptor was registered with an explicit (non-CLR) name.
-        // See #33 Finding 4.
+        // See #33 Finding 4. DR-1 polyglot: ingested-only types skipped here.
         var objectTypesByDomainAndClrName = allObjectTypes
-            .GroupBy(ot => (ot.DomainName, ot.ClrType.Name))
+            .Where(ot => ot.ClrType is not null)
+            .GroupBy(ot => (ot.DomainName, ot.ClrType!.Name))
             .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var metadata in workflowMetadata)
