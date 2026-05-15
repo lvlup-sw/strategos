@@ -12,6 +12,27 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     private readonly List<InterfaceDescriptor> _interfaces = [];
     private readonly List<CrossDomainLinkBuilder> _crossDomainLinkBuilders = [];
 
+    // DR-7 (Tasks 23-30): retain a snapshot of the original ingested
+    // descriptor (pre-merge) per (DomainName, Name). The graph-freeze
+    // checks need to compare the hand-declared property set against the
+    // pre-merge ingested set: by the time MergeTwo has run, hand-only
+    // properties have been merged in alongside ingested-only ones, so a
+    // direct inspection of the merged descriptor cannot tell which side
+    // each property came from "originally". Keyed by
+    // (DomainName, Name); only the most recent ingested original is kept
+    // when the same (Domain, Name) collides (deltas are
+    // last-write-wins on the merged side, this snapshot follows that).
+    private readonly Dictionary<(string DomainName, string Name), ObjectTypeDescriptor> _ingestedOriginals = new();
+
+    /// <summary>
+    /// DR-7 graph-freeze: pre-merge ingested originals keyed by
+    /// (DomainName, Name). Surfaces to <see cref="OntologyGraphBuilder"/>
+    /// so AONT201–AONT208 can compare hand vs ingested without losing
+    /// provenance after MergeTwo's per-name union.
+    /// </summary>
+    internal IReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor> IngestedOriginals
+        => _ingestedOriginals;
+
     public IReadOnlyList<ObjectTypeDescriptor> ObjectTypes => _objectTypes.AsReadOnly();
 
     public IReadOnlyList<InterfaceDescriptor> Interfaces => _interfaces.AsReadOnly();
@@ -67,6 +88,11 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         EnsureIdentityInvariant(descriptor);
+
+        // DR-7 (Tasks 23-30): snapshot the pre-merge ingested original so
+        // graph-freeze diagnostics can compare hand vs ingested property
+        // sets after MergeTwo collapses provenance into a single list.
+        SyncIngestedOriginal(descriptor);
 
         var existingIdx = FindObjectTypeIndex(descriptor.DomainName, descriptor.Name);
         if (existingIdx >= 0
@@ -239,6 +265,13 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var d = delta.Descriptor;
         EnsureIdentityInvariant(d);
 
+        // DR-7: keep the ingested-original snapshot synchronized with
+        // descriptor lifecycle. An Update that flips a descriptor from
+        // ingested → hand (or replaces a previous ingested original) must
+        // refresh / remove the snapshot; otherwise graph-freeze
+        // diagnostics compare against stale data.
+        SyncIngestedOriginal(d);
+
         var idx = FindObjectTypeIndex(d.DomainName, d.Name);
         if (idx < 0)
         {
@@ -266,6 +299,32 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         if (idx >= 0)
         {
             _objectTypes.RemoveAt(idx);
+        }
+
+        // DR-7: drop any ingested-original snapshot for this
+        // (DomainName, Name) so a subsequent Add for the same key
+        // doesn't compare against a stale pre-merge snapshot.
+        _ingestedOriginals.Remove((delta.DomainName, delta.TypeName));
+    }
+
+    /// <summary>
+    /// DR-7: keep <see cref="_ingestedOriginals"/> consistent with the
+    /// descriptor at <c>(descriptor.DomainName, descriptor.Name)</c>.
+    /// An ingested descriptor refreshes the snapshot; a hand-authored
+    /// descriptor (overwriting a previous ingested entry via Update)
+    /// drops the snapshot so AONT201–AONT208 don't compare against the
+    /// stale ingested side.
+    /// </summary>
+    private void SyncIngestedOriginal(ObjectTypeDescriptor descriptor)
+    {
+        var key = (descriptor.DomainName, descriptor.Name);
+        if (descriptor.Source == DescriptorSource.Ingested)
+        {
+            _ingestedOriginals[key] = descriptor;
+        }
+        else
+        {
+            _ingestedOriginals.Remove(key);
         }
     }
 

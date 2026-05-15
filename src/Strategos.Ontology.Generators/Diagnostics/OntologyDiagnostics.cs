@@ -317,4 +317,70 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    // --- Polyglot graph-freeze diagnostics (AONT201-208) — DR-7 ---
+
+    public static readonly DiagnosticDescriptor HandPropertyMissingFromIngested = new(
+        OntologyDiagnosticIds.HandPropertyMissingFromIngested,
+        "Hand-declared property missing from ingested descriptor",
+        "Hand-declared property '{0}' on '{1}.{2}' is missing from the ingested descriptor. Pass-6b rename matcher may have missed this — verify the property name on the ingested side.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HandPropertyTypeMismatch = new(
+        OntologyDiagnosticIds.HandPropertyTypeMismatch,
+        "Hand-declared property type mismatches ingested",
+        "Property '{0}' on '{1}.{2}' has hand-declared type/kind that mismatches the ingested side (hand: {3}, ingested: {4})",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IngestedPropertyMissingFromHandStrict = new(
+        OntologyDiagnosticIds.IngestedPropertyMissingFromHandStrict,
+        "Ingested-only property missing from hand Define() under Strict",
+        "Property '{0}' is present on the ingested descriptor of '{1}.{2}' but not declared in hand Define(); type is marked [DomainEntity(Strict = true)]",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IngestedTypeNotReferencedByHand = new(
+        OntologyDiagnosticIds.IngestedTypeNotReferencedByHand,
+        "Ingested type not referenced by any hand-authored Define()",
+        "Ingested-only descriptor '{0}.{1}' is not referenced by any hand-authored type (no Links, ParentType, or KeyProperty references found)",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IngestedContributesToIntentOnly = new(
+        OntologyDiagnosticIds.IngestedContributesToIntentOnly,
+        "Mechanical ingester contributed to intent-only field",
+        "Ingested descriptor '{0}.{1}' contributes to intent-only field '{2}' — mechanical ingesters must leave Actions, Events, and Lifecycle empty",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HandPropertyAlsoIngestedHygieneHint = new(
+        OntologyDiagnosticIds.HandPropertyAlsoIngestedHygieneHint,
+        "Hand-declared property is also ingested mechanically (opt-in hygiene hint)",
+        "Property '{0}' on '{1}.{2}' is declared in hand Define() and also contributed by the ingested side — consider removing the redundant hand declaration",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor BranchHandConflict = new(
+        OntologyDiagnosticIds.BranchHandConflict,
+        "Branch-hand vs main-hand property conflict (deferred)",
+        "Branch-hand and main-hand declarations conflict on '{0}.{1}'; requires four-input fold support (deferred)",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor LanguageIdDisagreement = new(
+        OntologyDiagnosticIds.LanguageIdDisagreement,
+        "LanguageId disagreement between origins",
+        "Descriptor '{0}.{1}' has LanguageId disagreement between hand ('{2}') and ingested ('{3}') contributions",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

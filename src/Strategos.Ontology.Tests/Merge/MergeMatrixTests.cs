@@ -164,6 +164,10 @@ public class MergeMatrixTests
         // Hand-only descriptor for HandPosition; ingestion contributes a
         // *new* link not declared by hand. The link must surface in the
         // composed graph tagged with Source = Ingested.
+        // The ingested mirror declares the hand-known "Symbol" property so
+        // DR-7 AONT201 (hand-declared property missing from ingested) does
+        // not fire — this fixture is exercising link-merge, not the
+        // property-completeness diagnostic.
         var ingestedShadow = new ObjectTypeDescriptor
         {
             Name = "HandPosition",
@@ -172,6 +176,10 @@ public class MergeMatrixTests
             LanguageId = "typescript",
             Source = DescriptorSource.Ingested,
             SourceId = IngestSourceId,
+            Properties = new List<PropertyDescriptor>
+            {
+                new("Symbol", typeof(string)) { Source = DescriptorSource.Ingested },
+            },
             Links = new List<LinkDescriptor>
             {
                 new("RelatedOrders", "Order", LinkCardinality.OneToMany)
@@ -218,6 +226,9 @@ public class MergeMatrixTests
         // ClrType: hand carries it; ingestion does not. Hand wins on the
         // happy path (and since ingestion can't carry CLR identity, the
         // outcome is "hand's CLR type survives").
+        // The ingested mirror declares the hand-known "Symbol" property so
+        // DR-7 AONT201 does not fire — this fixture is exercising identity
+        // field merge, not the property-completeness diagnostic.
         var ingestedShadow = new ObjectTypeDescriptor
         {
             Name = "HandPosition",
@@ -227,6 +238,10 @@ public class MergeMatrixTests
             LanguageId = "typescript",
             Source = DescriptorSource.Ingested,
             SourceId = IngestSourceId,
+            Properties = new List<PropertyDescriptor>
+            {
+                new("Symbol", typeof(string)) { Source = DescriptorSource.Ingested },
+            },
         };
 
         var source = new TestOntologySource
@@ -248,6 +263,9 @@ public class MergeMatrixTests
     public async Task Merge_IdentityFields_FollowLatticeRule_SymbolKey()
     {
         // SymbolKey: ingestion is SCIP-authoritative — ingested wins.
+        // The ingested mirror declares the hand-known "Symbol" property so
+        // DR-7 AONT201 does not fire — this fixture is exercising identity
+        // field merge, not the property-completeness diagnostic.
         var ingestedShadow = new ObjectTypeDescriptor
         {
             Name = "HandPosition",
@@ -256,6 +274,10 @@ public class MergeMatrixTests
             LanguageId = "typescript",
             Source = DescriptorSource.Ingested,
             SourceId = IngestSourceId,
+            Properties = new List<PropertyDescriptor>
+            {
+                new("Symbol", typeof(string)) { Source = DescriptorSource.Ingested },
+            },
         };
 
         var source = new TestOntologySource
@@ -278,6 +300,9 @@ public class MergeMatrixTests
     public async Task Merge_IdentityFields_FollowLatticeRule_SymbolFqn()
     {
         // SymbolFqn: ingested wins.
+        // The ingested mirror declares the hand-known "Symbol" property so
+        // DR-7 AONT201 does not fire — this fixture is exercising identity
+        // field merge, not the property-completeness diagnostic.
         var ingestedShadow = new ObjectTypeDescriptor
         {
             Name = "HandPosition",
@@ -287,6 +312,10 @@ public class MergeMatrixTests
             LanguageId = "typescript",
             Source = DescriptorSource.Ingested,
             SourceId = IngestSourceId,
+            Properties = new List<PropertyDescriptor>
+            {
+                new("Symbol", typeof(string)) { Source = DescriptorSource.Ingested },
+            },
         };
 
         var source = new TestOntologySource
@@ -310,6 +339,9 @@ public class MergeMatrixTests
         // LanguageId: hand wins, even when ingestion declares a different
         // language. (The hand path's CLR origin pins the descriptor's
         // primary language identity.)
+        // The ingested mirror declares the hand-known "Symbol" property so
+        // DR-7 AONT201 does not fire — this fixture is exercising identity
+        // field merge, not the property-completeness diagnostic.
         var ingestedShadow = new ObjectTypeDescriptor
         {
             Name = "HandPosition",
@@ -318,6 +350,10 @@ public class MergeMatrixTests
             LanguageId = "typescript",
             Source = DescriptorSource.Ingested,
             SourceId = IngestSourceId,
+            Properties = new List<PropertyDescriptor>
+            {
+                new("Symbol", typeof(string)) { Source = DescriptorSource.Ingested },
+            },
         };
 
         var source = new TestOntologySource
