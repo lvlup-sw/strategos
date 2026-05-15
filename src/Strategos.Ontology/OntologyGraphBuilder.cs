@@ -364,7 +364,64 @@ public sealed class OntologyGraphBuilder
                     LogNonFatal(diag);
                 }
             }
+
+            // AONT203 — ingested-only property missing from hand
+            // Define() when [DomainEntity(Strict = true)]. Opt-in: only
+            // fires when the descriptor's CLR type carries the attribute
+            // with Strict = true.
+            if (IsStrictDomainEntity(descriptor))
+            {
+                var handPropNames = new HashSet<string>(
+                    descriptor.Properties
+                        .Where(p => p.Source == DescriptorSource.HandAuthored)
+                        .Select(p => p.Name),
+                    StringComparer.Ordinal);
+
+                foreach (var ingestedProp in ingested.Properties)
+                {
+                    if (handPropNames.Contains(ingestedProp.Name))
+                    {
+                        continue;
+                    }
+
+                    var diag = new OntologyDiagnostic(
+                        Id: "AONT203",
+                        Message:
+                            $"AONT203: property '{ingestedProp.Name}' is present on the "
+                            + $"ingested descriptor of '{descriptor.DomainName}.{descriptor.Name}' "
+                            + $"but not declared in hand Define(); type is marked "
+                            + $"[DomainEntity(Strict = true)].",
+                        Severity: OntologyDiagnosticSeverity.Warning,
+                        DomainName: descriptor.DomainName,
+                        TypeName: descriptor.Name,
+                        PropertyName: ingestedProp.Name);
+
+                    nonFatal.Add(diag);
+                    LogNonFatal(diag);
+                }
+            }
         }
+    }
+
+    /// <summary>
+    /// Reads <see cref="DomainEntityAttribute"/> off a descriptor's
+    /// <see cref="ObjectTypeDescriptor.ClrType"/> and reports whether
+    /// the type opts in to strict mode. Returns <c>false</c> for
+    /// ingested-only descriptors (no CLR type) — strictness is a
+    /// hand-side opt-in by design.
+    /// </summary>
+    private static bool IsStrictDomainEntity(ObjectTypeDescriptor descriptor)
+    {
+        if (descriptor.ClrType is null)
+        {
+            return false;
+        }
+
+        var attr = (DomainEntityAttribute?)Attribute.GetCustomAttribute(
+            descriptor.ClrType,
+            typeof(DomainEntityAttribute));
+
+        return attr is { Strict: true };
     }
 
     /// <summary>
