@@ -307,4 +307,14 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    // --- Polyglot identity invariant (AONT037) ---
+
+    public static readonly DiagnosticDescriptor PolyglotInvariantViolated = new(
+        OntologyDiagnosticIds.PolyglotInvariantViolated,
+        "ObjectType descriptor violates DR-1 polyglot identity invariant",
+        "ObjectType descriptor '{0}' must supply ClrType (via generic obj.ObjectType<T>()) or SymbolKey (via symbolKey: named argument on the descriptor overload); neither was provided",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
