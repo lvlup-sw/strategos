@@ -277,6 +277,9 @@ public sealed class OntologyGraphBuilder
         // hand-tagged properties and confirm each appears on the
         // pre-merge ingested original. Skip descriptors that never had
         // an ingested contribution (hand-only).
+        // AONT202 — hand-declared property type/kind mismatches ingested
+        // contribution (same name). Warning-severity; surfaces on the
+        // returned graph and is mirrored to the structured logger.
         foreach (var descriptor in allObjectTypes)
         {
             if (!ingestedOriginals.TryGetValue((descriptor.DomainName, descriptor.Name), out var ingested))
@@ -284,9 +287,7 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            var ingestedPropNames = new HashSet<string>(
-                ingested.Properties.Select(p => p.Name),
-                StringComparer.Ordinal);
+            var ingestedByName = ingested.Properties.ToDictionary(p => p.Name, StringComparer.Ordinal);
 
             foreach (var property in descriptor.Properties)
             {
@@ -295,23 +296,85 @@ public sealed class OntologyGraphBuilder
                     continue;
                 }
 
-                if (ingestedPropNames.Contains(property.Name))
+                if (!ingestedByName.TryGetValue(property.Name, out var ingestedProp))
                 {
+                    fatal.Add(new OntologyDiagnostic(
+                        Id: "AONT201",
+                        Message:
+                            $"AONT201: hand-declared property '{property.Name}' on "
+                            + $"'{descriptor.DomainName}.{descriptor.Name}' is missing from the "
+                            + $"ingested descriptor. Pass-6b rename matcher may have missed this — "
+                            + $"verify the property name on the ingested side.",
+                        Severity: OntologyDiagnosticSeverity.Error,
+                        DomainName: descriptor.DomainName,
+                        TypeName: descriptor.Name,
+                        PropertyName: property.Name));
                     continue;
                 }
 
-                fatal.Add(new OntologyDiagnostic(
-                    Id: "AONT201",
-                    Message:
-                        $"AONT201: hand-declared property '{property.Name}' on "
-                        + $"'{descriptor.DomainName}.{descriptor.Name}' is missing from the "
-                        + $"ingested descriptor. Pass-6b rename matcher may have missed this — "
-                        + $"verify the property name on the ingested side.",
-                    Severity: OntologyDiagnosticSeverity.Error,
-                    DomainName: descriptor.DomainName,
-                    TypeName: descriptor.Name,
-                    PropertyName: property.Name));
+                // AONT202 — type/kind mismatch on a hand-vs-ingested
+                // property with the same name. Kind disagreement is
+                // sufficient (e.g. hand Scalar vs ingested Reference);
+                // a raw PropertyType inequality also trips the warning
+                // because ingested-side types may not be loadable as CLR
+                // (ReferenceSymbolKey carries the truth) but a non-null
+                // PropertyType disagreement is still meaningful drift.
+                if (property.Kind != ingestedProp.Kind || property.PropertyType != ingestedProp.PropertyType)
+                {
+                    var diag = new OntologyDiagnostic(
+                        Id: "AONT202",
+                        Message:
+                            $"AONT202: property '{property.Name}' on "
+                            + $"'{descriptor.DomainName}.{descriptor.Name}' has hand-declared "
+                            + $"type/kind ({property.PropertyType.Name}/{property.Kind}) that "
+                            + $"mismatches the ingested side "
+                            + $"({ingestedProp.PropertyType.Name}/{ingestedProp.Kind}).",
+                        Severity: OntologyDiagnosticSeverity.Warning,
+                        DomainName: descriptor.DomainName,
+                        TypeName: descriptor.Name,
+                        PropertyName: property.Name);
+
+                    nonFatal.Add(diag);
+                    LogNonFatal(diag);
+                }
             }
+        }
+    }
+
+    /// <summary>
+    /// Routes a non-fatal diagnostic through the wired structured logger.
+    /// Warnings use <c>LogWarning</c>; info uses <c>LogInformation</c>.
+    /// Each call carries structured properties
+    /// <c>{DiagnosticId, DomainName, TypeName, PropertyName}</c> so log
+    /// pipelines can filter by diagnostic id.
+    /// </summary>
+    private void LogNonFatal(OntologyDiagnostic diagnostic)
+    {
+        if (diagnostic.Severity == OntologyDiagnosticSeverity.Warning)
+        {
+#pragma warning disable CA2254 // Template should be a static expression
+            _logger.LogWarning(
+                "{DiagnosticId}: {Message} ({DomainName}.{TypeName}.{PropertyName})",
+                diagnostic.Id,
+                diagnostic.Message,
+                diagnostic.DomainName,
+                diagnostic.TypeName,
+                diagnostic.PropertyName);
+#pragma warning restore CA2254
+            return;
+        }
+
+        if (diagnostic.Severity == OntologyDiagnosticSeverity.Info)
+        {
+#pragma warning disable CA2254
+            _logger.LogInformation(
+                "{DiagnosticId}: {Message} ({DomainName}.{TypeName}.{PropertyName})",
+                diagnostic.Id,
+                diagnostic.Message,
+                diagnostic.DomainName,
+                diagnostic.TypeName,
+                diagnostic.PropertyName);
+#pragma warning restore CA2254
         }
     }
 
