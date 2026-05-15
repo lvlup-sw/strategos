@@ -13,7 +13,7 @@ namespace Strategos.Ontology.Generators.Tests.Analyzers;
 /// the identifier; the trigger test is preserved as a `[Skip]` marker
 /// for the v2.6.0 follow-up.
 /// </summary>
-public class AONT207RegistrationTests
+public sealed class AONT207RegistrationTests
 {
     [Test]
     public async Task Diagnostic_AONT207_IsRegistered()

@@ -181,12 +181,16 @@ public class AONT202Tests
 
         var warning = logger.Entries
             .FirstOrDefault(e => e.Level == LogLevel.Warning
-                              && (string?)e.State["DiagnosticId"] == "AONT202");
+                              && e.State.TryGetValue("DiagnosticId", out var id)
+                              && id as string == "AONT202");
 
         await Assert.That(warning).IsNotNull();
-        await Assert.That((string?)warning!.State["DomainName"]).IsEqualTo("Trading");
-        await Assert.That((string?)warning.State["TypeName"]).IsEqualTo("Position");
-        await Assert.That((string?)warning.State["PropertyName"]).IsEqualTo("Symbol");
+        await Assert.That(warning!.State.TryGetValue("DomainName", out var domainName)).IsTrue();
+        await Assert.That(domainName as string).IsEqualTo("Trading");
+        await Assert.That(warning.State.TryGetValue("TypeName", out var typeName)).IsTrue();
+        await Assert.That(typeName as string).IsEqualTo("Position");
+        await Assert.That(warning.State.TryGetValue("PropertyName", out var propertyName)).IsTrue();
+        await Assert.That(propertyName as string).IsEqualTo("Symbol");
     }
 }
 

@@ -356,7 +356,12 @@ internal sealed class OntologyQueryService : IOntologyQuery
             return [];
         }
 
-        var targetOt = FindObjectType(link.TargetTypeName);
+        // The owning domain is known here (ot.DomainName), so the inverse-link
+        // hop must use the domain-qualified lookup. Otherwise a same-named
+        // target type registered in a different domain would trip the
+        // bare-name ambiguity throw on an internal hop that should never
+        // have been ambiguous.
+        var targetOt = FindObjectType(ot.DomainName, link.TargetTypeName);
         if (targetOt is null)
         {
             return [];

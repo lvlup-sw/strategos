@@ -92,10 +92,7 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         // DR-7 (Tasks 23-30): snapshot the pre-merge ingested original so
         // graph-freeze diagnostics can compare hand vs ingested property
         // sets after MergeTwo collapses provenance into a single list.
-        if (descriptor.Source == DescriptorSource.Ingested)
-        {
-            _ingestedOriginals[(descriptor.DomainName, descriptor.Name)] = descriptor;
-        }
+        SyncIngestedOriginal(descriptor);
 
         var existingIdx = FindObjectTypeIndex(descriptor.DomainName, descriptor.Name);
         if (existingIdx >= 0
@@ -268,6 +265,13 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var d = delta.Descriptor;
         EnsureIdentityInvariant(d);
 
+        // DR-7: keep the ingested-original snapshot synchronized with
+        // descriptor lifecycle. An Update that flips a descriptor from
+        // ingested → hand (or replaces a previous ingested original) must
+        // refresh / remove the snapshot; otherwise graph-freeze
+        // diagnostics compare against stale data.
+        SyncIngestedOriginal(d);
+
         var idx = FindObjectTypeIndex(d.DomainName, d.Name);
         if (idx < 0)
         {
@@ -295,6 +299,32 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         if (idx >= 0)
         {
             _objectTypes.RemoveAt(idx);
+        }
+
+        // DR-7: drop any ingested-original snapshot for this
+        // (DomainName, Name) so a subsequent Add for the same key
+        // doesn't compare against a stale pre-merge snapshot.
+        _ingestedOriginals.Remove((delta.DomainName, delta.TypeName));
+    }
+
+    /// <summary>
+    /// DR-7: keep <see cref="_ingestedOriginals"/> consistent with the
+    /// descriptor at <c>(descriptor.DomainName, descriptor.Name)</c>.
+    /// An ingested descriptor refreshes the snapshot; a hand-authored
+    /// descriptor (overwriting a previous ingested entry via Update)
+    /// drops the snapshot so AONT201–AONT208 don't compare against the
+    /// stale ingested side.
+    /// </summary>
+    private void SyncIngestedOriginal(ObjectTypeDescriptor descriptor)
+    {
+        var key = (descriptor.DomainName, descriptor.Name);
+        if (descriptor.Source == DescriptorSource.Ingested)
+        {
+            _ingestedOriginals[key] = descriptor;
+        }
+        else
+        {
+            _ingestedOriginals.Remove(key);
         }
     }
 

@@ -313,7 +313,16 @@ public sealed class OntologyGraphBuilder
                 continue;
             }
 
-            var ingestedByName = ingested.Properties.ToDictionary(p => p.Name, StringComparer.Ordinal);
+            // Defensive: an ingested source could in principle emit two
+            // properties with the same name on a single descriptor (e.g. a
+            // malformed source replaying a partial state). Plain
+            // ToDictionary would throw before AONT201/202 could surface
+            // the real problem to the operator. Group by name and take
+            // last-write-wins so the duplicate name survives downstream
+            // diagnostics (where AONT040/AONT042-style messaging belongs).
+            var ingestedByName = ingested.Properties
+                .GroupBy(p => p.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
 
             foreach (var property in descriptor.Properties)
             {

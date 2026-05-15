@@ -23,9 +23,9 @@ namespace Strategos.Ontology.MCP.Tests.Tools;
 /// overload (which routes through <c>OntologyGraph.GetObjectType(domain, name)</c>
 /// directly — the unambiguous path).
 /// </remarks>
-public class OntologyValidateToolFindObjectTypeTests
+public sealed class OntologyValidateToolFindObjectTypeTests
 {
-    private static IOntologyQuery BuildCrossDomainQuery()
+    private static ServiceProvider BuildCrossDomainProvider()
     {
         var services = new ServiceCollection();
         services.AddOntology(opts =>
@@ -33,7 +33,7 @@ public class OntologyValidateToolFindObjectTypeTests
             opts.AddDomain<TradingOrderDomain>();
             opts.AddDomain<FulfillmentOrderDomain>();
         });
-        return services.BuildServiceProvider().GetRequiredService<IOntologyQuery>();
+        return services.BuildServiceProvider();
     }
 
     [Test]
@@ -42,7 +42,8 @@ public class OntologyValidateToolFindObjectTypeTests
         // Two domains both register an "Order" descriptor. Domain-qualified
         // lookup must return the descriptor from the requested domain, not
         // silently fall through to a same-named descriptor in another domain.
-        var query = BuildCrossDomainQuery();
+        await using var provider = BuildCrossDomainProvider();
+        var query = provider.GetRequiredService<IOntologyQuery>();
 
         var tradingReports = query.GetActionConstraintReport(
             "trading", "Order", knownProperties: null);
@@ -65,7 +66,8 @@ public class OntologyValidateToolFindObjectTypeTests
         // domains) must throw rather than silently return the first match.
         // The diagnostic must enumerate all matching (DomainName, Name)
         // candidates so the operator can disambiguate.
-        var query = BuildCrossDomainQuery();
+        await using var provider = BuildCrossDomainProvider();
+        var query = provider.GetRequiredService<IOntologyQuery>();
 
         var exception = await Assert.That(() => query.GetActions("Order"))
             .ThrowsException()
@@ -86,7 +88,8 @@ public class OntologyValidateToolFindObjectTypeTests
         // names against single-domain graphs.
         var services = new ServiceCollection();
         services.AddOntology(opts => opts.AddDomain<TradingOrderDomain>());
-        var query = services.BuildServiceProvider().GetRequiredService<IOntologyQuery>();
+        await using var provider = services.BuildServiceProvider();
+        var query = provider.GetRequiredService<IOntologyQuery>();
 
         var actions = query.GetActions("Order");
 
