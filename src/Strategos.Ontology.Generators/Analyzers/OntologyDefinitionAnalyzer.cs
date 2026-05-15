@@ -91,6 +91,69 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         var domainInfo = new DomainAnalysisInfo();
         CollectDomainInfo(body, context.SemanticModel, domainInfo);
         ReportDiagnostics(context, domainInfo);
+        ReportPolyglotInvariantViolations(context, body);
+    }
+
+    // AONT037: Polyglot identity invariant — descriptor-by-name overload
+    // (non-generic `ObjectType(name, …)`) must supply either a Type argument
+    // or a `symbolKey:` named argument. Generic `ObjectType<T>()` is exempt
+    // because the type argument supplies ClrType.
+    //
+    // Matched purely-syntactically so the diagnostic fires even before the
+    // descriptor overload lands on IOntologyBuilder.
+    private static void ReportPolyglotInvariantViolations(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            // Member-access form `<receiver>.ObjectType(...)` only.
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            // Generic overload uses GenericNameSyntax — exempt.
+            if (memberAccess.Name is not IdentifierNameSyntax identifier)
+            {
+                continue;
+            }
+
+            if (identifier.Identifier.Text != "ObjectType")
+            {
+                continue;
+            }
+
+            var args = invocation.ArgumentList.Arguments;
+
+            // Either form satisfies the invariant: a `symbolKey:` named arg,
+            // or any argument whose expression is a Type-valued expression
+            // (`typeof(...)`).
+            var hasSymbolKey = args.Any(a =>
+                a.NameColon?.Name.Identifier.Text == "symbolKey");
+            var hasTypeArgument = args.Any(a =>
+                a.Expression is TypeOfExpressionSyntax);
+
+            if (hasSymbolKey || hasTypeArgument)
+            {
+                continue;
+            }
+
+            // Use the first positional argument (typically the descriptor
+            // name literal) as the {0} placeholder when we can extract it;
+            // fall back to "<unknown>".
+            var descriptorName = "<unknown>";
+            if (args.Count > 0
+                && args[0].Expression is LiteralExpressionSyntax literal
+                && literal.IsKind(SyntaxKind.StringLiteralExpression))
+            {
+                descriptorName = literal.Token.ValueText;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                OntologyDiagnostics.PolyglotInvariantViolated,
+                invocation.GetLocation(),
+                descriptorName));
+        }
     }
 
     private static bool IsDomainOntologySubclass(INamedTypeSymbol? type)
