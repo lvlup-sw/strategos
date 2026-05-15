@@ -8,6 +8,7 @@ public sealed class OntologyGraphBuilder
 {
     private readonly List<DomainOntology> _domainOntologies = [];
     private readonly List<WorkflowMetadataBuilder> _workflowMetadata = [];
+    private readonly List<IOntologySource> _sources = [];
 
     public OntologyGraphBuilder AddDomain<T>()
         where T : DomainOntology, new()
@@ -28,6 +29,20 @@ public sealed class OntologyGraphBuilder
         return this;
     }
 
+    /// <summary>
+    /// DR-3 (Task 13): registers <see cref="IOntologySource"/> instances
+    /// to be drained at <see cref="Build"/> time. Each source's
+    /// <c>LoadAsync</c> is iterated and emitted deltas applied to the
+    /// matching per-domain builder. Sources contribute before composition
+    /// so all subsequent validation observes a unified descriptor set.
+    /// </summary>
+    public OntologyGraphBuilder AddSources(IEnumerable<IOntologySource> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        _sources.AddRange(sources);
+        return this;
+    }
+
     public OntologyGraph Build()
     {
         var domains = new List<DomainDescriptor>();
@@ -35,10 +50,33 @@ public sealed class OntologyGraphBuilder
         var allInterfaces = new List<InterfaceDescriptor>();
         var allCrossDomainLinkDescriptors = new List<(string SourceDomain, CrossDomainLinkDescriptor Descriptor)>();
 
+        // Per-domain builders are kept so source-emitted deltas land in
+        // the same OntologyBuilder that the hand-authored Define() pass
+        // populated. New domains contributed exclusively by sources get
+        // their own builder created on demand below.
+        var buildersByDomain = new Dictionary<string, OntologyBuilder>();
+
         foreach (var domainOntology in _domainOntologies)
         {
             var ontologyBuilder = new OntologyBuilder(domainOntology.DomainName);
             domainOntology.Build(ontologyBuilder);
+            buildersByDomain[domainOntology.DomainName] = ontologyBuilder;
+        }
+
+        // DR-3 (Task 13): drain registered IOntologySource instances and
+        // apply their deltas via the existing per-domain OntologyBuilder.
+        // Runs after the hand-authored pass so hand descriptors are in
+        // place when ingested deltas reference them (e.g. AddProperty
+        // against a hand-defined ObjectType). Sources whose deltas
+        // reference a domain unseen by the hand pass cause a new
+        // per-domain builder to be created on demand.
+        // DR-10 (Task 17): wrap each source's drain in try/catch so the
+        // SourceId is surfaced in any propagated composition exception.
+        DrainSources(buildersByDomain);
+
+        foreach (var domainOntology in _domainOntologies)
+        {
+            var ontologyBuilder = buildersByDomain[domainOntology.DomainName];
 
             var domainDescriptor = new DomainDescriptor(domainOntology.DomainName)
             {
@@ -52,6 +90,30 @@ public sealed class OntologyGraphBuilder
             foreach (var crossDomainLink in ontologyBuilder.CrossDomainLinks)
             {
                 allCrossDomainLinkDescriptors.Add((domainOntology.DomainName, crossDomainLink));
+            }
+        }
+
+        // Source-only domains (no DomainOntology subclass): fold into the
+        // top-level lists so AONT040 et al. see their descriptors.
+        foreach (var (domainName, ontologyBuilder) in buildersByDomain)
+        {
+            if (_domainOntologies.Any(d => d.DomainName == domainName))
+            {
+                continue; // already handled in the hand-authored loop above
+            }
+
+            var domainDescriptor = new DomainDescriptor(domainName)
+            {
+                ObjectTypes = ontologyBuilder.ObjectTypes.ToArray(),
+            };
+
+            domains.Add(domainDescriptor);
+            allObjectTypes.AddRange(ontologyBuilder.ObjectTypes);
+            allInterfaces.AddRange(ontologyBuilder.Interfaces);
+
+            foreach (var crossDomainLink in ontologyBuilder.CrossDomainLinks)
+            {
+                allCrossDomainLinkDescriptors.Add((domainName, crossDomainLink));
             }
         }
 
@@ -885,6 +947,85 @@ public sealed class OntologyGraphBuilder
 
         return true;
     }
+
+    /// <summary>
+    /// DR-3 + DR-10 (Tasks 13, 17): drains each registered
+    /// <see cref="IOntologySource"/>'s <c>LoadAsync</c> and applies each
+    /// emitted delta to the per-domain <see cref="OntologyBuilder"/>.
+    /// Synchronous bridging of the async stream is intentional —
+    /// <see cref="Build"/> is sync and Strategos 2.5.0 ships only the
+    /// startup drain. Source-raised exceptions are wrapped in
+    /// <see cref="OntologyCompositionException"/> with the offending
+    /// <see cref="IOntologySource.SourceId"/> in the message so logs and
+    /// incident reports attribute the failure to the right ingester.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Usage",
+        "VSTHRD002:Synchronously waiting on tasks or awaiters",
+        Justification =
+            "Intentional sync bridge at the OntologyGraphBuilder startup boundary. " +
+            "Build() is sync by design and Strategos 2.5.0 only drains LoadAsync " +
+            "once at composition; the async surface exists for forward compatibility " +
+            "(live invalidation lands in v2.6.0+ via SubscribeAsync). Task.Run + " +
+            "ConfigureAwait(false) protects callers running under a captured " +
+            "SynchronizationContext (e.g. WPF/UI).")]
+    private void DrainSources(Dictionary<string, OntologyBuilder> buildersByDomain)
+    {
+        foreach (var source in _sources)
+        {
+            try
+            {
+                Task.Run(async () =>
+                    await DrainSourceCoreAsync(source, buildersByDomain).ConfigureAwait(false))
+                    .GetAwaiter().GetResult();
+            }
+            catch (OntologyCompositionException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new OntologyCompositionException(
+                    $"IOntologySource '{source.SourceId}' raised during LoadAsync: {ex.Message}",
+                    ex);
+            }
+        }
+    }
+
+    private static async Task DrainSourceCoreAsync(
+        IOntologySource source,
+        Dictionary<string, OntologyBuilder> buildersByDomain)
+    {
+        await foreach (var delta in source.LoadAsync(CancellationToken.None))
+        {
+            var domainName = ResolveDeltaDomain(delta);
+            if (domainName is null)
+            {
+                continue;
+            }
+
+            if (!buildersByDomain.TryGetValue(domainName, out var ontologyBuilder))
+            {
+                ontologyBuilder = new OntologyBuilder(domainName);
+                buildersByDomain[domainName] = ontologyBuilder;
+            }
+
+            ontologyBuilder.ApplyDelta(delta);
+        }
+    }
+
+    private static string? ResolveDeltaDomain(OntologyDelta delta) => delta switch
+    {
+        OntologyDelta.AddObjectType a => a.Descriptor.DomainName,
+        OntologyDelta.UpdateObjectType u => u.Descriptor.DomainName,
+        OntologyDelta.RemoveObjectType r => r.DomainName,
+        OntologyDelta.AddProperty ap => ap.DomainName,
+        OntologyDelta.RenameProperty rp => rp.DomainName,
+        OntologyDelta.RemoveProperty rp => rp.DomainName,
+        OntologyDelta.AddLink al => al.DomainName,
+        OntologyDelta.RemoveLink rl => rl.DomainName,
+        _ => null,
+    };
 
     private static bool TryResolveUnambiguous(
         Dictionary<string, List<ObjectTypeDescriptor>> objectTypesByName,
