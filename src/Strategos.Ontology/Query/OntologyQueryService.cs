@@ -614,8 +614,47 @@ internal sealed class OntologyQueryService : IOntologyQuery
         return BlastRadiusScope.Domain;
     }
 
-    private ObjectTypeDescriptor? FindObjectType(string objectType) =>
-        graph.ObjectTypes.FirstOrDefault(ot => ot.Name == objectType);
+    /// <summary>
+    /// DR-8 Task 32: bare-name descriptor lookup. Resolves <paramref name="objectType"/>
+    /// against <see cref="OntologyGraph.ObjectTypes"/> by simple <see cref="ObjectTypeDescriptor.Name"/>.
+    /// Returns <c>null</c> when nothing matches; throws
+    /// <see cref="InvalidOperationException"/> when two or more descriptors across
+    /// distinct domains share the supplied name. This closes the PR #59 follow-up
+    /// where a domain-agnostic fallback could silently bind to the first match in
+    /// a cross-domain catalog. Callers that already know the domain should use
+    /// <see cref="FindObjectType(string, string)"/> instead.
+    /// </summary>
+    private ObjectTypeDescriptor? FindObjectType(string objectType)
+    {
+        var matches = graph.ObjectTypes.Where(ot => ot.Name == objectType).ToList();
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        if (matches.Count == 1)
+        {
+            return matches[0];
+        }
+
+        var candidates = string.Join(
+            ", ",
+            matches
+                .Select(ot => $"'{ot.DomainName}.{ot.Name}'")
+                .OrderBy(s => s, StringComparer.Ordinal));
+        throw new InvalidOperationException(
+            $"Object type name '{objectType}' is ambiguous: registered in multiple domains " +
+            $"({candidates}). Pass the owning domain explicitly to disambiguate.");
+    }
+
+    /// <summary>
+    /// DR-8 Task 32: domain-qualified descriptor lookup. Resolves
+    /// <c>(<paramref name="domain"/>, <paramref name="objectType"/>)</c> via
+    /// <see cref="OntologyGraph.GetObjectType(string, string)"/>. Always unambiguous
+    /// because per-domain name uniqueness is enforced by AONT040.
+    /// </summary>
+    private ObjectTypeDescriptor? FindObjectType(string domain, string objectType) =>
+        graph.GetObjectType(domain, objectType);
 
     private static IReadOnlyList<ConstraintEvaluation> EvaluateConstraints(
         IReadOnlyList<ActionPrecondition> preconditions,
