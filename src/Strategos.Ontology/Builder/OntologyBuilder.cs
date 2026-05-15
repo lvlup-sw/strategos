@@ -57,10 +57,12 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     }
 
     /// <summary>
-    /// DR-5 (Task 10): dispatches an <see cref="OntologyDelta"/> by
-    /// variant. The <see cref="OntologyDelta.AddObjectType"/> branch
-    /// routes to <see cref="ObjectTypeFromDescriptor"/>. Task 11 extends
-    /// this switch to the remaining variants.
+    /// DR-5 (Tasks 10 + 11): dispatches an <see cref="OntologyDelta"/>
+    /// by variant. The <see cref="OntologyDelta.AddObjectType"/> branch
+    /// routes to <see cref="ObjectTypeFromDescriptor"/>; the remaining
+    /// seven variants are handled inline below. The default arm throws
+    /// <see cref="NotSupportedException"/> naming the offending variant
+    /// type (AC2: explicit fallthrough).
     /// </summary>
     public void ApplyDelta(OntologyDelta delta)
     {
@@ -72,9 +74,151 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
                 ObjectTypeFromDescriptor(add.Descriptor);
                 break;
 
+            case OntologyDelta.UpdateObjectType update:
+                ApplyUpdateObjectType(update);
+                break;
+
+            case OntologyDelta.RemoveObjectType remove:
+                ApplyRemoveObjectType(remove);
+                break;
+
+            case OntologyDelta.AddProperty addProp:
+                ApplyAddProperty(addProp);
+                break;
+
+            case OntologyDelta.RenameProperty rename:
+                ApplyRenameProperty(rename);
+                break;
+
+            case OntologyDelta.RemoveProperty removeProp:
+                ApplyRemoveProperty(removeProp);
+                break;
+
+            case OntologyDelta.AddLink addLink:
+                ApplyAddLink(addLink);
+                break;
+
+            case OntologyDelta.RemoveLink removeLink:
+                ApplyRemoveLink(removeLink);
+                break;
+
             default:
                 throw new NotSupportedException(
                     $"Unknown delta variant: {delta.GetType().Name}");
         }
+    }
+
+    private void ApplyUpdateObjectType(OntologyDelta.UpdateObjectType delta)
+    {
+        var d = delta.Descriptor;
+        var idx = FindObjectTypeIndex(d.DomainName, d.Name);
+        if (idx < 0)
+        {
+            // Treat as add if not present — keeps the surface forgiving
+            // for sources that emit Update without a prior Add (e.g. a
+            // restart that lost partial state). Idempotent.
+            _objectTypes.Add(d);
+            return;
+        }
+
+        _objectTypes[idx] = d;
+    }
+
+    private void ApplyRemoveObjectType(OntologyDelta.RemoveObjectType delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.TypeName);
+        if (idx >= 0)
+        {
+            _objectTypes.RemoveAt(idx);
+        }
+    }
+
+    private void ApplyAddProperty(OntologyDelta.AddProperty delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.TypeName);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        var current = _objectTypes[idx];
+        var updated = current.Properties.ToList();
+        updated.Add(delta.Descriptor);
+        _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+    }
+
+    private void ApplyRenameProperty(OntologyDelta.RenameProperty delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.TypeName);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        var current = _objectTypes[idx];
+        var updated = current.Properties.ToList();
+        for (var i = 0; i < updated.Count; i++)
+        {
+            if (updated[i].Name == delta.FromName)
+            {
+                updated[i] = updated[i] with { Name = delta.ToName };
+            }
+        }
+
+        _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+    }
+
+    private void ApplyRemoveProperty(OntologyDelta.RemoveProperty delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.TypeName);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        var current = _objectTypes[idx];
+        var updated = current.Properties.Where(p => p.Name != delta.PropertyName).ToList();
+        _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+    }
+
+    private void ApplyAddLink(OntologyDelta.AddLink delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.SourceTypeName);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        var current = _objectTypes[idx];
+        var updated = current.Links.ToList();
+        updated.Add(delta.Descriptor);
+        _objectTypes[idx] = current with { Links = updated.AsReadOnly() };
+    }
+
+    private void ApplyRemoveLink(OntologyDelta.RemoveLink delta)
+    {
+        var idx = FindObjectTypeIndex(delta.DomainName, delta.SourceTypeName);
+        if (idx < 0)
+        {
+            return;
+        }
+
+        var current = _objectTypes[idx];
+        var updated = current.Links.Where(l => l.Name != delta.LinkName).ToList();
+        _objectTypes[idx] = current with { Links = updated.AsReadOnly() };
+    }
+
+    private int FindObjectTypeIndex(string domainName, string typeName)
+    {
+        for (var i = 0; i < _objectTypes.Count; i++)
+        {
+            var ot = _objectTypes[i];
+            if (ot.DomainName == domainName && ot.Name == typeName)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }
