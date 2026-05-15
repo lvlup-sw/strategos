@@ -400,6 +400,50 @@ public sealed class OntologyGraphBuilder
             }
         }
 
+        // AONT205 (defensive freeze-time surface) — Task 16 catches the
+        // common case at delta-apply, but a stress scenario where two
+        // ingested sources race intent fields could land a defective
+        // descriptor in the merged graph. Any descriptor with
+        // Source = Ingested that carries non-empty Actions/Events or a
+        // Lifecycle survives this check as an aggregated error.
+        foreach (var descriptor in allObjectTypes)
+        {
+            if (descriptor.Source != DescriptorSource.Ingested)
+            {
+                continue;
+            }
+
+            string? offending = null;
+            if (descriptor.Actions.Count > 0)
+            {
+                offending = "Actions";
+            }
+            else if (descriptor.Events.Count > 0)
+            {
+                offending = "Events";
+            }
+            else if (descriptor.Lifecycle is not null)
+            {
+                offending = "Lifecycle";
+            }
+
+            if (offending is null)
+            {
+                continue;
+            }
+
+            fatal.Add(new OntologyDiagnostic(
+                Id: "AONT205",
+                Message:
+                    $"AONT205: ingested descriptor '{descriptor.DomainName}.{descriptor.Name}' "
+                    + $"contributes to intent-only field '{offending}'. Mechanical ingesters must "
+                    + "leave Actions, Events, and Lifecycle empty — those are hand-authored intent.",
+                Severity: OntologyDiagnosticSeverity.Error,
+                DomainName: descriptor.DomainName,
+                TypeName: descriptor.Name,
+                PropertyName: offending));
+        }
+
         // AONT204 — info-severity hint when a purely ingested descriptor
         // (Source = Ingested at graph-level) is not referenced by any
         // hand-authored descriptor via Links.TargetTypeName,
