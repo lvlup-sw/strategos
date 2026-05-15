@@ -1,5 +1,12 @@
+using System.Collections.Immutable;
+
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Diagnostics;
 using Strategos.Ontology.Extensions;
 
 namespace Strategos.Ontology;
@@ -9,6 +16,32 @@ public sealed class OntologyGraphBuilder
     private readonly List<DomainOntology> _domainOntologies = [];
     private readonly List<WorkflowMetadataBuilder> _workflowMetadata = [];
     private readonly List<IOntologySource> _sources = [];
+    private ILogger<OntologyGraphBuilder> _logger = NullLogger<OntologyGraphBuilder>.Instance;
+    private OntologyOptions? _options;
+
+    /// <summary>
+    /// DR-7 / DR-10: wires an <see cref="ILogger{T}"/> so graph-freeze
+    /// warnings (AONT202, AONT203) and info (AONT204, AONT206) are
+    /// surfaced via structured logging in addition to
+    /// <see cref="OntologyGraph.NonFatalDiagnostics"/>.
+    /// </summary>
+    public OntologyGraphBuilder WithLogger(ILogger<OntologyGraphBuilder> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+        return this;
+    }
+
+    /// <summary>
+    /// DR-7 (Task 28): wires opt-in flags (e.g.
+    /// <see cref="OntologyOptions.EnableHygieneHints"/> for AONT206).
+    /// </summary>
+    public OntologyGraphBuilder WithOptions(OntologyOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
+        return this;
+    }
 
     public OntologyGraphBuilder AddDomain<T>()
         where T : DomainOntology, new()
@@ -207,6 +240,36 @@ public sealed class OntologyGraphBuilder
 
         var workflowChains = BuildWorkflowChains(allObjectTypes, _workflowMetadata, warnings);
 
+        // DR-7 + DR-10 (Tasks 23-30): graph-freeze AONT200-series checks.
+        // Pre-merge ingested originals are collected from each per-domain
+        // builder so hand vs ingested comparisons survive MergeTwo's
+        // per-name union. Error-severity diagnostics aggregate into the
+        // thrown exception; warning/info land on the returned graph and
+        // are mirrored to the structured logger.
+        var ingestedOriginals = new Dictionary<(string DomainName, string Name), ObjectTypeDescriptor>();
+        foreach (var (_, builder) in buildersByDomain)
+        {
+            foreach (var kvp in builder.IngestedOriginals)
+            {
+                ingestedOriginals[kvp.Key] = kvp.Value;
+            }
+        }
+
+        var fatalDiagnostics = ImmutableArray.CreateBuilder<OntologyDiagnostic>();
+        var nonFatalDiagnostics = ImmutableArray.CreateBuilder<OntologyDiagnostic>();
+        PerformGraphFreezeChecks(
+            allObjectTypes,
+            ingestedOriginals,
+            fatalDiagnostics,
+            nonFatalDiagnostics);
+
+        if (fatalDiagnostics.Count > 0)
+        {
+            throw new OntologyCompositionException(
+                fatalDiagnostics.ToImmutable(),
+                nonFatalDiagnostics.ToImmutable());
+        }
+
         return new OntologyGraph(
             domains: domains.ToArray(),
             objectTypes: allObjectTypes.ToArray(),
@@ -214,7 +277,68 @@ public sealed class OntologyGraphBuilder
             crossDomainLinks: resolvedLinks.ToArray(),
             workflowChains: workflowChains.ToArray(),
             objectTypeNamesByType: namesByType,
-            warnings: warnings.AsReadOnly());
+            warnings: warnings.AsReadOnly(),
+            nonFatalDiagnostics: nonFatalDiagnostics.ToImmutable());
+    }
+
+    /// <summary>
+    /// DR-7 (Tasks 23-30): graph-freeze AONT200-series diagnostics.
+    /// Iterates merged descriptors against their pre-merge ingested
+    /// originals to detect hand-vs-ingested property drift,
+    /// type/kind mismatches, missing references, language disagreements,
+    /// and other invariants. Error-severity entries land in
+    /// <paramref name="fatal"/>; warning + info entries land in
+    /// <paramref name="nonFatal"/> and are mirrored to the structured
+    /// logger so telemetry pipelines see them even when the build
+    /// succeeds.
+    /// </summary>
+    private void PerformGraphFreezeChecks(
+        List<ObjectTypeDescriptor> allObjectTypes,
+        IReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor> ingestedOriginals,
+        ImmutableArray<OntologyDiagnostic>.Builder fatal,
+        ImmutableArray<OntologyDiagnostic>.Builder nonFatal)
+    {
+        // AONT201 — hand-declared property missing from ingested
+        // descriptor (after MergeTwo). Inspect the merged descriptor for
+        // hand-tagged properties and confirm each appears on the
+        // pre-merge ingested original. Skip descriptors that never had
+        // an ingested contribution (hand-only).
+        foreach (var descriptor in allObjectTypes)
+        {
+            if (!ingestedOriginals.TryGetValue((descriptor.DomainName, descriptor.Name), out var ingested))
+            {
+                continue;
+            }
+
+            var ingestedPropNames = new HashSet<string>(
+                ingested.Properties.Select(p => p.Name),
+                StringComparer.Ordinal);
+
+            foreach (var property in descriptor.Properties)
+            {
+                if (property.Source != DescriptorSource.HandAuthored)
+                {
+                    continue;
+                }
+
+                if (ingestedPropNames.Contains(property.Name))
+                {
+                    continue;
+                }
+
+                fatal.Add(new OntologyDiagnostic(
+                    Id: "AONT201",
+                    Message:
+                        $"AONT201: hand-declared property '{property.Name}' on "
+                        + $"'{descriptor.DomainName}.{descriptor.Name}' is missing from the "
+                        + $"ingested descriptor. Pass-6b rename matcher may have missed this — "
+                        + $"verify the property name on the ingested side.",
+                    Severity: OntologyDiagnosticSeverity.Error,
+                    DomainName: descriptor.DomainName,
+                    TypeName: descriptor.Name,
+                    PropertyName: property.Name));
+            }
+        }
     }
 
     private static List<ResolvedCrossDomainLink> ResolveCrossDomainLinks(

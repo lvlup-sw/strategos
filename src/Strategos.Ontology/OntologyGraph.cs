@@ -1,5 +1,7 @@
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Diagnostics;
 using Strategos.Ontology.Internal;
 
 namespace Strategos.Ontology;
@@ -16,6 +18,15 @@ public sealed class OntologyGraph
     public IReadOnlyList<ResolvedCrossDomainLink> CrossDomainLinks { get; }
     public IReadOnlyList<WorkflowChain> WorkflowChains { get; }
     public IReadOnlyList<string> Warnings { get; }
+
+    /// <summary>
+    /// Non-fatal diagnostics (warning, info) observed during graph-freeze.
+    /// DR-7 / DR-10: warning-severity AONT202/AONT203/AONT207 and
+    /// info-severity AONT204/AONT206 surface here for telemetry. Empty
+    /// for graphs composed from purely hand-authored input without any
+    /// triggering condition.
+    /// </summary>
+    public ImmutableArray<OntologyDiagnostic> NonFatalDiagnostics { get; }
 
     /// <summary>
     /// SHA-256 of a stable serialization of the graph's structural fields,
@@ -46,7 +57,8 @@ public sealed class OntologyGraph
         IReadOnlyList<ResolvedCrossDomainLink> crossDomainLinks,
         IReadOnlyList<WorkflowChain> workflowChains,
         IReadOnlyDictionary<Type, IReadOnlyList<string>>? objectTypeNamesByType = null,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null,
+        ImmutableArray<OntologyDiagnostic> nonFatalDiagnostics = default)
     {
         Domains = domains;
         ObjectTypes = objectTypes;
@@ -63,6 +75,9 @@ public sealed class OntologyGraph
                     kvp => kvp.Key,
                     kvp => (IReadOnlyList<string>)kvp.Value.ToList().AsReadOnly()));
         Warnings = warnings ?? [];
+        NonFatalDiagnostics = nonFatalDiagnostics.IsDefault
+            ? ImmutableArray<OntologyDiagnostic>.Empty
+            : nonFatalDiagnostics;
 
         _objectTypeLookup = BuildObjectTypeLookup(objectTypes);
         _implementorsLookup = BuildImplementorsLookup(objectTypes);
