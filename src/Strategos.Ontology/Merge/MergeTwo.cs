@@ -113,7 +113,9 @@ public static class MergeTwo
             result.Add(p with { Source = DescriptorSource.Ingested });
         }
 
-        return result;
+        // AsReadOnly wraps the backing list so consumers cannot downcast
+        // to List<T> and mutate the merged collection.
+        return result.AsReadOnly();
     }
 
     /// <summary>
@@ -149,6 +151,8 @@ public static class MergeTwo
             result.Add(l with { Source = DescriptorSource.Ingested });
         }
 
-        return result;
+        // AsReadOnly wraps the backing list so consumers cannot downcast
+        // to List<T> and mutate the merged collection.
+        return result.AsReadOnly();
     }
 }

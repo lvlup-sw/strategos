@@ -369,7 +369,7 @@ PR-B depends on PR-A being merged.
 
 Run before opening PR-A:
 
-```
+```bash
 dotnet build strategos.sln  # 0 warnings, 0 errors
 dotnet test src/Strategos.Ontology.Tests/Strategos.Ontology.Tests.csproj
 dotnet test src/Strategos.Ontology.Generators.Tests/Strategos.Ontology.Generators.Tests.csproj

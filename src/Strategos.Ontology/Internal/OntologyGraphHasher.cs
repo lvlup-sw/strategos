@@ -359,13 +359,13 @@ internal static class OntologyGraphHasher
         // descriptor, so the tie-breaker is required for canonicalization.
         foreach (var w in graph.WorkflowChains
                               .OrderBy(w => w.WorkflowName, StringComparer.Ordinal)
-                              .ThenBy(w => w.ConsumedType.ClrType?.FullName ?? w.ConsumedType.SymbolKey ?? string.Empty, StringComparer.Ordinal)
-                              .ThenBy(w => w.ProducedType.ClrType?.FullName ?? w.ProducedType.SymbolKey ?? string.Empty, StringComparer.Ordinal))
+                              .ThenBy(w => w.ConsumedType.ClrType?.FullName ?? w.ConsumedType.SymbolKey ?? w.ConsumedType.Name, StringComparer.Ordinal)
+                              .ThenBy(w => w.ProducedType.ClrType?.FullName ?? w.ProducedType.SymbolKey ?? w.ProducedType.Name, StringComparer.Ordinal))
         {
             writer.Write("W|");
             WriteString(writer, w.WorkflowName);
-            WriteString(writer, w.ConsumedType.ClrType?.FullName ?? w.ConsumedType.SymbolKey ?? string.Empty);
-            WriteString(writer, w.ProducedType.ClrType?.FullName ?? w.ProducedType.SymbolKey ?? string.Empty);
+            WriteString(writer, w.ConsumedType.ClrType?.FullName ?? w.ConsumedType.SymbolKey ?? w.ConsumedType.Name);
+            WriteString(writer, w.ProducedType.ClrType?.FullName ?? w.ProducedType.SymbolKey ?? w.ProducedType.Name);
         }
 
         writer.Write("|END_WF");

@@ -66,19 +66,23 @@ public class IOntologyBuilderApplyDeltaTests
         new(d) { SourceId = SourceId, Timestamp = Timestamp };
 
     [Test]
-    public async Task ApplyDelta_UpdateObjectType_OverwritesExisting()
+    public async Task ApplyDelta_UpdateObjectType_SameProvenance_OverwritesExisting()
     {
+        // Same-provenance Update replaces at the existing index — no
+        // duplicate entry created and no cross-provenance merge invoked.
         IOntologyBuilder builder = new OntologyBuilder("Trading");
 
         var original = new ObjectTypeDescriptor("Position", typeof(string), "Trading")
         {
-            Source = DescriptorSource.HandAuthored,
+            Source = DescriptorSource.Ingested,
+            SourceId = SourceId,
+            SymbolKey = "scip ./pos.ts#PositionV1",
         };
         var updated = new ObjectTypeDescriptor("Position", typeof(string), "Trading")
         {
             Source = DescriptorSource.Ingested,
             SourceId = SourceId,
-            SymbolKey = "scip ./pos.ts#Position",
+            SymbolKey = "scip ./pos.ts#PositionV2",
         };
 
         builder.ApplyDelta(AddDelta(original));
@@ -91,6 +95,41 @@ public class IOntologyBuilderApplyDeltaTests
         var built = ((OntologyBuilder)builder).ObjectTypes;
         await Assert.That(built.Count).IsEqualTo(1);
         await Assert.That(built[0].Source).IsEqualTo(DescriptorSource.Ingested);
+        await Assert.That(built[0].SymbolKey).IsEqualTo("scip ./pos.ts#PositionV2");
+    }
+
+    [Test]
+    public async Task ApplyDelta_UpdateObjectType_CrossProvenance_FoldsThroughMergeTwo()
+    {
+        // Cross-provenance Update follows the DR-6 lateral lattice: an
+        // ingested Update against a hand-authored existing descriptor
+        // folds through MergeTwo rather than silently overwriting hand
+        // intent. After merge: record-level Source = HandAuthored (hand
+        // wins on composition), but ingested-authoritative identity
+        // fields (SymbolKey) win per the lattice rule.
+        IOntologyBuilder builder = new OntologyBuilder("Trading");
+
+        var existing = new ObjectTypeDescriptor("Position", typeof(string), "Trading")
+        {
+            Source = DescriptorSource.HandAuthored,
+        };
+        var ingestedUpdate = new ObjectTypeDescriptor("Position", typeof(string), "Trading")
+        {
+            Source = DescriptorSource.Ingested,
+            SourceId = SourceId,
+            SymbolKey = "scip ./pos.ts#Position",
+        };
+
+        builder.ApplyDelta(AddDelta(existing));
+        builder.ApplyDelta(new OntologyDelta.UpdateObjectType(ingestedUpdate)
+        {
+            SourceId = SourceId,
+            Timestamp = Timestamp,
+        });
+
+        var built = ((OntologyBuilder)builder).ObjectTypes;
+        await Assert.That(built.Count).IsEqualTo(1);
+        await Assert.That(built[0].Source).IsEqualTo(DescriptorSource.HandAuthored);
         await Assert.That(built[0].SymbolKey).IsEqualTo("scip ./pos.ts#Position");
     }
 

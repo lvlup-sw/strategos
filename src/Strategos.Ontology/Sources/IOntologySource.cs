@@ -3,8 +3,8 @@ namespace Strategos.Ontology;
 /// <summary>
 /// Extension point enabling ontology graph contributions from sources
 /// beyond hand-authored <c>DomainOntology.Define()</c>. Registered via DI
-/// (see <c>OntologyBuilderOptions.AddSource&lt;T&gt;()</c>). Drained at
-/// startup by <see cref="OntologyGraphBuilder"/>.
+/// (see <c>OntologyOptions.AddSource&lt;T&gt;()</c>). Drained at startup
+/// by <see cref="OntologyGraphBuilder"/>.
 /// </summary>
 /// <remarks>
 /// DR-3 (Task 7). The Strategos 2.5.0 consumer ships the <see cref="LoadAsync"/>

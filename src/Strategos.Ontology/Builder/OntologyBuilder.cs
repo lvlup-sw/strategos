@@ -66,30 +66,67 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     public void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
+        EnsureIdentityInvariant(descriptor);
 
         var existingIdx = FindObjectTypeIndex(descriptor.DomainName, descriptor.Name);
-        if (existingIdx >= 0)
+        if (existingIdx >= 0
+            && TryCrossProvenanceMerge(_objectTypes[existingIdx], descriptor, out var merged))
         {
-            var existing = _objectTypes[existingIdx];
-            // Cross-provenance fold: hand ↔ ingested. Identify the hand
-            // side regardless of arrival order so the merge contract
-            // (hand, ingested) is satisfied either way.
-            if (existing.Source == DescriptorSource.HandAuthored
-                && descriptor.Source == DescriptorSource.Ingested)
-            {
-                _objectTypes[existingIdx] = MergeTwo.Merge(hand: existing, ingested: descriptor);
-                return;
-            }
-
-            if (existing.Source == DescriptorSource.Ingested
-                && descriptor.Source == DescriptorSource.HandAuthored)
-            {
-                _objectTypes[existingIdx] = MergeTwo.Merge(hand: descriptor, ingested: existing);
-                return;
-            }
+            _objectTypes[existingIdx] = merged;
+            return;
         }
 
         _objectTypes.Add(descriptor);
+    }
+
+    /// <summary>
+    /// Attempts the DR-6 cross-provenance fold (hand ↔ ingested), returning
+    /// the merged descriptor when applicable. Returns <c>false</c> for
+    /// same-provenance pairs so the caller can choose between "duplicate
+    /// (surfaces AONT040 downstream)" semantics (add path) and "replace
+    /// at index" semantics (update path).
+    /// </summary>
+    private static bool TryCrossProvenanceMerge(
+        ObjectTypeDescriptor existing,
+        ObjectTypeDescriptor incoming,
+        out ObjectTypeDescriptor merged)
+    {
+        if (existing.Source == DescriptorSource.HandAuthored
+            && incoming.Source == DescriptorSource.Ingested)
+        {
+            merged = MergeTwo.Merge(hand: existing, ingested: incoming);
+            return true;
+        }
+
+        if (existing.Source == DescriptorSource.Ingested
+            && incoming.Source == DescriptorSource.HandAuthored)
+        {
+            merged = MergeTwo.Merge(hand: incoming, ingested: existing);
+            return true;
+        }
+
+        merged = existing;
+        return false;
+    }
+
+    /// <summary>
+    /// DR-1 identity invariant boundary check. The same invariant is
+    /// enforced inside <see cref="ObjectTypeDescriptor"/>'s
+    /// <c>ClrType</c>/<c>SymbolKey</c> init setters; this guards the
+    /// "neither field set in the object initializer" bypass — both
+    /// setters skipped, default-null values land on the descriptor, and
+    /// neither setter's invariant runs.
+    /// </summary>
+    private static void EnsureIdentityInvariant(ObjectTypeDescriptor descriptor)
+    {
+        if (descriptor.ClrType is null && descriptor.SymbolKey is null)
+        {
+            throw new InvalidOperationException(
+                $"ObjectTypeDescriptor '{descriptor.DomainName}.{descriptor.Name}' "
+                + "violates the DR-1 identity invariant: at least one of ClrType or "
+                + "SymbolKey must be non-null. Hand-authored descriptors must supply "
+                + "ClrType; ingested descriptors must supply SymbolKey.");
+        }
     }
 
     /// <summary>
@@ -200,6 +237,8 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     private void ApplyUpdateObjectType(OntologyDelta.UpdateObjectType delta)
     {
         var d = delta.Descriptor;
+        EnsureIdentityInvariant(d);
+
         var idx = FindObjectTypeIndex(d.DomainName, d.Name);
         if (idx < 0)
         {
@@ -210,7 +249,15 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
             return;
         }
 
-        _objectTypes[idx] = d;
+        // DR-6 lateral lattice: an Update arriving from one provenance
+        // against an existing descriptor of the opposite provenance is
+        // folded through MergeTwo so neither origin silently overwrites
+        // the other. Same-provenance Updates replace at the existing
+        // index (no duplicate created, unlike the Add path which lets
+        // AONT040 surface duplicates downstream).
+        _objectTypes[idx] = TryCrossProvenanceMerge(_objectTypes[idx], d, out var merged)
+            ? merged
+            : d;
     }
 
     private void ApplyRemoveObjectType(OntologyDelta.RemoveObjectType delta)

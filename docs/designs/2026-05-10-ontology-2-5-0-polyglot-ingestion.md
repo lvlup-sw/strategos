@@ -58,7 +58,7 @@ PR-A is shippable in isolation: it unblocks basileus to start implementing `Mart
 
 The polyglot descriptor schema is a field-level evolution of the existing `ObjectTypeDescriptor` record — `ClrType` becomes nullable, joined by `SymbolKey`, `SymbolFqn`, and `LanguageId`. The lattice rule from basileus ADR §9.2 governs which origin wins per field:
 
-```
+```text
 ObjectTypeDescriptor (polyglot)
   ├── ClrType:      Type?       — hand-main wins; null iff descriptor is purely-ingested
   ├── SymbolKey:    string?     — ingested wins (SCIP moniker is mechanical truth)
@@ -157,11 +157,11 @@ public interface IOntologySource
 }
 ```
 
-`OntologyGraphBuilder` drains `LoadAsync` from each registered source at construction. `SubscribeAsync` is a v2.5.0 surface — Strategos ships the consumer but does not wire live invalidation in this slice; consumers may complete the async enumerable immediately. Live invalidation lands when basileus exercises the surface.
+`OntologyGraphBuilder.Build()` drains `LoadAsync` from each registered source as part of graph composition — before validation runs but after the hand-authored `DomainOntology.Define()` pass has populated the per-domain builders, so ingested deltas can reference hand descriptors that already exist. `SubscribeAsync` is a v2.5.0 surface — Strategos ships the consumer but does not wire live invalidation in this slice; consumers may complete the async enumerable immediately. Live invalidation lands when basileus exercises the surface.
 
 **Acceptance criteria:**
 - `IOntologySource` defined in `Strategos.Ontology` namespace, public.
-- `OntologyBuilderOptions.AddSource<T>()` extension method registers `T : IOntologySource` as transient.
+- `OntologyOptions.AddSource<T>()` extension method registers `T : IOntologySource` as transient.
 - `OntologyGraphBuilder.Build()` drains all registered sources' `LoadAsync` before returning the graph.
 - A `TestOntologySource` test fixture exists in `Strategos.Ontology.Tests.TestInfrastructure`.
 - An integration test exercises two sources contributing to the same `ObjectType` with non-overlapping fields; both contributions appear in the composed graph with correct `DescriptorSource`.

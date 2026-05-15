@@ -58,6 +58,13 @@ public class RoslynSymbolKeyIntegrationTests
         }
         """;
 
+    /// <summary>
+    /// Verifies that the Roslyn-derived symbol identity put on an
+    /// ingested <see cref="ObjectTypeDescriptor"/> survives the
+    /// <see cref="IOntologySource"/> drain, <see cref="OntologyBuilder.ApplyDelta"/>,
+    /// and graph-freeze unchanged. Guards against drift between Strategos
+    /// test fixtures and the basileus production SCIP ingester.
+    /// </summary>
     [Test]
     [SkipIfRoslynIntegrationDisabled]
     public async Task RoslynSymbolKey_RoundTripThroughBuilder_PreservesIdentity()

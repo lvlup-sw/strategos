@@ -34,6 +34,17 @@ public sealed record ObjectTypeDescriptor
     /// CLR type, when known. Null for purely-ingested descriptors whose
     /// language has no loaded .NET type (e.g. TypeScript via SCIP).
     /// </summary>
+    /// <remarks>
+    /// The DR-1 identity invariant (at least one of <see cref="ClrType"/>
+    /// or <see cref="SymbolKey"/> must be non-null) is enforced in the
+    /// <see cref="SymbolKey"/> init setter for the explicit-set cases.
+    /// The "neither field set" bypass — where the parameterless property-
+    /// init constructor runs and neither <see cref="ClrType"/> nor
+    /// <see cref="SymbolKey"/> appears in the object initializer — is
+    /// caught at <c>OntologyBuilder.ObjectTypeFromDescriptor</c> and
+    /// <c>ApplyDelta</c>, the two surfaces through which descriptors
+    /// reach the composed graph.
+    /// </remarks>
     public Type? ClrType
     {
         get => _clrType;

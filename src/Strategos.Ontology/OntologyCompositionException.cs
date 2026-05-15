@@ -32,6 +32,11 @@ public sealed class OntologyCompositionException : Exception
     /// </summary>
     public ImmutableArray<OntologyDiagnostic> NonFatalDiagnostics { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OntologyCompositionException"/> class
+    /// with the supplied message and no aggregated diagnostics.
+    /// </summary>
+    /// <param name="message">Human-readable failure description.</param>
     public OntologyCompositionException(string message)
         : base(message)
     {
@@ -39,6 +44,12 @@ public sealed class OntologyCompositionException : Exception
         NonFatalDiagnostics = ImmutableArray<OntologyDiagnostic>.Empty;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OntologyCompositionException"/> class
+    /// with the supplied message wrapping a lower-level exception.
+    /// </summary>
+    /// <param name="message">Human-readable failure description.</param>
+    /// <param name="innerException">The lower-level exception that triggered the composition failure.</param>
     public OntologyCompositionException(string message, Exception innerException)
         : base(message, innerException)
     {
@@ -47,10 +58,11 @@ public sealed class OntologyCompositionException : Exception
     }
 
     /// <summary>
-    /// Constructs an exception aggregating one or more error-severity
-    /// diagnostics. The default message lists the first diagnostic's
-    /// identifier to make logs scannable.
+    /// Initializes a new instance of the <see cref="OntologyCompositionException"/> class
+    /// aggregating one or more error-severity diagnostics. The default message lists the
+    /// first diagnostic's identifier to make logs scannable.
     /// </summary>
+    /// <param name="diagnostics">Error-severity diagnostics that caused the build to fail.</param>
     public OntologyCompositionException(ImmutableArray<OntologyDiagnostic> diagnostics)
         : base(BuildMessage(diagnostics, ImmutableArray<OntologyDiagnostic>.Empty))
     {
@@ -59,10 +71,12 @@ public sealed class OntologyCompositionException : Exception
     }
 
     /// <summary>
-    /// Constructs an exception aggregating both fatal and non-fatal
-    /// diagnostics. Non-fatal items are passed through so callers can
-    /// log warnings/info that surfaced before the build failed.
+    /// Initializes a new instance of the <see cref="OntologyCompositionException"/> class
+    /// aggregating both fatal and non-fatal diagnostics. Non-fatal items are passed through
+    /// so callers can log warnings/info that surfaced before the build failed.
     /// </summary>
+    /// <param name="diagnostics">Error-severity diagnostics that caused the build to fail.</param>
+    /// <param name="nonFatalDiagnostics">Warning/info diagnostics observed before failure.</param>
     public OntologyCompositionException(
         ImmutableArray<OntologyDiagnostic> diagnostics,
         ImmutableArray<OntologyDiagnostic> nonFatalDiagnostics)

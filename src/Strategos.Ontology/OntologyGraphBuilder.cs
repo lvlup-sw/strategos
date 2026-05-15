@@ -39,12 +39,38 @@ public sealed class OntologyGraphBuilder
     public OntologyGraphBuilder AddSources(IEnumerable<IOntologySource> sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
-        _sources.AddRange(sources);
+        foreach (var source in sources)
+        {
+            if (source is null)
+            {
+                throw new ArgumentException(
+                    "IOntologySource enumerable contains a null entry; sources must be non-null so the drain loop can attribute exceptions and deltas to a stable SourceId.",
+                    nameof(sources));
+            }
+
+            _sources.Add(source);
+        }
+
         return this;
     }
 
-    public OntologyGraph Build()
+    public OntologyGraph Build() => Build(CancellationToken.None);
+
+    /// <summary>
+    /// Composes the immutable ontology graph, threading a cancellation
+    /// token through the <see cref="IOntologySource"/> drain so a slow or
+    /// hung source cannot block startup indefinitely. The hand-authored
+    /// <c>DomainOntology.Define()</c> pass is purely in-memory and is not
+    /// cancellation-aware; cancellation is checked between phases.
+    /// </summary>
+    /// <param name="cancellationToken">
+    /// Cancels the source-drain loop (and intermediate phases). On
+    /// cancellation, a <see cref="OperationCanceledException"/> is thrown
+    /// and no graph is produced.
+    /// </param>
+    public OntologyGraph Build(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var domains = new List<DomainDescriptor>();
         var allObjectTypes = new List<ObjectTypeDescriptor>();
         var allInterfaces = new List<InterfaceDescriptor>();
@@ -72,7 +98,7 @@ public sealed class OntologyGraphBuilder
         // per-domain builder to be created on demand.
         // DR-10 (Task 17): wrap each source's drain in try/catch so the
         // SourceId is surfaced in any propagated composition exception.
-        DrainSources(buildersByDomain);
+        DrainSources(buildersByDomain, cancellationToken);
 
         foreach (var domainOntology in _domainOntologies)
         {
@@ -969,15 +995,24 @@ public sealed class OntologyGraphBuilder
             "(live invalidation lands in v2.6.0+ via SubscribeAsync). Task.Run + " +
             "ConfigureAwait(false) protects callers running under a captured " +
             "SynchronizationContext (e.g. WPF/UI).")]
-    private void DrainSources(Dictionary<string, OntologyBuilder> buildersByDomain)
+    private void DrainSources(
+        Dictionary<string, OntologyBuilder> buildersByDomain,
+        CancellationToken cancellationToken)
     {
         foreach (var source in _sources)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                Task.Run(async () =>
-                    await DrainSourceCoreAsync(source, buildersByDomain).ConfigureAwait(false))
+                Task.Run(
+                    async () =>
+                        await DrainSourceCoreAsync(source, buildersByDomain, cancellationToken).ConfigureAwait(false),
+                    cancellationToken)
                     .GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (OntologyCompositionException)
             {
@@ -994,9 +1029,10 @@ public sealed class OntologyGraphBuilder
 
     private static async Task DrainSourceCoreAsync(
         IOntologySource source,
-        Dictionary<string, OntologyBuilder> buildersByDomain)
+        Dictionary<string, OntologyBuilder> buildersByDomain,
+        CancellationToken cancellationToken)
     {
-        await foreach (var delta in source.LoadAsync(CancellationToken.None))
+        await foreach (var delta in source.LoadAsync(cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             var domainName = ResolveDeltaDomain(delta);
             if (domainName is null)
