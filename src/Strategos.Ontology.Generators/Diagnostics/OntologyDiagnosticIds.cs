@@ -51,4 +51,7 @@ internal static class OntologyDiagnosticIds
 
     // ReadOnly (AONT036)
     public const string ReadOnlyConflictsWithMutation = "AONT036";
+
+    // Polyglot identity invariant (AONT037)
+    public const string PolyglotInvariantViolated = "AONT037";
 }
