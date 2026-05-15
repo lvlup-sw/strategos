@@ -55,4 +55,26 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
 
         _objectTypes.Add(descriptor);
     }
+
+    /// <summary>
+    /// DR-5 (Task 10): dispatches an <see cref="OntologyDelta"/> by
+    /// variant. The <see cref="OntologyDelta.AddObjectType"/> branch
+    /// routes to <see cref="ObjectTypeFromDescriptor"/>. Task 11 extends
+    /// this switch to the remaining variants.
+    /// </summary>
+    public void ApplyDelta(OntologyDelta delta)
+    {
+        ArgumentNullException.ThrowIfNull(delta);
+
+        switch (delta)
+        {
+            case OntologyDelta.AddObjectType add:
+                ObjectTypeFromDescriptor(add.Descriptor);
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Unknown delta variant: {delta.GetType().Name}");
+        }
+    }
 }

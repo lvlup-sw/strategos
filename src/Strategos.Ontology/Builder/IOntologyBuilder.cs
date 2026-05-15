@@ -39,4 +39,17 @@ public interface IOntologyBuilder
     /// is preserved unchanged so provenance flows through to graph-freeze.
     /// </remarks>
     void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor);
+
+    /// <summary>
+    /// Applies an <see cref="OntologyDelta"/> against the current builder
+    /// state. Dispatches by variant; the
+    /// <see cref="OntologyDelta.AddObjectType"/> branch routes to
+    /// <see cref="ObjectTypeFromDescriptor"/>. Unknown variants throw
+    /// <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <remarks>
+    /// DR-5 (Tasks 10 + 11). Polyglot ingestion deltas reach the graph
+    /// through this entry point.
+    /// </remarks>
+    void ApplyDelta(OntologyDelta delta);
 }
