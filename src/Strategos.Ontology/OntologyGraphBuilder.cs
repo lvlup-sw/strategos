@@ -345,6 +345,31 @@ public sealed class OntologyGraphBuilder
                 // because ingested-side types may not be loadable as CLR
                 // (ReferenceSymbolKey carries the truth) but a non-null
                 // PropertyType disagreement is still meaningful drift.
+                // AONT206 — opt-in hygiene hint: the property is
+                // declared on both sides. Fires only when the consumer
+                // has set OntologyOptions.EnableHygieneHints (MSBuild
+                // property OntologyEnableHygieneHints). Always emitted
+                // alongside any AONT202 mismatch (the two are
+                // complementary: 202 says "they disagree", 206 says
+                // "you may not need both").
+                if (_options is { EnableHygieneHints: true })
+                {
+                    var hint = new OntologyDiagnostic(
+                        Id: "AONT206",
+                        Message:
+                            $"AONT206: property '{property.Name}' on "
+                            + $"'{descriptor.DomainName}.{descriptor.Name}' is declared in hand "
+                            + "Define() and also contributed by the ingested side — consider "
+                            + "removing the redundant hand declaration.",
+                        Severity: OntologyDiagnosticSeverity.Info,
+                        DomainName: descriptor.DomainName,
+                        TypeName: descriptor.Name,
+                        PropertyName: property.Name);
+
+                    nonFatal.Add(hint);
+                    LogNonFatal(hint);
+                }
+
                 if (property.Kind != ingestedProp.Kind || property.PropertyType != ingestedProp.PropertyType)
                 {
                     var diag = new OntologyDiagnostic(
