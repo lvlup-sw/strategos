@@ -39,6 +39,15 @@ public sealed class OntologyOptions
     /// </summary>
     internal IReadOnlyList<Func<IOntologySource>> SourceFactories => _sourceFactories;
 
+    /// <summary>
+    /// DR-7 (Task 28): opt-in flag for AONT206 (hand-declared property
+    /// also contributed by ingestion — hygiene hint). Off by default to
+    /// avoid flooding telemetry with cosmetic info diagnostics; wired
+    /// through MSBuild via the <c>OntologyEnableHygieneHints</c> property
+    /// when consumers route it.
+    /// </summary>
+    public bool EnableHygieneHints { get; init; }
+
     public OntologyOptions AddDomain<T>()
         where T : DomainOntology, new()
     {
