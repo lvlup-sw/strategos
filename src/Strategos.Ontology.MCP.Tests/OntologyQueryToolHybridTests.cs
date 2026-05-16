@@ -311,4 +311,61 @@ public sealed class OntologyQueryToolHybridTests
         await Assert.That(result.Meta.Hybrid.FusionMethod).IsEqualTo("distribution_based");
         await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
     }
+
+    // ---- Task 35: Weighted Reciprocal snapshot ----
+
+    [Test]
+    public async Task QueryAsync_HybridReciprocalWeighted_DenseDominantWeights_SnapshotOrdering()
+    {
+        // SourceWeights = [1.0, 0.5] (dense dominant). Assert ordering matches
+        // a direct call to RankFusion.Reciprocal with the same weights.
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        var weights = new[] { 1.0, 0.5 };
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions
+            {
+                FusionMethod = FusionMethod.Reciprocal,
+                SourceWeights = weights,
+            });
+
+        var denseRanked = denseItems.Cast<TestItem>().Select((it, i) => new RankedCandidate(it.Id, i + 1)).ToList();
+        var sparseRanked = sparseResults.Select(r => new RankedCandidate(r.DocumentId, r.Rank)).ToList();
+        var expectedFused = RankFusion.Reciprocal(
+            new IReadOnlyList<RankedCandidate>[] { denseRanked, sparseRanked },
+            weights: weights,
+            k: 60,
+            topK: 3);
+
+        var result = (SemanticQueryResult)union;
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+    }
 }
