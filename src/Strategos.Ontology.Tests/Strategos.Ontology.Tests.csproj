@@ -3,11 +3,24 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      DR-9 (Task 22): SkipRoslynIntegrationTests gates the Roslyn
+      SymbolKey round-trip fixture. When set to a truthy value at
+      build time (e.g. `dotnet build -p:SkipRoslynIntegrationTests=true`),
+      the SKIP_ROSLYN_INTEGRATION_TESTS preprocessor symbol is defined
+      so SkipIfRoslynIntegrationDisabledAttribute statically reports
+      the test as skipped. The same attribute also honors the
+      identically-named environment variable for ad-hoc runs without
+      a rebuild.
+    -->
+    <SkipRoslynIntegrationTests Condition="'$(SkipRoslynIntegrationTests)' == ''">false</SkipRoslynIntegrationTests>
+    <DefineConstants Condition="'$(SkipRoslynIntegrationTests)' == 'true'">$(DefineConstants);SKIP_ROSLYN_INTEGRATION_TESTS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>

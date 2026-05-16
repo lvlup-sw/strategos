@@ -51,4 +51,17 @@ internal static class OntologyDiagnosticIds
 
     // ReadOnly (AONT036)
     public const string ReadOnlyConflictsWithMutation = "AONT036";
+
+    // Polyglot identity invariant (AONT037)
+    public const string PolyglotInvariantViolated = "AONT037";
+
+    // Polyglot graph-freeze diagnostics (AONT201-208) — DR-7
+    public const string HandPropertyMissingFromIngested = "AONT201";
+    public const string HandPropertyTypeMismatch = "AONT202";
+    public const string IngestedPropertyMissingFromHandStrict = "AONT203";
+    public const string IngestedTypeNotReferencedByHand = "AONT204";
+    public const string IngestedContributesToIntentOnly = "AONT205";
+    public const string HandPropertyAlsoIngestedHygieneHint = "AONT206";
+    public const string BranchHandConflict = "AONT207";
+    public const string LanguageIdDisagreement = "AONT208";
 }

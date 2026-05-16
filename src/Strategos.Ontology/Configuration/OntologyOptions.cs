@@ -17,6 +17,7 @@ public sealed class OntologyOptions
     private readonly List<WorkflowMetadataBuilder> _workflowMetadata = [];
     private readonly List<Action<IServiceCollection>> _serviceRegistrations = [];
     private readonly List<(int Order, Func<IServiceProvider, IActionDispatcher, IActionDispatcher> Factory)> _dispatcherDecorators = [];
+    private readonly List<Func<IOntologySource>> _sourceFactories = [];
 
     internal IReadOnlyList<DomainOntology> Domains => _domains;
 
@@ -25,6 +26,27 @@ public sealed class OntologyOptions
     internal IReadOnlyList<Action<IServiceCollection>> ServiceRegistrations => _serviceRegistrations;
 
     internal List<(int Order, Func<IServiceProvider, IActionDispatcher, IActionDispatcher> Factory)> DispatcherDecorators => _dispatcherDecorators;
+
+    /// <summary>
+    /// DR-3 (Task 12): factories that activate each
+    /// <see cref="IOntologySource"/> implementation registered via
+    /// <see cref="AddSource{T}"/>. Surfaced to <c>AddOntology</c> so the
+    /// graph builder's source-drain instantiates them prior to
+    /// <c>Build()</c>. Each factory closes over the generic type
+    /// parameter so the trim/AOT annotation propagates correctly without
+    /// requiring downstream call sites to thread the annotation through
+    /// non-generic API boundaries.
+    /// </summary>
+    internal IReadOnlyList<Func<IOntologySource>> SourceFactories => _sourceFactories;
+
+    /// <summary>
+    /// DR-7 (Task 28): opt-in flag for AONT206 (hand-declared property
+    /// also contributed by ingestion — hygiene hint). Off by default to
+    /// avoid flooding telemetry with cosmetic info diagnostics; wired
+    /// through MSBuild via the <c>OntologyEnableHygieneHints</c> property
+    /// when consumers route it.
+    /// </summary>
+    public bool EnableHygieneHints { get; init; }
 
     public OntologyOptions AddDomain<T>()
         where T : DomainOntology, new()
@@ -77,6 +99,28 @@ public sealed class OntologyOptions
     {
         ArgumentNullException.ThrowIfNull(registration);
         _serviceRegistrations.Add(registration);
+        return this;
+    }
+
+    /// <summary>
+    /// DR-3 (Task 12): registers an <see cref="IOntologySource"/>
+    /// implementation as transient in the service container and surfaces
+    /// it to the <see cref="OntologyGraphBuilder"/> source-drain.
+    /// </summary>
+    /// <remarks>
+    /// Routes through the same <c>graphBuilder.AddSources(...)</c> surface
+    /// the in-memory test wiring uses — there is no parallel registration
+    /// path. The transient lifetime matches the contract described on
+    /// <see cref="IOntologySource"/>: each <c>LoadAsync</c> drain creates
+    /// a fresh source instance.
+    /// </remarks>
+    public OntologyOptions AddSource<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
+        where T : class, IOntologySource, new()
+    {
+        // Factory closes over the generic parameter — the `new()` constraint
+        // gives us a trim-safe activator without resorting to reflection.
+        _sourceFactories.Add(static () => new T());
+        _serviceRegistrations.Add(services => services.AddTransient<IOntologySource, T>());
         return this;
     }
 

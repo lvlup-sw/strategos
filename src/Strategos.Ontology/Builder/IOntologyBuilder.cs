@@ -1,3 +1,5 @@
+using Strategos.Ontology.Descriptors;
+
 namespace Strategos.Ontology.Builder;
 
 public interface IOntologyBuilder
@@ -24,4 +26,30 @@ public interface IOntologyBuilder
         where T : class;
 
     ICrossDomainLinkBuilder CrossDomainLink(string name);
+
+    /// <summary>
+    /// Registers an <see cref="ObjectTypeDescriptor"/> directly, bypassing
+    /// the expression-tree DSL. This is the mechanism
+    /// <see cref="IOntologySource"/> contributions reach the graph —
+    /// necessary because ingested types may only be known by
+    /// <c>SymbolKey</c>, with no loaded CLR type.
+    /// </summary>
+    /// <remarks>
+    /// DR-5 (Task 9). The descriptor's <see cref="ObjectTypeDescriptor.Source"/>
+    /// is preserved unchanged so provenance flows through to graph-freeze.
+    /// </remarks>
+    void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor);
+
+    /// <summary>
+    /// Applies an <see cref="OntologyDelta"/> against the current builder
+    /// state. Dispatches by variant; the
+    /// <see cref="OntologyDelta.AddObjectType"/> branch routes to
+    /// <see cref="ObjectTypeFromDescriptor"/>. Unknown variants throw
+    /// <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <remarks>
+    /// DR-5 (Tasks 10 + 11). Polyglot ingestion deltas reach the graph
+    /// through this entry point.
+    /// </remarks>
+    void ApplyDelta(OntologyDelta delta);
 }

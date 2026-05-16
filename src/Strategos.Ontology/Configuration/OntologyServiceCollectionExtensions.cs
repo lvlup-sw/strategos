@@ -33,6 +33,24 @@ public static class OntologyServiceCollectionExtensions
 
         graphBuilder.AddWorkflowMetadata(options.WorkflowMetadata);
 
+        // DR-3 (Task 12): instantiate each registered IOntologySource for
+        // the graph-builder source-drain. Sources are also registered as
+        // transient in `services` via options.ServiceRegistrations so
+        // live-invalidation consumers (v2.6.0+) resolve fresh instances
+        // from the real container; the activator path below is the
+        // bootstrap drain used at compose time, before the real container
+        // is built.
+        if (options.SourceFactories.Count > 0)
+        {
+            var sources = new IOntologySource[options.SourceFactories.Count];
+            for (var i = 0; i < options.SourceFactories.Count; i++)
+            {
+                sources[i] = options.SourceFactories[i]();
+            }
+
+            graphBuilder.AddSources(sources);
+        }
+
         var graph = graphBuilder.Build();
         services.AddSingleton(graph);
 

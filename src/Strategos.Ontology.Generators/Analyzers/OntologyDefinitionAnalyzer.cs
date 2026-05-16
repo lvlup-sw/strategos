@@ -50,7 +50,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointEdgeMissing,
             OntologyDiagnostics.ExtensionPointNoLinks,
             OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
-            OntologyDiagnostics.ReadOnlyConflictsWithMutation);
+            OntologyDiagnostics.ReadOnlyConflictsWithMutation,
+            OntologyDiagnostics.PolyglotInvariantViolated);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -90,6 +91,85 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         var domainInfo = new DomainAnalysisInfo();
         CollectDomainInfo(body, context.SemanticModel, domainInfo);
         ReportDiagnostics(context, domainInfo);
+        ReportPolyglotInvariantViolations(context, body);
+    }
+
+    // AONT037: Polyglot identity invariant — descriptor-by-name overload
+    // (non-generic `ObjectType(name, …)`) must supply either a Type argument
+    // or a `symbolKey:` named argument. Generic `ObjectType<T>()` is exempt
+    // because the type argument supplies ClrType.
+    //
+    // Receiver-type filtered (must be IOntologyBuilder) so a stray
+    // `.ObjectType(...)` call on an unrelated receiver inside a Define()
+    // body doesn't false-fire AONT037.
+    private static void ReportPolyglotInvariantViolations(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            // Member-access form `<receiver>.ObjectType(...)` only.
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            // Generic overload uses GenericNameSyntax — exempt.
+            if (memberAccess.Name is not IdentifierNameSyntax identifier)
+            {
+                continue;
+            }
+
+            if (identifier.Identifier.Text != "ObjectType")
+            {
+                continue;
+            }
+
+            // Receiver must be an IOntologyBuilder (or the concrete
+            // OntologyBuilder). When the semantic model can't resolve the
+            // receiver type (e.g. heavily-broken source mid-edit), we err
+            // on the side of "skip" rather than false-fire — the user's
+            // editor will report the real error before AONT037 matters.
+            var receiverType = context.SemanticModel
+                .GetTypeInfo(memberAccess.Expression, context.CancellationToken).Type;
+            if (receiverType is null || !IsOntologyBuilderType(receiverType.Name))
+            {
+                continue;
+            }
+
+            var args = invocation.ArgumentList.Arguments;
+
+            // Either form satisfies the invariant:
+            //  - a `symbolKey:` named argument,
+            //  - a `clrType:` named argument (Type-valued, regardless of
+            //    expression form — typeof, variable, factory call, etc.),
+            //  - any positional argument whose expression is `typeof(...)`.
+            var hasSymbolKey = args.Any(a =>
+                a.NameColon?.Name.Identifier.Text == "symbolKey");
+            var hasTypeArgument = args.Any(a =>
+                a.NameColon?.Name.Identifier.Text == "clrType"
+                || a.Expression is TypeOfExpressionSyntax);
+
+            if (hasSymbolKey || hasTypeArgument)
+            {
+                continue;
+            }
+
+            // Use the first positional argument (typically the descriptor
+            // name literal) as the {0} placeholder when we can extract it;
+            // fall back to "<unknown>".
+            var descriptorName = "<unknown>";
+            if (args.Count > 0
+                && args[0].Expression is LiteralExpressionSyntax literal
+                && literal.IsKind(SyntaxKind.StringLiteralExpression))
+            {
+                descriptorName = literal.Token.ValueText;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                OntologyDiagnostics.PolyglotInvariantViolated,
+                invocation.GetLocation(),
+                descriptorName));
+        }
     }
 
     private static bool IsDomainOntologySubclass(INamedTypeSymbol? type)
