@@ -1,0 +1,372 @@
+{
+  "schema_version": "1",
+  "generator": "scripts/regenerate-dbsf-oracle.py",
+  "algorithm": "Distribution-Based Score Fusion (Qdrant 2024)",
+  "qdrant_client_pin": "1.12.1",
+  "tolerance": "1e-9",
+  "queries": [
+    {
+      "query_id": "q1-2list-balanced",
+      "description": "Two lists of similar scale with partial overlap.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 0.95
+          },
+          {
+            "document_id": "d-B",
+            "score": 0.9
+          },
+          {
+            "document_id": "d-C",
+            "score": 0.85
+          },
+          {
+            "document_id": "d-D",
+            "score": 0.8
+          }
+        ],
+        [
+          {
+            "document_id": "d-B",
+            "score": 0.92
+          },
+          {
+            "document_id": "d-A",
+            "score": 0.88
+          },
+          {
+            "document_id": "d-E",
+            "score": 0.84
+          },
+          {
+            "document_id": "d-F",
+            "score": 0.79
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.3014829174976534,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 1.290858154104645,
+          "rank": 2
+        },
+        {
+          "document_id": "d-E",
+          "fused_score": 0.43942968464069715,
+          "rank": 3
+        },
+        {
+          "document_id": "d-C",
+          "fused_score": 0.4254644007500069,
+          "rank": 4
+        },
+        {
+          "document_id": "d-D",
+          "fused_score": 0.27639320225002106,
+          "rank": 5
+        },
+        {
+          "document_id": "d-F",
+          "fused_score": 0.2663716407569757,
+          "rank": 6
+        }
+      ]
+    },
+    {
+      "query_id": "q2-single-element",
+      "description": "A list with a single element normalizes to 0.5.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 0.95
+          },
+          {
+            "document_id": "d-B",
+            "score": 0.9
+          }
+        ],
+        [
+          {
+            "document_id": "d-A",
+            "score": 99.0
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.166666666666666,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 0.3333333333333331,
+          "rank": 2
+        }
+      ]
+    },
+    {
+      "query_id": "q3-zero-variance",
+      "description": "All scores in one list identical \u2192 normalized to 0.5.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 0.95
+          },
+          {
+            "document_id": "d-B",
+            "score": 0.5
+          },
+          {
+            "document_id": "d-C",
+            "score": 0.1
+          }
+        ],
+        [
+          {
+            "document_id": "d-A",
+            "score": 5.0
+          },
+          {
+            "document_id": "d-B",
+            "score": 5.0
+          },
+          {
+            "document_id": "d-C",
+            "score": 5.0
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.208006656319505,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 0.9919997439877113,
+          "rank": 2
+        },
+        {
+          "document_id": "d-C",
+          "fused_score": 0.7999935996927836,
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "query_id": "q4-outlier-heavy",
+      "description": "One list contains a large outlier \u2014 DBSF clamps it.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 1.0
+          },
+          {
+            "document_id": "d-B",
+            "score": 0.8
+          },
+          {
+            "document_id": "d-C",
+            "score": 0.6
+          },
+          {
+            "document_id": "d-D",
+            "score": 0.4
+          }
+        ],
+        [
+          {
+            "document_id": "d-A",
+            "score": 100.0
+          },
+          {
+            "document_id": "d-B",
+            "score": 2.0
+          },
+          {
+            "document_id": "d-C",
+            "score": 1.5
+          },
+          {
+            "document_id": "d-D",
+            "score": 1.0
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.5122720150486757,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 0.9802676010458504,
+          "rank": 2
+        },
+        {
+          "document_id": "d-C",
+          "fused_score": 0.8292426616504416,
+          "rank": 3
+        },
+        {
+          "document_id": "d-D",
+          "fused_score": 0.678217722255033,
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "query_id": "q5-mixed-pos-neg",
+      "description": "Scores cross zero \u2014 DBSF still normalizes correctly.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 0.7
+          },
+          {
+            "document_id": "d-B",
+            "score": -0.1
+          },
+          {
+            "document_id": "d-C",
+            "score": -0.4
+          },
+          {
+            "document_id": "d-D",
+            "score": -0.7
+          }
+        ],
+        [
+          {
+            "document_id": "d-A",
+            "score": 2.1
+          },
+          {
+            "document_id": "d-B",
+            "score": 0.5
+          },
+          {
+            "document_id": "d-C",
+            "score": -1.5
+          },
+          {
+            "document_id": "d-D",
+            "score": -3.0
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.4852701451064716,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 1.0918847233965128,
+          "rank": 2
+        },
+        {
+          "document_id": "d-C",
+          "fused_score": 0.8239024869522434,
+          "rank": 3
+        },
+        {
+          "document_id": "d-D",
+          "fused_score": 0.5989426445447721,
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "query_id": "q6-large-skew",
+      "description": "Lists with very different \u03c3 \u2014 DBSF puts them on the same scale.",
+      "lists": [
+        [
+          {
+            "document_id": "d-A",
+            "score": 0.0001
+          },
+          {
+            "document_id": "d-B",
+            "score": 5e-05
+          },
+          {
+            "document_id": "d-C",
+            "score": 0.0
+          },
+          {
+            "document_id": "d-D",
+            "score": -2e-05
+          }
+        ],
+        [
+          {
+            "document_id": "d-A",
+            "score": 50.0
+          },
+          {
+            "document_id": "d-B",
+            "score": 30.0
+          },
+          {
+            "document_id": "d-C",
+            "score": 10.0
+          },
+          {
+            "document_id": "d-D",
+            "score": -10.0
+          }
+        ]
+      ],
+      "weights": null,
+      "top_k": 10,
+      "expected_fused": [
+        {
+          "document_id": "d-A",
+          "fused_score": 1.4651794549427375,
+          "rank": 1
+        },
+        {
+          "document_id": "d-B",
+          "fused_score": 1.1371655474110784,
+          "rank": 2
+        },
+        {
+          "document_id": "d-C",
+          "fused_score": 0.8091516398794196,
+          "rank": 3
+        },
+        {
+          "document_id": "d-D",
+          "fused_score": 0.5885033577667644,
+          "rank": 4
+        }
+      ]
+    }
+  ]
+}

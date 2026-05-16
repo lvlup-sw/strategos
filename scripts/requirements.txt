@@ -1,0 +1,7 @@
+# Pinned for the DBSF parity oracle (scripts/regenerate-dbsf-oracle.py).
+# Qdrant 1.11+ ships distribution_based_score_fusion in
+# qdrant_client.hybrid.fusion. Pinning the version locks the parity surface
+# the C# implementation must conform to.
+#
+# Install: python3 -m pip install -r scripts/requirements.txt
+qdrant-client==1.12.1
