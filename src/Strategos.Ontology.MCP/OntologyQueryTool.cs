@@ -236,9 +236,12 @@ public sealed class OntologyQueryTool
         string? interfaceName,
         string? include)
     {
-        // Build (id → item, score) lookup for the dense leg.
+        // Build (id → item, score) lookup for the dense leg, preserving original
+        // item order so that DBSF's tie-break (input-order stability inside
+        // RankFusion) matches an oracle that iterates dense.Items in order.
         var denseByDocId = new Dictionary<string, (object Item, double Score, int Rank)>(StringComparer.Ordinal);
         var denseRanked = new List<RankedCandidate>(dense.Items.Count);
+        var denseScored = new List<ScoredCandidate>(dense.Items.Count);
         for (int i = 0; i < dense.Items.Count; i++)
         {
             var id = ExtractDocumentId(dense.Items[i]);
@@ -252,13 +255,13 @@ public sealed class OntologyQueryTool
             {
                 denseByDocId[id] = (dense.Items[i], dense.Scores[i], i + 1);
                 denseRanked.Add(new RankedCandidate(id, i + 1));
+                denseScored.Add(new ScoredCandidate(id, dense.Scores[i]));
             }
         }
 
         var sparseRanked = sparse.Select(r => new RankedCandidate(r.DocumentId, r.Rank)).ToList();
 
-        // Run fusion. Note: in 2.6.0 only Reciprocal is wired in this commit
-        // (Task 33); DistributionBased is added in Task 34.
+        // Run fusion. Dispatch on FusionMethod.
         IReadOnlyList<FusedResult> fused;
         if (hybridOptions.FusionMethod == FusionMethod.Reciprocal)
         {
@@ -270,8 +273,15 @@ public sealed class OntologyQueryTool
         }
         else
         {
-            // Placeholder until Task 34 wires DistributionBased.
-            throw new NotImplementedException("DistributionBased dispatch is wired in Task 34.");
+            // DistributionBased uses raw scores rather than ranks. denseScored
+            // was built above in dense.Items order so DBSF's stability matches
+            // an oracle that iterates dense.Items left-to-right.
+            var sparseScored = sparse.Select(r => new ScoredCandidate(r.DocumentId, r.Score)).ToList();
+
+            fused = RankFusion.DistributionBased(
+                new IReadOnlyList<ScoredCandidate>[] { denseScored, sparseScored },
+                weights: hybridOptions.SourceWeights,
+                topK: topK);
         }
 
         // Project the fused order back to dense items. Documents that exist only
