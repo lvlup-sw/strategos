@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Ontology 2.6.0 — Hybrid Retrieval Seams (DR-1/DR-2/DR-3, #56/#57/#58, milestone #47)
+
+#### Added
+
+- **`IKeywordSearchProvider`** seam (PR-A) — extension point for sparse / BM25
+  keyword search. Includes `KeywordSearchRequest`, `KeywordSearchResult`,
+  `KeywordSearchException`. Strategos defines the contract and provides no
+  default DI registration; consumers register an implementation in their
+  composition root.
+- **`RankFusion`** static utilities (PR-B) — `RankFusion.Reciprocal` (weighted
+  Cormack 2009 RRF, bit-identical to the original paper when weights = null)
+  and `RankFusion.DistributionBased` (Qdrant 2024 DBSF, parity ≤ 1e-9).
+  Supporting records: `RankedCandidate`, `ScoredCandidate`, `FusedResult`.
+- **`HybridQueryOptions`** + **`FusionMethod`** enum (PR-C) — additive optional
+  per-call configuration for `OntologyQueryTool.QueryAsync`.
+- **`HybridMeta`** typed sub-record (PR-C) — attached to `ResponseMeta.Hybrid`
+  whenever the hybrid path was engaged. Omitted from JSON when null, preserving
+  byte-for-byte 2.5.0 `_meta` snapshots.
+
+#### Changed
+
+- **`OntologyQueryTool` constructor** — gains optional
+  `IKeywordSearchProvider? keywordProvider = null` as the last parameter. The
+  4-arg 2.5.0 ctor remains source-compatible.
+- **`OntologyQueryTool.QueryAsync`** — gains optional
+  `HybridQueryOptions? hybridOptions = null` immediately before
+  `CancellationToken ct`. Null preserves byte-identical 2.5.0 behavior
+  (DIM-3 hard backward-compat gate).
+- **`ResponseMeta`** — gains optional `HybridMeta? Hybrid { get; init; }`
+  serialized as absent when null.
+
+#### Migration
+
+- **No migration required for 2.5.0 callers.** Every existing call site of
+  `OntologyQueryTool.QueryAsync` continues to compile and produce
+  byte-identical results without any changes. Hybrid retrieval is opt-in via
+  the new `hybridOptions` parameter and requires consumers to register an
+  `IKeywordSearchProvider` in DI; without one, supplying `hybridOptions`
+  degrades automatically to dense-only with `HybridMeta { Hybrid = false,
+  Degraded = "no-keyword-provider" }`, emitting a single warn-once log so
+  operators can discover the missing DI registration.
+
 ## [1.1.1] - 2026-01-19
 
 ### Added

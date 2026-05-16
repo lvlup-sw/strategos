@@ -1,0 +1,681 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+using Strategos.Ontology;
+using Strategos.Ontology.Events;
+using Strategos.Ontology.ObjectSets;
+using Strategos.Ontology.Retrieval;
+
+namespace Strategos.Ontology.MCP.Tests;
+
+/// <summary>
+/// PR-C Tasks 29–40: <see cref="OntologyQueryTool.QueryAsync"/> hybrid path wiring.
+/// Tests are organized by behavior-tree leaf (design §6.4).
+/// </summary>
+public sealed class OntologyQueryToolHybridTests
+{
+    private OntologyGraph _graph = null!;
+    private IObjectSetProvider _objectSetProvider = null!;
+    private IEventStreamProvider _eventStreamProvider = null!;
+
+    [Before(Test)]
+    public void Setup()
+    {
+        _graph = TestOntologyGraphFactory.CreateTradingGraph();
+        _objectSetProvider = Substitute.For<IObjectSetProvider>();
+        _eventStreamProvider = Substitute.For<IEventStreamProvider>();
+    }
+
+    private OntologyQueryTool BuildTool(IKeywordSearchProvider? keywordProvider = null) =>
+        new(_graph, _objectSetProvider, _eventStreamProvider,
+            NullLogger<OntologyQueryTool>.Instance, keywordProvider);
+
+    private OntologyQueryTool BuildTool(CapturingLogger<OntologyQueryTool> logger, IKeywordSearchProvider? keywordProvider = null) =>
+        new(_graph, _objectSetProvider, _eventStreamProvider, logger, keywordProvider);
+
+    // ---- Task 29: null hybridOptions preserves 2.5.0 behavior ----
+
+    [Test]
+    public async Task QueryAsync_HybridOptionsNull_StructuralBranch_ReturnsQueryResult_NoHybridMeta()
+    {
+        // Structural path with no hybridOptions = unmodified 2.5.0 behavior.
+        var items = new List<object> { new { Id = "p1" } };
+        _objectSetProvider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties));
+
+        var tool = BuildTool();
+        var union = await tool.QueryAsync(objectType: "TestPosition", domain: "trading", hybridOptions: null);
+
+        await Assert.That(union).IsTypeOf<QueryResult>();
+        var result = (QueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNull();
+    }
+
+    [Test]
+    public async Task QueryAsync_HybridOptionsNull_SemanticBranch_ReturnsSemanticQueryResult_NoHybridMeta()
+    {
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.92 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var tool = BuildTool();
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: null);
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNull();
+    }
+
+    // ---- Task 30: structural + hybridOptions → silent ignore ----
+
+    [Test]
+    public async Task QueryAsync_StructuralQueryWithHybridOptions_IgnoresOptions_NoHybridMeta_NoWarnLog()
+    {
+        // Non-semantic branch must be byte-identical to 2.5.0 even when caller
+        // supplies hybridOptions (structural branch ignores them entirely,
+        // does not emit a warning, and does not surface HybridMeta).
+        var items = new List<object> { new { Id = "p1", Symbol = "AAPL" } };
+        _objectSetProvider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties));
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            hybridOptions: new HybridQueryOptions());
+
+        await Assert.That(union).IsTypeOf<QueryResult>();
+        var result = (QueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNull();
+        await Assert.That(logger.Entries.Count).IsEqualTo(0);
+    }
+
+    // ---- Task 31: semantic + hybridOptions + no provider → degraded ----
+
+    [Test]
+    public async Task QueryAsync_SemanticWithHybridOptions_NoProviderRegistered_DenseOnly_DegradedNoKeywordProvider_WarnsOnce()
+    {
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger, keywordProvider: null);
+
+        var first = (SemanticQueryResult)await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        var second = (SemanticQueryResult)await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        // Items match dense-only.
+        await Assert.That(first.Items).HasCount().EqualTo(1);
+        await Assert.That(second.Items).HasCount().EqualTo(1);
+
+        // HybridMeta degraded shape on both calls.
+        await Assert.That(first.Meta.Hybrid).IsNotNull();
+        await Assert.That(first.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(first.Meta.Hybrid.Degraded).IsEqualTo("no-keyword-provider");
+        await Assert.That(second.Meta.Hybrid).IsNotNull();
+        await Assert.That(second.Meta.Hybrid!.Degraded).IsEqualTo("no-keyword-provider");
+
+        // Warn-once: exactly one warning across two calls.
+        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        await Assert.That(warnings.Count).IsEqualTo(1);
+    }
+
+    // ---- Task 32: EnableKeyword=false → dense-only, no Degraded ----
+
+    [Test]
+    public async Task QueryAsync_SemanticWithHybridOptionsEnableKeywordFalse_DenseOnly_HybridMetaHybridFalse_NoDegraded()
+    {
+        // Provider IS registered but EnableKeyword=false forces dense-only.
+        // This is the explicit-ablation path: HybridMeta surfaces (so callers
+        // can observe their request was honored) but Degraded is null because
+        // nothing degraded — the caller asked for this.
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.88 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions { EnableKeyword = false });
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
+
+        // Sparse leg must NOT have been called.
+        await keywordProvider.DidNotReceive().SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    // ---- Task 33: Hybrid happy path — Reciprocal ----
+
+    /// <summary>Test item with a stable Id reflection-readable by the hybrid path.</summary>
+    private sealed record TestItem(string Id, string Symbol);
+
+    [Test]
+    public async Task QueryAsync_HybridReciprocal_BothLegsReturn_FusedOutputMatchesRankFusionReciprocal_HybridMetaHealthyReciprocal()
+    {
+        // Dense fixture: 3 items with descending scores.
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        // Sparse fixture: different ordering, overlap on doc-b and doc-c.
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions());
+
+        // Compute the oracle directly via RankFusion.Reciprocal.
+        var denseRanked = denseItems
+            .Cast<TestItem>()
+            .Select((it, i) => new RankedCandidate(it.Id, i + 1))
+            .ToList();
+        var sparseRanked = sparseResults
+            .Select(r => new RankedCandidate(r.DocumentId, r.Rank))
+            .ToList();
+        var expectedFused = RankFusion.Reciprocal(
+            new IReadOnlyList<RankedCandidate>[] { denseRanked, sparseRanked },
+            weights: null,
+            k: 60,
+            topK: 3);
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+
+        // Ordering matches oracle (only documents that exist on the dense leg
+        // can be projected back to items — sparse-only docs are dropped here).
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+
+        // HybridMeta healthy shape.
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsTrue();
+        await Assert.That(result.Meta.Hybrid.FusionMethod).IsEqualTo("reciprocal");
+        await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
+        await Assert.That(result.Meta.Hybrid.DenseTopScore).IsEqualTo(0.90);
+        await Assert.That(result.Meta.Hybrid.SparseTopScore).IsEqualTo(18.0);
+        await Assert.That(result.Meta.Hybrid.BmSaturationThreshold).IsEqualTo(18.0);
+    }
+
+    // ---- Task 34: Hybrid happy path — DistributionBased ----
+
+    [Test]
+    public async Task QueryAsync_HybridDistributionBased_BothLegsReturn_FusedOutputMatchesRankFusionDistributionBased_HybridMetaHealthyDistributionBased()
+    {
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions { FusionMethod = FusionMethod.DistributionBased });
+
+        // Oracle.
+        var denseScored = denseItems
+            .Cast<TestItem>()
+            .Select((it, i) => new ScoredCandidate(it.Id, denseScores[i]))
+            .ToList();
+        var sparseScored = sparseResults
+            .Select(r => new ScoredCandidate(r.DocumentId, r.Score))
+            .ToList();
+        var expectedFused = RankFusion.DistributionBased(
+            new IReadOnlyList<ScoredCandidate>[] { denseScored, sparseScored },
+            weights: null,
+            topK: 3);
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsTrue();
+        await Assert.That(result.Meta.Hybrid.FusionMethod).IsEqualTo("distribution_based");
+        await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
+    }
+
+    // ---- Task 35: Weighted Reciprocal snapshot ----
+
+    [Test]
+    public async Task QueryAsync_HybridReciprocalWeighted_DenseDominantWeights_SnapshotOrdering()
+    {
+        // SourceWeights = [1.0, 0.5] (dense dominant). Assert ordering matches
+        // a direct call to RankFusion.Reciprocal with the same weights.
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        var weights = new[] { 1.0, 0.5 };
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions
+            {
+                FusionMethod = FusionMethod.Reciprocal,
+                SourceWeights = weights,
+            });
+
+        var denseRanked = denseItems.Cast<TestItem>().Select((it, i) => new RankedCandidate(it.Id, i + 1)).ToList();
+        var sparseRanked = sparseResults.Select(r => new RankedCandidate(r.DocumentId, r.Rank)).ToList();
+        var expectedFused = RankFusion.Reciprocal(
+            new IReadOnlyList<RankedCandidate>[] { denseRanked, sparseRanked },
+            weights: weights,
+            k: 60,
+            topK: 3);
+
+        var result = (SemanticQueryResult)union;
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+    }
+
+    // ---- Task 36: Weighted DistributionBased snapshot ----
+
+    [Test]
+    public async Task QueryAsync_HybridDistributionBasedWeighted_DenseDominantWeights_SnapshotOrdering()
+    {
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        var weights = new[] { 1.0, 0.5 };
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions
+            {
+                FusionMethod = FusionMethod.DistributionBased,
+                SourceWeights = weights,
+            });
+
+        var denseScored = denseItems.Cast<TestItem>().Select((it, i) => new ScoredCandidate(it.Id, denseScores[i])).ToList();
+        var sparseScored = sparseResults.Select(r => new ScoredCandidate(r.DocumentId, r.Score)).ToList();
+        var expectedFused = RankFusion.DistributionBased(
+            new IReadOnlyList<ScoredCandidate>[] { denseScored, sparseScored },
+            weights: weights,
+            topK: 3);
+
+        var result = (SemanticQueryResult)union;
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+    }
+
+    // ---- Task 37: Sparse failure → fallback dense-only, Degraded="sparse-failed" ----
+
+    [Test]
+    public async Task QueryAsync_HybridSparseProviderThrows_FallsBackToDenseOnly_DegradedSparseFailed_ExceptionAndStackLogged()
+    {
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseFault = new IOException("synthetic sparse backend fault");
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<KeywordSearchResult>>>(_ => throw sparseFault);
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger, keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        var result = (SemanticQueryResult)union;
+        // Dense-only items.
+        await Assert.That(result.Items.Cast<TestItem>().Select(i => i.Id).ToList())
+            .IsEquivalentTo(new[] { "doc-a" });
+        // HybridMeta degraded shape.
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(result.Meta.Hybrid.Degraded).IsEqualTo("sparse-failed");
+        // Exception and stack logged at Error level.
+        var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).ToList();
+        await Assert.That(errors.Count).IsEqualTo(1);
+        await Assert.That(errors[0].Exception).IsSameReferenceAs(sparseFault);
+    }
+
+    // ---- Task 38: Dense failure → propagates (no fallback to sparse-only) ----
+
+    [Test]
+    public async Task QueryAsync_HybridDenseThrows_PropagatesException_NoFallbackToSparseOnly()
+    {
+        var denseFault = new InvalidOperationException("synthetic dense backend fault");
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ScoredObjectSetResult<object>>>(_ => throw denseFault);
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-a", Score: 18.0, Rank: 1),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        await Assert.That(async () => await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions()))
+            .Throws<InvalidOperationException>();
+    }
+
+    // ---- Task 39: Cancellation propagation through both legs ----
+
+    [Test]
+    public async Task QueryAsync_HybridCancellationMidFlight_BothLegsCancelled_ThrowsOperationCanceledException()
+    {
+        // Both legs honor ct: a delaying provider for sparse + delaying dense.
+        // After 10ms we cancel and assert OperationCanceledException surfaces.
+        var denseTcs = new TaskCompletionSource<ScoredObjectSetResult<object>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var ct = callInfo.Arg<CancellationToken>();
+                ct.Register(() => denseTcs.TrySetCanceled(ct));
+#pragma warning disable VSTHRD003 // Test fixture intentionally returns an externally-controlled Task to simulate a long-running provider call.
+                return denseTcs.Task;
+#pragma warning restore VSTHRD003
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var ct = callInfo.Arg<CancellationToken>();
+                await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+                return (IReadOnlyList<KeywordSearchResult>)Array.Empty<KeywordSearchResult>();
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(10));
+
+        await Assert.That(async () => await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions(),
+            ct: cts.Token))
+            .Throws<OperationCanceledException>();
+    }
+
+    // ---- Task 40: Parallelism overlap timing assertion ----
+
+    [Test]
+    public async Task QueryAsync_HybridBothLegs_RunInParallel_TimingOverlapWithinTolerance()
+    {
+        // Deterministic parallelism check: each leg signals "I have started"
+        // (Release on its own semaphore) and then waits on the other leg's
+        // semaphore before completing. If the legs ran sequentially, the
+        // second leg's wait would never be satisfied and the test would hang
+        // and fail via the outer test timeout rather than passing on a
+        // wall-clock fluke. SemaphoreSlim is used in place of TaskCompletionSource
+        // so VSTHRD003 (Microsoft.VisualStudio.Threading) does not flag the
+        // cross-task await as a potential deadlock pattern.
+        using var denseStartedGate = new SemaphoreSlim(0, 1);
+        using var sparseStartedGate = new SemaphoreSlim(0, 1);
+
+        DateTimeOffset denseStart = default;
+        DateTimeOffset denseEnd = default;
+        DateTimeOffset sparseStart = default;
+        DateTimeOffset sparseEnd = default;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                denseStart = DateTimeOffset.UtcNow;
+                denseStartedGate.Release();
+                await sparseStartedGate.WaitAsync().ConfigureAwait(false);
+                denseEnd = DateTimeOffset.UtcNow;
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                sparseStart = DateTimeOffset.UtcNow;
+                sparseStartedGate.Release();
+                await denseStartedGate.WaitAsync().ConfigureAwait(false);
+                sparseEnd = DateTimeOffset.UtcNow;
+                return (IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+                {
+                    new("doc-a", 12.0, 1),
+                };
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        // True overlap: each leg's start-gate was released before the other leg
+        // finished, so sparseStart < denseEnd and sparseEnd > denseStart hold
+        // by construction regardless of CI load.
+        await Assert.That(sparseStart < denseEnd).IsTrue();
+        await Assert.That(sparseEnd > denseStart).IsTrue();
+    }
+
+    // ---- Task 41: DenseTopK forwards to dense SimilarityExpression ----
+
+    [Test]
+    public async Task QueryAsync_HybridWithDenseTopKLargerThanOuterTopK_DenseLegReceivesDenseTopKPool()
+    {
+        // DenseTopK governs the dense candidate pool fed to fusion. The hybrid
+        // path must forward it to the dense SimilarityExpression so the fusion
+        // input is the full pool rather than the outer (caller-visible) topK.
+        SimilarityExpression? capturedExpression = null;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+            {
+                new("doc-a", 12.0, 1),
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 5,
+            hybridOptions: new HybridQueryOptions { DenseTopK = 100 });
+
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.TopK).IsEqualTo(100);
+    }
+
+    [Test]
+    public async Task QueryAsync_HybridWithDenseTopKSmallerThanOuterTopK_DenseLegReceivesOuterTopK()
+    {
+        // If DenseTopK is smaller than the outer topK the caller asked for,
+        // the dense leg must still honor the outer topK so callers always
+        // get back at least the number of results they requested. The
+        // candidate pool is max(outer topK, DenseTopK).
+        SimilarityExpression? capturedExpression = null;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+            {
+                new("doc-a", 12.0, 1),
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 25,
+            hybridOptions: new HybridQueryOptions { DenseTopK = 10 });
+
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.TopK).IsEqualTo(25);
+    }
+}
