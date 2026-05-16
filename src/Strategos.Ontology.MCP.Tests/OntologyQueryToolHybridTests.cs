@@ -175,4 +175,78 @@ public sealed class OntologyQueryToolHybridTests
         // Sparse leg must NOT have been called.
         await keywordProvider.DidNotReceive().SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>());
     }
+
+    // ---- Task 33: Hybrid happy path — Reciprocal ----
+
+    /// <summary>Test item with a stable Id reflection-readable by the hybrid path.</summary>
+    private sealed record TestItem(string Id, string Symbol);
+
+    [Test]
+    public async Task QueryAsync_HybridReciprocal_BothLegsReturn_FusedOutputMatchesRankFusionReciprocal_HybridMetaHealthyReciprocal()
+    {
+        // Dense fixture: 3 items with descending scores.
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        // Sparse fixture: different ordering, overlap on doc-b and doc-c.
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions());
+
+        // Compute the oracle directly via RankFusion.Reciprocal.
+        var denseRanked = denseItems
+            .Cast<TestItem>()
+            .Select((it, i) => new RankedCandidate(it.Id, i + 1))
+            .ToList();
+        var sparseRanked = sparseResults
+            .Select(r => new RankedCandidate(r.DocumentId, r.Rank))
+            .ToList();
+        var expectedFused = RankFusion.Reciprocal(
+            new IReadOnlyList<RankedCandidate>[] { denseRanked, sparseRanked },
+            weights: null,
+            k: 60,
+            topK: 3);
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+
+        // Ordering matches oracle (only documents that exist on the dense leg
+        // can be projected back to items — sparse-only docs are dropped here).
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+
+        // HybridMeta healthy shape.
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsTrue();
+        await Assert.That(result.Meta.Hybrid.FusionMethod).IsEqualTo("reciprocal");
+        await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
+        await Assert.That(result.Meta.Hybrid.DenseTopScore).IsEqualTo(0.90);
+        await Assert.That(result.Meta.Hybrid.SparseTopScore).IsEqualTo(18.0);
+        await Assert.That(result.Meta.Hybrid.BmSaturationThreshold).IsEqualTo(18.0);
+    }
 }

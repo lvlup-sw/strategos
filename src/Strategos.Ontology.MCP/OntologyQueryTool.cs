@@ -183,9 +183,166 @@ public sealed class OntologyQueryTool
                 filter, traverseLink, interfaceName, include);
         }
 
-        // TODO Tasks 33–40: happy paths, weighted snapshots, sparse/dense
-        // failure handling, cancellation, parallelism.
-        throw new NotImplementedException("Hybrid happy-path is wired in Tasks 33+.");
+        return await ExecuteHybridSemanticAsync(
+            similarityExpression, objectType, semanticQuery, topK, minRelevance,
+            filter, traverseLink, interfaceName, include, hybridOptions, ct).ConfigureAwait(false);
+    }
+
+    private async Task<SemanticQueryResult> ExecuteHybridSemanticAsync(
+        SimilarityExpression similarityExpression,
+        string objectType,
+        string semanticQuery,
+        int topK,
+        double minRelevance,
+        string? filter,
+        string? traverseLink,
+        string? interfaceName,
+        string? include,
+        HybridQueryOptions hybridOptions,
+        CancellationToken ct)
+    {
+        // Fan out dense + sparse legs in parallel. Both Tasks start before either
+        // is awaited so we get true overlap (design §6.6 parallelism contract).
+        // The dense leg's request signature is fixed by the existing 2.5.0
+        // similarity pipeline; the sparse leg uses HybridQueryOptions.SparseTopK
+        // and the descriptor name (objectType) as the collection key.
+        var denseTask = _objectSetProvider.ExecuteSimilarityAsync<object>(similarityExpression, ct);
+        var sparseTask = _keywordProvider!.SearchAsync(
+            new KeywordSearchRequest(semanticQuery, objectType, hybridOptions.SparseTopK),
+            ct);
+
+        // Await both. Dense throws propagate (design: dense is baseline — Task 38).
+        // Sparse-fault handling is wired in Task 37.
+        await Task.WhenAll(denseTask, sparseTask).ConfigureAwait(false);
+
+        var dense = await denseTask.ConfigureAwait(false);
+        var sparse = await sparseTask.ConfigureAwait(false);
+
+        return FuseHybrid(
+            dense, sparse, hybridOptions, objectType, semanticQuery, topK, minRelevance,
+            filter, traverseLink, interfaceName, include);
+    }
+
+    private SemanticQueryResult FuseHybrid(
+        ScoredObjectSetResult<object> dense,
+        IReadOnlyList<KeywordSearchResult> sparse,
+        HybridQueryOptions hybridOptions,
+        string objectType,
+        string semanticQuery,
+        int topK,
+        double minRelevance,
+        string? filter,
+        string? traverseLink,
+        string? interfaceName,
+        string? include)
+    {
+        // Build (id → item, score) lookup for the dense leg.
+        var denseByDocId = new Dictionary<string, (object Item, double Score, int Rank)>(StringComparer.Ordinal);
+        var denseRanked = new List<RankedCandidate>(dense.Items.Count);
+        for (int i = 0; i < dense.Items.Count; i++)
+        {
+            var id = ExtractDocumentId(dense.Items[i]);
+            if (id is null)
+            {
+                continue;
+            }
+
+            // Tie behavior: first occurrence wins for the dense projection map.
+            if (!denseByDocId.ContainsKey(id))
+            {
+                denseByDocId[id] = (dense.Items[i], dense.Scores[i], i + 1);
+                denseRanked.Add(new RankedCandidate(id, i + 1));
+            }
+        }
+
+        var sparseRanked = sparse.Select(r => new RankedCandidate(r.DocumentId, r.Rank)).ToList();
+
+        // Run fusion. Note: in 2.6.0 only Reciprocal is wired in this commit
+        // (Task 33); DistributionBased is added in Task 34.
+        IReadOnlyList<FusedResult> fused;
+        if (hybridOptions.FusionMethod == FusionMethod.Reciprocal)
+        {
+            fused = RankFusion.Reciprocal(
+                new IReadOnlyList<RankedCandidate>[] { denseRanked, sparseRanked },
+                weights: hybridOptions.SourceWeights,
+                k: hybridOptions.RrfK,
+                topK: topK);
+        }
+        else
+        {
+            // Placeholder until Task 34 wires DistributionBased.
+            throw new NotImplementedException("DistributionBased dispatch is wired in Task 34.");
+        }
+
+        // Project the fused order back to dense items. Documents that exist only
+        // on the sparse leg (no matching dense item with extractable Id) are
+        // dropped — the 2.5.0 SemanticQueryResult shape is items+scores, and
+        // we cannot synthesize an object for a sparse-only DocumentId.
+        var projectedItems = new List<object>(fused.Count);
+        var projectedScores = new List<double>(fused.Count);
+        foreach (var f in fused)
+        {
+            if (denseByDocId.TryGetValue(f.DocumentId, out var hit))
+            {
+                projectedItems.Add(hit.Item);
+                projectedScores.Add(hit.Score);
+            }
+        }
+
+        var sparseTopScore = sparse.Count > 0 ? sparse[0].Score : (double?)null;
+        var denseTopScore = dense.Scores.Count > 0 ? dense.Scores[0] : (double?)null;
+        var fusionTag = hybridOptions.FusionMethod switch
+        {
+            FusionMethod.Reciprocal => "reciprocal",
+            FusionMethod.DistributionBased => "distribution_based",
+            _ => null,
+        };
+
+        var hybridMeta = new HybridMeta(
+            Hybrid: true,
+            FusionMethod: fusionTag,
+            Degraded: null,
+            DenseTopScore: denseTopScore,
+            SparseTopScore: sparseTopScore,
+            BmSaturationThreshold: hybridOptions.BmSaturationThreshold);
+
+        return BuildSemanticResult(objectType, projectedItems, projectedScores,
+            hybridMeta, semanticQuery, topK, minRelevance,
+            filter, traverseLink, interfaceName, include);
+    }
+
+    /// <summary>
+    /// Reads the <c>Id</c> property from a dense-leg item via reflection. The
+    /// hybrid coordinator needs a stable string identifier to align dense items
+    /// with sparse <see cref="KeywordSearchResult.DocumentId"/>; the ontology's
+    /// existing convention is a public <c>Id</c> property. Returns <c>null</c>
+    /// when no such property exists or its string projection is null.
+    /// </summary>
+    /// <remarks>
+    /// The trim-warning is suppressed because dense items are produced by
+    /// <see cref="IObjectSetProvider.ExecuteSimilarityAsync"/> which already
+    /// requires the underlying CLR types to be preserved end-to-end; the
+    /// ontology graph machinery keeps those types referenced.
+    /// </remarks>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075:'this' argument does not satisfy 'DynamicallyAccessedMembersAttribute' in call to target method",
+        Justification = "Dense items' CLR types are retained by the ontology graph (see IObjectSetProvider). The 'Id' property is part of every ontology object descriptor that participates in similarity search.")]
+    private static string? ExtractDocumentId(object item)
+    {
+        if (item is null)
+        {
+            return null;
+        }
+
+        var prop = item.GetType().GetProperty("Id");
+        if (prop is null)
+        {
+            return null;
+        }
+
+        var value = prop.GetValue(item);
+        return value?.ToString();
     }
 
     private SemanticQueryResult BuildSemanticResult(
