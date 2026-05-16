@@ -16,7 +16,7 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/lvlup-sw/strategos' },
       ],
       editLink: {
-        baseUrl: 'https://github.com/lvlup-sw/strategos/edit/main/docs/src/content/docs/',
+        baseUrl: 'https://github.com/lvlup-sw/strategos/edit/main/',
       },
       pagefind: true,
       sidebar: [
