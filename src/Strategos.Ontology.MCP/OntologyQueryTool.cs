@@ -57,8 +57,13 @@ public sealed class OntologyQueryTool
         int topK = 5,
         double minRelevance = 0.7,
         string? distanceMetric = null,
+        HybridQueryOptions? hybridOptions = null,
         CancellationToken ct = default)
     {
+        // Validate at call entry so the caller observes argument faults synchronously
+        // before any retrieval work is initiated (design §6.6).
+        hybridOptions?.Validate();
+
         var inclusion = ParseInclusion(include);
         var expression = BuildExpression(domain, objectType, filter, traverseLink, interfaceName, inclusion);
 
