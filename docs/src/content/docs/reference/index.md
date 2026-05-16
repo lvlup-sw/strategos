@@ -22,7 +22,8 @@ The Reference section provides detailed, factual documentation for looking up sp
 | Topic | Description |
 |-------|-------------|
 | [Packages](/reference/packages) | NuGet package overview, dependencies, and installation scenarios |
-| [Diagnostics](/reference/diagnostics) | Compiler diagnostic codes (AGWF/AGSR) and resolutions |
+| [Diagnostics](/reference/diagnostics) | AONT ontology diagnostics and AGWF/AGSR workflow analyzer codes |
+| [Ontology](/reference/ontology) | `IOntologyQuery`, `IObjectSetProvider`, `IEmbeddingProvider`, dispatcher, sources, graph versioning, Npgsql |
 | [Configuration](/reference/configuration) | Wolverine, Marten, and PostgreSQL integration setup |
 
 ### API Reference
