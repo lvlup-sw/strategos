@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
+using Strategos.Ontology.Retrieval;
 
 namespace Strategos.Ontology.MCP;
 
@@ -15,18 +16,21 @@ public sealed class OntologyQueryTool
     private readonly IObjectSetProvider _objectSetProvider;
     private readonly IEventStreamProvider _eventStreamProvider;
     private readonly ILogger<OntologyQueryTool> _logger;
+    private readonly IKeywordSearchProvider? _keywordProvider;
 
     public OntologyQueryTool(
         OntologyGraph graph,
         IObjectSetProvider objectSetProvider,
         IEventStreamProvider eventStreamProvider,
-        ILogger<OntologyQueryTool> logger)
+        ILogger<OntologyQueryTool> logger,
+        IKeywordSearchProvider? keywordProvider = null)
     {
         ArgumentNullException.ThrowIfNull(logger, nameof(logger));
         _graph = graph;
         _objectSetProvider = objectSetProvider;
         _eventStreamProvider = eventStreamProvider;
         _logger = logger;
+        _keywordProvider = keywordProvider;
     }
 
     /// <summary>
