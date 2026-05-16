@@ -21,6 +21,16 @@ public sealed record ResponseMeta(
     [property: JsonPropertyName("ontologyVersion")] string OntologyVersion)
 {
     /// <summary>
+    /// Hybrid retrieval metadata. <c>null</c> when <c>hybridOptions</c> was not
+    /// supplied to <c>OntologyQueryTool.QueryAsync</c>, or when the structural
+    /// (non-semantic) branch was taken. Serialized as absent so 2.5.0 snapshots
+    /// remain byte-for-byte stable (design §6.5).
+    /// </summary>
+    [JsonPropertyName("hybrid")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HybridMeta? Hybrid { get; init; }
+
+    /// <summary>
     /// Builds a <see cref="ResponseMeta"/> from the supplied graph, stamping
     /// the wire-format prefix onto the bare hex version.
     /// </summary>
