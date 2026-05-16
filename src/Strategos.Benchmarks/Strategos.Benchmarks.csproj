@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Strategos.Infrastructure\Strategos.Infrastructure.csproj" />
+    <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
     <ProjectReference Include="..\Strategos.Rag\Strategos.Rag.csproj" />
     <ProjectReference Include="..\Strategos\Strategos.csproj" />
   </ItemGroup>
