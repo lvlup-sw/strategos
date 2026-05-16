@@ -462,4 +462,33 @@ public sealed class OntologyQueryToolHybridTests
         await Assert.That(errors.Count).IsEqualTo(1);
         await Assert.That(errors[0].Exception).IsSameReferenceAs(sparseFault);
     }
+
+    // ---- Task 38: Dense failure → propagates (no fallback to sparse-only) ----
+
+    [Test]
+    public async Task QueryAsync_HybridDenseThrows_PropagatesException_NoFallbackToSparseOnly()
+    {
+        var denseFault = new InvalidOperationException("synthetic dense backend fault");
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ScoredObjectSetResult<object>>>(_ => throw denseFault);
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-a", Score: 18.0, Rank: 1),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        await Assert.That(async () => await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions()))
+            .Throws<InvalidOperationException>();
+    }
 }
