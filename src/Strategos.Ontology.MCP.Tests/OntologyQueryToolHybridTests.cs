@@ -533,4 +533,58 @@ public sealed class OntologyQueryToolHybridTests
             ct: cts.Token))
             .Throws<OperationCanceledException>();
     }
+
+    // ---- Task 40: Parallelism overlap timing assertion ----
+
+    [Test]
+    public async Task QueryAsync_HybridBothLegs_RunInParallel_TimingOverlapWithinTolerance()
+    {
+        // sparse-start should occur before dense-end, and sparse-end after dense-start.
+        // We use a 50ms sparse artificial delay and instrument dense via a TCS.
+        DateTimeOffset denseStart = default;
+        DateTimeOffset denseEnd = default;
+        DateTimeOffset sparseStart = default;
+        DateTimeOffset sparseEnd = default;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                denseStart = DateTimeOffset.UtcNow;
+                // Small dense delay so the sparse leg has time to also start.
+                await Task.Delay(40).ConfigureAwait(false);
+                denseEnd = DateTimeOffset.UtcNow;
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                sparseStart = DateTimeOffset.UtcNow;
+                await Task.Delay(50).ConfigureAwait(false);
+                sparseEnd = DateTimeOffset.UtcNow;
+                return (IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+                {
+                    new("doc-a", 12.0, 1),
+                };
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        // True overlap: sparse must start before dense ends AND sparse must end
+        // after dense started. Both windows confirm the legs ran concurrently
+        // rather than sequentially.
+        await Assert.That(sparseStart < denseEnd).IsTrue();
+        await Assert.That(sparseEnd > denseStart).IsTrue();
+    }
 }
