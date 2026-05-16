@@ -170,16 +170,16 @@ cd src && dotnet test
 
 ## Documentation Contributions
 
-We welcome documentation improvements! The docs site is built with VitePress.
+We welcome documentation improvements! The docs site is built with Astro + Starlight (`@astrojs/starlight`).
 
 - **[Documentation Site](https://lvlup-sw.github.io/strategos/)** - Live documentation
-- **[Docs Contributing Guide](docs/contributing.md)** - Style guidelines and local setup
+- **[Docs Contributing Guide](docs/src/content/docs/contributing.md)** - Style guidelines and local setup
 
 To contribute documentation:
 
-1. Follow the setup in `docs/contributing.md`
-2. Run `npm run docs:dev` in the `docs/` directory
-3. Make changes and preview locally
+1. Follow the setup in `docs/src/content/docs/contributing.md`
+2. Markdown content lives under `docs/src/content/docs/` (Starlight's content collection layout)
+3. Run `npm run dev` in the `docs/` directory to preview locally
 4. Submit a PR with `docs:` prefix
 
 ## Questions?

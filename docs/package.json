@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
-    "docs:preview": "vitepress preview"
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
   },
-  "devDependencies": {
-    "vitepress": "^1.5.0"
+  "dependencies": {
+    "astro": "^6.3.3",
+    "@astrojs/starlight": "^0.39.2"
   }
 }
