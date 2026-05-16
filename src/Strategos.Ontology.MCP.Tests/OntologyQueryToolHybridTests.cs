@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Strategos.Ontology;
@@ -97,5 +98,47 @@ public sealed class OntologyQueryToolHybridTests
         var result = (QueryResult)union;
         await Assert.That(result.Meta.Hybrid).IsNull();
         await Assert.That(logger.Entries.Count).IsEqualTo(0);
+    }
+
+    // ---- Task 31: semantic + hybridOptions + no provider → degraded ----
+
+    [Test]
+    public async Task QueryAsync_SemanticWithHybridOptions_NoProviderRegistered_DenseOnly_DegradedNoKeywordProvider_WarnsOnce()
+    {
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger, keywordProvider: null);
+
+        var first = (SemanticQueryResult)await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        var second = (SemanticQueryResult)await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        // Items match dense-only.
+        await Assert.That(first.Items).HasCount().EqualTo(1);
+        await Assert.That(second.Items).HasCount().EqualTo(1);
+
+        // HybridMeta degraded shape on both calls.
+        await Assert.That(first.Meta.Hybrid).IsNotNull();
+        await Assert.That(first.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(first.Meta.Hybrid.Degraded).IsEqualTo("no-keyword-provider");
+        await Assert.That(second.Meta.Hybrid).IsNotNull();
+        await Assert.That(second.Meta.Hybrid!.Degraded).IsEqualTo("no-keyword-provider");
+
+        // Warn-once: exactly one warning across two calls.
+        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        await Assert.That(warnings.Count).IsEqualTo(1);
     }
 }

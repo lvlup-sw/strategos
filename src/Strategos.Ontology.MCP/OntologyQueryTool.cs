@@ -18,6 +18,12 @@ public sealed class OntologyQueryTool
     private readonly ILogger<OntologyQueryTool> _logger;
     private readonly IKeywordSearchProvider? _keywordProvider;
 
+    // Warn-once latch for the "hybrid requested but no IKeywordSearchProvider
+    // registered" degraded path. Scoped per OntologyQueryTool instance per design
+    // §6.6 ("Warning-once: ... per process" — DI typically registers the tool as a
+    // singleton, making per-instance equivalent to per-process for production hosts).
+    private int _noProviderWarnedOnce;
+
     public OntologyQueryTool(
         OntologyGraph graph,
         IObjectSetProvider objectSetProvider,
@@ -71,7 +77,7 @@ public sealed class OntologyQueryTool
         {
             return await ExecuteSemanticQueryAsync(
                 expression, objectType, semanticQuery, topK, minRelevance, distanceMetric,
-                filter, traverseLink, interfaceName, include, ct).ConfigureAwait(false);
+                filter, traverseLink, interfaceName, include, hybridOptions, ct).ConfigureAwait(false);
         }
 
         var result = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
@@ -120,6 +126,7 @@ public sealed class OntologyQueryTool
         string? traverseLink,
         string? interfaceName,
         string? include,
+        HybridQueryOptions? hybridOptions,
         CancellationToken ct)
     {
         var metric = ParseDistanceMetric(distanceMetric);
@@ -127,13 +134,67 @@ public sealed class OntologyQueryTool
         var similarityExpression = new SimilarityExpression(
             baseExpression, semanticQuery, topK, minRelevance, metric);
 
-        var result = await _objectSetProvider
-            .ExecuteSimilarityAsync<object>(similarityExpression, ct)
-            .ConfigureAwait(false);
-
-        return new SemanticQueryResult(objectType, result.Items, CurrentMeta())
+        // Hybrid dispatch lives entirely on the semantic branch; structural
+        // queries return 2.5.0 QueryResult untouched. See design §6.4 decision tree.
+        if (hybridOptions is null)
         {
-            Scores = result.Scores,
+            var dense = await _objectSetProvider
+                .ExecuteSimilarityAsync<object>(similarityExpression, ct)
+                .ConfigureAwait(false);
+
+            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
+                hybridMeta: null, semanticQuery, topK, minRelevance,
+                filter, traverseLink, interfaceName, include);
+        }
+
+        // Hybrid requested but no provider registered → degraded dense-only
+        // with warn-once. The warning carries enough context for operators
+        // to discover the missing DI registration.
+        if (_keywordProvider is null)
+        {
+            if (Interlocked.CompareExchange(ref _noProviderWarnedOnce, 1, 0) == 0)
+            {
+                _logger.LogWarning(
+                    "HybridQueryOptions supplied but no IKeywordSearchProvider is registered; falling back to dense-only retrieval for this and subsequent calls.");
+            }
+
+            var dense = await _objectSetProvider
+                .ExecuteSimilarityAsync<object>(similarityExpression, ct)
+                .ConfigureAwait(false);
+
+            var degradedMeta = new HybridMeta(Hybrid: false, Degraded: "no-keyword-provider");
+            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
+                hybridMeta: degradedMeta, semanticQuery, topK, minRelevance,
+                filter, traverseLink, interfaceName, include);
+        }
+
+        // TODO Tasks 32–40: EnableKeyword=false, happy paths, weighted snapshots,
+        // sparse/dense failure handling, cancellation, parallelism.
+        throw new NotImplementedException("Hybrid path with registered provider is wired in later PR-C tasks.");
+    }
+
+    private SemanticQueryResult BuildSemanticResult(
+        string objectType,
+        IReadOnlyList<object> items,
+        IReadOnlyList<double> scores,
+        HybridMeta? hybridMeta,
+        string semanticQuery,
+        int topK,
+        double minRelevance,
+        string? filter,
+        string? traverseLink,
+        string? interfaceName,
+        string? include)
+    {
+        var meta = CurrentMeta();
+        if (hybridMeta is not null)
+        {
+            meta = meta with { Hybrid = hybridMeta };
+        }
+
+        return new SemanticQueryResult(objectType, items, meta)
+        {
+            Scores = scores,
             SemanticQuery = semanticQuery,
             TopK = topK,
             MinRelevance = minRelevance,
