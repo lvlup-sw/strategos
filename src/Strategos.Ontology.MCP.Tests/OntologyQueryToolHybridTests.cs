@@ -491,4 +491,46 @@ public sealed class OntologyQueryToolHybridTests
             hybridOptions: new HybridQueryOptions()))
             .Throws<InvalidOperationException>();
     }
+
+    // ---- Task 39: Cancellation propagation through both legs ----
+
+    [Test]
+    public async Task QueryAsync_HybridCancellationMidFlight_BothLegsCancelled_ThrowsOperationCanceledException()
+    {
+        // Both legs honor ct: a delaying provider for sparse + delaying dense.
+        // After 10ms we cancel and assert OperationCanceledException surfaces.
+        var denseTcs = new TaskCompletionSource<ScoredObjectSetResult<object>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var ct = callInfo.Arg<CancellationToken>();
+                ct.Register(() => denseTcs.TrySetCanceled(ct));
+#pragma warning disable VSTHRD003 // Test fixture intentionally returns an externally-controlled Task to simulate a long-running provider call.
+                return denseTcs.Task;
+#pragma warning restore VSTHRD003
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var ct = callInfo.Arg<CancellationToken>();
+                await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+                return (IReadOnlyList<KeywordSearchResult>)Array.Empty<KeywordSearchResult>();
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(10));
+
+        await Assert.That(async () => await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions(),
+            ct: cts.Token))
+            .Throws<OperationCanceledException>();
+    }
 }
