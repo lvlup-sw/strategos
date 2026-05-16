@@ -26,7 +26,7 @@ The Strategos-side surface is therefore three concrete things: (1) the descripto
 
 - Polyglot descriptor schema on `ObjectTypeDescriptor`, `LinkDescriptor`, `PropertyDescriptor` (#48)
 - `AONT037` source-generator diagnostic for `ClrType != null OR SymbolKey != null` invariant (#48)
-- `IOntologySource` interface + `OntologyDelta` event vocabulary + `AddSource<T>()` DI extension (#37)
+- `IOntologySource` interface + `OntologyDelta` event vocabulary + `AddSource<T>()` instance-method factory on `OntologyOptions` (constructs via `new T()`; AOT-safe; no DI activation) (#37)
 - Runtime `IOntologyBuilder.ObjectTypeFromDescriptor` / `ApplyDelta` (#37)
 - `DescriptorSource` enum (`HandAuthored | Ingested`) field-level provenance on descriptors (#37)
 - `AONT201` through `AONT208` graph-freeze diagnostics (#43, expanded from #43's original 6 codes per ADR §9.3)
@@ -121,7 +121,7 @@ public enum DescriptorSource { HandAuthored, Ingested }
 - `LinkDescriptor.TargetTypeName` already exists (PR #59); `LinkDescriptor.TargetSymbolKey` is added as a parallel optional field.
 - `PropertyDescriptor` reference-property fields accept `string? SymbolKey` alongside existing `Type? ReferenceType`.
 - Existing `DomainOntology` subclasses across `Strategos.Ontology.Tests`, `Strategos.Ontology.MCP.Tests`, and the trading sample compile and run unchanged with `LanguageId = "dotnet"` default.
-- 666 existing tests in `Strategos.Ontology.Tests` continue to pass; 121 in `Strategos.Ontology.MCP.Tests` continue to pass.
+- All existing tests in `Strategos.Ontology.Tests` and `Strategos.Ontology.MCP.Tests` continue to pass.
 
 ### DR-2: AONT037 source-generator diagnostic
 
@@ -137,7 +137,7 @@ public enum DescriptorSource { HandAuthored, Ingested }
 
 ### DR-3: `IOntologySource` extension point
 
-**Statement:** `Strategos.Ontology.IOntologySource` is a new public interface enabling ontology graph contributions from sources beyond hand-authored `DomainOntology.Define()`. Registered via DI: `options.AddSource<MartenOntologySource>()`.
+**Statement:** `Strategos.Ontology.IOntologySource` is a new public interface enabling ontology graph contributions from sources beyond hand-authored `DomainOntology.Define()`. Registered through the `OntologyOptions.AddSource<T>()` instance-method factory, which constructs the source via `new T()` (no DI activation) so the same registration path is AOT-safe and DI-free; callers requiring constructor injection should instantiate the source themselves and register via the descriptor overload.
 
 **Shape:**
 
@@ -161,7 +161,7 @@ public interface IOntologySource
 
 **Acceptance criteria:**
 - `IOntologySource` defined in `Strategos.Ontology` namespace, public.
-- `OntologyOptions.AddSource<T>()` extension method registers `T : IOntologySource` as transient.
+- `OntologyOptions.AddSource<T>()` is an instance-method factory on `OntologyOptions` that constructs `T : IOntologySource, new()` via `new T()` (no DI activation; AOT-safe). Callers needing constructor injection should instantiate the source themselves and register the instance.
 - `OntologyGraphBuilder.Build()` drains all registered sources' `LoadAsync` before returning the graph.
 - A `TestOntologySource` test fixture exists in `Strategos.Ontology.Tests.TestInfrastructure`.
 - An integration test exercises two sources contributing to the same `ObjectType` with non-overlapping fields; both contributions appear in the composed graph with correct `DescriptorSource`.

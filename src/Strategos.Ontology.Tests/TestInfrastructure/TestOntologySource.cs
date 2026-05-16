@@ -25,6 +25,11 @@ public sealed class TestOntologySource : IOntologySource
     public async IAsyncEnumerable<OntologyDelta> LoadAsync(
         [EnumeratorCancellation] CancellationToken ct)
     {
+        // Honor pre-cancelled tokens before the first await — otherwise
+        // a pre-cancelled call would complete normally (no deltas) instead
+        // of failing fast, which masks bad callers in tests.
+        ct.ThrowIfCancellationRequested();
+
         // Yield once so the method body runs asynchronously even when the
         // delta list is empty — keeps the contract consistent with the
         // production source wiring.
@@ -40,6 +45,7 @@ public sealed class TestOntologySource : IOntologySource
     public async IAsyncEnumerable<OntologyDelta> SubscribeAsync(
         [EnumeratorCancellation] CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         await Task.Yield();
         yield break;
     }

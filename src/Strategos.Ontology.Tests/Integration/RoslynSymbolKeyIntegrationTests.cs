@@ -155,6 +155,9 @@ public class RoslynSymbolKeyIntegrationTests
 /// </summary>
 internal sealed class SkipIfRoslynIntegrationDisabledAttribute : SkipAttribute
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SkipIfRoslynIntegrationDisabledAttribute"/> class.
+    /// </summary>
     public SkipIfRoslynIntegrationDisabledAttribute()
         : base("SkipRoslynIntegrationTests is set; skipping Roslyn integration fixture.")
     {

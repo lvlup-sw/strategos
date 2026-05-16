@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Diagnostics;
@@ -31,7 +32,10 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     /// provenance after MergeTwo's per-name union.
     /// </summary>
     internal IReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor> IngestedOriginals
-        => _ingestedOriginals;
+        // Defensive wrapper: callers must not be able to cast back to
+        // Dictionary<,> and mutate the snapshot. A fresh ReadOnlyDictionary
+        // each access is cheap (graph-freeze reads it once per build).
+        => new ReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor>(_ingestedOriginals);
 
     public IReadOnlyList<ObjectTypeDescriptor> ObjectTypes => _objectTypes.AsReadOnly();
 
@@ -265,13 +269,6 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var d = delta.Descriptor;
         EnsureIdentityInvariant(d);
 
-        // DR-7: keep the ingested-original snapshot synchronized with
-        // descriptor lifecycle. An Update that flips a descriptor from
-        // ingested → hand (or replaces a previous ingested original) must
-        // refresh / remove the snapshot; otherwise graph-freeze
-        // diagnostics compare against stale data.
-        SyncIngestedOriginal(d);
-
         var idx = FindObjectTypeIndex(d.DomainName, d.Name);
         if (idx < 0)
         {
@@ -279,6 +276,10 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
             // for sources that emit Update without a prior Add (e.g. a
             // restart that lost partial state). Idempotent.
             _objectTypes.Add(d);
+            // No prior descriptor means no cross-provenance fold could
+            // have happened: SyncIngestedOriginal applies its normal rule
+            // (ingested → store, hand → clear).
+            SyncIngestedOriginal(d);
             return;
         }
 
@@ -288,9 +289,34 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         // the other. Same-provenance Updates replace at the existing
         // index (no duplicate created, unlike the Add path which lets
         // AONT040 surface duplicates downstream).
-        _objectTypes[idx] = TryCrossProvenanceMerge(_objectTypes[idx], d, out var merged)
+        var existing = _objectTypes[idx];
+        _objectTypes[idx] = TryCrossProvenanceMerge(existing, d, out var merged)
             ? merged
             : d;
+
+        // DR-7: sync the ingested-original snapshot AFTER the merge
+        // decision. When an incoming hand-authored Update folds against
+        // an existing ingested baseline, MergeTwo keeps the ingested
+        // contributions — so the snapshot must be preserved (not cleared
+        // as a vanilla hand Update would do). The order matters:
+        //   - incoming ingested → always refresh snapshot from incoming.
+        //   - incoming hand, existing ingested → preserve existing
+        //     snapshot so AONT201–AONT208 can still diff hand vs ingested.
+        //   - incoming hand, existing hand → no ingested side; clear any
+        //     stale snapshot defensively.
+        var key = (d.DomainName, d.Name);
+        if (d.Source == DescriptorSource.Ingested)
+        {
+            _ingestedOriginals[key] = d;
+        }
+        else if (existing.Source == DescriptorSource.Ingested)
+        {
+            _ingestedOriginals[key] = existing;
+        }
+        else
+        {
+            _ingestedOriginals.Remove(key);
+        }
     }
 
     private void ApplyRemoveObjectType(OntologyDelta.RemoveObjectType delta)
@@ -340,6 +366,13 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var updated = current.Properties.ToList();
         updated.Add(delta.Descriptor);
         _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+
+        // DR-7: mirror the same property mutation into the ingested
+        // snapshot so DR-7 diagnostics don't read stale pre-delta
+        // properties. No-op if there's no ingested baseline for this key.
+        MutateIngestedOriginalProperties(
+            (delta.DomainName, delta.TypeName),
+            props => props.Add(delta.Descriptor));
     }
 
     private void ApplyRenameProperty(OntologyDelta.RenameProperty delta)
@@ -361,6 +394,19 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         }
 
         _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+
+        MutateIngestedOriginalProperties(
+            (delta.DomainName, delta.TypeName),
+            props =>
+            {
+                for (var i = 0; i < props.Count; i++)
+                {
+                    if (props[i].Name == delta.FromName)
+                    {
+                        props[i] = props[i] with { Name = delta.ToName };
+                    }
+                }
+            });
     }
 
     private void ApplyRemoveProperty(OntologyDelta.RemoveProperty delta)
@@ -374,6 +420,10 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var current = _objectTypes[idx];
         var updated = current.Properties.Where(p => p.Name != delta.PropertyName).ToList();
         _objectTypes[idx] = current with { Properties = updated.AsReadOnly() };
+
+        MutateIngestedOriginalProperties(
+            (delta.DomainName, delta.TypeName),
+            props => props.RemoveAll(p => p.Name == delta.PropertyName));
     }
 
     private void ApplyAddLink(OntologyDelta.AddLink delta)
@@ -388,6 +438,10 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var updated = current.Links.ToList();
         updated.Add(delta.Descriptor);
         _objectTypes[idx] = current with { Links = updated.AsReadOnly() };
+
+        MutateIngestedOriginalLinks(
+            (delta.DomainName, delta.SourceTypeName),
+            links => links.Add(delta.Descriptor));
     }
 
     private void ApplyRemoveLink(OntologyDelta.RemoveLink delta)
@@ -401,6 +455,48 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         var current = _objectTypes[idx];
         var updated = current.Links.Where(l => l.Name != delta.LinkName).ToList();
         _objectTypes[idx] = current with { Links = updated.AsReadOnly() };
+
+        MutateIngestedOriginalLinks(
+            (delta.DomainName, delta.SourceTypeName),
+            links => links.RemoveAll(l => l.Name == delta.LinkName));
+    }
+
+    /// <summary>
+    /// DR-7: apply <paramref name="mutate"/> to the ingested-original
+    /// property list at <paramref name="key"/> if one exists; no-op if
+    /// the key has no ingested baseline (the snapshot drives DR-7
+    /// diagnostics only when both sides contributed).
+    /// </summary>
+    private void MutateIngestedOriginalProperties(
+        (string DomainName, string Name) key,
+        Action<List<PropertyDescriptor>> mutate)
+    {
+        if (!_ingestedOriginals.TryGetValue(key, out var current))
+        {
+            return;
+        }
+
+        var properties = current.Properties.ToList();
+        mutate(properties);
+        _ingestedOriginals[key] = current with { Properties = properties.AsReadOnly() };
+    }
+
+    /// <summary>
+    /// DR-7 link-mutation mirror — see
+    /// <see cref="MutateIngestedOriginalProperties"/>.
+    /// </summary>
+    private void MutateIngestedOriginalLinks(
+        (string DomainName, string Name) key,
+        Action<List<LinkDescriptor>> mutate)
+    {
+        if (!_ingestedOriginals.TryGetValue(key, out var current))
+        {
+            return;
+        }
+
+        var links = current.Links.ToList();
+        mutate(links);
+        _ingestedOriginals[key] = current with { Links = links.AsReadOnly() };
     }
 
     private int FindObjectTypeIndex(string domainName, string typeName)

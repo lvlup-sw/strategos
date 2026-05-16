@@ -103,9 +103,13 @@ public static class MergeTwo
         }
 
         // Ingested-only entries are appended, restamped with Source = Ingested.
+        // Mark newly-appended names in `seen` so a duplicate name within
+        // `ingested` itself collapses to a single emission (rule: ingested
+        // duplicates are silently de-duped — they're mechanical noise, not
+        // intent — same as the hand-side de-dup behavior).
         foreach (var p in ingested)
         {
-            if (seen.Contains(p.Name))
+            if (!seen.Add(p.Name))
             {
                 continue;
             }
@@ -143,7 +147,7 @@ public static class MergeTwo
 
         foreach (var l in ingested)
         {
-            if (seen.Contains(l.Name))
+            if (!seen.Add(l.Name))
             {
                 continue;
             }

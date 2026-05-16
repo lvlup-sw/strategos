@@ -527,7 +527,7 @@ PR-B begins after PR-A merges to main.
 
 ## PR-B acceptance gate
 
-```
+```bash
 dotnet build strategos.sln  # 0 warnings, 0 errors
 dotnet test  # all test projects pass
 ```

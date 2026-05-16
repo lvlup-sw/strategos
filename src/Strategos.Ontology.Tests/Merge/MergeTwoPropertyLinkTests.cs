@@ -164,4 +164,42 @@ public class MergeTwoPropertyLinkTests
         var payments = merged.Links.Single(l => l.Name == "Payments");
         await Assert.That(payments.Source).IsEqualTo(DescriptorSource.Ingested);
     }
+
+    [Test]
+    public async Task MergeTwo_DuplicateIngestedProperty_CollapsesToSingleEntry()
+    {
+        // Two ingested entries with the same Name — mechanical noise from
+        // a misbehaving ingester. The seen-set bookkeeping must collapse
+        // these to a single output so downstream callers don't observe
+        // a property twice.
+        var dup1 = new PropertyDescriptor("Notional", typeof(decimal))
+        { Source = DescriptorSource.Ingested };
+        var dup2 = new PropertyDescriptor("Notional", typeof(decimal))
+        { Source = DescriptorSource.Ingested };
+
+        var hand = BaseHand();
+        var ingested = BaseIngested(dup1, dup2);
+
+        var merged = MergeTwo.Merge(hand, ingested);
+
+        var hits = merged.Properties.Where(p => p.Name == "Notional").ToList();
+        await Assert.That(hits.Count).IsEqualTo(1);
+        await Assert.That(hits[0].Source).IsEqualTo(DescriptorSource.Ingested);
+    }
+
+    [Test]
+    public async Task MergeTwo_DuplicateIngestedLink_CollapsesToSingleEntry()
+    {
+        var dup1 = new LinkDescriptor("Payments", "Payment", LinkCardinality.OneToMany);
+        var dup2 = new LinkDescriptor("Payments", "Payment", LinkCardinality.OneToMany);
+
+        var hand = BaseHandWithLinks();
+        var ingested = BaseIngestedWithLinks(dup1, dup2);
+
+        var merged = MergeTwo.Merge(hand, ingested);
+
+        var hits = merged.Links.Where(l => l.Name == "Payments").ToList();
+        await Assert.That(hits.Count).IsEqualTo(1);
+        await Assert.That(hits[0].Source).IsEqualTo(DescriptorSource.Ingested);
+    }
 }

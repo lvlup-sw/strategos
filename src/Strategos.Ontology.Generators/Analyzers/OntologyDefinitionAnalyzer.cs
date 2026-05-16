@@ -99,8 +99,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
     // or a `symbolKey:` named argument. Generic `ObjectType<T>()` is exempt
     // because the type argument supplies ClrType.
     //
-    // Matched purely-syntactically so the diagnostic fires even before the
-    // descriptor overload lands on IOntologyBuilder.
+    // Receiver-type filtered (must be IOntologyBuilder) so a stray
+    // `.ObjectType(...)` call on an unrelated receiver inside a Define()
+    // body doesn't false-fire AONT037.
     private static void ReportPolyglotInvariantViolations(
         SyntaxNodeAnalysisContext context, SyntaxNode body)
     {
@@ -123,15 +124,30 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
+            // Receiver must be an IOntologyBuilder (or the concrete
+            // OntologyBuilder). When the semantic model can't resolve the
+            // receiver type (e.g. heavily-broken source mid-edit), we err
+            // on the side of "skip" rather than false-fire — the user's
+            // editor will report the real error before AONT037 matters.
+            var receiverType = context.SemanticModel
+                .GetTypeInfo(memberAccess.Expression, context.CancellationToken).Type;
+            if (receiverType is null || !IsOntologyBuilderType(receiverType.Name))
+            {
+                continue;
+            }
+
             var args = invocation.ArgumentList.Arguments;
 
-            // Either form satisfies the invariant: a `symbolKey:` named arg,
-            // or any argument whose expression is a Type-valued expression
-            // (`typeof(...)`).
+            // Either form satisfies the invariant:
+            //  - a `symbolKey:` named argument,
+            //  - a `clrType:` named argument (Type-valued, regardless of
+            //    expression form — typeof, variable, factory call, etc.),
+            //  - any positional argument whose expression is `typeof(...)`.
             var hasSymbolKey = args.Any(a =>
                 a.NameColon?.Name.Identifier.Text == "symbolKey");
             var hasTypeArgument = args.Any(a =>
-                a.Expression is TypeOfExpressionSyntax);
+                a.NameColon?.Name.Identifier.Text == "clrType"
+                || a.Expression is TypeOfExpressionSyntax);
 
             if (hasSymbolKey || hasTypeArgument)
             {

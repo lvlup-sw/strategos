@@ -119,4 +119,62 @@ public class TestOntologySourceTests
 
         await Assert.That(caught).IsNotNull();
     }
+
+    [Test]
+    public async Task TestOntologySource_LoadAsync_PreCancelled_EmptyDeltas_StillThrows()
+    {
+        // Regression: a pre-cancelled token must fail fast even when the
+        // delta list is empty. Previously the per-iteration check was the
+        // only guard, so a no-deltas Load would complete normally on an
+        // already-cancelled token.
+        var source = new TestOntologySource
+        {
+            SourceId = "test",
+            Deltas = ImmutableArray<OntologyDelta>.Empty,
+        };
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        OperationCanceledException? caught = null;
+        try
+        {
+            await foreach (var _ in source.LoadAsync(cts.Token))
+            {
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+    }
+
+    [Test]
+    public async Task TestOntologySource_SubscribeAsync_PreCancelled_Throws()
+    {
+        var source = new TestOntologySource
+        {
+            SourceId = "test",
+            Deltas = ImmutableArray<OntologyDelta>.Empty,
+        };
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        OperationCanceledException? caught = null;
+        try
+        {
+            await foreach (var _ in source.SubscribeAsync(cts.Token))
+            {
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+    }
 }

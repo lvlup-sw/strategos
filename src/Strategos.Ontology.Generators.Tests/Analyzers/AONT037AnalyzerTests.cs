@@ -105,4 +105,66 @@ public class TestDomain : DomainOntology
 
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task Analyze_DescriptorOverloadWithClrTypeNamedArg_DoesNotFireAONT037()
+    {
+        // Regression: a `clrType:` named argument satisfies the identity
+        // invariant regardless of the expression form (typeof, variable,
+        // factory call). Previously the matcher only recognised
+        // `typeof(...)` positional/named — a `clrType: someVariable`
+        // pattern false-fired AONT037.
+        var source = @"
+using System;
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class TradeOrder { public System.Guid Id { get; set; } }
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""trading"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        Type t = typeof(TradeOrder);
+        builder.ObjectType(""Foo"", clrType: t, domainName: ""trading"");
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(
+            source, OntologyDiagnosticIds.PolyglotInvariantViolated);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Analyze_ObjectTypeOnNonBuilderReceiver_DoesNotFireAONT037()
+    {
+        // Regression: AONT037 must only fire on IOntologyBuilder
+        // receivers. A `.ObjectType(...)` call on any other type is not
+        // a builder registration and must not false-fire.
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+public class Bystander
+{
+    public void ObjectType(string name) { }
+}
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""trading"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        var b = new Bystander();
+        b.ObjectType(""Foo"");
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(
+            source, OntologyDiagnosticIds.PolyglotInvariantViolated);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
 }

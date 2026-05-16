@@ -313,7 +313,7 @@ internal static class OntologyDiagnostics
     public static readonly DiagnosticDescriptor PolyglotInvariantViolated = new(
         OntologyDiagnosticIds.PolyglotInvariantViolated,
         "ObjectType descriptor violates DR-1 polyglot identity invariant",
-        "ObjectType descriptor '{0}' must supply ClrType (via generic obj.ObjectType<T>()) or SymbolKey (via symbolKey: named argument on the descriptor overload); neither was provided",
+        "ObjectType descriptor '{0}' must supply ClrType (via generic builder.Object<T>() or the clrType: named argument on the descriptor overload) or SymbolKey (via symbolKey: named argument on the descriptor overload); neither was provided",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
