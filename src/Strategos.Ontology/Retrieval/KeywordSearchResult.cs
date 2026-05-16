@@ -14,7 +14,35 @@ namespace Strategos.Ontology.Retrieval;
 /// Matches the BM25 / Lucene convention. Ties in <paramref name="Score"/> must be broken
 /// by <paramref name="DocumentId"/> ordinal ascending so that rank assignment is stable.
 /// </param>
-public sealed record KeywordSearchResult(
-    string DocumentId,
-    double Score,
-    int Rank);
+public sealed record KeywordSearchResult
+{
+    public KeywordSearchResult(string DocumentId, double Score, int Rank)
+    {
+        if (string.IsNullOrWhiteSpace(DocumentId))
+        {
+            throw new ArgumentException("DocumentId must be non-empty.", nameof(DocumentId));
+        }
+
+        if (double.IsNaN(Score) || double.IsInfinity(Score))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Score), Score, "Score must be a finite number.");
+        }
+
+        if (Rank < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Rank), Rank, "Rank is 1-indexed and must be >= 1.");
+        }
+
+        this.DocumentId = DocumentId;
+        this.Score = Score;
+        this.Rank = Rank;
+    }
+
+    public string DocumentId { get; init; }
+
+    public double Score { get; init; }
+
+    public int Rank { get; init; }
+}

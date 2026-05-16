@@ -597,4 +597,85 @@ public sealed class OntologyQueryToolHybridTests
         await Assert.That(sparseStart < denseEnd).IsTrue();
         await Assert.That(sparseEnd > denseStart).IsTrue();
     }
+
+    // ---- Task 41: DenseTopK forwards to dense SimilarityExpression ----
+
+    [Test]
+    public async Task QueryAsync_HybridWithDenseTopKLargerThanOuterTopK_DenseLegReceivesDenseTopKPool()
+    {
+        // DenseTopK governs the dense candidate pool fed to fusion. The hybrid
+        // path must forward it to the dense SimilarityExpression so the fusion
+        // input is the full pool rather than the outer (caller-visible) topK.
+        SimilarityExpression? capturedExpression = null;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+            {
+                new("doc-a", 12.0, 1),
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 5,
+            hybridOptions: new HybridQueryOptions { DenseTopK = 100 });
+
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.TopK).IsEqualTo(100);
+    }
+
+    [Test]
+    public async Task QueryAsync_HybridWithDenseTopKSmallerThanOuterTopK_DenseLegReceivesOuterTopK()
+    {
+        // If DenseTopK is smaller than the outer topK the caller asked for,
+        // the dense leg must still honor the outer topK so callers always
+        // get back at least the number of results they requested. The
+        // candidate pool is max(outer topK, DenseTopK).
+        SimilarityExpression? capturedExpression = null;
+
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.9 };
+
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExpression = callInfo.Arg<SimilarityExpression>();
+                return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
+            });
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
+            {
+                new("doc-a", 12.0, 1),
+            });
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 25,
+            hybridOptions: new HybridQueryOptions { DenseTopK = 10 });
+
+        await Assert.That(capturedExpression).IsNotNull();
+        await Assert.That(capturedExpression!.TopK).IsEqualTo(25);
+    }
 }

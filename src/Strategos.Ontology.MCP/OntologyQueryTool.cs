@@ -204,10 +204,25 @@ public sealed class OntologyQueryTool
     {
         // Fan out dense + sparse legs in parallel. Both Tasks start before either
         // is awaited so we get true overlap (design §6.6 parallelism contract).
-        // The dense leg's request signature is fixed by the existing 2.5.0
-        // similarity pipeline; the sparse leg uses HybridQueryOptions.SparseTopK
-        // and the descriptor name (objectType) as the collection key.
-        var denseTask = _objectSetProvider.ExecuteSimilarityAsync<object>(similarityExpression, ct);
+        // The sparse leg uses HybridQueryOptions.SparseTopK and the descriptor
+        // name (objectType) as the collection key.
+        //
+        // The dense leg uses a candidate pool of max(outer topK, DenseTopK) so
+        // fusion sees the full DenseTopK pool the caller requested while still
+        // returning at least the outer topK results the caller asked for. The
+        // final projection in FuseHybrid trims back to outer topK.
+        var denseSimilarityExpression = hybridOptions.DenseTopK > similarityExpression.TopK
+            ? new SimilarityExpression(
+                similarityExpression.Source,
+                similarityExpression.QueryText,
+                hybridOptions.DenseTopK,
+                similarityExpression.MinRelevance,
+                similarityExpression.Metric,
+                similarityExpression.EmbeddingPropertyName,
+                similarityExpression.QueryVector,
+                similarityExpression.Filters)
+            : similarityExpression;
+        var denseTask = _objectSetProvider.ExecuteSimilarityAsync<object>(denseSimilarityExpression, ct);
         var sparseTask = InvokeSparseLegAsync(semanticQuery, objectType, hybridOptions.SparseTopK, ct);
 
         // Await both. Dense throws propagate (baseline — design §6.6, Task 38).
