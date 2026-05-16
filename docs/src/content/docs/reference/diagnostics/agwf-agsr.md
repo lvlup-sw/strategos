@@ -1,10 +1,10 @@
 ---
-title: "Compiler Diagnostics"
+title: AGWF / AGSR — Workflow & State Reducer Diagnostics
+sidebar:
+  order: 5
 ---
 
-# Compiler Diagnostics
-
-The Strategos source generator includes compile-time diagnostics that catch workflow definition errors before runtime.
+The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Strategos workflow source generator at compile time. They catch workflow definition errors before runtime — empty names, missing entry points, fork/join mismatches, and invalid reducer attribute targets. The AONT-prefixed diagnostics on the sibling pages cover the ontology layer; this page covers the workflow analyzer.
 
 ## Diagnostic Namespaces
 
