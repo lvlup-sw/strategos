@@ -141,14 +141,14 @@ The Ontology section appears twice — once under Guide (task-oriented walkthrou
 
 | File | Coverage | Sources |
 |---|---|---|
-| `index.md` | Getting started: define types, register with `AddOntology<T>()`, query via `IOntologyQuery` | `src/Strategos.Ontology/README.md`, `platform-architecture.md` §4.14 |
-| `similarity-search.md` | `ISearchable`, `ExecuteSimilarityAsync`, `IEmbeddingProvider`, pgvector setup | Existing `Strategos.Ontology.Npgsql` README + §4.14.7 |
-| `text-chunking.md` | `ITextChunker`, `SentenceBoundaryChunker`, `ChunkOptions` | `src/Strategos.Ontology/Chunking/` source + spec §4.14.8 |
+| `index.md` | Getting started: define types, register via `services.AddOntology(opts => opts.AddDomain<T>())`, query through `IOntologyQuery` (requires `IObjectSetProvider`, `IActionDispatcher`, `IEventStreamProvider` registered) | `src/Strategos.Ontology/README.md`, `platform-architecture.md` §4.14 |
+| `similarity-search.md` | `ISearchable`, `ObjectSet<T>.SimilarTo` (default `topK: 5, minRelevance: 0.7`), `IEmbeddingProvider` (`Dimensions` + `EmbedAsync` + `EmbedBatchAsync`, `float[]` vector), pgvector setup | Existing `Strategos.Ontology.Npgsql` README + §4.14.7 |
+| `text-chunking.md` | `ITextChunker`, `SentenceBoundaryChunker`, `ChunkOptions`, `IngestionPipelineBuilder.Chunk` overloads | `src/Strategos.Ontology/Chunking/` source + spec §4.14.8 |
 | `polyglot-descriptors.md` | 2.5.0 (#48): optional `ClrType`, `SymbolKey`, `LanguageId`, AONT037 | Design doc `2026-05-10-ontology-2-5-0-polyglot-ingestion.md` |
-| `ontology-sources.md` | 2.5.0 (#37): `IOntologySource` extension, runtime `OntologyBuilder`, provenance | Design doc, source under `src/Strategos.Ontology/Sources/` |
+| `ontology-sources.md` | 2.5.0 (#37): `IOntologySource` extension (in `namespace Strategos.Ontology`), DI via `OntologyOptions.AddSource<T>` or direct `OntologyGraphBuilder.AddSources(...)`, provenance via `DescriptorSource` enum + `SourceId` | Design doc, source under `src/Strategos.Ontology/Sources/` |
 | `validation.md` | 2.5.0 (#41, #42): `ontology_validate`, `ValidationVerdict`, blast-radius primitives, pattern violations | Design doc `2026-05-08-ontology-2-5-0-dispatch-validation.md` |
-| `read-only-dispatch.md` | 2.5.0 (#39, #38): `DispatchReadOnlyAsync`, `.ReadOnly()` DSL, structured constraint feedback, `IActionDispatchObserver` | Same design doc |
-| `mcp-integration.md` | 2.5.0 (#40): `OntologyToolDescriptor` MCP 2025-11-25 upgrade, `_meta` envelope | Design doc `2026-04-19-mcp-surface-conformance.md` |
+| `read-only-dispatch.md` | 2.5.0 (#39, #38): `DispatchReadOnlyAsync`, `.ReadOnly()` DSL, structured constraint feedback via `ConstraintReportingActionDispatcher` decorator (opt-in `OntologyOptions.AddConstraintReporting()`) carrying `ConstraintViolationReport`, `IActionDispatchObserver` | Same design doc |
+| `mcp-integration.md` | 2.5.0 (#40): `OntologyToolDescriptor` MCP 2025-11-25 upgrade, `_meta` envelope (v1 carries `OntologyVersion`; `Title` lives on the descriptor itself) | Design doc `2026-04-19-mcp-surface-conformance.md` |
 
 **Reference tier — `docs/src/content/docs/reference/ontology/`:**
 
@@ -156,11 +156,11 @@ The Ontology section appears twice — once under Guide (task-oriented walkthrou
 |---|---|
 | `index.md` | Overview — what ontology is, package map, links to guide |
 | `api/ontology-query.md` | `IOntologyQuery` surface (including `GetObjectTypeNames<T>` and new 2.5.0 additions) |
-| `api/object-set-provider.md` | `IObjectSetProvider`, `IObjectSetWriter`, expression types |
-| `api/embedding-provider.md` | `IEmbeddingProvider`, `EmbeddingOptions` |
-| `api/dispatcher.md` | `IActionDispatcher`, `DispatchReadOnlyAsync`, `IActionDispatchObserver` |
-| `api/source.md` | `IOntologySource`, `OntologyBuilder`, `ProvenanceMetadata` |
-| `npgsql.md` | `Strategos.Ontology.Npgsql`: `PgVectorOptions`, `EnsureSchemaAsync`, distance metrics, partitioning |
+| `api/object-set-provider.md` | `IObjectSetProvider`, `IObjectSetWriter`, expression types (`ObjectSetExpression`, `SimilarityExpression`, `FilterExpression`, `TraverseLinkExpression`) |
+| `api/embedding-provider.md` | `IEmbeddingProvider` (`Dimensions`, `EmbedAsync`, `EmbedBatchAsync`); registration via `OntologyOptions.UseEmbeddingProvider<T>` |
+| `api/dispatcher.md` | `IActionDispatcher`, `DispatchReadOnlyAsync`, `ActionResult`, `ConstraintReportingActionDispatcher` decorator + `ConstraintViolationReport`, `IActionDispatchObserver` |
+| `api/source.md` | `IOntologySource`, public builder surface (`IOntologyBuilder`, `OntologyGraphBuilder.AddSources`, `OntologyOptions.AddSource<T>`), provenance via `DescriptorSource` enum + `OntologyDelta.SourceId` |
+| `npgsql.md` | `Strategos.Ontology.Npgsql`: `PgVectorOptions`, `EnsureSchemaAsync<T>(string? descriptorName, CancellationToken)`, distance metrics, partitioning |
 | `graph-versioning.md` | 2.5.0 (#44): `OntologyGraph.Version` hash semantics, when it changes |
 
 **Diagnostics tier — `docs/src/content/docs/reference/diagnostics/`:**
