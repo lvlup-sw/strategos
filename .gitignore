@@ -58,7 +58,11 @@ secrets.json
 # Node.js
 node_modules/
 
-# VitePress
+# Astro / Starlight (replaces VitePress)
+docs/.astro/
+docs/dist/
+
+# VitePress (legacy — kept for safety during transition)
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 

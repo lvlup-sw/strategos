@@ -20,23 +20,23 @@ export default defineConfig({
       },
       pagefind: true,
       sidebar: [
-        { label: 'Learn', autogenerate: { directory: 'learn' } },
+        { label: 'Learn', items: [{ autogenerate: { directory: 'learn' } }] },
         {
           label: 'Guide',
           items: [
             { autogenerate: { directory: 'guide', collapsed: false } },
-            { label: 'Ontology', autogenerate: { directory: 'guide/ontology' } },
+            { label: 'Ontology', items: [{ autogenerate: { directory: 'guide/ontology' } }] },
           ],
         },
         {
           label: 'Reference',
           items: [
             { autogenerate: { directory: 'reference' } },
-            { label: 'Ontology', autogenerate: { directory: 'reference/ontology' } },
-            { label: 'Diagnostics', autogenerate: { directory: 'reference/diagnostics' } },
+            { label: 'Ontology', items: [{ autogenerate: { directory: 'reference/ontology' } }] },
+            { label: 'Diagnostics', items: [{ autogenerate: { directory: 'reference/diagnostics' } }] },
           ],
         },
-        { label: 'Examples', autogenerate: { directory: 'examples' } },
+        { label: 'Examples', items: [{ autogenerate: { directory: 'examples' } }] },
       ],
     }),
   ],
