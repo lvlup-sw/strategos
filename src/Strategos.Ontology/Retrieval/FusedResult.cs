@@ -14,4 +14,35 @@ namespace Strategos.Ontology.Retrieval;
 /// <param name="DocumentId">Opaque document identifier carried through from the inputs.</param>
 /// <param name="FusedScore">The aggregated fusion score (formula depends on the method: RRF sum or weighted DBSF sum).</param>
 /// <param name="Rank">1-indexed post-fusion rank (rank 1 = top result).</param>
-public sealed record FusedResult(string DocumentId, double FusedScore, int Rank);
+public sealed record FusedResult
+{
+    public FusedResult(string DocumentId, double FusedScore, int Rank)
+    {
+        if (string.IsNullOrWhiteSpace(DocumentId))
+        {
+            throw new ArgumentException("DocumentId must be non-empty.", nameof(DocumentId));
+        }
+
+        if (double.IsNaN(FusedScore) || double.IsInfinity(FusedScore))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(FusedScore), FusedScore, "FusedScore must be a finite number.");
+        }
+
+        if (Rank < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Rank), Rank, "Rank is 1-indexed and must be >= 1.");
+        }
+
+        this.DocumentId = DocumentId;
+        this.FusedScore = FusedScore;
+        this.Rank = Rank;
+    }
+
+    public string DocumentId { get; init; }
+
+    public double FusedScore { get; init; }
+
+    public int Rank { get; init; }
+}

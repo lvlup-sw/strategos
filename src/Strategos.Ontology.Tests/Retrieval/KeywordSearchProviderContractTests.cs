@@ -1,4 +1,5 @@
 using Strategos.Ontology.Retrieval;
+using TUnit.Assertions.Enums;
 
 namespace Strategos.Ontology.Tests.Retrieval;
 
@@ -179,7 +180,7 @@ public class KeywordSearchProviderContractTests
         var results = await provider.SearchAsync(new KeywordSearchRequest("q", Collection, TopK: 10));
 
         await Assert.That(results.Select(r => r.DocumentId).ToArray())
-            .IsEquivalentTo(new[] { "doc-a", "doc-m", "doc-z" });
+            .IsEquivalentTo(new[] { "doc-a", "doc-m", "doc-z" }, CollectionOrdering.Matching);
         await Assert.That(results[0].Rank).IsEqualTo(1);
         await Assert.That(results[1].Rank).IsEqualTo(2);
         await Assert.That(results[2].Rank).IsEqualTo(3);

@@ -45,8 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-identical results without any changes. Hybrid retrieval is opt-in via
   the new `hybridOptions` parameter and requires consumers to register an
   `IKeywordSearchProvider` in DI; without one, supplying `hybridOptions`
-  degrades silently to dense-only with `HybridMeta { Hybrid = false,
-  Degraded = "no-keyword-provider" }` and emits a single warn-once log.
+  degrades automatically to dense-only with `HybridMeta { Hybrid = false,
+  Degraded = "no-keyword-provider" }`, emitting a single warn-once log so
+  operators can discover the missing DI registration.
 
 ## [1.1.1] - 2026-01-19
 

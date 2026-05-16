@@ -17,4 +17,26 @@ namespace Strategos.Ontology.Retrieval;
 /// a single list need not be contiguous; <see cref="RankFusion.Reciprocal"/> consumes them
 /// as-is when computing <c>weight / (k + rank)</c>.
 /// </remarks>
-public sealed record RankedCandidate(string DocumentId, int Rank);
+public sealed record RankedCandidate
+{
+    public RankedCandidate(string DocumentId, int Rank)
+    {
+        if (string.IsNullOrWhiteSpace(DocumentId))
+        {
+            throw new ArgumentException("DocumentId must be non-empty.", nameof(DocumentId));
+        }
+
+        if (Rank < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Rank), Rank, "Rank is 1-indexed and must be >= 1.");
+        }
+
+        this.DocumentId = DocumentId;
+        this.Rank = Rank;
+    }
+
+    public string DocumentId { get; init; }
+
+    public int Rank { get; init; }
+}

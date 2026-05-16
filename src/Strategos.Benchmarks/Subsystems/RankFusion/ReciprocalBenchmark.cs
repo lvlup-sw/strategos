@@ -16,13 +16,17 @@ namespace Strategos.Benchmarks.Subsystems.RankFusion;
 /// Acceptance gate: median &lt; 1 ms on x64.
 /// </summary>
 [MemoryDiagnoser]
-public class ReciprocalBenchmark
+public sealed class ReciprocalBenchmark
 {
     private const int CandidatesPerList = 100;
 
     private IReadOnlyList<IReadOnlyList<RankedCandidate>> disjointLists = null!;
     private IReadOnlyList<IReadOnlyList<RankedCandidate>> overlappingLists = null!;
 
+    /// <summary>
+    /// Builds the two ranked input list configurations consumed by every benchmark method
+    /// on this type. Invoked once by BenchmarkDotNet before the benchmark iterations run.
+    /// </summary>
     [GlobalSetup]
     public void GlobalSetup()
     {
@@ -52,10 +56,18 @@ public class ReciprocalBenchmark
         return list;
     }
 
+    /// <summary>
+    /// Fuses two disjoint 100-candidate ranked lists with RRF (k=60), returning the top 10.
+    /// Measures the no-overlap baseline where every document appears in exactly one input.
+    /// </summary>
     [Benchmark]
     public IReadOnlyList<FusedResult> Reciprocal_TwoLists_Disjoint_TopK10()
         => Ontology.Retrieval.RankFusion.Reciprocal(this.disjointLists, weights: null, k: 60, topK: 10);
 
+    /// <summary>
+    /// Fuses two 100-candidate ranked lists with 50% overlap via RRF (k=60), returning the
+    /// top 10. Exercises the path where the same documents appear on both legs.
+    /// </summary>
     [Benchmark]
     public IReadOnlyList<FusedResult> Reciprocal_TwoLists_Overlapping_TopK10()
         => Ontology.Retrieval.RankFusion.Reciprocal(this.overlappingLists, weights: null, k: 60, topK: 10);

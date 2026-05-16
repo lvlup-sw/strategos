@@ -539,8 +539,17 @@ public sealed class OntologyQueryToolHybridTests
     [Test]
     public async Task QueryAsync_HybridBothLegs_RunInParallel_TimingOverlapWithinTolerance()
     {
-        // sparse-start should occur before dense-end, and sparse-end after dense-start.
-        // We use a 50ms sparse artificial delay and instrument dense via a TCS.
+        // Deterministic parallelism check: each leg signals "I have started"
+        // (Release on its own semaphore) and then waits on the other leg's
+        // semaphore before completing. If the legs ran sequentially, the
+        // second leg's wait would never be satisfied and the test would hang
+        // and fail via the outer test timeout rather than passing on a
+        // wall-clock fluke. SemaphoreSlim is used in place of TaskCompletionSource
+        // so VSTHRD003 (Microsoft.VisualStudio.Threading) does not flag the
+        // cross-task await as a potential deadlock pattern.
+        using var denseStartedGate = new SemaphoreSlim(0, 1);
+        using var sparseStartedGate = new SemaphoreSlim(0, 1);
+
         DateTimeOffset denseStart = default;
         DateTimeOffset denseEnd = default;
         DateTimeOffset sparseStart = default;
@@ -554,8 +563,8 @@ public sealed class OntologyQueryToolHybridTests
             .Returns(async _ =>
             {
                 denseStart = DateTimeOffset.UtcNow;
-                // Small dense delay so the sparse leg has time to also start.
-                await Task.Delay(40).ConfigureAwait(false);
+                denseStartedGate.Release();
+                await sparseStartedGate.WaitAsync().ConfigureAwait(false);
                 denseEnd = DateTimeOffset.UtcNow;
                 return new ScoredObjectSetResult<object>(denseItems, 1, ObjectSetInclusion.Properties, denseScores);
             });
@@ -566,7 +575,8 @@ public sealed class OntologyQueryToolHybridTests
             .Returns(async _ =>
             {
                 sparseStart = DateTimeOffset.UtcNow;
-                await Task.Delay(50).ConfigureAwait(false);
+                sparseStartedGate.Release();
+                await denseStartedGate.WaitAsync().ConfigureAwait(false);
                 sparseEnd = DateTimeOffset.UtcNow;
                 return (IReadOnlyList<KeywordSearchResult>)new List<KeywordSearchResult>
                 {
@@ -581,9 +591,9 @@ public sealed class OntologyQueryToolHybridTests
             semanticQuery: "tech stocks",
             hybridOptions: new HybridQueryOptions());
 
-        // True overlap: sparse must start before dense ends AND sparse must end
-        // after dense started. Both windows confirm the legs ran concurrently
-        // rather than sequentially.
+        // True overlap: each leg's start-gate was released before the other leg
+        // finished, so sparseStart < denseEnd and sparseEnd > denseStart hold
+        // by construction regardless of CI load.
         await Assert.That(sparseStart < denseEnd).IsTrue();
         await Assert.That(sparseEnd > denseStart).IsTrue();
     }

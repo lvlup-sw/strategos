@@ -197,11 +197,11 @@ def build_queries() -> list[dict]:
     )
 
     # 6. Large-skew list — one list has tightly clustered scores around 0,
-    # the other has a wide range. Exercises σ-spread asymmetry.
+    # the other has a wide range. Exercises sigma-spread asymmetry.
     queries.append(
         {
             "query_id": "q6-large-skew",
-            "description": "Lists with very different σ — DBSF puts them on the same scale.",
+            "description": "Lists with very different sigma — DBSF puts them on the same scale.",
             "lists": [
                 [
                     ("d-A", 0.0001),

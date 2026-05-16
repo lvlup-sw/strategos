@@ -14,7 +14,7 @@ namespace Strategos.Ontology.Retrieval;
 public sealed class KeywordSearchException : Exception
 {
     /// <summary>
-    /// Initializes a new <see cref="KeywordSearchException"/>.
+    /// Initializes a new instance of the <see cref="KeywordSearchException"/> class.
     /// </summary>
     /// <param name="message">A human-readable description of the failure.</param>
     /// <param name="inner">

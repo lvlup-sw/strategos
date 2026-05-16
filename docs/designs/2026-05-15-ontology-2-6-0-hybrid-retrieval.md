@@ -52,7 +52,7 @@ PR-A and PR-B touch disjoint files. They can be developed and merged in any orde
 
 ### 3.2 Architectural sketch
 
-```
+```text
                 ┌─────────────────────────────────────────────┐
                 │            OntologyQueryTool                │
                 │                                             │
@@ -227,7 +227,7 @@ public sealed record FusedResult(string DocumentId, double FusedScore, int Rank)
 
 Formula:
 
-```
+```text
 fused_score(d) = Σ_{L ∈ rankedLists}  weight_L / (k + rank_L(d))
                                      where rank_L(d) = position in L if present, else +∞
                                      (term ≡ 0 by convention when d ∉ L)
@@ -255,7 +255,7 @@ public sealed record ScoredCandidate(string DocumentId, double Score);
 
 Algorithm:
 
-```
+```text
 1. For each list L: μ_L ← mean, σ_L ← stdev
 2. low_L ← μ_L - 3σ_L,  high_L ← μ_L + 3σ_L
 3. For each candidate (id, score) in L:
@@ -429,7 +429,7 @@ Semantic-only wins on every dimension. The issue text's `QueryRequest`-style sig
 
 ### 6.4 Behavior decision tree
 
-```
+```text
 hybridOptions is null
   └─ existing 2.5.0 behavior (byte-for-byte). No HybridMeta on ResponseMeta.
 

@@ -84,6 +84,12 @@ public sealed record HybridQueryOptions
     /// </exception>
     public void Validate()
     {
+        if (!Enum.IsDefined(FusionMethod))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(FusionMethod), FusionMethod, "FusionMethod must be a defined enum value.");
+        }
+
         if (SparseTopK < 0)
         {
             throw new ArgumentOutOfRangeException(

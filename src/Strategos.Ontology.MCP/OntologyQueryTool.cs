@@ -147,6 +147,22 @@ public sealed class OntologyQueryTool
                 filter, traverseLink, interfaceName, include);
         }
 
+        // EnableKeyword=false: explicit-ablation path takes precedence over
+        // provider-missing degradation so callers who explicitly opted out of
+        // sparse never see Degraded="no-keyword-provider" even when no
+        // IKeywordSearchProvider is registered (CodeRabbit PR #77 finding).
+        if (!hybridOptions.EnableKeyword)
+        {
+            var dense = await _objectSetProvider
+                .ExecuteSimilarityAsync<object>(similarityExpression, ct)
+                .ConfigureAwait(false);
+
+            var enabledFalseMeta = new HybridMeta(Hybrid: false);
+            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
+                hybridMeta: enabledFalseMeta, semanticQuery, topK, minRelevance,
+                filter, traverseLink, interfaceName, include);
+        }
+
         // Hybrid requested but no provider registered → degraded dense-only
         // with warn-once. The warning carries enough context for operators
         // to discover the missing DI registration.
@@ -165,21 +181,6 @@ public sealed class OntologyQueryTool
             var degradedMeta = new HybridMeta(Hybrid: false, Degraded: "no-keyword-provider");
             return BuildSemanticResult(objectType, dense.Items, dense.Scores,
                 hybridMeta: degradedMeta, semanticQuery, topK, minRelevance,
-                filter, traverseLink, interfaceName, include);
-        }
-
-        // EnableKeyword=false: explicit-ablation path. Provider is registered
-        // but caller asked for dense-only; surface HybridMeta { Hybrid=false }
-        // with no Degraded tag (nothing degraded — caller requested this).
-        if (!hybridOptions.EnableKeyword)
-        {
-            var dense = await _objectSetProvider
-                .ExecuteSimilarityAsync<object>(similarityExpression, ct)
-                .ConfigureAwait(false);
-
-            var enabledFalseMeta = new HybridMeta(Hybrid: false);
-            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
-                hybridMeta: enabledFalseMeta, semanticQuery, topK, minRelevance,
                 filter, traverseLink, interfaceName, include);
         }
 
