@@ -4,7 +4,7 @@ sidebar:
   order: 3
 ---
 
-The AONT100–199 range covers runtime structural validation of link descriptors and per-domain registration invariants that surface during `OntologyGraphBuilder.Build()`. The diagnostics in this slice — currently AONT040 and AONT041 — fire before any cross-domain resolver runs, so the message names the original multi-registration or duplicate registration rather than a downstream "unresolvable" error. They throw `OntologyCompositionException` and are surfaced via the [`OntologyCompositionException.Diagnostics`](/reference/ontology/api/source/) list.
+The AONT100–199 range covers runtime structural validation of link descriptors and per-domain registration invariants that surface during `OntologyGraphBuilder.Build()`. The diagnostics in this slice — currently AONT040 and AONT041 — fire before any cross-domain resolver runs, so the message names the original multi-registration or duplicate registration rather than a downstream "unresolvable" error. They throw `OntologyCompositionException`, whose `Diagnostics` property carries an `ImmutableArray<OntologyDiagnostic>` of every diagnostic that fired during the failed build.
 
 ## Diagnostic table
 

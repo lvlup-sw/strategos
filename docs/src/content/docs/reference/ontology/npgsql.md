@@ -46,10 +46,10 @@ Two extension methods register the provider. Choose by where in the bootstrap pi
 
 ```csharp
 // Inside AddOntology — preferred for full ontology setups.
+services.AddOpenAiEmbeddings(opts => opts.ApiKey = apiKey);
 services.AddOntology(options =>
 {
     options.AddDomain<TradingOntology>();
-    options.UseEmbeddingProvider<OpenAiEmbeddingProvider>();
     options.UsePgVector(connectionString);
 });
 
@@ -97,7 +97,7 @@ Where `<dimensions>` is sourced from the registered `IEmbeddingProvider.Dimensio
 
 The `descriptorName` parameter resolves the target table:
 
-- When non-null, the table name is the snake-cased descriptor name (e.g. `"trading_documents"` → `"trading_documents"`).
+- When non-null, the table name is the snake-cased descriptor name (e.g. `"TradingDocuments"` → `"trading_documents"`).
 - When null, resolution falls back to the registered descriptor name for `T` via the optional `OntologyGraph` passed to the provider constructor. For a type registered exactly once, the default works. For a type registered under multiple descriptor names (multi-registration), the default-null call throws — callers must supply `descriptorName` explicitly, one call per descriptor.
 
 ## Multi-registration partitioning

@@ -22,22 +22,29 @@ Namespace: `Strategos.Ontology.Embeddings`. Source: `src/Strategos.Ontology/Embe
 
 ## Registration
 
-Embedding providers register through `OntologyOptions.UseEmbeddingProvider<T>` during `AddOntology`:
+Embedding providers register through `OntologyOptions.UseEmbeddingProvider<T>` during `AddOntology`, or through a package's own helper extension (the recommended path for shipped providers):
 
 ```csharp
 services.AddOntology(options =>
 {
     options.AddDomain<TradingOntology>();
-    options.UseEmbeddingProvider<OpenAiEmbeddingProvider>();
+    options.UseEmbeddingProvider<OpenAiCompatibleEmbeddingProvider>();
     options.UsePgVector(connectionString); // consumes IEmbeddingProvider
+});
+
+// Or use the package's canonical helper, which also wires HttpClient and options:
+services.AddOpenAiEmbeddings(opts =>
+{
+    opts.ApiKey = configuration["OpenAi:ApiKey"]!;
+    opts.Model = "text-embedding-3-small";
 });
 ```
 
-`UseEmbeddingProvider<T>` adds `T` as a singleton against the `IEmbeddingProvider` contract; downstream registrations (`UsePgVector`, custom providers) resolve `IEmbeddingProvider` through the same container. Pre-built implementations:
+`UseEmbeddingProvider<T>` adds `T` as a singleton against the `IEmbeddingProvider` contract. `AddOpenAiEmbeddings` (from `Strategos.Ontology.Embeddings`) is the typical entry point because it also configures the `HttpClient` and `OpenAiEmbeddingOptions`. Downstream registrations (`UsePgVector`, custom providers) resolve `IEmbeddingProvider` through the same container. Pre-built implementations:
 
 | Implementation | Package | Notes |
 |---|---|---|
-| `OpenAiEmbeddingProvider` (and compatible) | `LevelUp.Strategos.Ontology.Embeddings` | Targets the OpenAI HTTP embedding endpoint or any OpenAI-compatible API. |
+| `OpenAiCompatibleEmbeddingProvider` | `Strategos.Ontology.Embeddings` | Targets the OpenAI HTTP embedding endpoint or any OpenAI-compatible API. Use `AddOpenAiEmbeddings(...)` to register. |
 | Custom | (your own assembly) | Any class implementing `IEmbeddingProvider` is accepted. Test wiring typically registers a stub that returns a deterministic vector for assertion. |
 
 ## Interaction with `SimilarityExpression`

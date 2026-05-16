@@ -47,7 +47,7 @@ Task<ActionResult> DispatchReadOnlyAsync(
 
 The guard is at the interface, not at any concrete dispatcher, so the invariant cannot be overridden away silently. Existing implementations compile unchanged — the default supplies the read-only path automatically.
 
-`ActionContext` carries an optional `ActionDescriptor` init property. Populate it (typically from `IOntologyQuery.GetActionDescriptor`) before calling `DispatchReadOnlyAsync`; the default implementation reads `context.ActionDescriptor?.IsReadOnly` and rejects the call if the descriptor is missing or flags the action as mutating.
+`ActionContext` carries an optional `ActionDescriptor` init property. Populate it before calling `DispatchReadOnlyAsync` — typically by looking up the action on `IOntologyQuery.GetActions(objectType)` and selecting by `Name`. The default implementation reads `context.ActionDescriptor?.IsReadOnly` and rejects the call if the descriptor is missing or flags the action as mutating.
 
 ## Structured feedback on rejection
 

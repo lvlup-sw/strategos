@@ -92,4 +92,4 @@ Typical observers: structured-logging sinks, audit trails, telemetry exporters, 
 
 ## Decorator composition
 
-Dispatcher decorators (constraint-reporting, observation, custom) are composed via `OntologyOptions.AddDispatcherDecorator(...)` and run in ascending `Order`. The constraint-reporting decorator populates `ActionResult.Violations`; the observation decorator forwards to registered `IActionDispatchObserver` implementations. Custom decorators can short-circuit, transform, or log without modifying the underlying dispatcher.
+Dispatcher decorators (constraint-reporting, observation, custom) are composed via the extension methods on `OntologyDispatcherDecoratorExtensions` — `AddConstraintReporting()` and `AddDispatchObservation()` — both of which schedule decorator factories that wrap `IActionDispatcher` and run in ascending `Order`. The constraint-reporting decorator populates `ActionResult.Violations`; the observation decorator forwards to registered `IActionDispatchObserver` implementations. Custom decorators can short-circuit, transform, or log without modifying the underlying dispatcher.

@@ -85,4 +85,4 @@ Most consumers only call `Object`, `Interface`, and `CrossDomainLink` — `Objec
 ## Related
 
 - [Graph Versioning](/reference/ontology/graph-versioning/) — how the composed graph hashes to a deterministic `Version` once frozen.
-- [Diagnostics: AONT200-series](/reference/diagnostics/) — drift diagnostics surfaced when hand-authored and ingested contributions disagree.
+- [Diagnostics: AONT200-series](/reference/diagnostics/aont-200-series/) — drift diagnostics surfaced when hand-authored and ingested contributions disagree.

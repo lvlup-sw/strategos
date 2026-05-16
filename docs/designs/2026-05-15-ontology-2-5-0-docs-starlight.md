@@ -84,7 +84,11 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/lvlup-sw/strategos' },
       ],
       editLink: {
-        baseUrl: 'https://github.com/lvlup-sw/strategos/edit/main/docs/src/content/docs/',
+        // Starlight 0.39 appends the project-relative source path (the
+        // Astro project root is `docs/`, so the path it appends is
+        // `src/content/docs/<page>.md`). The baseUrl must therefore end
+        // at `/docs/` so the final URL is the repo-root path to the file.
+        baseUrl: 'https://github.com/lvlup-sw/strategos/edit/main/docs/',
       },
       pagefind: true,
       sidebar: [
