@@ -368,4 +368,58 @@ public sealed class OntologyQueryToolHybridTests
         var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
         await Assert.That(resultIds).IsEquivalentTo(expectedIds);
     }
+
+    // ---- Task 36: Weighted DistributionBased snapshot ----
+
+    [Test]
+    public async Task QueryAsync_HybridDistributionBasedWeighted_DenseDominantWeights_SnapshotOrdering()
+    {
+        var denseItems = new List<object>
+        {
+            new TestItem("doc-a", "AAPL"),
+            new TestItem("doc-b", "MSFT"),
+            new TestItem("doc-c", "GOOG"),
+        };
+        var denseScores = new List<double> { 0.90, 0.85, 0.70 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseResults = new List<KeywordSearchResult>
+        {
+            new("doc-c", Score: 18.0, Rank: 1),
+            new("doc-b", Score: 12.0, Rank: 2),
+            new("doc-d", Score: 9.0, Rank: 3),
+        };
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(sparseResults));
+
+        var tool = BuildTool(keywordProvider: keywordProvider);
+        var weights = new[] { 1.0, 0.5 };
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            topK: 3,
+            hybridOptions: new HybridQueryOptions
+            {
+                FusionMethod = FusionMethod.DistributionBased,
+                SourceWeights = weights,
+            });
+
+        var denseScored = denseItems.Cast<TestItem>().Select((it, i) => new ScoredCandidate(it.Id, denseScores[i])).ToList();
+        var sparseScored = sparseResults.Select(r => new ScoredCandidate(r.DocumentId, r.Score)).ToList();
+        var expectedFused = RankFusion.DistributionBased(
+            new IReadOnlyList<ScoredCandidate>[] { denseScored, sparseScored },
+            weights: weights,
+            topK: 3);
+
+        var result = (SemanticQueryResult)union;
+        var resultIds = result.Items.Cast<TestItem>().Select(i => i.Id).ToList();
+        var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
+        await Assert.That(resultIds).IsEquivalentTo(expectedIds);
+    }
 }
