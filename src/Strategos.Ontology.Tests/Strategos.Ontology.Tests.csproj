@@ -29,4 +29,12 @@
     <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Retrieval test fixtures (PR-B Tasks 17/18): copy into output so the
+         DBSF parity test can load the Qdrant oracle JSON at runtime. -->
+    <None Update="Retrieval\Fixtures\qdrant-dbsf-oracle.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
