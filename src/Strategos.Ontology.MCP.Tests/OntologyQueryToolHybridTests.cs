@@ -141,4 +141,38 @@ public sealed class OntologyQueryToolHybridTests
         var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
         await Assert.That(warnings.Count).IsEqualTo(1);
     }
+
+    // ---- Task 32: EnableKeyword=false → dense-only, no Degraded ----
+
+    [Test]
+    public async Task QueryAsync_SemanticWithHybridOptionsEnableKeywordFalse_DenseOnly_HybridMetaHybridFalse_NoDegraded()
+    {
+        // Provider IS registered but EnableKeyword=false forces dense-only.
+        // This is the explicit-ablation path: HybridMeta surfaces (so callers
+        // can observe their request was honored) but Degraded is null because
+        // nothing degraded — the caller asked for this.
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.88 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        var tool = BuildTool(keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions { EnableKeyword = false });
+
+        await Assert.That(union).IsTypeOf<SemanticQueryResult>();
+        var result = (SemanticQueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(result.Meta.Hybrid.Degraded).IsNull();
+
+        // Sparse leg must NOT have been called.
+        await keywordProvider.DidNotReceive().SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>());
+    }
 }

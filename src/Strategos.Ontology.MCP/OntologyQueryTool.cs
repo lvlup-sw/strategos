@@ -168,9 +168,24 @@ public sealed class OntologyQueryTool
                 filter, traverseLink, interfaceName, include);
         }
 
-        // TODO Tasks 32–40: EnableKeyword=false, happy paths, weighted snapshots,
-        // sparse/dense failure handling, cancellation, parallelism.
-        throw new NotImplementedException("Hybrid path with registered provider is wired in later PR-C tasks.");
+        // EnableKeyword=false: explicit-ablation path. Provider is registered
+        // but caller asked for dense-only; surface HybridMeta { Hybrid=false }
+        // with no Degraded tag (nothing degraded — caller requested this).
+        if (!hybridOptions.EnableKeyword)
+        {
+            var dense = await _objectSetProvider
+                .ExecuteSimilarityAsync<object>(similarityExpression, ct)
+                .ConfigureAwait(false);
+
+            var enabledFalseMeta = new HybridMeta(Hybrid: false);
+            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
+                hybridMeta: enabledFalseMeta, semanticQuery, topK, minRelevance,
+                filter, traverseLink, interfaceName, include);
+        }
+
+        // TODO Tasks 33–40: happy paths, weighted snapshots, sparse/dense
+        // failure handling, cancellation, parallelism.
+        throw new NotImplementedException("Hybrid happy-path is wired in Tasks 33+.");
     }
 
     private SemanticQueryResult BuildSemanticResult(
