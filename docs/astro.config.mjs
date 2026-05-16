@@ -10,7 +10,7 @@ export default defineConfig({
     starlight({
       title: 'Strategos',
       description: 'Deterministic, auditable AI agent workflows for .NET',
-      logo: { src: './public/logo.svg' },
+      logo: { src: './src/assets/logo.svg' },
       favicon: '/logo.svg',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/lvlup-sw/strategos' },

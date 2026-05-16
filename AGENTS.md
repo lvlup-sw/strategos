@@ -13,7 +13,7 @@ The library bridges agent frameworks and workflow engines by treating each agent
 - **Testing**: TUnit with NSubstitute for mocking
 - **Code Generation**: Roslyn Source Generators
 - **Code Quality**: StyleCop Analyzers, .NET Analyzers
-- **Documentation**: VitePress (Node.js-based static site)
+- **Documentation**: Astro + Starlight (`@astrojs/starlight`, content-collection layout under `docs/src/content/docs/`)
 
 ## Key Dependencies
 
@@ -42,7 +42,7 @@ src/
 ├── Strategos.Rag/           # Vector store adapters
 └── *Tests/                         # Test projects (co-located)
 
-docs/                           # VitePress documentation site
+docs/                           # Astro + Starlight documentation site (src/content/docs/)
 packages/                       # NuGet package output
 ```
 
