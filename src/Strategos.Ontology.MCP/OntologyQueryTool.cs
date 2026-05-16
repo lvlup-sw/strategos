@@ -207,20 +207,68 @@ public sealed class OntologyQueryTool
         // similarity pipeline; the sparse leg uses HybridQueryOptions.SparseTopK
         // and the descriptor name (objectType) as the collection key.
         var denseTask = _objectSetProvider.ExecuteSimilarityAsync<object>(similarityExpression, ct);
-        var sparseTask = _keywordProvider!.SearchAsync(
-            new KeywordSearchRequest(semanticQuery, objectType, hybridOptions.SparseTopK),
-            ct);
+        var sparseTask = InvokeSparseLegAsync(semanticQuery, objectType, hybridOptions.SparseTopK, ct);
 
-        // Await both. Dense throws propagate (design: dense is baseline — Task 38).
-        // Sparse-fault handling is wired in Task 37.
-        await Task.WhenAll(denseTask, sparseTask).ConfigureAwait(false);
+        // Await both. Dense throws propagate (baseline — design §6.6, Task 38).
+        // Sparse-fault is caught inside InvokeSparseLegAsync and surfaced as null
+        // so that Task.WhenAll cannot raise just-the-sparse failure here. We
+        // still await Task.WhenAll for cancellation-token propagation symmetry.
+        try
+        {
+            await Task.WhenAll(denseTask, sparseTask).ConfigureAwait(false);
+        }
+        catch when (denseTask.IsFaulted)
+        {
+            // Re-throw the dense exception below by awaiting the task directly.
+        }
 
         var dense = await denseTask.ConfigureAwait(false);
-        var sparse = await sparseTask.ConfigureAwait(false);
+        var sparseOrNull = await sparseTask.ConfigureAwait(false);
+
+        if (sparseOrNull is null)
+        {
+            // Sparse-failed degraded path: return dense-only items with
+            // HybridMeta { Hybrid = false, Degraded = "sparse-failed" }.
+            var degradedMeta = new HybridMeta(Hybrid: false, Degraded: "sparse-failed");
+            return BuildSemanticResult(objectType, dense.Items, dense.Scores,
+                degradedMeta, semanticQuery, topK, minRelevance,
+                filter, traverseLink, interfaceName, include);
+        }
 
         return FuseHybrid(
-            dense, sparse, hybridOptions, objectType, semanticQuery, topK, minRelevance,
+            dense, sparseOrNull, hybridOptions, objectType, semanticQuery, topK, minRelevance,
             filter, traverseLink, interfaceName, include);
+    }
+
+    /// <summary>
+    /// Invokes the sparse keyword leg, returning <c>null</c> on caught fault
+    /// (logged at Error with the exception + stack) and rethrowing on cancel
+    /// so caller-driven cancellation does not silently mutate into a
+    /// sparse-failed degraded result.
+    /// </summary>
+    private async Task<IReadOnlyList<KeywordSearchResult>?> InvokeSparseLegAsync(
+        string query, string collection, int sparseTopK, CancellationToken ct)
+    {
+        try
+        {
+            return await _keywordProvider!
+                .SearchAsync(new KeywordSearchRequest(query, collection, sparseTopK), ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Caller-driven cancellation: surface naturally so QueryAsync
+            // rethrows OperationCanceledException (design §6.6 cancellation).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Hybrid sparse leg threw {ExceptionType}; falling back to dense-only retrieval for this call.",
+                ex.GetType().Name);
+            return null;
+        }
     }
 
     private SemanticQueryResult FuseHybrid(

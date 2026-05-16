@@ -422,4 +422,44 @@ public sealed class OntologyQueryToolHybridTests
         var expectedIds = expectedFused.Select(f => f.DocumentId).Where(id => denseItems.Any(d => ((TestItem)d).Id == id)).ToList();
         await Assert.That(resultIds).IsEquivalentTo(expectedIds);
     }
+
+    // ---- Task 37: Sparse failure → fallback dense-only, Degraded="sparse-failed" ----
+
+    [Test]
+    public async Task QueryAsync_HybridSparseProviderThrows_FallsBackToDenseOnly_DegradedSparseFailed_ExceptionAndStackLogged()
+    {
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var sparseFault = new IOException("synthetic sparse backend fault");
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<KeywordSearchResult>>>(_ => throw sparseFault);
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger, keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        var result = (SemanticQueryResult)union;
+        // Dense-only items.
+        await Assert.That(result.Items.Cast<TestItem>().Select(i => i.Id).ToList())
+            .IsEquivalentTo(new[] { "doc-a" });
+        // HybridMeta degraded shape.
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(result.Meta.Hybrid.Degraded).IsEqualTo("sparse-failed");
+        // Exception and stack logged at Error level.
+        var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).ToList();
+        await Assert.That(errors.Count).IsEqualTo(1);
+        await Assert.That(errors[0].Exception).IsSameReferenceAs(sparseFault);
+    }
 }
