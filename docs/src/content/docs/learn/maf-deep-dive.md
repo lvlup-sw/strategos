@@ -434,9 +434,9 @@ On failure, compensations run in reverse order automatically.
 - [Durable Task Scheduler](https://learn.microsoft.com/en-us/azure/azure-functions/durable/durable-task-scheduler/durable-task-scheduler)
 
 ### Strategos
-- [Design Document](./design.md)
-- [Library Roadmap](./workflow-library-roadmap-v2.md)
-- [Exploration-Exploitation Theory](./theory/exploration-exploitation.md)
+- Design Document
+- Library Roadmap
+- Exploration-Exploitation Theory
 
 ---
 

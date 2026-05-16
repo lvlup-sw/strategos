@@ -36,7 +36,7 @@ The Basileus platform is a multi-tier architecture designed to orchestrate AI ag
 2. **Tool Abstraction** -- Execution environments have no knowledge of tool backend implementations. Tools are accessed through a filesystem-based progressive disclosure system, enriched with ontology schemas (Object Types, Actions, Links) to provide typed semantic discovery and constrain the valid action space. All tool invocations route back to the ControlPlane via envd callbacks; sandboxes never hold credentials or connect to external services directly.
 3. **Credential Isolation** -- API keys, database credentials, and OAuth tokens live exclusively in Azure Key Vault, accessed only by the ControlPlane. Secrets are injected at call time and never enter the sandbox.
 4. **Centralized Observability** -- All execution requests and tool invocations flow through a single control point, providing complete audit trails via event sourcing.
-5. **Semantic Type Safety** -- A compile-time ontology (Strategos.Ontology) maps domain types into a unified type graph of Object Types, Properties, Links, Actions, and Interfaces. Domain assemblies remain independent -- the ontology maps them, not owns them. A Roslyn source generator validates the type graph at build time, produces cross-domain link resolution, and generates typed tool stubs for progressive disclosure. Agents plan against the ontology rather than flat tool lists, directly reducing the CMDP action space ([AI Theory, &sect;2.3](../ai-theory/strategos-theory.md)).
+5. **Semantic Type Safety** -- A compile-time ontology (Strategos.Ontology) maps domain types into a unified type graph of Object Types, Properties, Links, Actions, and Interfaces. Domain assemblies remain independent -- the ontology maps them, not owns them. A Roslyn source generator validates the type graph at build time, produces cross-domain link resolution, and generates typed tool stubs for progressive disclosure. Agents plan against the ontology rather than flat tool lists, directly reducing the CMDP action space (AI Theory, &sect;2.3).
 
 ### Three-Tier Architecture
 
@@ -78,7 +78,7 @@ flowchart TB
 - Hosts the Strategos runtime for reflective agent orchestration
 - Implements the Phronesis pattern via workflow definitions (Plan, Think, Act, Observe, Reflect, Synthesize)
 - Processes user requests and maintains Task/Progress Ledgers
-- Hosts the Workflow MCP Server — a second MCP server (separate from ControlPlane) that exposes workflow event streams and command interfaces to external MCP clients (Exarchos instances). Uses Marten `ISubscription` → `Channel<T>` → SSE for real-time event delivery. See [Remote Notification Bridge](../designs/2026-02-19-remote-notification-bridge.md).
+- Hosts the Workflow MCP Server — a second MCP server (separate from ControlPlane) that exposes workflow event streams and command interfaces to external MCP clients (Exarchos instances). Uses Marten `ISubscription` → `Channel<T>` → SSE for real-time event delivery. See Remote Notification Bridge.
 - Never directly communicates with the Execution Tier
 
 **Control Plane Tier (ControlPlane)**
@@ -112,7 +112,7 @@ flowchart TB
 The system uses three transport mechanisms, each suited to its tier boundary:
 
 - **HTTP + MCP (streamable HTTP)** connects AgentHost to ControlPlane. Streamable HTTP provides real-time execution updates within the MCP protocol, with gRPC as a future upgrade path.
-- **MCP (streamable HTTP)** connects Exarchos (developer workstation) to the AgentHost Workflow MCP Server. Exarchos initiates an outbound HTTPS connection (NAT-safe) and receives workflow events via SSE stream. Developer commands flow back through MCP tool calls. This is a separate MCP server from the ControlPlane MCP server, co-located with AgentHost. See [Remote Notification Bridge](../designs/2026-02-19-remote-notification-bridge.md) and [SDLC Pipeline §12](./distributed-sdlc-pipeline.md#12-basileus-integration).
+- **MCP (streamable HTTP)** connects Exarchos (developer workstation) to the AgentHost Workflow MCP Server. Exarchos initiates an outbound HTTPS connection (NAT-safe) and receives workflow events via SSE stream. Developer commands flow back through MCP tool calls. This is a separate MCP server from the ControlPlane MCP server, co-located with AgentHost. See Remote Notification Bridge and SDLC Pipeline §12.
 - **E2B SDK (WebSocket / vsock)** connects ControlPlane to Sandbox. The E2B SDK mediates all host-guest communication through the envd agent inside each Firecracker micro-VM. File transfer uses `sandbox.files.read()` and `sandbox.files.write()` rather than shared volumes, since Firecracker VMs do not support shared filesystems.
 
 All inter-service communication within the backend occurs within the same Azure VNet at sub-millisecond latency. No traffic between backend tiers traverses the public internet. The Exarchos→AgentHost MCP connection traverses the public internet (TLS encrypted, bearer token authenticated).
@@ -443,7 +443,7 @@ The `ReflectionOutcome.Escalate` path is the shared escalation semantic across t
 3. If human provides guidance → loop back to Think with enriched context
 4. If timeout expires → `GracefulDegrade` step synthesizes a partial result from completed work
 
-This ensures consistent escalation behavior regardless of whether the trigger is a platform confidence score, an SDLC context quality assessment, or a CI remediation failure. The SDLC pipeline's `NeedsGuidance` event maps directly to `ReflectionOutcome.Escalate`. See [SDLC Pipeline §6](../adrs/distributed-sdlc-pipeline.md#6-remote-tier-agentic-coder) for context quality scoring that feeds this path.
+This ensures consistent escalation behavior regardless of whether the trigger is a platform confidence score, an SDLC context quality assessment, or a CI remediation failure. The SDLC pipeline's `NeedsGuidance` event maps directly to `ReflectionOutcome.Escalate`. See SDLC Pipeline §6 for context quality scoring that feeds this path.
 
 **SynthesizeResults** -- Aggregate results across all completed tasks into a final response, with richer context from the Observe/Reflect trail.
 
@@ -483,7 +483,7 @@ Each fork's ThinkStep resolves its profile from the task requirements. The profi
 
 **Profile Evolution (Adaptive Configuration):**
 
-Execution profiles are registered at startup but their *tunable parameters* adapt over time based on quality signals from the [SDLC Pipeline's CodeQualityView](../adrs/distributed-sdlc-pipeline.md#8-cqrs-views). This creates a semi-automated feedback loop:
+Execution profiles are registered at startup but their *tunable parameters* adapt over time based on quality signals from the SDLC Pipeline's CodeQualityView. This creates a semi-automated feedback loop:
 
 Parameters that auto-tune within bounded ranges:
 
@@ -841,7 +841,7 @@ public class StrategyPriorsProjection : MultiStreamProjection<StrategyPriors, st
 
 On workflow start, the ThinkStep seeds its Thompson Sampling selector from the `StrategyPriors` read model rather than uniform `Beta(2, 2)` priors. This creates a cross-workflow learning loop: early workflows explore broadly, later workflows exploit accumulated knowledge about which strategies succeed for which task categories.
 
-These durable priors also feed into the [SDLC Pipeline's CodeQualityView](../adrs/distributed-sdlc-pipeline.md#8-cqrs-views) and the [Task Router's learned scoring](../adrs/distributed-sdlc-pipeline.md#5-task-router), forming the cross-system feedback architecture described in §3.7 (Profile Evolution).
+These durable priors also feed into the SDLC Pipeline's CodeQualityView and the Task Router's learned scoring, forming the cross-system feedback architecture described in §3.7 (Profile Evolution).
 
 **Confidence-Based Routing:**
 
@@ -1201,7 +1201,7 @@ The Ontology Layer is a semantic type system for all agentic operations -- runni
 
 While it lives in the [Strategos repository](https://github.com/levelup-software/strategos) and ships as NuGet packages, it is architecturally independent from the workflow DSL. Workflows can declare ontological context (`Consumes<T>`, `Produces<T>`) but the ontology is usable without workflows.
 
-The layer's design is grounded in two theoretical sources: Nirenburg & Raskin's *Ontological Semantics* (MIT Press, 2004) for foundational knowledge representation theory (IS-A hierarchy, frame-based types, property/relation distinction), and Zhou et al.'s "Ontology-to-tools compilation for executable semantic constraint enforcement in LLM agents" (arXiv:2602.03439, 2025) for constraint enforcement and MCP tool integration patterns (hard/soft constraints, structured feedback, tool description enrichment). See the [Nirenburg & Raskin grounding analysis](ontology-theoretical-grounding.md) and [Zhou et al. grounding analysis](ontology-to-tools-grounding.md) for detailed alignment analyses.
+The layer's design is grounded in two theoretical sources: Nirenburg & Raskin's *Ontological Semantics* (MIT Press, 2004) for foundational knowledge representation theory (IS-A hierarchy, frame-based types, property/relation distinction), and Zhou et al.'s "Ontology-to-tools compilation for executable semantic constraint enforcement in LLM agents" (arXiv:2602.03439, 2025) for constraint enforcement and MCP tool integration patterns (hard/soft constraints, structured feedback, tool description enrichment). See the [Nirenburg & Raskin grounding analysis](/strategos/reference/ontology-theoretical-grounding/) and [Zhou et al. grounding analysis](/strategos/reference/ontology-to-tools-grounding/) for detailed alignment analyses.
 
 #### 4.14.1 Problem
 
@@ -3048,7 +3048,7 @@ Auto-shutdown at end of workday eliminates ~65% of compute costs versus 24/7 ope
 
 **Scaling within dev mode:** Upgrade to Standard_D8s_v5 (8 vCPU, 32 GiB, ~$68/mo) or Standard_D16s_v5 (16 vCPU, 64 GiB, ~$135/mo) for higher sandbox concurrency. All support nested virtualization.
 
-For step-by-step setup instructions, see the [E2B Azure Migration Guide](../decisions/e2b-azure-migration-guide.md).
+For step-by-step setup instructions, see the E2B Azure Migration Guide.
 
 ### 9.3 Production Deployment ($2,500--$3,300/month)
 
@@ -3076,7 +3076,7 @@ Azure VNet
 | Supporting services (ACR, Key Vault, Redis, PostgreSQL) | $93--$246 |
 | **Total** | **$2,500--$3,300/mo** |
 
-For detailed production architecture, GCP-to-Azure resource mapping, Terraform migration scope, and implementation phases, see the [E2B Azure Migration Guide](../decisions/e2b-azure-migration-guide.md).
+For detailed production architecture, GCP-to-Azure resource mapping, Terraform migration scope, and implementation phases, see the E2B Azure Migration Guide.
 
 ### 9.4 Observability Strategy
 
@@ -3136,7 +3136,7 @@ The platform extends observability into production runtime via the Panoptikon pr
 
 **Agent-Driven Incident Triage (IncidentWorkflow):** A Phronesis workflow expressed via the Strategos fluent DSL. Steps: AssembleIncidentContext (Sentry + Azure Monitor logs + Honeycomb traces + Marten event history) → DiagnoseRootCause → GenerateFix / EscalateToHumanQueue → ResolveIncident. Impact-based HITL gating: low = auto-merge, medium = human notified, high = human approval required.
 
-See [Panoptikon Production Observability](../designs/2026-02-24-panoptikon-production-observability.md) for the complete design including deployment flow, incident workflow definition, production event taxonomy, and Loop 6 feedback integration.
+See Panoptikon Production Observability for the complete design including deployment flow, incident workflow definition, production event taxonomy, and Loop 6 feedback integration.
 
 ### 9.5 Cost Optimization
 
@@ -3150,7 +3150,7 @@ See [Panoptikon Production Observability](../designs/2026-02-24-panoptikon-produ
 
 With 1-year Reserved Instances, the production total drops to approximately $1,750--$2,200/month.
 
-For detailed cost breakdowns, VM sizing options, and optimization analysis, see the [E2B Azure Migration Guide](../decisions/e2b-azure-migration-guide.md), Section 13.
+For detailed cost breakdowns, VM sizing options, and optimization analysis, see the E2B Azure Migration Guide, Section 13.
 
 ### 9.6 Hybrid Deployment -- Container Apps + E2B VM
 
@@ -3381,7 +3381,7 @@ Adapters handle the mapping between workflow state and agent input/output, conte
 
 ### 11.4 SDLC Pipeline: Agentic Coder as Phronesis Workflow
 
-The [SDLC Pipeline's Agentic Coder](../adrs/distributed-sdlc-pipeline.md#6-remote-tier-agentic-coder) runs a plan-code-test-review loop inside containerized environments. This loop is a natural consumer of the Strategos library -- expressing it as a Phronesis-style workflow definition provides automatic event sourcing, durability, loop detection, budget algebra, confidence routing, and compensation handlers without ad hoc reimplementation.
+The SDLC Pipeline's Agentic Coder runs a plan-code-test-review loop inside containerized environments. This loop is a natural consumer of the Strategos library -- expressing it as a Phronesis-style workflow definition provides automatic event sourcing, durability, loop detection, budget algebra, confidence routing, and compensation handlers without ad hoc reimplementation.
 
 The Agentic Coder's phases map directly to Phronesis steps:
 
@@ -3570,7 +3570,7 @@ public class SummarizeHistory : IWorkflowStep<ConversationalState>
 
 Token counting varies by model (GPT-4, Claude, Llama have different tokenizers), so summarization strategies are left to the consumer.
 
-For detailed analysis of all deferred features including implementation priority matrix and future roadmap, see the [Deferred Features](./archive/deferred-features.md) document.
+For detailed analysis of all deferred features including implementation priority matrix and future roadmap, see the Deferred Features document.
 
 ---
 
@@ -3657,10 +3657,10 @@ Five feedback loops connect the platform runtime, SDLC pipeline, and knowledge s
 |------|------|-----------|------------|
 | **1** | Within-Workflow Strategy Learning | Seconds (per iteration) | Fully automated (existing) |
 | **2** | Cross-Workflow Strategy Learning | Hours--days (accumulated) | Fully automated — durable Thompson Sampling priors via Marten projection (§4.7) |
-| **3** | Task Router Adaptation | Days--weeks (statistical) | Semi-automated — local-first learning from JSONL events, enriched by remote CodeQualityView metrics. See [SDLC Pipeline §5](../adrs/distributed-sdlc-pipeline.md#5-task-router). |
+| **3** | Task Router Adaptation | Days--weeks (statistical) | Semi-automated — local-first learning from JSONL events, enriched by remote CodeQualityView metrics. See SDLC Pipeline §5. |
 | **4** | Profile Evolution | Days--weeks (trend-based) | Semi-automated — tunable parameters auto-adjust within bounded ranges; structural changes escalate to human (§3.7) |
 | **5** | Knowledge Enrichment | Continuous (post-workflow) | Automated ingestion with quality-based indexing |
-| **6** | Production Feedback (Panoptikon) | Minutes--days (incident-driven + continuous) | Automated — instant rollback + agent triage; production penalties applied to Thompson Sampling priors. See [Panoptikon §8](../designs/2026-02-24-panoptikon-production-observability.md#8-loop-6-production-feedback). |
+| **6** | Production Feedback (Panoptikon) | Minutes--days (incident-driven + continuous) | Automated — instant rollback + agent triage; production penalties applied to Thompson Sampling priors. See Panoptikon §8. |
 
 **Loop 5: Knowledge Enrichment** merits additional detail. After each workflow completes, its execution history contains valuable intelligence: which approaches worked, which RAG documents were relevant, which code patterns succeeded. This data should flow into the Knowledge domain's RAG collections:
 
@@ -3685,7 +3685,7 @@ Loop 6 operates at two timescales:
 - **Immediate (incident-driven):** Rollback + triage within minutes. IncidentWorkflow produces fix PRs or escalations.
 - **Continuous (trend-driven):** `ProductionHealthSampled` events (adaptive: 30s during deployments, 5min during stability) feed the `ProductionHealthView` CQRS projection, enabling error rate trend analysis, deployment success rate tracking, and proactive degradation detection.
 
-Implementation is staged: Phase 1 (GitOps CD + instant rollback) → Phase 2 (Sentry + IncidentWorkflow) → Phase 3 (continuous feedback + CodeQualityView extensions). See [Panoptikon Production Observability](../designs/2026-02-24-panoptikon-production-observability.md) for the complete design.
+Implementation is staged: Phase 1 (GitOps CD + instant rollback) → Phase 2 (Sentry + IncidentWorkflow) → Phase 3 (continuous feedback + CodeQualityView extensions). See Panoptikon Production Observability for the complete design.
 
 #### Cross-Loop Dynamics
 
@@ -3748,11 +3748,11 @@ Together, these mechanisms ensure the system improves monotonically under normal
 
 | Document | Relationship |
 |----------|-------------|
-| [System Index](./system-index.md) | Entry-point reference mapping concepts to authoritative locations |
-| [Distributed SDLC Pipeline](./distributed-sdlc-pipeline.md) | Exarchos, Task Router, Agentic Coder, unified event stream, CQRS views |
-| [E2B Azure Migration Guide](../decisions/e2b-azure-migration-guide.md) | Deployment guide for self-hosting E2B on Azure (dev and production paths) |
-| [Agentic Platform Architecture](../decisions/agentic-platform-architecture.md) | Original E2B system design (security model, tool patterns, sandbox manager) |
-| [Panoptikon Production Observability](../designs/2026-02-24-panoptikon-production-observability.md) | Production observability loop: GitOps CD, instant rollback, incident workflow, Loop 6 feedback |
+| System Index | Entry-point reference mapping concepts to authoritative locations |
+| Distributed SDLC Pipeline | Exarchos, Task Router, Agentic Coder, unified event stream, CQRS views |
+| E2B Azure Migration Guide | Deployment guide for self-hosting E2B on Azure (dev and production paths) |
+| Agentic Platform Architecture | Original E2B system design (security model, tool patterns, sandbox manager) |
+| Panoptikon Production Observability | Production observability loop: GitOps CD, instant rollback, incident workflow, Loop 6 feedback |
 | [AI Theory](../ai-theory/) | Formal theoretical framework (CMDP, HSM, Thompson Sampling, Budget Algebra) |
 | [Ontology Layer Design](https://github.com/levelup-software/strategos/blob/main/docs/designs/2026-02-24-ontology-layer.md) | Full DSL specification, source generator pipeline, agent query interface, and Palantir concept mapping |
 

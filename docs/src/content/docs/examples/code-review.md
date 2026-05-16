@@ -1276,6 +1276,6 @@ var securityReport = await session
 
 ## Related Documentation
 
-- [Fork/Join Example](./fork-join.md) - Parallel execution pattern
-- [Branching Example](./branching.md) - Conditional routing
-- [Approval Flow Example](./approval-flow.md) - Human approval patterns
+- [Fork/Join Example](/strategos/examples/fork-join/) - Parallel execution pattern
+- [Branching Example](/strategos/examples/branching/) - Conditional routing
+- [Approval Flow Example](/strategos/examples/approval-flow/) - Human approval patterns

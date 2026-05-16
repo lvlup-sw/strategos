@@ -561,6 +561,6 @@ Enable querying workflow status:
 
 ## Related
 
-- [Branching Pattern](./branching.md) - Conditional routing based on state
-- [Iterative Refinement Pattern](./iterative-refinement.md) - Loops until quality achieved
-- [Fork/Join Pattern](./fork-join.md) - Parallel execution with synchronization
+- [Branching Pattern](/strategos/examples/branching/) - Conditional routing based on state
+- [Iterative Refinement Pattern](/strategos/examples/iterative-refinement/) - Loops until quality achieved
+- [Fork/Join Pattern](/strategos/examples/fork-join/) - Parallel execution with synchronization

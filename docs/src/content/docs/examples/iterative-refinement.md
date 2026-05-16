@@ -464,5 +464,5 @@ When quality target isn't met after max iterations:
 ## Related
 
 - [AgenticCoder Sample](../../samples/AgenticCoder/) - Working implementation of iterative refinement
-- [Approval Flow Pattern](./approval-flow.md) - Human checkpoints within loops
-- [Basic Workflow](./basic-workflow.md) - Sequential steps without loops
+- [Approval Flow Pattern](/strategos/examples/approval-flow/) - Human checkpoints within loops
+- [Basic Workflow](/strategos/examples/basic-workflow/) - Sequential steps without loops

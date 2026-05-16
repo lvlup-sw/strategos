@@ -851,6 +851,6 @@ public record ProcessOrderFailed(Guid WorkflowId, string ErrorCode, string Error
 
 ## Related Documentation
 
-- [Basic Workflow Example](./basic-workflow.md) - Simpler linear workflow introduction
-- [Branching Example](./branching.md) - Conditional execution paths
+- [Basic Workflow Example](/strategos/examples/basic-workflow/) - Simpler linear workflow introduction
+- [Branching Example](/strategos/examples/branching/) - Conditional execution paths
 - [State Management](/guide/state-management) - Deep dive on state patterns

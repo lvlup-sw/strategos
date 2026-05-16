@@ -510,11 +510,11 @@ Sequencing constraint: **Strategos 2.6.0 must ship before Basileus can start.** 
 
 ## 14. Related
 
-- [ADR: Exarchos ↔ Basileus Coordination Architecture](../adrs/2026-04-18-exarchos-basileus-coordination.md) — §§2.2, 2.8, 2.12, 9.8, 9.9
-- [Research: Data Shape → Query Performance and Relevance](../research/2026-04-19-data-shape-query-performance-relevance.md) — §§2.1, 2.4, 2.6, 3.1, 4.2, 5.4
-- [Design: Ingest Ontology From Source](./2026-04-19-ingest-ontology-from-source.md) — §§4.4, 4.4.2 (metadata + pgvector HNSW)
-- [Research: Ontology Ingestion Cost Analysis](../research/2026-04-19-ontology-ingestion-cost-analysis.md) — cost envelope
-- [Data Fabric & Ontology Context](./2026-04-05-data-fabric-ontology-context.md) — three-phase context assembly
+- ADR: Exarchos ↔ Basileus Coordination Architecture — §§2.2, 2.8, 2.12, 9.8, 9.9
+- Research: Data Shape → Query Performance and Relevance — §§2.1, 2.4, 2.6, 3.1, 4.2, 5.4
+- [Design: Ingest Ontology From Source](/strategos/reference/2026-04-19-ingest-ontology-from-source/) — §§4.4, 4.4.2 (metadata + pgvector HNSW)
+- Research: Ontology Ingestion Cost Analysis — cost envelope
+- Data Fabric & Ontology Context — three-phase context assembly
 - [`IReranker` interface](../../shared/Basileus.AgentHost.Abstractions/DataFabric/IReranker.cs) — existing contract
 - [Azure AI Foundry — Cohere Rerank v3.5](https://ai.azure.com/catalog/models/Cohere-rerank-v3.5)
 - [Azure AI Search — Hybrid Search Overview](https://learn.microsoft.com/azure/search/hybrid-search-overview)

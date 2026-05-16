@@ -492,6 +492,6 @@ Add a fraud check that can short-circuit any path:
 
 ## Related
 
-- [Basic Workflow](./basic-workflow.md) - Sequential steps without branching
-- [Fork/Join Pattern](./fork-join.md) - Parallel execution (not exclusive like branching)
-- [Approval Flow Pattern](./approval-flow.md) - Human checkpoints within branches
+- [Basic Workflow](/strategos/examples/basic-workflow/) - Sequential steps without branching
+- [Fork/Join Pattern](/strategos/examples/fork-join/) - Parallel execution (not exclusive like branching)
+- [Approval Flow Pattern](/strategos/examples/approval-flow/) - Human checkpoints within branches

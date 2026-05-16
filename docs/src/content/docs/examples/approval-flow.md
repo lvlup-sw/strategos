@@ -523,5 +523,5 @@ Different documents need different approval levels:
 ## Related
 
 - [ContentPipeline Sample](../../samples/ContentPipeline/) - Working implementation with approval gates
-- [Iterative Refinement Pattern](./iterative-refinement.md) - Loops for quality improvement
-- [Branching Pattern](./branching.md) - Conditional routing based on decisions
+- [Iterative Refinement Pattern](/strategos/examples/iterative-refinement/) - Loops for quality improvement
+- [Branching Pattern](/strategos/examples/branching/) - Conditional routing based on decisions

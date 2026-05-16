@@ -585,20 +585,20 @@ These remain open and tracked on the relevant issues:
 
 ## 10. Related
 
-- [Strategic Framing: Exarchos × Basileus × Strategos](../decisions/2026-04-18-strategic-framing-exarchos-basileus.md)
-- [Coordination design (input)](../designs/2026-04-18-exarchos-basileus-coordination.md)
-- [Platform-agnostic coordination research (input)](../research/2026-04-18-platform-agnostic-coordination.md)
-- [Strategos ontology gap analysis (input, this rev)](../research/2026-04-18-strategos-ontology-gap-analysis.md)
-- [Source ingestion design](../designs/2026-04-19-ingest-ontology-from-source.md) — §1.3 completeness mechanism; §2.14 cost model implementation
-- [Ontology ingestion cost analysis](../research/2026-04-19-ontology-ingestion-cost-analysis.md) — grounding for §2.14 SLOs
-- [Data shape → query performance and relevance](../research/2026-04-19-data-shape-query-performance-relevance.md) — grounding for ingest-design §4.4 chunking/metadata/index choices; surfaces the compositional work (hybrid retrieval) resolved by the follow-on design
-- [Retrieval composition for the Ontology MCP Endpoint](../designs/2026-04-19-retrieval-composition-for-ontology-mcp.md) — resolves ADR open questions §9.8 and §9.9; commits Strategos 2.6.0 seams + Basileus Azure-native implementations of hybrid BM25+vector+RRF+rerank+bounded-graph-expansion pipeline
-- [Platform Architecture §11.7 Channel integration](./platform-architecture.md#117-claude-code-channel-integration)
-- [Distributed SDLC Pipeline §12 Basileus integration](./distributed-sdlc-pipeline.md#12-basileus-integration)
-- [Data Fabric & Ontology Context](../designs/2026-04-05-data-fabric-ontology-context.md)
-- [Ingestion Concept](../ingestion.md)
-- [Strategos ontology theoretical grounding (N&R)](../../../strategos/docs/reference/ontology-theoretical-grounding.md)
-- [Strategos ontology-to-tools grounding (Zhou et al.)](../../../strategos/docs/reference/ontology-to-tools-grounding.md)
+- Strategic Framing: Exarchos × Basileus × Strategos
+- Coordination design (input)
+- Platform-agnostic coordination research (input)
+- Strategos ontology gap analysis (input, this rev)
+- Source ingestion design — §1.3 completeness mechanism; §2.14 cost model implementation
+- Ontology ingestion cost analysis — grounding for §2.14 SLOs
+- Data shape → query performance and relevance — grounding for ingest-design §4.4 chunking/metadata/index choices; surfaces the compositional work (hybrid retrieval) resolved by the follow-on design
+- Retrieval composition for the Ontology MCP Endpoint — resolves ADR open questions §9.8 and §9.9; commits Strategos 2.6.0 seams + Basileus Azure-native implementations of hybrid BM25+vector+RRF+rerank+bounded-graph-expansion pipeline
+- [Platform Architecture §11.7 Channel integration](/strategos/reference/platform-architecture/#117-claude-code-channel-integration)
+- Distributed SDLC Pipeline §12 Basileus integration
+- Data Fabric & Ontology Context
+- Ingestion Concept
+- Strategos ontology theoretical grounding (N&R)
+- Strategos ontology-to-tools grounding (Zhou et al.)
 - MCP spec: [schema](https://modelcontextprotocol.io/specification/2025-11-25/schema), [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [tool annotations](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/), [logging](https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging), [elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation), [progress](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress)
 - [MCP client capability matrix](https://mcp-availability.com/)
 - [Claude Code Channels documentation](https://code.claude.com/docs/en/channels)

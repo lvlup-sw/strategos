@@ -219,7 +219,7 @@ This is already partially described in §4.14.15 but should be made explicit in 
 
 ## 6. Comparison with Nirenburg & Raskin Analysis
 
-This analysis complements the [Nirenburg & Raskin theoretical grounding](./ontology-theoretical-grounding.md). The two sources address different aspects of our ontology layer:
+This analysis complements the [Nirenburg & Raskin theoretical grounding](/strategos/reference/ontology-theoretical-grounding/). The two sources address different aspects of our ontology layer:
 
 | Aspect | N&R (2004) | Zhou et al. (2025) |
 |--------|-----------|-------------------|
@@ -264,6 +264,6 @@ The N&R analysis identifies *structural* gaps in our ontology model (hierarchy, 
 
 All files in `docs/reference/ontology-to-tools-compilation/`:
 
-- [main-paper.md](ontology-to-tools-compilation/main-paper.md) — Sections 1-6
-- [supplementary.md](ontology-to-tools-compilation/supplementary.md) — Background, methods, prompts, traces
-- [references.md](ontology-to-tools-compilation/references.md) — Bibliography
+- [main-paper.md](/strategos/reference/ontology-to-tools-compilation/main-paper/) — Sections 1-6
+- [supplementary.md](/strategos/reference/ontology-to-tools-compilation/supplementary/) — Background, methods, prompts, traces
+- [references.md](/strategos/reference/ontology-to-tools-compilation/references/) — Bibliography

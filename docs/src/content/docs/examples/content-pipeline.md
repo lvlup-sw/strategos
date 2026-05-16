@@ -885,6 +885,6 @@ public async Task<object> Handle(
 
 ## Related Documentation
 
-- [Iterative Refinement Example](./iterative-refinement.md) - Loop pattern details
-- [Thompson Sampling Example](./thompson-sampling.md) - Agent selection algorithm
-- [Approval Flow Example](./approval-flow.md) - Human approval patterns
+- [Iterative Refinement Example](/strategos/examples/iterative-refinement/) - Loop pattern details
+- [Thompson Sampling Example](/strategos/examples/thompson-sampling/) - Agent selection algorithm
+- [Approval Flow Example](/strategos/examples/approval-flow/) - Human approval patterns

@@ -14,9 +14,9 @@ An ontology-to-tools compilation framework that turns an OWL/RDF ontology (T-Box
 
 | File | Section | Pages | Summary |
 |------|---------|-------|---------|
-| [main-paper](./main-paper.md) | Main paper | 1-27 | Introduction, framework design, performance evaluation (micro-F1 0.826), discussion, and methods |
-| [supplementary](./supplementary.md) | Supplementary | 28-47 | Background/related work, MCP implementation details, meta-prompts, evaluation traces |
-| [references](./references.md) | References | 48-54 | Complete bibliography |
+| [main-paper](/strategos/reference/ontology-to-tools-compilation/main-paper/) | Main paper | 1-27 | Introduction, framework design, performance evaluation (micro-F1 0.826), discussion, and methods |
+| [supplementary](/strategos/reference/ontology-to-tools-compilation/supplementary/) | Supplementary | 28-47 | Background/related work, MCP implementation details, meta-prompts, evaluation traces |
+| [references](/strategos/reference/ontology-to-tools-compilation/references/) | References | 48-54 | Complete bibliography |
 
 ## Relevance to Strategos Ontology Layer
 
@@ -28,4 +28,4 @@ This paper addresses the same core problem as our `Strategos.Ontology` layer: co
 - **MCP tool exposure** parallels our `Strategos.Ontology.MCP` package
 - **Constraint feedback loop** informs our postcondition/derivation chain staleness reasoning
 
-See [ontology-to-tools-grounding.md](../ontology-to-tools-grounding.md) for the formal analysis.
+See [ontology-to-tools-grounding.md](/strategos/reference/ontology-to-tools-grounding/) for the formal analysis.

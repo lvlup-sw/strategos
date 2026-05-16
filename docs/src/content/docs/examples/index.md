@@ -33,7 +33,7 @@ Choose a path based on your goals and available time.
 
 | Step | Read | Learn |
 |------|------|-------|
-| 1 | [Basic Workflow](./basic-workflow.md) | Sequential steps, immutable state, saga pattern |
+| 1 | [Basic Workflow](/strategos/examples/basic-workflow/) | Sequential steps, immutable state, saga pattern |
 | 2 | Run the [ContentPipeline sample](../../samples/ContentPipeline/) | See a workflow in action |
 | 3 | **Exercise**: Add a `ReserveInventory` step to the order workflow |
 
@@ -47,9 +47,9 @@ Choose a path based on your goals and available time.
 
 | Step | Read | Learn |
 |------|------|-------|
-| 1 | [Thompson Sampling](./thompson-sampling.md) | Multi-armed bandit, exploration vs exploitation |
+| 1 | [Thompson Sampling](/strategos/examples/thompson-sampling/) | Multi-armed bandit, exploration vs exploitation |
 | 2 | Run the [MultiModelRouter sample](../../samples/MultiModelRouter/) | See adaptive model selection |
-| 3 | [Iterative Refinement](./iterative-refinement.md) | Quality loops, `[Append]` attribute, maxIterations |
+| 3 | [Iterative Refinement](/strategos/examples/iterative-refinement/) | Quality loops, `[Append]` attribute, maxIterations |
 | 4 | Run the [AgenticCoder sample](../../samples/AgenticCoder/) | See test-driven refinement |
 | 5 | **Exercise**: Add a custom task category to MultiModelRouter |
 
@@ -63,9 +63,9 @@ Choose a path based on your goals and available time.
 
 | Step | Read | Learn |
 |------|------|-------|
-| 1 | [Approval Flow](./approval-flow.md) | Human checkpoints, timeout handling, escalation |
-| 2 | [Branching](./branching.md) | Conditional routing, transition tables |
-| 3 | [Fork/Join](./fork-join.md) | Parallel execution, state merging |
+| 1 | [Approval Flow](/strategos/examples/approval-flow/) | Human checkpoints, timeout handling, escalation |
+| 2 | [Branching](/strategos/examples/branching/) | Conditional routing, transition tables |
+| 3 | [Fork/Join](/strategos/examples/fork-join/) | Parallel execution, state merging |
 | 4 | Run the [ContentPipeline sample](../../samples/ContentPipeline/) | See approval gates and compensation |
 | 5 | **Exercise**: Add multi-approver workflow to ContentPipeline |
 
@@ -92,12 +92,12 @@ Choose a path based on your goals and available time.
 
 | Pattern | When to Use | Key Concept |
 |---------|-------------|-------------|
-| [Basic Workflow](./basic-workflow.md) | Sequential operations with dependencies | Saga pattern, immutable state |
-| [Branching](./branching.md) | Different logic for different inputs | Declarative routing, transition tables |
-| [Fork/Join](./fork-join.md) | Independent operations that can parallelize | State merging, fail-fast vs continue |
-| [Iterative Refinement](./iterative-refinement.md) | Quality improvement through feedback | `[Append]`, maxIterations circuit breaker |
-| [Approval Flow](./approval-flow.md) | Human decisions in automated workflows | Timeout handling, escalation, audit |
-| [Thompson Sampling](./thompson-sampling.md) | Adaptive selection from multiple options | Beta distributions, exploration/exploitation |
+| [Basic Workflow](/strategos/examples/basic-workflow/) | Sequential operations with dependencies | Saga pattern, immutable state |
+| [Branching](/strategos/examples/branching/) | Different logic for different inputs | Declarative routing, transition tables |
+| [Fork/Join](/strategos/examples/fork-join/) | Independent operations that can parallelize | State merging, fail-fast vs continue |
+| [Iterative Refinement](/strategos/examples/iterative-refinement/) | Quality improvement through feedback | `[Append]`, maxIterations circuit breaker |
+| [Approval Flow](/strategos/examples/approval-flow/) | Human decisions in automated workflows | Timeout handling, escalation, audit |
+| [Thompson Sampling](/strategos/examples/thompson-sampling/) | Adaptive selection from multiple options | Beta distributions, exploration/exploitation |
 
 ---
 

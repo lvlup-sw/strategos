@@ -1215,9 +1215,9 @@ Split across repos.
 
 ## 12. Related
 
-- [Exarchos ↔ Basileus Coordination ADR (rev)](../adrs/2026-04-18-exarchos-basileus-coordination.md) §1.3 (completeness constraint), §2.10 (Strategos refinements), §6.2 (coverage CI gate)
-- [Strategos Ontology Gap Analysis](../research/2026-04-18-strategos-ontology-gap-analysis.md) — the source of the three-stream insight
-- [Strategos Ontology Theoretical Grounding](../../../strategos/docs/reference/ontology-theoretical-grounding.md) §4.3 (N&R Fact Database gap — partially addressed by stream 3 semantic indexing)
-- [Strategos Ontology-to-Tools Grounding](../../../strategos/docs/reference/ontology-to-tools-grounding.md) §3.1 (compilation pipeline — source-to-ontology ingestion is the inverse direction)
-- [Data Fabric & Ontology Context](2026-04-05-data-fabric-ontology-context.md)
-- [Backend Quality Dimensions](../../../../.claude/plugins/cache/lvlup-sw/axiom/0.2.5/skills/backend-quality/references/dimensions.md) — DIM-1 (single source of truth per field), DIM-5 (no dead code / dual rot surfaces)
+- Exarchos ↔ Basileus Coordination ADR (rev) §1.3 (completeness constraint), §2.10 (Strategos refinements), §6.2 (coverage CI gate)
+- Strategos Ontology Gap Analysis — the source of the three-stream insight
+- Strategos Ontology Theoretical Grounding §4.3 (N&R Fact Database gap — partially addressed by stream 3 semantic indexing)
+- Strategos Ontology-to-Tools Grounding §3.1 (compilation pipeline — source-to-ontology ingestion is the inverse direction)
+- Data Fabric & Ontology Context
+- Backend Quality Dimensions — DIM-1 (single source of truth per field), DIM-5 (no dead code / dual rot surfaces)

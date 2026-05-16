@@ -376,8 +376,8 @@ obj.Action("ExecuteTrade")
 
 All chapter files are located in `docs/reference/ontological-semantics/`:
 
-- [00-preface.md](ontological-semantics/00-preface.md) -- Society of microtheories
-- [01-introduction.md](ontological-semantics/01-introduction.md) -- Agent model, four knowledge sources
-- [05-formal-ontology.md](ontological-semantics/05-formal-ontology.md) -- IS-A hierarchy, categories, properties
-- [06-meaning-representation.md](ontological-semantics/06-meaning-representation.md) -- TMR, preconditions, temporal structure
-- [07-static-knowledge-sources.md](ontological-semantics/07-static-knowledge-sources.md) -- Ontology BNF, Fact DB, lexicon
+- [00-preface.md](/strategos/reference/ontological-semantics/00-preface/) -- Society of microtheories
+- [01-introduction.md](/strategos/reference/ontological-semantics/01-introduction/) -- Agent model, four knowledge sources
+- [05-formal-ontology.md](/strategos/reference/ontological-semantics/05-formal-ontology/) -- IS-A hierarchy, categories, properties
+- [06-meaning-representation.md](/strategos/reference/ontological-semantics/06-meaning-representation/) -- TMR, preconditions, temporal structure
+- [07-static-knowledge-sources.md](/strategos/reference/ontological-semantics/07-static-knowledge-sources/) -- Ontology BNF, Fact DB, lexicon

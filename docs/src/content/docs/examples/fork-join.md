@@ -553,6 +553,6 @@ Only run certain analyses based on company type:
 
 ## Related
 
-- [Basic Workflow](./basic-workflow.md) - Sequential steps without parallelism
-- [Branching Pattern](./branching.md) - Exclusive routing (one path, not all)
-- [Iterative Refinement Pattern](./iterative-refinement.md) - Loops for quality improvement
+- [Basic Workflow](/strategos/examples/basic-workflow/) - Sequential steps without parallelism
+- [Branching Pattern](/strategos/examples/branching/) - Exclusive routing (one path, not all)
+- [Iterative Refinement Pattern](/strategos/examples/iterative-refinement/) - Loops for quality improvement
