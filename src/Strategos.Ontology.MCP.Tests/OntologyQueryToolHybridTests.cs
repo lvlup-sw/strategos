@@ -29,6 +29,9 @@ public sealed class OntologyQueryToolHybridTests
         new(_graph, _objectSetProvider, _eventStreamProvider,
             NullLogger<OntologyQueryTool>.Instance, keywordProvider);
 
+    private OntologyQueryTool BuildTool(CapturingLogger<OntologyQueryTool> logger, IKeywordSearchProvider? keywordProvider = null) =>
+        new(_graph, _objectSetProvider, _eventStreamProvider, logger, keywordProvider);
+
     // ---- Task 29: null hybridOptions preserves 2.5.0 behavior ----
 
     [Test]
@@ -67,5 +70,32 @@ public sealed class OntologyQueryToolHybridTests
         await Assert.That(union).IsTypeOf<SemanticQueryResult>();
         var result = (SemanticQueryResult)union;
         await Assert.That(result.Meta.Hybrid).IsNull();
+    }
+
+    // ---- Task 30: structural + hybridOptions → silent ignore ----
+
+    [Test]
+    public async Task QueryAsync_StructuralQueryWithHybridOptions_IgnoresOptions_NoHybridMeta_NoWarnLog()
+    {
+        // Non-semantic branch must be byte-identical to 2.5.0 even when caller
+        // supplies hybridOptions (structural branch ignores them entirely,
+        // does not emit a warning, and does not surface HybridMeta).
+        var items = new List<object> { new { Id = "p1", Symbol = "AAPL" } };
+        _objectSetProvider
+            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties));
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            hybridOptions: new HybridQueryOptions());
+
+        await Assert.That(union).IsTypeOf<QueryResult>();
+        var result = (QueryResult)union;
+        await Assert.That(result.Meta.Hybrid).IsNull();
+        await Assert.That(logger.Entries.Count).IsEqualTo(0);
     }
 }
