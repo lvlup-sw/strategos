@@ -9,21 +9,56 @@ using Strategos.Identity.Abstractions.Tests.Fakes;
 namespace Strategos.Identity.Abstractions.Tests;
 
 /// <summary>
-/// Consolidated DR-8 traceability anchor. Each test maps to one row of the
-/// design document's "Error handling and edge cases" table:
+/// Consolidated DR-8 traceability anchor. The DR-8 "Error handling and edge
+/// cases" table in the design document has six rows; each is mapped below
+/// to the test (or off-repo enforcement surface) that satisfies it.
 /// </summary>
-/// <list type="bullet">
-///   <item><description>Row 1 — accessor read outside a handler returns null (no throw).</description></item>
-///   <item><description>Row 2 — middleware generates a new identity when none is incoming (basileus contract).</description></item>
-///   <item><description>Row 3 — identity records reject null/empty values at construction.</description></item>
-///   <item><description>Row 4 — provider returns null is a basileus contract; the stub provider's contract is enforced in T6.</description></item>
-///   <item><description>Row 5 — headers ride the envelope natively via Wolverine (documented, not tested here).</description></item>
-///   <item><description>Row 6 — non-ASCII header values are rejected by the record constructor.</description></item>
-/// </list>
 /// <remarks>
-/// Rows 2/4/5 are basileus-middleware contracts; their tests here are
-/// documentation anchors that pass trivially so an explicit grep for
-/// <c>DR8_</c> surfaces the full traceability mapping.
+/// <para>
+/// <b>Strategos-side enforcement (tests live in this class):</b>
+/// </para>
+/// <list type="bullet">
+///   <item><description>
+///     <b>Row 1</b> — accessor read outside a handler returns null (no throw).
+///     Test: <see cref="DR8_AccessorReadOutsideHandler_ReturnsNull_NoThrow"/>.
+///   </description></item>
+///   <item><description>
+///     <b>Row 3</b> — identity records reject null/empty values at construction.
+///     Test: <see cref="DR8_IdentityRecordConstructedWithNullValue_ThrowsArgumentException"/>.
+///     (Additional null/empty/whitespace/non-ASCII coverage in
+///     <see cref="WorkflowIdentityTests"/> and <see cref="AgentIdentityTests"/>.)
+///   </description></item>
+///   <item><description>
+///     <b>Row 6</b> — non-ASCII / control-character header values are rejected by
+///     the record constructor so the transport layer never sees an un-encodable byte.
+///     Test: <see cref="DR8_HeaderValueWithNonAsciiCharacter_RecordConstructorRejects"/>.
+///   </description></item>
+/// </list>
+/// <para>
+/// <b>Basileus-side / Wolverine-side enforcement (no Strategos-side test):</b>
+/// </para>
+/// <list type="bullet">
+///   <item><description>
+///     <b>Row 2</b> — middleware generates a new identity when none is incoming.
+///     This is the basileus <c>StrategosHeaderMiddleware</c> contract; the
+///     reference implementation lives in lvlup-sw/basileus PR #184. See
+///     <c>docs/coordination/2026-05-16-basileus-handoff.md</c> for the cross-repo
+///     handoff and middleware-shape contract.
+///   </description></item>
+///   <item><description>
+///     <b>Row 4</b> — provider returning null from <c>DeriveStepIdentity</c> is a
+///     basileus contract surface. The Strategos-side enforcement is the stub
+///     provider's own throw-on-null behavior verified in
+///     <see cref="IAgentIdentityProviderContractTests"/> (T6).
+///   </description></item>
+///   <item><description>
+///     <b>Row 5</b> — outgoing messages carry the workflow-identity header via
+///     Wolverine's native envelope mechanism plus the
+///     <c>PropagateIncomingHeaderToOutgoing</c> policy. Tested by Wolverine's
+///     own test suite (out of scope for Strategos); documented in CHANGELOG
+///     under the v2.7.0-preview.1 Migration subsection.
+///   </description></item>
+/// </list>
 /// </remarks>
 [Property("Category", "Integration")]
 public class DR8EdgeCasesIntegrationTests
@@ -42,21 +77,6 @@ public class DR8EdgeCasesIntegrationTests
     }
 
     /// <summary>
-    /// DR-8 Row 2 (documentation): when no incoming workflow-identity header is
-    /// present, the basileus middleware is responsible for generating one keyed
-    /// to <c>sagaId</c>. Strategos provides no enforcement.
-    /// </summary>
-    [Test]
-    public async Task DR8_NoIncomingWorkflowHeader_MiddlewareGeneratesNewIdentity_DocumentedAsBasileusContract()
-    {
-        // Documentation test: anchors the DR-8 row 2 contract in this suite so
-        // that a grep for DR8_ surfaces the basileus boundary. The actual
-        // enforcement lives in the basileus middleware (out of scope for
-        // Strategos).
-        await Assert.That(true).IsTrue();
-    }
-
-    /// <summary>
     /// DR-8 Row 3: both <see cref="WorkflowIdentity"/> and <see cref="AgentIdentity"/>
     /// reject null/empty values at construction.
     /// </summary>
@@ -68,29 +88,6 @@ public class DR8EdgeCasesIntegrationTests
 
         await Assert.That(() => new WorkflowIdentity(string.Empty)).Throws<ArgumentException>();
         await Assert.That(() => new AgentIdentity(string.Empty)).Throws<ArgumentException>();
-    }
-
-    /// <summary>
-    /// DR-8 Row 4 (documentation): the basileus provider returning null from
-    /// <c>DeriveStepIdentity</c> is a basileus contract surface. The stub's own
-    /// throw-on-null behavior is the Strategos-side enforcement (T6).
-    /// </summary>
-    [Test]
-    public async Task DR8_ProviderReturnsNull_DocumentedAsBasileusContract_NotEnforcedHere()
-    {
-        await Assert.That(true).IsTrue();
-    }
-
-    /// <summary>
-    /// DR-8 Row 5 (documentation): outgoing messages carry the workflow header
-    /// via Wolverine's native envelope mechanism + the
-    /// <c>PropagateIncomingHeaderToOutgoing</c> policy. Tested by Wolverine's
-    /// own suite; documented here for traceability.
-    /// </summary>
-    [Test]
-    public async Task DR8_HandlerEmitsMessage_HeadersRideOnEnvelope_NativeWolverineMechanism_DocumentedNotTested()
-    {
-        await Assert.That(true).IsTrue();
     }
 
     /// <summary>
