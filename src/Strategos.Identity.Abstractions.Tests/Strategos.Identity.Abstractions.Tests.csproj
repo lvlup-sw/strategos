@@ -8,8 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <PackageReference Include="NSubstitute" />
-    <PackageReference Include="Verify.SourceGenerators" />
   </ItemGroup>
 
   <ItemGroup>
