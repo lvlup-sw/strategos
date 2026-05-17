@@ -30,9 +30,24 @@
     </PackageReference>
   </ItemGroup>
 
+  <!--
+    Strategos.Identity.Abstractions ships alongside the generator as a sibling
+    analyzer-side reference. The generator emits a base-list entry against
+    IPhaseAwareSaga; the consumer also needs the abstractions assembly on the
+    target's runtime classpath. We reference the project here with PrivateAssets="all"
+    to keep it out of the package's compile dependency closure, and pack the
+    DLL into analyzers/dotnet/cs so it loads next to the generator at SG time.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj"
+                      PrivateAssets="all"
+                      ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
   <!-- Pack the generator as an analyzer -->
   <ItemGroup>
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="$(OutputPath)\Strategos.Identity.Abstractions.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <!-- Expose internals to test project -->

@@ -72,6 +72,7 @@ internal static class SagaEmitter
             "System",
             "System.CodeDom.Compiler",
             "System.Collections.Generic",
+            "Strategos.Identity.Abstractions",
             "Strategos.Services",
             "Marten.Schema",
             "Microsoft.Extensions.Logging",
@@ -153,7 +154,7 @@ internal static class SagaEmitter
         sb.AppendLine($"/// Wolverine saga for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
         sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
-        sb.AppendLine($"public partial class {sagaClassName} : Saga");
+        sb.AppendLine($"public partial class {sagaClassName} : Saga, IPhaseAwareSaga");
         sb.AppendLine("{");
     }
 }
