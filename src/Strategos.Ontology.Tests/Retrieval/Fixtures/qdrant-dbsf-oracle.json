@@ -51,32 +51,32 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.3014829174976534,
+          "fused_score": 1.261091865360016,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 1.290858154104645,
+          "fused_score": 1.2518905503524718,
           "rank": 2
         },
         {
           "document_id": "d-E",
-          "fused_score": 0.43942968464069715,
+          "fused_score": 0.447544568183609,
           "rank": 3
         },
         {
           "document_id": "d-C",
-          "fused_score": 0.4254644007500069,
+          "fused_score": 0.43545027756320964,
           "rank": 4
         },
         {
           "document_id": "d-D",
-          "fused_score": 0.27639320225002106,
+          "fused_score": 0.30635083268962926,
           "rank": 5
         },
         {
           "document_id": "d-F",
-          "fused_score": 0.2663716407569757,
+          "fused_score": 0.297671905851064,
           "rank": 6
         }
       ]
@@ -107,12 +107,12 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.166666666666666,
+          "fused_score": 1.1178511301977578,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 0.3333333333333331,
+          "fused_score": 0.3821488698022417,
           "rank": 2
         }
       ]
@@ -155,24 +155,24 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.208006656319505,
+          "fused_score": 1.1698367236950844,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 0.9919997439877113,
+          "fused_score": 0.9934678183194199,
           "rank": 2
         },
         {
           "document_id": "d-C",
-          "fused_score": 0.7999935996927836,
+          "fused_score": 0.8366954579854957,
           "rank": 3
         }
       ]
     },
     {
       "query_id": "q4-outlier-heavy",
-      "description": "One list contains a large outlier \u2014 DBSF clamps it.",
+      "description": "One list contains a large outlier.",
       "lists": [
         [
           {
@@ -216,22 +216,22 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.5122720150486757,
+          "fused_score": 1.4436405786799975,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 0.9802676010458504,
+          "fused_score": 0.9829112412280969,
           "rank": 2
         },
         {
           "document_id": "d-C",
-          "fused_score": 0.8292426616504416,
+          "fused_score": 0.8521198071066677,
           "rank": 3
         },
         {
           "document_id": "d-D",
-          "fused_score": 0.678217722255033,
+          "fused_score": 0.7213283729852384,
           "rank": 4
         }
       ]
@@ -282,22 +282,22 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.4852701451064716,
+          "fused_score": 1.4202562733603652,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 1.0918847233965128,
+          "fused_score": 1.0795745046810863,
           "rank": 2
         },
         {
           "document_id": "d-C",
-          "fused_score": 0.8239024869522434,
+          "fused_score": 0.8474950801573811,
           "rank": 3
         },
         {
           "document_id": "d-D",
-          "fused_score": 0.5989426445447721,
+          "fused_score": 0.6526741418011672,
           "rank": 4
         }
       ]
@@ -348,22 +348,22 @@
       "expected_fused": [
         {
           "document_id": "d-A",
-          "fused_score": 1.4651794549427375,
+          "fused_score": 1.4028572252990092,
           "rank": 1
         },
         {
           "document_id": "d-B",
-          "fused_score": 1.1371655474110784,
+          "fused_score": 1.1187888485819928,
           "rank": 2
         },
         {
           "document_id": "d-C",
-          "fused_score": 0.8091516398794196,
+          "fused_score": 0.8347204718649763,
           "rank": 3
         },
         {
           "document_id": "d-D",
-          "fused_score": 0.5885033577667644,
+          "fused_score": 0.6436334542540214,
           "rank": 4
         }
       ]

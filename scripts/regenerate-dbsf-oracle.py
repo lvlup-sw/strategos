@@ -2,33 +2,42 @@
 # =============================================================================
 # regenerate-dbsf-oracle.py
 #
-# Generates the Qdrant DBSF (Distribution-Based Score Fusion) parity oracle
-# at src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json.
+# Generates / verifies the Qdrant DBSF (Distribution-Based Score Fusion) parity
+# oracle at src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json.
 #
-# Manual-run script: not in CI. Re-run when bumping the qdrant-client pin in
-# scripts/requirements.txt or when adding/removing fixture queries.
+# Calls qdrant_client.hybrid.fusion.distribution_based_score_fusion directly
+# (qdrant-client pinned to 1.12.1 in scripts/requirements.txt). Degenerate
+# inputs that raise ZeroDivisionError inside qdrant's implementation (single-
+# element lists, zero-variance lists) are caught per-list and emitted using
+# the documented Strategos 0.5-convention extension — see
+# src/Strategos.Ontology/Retrieval/RankFusion.DistributionBased.cs.
+#
+# Discovered import path (verified against qdrant-client==1.12.1):
+#   from qdrant_client.hybrid.fusion import distribution_based_score_fusion
+#   from qdrant_client.http.models import ScoredPoint
+#
+# ScoredPoint construction note: in 1.12.1 the model accepts string ids, so we
+# pass document_id directly as id without an int↔str mapping layer.
 #
 # Usage:
 #   python3 -m pip install -r scripts/requirements.txt
-#   python3 scripts/regenerate-dbsf-oracle.py
+#   python3 scripts/regenerate-dbsf-oracle.py            # regenerate oracle
+#   python3 scripts/regenerate-dbsf-oracle.py --check    # parity-check only
 #
-# Reference: qdrant_client.hybrid.fusion.distribution_based_score_fusion
-#   (Qdrant 1.11+, pinned to 1.12.1 in scripts/requirements.txt).
-#
-# The script reproduces the Qdrant Python algorithm in-process so the oracle
-# is self-contained and reviewable. Strategos extends DBSF with per-list
-# weights: when weights is null the algorithm matches Qdrant's stock
-# unweighted DBSF bit-for-bit (within the 1e-9 tolerance the C# test asserts).
+# The --check mode regenerates in-memory and exits non-zero if the committed
+# oracle JSON does not match byte-for-byte. CI uses --check to guard against
+# silent drift (see .github/workflows/ci.yml#dbsf-parity-guard).
 # =============================================================================
 
 from __future__ import annotations
 
+import argparse
 import json
-import math
-import os
-import statistics
+import sys
 from pathlib import Path
-from typing import Iterable
+
+from qdrant_client.hybrid.fusion import distribution_based_score_fusion
+from qdrant_client.http.models import ScoredPoint
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_PATH = (
@@ -41,42 +50,38 @@ FIXTURE_PATH = (
 )
 
 
-def _normalize_list(items: list[tuple[str, float]]) -> dict[str, float]:
-    """Reproduce qdrant_client.hybrid.fusion's per-list normalization.
+def _scored_points(items: list[tuple[str, float]]) -> list[ScoredPoint]:
+    """Build a fresh ScoredPoint list. We rebuild on every call because the
+    real qdrant function mutates point.score in-place during normalization."""
+    return [
+        ScoredPoint(id=doc_id, version=0, score=score, payload={})
+        for (doc_id, score) in items
+    ]
 
-    For each list:
-      mu     = mean of scores
-      sigma  = stdev of scores (Qdrant uses statistics.pstdev — population stdev — but the
-               oracle works for either because we treat zero-variance as a
-               special case below)
-      low    = mu - 3*sigma
-      high   = mu + 3*sigma
-      normalized(id) = (clamp(score, low, high) - low) / (high - low)
 
-    Special cases (Qdrant convention):
-      - Single-element list: normalize to 0.5.
-      - Zero-variance list (sigma < 1e-9): all elements normalize to 0.5.
-      - Empty list: contribute nothing.
+def _normalize_via_qdrant(items: list[tuple[str, float]]) -> dict[str, float] | None:
+    """Call qdrant's per-list normalization indirectly via a single-list fusion.
+
+    Returns:
+      - dict mapping doc_id → normalized score, OR
+      - None when qdrant raises ZeroDivisionError (single-element / zero-variance
+        list — caller applies the Strategos 0.5-convention fallback).
     """
     if not items:
         return {}
-    scores = [s for (_, s) in items]
-    if len(scores) == 1:
-        return {items[0][0]: 0.5}
-    mu = statistics.fmean(scores)
-    # Population stdev: qdrant_client uses np.std (default ddof=0). We mirror that.
-    var = sum((s - mu) ** 2 for s in scores) / len(scores)
-    sigma = math.sqrt(var)
-    if sigma < 1e-9:
-        return {doc_id: 0.5 for (doc_id, _) in items}
-    low = mu - 3 * sigma
-    high = mu + 3 * sigma
-    span = high - low  # = 6 * sigma; guaranteed > 0 because sigma >= 1e-9
-    out: dict[str, float] = {}
-    for (doc_id, score) in items:
-        clamped = max(low, min(high, score))
-        out[doc_id] = (clamped - low) / span
-    return out
+    try:
+        # Single-list fusion: limit large enough to retain every doc.
+        fused = distribution_based_score_fusion(
+            responses=[_scored_points(items)],
+            limit=len(items),
+        )
+    except ZeroDivisionError:
+        # Strategos extension: qdrant raises here for single-element lists
+        # (N-1 == 0 in the variance computation) and for zero-variance lists
+        # (high - low == 0 in the rescale). Both map to 0.5 per Strategos.
+        return None
+    # fused order is by score desc; we just need the per-doc score.
+    return {pt.id: pt.score for pt in fused}
 
 
 def dbsf(
@@ -84,8 +89,22 @@ def dbsf(
     weights: list[float] | None,
     top_k: int,
 ) -> list[dict]:
-    """Strategos-extended DBSF (weighted). When `weights is None`, output is
-    bit-identical to qdrant_client's unweighted DBSF."""
+    """Strategos-extended DBSF (weighted).
+
+    Algorithm:
+      - For each list, compute qdrant's per-list normalized scores via
+        `distribution_based_score_fusion([list], limit=len(list))`.
+      - When that raises ZeroDivisionError (single-element / zero-variance),
+        emit the Strategos 0.5-convention fallback for every doc in that list.
+      - Multiply per-doc normalized scores by `weights[li]` (default 1.0).
+      - Sum across lists; sort fused desc with `DocumentId` ordinal tie-break;
+        return top_k 1-indexed entries.
+
+    When `weights is None`, output for non-degenerate inputs matches
+    `qdrant_client.hybrid.fusion.distribution_based_score_fusion(lists, top_k)`
+    bit-for-bit within float reordering noise (the C# parity test asserts
+    ≤ 1e-9).
+    """
     if weights is None:
         weights = [1.0] * len(lists)
     if len(weights) != len(lists):
@@ -96,7 +115,10 @@ def dbsf(
         w = weights[li]
         if w == 0.0 or not lst:
             continue
-        norm = _normalize_list(lst)
+        norm = _normalize_via_qdrant(lst)
+        if norm is None:
+            # Strategos 0.5-convention fallback (qdrant raises here).
+            norm = {doc_id: 0.5 for (doc_id, _) in lst}
         for doc_id, n in norm.items():
             fused[doc_id] = fused.get(doc_id, 0.0) + w * n
 
@@ -130,7 +152,8 @@ def build_queries() -> list[dict]:
         }
     )
 
-    # 2. Single-element list — Qdrant convention: normalize to 0.5.
+    # 2. Single-element list — Strategos extension: normalize to 0.5
+    # (qdrant raises ZeroDivisionError on N-1 == 0).
     queries.append(
         {
             "query_id": "q2-single-element",
@@ -144,7 +167,8 @@ def build_queries() -> list[dict]:
         }
     )
 
-    # 3. Zero-variance list — all scores equal => all normalize to 0.5.
+    # 3. Zero-variance list — Strategos extension: all 0.5
+    # (qdrant raises ZeroDivisionError on high-low == 0).
     queries.append(
         {
             "query_id": "q3-zero-variance",
@@ -158,11 +182,12 @@ def build_queries() -> list[dict]:
         }
     )
 
-    # 4. Outlier-heavy list — DBSF should clamp outliers, blunting their effect.
+    # 4. Outlier-heavy list — DBSF without clamping no longer blunts the
+    # outlier; the algorithm still produces a deterministic ordering.
     queries.append(
         {
             "query_id": "q4-outlier-heavy",
-            "description": "One list contains a large outlier — DBSF clamps it.",
+            "description": "One list contains a large outlier.",
             "lists": [
                 [
                     ("d-A", 1.0),
@@ -201,7 +226,7 @@ def build_queries() -> list[dict]:
     queries.append(
         {
             "query_id": "q6-large-skew",
-            "description": "Lists with very different sigma — DBSF puts them on the same scale.",
+            "description": "Lists with very different σ — DBSF puts them on the same scale.",
             "lists": [
                 [
                     ("d-A", 0.0001),
@@ -224,7 +249,7 @@ def build_queries() -> list[dict]:
     return queries
 
 
-def main() -> int:
+def build_payload() -> dict:
     queries = build_queries()
     out_queries = []
     for q in queries:
@@ -240,7 +265,7 @@ def main() -> int:
             }
         )
 
-    payload = {
+    return {
         "schema_version": "1",
         "generator": "scripts/regenerate-dbsf-oracle.py",
         "algorithm": "Distribution-Based Score Fusion (Qdrant 2024)",
@@ -249,13 +274,66 @@ def main() -> int:
         "queries": out_queries,
     }
 
+
+def _serialize(payload: dict) -> str:
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
+def _write(payload: dict) -> int:
     FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with FIXTURE_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, sort_keys=False)
-        fh.write("\n")
-
-    print(f"Wrote {len(out_queries)} queries to {FIXTURE_PATH.relative_to(REPO_ROOT)}")
+        fh.write(_serialize(payload))
+    print(f"Wrote {len(payload['queries'])} queries to {FIXTURE_PATH.relative_to(REPO_ROOT)}")
     return 0
+
+
+def _check(payload: dict) -> int:
+    expected = _serialize(payload)
+    if not FIXTURE_PATH.exists():
+        print(f"check FAILED: {FIXTURE_PATH} does not exist", file=sys.stderr)
+        return 1
+    with FIXTURE_PATH.open("r", encoding="utf-8") as fh:
+        actual = fh.read()
+    if actual == expected:
+        print(f"check PASS: {FIXTURE_PATH.relative_to(REPO_ROOT)} matches real-qdrant output.")
+        return 0
+
+    # Diff per-query to surface which query/score diverges.
+    try:
+        expected_obj = json.loads(expected)
+        actual_obj = json.loads(actual)
+        diffs: list[str] = []
+        for eq, aq in zip(expected_obj.get("queries", []), actual_obj.get("queries", [])):
+            qid = eq.get("query_id")
+            if eq.get("expected_fused") != aq.get("expected_fused"):
+                diffs.append(qid)
+        if diffs:
+            print(
+                "check FAILED: oracle mismatch on queries: " + ", ".join(diffs),
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "check FAILED: oracle differs from real-qdrant output (whitespace / key-order drift).",
+                file=sys.stderr,
+            )
+    except json.JSONDecodeError:
+        print("check FAILED: committed oracle is not valid JSON.", file=sys.stderr)
+    return 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify the committed oracle matches real-qdrant output; exit non-zero on drift.",
+    )
+    args = parser.parse_args()
+    payload = build_payload()
+    if args.check:
+        return _check(payload)
+    return _write(payload)
 
 
 if __name__ == "__main__":
