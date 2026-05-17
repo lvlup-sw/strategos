@@ -49,3 +49,25 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
+
+  dbsf-parity-guard:
+    # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
+    # still matches the output of qdrant_client.hybrid.fusion.distribution_based_score_fusion
+    # for the pinned qdrant-client version. Reconciliation issue #79; see
+    # docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md.
+    name: DBSF parity guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install qdrant-client (pinned)
+        run: python3 -m pip install -r scripts/requirements.txt
+
+      - name: Verify DBSF oracle matches real qdrant
+        run: python3 scripts/regenerate-dbsf-oracle.py --check
