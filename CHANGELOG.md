@@ -18,7 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   composition root.
 - **`RankFusion`** static utilities (PR-B) — `RankFusion.Reciprocal` (weighted
   Cormack 2009 RRF, bit-identical to the original paper when weights = null)
-  and `RankFusion.DistributionBased` (Qdrant 2024 DBSF, parity ≤ 1e-9).
+  and `RankFusion.DistributionBased` (Qdrant 2024 DBSF). DBSF matches
+  `qdrant_client.hybrid.fusion.distribution_based_score_fusion`
+  (qdrant-client 1.12.1) within `1e-9` on non-degenerate inputs; single-element
+  and zero-variance lists use the documented Strategos 0.5-convention
+  extension because qdrant raises `ZeroDivisionError` in those cases. A
+  `dbsf-parity-guard` CI job (`.github/workflows/ci.yml`) mechanically rejects
+  oracle drift on every PR. See issue #79 for the 2026-05-16 reconciliation
+  that corrected an earlier overclaimed "parity ≤ 1e-9" wording.
   Supporting records: `RankedCandidate`, `ScoredCandidate`, `FusedResult`.
 - **`HybridQueryOptions`** + **`FusionMethod`** enum (PR-C) — additive optional
   per-call configuration for `OntologyQueryTool.QueryAsync`.

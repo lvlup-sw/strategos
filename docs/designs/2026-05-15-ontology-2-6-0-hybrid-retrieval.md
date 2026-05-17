@@ -237,12 +237,21 @@ Output sorted by `fused_score` descending; ties broken by `DocumentId` ordinal a
 
 ### 5.2 DistributionBased (DBSF — Qdrant 2024)
 
+> **2026-05-16 reconciliation (issue #79).** §5.2 was rewritten after the
+> 2.6.0 release-gate audit proved the original "clamp + population stdev"
+> spec did NOT match qdrant. The algorithm below — sample stdev, no
+> clamping — matches `qdrant_client.hybrid.fusion.distribution_based_score_fusion`
+> (1.12.1) within `1e-9` on non-degenerate inputs. See
+> `docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md`.
+
 ```csharp
 public static partial class RankFusion
 {
     /// <summary>
-    /// Distribution-Based Score Fusion (Qdrant, 2024). Per-list normalize via μ±3σ,
-    /// clamp to [μ-3σ, μ+3σ], scale to [0,1], then weighted sum across lists.
+    /// Distribution-Based Score Fusion (Qdrant, 2024). Per-list normalize via
+    /// (score - (μ-3σ)) / 6σ using sample stdev (Bessel-corrected); no clamping;
+    /// then weighted sum across lists. Matches qdrant-client 1.12.1 within 1e-9
+    /// on non-degenerate inputs.
     /// </summary>
     public static IReadOnlyList<FusedResult> DistributionBased(
         IReadOnlyList<IReadOnlyList<ScoredCandidate>> scoredLists,
@@ -256,12 +265,17 @@ public sealed record ScoredCandidate(string DocumentId, double Score);
 Algorithm:
 
 ```text
-1. For each list L: μ_L ← mean, σ_L ← stdev
+1. For each list L: μ_L ← mean,  σ_L ← sample stdev (Σ(x-μ)² / (N-1))
 2. low_L ← μ_L - 3σ_L,  high_L ← μ_L + 3σ_L
 3. For each candidate (id, score) in L:
-     normalized(id, L) = (clamp(score, low_L, high_L) - low_L) / (high_L - low_L)
+     normalized(id, L) = (score - low_L) / (high_L - low_L)
+                                     (no clamping — may exceed [0, 1])
 4. fused_score(d) = Σ_L  weight_L · normalized(d, L)
                                     where normalized(d, L) = 0 if d ∉ L
+
+Strategos extensions (qdrant raises ZeroDivisionError in both cases):
+  - Single-element list (N = 1): normalized = 0.5.
+  - Zero-variance list (σ < 1e-9): every element normalizes to 0.5.
 ```
 
 ### 5.3 Behavior table (Reciprocal)
@@ -284,12 +298,13 @@ Algorithm:
 | Concern | Specification |
 |---|---|
 | Argument validation | `topK >= 0`, all `weight_L >= 0`, `weights.Count == scoredLists.Count` (when non-null). |
-| Single-element list | Normalize that one element to `0.5` (Qdrant convention). |
-| Zero-variance list (σ < 1e-9) | All elements normalize to `0.5` (Qdrant convention). |
+| Single-element list | Normalize that one element to `0.5`. **Strategos robustness extension** — qdrant raises `ZeroDivisionError` (variance divides by `N-1 = 0`). |
+| Zero-variance list (σ < 1e-9) | All elements normalize to `0.5`. **Strategos robustness extension** — qdrant raises `ZeroDivisionError` (rescale divides by `high-low = 0`). |
 | Empty list | Skip (contributes 0 to all documents). |
 | Score scale | Any real-valued scores accepted (positive or negative). |
-| Outlier handling | Clamp to `[μ-3σ, μ+3σ]` before normalizing (DBSF's stated advantage over min-max). |
-| Determinism | Identical inputs → identical outputs. Tie-break by `DocumentId` ordinal. |
+| Output range | Normalized scores are NOT bounded to `[0, 1]`. Scores outside `[μ-3σ, μ+3σ]` normalize outside that interval — preserved to match qdrant (no clamping). |
+| σ definition | Bessel-corrected sample stdev (`Σ(x-μ)² / (N-1)`). Matches qdrant-client 1.12.1. |
+| Determinism | Identical inputs → identical outputs. Tie-break by `DocumentId` ordinal (Strategos choice; qdrant uses insertion order). |
 | Float stability | Mean and variance computed in single pass per list. |
 
 ### 5.5 Test strategy
@@ -304,9 +319,9 @@ Algorithm:
 
 **DistributionBased:**
 
-- **Qdrant parity oracle.** A fixed test corpus computed via Qdrant's reference Python implementation (`qdrant_client/hybrid/fusion.py::distribution_based_score_fusion`) committed as JSON at `Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json`; C# reproduces ordering and per-document scores within `1e-9`. **Hard gate.** Regenerator script at `scripts/regenerate-dbsf-oracle.py` (Python, manual run; not in CI).
-- **Edge cases.** Empty list, single-element list (→ 0.5), zero-variance list (→ 0.5), heavily-skewed scores, mixed positive/negative scores.
-- **Outlier-robustness.** Queries with heavy outliers in one path; DBSF tracks expected ordering, min-max-baseline would not.
+- **Qdrant parity oracle.** A fixed test corpus computed by calling `qdrant_client.hybrid.fusion.distribution_based_score_fusion` directly (qdrant-client 1.12.1) and committed as JSON at `Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json`. C# reproduces ordering and per-document scores within `1e-9` on **non-degenerate inputs**; degenerate inputs (single-element / zero-variance lists, where qdrant raises `ZeroDivisionError`) use the documented Strategos 0.5-convention extension. **Hard gate.** Regenerator script at `scripts/regenerate-dbsf-oracle.py`; `--check` mode is wired into the `dbsf-parity-guard` CI job (`.github/workflows/ci.yml`) so silent drift is mechanically rejected.
+- **Edge cases.** Empty list, single-element list (→ 0.5 — Strategos extension), zero-variance list (→ 0.5 — Strategos extension), heavily-skewed scores, mixed positive/negative scores.
+- **Deterministic ordering under outliers.** A query with a heavy outlier in one path (q4-outlier-heavy) is included in the oracle. DBSF without clamping still yields a deterministic, qdrant-equivalent ordering, but no longer "blunts" outliers the way a clamping variant would.
 - **Property tests.** Translation invariance (adding constant offset to all scores in a list doesn't change output); scale invariance (multiplying by positive constant doesn't change output); weight monotonicity.
 - **Benchmark.** Same 2×100 < 1 ms gate.
 
@@ -325,7 +340,7 @@ Algorithm:
 - [ ] Static partial class + records under `Strategos.Ontology.Retrieval`.
 - [ ] `Reciprocal` with `weights = null` is bit-identical to Cormack 2009 reference.
 - [ ] Cormack 2009 §3.3 reference vectors green.
-- [ ] DBSF Qdrant parity JSON oracle green within `1e-9`.
+- [ ] DBSF Qdrant parity JSON oracle green within `1e-9` on non-degenerate inputs (documented Strategos 0.5-convention extension for single-element and zero-variance lists where qdrant raises `ZeroDivisionError`); `dbsf-parity-guard` CI job green.
 - [ ] Edge-case and property tests for both methods green.
 - [ ] BenchmarkDotNet entries green at < 1 ms for 2×100 fusion.
 - [ ] XML doc-comments cite Cormack 2009 and Qdrant DBSF.
@@ -588,7 +603,7 @@ Applied `/axiom:design` across the design. Key takeaways carried into the design
 - **DIM-3 (backward compat).** Hard gate. Hybrid sub-record is omittable; new parameter is optional and last positional; provider is optional in DI; structural queries see byte-for-byte 2.5.0 behavior. Verified via "2.5.0 test suite passes unmodified" acceptance criterion.
 - **DIM-4 (surface clarity).** XML doc-comments call out: rank-1-indexed convention, score-scale-agnostic semantics, when to pick `Reciprocal` vs `DistributionBased`, `[denseWeight, sparseWeight]` ordering, that `BmSaturationThreshold` is informational only.
 - **DIM-5 (failure mode visibility).** All degradation paths surface in `HybridMeta.Degraded`. Dense failure propagates (baseline). Sparse failure logs with stack. Provider absence warns once per process. No silent fallback to a "looks fine" wire envelope.
-- **DIM-6 (test surface).** Three test layers: (a) PR-A in-memory provider exercises the full contract; (b) PR-B has Cormack 2009 + Qdrant DBSF parity oracles as hard gates plus property tests; (c) PR-C has snapshot tests on all five `HybridMeta` shapes. BenchmarkDotNet for PR-B.
+- **DIM-6 (test surface).** Three test layers: (a) PR-A in-memory provider exercises the full contract; (b) PR-B has Cormack 2009 + Qdrant DBSF parity oracles as hard gates plus property tests (DBSF parity is ≤ `1e-9` on non-degenerate inputs — see §5.5 — and a CI parity-guard job rejects oracle drift); (c) PR-C has snapshot tests on all five `HybridMeta` shapes. BenchmarkDotNet for PR-B.
 - **DIM-7 (fail-closed).** No silent fall-through. `HybridMeta.Hybrid = true` if and only if the sparse path actually contributed. Provider absence is explicit; sparse failure is explicit; dense failure is hard. `EnableKeyword = false` is explicit caller opt-out.
 - **DIM-8 (operational ergonomics).** Defaults match production consensus (`Reciprocal`, `k = 60`, weights = 1.0, `SparseTopK = DenseTopK = 50`). Library-level concerns (algorithm choice, weights) exposed; infrastructure-level concerns (backend, cache, reranker) left to consumers per parent ADR.
 
@@ -599,7 +614,7 @@ Applied `/axiom:design` across the design. Key takeaways carried into the design
 - All three PRs (A/B/C) merged.
 - Full 2.5.0 `OntologyQueryTool` test suite green on `main` post-PR-C.
 - BenchmarkDotNet entries green at < 1 ms for 2×100 fusion.
-- Cormack 2009 and Qdrant DBSF parity oracles green.
+- Cormack 2009 and Qdrant DBSF parity oracles green (DBSF: ≤ `1e-9` on non-degenerate inputs + Strategos 0.5-convention extension for single-element / zero-variance lists — see §5.5).
 - CHANGELOG.md updated under `## [2.6.0]`.
 - Milestone "Ontology 2.6.0 — Hybrid Retrieval Seams" closed; issues #56, #57, #58, #47 closed.
 - Downstream basileus#167 unblocked (verified by Basileus dev environment compose).

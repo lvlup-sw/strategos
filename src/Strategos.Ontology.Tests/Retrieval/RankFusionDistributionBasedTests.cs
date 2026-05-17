@@ -190,11 +190,16 @@ public sealed class RankFusionDistributionBasedTests
     }
 
     [Test]
-    public async Task DistributionBased_OutlierPath_TracksExpectedOrdering()
+    public async Task DistributionBased_OutlierPath_MatchesOracleFixture()
     {
-        // Same data as the oracle's q4-outlier-heavy: an outlier in list 2 that
-        // DBSF should clamp. Compare to a hand-rolled min-max baseline to assert
-        // DBSF orders differently.
+        // Same data as the oracle's q4-outlier-heavy. The earlier version of
+        // this test compared DBSF to a hand-rolled min-max baseline, claiming
+        // DBSF "clamps the outlier" — that was true of the prior in-house
+        // implementation but is NOT true of qdrant's DBSF (no clamping).
+        // After the 2026-05-16 reconciliation (issue #79) this test instead
+        // asserts the deterministic ordering and the documented top-doc
+        // score, both sourced from the q4 oracle entry. The full per-doc
+        // parity check lives in DistributionBased_AgainstQdrantOracle_*.
         var lists = new IReadOnlyList<ScoredCandidate>[]
         {
             new[]
@@ -206,7 +211,7 @@ public sealed class RankFusionDistributionBasedTests
             },
             new[]
             {
-                new ScoredCandidate("d-A", 100.0), // outlier
+                new ScoredCandidate("d-A", 100.0), // outlier — no clamping
                 new ScoredCandidate("d-B", 2.0),
                 new ScoredCandidate("d-C", 1.5),
                 new ScoredCandidate("d-D", 1.0),
@@ -215,34 +220,16 @@ public sealed class RankFusionDistributionBasedTests
 
         var dbsf = RankFusion.DistributionBased(lists, weights: null, topK: 10);
 
-        // Min-max baseline: per-list min-max normalize to [0,1] then sum.
-        // d-A in list 2 → 1.0 (max), so min-max would pin its contribution at 1.0.
-        // Compute and check ordering MAY differ from DBSF (DBSF clamps the outlier).
-        // The KEY assertion: DBSF's gap between d-A and d-B is smaller than min-max's,
-        // because DBSF clamps d-A's outlier list-2 score to μ+3σ.
-        var minMax = MinMaxBaseline(lists);
-        var dbsfGapAB = dbsf[0].FusedScore - dbsf[1].FusedScore;
-        var mmGapAB = minMax["d-A"] - minMax["d-B"];
-        await Assert.That(dbsfGapAB).IsLessThan(mmGapAB);
-    }
+        await Assert.That(dbsf.Count).IsEqualTo(4);
+        await Assert.That(dbsf[0].DocumentId).IsEqualTo("d-A");
+        await Assert.That(dbsf[1].DocumentId).IsEqualTo("d-B");
+        await Assert.That(dbsf[2].DocumentId).IsEqualTo("d-C");
+        await Assert.That(dbsf[3].DocumentId).IsEqualTo("d-D");
 
-    private static Dictionary<string, double> MinMaxBaseline(IReadOnlyList<IReadOnlyList<ScoredCandidate>> lists)
-    {
-        var sums = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var lst in lists)
-        {
-            if (lst.Count == 0) continue;
-            double min = lst.Min(c => c.Score);
-            double max = lst.Max(c => c.Score);
-            double span = max - min;
-            foreach (var c in lst)
-            {
-                double n = span < 1e-9 ? 0.5 : (c.Score - min) / span;
-                sums[c.DocumentId] = sums.GetValueOrDefault(c.DocumentId, 0.0) + n;
-            }
-        }
-
-        return sums;
+        // d-A from oracle q4-outlier-heavy (qdrant 1.12.1 output).
+        const double ExpectedTopScore = 1.4436405786799975;
+        await Assert.That(Math.Abs(dbsf[0].FusedScore - ExpectedTopScore))
+            .IsLessThanOrEqualTo(EdgeTolerance);
     }
 
     [Test]

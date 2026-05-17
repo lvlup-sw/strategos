@@ -6,6 +6,8 @@
 **Closes:** strategos#56, strategos#57, strategos#58; resolves milestone #47.
 **Iron Law:** **NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST**
 
+> **2026-05-16 reconciliation note:** §6 (DBSF) of this plan describes the original algorithm (population stdev + clamping). That algorithm shipped, was caught at release-gate verification on 2026-05-16 as not matching real `qdrant-client==1.12.1`, and was reconciled to real-qdrant parity (sample stdev + no clamping) by issue #79 and the follow-up plan at [`docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md`](2026-05-16-refactor-dbsf-qdrant-parity.md). Task 18 and Task 19 references to clamping and a min-max baseline test are historical only; the current behavior matches the reconciliation plan, not this one.
+
 ## Cadence
 
 Three PRs, partial-parallel:
