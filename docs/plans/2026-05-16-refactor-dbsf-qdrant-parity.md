@@ -204,7 +204,7 @@ PR #77 shipped `RankFusion.DistributionBased` with a stated "Qdrant DBSF parity 
 
 ## Execution Order
 
-```
+```text
 Task 1 (regen script + --check)  ─┐
         │                          │
         ▼                          │

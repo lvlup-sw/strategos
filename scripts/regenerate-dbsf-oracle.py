@@ -302,11 +302,19 @@ def _check(payload: dict) -> int:
     try:
         expected_obj = json.loads(expected)
         actual_obj = json.loads(actual)
+        expected_queries = expected_obj.get("queries", [])
+        actual_queries = actual_obj.get("queries", [])
         diffs: list[str] = []
-        for eq, aq in zip(expected_obj.get("queries", []), actual_obj.get("queries", [])):
-            qid = eq.get("query_id")
-            if eq.get("expected_fused") != aq.get("expected_fused"):
-                diffs.append(qid)
+        if len(expected_queries) != len(actual_queries):
+            diffs.append(
+                f"<query-count mismatch: expected {len(expected_queries)}, "
+                f"committed {len(actual_queries)}>"
+            )
+        else:
+            for eq, aq in zip(expected_queries, actual_queries):
+                qid = eq.get("query_id")
+                if eq.get("expected_fused") != aq.get("expected_fused"):
+                    diffs.append(qid)
         if diffs:
             print(
                 "check FAILED: oracle mismatch on queries: " + ", ".join(diffs),
