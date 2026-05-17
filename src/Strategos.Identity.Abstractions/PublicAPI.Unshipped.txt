@@ -4,6 +4,8 @@ Strategos.Identity.Abstractions.AgentIdentity
 Strategos.Identity.Abstractions.AgentIdentity.AgentIdentity(string value) -> void
 Strategos.Identity.Abstractions.AgentIdentity.Value.get -> string
 Strategos.Identity.Abstractions.AgentIdentity.Value.init -> void
+Strategos.Identity.Abstractions.IPhaseAwareSaga
+Strategos.Identity.Abstractions.IPhaseAwareSaga.CurrentPhaseName.get -> string!
 Strategos.Identity.Abstractions.StrategosHeaders
 Strategos.Identity.Abstractions.WorkflowIdentity
 Strategos.Identity.Abstractions.WorkflowIdentity.WorkflowIdentity(string value) -> void
