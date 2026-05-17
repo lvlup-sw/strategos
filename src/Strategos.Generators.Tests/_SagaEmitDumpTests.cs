@@ -11,8 +11,8 @@ using Strategos.Generators.Tests.Fixtures;
 namespace Strategos.Generators.Tests;
 
 /// <summary>
-/// One-shot diagnostic that writes a representative saga emit to /tmp for
-/// manual diff inspection during T10.
+/// One-shot diagnostic that writes a representative saga emit to the system temp
+/// directory for manual diff inspection during T10.
 /// </summary>
 /// <remarks>
 /// Disabled by default. Enable via the <c>STRATEGOS_DUMP_SAGA</c> env var.
@@ -22,7 +22,7 @@ namespace Strategos.Generators.Tests;
 [Property("Category", "Diagnostic")]
 public class _SagaEmitDumpTests
 {
-    /// <summary>Writes the linear workflow saga emit to /tmp/ProcessOrderSaga.emit.cs.</summary>
+    /// <summary>Writes the linear workflow saga emit to <c>Path.GetTempPath()/ProcessOrderSaga.emit.cs</c>.</summary>
     [Test]
     public async Task DumpEmit_LinearWorkflow_WhenEnvVarSet()
     {
@@ -34,7 +34,8 @@ public class _SagaEmitDumpTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
-        File.WriteAllText("/tmp/ProcessOrderSaga.emit.cs", sagaSource);
+        var dumpPath = Path.Combine(Path.GetTempPath(), "ProcessOrderSaga.emit.cs");
+        File.WriteAllText(dumpPath, sagaSource);
 
         await Assert.That(sagaSource).IsNotEmpty();
     }

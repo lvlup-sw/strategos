@@ -70,6 +70,14 @@ public class SagaSnapshotInspectionTests
         // Additive emit
         await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga");
         await Assert.That(sagaSource).Contains("public string CurrentPhaseName => Phase.ToString();");
+
+        // The contract is "exactly once" — duplicate emits (e.g., a regression where
+        // SagaPropertiesEmitter ran twice) would silently slip past a plain Contains check.
+        var currentPhaseNameOccurrences = System.Text.RegularExpressions.Regex.Matches(
+            sagaSource,
+            @"public string CurrentPhaseName => Phase\.ToString\(\);").Count;
+        await Assert.That(currentPhaseNameOccurrences).IsEqualTo(1);
+
         await Assert.That(sagaSource).Contains("using Strategos.Identity.Abstractions;");
 
         // DR-7 negations: no Option-C state leaked into emit

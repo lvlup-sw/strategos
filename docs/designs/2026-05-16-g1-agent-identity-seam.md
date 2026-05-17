@@ -31,7 +31,7 @@ Attribute every outbound message produced inside a saga handler to a specific `(
 
 Following the hexagonal convention (nrjohnstone/ports-adapters-examples, guiferreira, justifiedcode): the domain owns the ports, the adapter implements them. Strategos is the domain (durable workflow state machine); Basileus is the adapter (SPIFFE / SPIRE identity provider).
 
-```
+```text
 ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
 │  Strategos.Identity.Abstractions│   │  Basileus.Identity.Spiffe       │
 │  (ports — owned by domain)      │←──│  (adapter — owned by infra)     │

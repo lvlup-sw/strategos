@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-## [2.7.0-preview.1] - 2026-05-16
+## [2.7.0-preview.1] - 2026-05-17
 
 ### G1 — Agent Identity Seam (DR-1..DR-10, supersedes #67/#68/#69, design 2026-05-16-g1-agent-identity-seam)
 
@@ -231,6 +231,8 @@ First stable release of the Strategos library for building production-grade agen
 - Transactional outbox pattern
 - Time-travel debugging via event replay
 
+[2.7.0-preview.1]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0-preview.1
+[2.6.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.6.0
 [1.1.1]: https://github.com/lvlup-sw/strategos/releases/tag/v1.1.1
 [1.1.0]: https://github.com/lvlup-sw/strategos/releases/tag/v1.1.0
 [1.0.0]: https://github.com/lvlup-sw/strategos/releases/tag/v1.0.0

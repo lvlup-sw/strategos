@@ -390,7 +390,7 @@
 
 **Phase:** Coordination (not RED-GREEN per se — this is a cross-repo task)
 **DR coverage:** DR-9
-**Parallelizable:** No (final coordination step, runs after T12 release)
+**Parallelizable:** No (final coordination step, runs after T14 release)
 **Estimated:** 8 min
 
 1. **Open basileus tracking issue** on lvlup-sw/basileus titled `G1-strategos integration: re-cut PR #184 against Strategos.Identity.Abstractions 2.7.0-preview.1` with body including:
@@ -419,7 +419,7 @@
 - PR #184 comment is posted
 - Strategos issues #67/#68/#69 are closed-as-superseded with cross-links
 
-**Dependencies:** T12 (preview release must be published first so basileus can pin to it)
+**Dependencies:** T14 (preview release must be published first so basileus can pin to it)
 **Not parallelizable:** runs last
 **Note:** This is coordination work, not Strategos code. It belongs in the Strategos plan because it's required for the design to actually deliver value (basileus is the inaugural consumer).
 
@@ -446,7 +446,7 @@
    - Bump `MinVer` minimum to `2.7.0-preview.1` (or pass via `dotnet pack /p:MinVerSkip=true /p:Version=2.7.0-preview.1` if MinVer is git-tag-driven)
    - Pre-tag verification: `dotnet pack src/Strategos.Identity.Abstractions/` produces a valid nupkg
    - `README.md` (Strategos root) — add a new `### Identity Seam (v2.7.0-preview.1)` subsection documenting the abstractions package, `StrategosHeaders`, and the `PropagateIncomingHeaderToOutgoing` consumer-side registration
-   - Move `PublicAPI.Unshipped.txt` entries → `PublicAPI.Shipped.txt` (preview API is still pre-shipped per #51 protocol; defer this move to GA, but document the surface in CHANGELOG)
+   - Leave `PublicAPI.Unshipped.txt` entries in place — moving them to `PublicAPI.Shipped.txt` is **deferred to 2.7.0 GA** per #51 protocol (preview API is not yet "shipped" in that sense). The preview surface is documented in the CHANGELOG instead.
 
 3. **[REFACTOR]** None — release artifacts speak for themselves
 
