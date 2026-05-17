@@ -16,7 +16,7 @@ namespace Strategos.Identity.Abstractions.Tests.Fakes;
 /// stub is intentionally simpler so tests can assert the contract without
 /// pulling in SPIFFE machinery.
 /// </remarks>
-public sealed class StubAgentIdentityProvider : IAgentIdentityProvider
+internal sealed class StubAgentIdentityProvider : IAgentIdentityProvider
 {
     /// <inheritdoc/>
     public AgentIdentity DeriveStepIdentity(WorkflowIdentity workflow, string phaseName)

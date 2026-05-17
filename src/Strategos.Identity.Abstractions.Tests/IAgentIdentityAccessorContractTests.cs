@@ -74,11 +74,11 @@ public class IAgentIdentityAccessorContractTests
     }
 
     /// <summary>
-    /// DR-5: an invalid header value must not throw — the accessor returns null
-    /// so projections, debuggers, and inspection paths stay reliable.
+    /// DR-5: an invalid workflow header value must not throw — the accessor
+    /// returns null so projections, debuggers, and inspection paths stay reliable.
     /// </summary>
     [Test]
-    public async Task FakeAgentIdentityAccessor_HeaderValueInvalid_ReturnsNullNoThrow()
+    public async Task FakeAgentIdentityAccessor_WorkflowHeaderValueInvalid_ReturnsNullNoThrow()
     {
         var headers = new Dictionary<string, string>
         {
@@ -88,5 +88,26 @@ public class IAgentIdentityAccessorContractTests
         var sut = new FakeAgentIdentityAccessor(headers);
 
         await Assert.That(sut.CurrentWorkflow).IsNull();
+    }
+
+    /// <summary>
+    /// DR-5 symmetric coverage: an invalid agent header value must not throw
+    /// either — the accessor returns null on both properties uniformly. This
+    /// mirrors <see cref="FakeAgentIdentityAccessor_WorkflowHeaderValueInvalid_ReturnsNullNoThrow"/>
+    /// so the agent-side path has the same regression net as the workflow-side path.
+    /// </summary>
+    [Test]
+    public async Task FakeAgentIdentityAccessor_AgentHeaderValueInvalid_ReturnsNullNoThrow()
+    {
+        var headers = new Dictionary<string, string>
+        {
+            [StrategosHeaders.WorkflowIdentity] = "wf-001",
+            // Control character violates the printable-ASCII subset rule on construction.
+            [StrategosHeaders.AgentIdentity] = "wf-001#bad\nphase",
+        };
+        var sut = new FakeAgentIdentityAccessor(headers);
+
+        await Assert.That(sut.CurrentWorkflow).IsNotNull();
+        await Assert.That(sut.CurrentAgent).IsNull();
     }
 }

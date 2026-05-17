@@ -21,7 +21,7 @@ namespace Strategos.Identity.Abstractions.Tests.Fakes;
 /// projections, debuggers, or hosted-service inspection paths.
 /// </para>
 /// </remarks>
-public sealed class FakeAgentIdentityAccessor : IAgentIdentityAccessor
+internal sealed class FakeAgentIdentityAccessor : IAgentIdentityAccessor
 {
     private readonly IDictionary<string, string>? envelopeHeaders;
 
