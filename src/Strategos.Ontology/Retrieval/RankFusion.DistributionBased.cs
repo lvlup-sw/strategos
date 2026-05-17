@@ -15,16 +15,18 @@ public static partial class RankFusion
 
     /// <summary>
     /// Fuses multiple scored lists using Distribution-Based Score Fusion.
-    /// Per-list compute μ, σ; clamp scores to <c>[μ-3σ, μ+3σ]</c>; normalize to
-    /// <c>[0,1]</c>; multiply by per-list weight; sum across lists.
+    /// Per-list compute μ and σ (sample stdev, Bessel-corrected); normalize via
+    /// <c>(score − (μ−3σ)) / 6σ</c>; multiply by per-list weight; sum across lists.
+    /// Matches <c>qdrant_client.hybrid.fusion.distribution_based_score_fusion</c>
+    /// (qdrant-client 1.12.1) within <c>1e-9</c> on non-degenerate inputs.
     /// </summary>
     /// <param name="scoredLists">Input scored lists. Each inner list's documents
     /// must have unique <see cref="ScoredCandidate.DocumentId"/> (enforced via
     /// <see cref="System.Diagnostics.Debug.Assert(bool)"/>).</param>
     /// <param name="weights">Optional per-list weights (must equal
     /// <c>scoredLists.Count</c> when non-null; every element must be ≥ 0). Null =
-    /// all <c>1.0</c>, matching Qdrant's stock unweighted DBSF bit-for-bit
-    /// (within <c>1e-9</c>).</param>
+    /// all <c>1.0</c>, matching qdrant's stock unweighted DBSF within <c>1e-9</c>
+    /// on non-degenerate inputs.</param>
     /// <param name="topK">Maximum number of fused results to return (default <c>10</c>).
     /// Must be non-negative. <c>0</c> returns an empty list without computation.</param>
     /// <returns>The fused results sorted by <see cref="FusedResult.FusedScore"/>
@@ -36,10 +38,20 @@ public static partial class RankFusion
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="topK"/> &lt; 0.</exception>
     /// <remarks>
     /// <list type="bullet">
-    ///   <item><description><b>Single-element list:</b> that element normalizes to <c>0.5</c> (Qdrant convention).</description></item>
-    ///   <item><description><b>Zero-variance list</b> (σ &lt; <c>1e-9</c>): every element normalizes to <c>0.5</c>.</description></item>
-    ///   <item><description><b>σ definition:</b> population stdev (<c>Σ(x-μ)²/N</c>, matching <c>numpy.std(ddof=0)</c> as used by qdrant-client).</description></item>
-    ///   <item><description><b>Outlier handling:</b> scores outside <c>[μ-3σ, μ+3σ]</c> are clamped to the boundary (DBSF's stated advantage over min-max).</description></item>
+    ///   <item><description><b>σ definition:</b> Bessel-corrected sample stdev
+    ///     (<c>Σ(x-μ)²/(N-1)</c>) — matches qdrant-client 1.12.1.</description></item>
+    ///   <item><description><b>Output range:</b> normalized scores are NOT bounded
+    ///     to <c>[0, 1]</c>. Scores outside <c>[μ-3σ, μ+3σ]</c> normalize outside
+    ///     that interval — preserved to match qdrant (no clamping).</description></item>
+    ///   <item><description><b>Tie-break:</b> documents with equal fused scores are
+    ///     ordered by <see cref="FusedResult.DocumentId"/> ordinal ascending —
+    ///     deterministic across runs (Strategos choice; qdrant uses insertion order).</description></item>
+    ///   <item><description><b>Single-element list:</b> that element normalizes to <c>0.5</c>.
+    ///     <b>Strategos robustness extension</b> — qdrant raises <c>ZeroDivisionError</c>
+    ///     here (variance divides by <c>N-1 = 0</c>).</description></item>
+    ///   <item><description><b>Zero-variance list</b> (σ &lt; <c>1e-9</c>): every element
+    ///     normalizes to <c>0.5</c>. <b>Strategos robustness extension</b> — qdrant raises
+    ///     <c>ZeroDivisionError</c> here (rescale divides by <c>high - low = 0</c>).</description></item>
     /// </list>
     /// </remarks>
     public static IReadOnlyList<FusedResult> DistributionBased(
@@ -118,7 +130,10 @@ public static partial class RankFusion
                 varSum += d * d;
             }
 
-            double sigma = Math.Sqrt(varSum / list.Count);
+            // Bessel-corrected sample stdev: matches qdrant_client.hybrid.fusion
+            // (qdrant uses `variance = Σ(x-μ)² / (N-1)`). N ≥ 2 here — the
+            // single-element branch returned earlier.
+            double sigma = Math.Sqrt(varSum / (list.Count - 1));
 
             // Zero-variance list: every element normalizes to 0.5 (Qdrant convention).
             if (sigma < ZeroVarianceEpsilon)
@@ -155,8 +170,10 @@ public static partial class RankFusion
                     seen.Add(c.DocumentId),
                     $"Duplicate DocumentId '{c.DocumentId}' in scoredLists[{li}].");
 #endif
-                double clamped = Math.Min(high, Math.Max(low, c.Score));
-                double normalized = (clamped - low) / span;
+                // No clamping: qdrant_client.hybrid.fusion doesn't bound
+                // outputs to [0, 1]. Scores beyond [μ-3σ, μ+3σ] normalize
+                // outside that interval — preserved to match qdrant.
+                double normalized = (c.Score - low) / span;
                 fused[c.DocumentId] = fused.GetValueOrDefault(c.DocumentId, 0.0) + (weight * normalized);
             }
         }
