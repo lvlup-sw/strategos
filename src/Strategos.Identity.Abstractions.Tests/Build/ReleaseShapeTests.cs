@@ -56,7 +56,7 @@ public class ReleaseShapeTests
         var changelogPath = Path.Combine(RepoRoot, "CHANGELOG.md");
         var content = await File.ReadAllTextAsync(changelogPath);
 
-        await Assert.That(content).Contains("## [2.7.0-preview.1] - 2026-05-16");
+        await Assert.That(content).Contains("## [2.7.0-preview.1] - 2026-05-17");
         await Assert.That(content).Contains("Strategos.Identity.Abstractions");
         await Assert.That(content).Contains("PropagateIncomingHeaderToOutgoing");
     }
