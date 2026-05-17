@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.6.0] - 2026-05-17
+
 ### Ontology 2.6.0 — Hybrid Retrieval Seams (DR-1/DR-2/DR-3, #56/#57/#58, milestone #47)
 
 #### Added
