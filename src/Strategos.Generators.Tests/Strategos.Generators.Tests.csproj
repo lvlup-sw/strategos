@@ -18,6 +18,7 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\Strategos\Strategos.csproj" />
+    <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>
