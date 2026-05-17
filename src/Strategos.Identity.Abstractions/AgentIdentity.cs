@@ -23,29 +23,36 @@ namespace Strategos.Identity.Abstractions;
 /// identity is per-message-derived; each handler stamps its own and the
 /// header is NOT propagated to outgoing messages.
 /// </para>
+/// <para>
+/// Declared as a positional record with a custom <c>init</c>-setter that
+/// re-runs the DR-2 validator on every assignment. This closes the
+/// <c>with</c>-clone bypass that a body-syntax record exposes: the synthetic
+/// copy constructor used by <c>with</c> invokes the property's <c>init</c>
+/// setter, so the validator runs there too. Without the custom <c>init</c>
+/// setter, <c>existing with { Value = "bad-é-value" }</c> would silently
+/// produce an invalid record.
+/// </para>
 /// </remarks>
-public sealed record AgentIdentity
+/// <param name="Value">
+/// The header-safe identifier value. Must be non-null, non-empty, and contain
+/// only printable ASCII (0x20..0x7E).
+/// </param>
+public sealed record AgentIdentity(string Value)
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AgentIdentity"/> class.
-    /// </summary>
-    /// <param name="value">
-    /// The header-safe identifier value. Must be non-null, non-empty, and contain
-    /// only printable ASCII (0x20..0x7E).
-    /// </param>
-    /// <exception cref="ArgumentNullException">When <paramref name="value"/> is null.</exception>
-    /// <exception cref="ArgumentException">
-    /// When <paramref name="value"/> is empty, whitespace-only, or contains
-    /// non-printable-ASCII characters.
-    /// </exception>
-    public AgentIdentity(string value)
-    {
-        IdentityValueValidator.Validate(value, nameof(value));
-        this.Value = value;
-    }
+    private readonly string value = ValidateAndReturn(Value);
 
     /// <summary>
     /// Gets the header-safe identifier value.
     /// </summary>
-    public string Value { get; init; }
+    public string Value
+    {
+        get => this.value;
+        init => this.value = ValidateAndReturn(value);
+    }
+
+    private static string ValidateAndReturn(string value)
+    {
+        IdentityValueValidator.Validate(value, nameof(Value));
+        return value;
+    }
 }

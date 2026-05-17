@@ -61,4 +61,40 @@ public class AgentIdentityTests
 
         await Assert.That(t.IsSealed).IsTrue();
     }
+
+    /// <summary>
+    /// DR-2 must hold under <c>with</c>-clone too. Body-syntax records expose an
+    /// <c>init</c> setter that bypasses the constructor, so a clone with a bad
+    /// value would silently succeed. Positional-record primary-constructor
+    /// validation runs on every clone via the synthetic copy constructor.
+    /// </summary>
+    [Test]
+    public async Task AgentIdentity_WithClone_NonAsciiValue_ThrowsArgumentException()
+    {
+        var original = new AgentIdentity("valid-value");
+
+        await Assert.That(() => original with { Value = "agent-é" }).Throws<ArgumentException>();
+    }
+
+    /// <summary>
+    /// DR-2 must hold under <c>with</c>-clone for empty values too.
+    /// </summary>
+    [Test]
+    public async Task AgentIdentity_WithClone_EmptyValue_ThrowsArgumentException()
+    {
+        var original = new AgentIdentity("valid-value");
+
+        await Assert.That(() => original with { Value = string.Empty }).Throws<ArgumentException>();
+    }
+
+    /// <summary>
+    /// DR-2 must hold under <c>with</c>-clone for null values too.
+    /// </summary>
+    [Test]
+    public async Task AgentIdentity_WithClone_NullValue_ThrowsArgumentNullException()
+    {
+        var original = new AgentIdentity("valid-value");
+
+        await Assert.That(() => original with { Value = null! }).Throws<ArgumentNullException>();
+    }
 }
