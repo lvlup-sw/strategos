@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      netstandard2.0 mirrors Strategos.Generators so the abstractions package can be referenced
+      from the Roslyn analyzer assembly (per the SG cookbook: a generator may take a public
+      dependency on a contract package).
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <!-- NuGet package configuration -->
+    <PackageId>LevelUp.Strategos.Identity.Abstractions</PackageId>
+    <Description>Identity seam abstractions for Strategos: workflow and agent identity value records, header constants, and ports (IAgentIdentityProvider, IAgentIdentityAccessor, IPhaseAwareSaga) consumed by Wolverine envelope-header propagation.</Description>
+    <PackageTags>workflow;agent;identity;wolverine;saga;ports;hexagonal;strategos</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

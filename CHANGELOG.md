@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.7.0-preview.1] - 2026-05-16
+
+### G1 — Agent Identity Seam (DR-1..DR-10, supersedes #67/#68/#69, design 2026-05-16-g1-agent-identity-seam)
+
+#### Added
+
+- **`Strategos.Identity.Abstractions`** package debut. New
+  netstandard2.0 package shipping the agent-identity ports consumed by
+  the basileus SPIFFE adapter:
+  - `WorkflowIdentity` and `AgentIdentity` sealed records — opaque,
+    printable-ASCII-validated string values that ride on Wolverine
+    envelope headers without additional encoding.
+  - `IAgentIdentityProvider` — port for deriving per-step agent
+    identities from `(workflow, phaseName)`. Strategos owns the
+    contract; basileus is the SPIFFE-shaped adapter.
+  - `IAgentIdentityAccessor` — read-only port that exposes the active
+    envelope's identity to in-handler code. Returns `null` outside a
+    Wolverine handler context (mirrors `IHttpContextAccessor`).
+  - `IPhaseAwareSaga` — marker interface emitted on every generated
+    saga so middleware can read `saga.CurrentPhaseName` without
+    binding to the workflow's phase enum.
+  - `StrategosHeaders` constants — `x-strategos-workflow-identity`
+    and `x-strategos-agent-identity` wire-protocol header keys.
+
+#### Changed
+
+- **`Strategos.Generators`** emits a computed `CurrentPhaseName`
+  property (`=> Phase.ToString()`) and adds `IPhaseAwareSaga` to the
+  generated saga's base list. Both additions are additive — no
+  breaking changes to the existing 2.6.0 generator surface. The
+  generator ships `Strategos.Identity.Abstractions.dll` alongside
+  itself in `analyzers/dotnet/cs` so the analyzer assembly loads at
+  SG time.
+
+#### Migration
+
+- **Consumers register** the Wolverine header-propagation policy in
+  their `UseWolverine` block to enable cross-message workflow-identity
+  propagation:
+  ```csharp
+  opts.Policies.PropagateIncomingHeaderToOutgoing(
+      StrategosHeaders.WorkflowIdentity);
+  ```
+  `StrategosHeaders.AgentIdentity` is per-message-derived and is NOT
+  propagated — each handler stamps its own.
+- The basileus SPIFFE adapter (lvlup-sw/basileus PR #184) is the
+  reference `IAgentIdentityProvider` implementation. See
+  `docs/coordination/2026-05-16-basileus-handoff.md` for the
+  cross-repo handoff.
+
 ## [2.6.0] - 2026-05-17
 
 ### Ontology 2.6.0 — Hybrid Retrieval Seams (DR-1/DR-2/DR-3, #56/#57/#58, milestone #47)

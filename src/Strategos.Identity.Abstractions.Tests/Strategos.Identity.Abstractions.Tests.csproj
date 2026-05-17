@@ -3,21 +3,16 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <RootNamespace>Strategos.Identity.Abstractions.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
     <PackageReference Include="NSubstitute" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Verify.SourceGenerators" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Reference the generator as analyzer AND regular reference for testing -->
-    <ProjectReference Include="..\Strategos.Generators\Strategos.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="true" />
-    <ProjectReference Include="..\Strategos\Strategos.csproj" />
     <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
   </ItemGroup>
 
