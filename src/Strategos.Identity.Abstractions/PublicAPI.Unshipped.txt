@@ -1,0 +1,4 @@
+Strategos.Identity.Abstractions.WorkflowIdentity
+Strategos.Identity.Abstractions.WorkflowIdentity.WorkflowIdentity(string value) -> void
+Strategos.Identity.Abstractions.WorkflowIdentity.Value.get -> string
+Strategos.Identity.Abstractions.WorkflowIdentity.Value.init -> void
