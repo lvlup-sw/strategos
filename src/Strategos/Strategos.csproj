@@ -19,6 +19,18 @@
 
   <ItemGroup>
     <PackageReference Include="MemoryPack" />
+    <!--
+      LevelUp.Strategos.Identity.Abstractions ships the IPhaseAwareSaga contract
+      that the Strategos.Generators source generator emits a base-list entry
+      against. We route the runtime/compile dependency through THIS metapackage
+      (not the generator package) because LevelUp.Strategos.Generators is marked
+      <DevelopmentDependency>true</DevelopmentDependency>, which causes NuGet to
+      suppress transitive flow from that package. Every consumer of the Strategos
+      generator is expected to also reference this core metapackage, so the
+      abstractions assembly lands on the consumer's compile + runtime classpath
+      via this single explicit edge. (G1 v2.7.0-preview.1)
+    -->
+    <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

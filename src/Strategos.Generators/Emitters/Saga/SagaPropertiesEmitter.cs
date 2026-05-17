@@ -64,6 +64,13 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
         sb.AppendLine($"    public {phaseEnumName} Phase {{ get; set; }} = {phaseEnumName}.NotStarted;");
         sb.AppendLine();
 
+        // IPhaseAwareSaga.CurrentPhaseName — the ONLY identity-related emit per DR-6
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Gets the current saga phase as a stable string identifier (Phase.ToString()).");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    public string CurrentPhaseName => Phase.ToString();");
+        sb.AppendLine();
+
         // State property (if state type is specified)
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {

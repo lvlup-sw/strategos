@@ -75,6 +75,7 @@ The library builds on proven .NET infrastructure rather than reinventing durabil
 |---------|---------|
 | `Strategos` | Core fluent DSL and abstractions |
 | `Strategos.Generators` | Compile-time source generation (sagas, events, phase enums) |
+| `Strategos.Identity.Abstractions` | Agent-identity ports (workflow + agent identity records, IPhaseAwareSaga, IAgentIdentityProvider, StrategosHeaders) |
 | `Strategos.Infrastructure` | Production implementations (Thompson Sampling, loop detection, budgets) |
 | `Strategos.Agents` | Microsoft Agent Framework integration for LLM-powered steps |
 | `Strategos.Rag` | Vector store adapters for RAG patterns |
@@ -94,6 +95,34 @@ dotnet add package LevelUp.Strategos.Infrastructure
 ```
 
 See [Package Documentation](docs/packages.md) for detailed guidance.
+
+### Identity Seam (v2.7.0-preview.1)
+
+Sagas surface their current phase via the `IPhaseAwareSaga` marker
+interface (every generated saga implements it automatically). The
+basileus SPIFFE adapter uses this seam to attribute every outgoing
+message to a per-step `AgentIdentity` derived from
+`(WorkflowIdentity, saga.CurrentPhaseName)`. Identity rides on
+Wolverine envelope headers — there are no new fields on the saga.
+
+Consumers register the workflow-identity propagation policy in their
+`UseWolverine` block:
+
+```csharp
+using Strategos.Identity.Abstractions;
+
+services.AddWolverine(opts =>
+{
+    opts.Policies.PropagateIncomingHeaderToOutgoing(
+        StrategosHeaders.WorkflowIdentity);
+});
+```
+
+`StrategosHeaders.AgentIdentity` is per-message-derived — each handler
+stamps its own (matches OpenTelemetry `traceparent` semantics). The
+basileus middleware (lvlup-sw/basileus PR #184) provides the SPIFFE
+provider + the stamping middleware; see
+`docs/designs/2026-05-16-g1-agent-identity-seam.md` for the design.
 
 ## How It Compares
 
