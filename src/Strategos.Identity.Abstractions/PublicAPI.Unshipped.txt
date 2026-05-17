@@ -1,8 +1,9 @@
 const Strategos.Identity.Abstractions.StrategosHeaders.AgentIdentity = "x-strategos-agent-identity" -> string!
 const Strategos.Identity.Abstractions.StrategosHeaders.WorkflowIdentity = "x-strategos-workflow-identity" -> string!
 Strategos.Identity.Abstractions.AgentIdentity
-Strategos.Identity.Abstractions.AgentIdentity.AgentIdentity(string value) -> void
-Strategos.Identity.Abstractions.AgentIdentity.Value.get -> string
+Strategos.Identity.Abstractions.AgentIdentity.AgentIdentity(string! Value) -> void
+Strategos.Identity.Abstractions.AgentIdentity.Deconstruct(out string! Value) -> void
+Strategos.Identity.Abstractions.AgentIdentity.Value.get -> string!
 Strategos.Identity.Abstractions.AgentIdentity.Value.init -> void
 Strategos.Identity.Abstractions.IAgentIdentityAccessor
 Strategos.Identity.Abstractions.IAgentIdentityAccessor.CurrentAgent.get -> Strategos.Identity.Abstractions.AgentIdentity?
@@ -14,6 +15,7 @@ Strategos.Identity.Abstractions.IPhaseAwareSaga
 Strategos.Identity.Abstractions.IPhaseAwareSaga.CurrentPhaseName.get -> string!
 Strategos.Identity.Abstractions.StrategosHeaders
 Strategos.Identity.Abstractions.WorkflowIdentity
-Strategos.Identity.Abstractions.WorkflowIdentity.WorkflowIdentity(string value) -> void
-Strategos.Identity.Abstractions.WorkflowIdentity.Value.get -> string
+Strategos.Identity.Abstractions.WorkflowIdentity.Deconstruct(out string! Value) -> void
+Strategos.Identity.Abstractions.WorkflowIdentity.WorkflowIdentity(string! Value) -> void
+Strategos.Identity.Abstractions.WorkflowIdentity.Value.get -> string!
 Strategos.Identity.Abstractions.WorkflowIdentity.Value.init -> void

@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Migration
 
+- **Package consumption.** `LevelUp.Strategos.Identity.Abstractions`
+  flows transitively from the `LevelUp.Strategos` core metapackage —
+  consumers that already reference `LevelUp.Strategos` need no
+  additional `PackageReference`. The dependency is routed through the
+  core (not through `LevelUp.Strategos.Generators`) because the
+  generator package is marked `<DevelopmentDependency>true</DevelopmentDependency>`,
+  which causes NuGet to suppress transitive flow from that package. A
+  CI consumer-build probe (`scripts/verify-generator-consumer-build.sh`,
+  wired into the `pack-verify` job) guards against regression of this
+  packaging contract.
 - **Consumers register** the Wolverine header-propagation policy in
   their `UseWolverine` block to enable cross-message workflow-identity
   propagation:

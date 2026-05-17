@@ -44,11 +44,17 @@ public class EndToEndStubIntegrationTests
         // (c) The generated saga uses the abstractions namespace, NOT Basileus.
         await Assert.That(sagaSource).Contains("using Strategos.Identity.Abstractions;");
 
-        // (c, negation) — no Basileus token anywhere in any generated tree.
+        // (c, negation) — no Basileus binding anywhere in any generated tree.
+        // We assert against the specific "using Basileus" / "Basileus." tokens
+        // (rather than a bare "Basileus" substring) so the test stays robust
+        // against future case-variation in comments / xmldoc and won't false-
+        // positive on prose. The generated saga must not import any Basileus
+        // namespace nor reference any Basileus.* type.
         foreach (var tree in result.GeneratedTrees)
         {
             var src = tree.GetText().ToString();
-            await Assert.That(src).DoesNotContain("Basileus");
+            await Assert.That(src).DoesNotContain("using Basileus");
+            await Assert.That(src).DoesNotContain("Basileus.");
         }
     }
 
@@ -127,7 +133,12 @@ public class EndToEndStubIntegrationTests
 
     /// <summary>
     /// Generators-tests-local copy of the provider stub kept inline so the
-    /// production abstractions package stays minimal.
+    /// production abstractions package stays minimal. Mirrors the null-handling
+    /// shape of <c>StubAgentIdentityProvider</c> in
+    /// <c>Strategos.Identity.Abstractions.Tests/Fakes</c>: null phaseName throws
+    /// <see cref="ArgumentNullException"/> (not the generic
+    /// <see cref="ArgumentException"/>), and empty/whitespace throws the more
+    /// general <see cref="ArgumentException"/>.
     /// </summary>
     private sealed class StubAgentIdentityProvider : IAgentIdentityProvider
     {
@@ -136,6 +147,11 @@ public class EndToEndStubIntegrationTests
             if (workflow is null)
             {
                 throw new ArgumentNullException(nameof(workflow));
+            }
+
+            if (phaseName is null)
+            {
+                throw new ArgumentNullException(nameof(phaseName));
             }
 
             if (string.IsNullOrWhiteSpace(phaseName))

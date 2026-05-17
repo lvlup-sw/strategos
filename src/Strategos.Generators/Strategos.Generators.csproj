@@ -31,12 +31,24 @@
   </ItemGroup>
 
   <!--
-    Strategos.Identity.Abstractions ships alongside the generator as a sibling
-    analyzer-side reference. The generator emits a base-list entry against
-    IPhaseAwareSaga; the consumer also needs the abstractions assembly on the
-    target's runtime classpath. We reference the project here with PrivateAssets="all"
-    to keep it out of the package's compile dependency closure, and pack the
-    DLL into analyzers/dotnet/cs so it loads next to the generator at SG time.
+    Strategos.Identity.Abstractions is consumed on two distinct classpaths:
+      1. ANALYZER SIDE — at source-generation time, the generator emits a base-list
+         entry against IPhaseAwareSaga, so the abstractions DLL is packed into
+         analyzers/dotnet/cs (see the <None Include=...> below) and loaded next to
+         the generator inside Roslyn. The ProjectReference here is kept private
+         (PrivateAssets="all") because this generator package is marked
+         <DevelopmentDependency>true</DevelopmentDependency> — NuGet suppresses
+         transitive flow regardless of PrivateAssets, so we cannot flow the
+         contract from THIS package.
+      2. CONSUMER SIDE — the generated code references IPhaseAwareSaga at compile
+         time AND at runtime. The runtime/compile dep flows via the
+         LevelUp.Strategos core metapackage's explicit PackageReference to
+         LevelUp.Strategos.Identity.Abstractions (see src/Strategos/Strategos.csproj).
+         Every consumer of the generator package is expected to also reference
+         the core Strategos package, so abstractions is on their compile classpath
+         via that route. This decoupling keeps the generator package itself a
+         pure development-time dependency while routing the runtime contract
+         through the consumer-facing metapackage.
   -->
   <ItemGroup>
     <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj"
