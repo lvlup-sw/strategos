@@ -4,6 +4,9 @@ Strategos.Identity.Abstractions.AgentIdentity
 Strategos.Identity.Abstractions.AgentIdentity.AgentIdentity(string value) -> void
 Strategos.Identity.Abstractions.AgentIdentity.Value.get -> string
 Strategos.Identity.Abstractions.AgentIdentity.Value.init -> void
+Strategos.Identity.Abstractions.IAgentIdentityAccessor
+Strategos.Identity.Abstractions.IAgentIdentityAccessor.CurrentAgent.get -> Strategos.Identity.Abstractions.AgentIdentity?
+Strategos.Identity.Abstractions.IAgentIdentityAccessor.CurrentWorkflow.get -> Strategos.Identity.Abstractions.WorkflowIdentity?
 Strategos.Identity.Abstractions.IAgentIdentityProvider
 Strategos.Identity.Abstractions.IAgentIdentityProvider.DeriveStepIdentity(Strategos.Identity.Abstractions.WorkflowIdentity! workflow, string! phaseName) -> Strategos.Identity.Abstractions.AgentIdentity!
 Strategos.Identity.Abstractions.IAgentIdentityProvider.ParseWorkflowHeader(string! headerValue) -> Strategos.Identity.Abstractions.WorkflowIdentity!
