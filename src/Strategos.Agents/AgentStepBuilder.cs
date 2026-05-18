@@ -25,6 +25,7 @@ public sealed class AgentStepBuilder<TState, TResult>
     private Func<TState, string>? _systemPrompt;
     private Func<TState, string>? _userPrompt;
     private Func<TState, TResult, CancellationToken, Task<StepResult<TState>>>? _applyResult;
+    private readonly List<AIFunction> _tools = new();
 
     /// <summary>Configure the system prompt hook (required).</summary>
     public AgentStepBuilder<TState, TResult> WithSystemPrompt(Func<TState, string> systemPrompt)
@@ -45,6 +46,19 @@ public sealed class AgentStepBuilder<TState, TResult>
         Func<TState, TResult, CancellationToken, Task<StepResult<TState>>> applyResult)
     {
         _applyResult = applyResult ?? throw new ArgumentNullException(nameof(applyResult));
+        return this;
+    }
+
+    /// <summary>
+    /// Register an <see cref="AIFunction"/> tool with the agent (DR-4). Multiple calls accumulate;
+    /// duplicate-name collision detection is deferred to <see cref="Build"/> so that fluent
+    /// reuse (e.g. conditional/builder-pipeline reconfiguration) remains ergonomic.
+    /// </summary>
+    /// <param name="tool">The AIFunction to register.</param>
+    public AgentStepBuilder<TState, TResult> WithTool(AIFunction tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        _tools.Add(tool);
         return this;
     }
 
@@ -73,11 +87,19 @@ public sealed class AgentStepBuilder<TState, TResult>
             throw new AgentBuilderValidationException("ApplyResult");
         }
 
+        var firstDuplicate = _tools
+            .GroupBy(t => t.Name)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (firstDuplicate is not null)
+        {
+            throw new AgentDuplicateToolException(firstDuplicate.Key);
+        }
+
         var configuration = new AgentStepConfiguration<TState, TResult>(
             SystemPrompt: _systemPrompt,
             UserPrompt: _userPrompt,
             ApplyResult: _applyResult,
-            Tools: Array.Empty<AIFunction>(),
+            Tools: _tools.ToArray(),
             McpToolSource: null,
             ChatOptions: null,
             ChatClientConfigurator: null,
