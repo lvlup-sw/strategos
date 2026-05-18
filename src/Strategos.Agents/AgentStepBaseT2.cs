@@ -49,26 +49,55 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
     {
         var messages = BuildMessages(state);
 
-        var response = await _chatClient.GetResponseAsync<TResult>(
-                messages,
-                _configuration.ChatOptions,
-                cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        ChatResponse<TResult>? response;
+        try
+        {
+            response = await _chatClient.GetResponseAsync<TResult>(
+                    messages,
+                    _configuration.ChatOptions,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is not a domain failure (DR-10) — propagate unwrapped.
+            throw;
+        }
+        catch (ArgumentNullException)
+        {
+            // MEAI's typed extension throws ArgumentNullException when the underlying
+            // chat client returns a null ChatResponse. That's the DR-10 boundary we
+            // own: re-classify as AGAG006 with no partial state mutation.
+            throw new AgentChatResponseException(
+                "Chat client returned a null response.");
+        }
 
         if (response is null)
         {
-            // T-010 lands AGAG006 here.
-            throw new NotImplementedException("Null/empty response handling lands in T-010.");
+            // Defensive: should not happen via MEAI typed extension (it throws ANE),
+            // but if a direct caller produces null we surface the same DR-10 contract.
+            throw new AgentChatResponseException(
+                "Chat client returned a null response.");
         }
 
-        if (!response.TryGetResult(out var typedResult) || typedResult is null)
+        var hasResult = response.TryGetResult(out var typedResult) && typedResult is not null;
+        if (!hasResult && string.IsNullOrEmpty(response.Text))
+        {
+            // DR-10: empty payload (no Result, no Text) — distinct from a malformed
+            // structured-output failure (AGAG002). State is untouched (apply-result
+            // never runs); the caller's TState instance remains reference-equal.
+            throw new AgentChatResponseException(
+                "Chat client returned an empty response (no text and no structured result).");
+        }
+
+        if (!hasResult)
         {
             // DR-3 / DR-10 no-silent-fallback: throw with AGAG002 and the raw payload.
             // The exception ctor handles ≤4 KB truncation; apply-result hook is NOT invoked.
             throw new AgentStructuredOutputException(response.Text);
         }
 
-        return await _configuration.ApplyResult(state, typedResult, cancellationToken).ConfigureAwait(false);
+        return await _configuration.ApplyResult(state, typedResult!, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
