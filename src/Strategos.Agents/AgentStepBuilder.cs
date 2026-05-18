@@ -187,7 +187,9 @@ public sealed class AgentStepBuilder<TState, TResult>
         _chatClientConfigurator?.Invoke(builder);
 
         // 2. Surface the Strategos-registered AIFunctions as an inspectable chain step.
-        builder.UseStrategosFunctions(tools);
+        //    The MCP tool source (if any) is resolved lazily on first request by the
+        //    middleware itself — Build() stays sync (T-016 invariant).
+        builder.UseStrategosFunctions(tools, _mcpToolSource);
 
         // 3. Automatic function-call invocation, bounded by _maxToolIterations (DR-8).
         builder.UseFunctionInvocation(
