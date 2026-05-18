@@ -144,6 +144,173 @@ public sealed class AgentStepBaseExecuteTests
             Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task ExecuteAsync_NullChatResponse_ThrowsAgentChatResponseExceptionWithAGAG006()
+    {
+        // Arrange — IChatClient.GetResponseAsync (untyped) returns null. The MEAI typed
+        // extension ChatClientStructuredOutputExtensions.GetResponseAsync<TestDto> then
+        // produces a ChatResponse<TestDto> whose underlying text is empty and whose
+        // TryGetResult returns false → DR-10 boundary: AGAG006 must be thrown.
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient
+            .GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions?>(),
+                Arg.Any<CancellationToken>())
+            .Returns((ChatResponse?)null!);
+
+        var initialState = new TestState { UserQuery = "what's 2+2?" };
+
+        var applyResult = Substitute.For<Func<TestState, TestDto, CancellationToken, Task<StepResult<TestState>>>>();
+        applyResult
+            .Invoke(Arg.Any<TestState>(), Arg.Any<TestDto>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(new StepResult<TestState>(ci.Arg<TestState>())));
+
+        var configuration = new AgentStepConfiguration<TestState, TestDto>(
+            SystemPrompt: _ => "system",
+            UserPrompt: state => state.UserQuery,
+            ApplyResult: applyResult,
+            Tools: Array.Empty<AIFunction>(),
+            McpToolSource: null,
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null);
+
+        var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
+        var context = new StepContext
+        {
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            WorkflowId = initialState.WorkflowId,
+            StepName = "TestStep",
+            Timestamp = DateTimeOffset.UtcNow,
+            CurrentPhase = "Testing",
+        };
+
+        // Act + Assert
+        var thrown = await Assert
+            .That(async () => await orchestrator.ExecuteAsync(initialState, context, CancellationToken.None))
+            .Throws<AgentChatResponseException>();
+
+        await Assert.That(thrown!.Diagnostic).IsEqualTo("AGAG006");
+
+        // State reference-equal pre/post throw — orchestrator must not have mutated or
+        // replaced the caller's state instance (DR-10 no-partial-mutation).
+        await Assert.That(ReferenceEquals(initialState, initialState)).IsTrue();
+
+        // apply-result hook MUST NEVER be invoked on the failure path.
+        _ = applyResult.DidNotReceive().Invoke(
+            Arg.Any<TestState>(),
+            Arg.Any<TestDto>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_EmptyChatResponse_ThrowsAgentChatResponseExceptionWithAGAG006()
+    {
+        // Arrange — IChatClient.GetResponseAsync returns a ChatResponse whose text is
+        // empty AND whose Result cannot be derived. The MEAI typed extension wraps this
+        // into a ChatResponse<TestDto> whose TryGetResult is false → DR-10 AGAG006.
+        var chatMessage = new ChatMessage(ChatRole.Assistant, string.Empty);
+        var chatResponse = new ChatResponse(chatMessage);
+
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient
+            .GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(chatResponse);
+
+        var initialState = new TestState { UserQuery = "what's 2+2?" };
+        var stateSnapshot = initialState;
+
+        var applyResult = Substitute.For<Func<TestState, TestDto, CancellationToken, Task<StepResult<TestState>>>>();
+        applyResult
+            .Invoke(Arg.Any<TestState>(), Arg.Any<TestDto>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(new StepResult<TestState>(ci.Arg<TestState>())));
+
+        var configuration = new AgentStepConfiguration<TestState, TestDto>(
+            SystemPrompt: _ => "system",
+            UserPrompt: state => state.UserQuery,
+            ApplyResult: applyResult,
+            Tools: Array.Empty<AIFunction>(),
+            McpToolSource: null,
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null);
+
+        var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
+        var context = new StepContext
+        {
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            WorkflowId = initialState.WorkflowId,
+            StepName = "TestStep",
+            Timestamp = DateTimeOffset.UtcNow,
+            CurrentPhase = "Testing",
+        };
+
+        // Act + Assert
+        var thrown = await Assert
+            .That(async () => await orchestrator.ExecuteAsync(initialState, context, CancellationToken.None))
+            .Throws<AgentChatResponseException>();
+
+        await Assert.That(thrown!.Diagnostic).IsEqualTo("AGAG006");
+
+        // DR-10 no-partial-mutation: same TState instance the caller passed in.
+        await Assert.That(ReferenceEquals(stateSnapshot, initialState)).IsTrue();
+
+        _ = applyResult.DidNotReceive().Invoke(
+            Arg.Any<TestState>(),
+            Arg.Any<TestDto>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ChatClientThrowsOperationCanceled_PropagatesUnwrapped()
+    {
+        // Arrange — IChatClient throws OperationCanceledException. Cancellation is NOT
+        // a domain failure; the orchestrator must let it propagate as-is (NOT wrapped
+        // in an AgentException). DR-10 negative case.
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient
+            .GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(),
+                Arg.Any<ChatOptions?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<ChatResponse>>(_ => throw new OperationCanceledException("test-cancel"));
+
+        var initialState = new TestState { UserQuery = "what's 2+2?" };
+
+        var configuration = new AgentStepConfiguration<TestState, TestDto>(
+            SystemPrompt: _ => "system",
+            UserPrompt: state => state.UserQuery,
+            ApplyResult: (state, _, _) => Task.FromResult(new StepResult<TestState>(state)),
+            Tools: Array.Empty<AIFunction>(),
+            McpToolSource: null,
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null);
+
+        var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
+        var context = new StepContext
+        {
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            WorkflowId = initialState.WorkflowId,
+            StepName = "TestStep",
+            Timestamp = DateTimeOffset.UtcNow,
+            CurrentPhase = "Testing",
+        };
+
+        // Act + Assert — assert OCE escapes; explicitly assert NOT AgentException.
+        var thrown = await Assert
+            .That(async () => await orchestrator.ExecuteAsync(initialState, context, CancellationToken.None))
+            .Throws<OperationCanceledException>();
+
+        Exception asException = thrown!;
+        await Assert.That(asException is AgentException).IsFalse();
+        await Assert.That(thrown!.Message).IsEqualTo("test-cancel");
+    }
+
     internal sealed record TestState : IWorkflowState
     {
         public Guid WorkflowId { get; init; } = Guid.NewGuid();
