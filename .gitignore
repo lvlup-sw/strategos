@@ -32,6 +32,8 @@ packages/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+# DR-11 / T-022 — directory feed populated by scripts/pack-to-local-feed.sh
+local-feed/
 
 # Test Results
 TestResults/
