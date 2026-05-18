@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    DR-11 basileus-consumed surface smoke project (T-022).
+
+    Intentionally a PackageReference (not ProjectReference) consumer of
+    LevelUp.Strategos.Agents at the version about to ship to basileus.
+    Restored from a sibling local-feed/ directory populated by
+    scripts/pack-to-local-feed.sh. Lives outside src/ to avoid being
+    swept into CI's main build-test job (which restores src/strategos.sln
+    BEFORE we have packed the local feed — chicken-and-egg).
+
+    Layout: standalone Basileus.Smoke.sln in this directory (separate
+    from src/strategos.sln). Justification documented in
+    BasileusConsumedSurfaceTests.cs file header.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+    <!--
+      Opt out of MinVer + analyzers that the src/Directory.Build.props
+      chain installs. We are deliberately outside that hierarchy, so
+      nothing flows in here automatically anyway — this guard is here so
+      that a future contributor who copies the file under src/ does not
+      get a confusing build.
+    -->
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+    <!-- Match the new Microsoft Testing Platform integration used elsewhere -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Pulled from sibling local-feed/ via nuget.config in this directory.
+      Pin to 2.7.0-preview.2 explicitly: this project's job is to fail
+      restore loudly the moment the production csproj's <Version> drifts
+      off the version basileus expects.
+    -->
+    <PackageReference Include="LevelUp.Strategos.Agents" Version="2.7.0-preview.2" />
+    <PackageReference Include="TUnit" Version="1.2.11" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
+  </ItemGroup>
+
+</Project>
