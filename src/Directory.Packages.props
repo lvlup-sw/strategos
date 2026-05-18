@@ -32,5 +32,7 @@
     <PackageVersion Include="MemoryPack" Version="1.21.3" />
     <PackageVersion Include="BitFaster.Caching" Version="2.5.2" />
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
+    <!-- Model Context Protocol -->
+    <PackageVersion Include="ModelContextProtocol.Client" Version="0.4.0-preview.1" />
   </ItemGroup>
 </Project>
