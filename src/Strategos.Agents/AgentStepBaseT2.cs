@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using Strategos.Abstractions;
 using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
+using Strategos.Agents.Exceptions;
 using Strategos.Steps;
 
 namespace Strategos.Agents;
@@ -62,8 +63,9 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
 
         if (!response.TryGetResult(out var typedResult) || typedResult is null)
         {
-            // T-009 lands AGAG002 here.
-            throw new NotImplementedException("Structured-output failure handling lands in T-009.");
+            // DR-3 / DR-10 no-silent-fallback: throw with AGAG002 and the raw payload.
+            // The exception ctor handles ≤4 KB truncation; apply-result hook is NOT invoked.
+            throw new AgentStructuredOutputException(response.Text);
         }
 
         return await _configuration.ApplyResult(state, typedResult, cancellationToken).ConfigureAwait(false);
