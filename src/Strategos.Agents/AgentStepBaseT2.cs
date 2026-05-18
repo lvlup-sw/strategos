@@ -1,0 +1,52 @@
+// =============================================================================
+// <copyright file="AgentStepBaseT2.cs" company="Levelup Software">
+// Copyright (c) Levelup Software. All rights reserved.
+// </copyright>
+// =============================================================================
+
+using Microsoft.Extensions.AI;
+using Strategos.Abstractions;
+using Strategos.Agents.Abstractions;
+using Strategos.Agents.Configuration;
+using Strategos.Steps;
+
+namespace Strategos.Agents;
+
+/// <summary>
+/// Sealed orchestrator for LLM-powered workflow steps with typed structured results (DR-1).
+/// Constructed via <c>AgentStepBuilder&lt;TState, TResult&gt;</c>; never subclassed.
+/// </summary>
+/// <typeparam name="TState">Workflow state type.</typeparam>
+/// <typeparam name="TResult">Typed structured result produced by the agent's chat client.</typeparam>
+/// <remarks>
+/// This file lives alongside the legacy <c>AgentStepBase&lt;TState&gt;</c> (single-arity, abstract)
+/// during the migration window. T-021 deletes the legacy type and renames this file to
+/// <c>AgentStepBase.cs</c>.
+/// </remarks>
+public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
+    where TState : class, IWorkflowState
+{
+    /// <summary>Default upper bound on tool-call iterations per request (DR-8).</summary>
+    public const int DefaultMaxToolIterations = 8;
+
+    private readonly IChatClient _chatClient;
+    private readonly AgentStepConfiguration<TState, TResult> _configuration;
+
+    internal AgentStepBase(
+        IChatClient chatClient,
+        AgentStepConfiguration<TState, TResult> configuration)
+    {
+        _chatClient = chatClient ?? throw new ArgumentNullException(nameof(chatClient));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+    }
+
+    /// <inheritdoc/>
+    public Task<StepResult<TState>> ExecuteAsync(
+        TState state,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        // T-008 lands the happy-path implementation; T-009..T-011 land error paths.
+        throw new NotImplementedException("ExecuteAsync wiring lands in T-008.");
+    }
+}
