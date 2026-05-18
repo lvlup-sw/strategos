@@ -1,45 +1,22 @@
-// -----------------------------------------------------------------------
+// =============================================================================
 // <copyright file="IAgentStep.cs" company="Levelup Software">
 // Copyright (c) Levelup Software. All rights reserved.
 // </copyright>
-// -----------------------------------------------------------------------
+// =============================================================================
 
 using Strategos.Abstractions;
-using Strategos.Steps;
 
 namespace Strategos.Agents.Abstractions;
 
 /// <summary>
-/// Represents a workflow step that is powered by an LLM agent.
+/// Generic refinement of <see cref="IWorkflowStep{TState}"/> for LLM-powered steps
+/// that produce a typed structured result. The two-arity contract subsumes the
+/// previous <c>GetOutputSchemaType()</c> sentinel by making the result type part
+/// of the interface signature.
 /// </summary>
-/// <typeparam name="TState">The type of workflow state.</typeparam>
-/// <remarks>
-/// <para>
-/// Agent steps extend the base <see cref="IWorkflowStep{TState}"/> contract with
-/// LLM-specific capabilities such as system prompts, output schema validation,
-/// and streaming response handling.
-/// </para>
-/// <para>
-/// Implementations should use the <see cref="AgentStepContext"/> to access
-/// the chat client, conversation history, and execution context.
-/// </para>
-/// </remarks>
-public interface IAgentStep<TState> : IWorkflowStep<TState>
+/// <typeparam name="TState">Workflow state type.</typeparam>
+/// <typeparam name="TResult">Typed structured result returned by the agent's chat client (use <see cref="string"/> for unstructured text).</typeparam>
+public interface IAgentStep<TState, TResult> : IWorkflowStep<TState>
     where TState : class, IWorkflowState
 {
-    /// <summary>
-    /// Gets the system prompt that defines the agent's behavior and capabilities.
-    /// </summary>
-    /// <returns>The system prompt string.</returns>
-    string GetSystemPrompt();
-
-    /// <summary>
-    /// Gets the type used for structured output validation.
-    /// </summary>
-    /// <remarks>
-    /// When set, the agent's response will be validated against this schema
-    /// and deserialized into an instance of this type.
-    /// </remarks>
-    /// <returns>The output schema type, or null for unstructured text output.</returns>
-    Type? GetOutputSchemaType();
 }
