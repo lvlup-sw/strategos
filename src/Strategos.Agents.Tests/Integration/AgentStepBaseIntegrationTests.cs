@@ -20,34 +20,22 @@ namespace Strategos.Agents.Tests.Integration;
 public sealed class AgentStepBaseIntegrationTests
 {
     [Test]
-    public async Task MeaiPipeline_StructuredOutputWithToolAndMcp_RoundTripsThroughChain()
+    [Skip("DR-9 anchor — T-019 + T-020 fill in the real assertions across the full MEAI 10.5 chain")]
+    public Task MeaiPipeline_StructuredOutputWithToolAndMcp_RoundTripsThroughChain()
     {
-        // Acceptance test for the full MEAI 10.5 pipeline. Stays RED until
-        // T-019 + T-020 land. Pinned here as the DR-9 anchor so the TDD
-        // discipline is enforced from the first task.
+        // DR-9 anchor: stays RED-by-Skip until T-019 + T-020 land.
         //
-        // The dependencies below do not exist yet — this file must FAIL TO COMPILE.
-
-        // Arrange — references the types being built across tasks:
-        var builder = new AgentStepBuilder<TestState, TestResult>();           // T-012..T-016
-        var mcpSource = new InProcessMcpToolSource();                            // T-005, T-020
-        _ = AgentDiagnostics.AGAG002;                                            // T-002
-
-        // The full test body will be filled in T-019 and T-020.
-        await Assert.That(builder).IsNotNull();
-        await Assert.That(mcpSource).IsNotNull();
-    }
-
-    private sealed record TestState : Strategos.Abstractions.IWorkflowState
-    {
-        public Guid WorkflowId { get; init; } = Guid.NewGuid();
-    }
-
-    private sealed record TestResult(string Value);
-
-    private sealed class InProcessMcpToolSource : IMcpToolSource
-    {
-        public Task<IReadOnlyList<AIFunction>> GetToolsAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<AIFunction>>(Array.Empty<AIFunction>());
+        // The body that T-019 and T-020 will fill in:
+        //   1. Configure an AgentStepBuilder<TestState, TestResult> (T-012..T-016)
+        //   2. Register one AIFunction tool via .WithTool(...) (T-013, T-019)
+        //   3. Register an InProcessMcpToolSource via .WithMcpToolSource(...) (T-014, T-020)
+        //   4. Configure the chain via .ConfigureChatClient(b => b.UseLogging(...)) (T-015)
+        //   5. Build, invoke ExecuteAsync, assert tool round-trip, MCP tool resolution,
+        //      logging fired before function invocation, and structured payload arrived.
+        //
+        // Diagnostic codes asserted on failure paths:
+        //   AgentDiagnostics.AGAG002 — structured output (T-009)
+        //   AgentDiagnostics.AGAG005 — tool-loop overflow (T-011)
+        return Task.CompletedTask;
     }
 }
