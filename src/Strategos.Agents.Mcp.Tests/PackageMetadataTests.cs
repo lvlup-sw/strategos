@@ -25,7 +25,7 @@ public sealed class PackageMetadataTests
     {
         // The core Strategos.Agents package must stay free of MCP dependencies
         // (port/adapter separation).
-        var coreAssembly = typeof(Strategos.Agents.Abstractions.IAgentStep<>).Assembly;
+        var coreAssembly = typeof(Strategos.Agents.Abstractions.IAgentStep<,>).Assembly;
         var referenced = coreAssembly.GetReferencedAssemblies();
         foreach (var refName in referenced)
         {
