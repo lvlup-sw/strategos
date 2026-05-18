@@ -41,12 +41,45 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
     }
 
     /// <inheritdoc/>
-    public Task<StepResult<TState>> ExecuteAsync(
+    public async Task<StepResult<TState>> ExecuteAsync(
         TState state,
         StepContext context,
         CancellationToken cancellationToken)
     {
-        // T-008 lands the happy-path implementation; T-009..T-011 land error paths.
-        throw new NotImplementedException("ExecuteAsync wiring lands in T-008.");
+        var messages = BuildMessages(state);
+
+        var response = await _chatClient.GetResponseAsync<TResult>(
+                messages,
+                _configuration.ChatOptions,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response is null)
+        {
+            // T-010 lands AGAG006 here.
+            throw new NotImplementedException("Null/empty response handling lands in T-010.");
+        }
+
+        if (!response.TryGetResult(out var typedResult) || typedResult is null)
+        {
+            // T-009 lands AGAG002 here.
+            throw new NotImplementedException("Structured-output failure handling lands in T-009.");
+        }
+
+        return await _configuration.ApplyResult(state, typedResult, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the message sequence sent to the chat client for a given state.
+    /// </summary>
+    /// <param name="state">The current workflow state.</param>
+    /// <returns>The ordered system + user messages.</returns>
+    internal IList<ChatMessage> BuildMessages(TState state)
+    {
+        return new List<ChatMessage>
+        {
+            new(ChatRole.System, _configuration.SystemPrompt(state)),
+            new(ChatRole.User, _configuration.UserPrompt(state)),
+        };
     }
 }
