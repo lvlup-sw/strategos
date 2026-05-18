@@ -11,23 +11,21 @@ namespace Strategos.Agents.Mcp.Tests;
 [Property("Category", "Unit")]
 public sealed class PackageMetadataTests
 {
-    [Test]
-    public async Task StrategosAgentsMcp_Package_DependsOnModelContextProtocolClient()
-    {
-        // The Strategos.Agents.Mcp assembly must reference ModelContextProtocol packages
-        // (it's the whole point of this sub-package).
-        var assembly = typeof(Strategos.Agents.Mcp.PackageMarker).Assembly;
-        var referenced = assembly.GetReferencedAssemblies();
-        var hasMcp = referenced.Any(r => r.Name?.StartsWith("ModelContextProtocol", StringComparison.OrdinalIgnoreCase) ?? false);
-        await Assert.That(hasMcp).IsTrue();
-    }
+    // NOTE: A runtime-reference assertion `StrategosAgentsMcp_Package_DependsOnModelContextProtocolClient`
+    // was removed here: the assembly compiles with a csproj-level <PackageReference> to
+    // ModelContextProtocol 1.3.0, but `GetReferencedAssemblies()` only reports assemblies
+    // whose types are actually used. Until T-018 lands the McpToolSource adapter (which
+    // imports ModelContextProtocol.Client.* types), the linker strips the reference and
+    // the runtime check would falsely fail. T-018 will re-add this test with a real
+    // typeof(McpClient) assertion. The architectural invariant test below (core does NOT
+    // reference MCP) is the load-bearing assertion for the port/adapter separation.
 
     [Test]
     public async Task StrategosAgents_CoreAssembly_DoesNotReferenceModelContextProtocol()
     {
         // The core Strategos.Agents package must stay free of MCP dependencies
         // (port/adapter separation).
-        var coreAssembly = typeof(Strategos.Agents.Abstractions.IAgentStep).Assembly;
+        var coreAssembly = typeof(Strategos.Agents.Abstractions.IAgentStep<>).Assembly;
         var referenced = coreAssembly.GetReferencedAssemblies();
         foreach (var refName in referenced)
         {
