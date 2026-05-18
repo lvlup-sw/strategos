@@ -12,27 +12,24 @@ dotnet add package LevelUp.Strategos.Agents
 
 ### Agent Steps
 
-Create workflow steps powered by LLM agents:
+Build an `IAgentStep<TState, TResult>` with the fluent builder (post-DR-11
+two-arity contract). `WithSystemPrompt`, `WithUserPrompt`, and
+`WithApplyResult` are required; missing any throws `AGAG001` at `Build()`:
 
 ```csharp
-public class AnalyzeDocumentStep : IAgentStep<DocumentState>
-{
-    public string GetSystemPrompt() => """
-        You are a document analyst. Analyze the provided document and extract key insights.
-        Focus on: main topics, sentiment, key entities, and actionable recommendations.
-        """;
+using Strategos.Agents;
+using Strategos.Steps;
 
-    public Type? GetOutputSchemaType() => typeof(DocumentAnalysis);
+var step = new AgentStepBuilder<DocumentState, DocumentAnalysis>()
+    .WithSystemPrompt(_ => "You are a document analyst. Extract key insights.")
+    .WithUserPrompt(s => s.DocumentText)
+    .WithApplyResult((state, result, _) =>
+        Task.FromResult(new StepResult<DocumentState>(state with { Analysis = result })))
+    .WithTool(summarizeFunction)
+    .ConfigureChatClient(b => b.UseLogging(loggerFactory))
+    .Build(chatClient);
 
-    public async Task<StepResult<DocumentState>> ExecuteAsync(
-        DocumentState state,
-        StepContext context,
-        CancellationToken ct)
-    {
-        // Agent execution handled by generated worker
-        return StepResult<DocumentState>.FromState(state);
-    }
-}
+var stepResult = await step.ExecuteAsync(state, context, ct);
 ```
 
 ### Conversation Continuity
@@ -86,7 +83,8 @@ services.AddStrategosAgents()
 
 | Interface | Purpose |
 |-----------|---------|
-| `IAgentStep<TState>` | Workflow step powered by LLM agent |
+| `IAgentStep<TState, TResult>` | Workflow step powered by LLM agent with typed structured result |
+| `AgentStepBuilder<TState, TResult>` | Fluent builder; the only sanctioned construction path |
 | `IConversationalState` | State with per-agent conversation threads |
 | `IConversationThreadManager` | Manages conversation thread lifecycle |
 | `IStreamingCallback` | Handles real-time token streaming |

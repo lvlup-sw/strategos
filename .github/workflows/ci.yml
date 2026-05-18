@@ -93,6 +93,25 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
 
+  quality-gates:
+    # T-023 / DR-7, DR-10, DR-11 grep gates. Pure shell — no .NET needed,
+    # runs as a parallel job (NOT `needs: build-test`) so the slowest gate
+    # doesn't block the others.
+    name: Quality gates (grep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: AGAG hygiene (DR-7)
+        run: bash scripts/check-agag-hygiene.sh
+
+      - name: Catch discipline (DR-10)
+        run: bash scripts/check-catch-discipline.sh
+
+      - name: Prose discipline (DIM-8)
+        run: bash scripts/check-prose.sh
+
   dbsf-parity-guard:
     # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
     # still matches the output of qdrant_client.hybrid.fusion.distribution_based_score_fusion
