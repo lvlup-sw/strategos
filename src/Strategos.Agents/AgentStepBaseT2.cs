@@ -80,6 +80,24 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
                 "Chat client returned a null response.");
         }
 
+        // DR-8: detect the FunctionInvokingChatClient iteration cap. MEAI 10.5 does not
+        // throw when it reaches MaximumIterationsPerRequest — it logs
+        // "Reached maximum iteration count of {N}. Stopping function invocation loop."
+        // and returns the latest inner response as-is. That response retains
+        // FinishReason == ToolCalls (the model still wanted to call tools when the
+        // middleware bailed). We surface that condition as AGAG005 with the captured
+        // PartialTrace. This check MUST precede the AGAG006 empty-payload check,
+        // because the capped response will also have an empty Text / no TryGetResult.
+        if (response.FinishReason == ChatFinishReason.ToolCalls)
+        {
+            var maxIterations = _configuration.MaxToolIterations ?? DefaultMaxToolIterations;
+            // Snapshot the messages into an immutable IReadOnlyList. We do NOT alias
+            // response.Messages directly — callers must observe a stable trace even
+            // if the response is later mutated by another consumer.
+            var partialTrace = response.Messages.ToArray();
+            throw new AgentToolLoopException(maxIterations, partialTrace);
+        }
+
         var hasResult = response.TryGetResult(out var typedResult) && typedResult is not null;
         if (!hasResult && string.IsNullOrEmpty(response.Text))
         {
