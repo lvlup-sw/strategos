@@ -30,6 +30,7 @@ public sealed class AgentStepBuilder<TState, TResult>
     private ChatOptions? _chatOptions;
     private bool _chatOptionsSet;
     private int? _maxToolIterations;
+    private Action<ChatClientBuilder>? _chatClientConfigurator;
 
     /// <summary>Configure the system prompt hook (required).</summary>
     public AgentStepBuilder<TState, TResult> WithSystemPrompt(Func<TState, string> systemPrompt)
@@ -112,6 +113,20 @@ public sealed class AgentStepBuilder<TState, TResult>
     }
 
     /// <summary>
+    /// Host-composition escape hatch (DR-6). The supplied configurator runs FIRST when
+    /// the IChatClient pipeline is composed in <see cref="Build"/> — its added middleware
+    /// (typically <c>UseLogging</c>, <c>UseOpenTelemetry</c>, <c>UseDistributedCache</c>)
+    /// wraps the Strategos-internal stages (<c>UseStrategosFunctions</c> →
+    /// <c>UseFunctionInvocation</c>), which Strategos always applies in fixed order.
+    /// </summary>
+    /// <param name="configurator">The host's <see cref="ChatClientBuilder"/> configurator.</param>
+    public AgentStepBuilder<TState, TResult> ConfigureChatClient(Action<ChatClientBuilder> configurator)
+    {
+        _chatClientConfigurator = configurator ?? throw new ArgumentNullException(nameof(configurator));
+        return this;
+    }
+
+    /// <summary>
     /// Construct the configured <see cref="IAgentStep{TState, TResult}"/>. Throws
     /// <see cref="AgentBuilderValidationException"/> (AGAG001) if any required hook is missing.
     /// </summary>
@@ -144,16 +159,41 @@ public sealed class AgentStepBuilder<TState, TResult>
             throw new AgentDuplicateToolException(firstDuplicate.Key);
         }
 
+        var toolList = _tools.ToArray();
         var configuration = new AgentStepConfiguration<TState, TResult>(
             SystemPrompt: _systemPrompt,
             UserPrompt: _userPrompt,
             ApplyResult: _applyResult,
-            Tools: _tools.ToArray(),
+            Tools: toolList,
             McpToolSource: _mcpToolSource,
             ChatOptions: _chatOptions,
-            ChatClientConfigurator: null,
+            ChatClientConfigurator: _chatClientConfigurator,
             MaxToolIterations: _maxToolIterations);
 
-        return new AgentStepBase<TState, TResult>(chatClient, configuration);
+        var composedChatClient = ComposeChatClient(chatClient, toolList);
+        return new AgentStepBase<TState, TResult>(composedChatClient, configuration);
+    }
+
+    /// <summary>
+    /// Composes the IChatClient pipeline in fixed order (DR-6):
+    /// host configurator → <c>UseStrategosFunctions</c> → <c>UseFunctionInvocation</c>.
+    /// </summary>
+    private IChatClient ComposeChatClient(IChatClient innerClient, IReadOnlyList<AIFunction> tools)
+    {
+        var maxIterations = _maxToolIterations ?? AgentStepBase<TState, TResult>.DefaultMaxToolIterations;
+        var builder = new ChatClientBuilder(innerClient);
+
+        // 1. Host configurator runs FIRST so its middleware ends up OUTERMOST in the chain.
+        _chatClientConfigurator?.Invoke(builder);
+
+        // 2. Surface the Strategos-registered AIFunctions as an inspectable chain step.
+        builder.UseStrategosFunctions(tools);
+
+        // 3. Automatic function-call invocation, bounded by _maxToolIterations (DR-8).
+        builder.UseFunctionInvocation(
+            loggerFactory: null,
+            configure: client => client.MaximumIterationsPerRequest = maxIterations);
+
+        return builder.Build();
     }
 }
