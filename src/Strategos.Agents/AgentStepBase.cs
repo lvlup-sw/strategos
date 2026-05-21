@@ -28,6 +28,13 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
     private readonly IChatClient _chatClient;
     private readonly AgentStepConfiguration<TState, TResult> _configuration;
 
+    /// <summary>
+    /// Test-only accessor for the underlying configuration. Internal-visible so
+    /// <c>Strategos.Agents.Tests</c> can inspect builder-applied configuration
+    /// without reaching into private fields via reflection (white-box test smell).
+    /// </summary>
+    internal AgentStepConfiguration<TState, TResult> Configuration => _configuration;
+
     internal AgentStepBase(
         IChatClient chatClient,
         AgentStepConfiguration<TState, TResult> configuration)

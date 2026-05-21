@@ -13,6 +13,7 @@ using Strategos.Agents;
 using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
 using Strategos.Agents.Diagnostics;
+using Strategos.Agents.Tests.Fixtures;
 using Strategos.Steps;
 
 namespace Strategos.Agents.Tests.Integration;
@@ -429,32 +430,6 @@ public sealed class AgentStepBaseIntegrationTests
     internal sealed class MultDto
     {
         public int Product { get; set; }
-    }
-
-    /// <summary>
-    /// In-process test adapter implementing <see cref="IMcpToolSource"/>. Hand-rolled
-    /// in-test (NOT the production <c>McpToolSource</c> adapter) so the test exercises
-    /// the contract surface, not the MCP transport. Counts invocations so the lazy
-    /// cache contract on <see cref="StrategosFunctionsChatClient"/> can be asserted
-    /// against the adapter directly.
-    /// </summary>
-    private sealed class InProcessTestMcpToolSource : IMcpToolSource
-    {
-        private readonly IReadOnlyList<AIFunction> _tools;
-        private int _calls;
-
-        public InProcessTestMcpToolSource(IReadOnlyList<AIFunction> tools)
-        {
-            _tools = tools;
-        }
-
-        public int GetToolsAsyncCount => Volatile.Read(ref _calls);
-
-        public Task<IReadOnlyList<AIFunction>> GetToolsAsync(CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref _calls);
-            return Task.FromResult(_tools);
-        }
     }
 
     /// <summary>
