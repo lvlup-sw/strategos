@@ -75,9 +75,14 @@ jobs:
         run: bash scripts/pack-to-local-feed.sh ./local-feed
 
       - name: Restore + build + test smoke project
+        # TUnit uses the Microsoft.Testing.Platform exe entrypoint, not the
+        # vstest host — invoke via `dotnet run` (the project sets
+        # OutputType=Exe). `dotnet test` was rejected by the .NET 10 SDK
+        # ("Specifying a project for 'dotnet test' should be via '--project'")
+        # AND would not surface TUnit's source-generated test list anyway.
         run: |
           dotnet restore tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj
-          dotnet test tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj -c Release --no-restore
+          dotnet run --project tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj --configuration Release --no-restore
 
   coverage-gate:
     needs: build-test
