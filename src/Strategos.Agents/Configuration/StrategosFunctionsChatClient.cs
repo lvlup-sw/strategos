@@ -127,18 +127,7 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
         }
 
         clone.Tools ??= new List<AITool>();
-
-        // Build the existing-name / existing-ref sets from whatever the caller supplied.
-        var existingNames = new HashSet<string>(StringComparer.Ordinal);
-        var existingRefs = new HashSet<AITool>(ReferenceEqualityComparer.Instance);
-        foreach (var existing in clone.Tools)
-        {
-            existingRefs.Add(existing);
-            if (!string.IsNullOrEmpty(existing.Name))
-            {
-                existingNames.Add(existing.Name);
-            }
-        }
+        var (existingRefs, existingNames) = BuildExistingToolSet(clone.Tools);
 
         // Source 2: Strategos-registered tools (wins over MCP, loses to host).
         AppendIfAbsent(clone.Tools, Tools, existingRefs, existingNames);
@@ -147,6 +136,22 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
         AppendIfAbsent(clone.Tools, mcpTools, existingRefs, existingNames);
 
         return clone;
+    }
+
+    private static (HashSet<AITool> Refs, HashSet<string> Names) BuildExistingToolSet(IList<AITool> tools)
+    {
+        var refs = new HashSet<AITool>(ReferenceEqualityComparer.Instance);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in tools)
+        {
+            refs.Add(t);
+            if (!string.IsNullOrEmpty(t.Name))
+            {
+                names.Add(t.Name);
+            }
+        }
+
+        return (refs, names);
     }
 
     private static void AppendIfAbsent(
