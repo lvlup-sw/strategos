@@ -71,6 +71,23 @@ public class WebSocketStreamingCallback : IStreamingCallback
 }
 ```
 
+## Diagnostics
+
+Strategos.Agents throws typed `AgentException` subclasses keyed by short
+diagnostic identifiers (`AGAG001`..`AGAG006`). The identifiers are part of
+the public contract — catch on the exception type, branch on
+`exception.Diagnostic`, and forward the code to your telemetry pipeline.
+The literals live in `Strategos.Agents.Diagnostics.AgentDiagnostics`.
+
+| Code | Exception | Meaning | When thrown |
+|------|-----------|---------|-------------|
+| `AGAG001` | `AgentBuilderValidationException` | A required builder hook delegate was missing at `Build()` time. | `AgentStepBuilder.Build()` invoked with a required hook missing (DR-2). |
+| `AGAG002` | `AgentStructuredOutputException` | Structured-output deserialization failed — `ChatResponse<T>.TryGetResult` returned false. | The chat client returned a `ChatResponse<TResult>` whose payload would not bind to `TResult` (DR-3). Carries a truncated (≤4 KB) copy of the raw payload. |
+| `AGAG003` | `AgentDuplicateToolException` | Duplicate tool name registered on an `AgentStepBuilder`. | `AgentStepBuilder.Build()` detects two `AIFunction`s with the same name (DR-4). |
+| `AGAG004` | `AgentMcpException` | MCP client handshake or tool-discovery failure. | An `IMcpToolSource` adapter fails to open the MCP transport or list tools (DR-5). The endpoint is surfaced with user-info credentials stripped. |
+| `AGAG005` | `AgentToolLoopException` | Tool-invocation iteration count exceeded the configured maximum. | The chat-tool loop hits its bounded cap (DR-8). Carries the cap and a partial trace of the tool-call messages. |
+| `AGAG006` | `AgentChatResponseException` | Chat client returned a null or empty `ChatResponse<T>`. | The chat client yielded no usable response object for the agent step (DR-10). |
+
 ## Configuration
 
 ```csharp
