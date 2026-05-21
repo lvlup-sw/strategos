@@ -6,10 +6,9 @@
 
 using Microsoft.Extensions.AI;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
 using Strategos.Agents.Exceptions;
+using Strategos.Agents.Tests.Fixtures;
 
 namespace Strategos.Agents.Tests.Unit.Configuration;
 
@@ -37,15 +36,12 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
             .Returns(Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))));
 
         var mcpTool = AIFunctionFactory.Create(() => "mcp", name: "mcp_tool");
-        var mcpSource = Substitute.For<IMcpToolSource>();
-        mcpSource
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<AIFunction>>(new[] { mcpTool }));
+        var mcpSource = new InProcessTestMcpToolSource(new[] { mcpTool });
 
         var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), mcpSource);
 
         // BEFORE first call: resolver must not have been invoked.
-        await mcpSource.Received(0).GetToolsAsync(Arg.Any<CancellationToken>());
+        await Assert.That(mcpSource.GetToolsAsyncCount).IsEqualTo(0);
 
         await client.GetResponseAsync(
             new[] { new ChatMessage(ChatRole.User, "hi") },
@@ -53,7 +49,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
             cancellationToken: CancellationToken.None);
 
         // AFTER first call: resolver invoked exactly once.
-        await mcpSource.Received(1).GetToolsAsync(Arg.Any<CancellationToken>());
+        await Assert.That(mcpSource.GetToolsAsyncCount).IsEqualTo(1);
     }
 
     [Test]
@@ -68,10 +64,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
             .Returns(Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))));
 
         var mcpTool = AIFunctionFactory.Create(() => "mcp", name: "mcp_tool");
-        var mcpSource = Substitute.For<IMcpToolSource>();
-        mcpSource
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<AIFunction>>(new[] { mcpTool }));
+        var mcpSource = new InProcessTestMcpToolSource(new[] { mcpTool });
 
         var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), mcpSource);
 
@@ -86,7 +79,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
             cancellationToken: CancellationToken.None);
 
         // Resolver invoked exactly once even though there were two requests.
-        await mcpSource.Received(1).GetToolsAsync(Arg.Any<CancellationToken>());
+        await Assert.That(mcpSource.GetToolsAsyncCount).IsEqualTo(1);
     }
 
     [Test]
@@ -109,10 +102,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
         var strategosTool = AIFunctionFactory.Create(() => "strat", name: "strategos_tool");
         var mcpTool = AIFunctionFactory.Create(() => "mcp", name: "mcp_tool");
 
-        var mcpSource = Substitute.For<IMcpToolSource>();
-        mcpSource
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<AIFunction>>(new[] { mcpTool }));
+        var mcpSource = new InProcessTestMcpToolSource(new[] { mcpTool });
 
         var client = new StrategosFunctionsChatClient(inner, new[] { strategosTool }, mcpSource);
 
@@ -162,10 +152,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
         var hostShared = AIFunctionFactory.Create(() => "from-host", name: "shared_name");
         var stratShared = AIFunctionFactory.Create(() => "from-strategos", name: "shared_name");
 
-        var mcpSourceA = Substitute.For<IMcpToolSource>();
-        mcpSourceA
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<AIFunction>>(Array.Empty<AIFunction>()));
+        var mcpSourceA = new InProcessTestMcpToolSource(Array.Empty<AIFunction>());
 
         var clientA = new StrategosFunctionsChatClient(inner, new[] { stratShared }, mcpSourceA);
         await clientA.GetResponseAsync(
@@ -181,10 +168,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
         var stratOnly = AIFunctionFactory.Create(() => "from-strategos", name: "shared_name2");
         var mcpOnly = AIFunctionFactory.Create(() => "from-mcp", name: "shared_name2");
 
-        var mcpSourceB = Substitute.For<IMcpToolSource>();
-        mcpSourceB
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IReadOnlyList<AIFunction>>(new[] { mcpOnly }));
+        var mcpSourceB = new InProcessTestMcpToolSource(new[] { mcpOnly });
 
         var clientB = new StrategosFunctionsChatClient(inner, new[] { stratOnly }, mcpSourceB);
         await clientB.GetResponseAsync(
@@ -208,10 +192,7 @@ public sealed class StrategosFunctionsChatClientMcpInjectionTests
             .Returns(Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))));
 
         var inner_ex = new InvalidOperationException("boom");
-        var mcpSource = Substitute.For<IMcpToolSource>();
-        mcpSource
-            .GetToolsAsync(Arg.Any<CancellationToken>())
-            .Throws(inner_ex);
+        var mcpSource = new InProcessTestMcpToolSource(inner_ex);
 
         var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), mcpSource);
 

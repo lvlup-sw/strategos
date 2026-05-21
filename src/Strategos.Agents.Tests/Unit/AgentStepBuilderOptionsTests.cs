@@ -4,13 +4,11 @@
 // </copyright>
 // =============================================================================
 
-using System.Reflection;
 using Microsoft.Extensions.AI;
 using NSubstitute;
 using Strategos.Abstractions;
 using Strategos.Agents;
-using Strategos.Agents.Abstractions;
-using Strategos.Agents.Configuration;
+using Strategos.Agents.Tests.Fixtures;
 using Strategos.Steps;
 
 namespace Strategos.Agents.Tests.Unit;
@@ -36,7 +34,7 @@ public sealed class AgentStepBuilderOptionsTests
     [Test]
     public async Task WithMcpToolSource_StoresPortInConfiguration()
     {
-        var port = Substitute.For<IMcpToolSource>();
+        var port = new InProcessTestMcpToolSource(Array.Empty<AIFunction>());
 
         var builder = new AgentStepBuilder<TestState, string>();
         builder.WithSystemPrompt(_ => "sys");
@@ -44,8 +42,8 @@ public sealed class AgentStepBuilderOptionsTests
         builder.WithApplyResult((state, _, _) => Task.FromResult(new StepResult<TestState>(state)));
         builder.WithMcpToolSource(port);
 
-        var step = builder.Build(FakeChatClient());
-        var configuration = GetConfiguration(step);
+        var step = (AgentStepBase<TestState, string>)builder.Build(FakeChatClient());
+        var configuration = step.Configuration;
 
         await Assert.That(configuration.McpToolSource).IsSameReferenceAs(port);
     }
@@ -68,13 +66,6 @@ public sealed class AgentStepBuilderOptionsTests
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() => builder.WithMaxToolIterations(-1));
 
         await Assert.That(ex).IsNotNull();
-    }
-
-    private static AgentStepConfiguration<TestState, string> GetConfiguration(object step)
-    {
-        var field = step.GetType().GetField("_configuration", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Expected private field '_configuration' on AgentStepBase<,>.");
-        return (AgentStepConfiguration<TestState, string>)field.GetValue(step)!;
     }
 
     private static IChatClient FakeChatClient()

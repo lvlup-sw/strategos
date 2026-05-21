@@ -4,11 +4,9 @@
 // </copyright>
 // =============================================================================
 
-using System.Reflection;
 using Microsoft.Extensions.AI;
 using Strategos.Abstractions;
 using Strategos.Agents;
-using Strategos.Agents.Configuration;
 using Strategos.Agents.Diagnostics;
 using Strategos.Agents.Exceptions;
 using Strategos.Steps;
@@ -35,9 +33,9 @@ public sealed class AgentStepBuilderToolsTests
         builder.WithTool(toolA);
         builder.WithTool(toolB);
 
-        var step = builder.Build(FakeChatClient());
+        var step = (AgentStepBase<TestState, string>)builder.Build(FakeChatClient());
 
-        var configuration = GetConfiguration(step);
+        var configuration = step.Configuration;
 
         await Assert.That(configuration.Tools.Count).IsEqualTo(2);
         await Assert.That(configuration.Tools).Contains(toolA);
@@ -63,13 +61,6 @@ public sealed class AgentStepBuilderToolsTests
 
         await Assert.That(ex.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG003);
         await Assert.That(ex.ToolName).IsEqualTo("collide");
-    }
-
-    private static AgentStepConfiguration<TestState, string> GetConfiguration(object step)
-    {
-        var field = step.GetType().GetField("_configuration", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("Expected private field '_configuration' on AgentStepBase<,>.");
-        return (AgentStepConfiguration<TestState, string>)field.GetValue(step)!;
     }
 
     private static IChatClient FakeChatClient()

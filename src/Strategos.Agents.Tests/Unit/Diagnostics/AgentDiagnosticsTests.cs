@@ -8,7 +8,7 @@ using System.Reflection;
 
 namespace Strategos.Agents.Tests.Unit.Diagnostics;
 
-public class AgentDiagnosticsTests
+public sealed class AgentDiagnosticsTests
 {
     [Test]
     public async Task AgentDiagnostics_AllSixCodes_DeclaredAsConstStringMatchingPattern()
