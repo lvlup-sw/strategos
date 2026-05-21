@@ -5,8 +5,12 @@
 // =============================================================================
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Strategos.Abstractions;
 using Strategos.Agents;
@@ -26,7 +30,10 @@ namespace Strategos.Agents.Tests.Integration;
 /// (NSubstitute is used only for the terminal <see cref="IChatClient"/>, not for
 /// the logging surface) — see [[feedback_no_handwavy_mitigations]].
 /// </summary>
-[Property("Category", "Integration")]
+// DR-9: this class deliberately carries NO TUnit Property metadata that could
+// be used by `--treenode-filter` to exclude it from CI. The design's DR-9
+// acceptance criterion requires this test to run in the standard test job; a
+// metadata gate is forbidden so it cannot be silently skipped.
 public sealed class AgentStepBuilderConfiguratorTests
 {
     [Test]
@@ -156,6 +163,76 @@ public sealed class AgentStepBuilderConfiguratorTests
     }
 
     [Test]
+    public async Task Build_ConfigureChatClientWithDistributedCache_RepeatCallsReturnCachedResponse()
+    {
+        // DR-6 acceptance bullet 2: a consumer calling
+        // `.ConfigureChatClient(b => b.UseDistributedCache(cache))` sees cached
+        // responses on repeat calls. Wiring parity (DIM-4) demands a real
+        // IDistributedCache (MemoryDistributedCache), NOT NSubstitute — the
+        // production code path must serialize/deserialize through actual
+        // distributed-cache semantics.
+        //
+        // Pipeline composed by AgentStepBuilder.Build for this test:
+        //   DistributedCachingChatClient (outermost, from host configurator)
+        //     → StrategosFunctionsChatClient
+        //       → FunctionInvokingChatClient
+        //         → CountingChatClient (terminal — hand-rolled, NOT a mock)
+        //
+        // The cache wraps the rest of the chain, so a second ExecuteAsync call
+        // with identical inputs MUST be served from cache and never reach the
+        // terminal CountingChatClient. We assert that by checking CallCount == 1.
+
+        // Arrange — real MemoryDistributedCache (no mock).
+        var cache = new MemoryDistributedCache(
+            Options.Create(new MemoryDistributedCacheOptions()));
+
+        // Deterministic structured-output payload. AgentStepBase calls
+        // GetResponseAsync<TResult>, which serializes/deserializes through JSON.
+        // Returning a CachedDto JSON keeps the test compatible with that path.
+        const string jsonPayload = "{\"value\":\"cached-answer\"}";
+        var fake = new CountingChatClient(
+            new ChatResponse(new ChatMessage(ChatRole.Assistant, jsonPayload)));
+
+        var applyResultInvocations = 0;
+        var builder = new AgentStepBuilder<TestState, CachedDto>();
+        builder.WithSystemPrompt(_ => "sys");
+        builder.WithUserPrompt(_ => "user");
+        builder.WithApplyResult((s, _, _) =>
+        {
+            applyResultInvocations++;
+            return Task.FromResult(new StepResult<TestState>(s));
+        });
+        builder.ConfigureChatClient(b => b.UseDistributedCache(cache));
+
+        var step = builder.Build(fake);
+
+        // Fixed WorkflowId so both calls produce identical message sequences.
+        var state = new TestState { WorkflowId = Guid.Parse("11111111-1111-1111-1111-111111111111") };
+        var context = new StepContext
+        {
+            CorrelationId = "test-correlation",
+            WorkflowId = state.WorkflowId,
+            StepName = "CacheTestStep",
+            Timestamp = DateTimeOffset.UtcNow,
+            CurrentPhase = "Testing",
+        };
+
+        // Act — two ExecuteAsync calls with identical state.
+        await step.ExecuteAsync(state, context, CancellationToken.None);
+        await step.ExecuteAsync(state, context, CancellationToken.None);
+
+        // Assert — terminal client invoked exactly ONCE. The second call was
+        // served from the MemoryDistributedCache without reaching the bottom
+        // of the chain.
+        await Assert.That(fake.CallCount).IsEqualTo(1);
+
+        // Sanity: ApplyResult fired both times — the cached response is still
+        // delivered to the consumer-facing pipeline output. Only the inner
+        // chat-client invocation was elided.
+        await Assert.That(applyResultInvocations).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task Build_WithMaxToolIterationsOverride_PropagatesToFunctionInvokingClient()
     {
         var terminalClient = Substitute.For<IChatClient>();
@@ -252,5 +329,60 @@ public sealed class AgentStepBuilderConfiguratorTests
     internal sealed record TestState : IWorkflowState
     {
         public Guid WorkflowId { get; init; } = Guid.NewGuid();
+    }
+
+    /// <summary>
+    /// Structured-output payload used by the DR-6 cached-response test. Matches
+    /// the JSON shape <c>{"value":"…"}</c> the fake terminal client returns.
+    /// </summary>
+    internal sealed record CachedDto(string Value);
+
+    /// <summary>
+    /// Hand-rolled terminal <see cref="IChatClient"/> that returns a fixed
+    /// <see cref="ChatResponse"/> and tracks invocation count. Deliberately
+    /// NOT NSubstitute — the DR-6 acceptance criterion requires real wiring
+    /// parity (DIM-4) for the cache test.
+    /// </summary>
+    private sealed class CountingChatClient : IChatClient
+    {
+        private readonly ChatResponse _response;
+        private int _callCount;
+
+        public CountingChatClient(ChatResponse response)
+        {
+            _response = response ?? throw new ArgumentNullException(nameof(response));
+        }
+
+        public int CallCount => Volatile.Read(ref _callCount);
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _callCount);
+            return Task.FromResult(_response);
+        }
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _callCount);
+            foreach (var msg in _response.Messages)
+            {
+                yield return new ChatResponseUpdate(msg.Role, msg.Text);
+            }
+
+            await Task.CompletedTask.ConfigureAwait(false);
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+            // no-op
+        }
     }
 }

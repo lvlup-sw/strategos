@@ -20,7 +20,10 @@ namespace Strategos.Agents.Tests.Integration;
 /// The orchestrator must surface the cap as <see cref="AgentToolLoopException"/> (AGAG005)
 /// rather than silently returning whatever the capped pipeline produced.
 /// </summary>
-[Property("Category", "Integration")]
+// DR-9: this class deliberately carries NO TUnit Property metadata that could
+// be used by `--treenode-filter` to exclude it from CI. The design's DR-9
+// acceptance criterion requires this test to run in the standard test job; a
+// metadata gate is forbidden so it cannot be silently skipped.
 public sealed class AgentStepBaseToolLoopTests
 {
     [Test]
