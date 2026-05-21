@@ -35,7 +35,10 @@ namespace Strategos.Agents.Tests.Integration;
 /// ordering through the full pipeline.
 /// </para>
 /// </remarks>
-[Property("Category", "Integration")]
+// DR-9: this class deliberately carries NO TUnit Property metadata that could
+// be used by `--treenode-filter` to exclude it from CI. The design's DR-9
+// acceptance criterion requires this test to run in the standard test job; a
+// metadata gate is forbidden so it cannot be silently skipped.
 public sealed class AgentStepBaseIntegrationTests
 {
     [Test]
