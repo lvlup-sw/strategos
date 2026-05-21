@@ -4,6 +4,7 @@
 // </copyright>
 // =============================================================================
 
+using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using Strategos.Agents.Abstractions;
@@ -127,10 +128,13 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
             {
                 await _client.DisposeAsync().ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
                 // Disposal must never throw to callers; the underlying client may already
-                // be in a faulted state from a failed handshake.
+                // be in a faulted state from a failed handshake. Surface via Trace so the
+                // failure is observable without forcing logger wiring on callers.
+                Trace.WriteLine(
+                    $"AGAG004 swallowed dispose failure on McpToolSource: {ex.GetType().Name}: {ex.Message}");
             }
 
             _client = null;
