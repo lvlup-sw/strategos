@@ -45,30 +45,21 @@ public sealed class AgentExceptionHierarchyTests
 
             // Each subclass must have at least one constructor we can hit;
             // every constructed instance must report the correct Diagnostic.
-            var ctor = t.GetConstructors().FirstOrDefault();
+            // Pick the simplest constructor deterministically (fewest parameters,
+            // then ordinal signature) — reflection order is otherwise unspecified
+            // and would make this test flaky as constructors evolve.
+            var ctor = t.GetConstructors()
+                .OrderBy(c => c.GetParameters().Length)
+                .ThenBy(c => c.ToString(), StringComparer.Ordinal)
+                .FirstOrDefault();
             await Assert.That(ctor).IsNotNull();
 
-            // Try the simplest construction path each exception offers:
-            object? instance = null;
+            object? instance;
             var parameters = ctor!.GetParameters();
             try
             {
-                if (parameters.Length == 0)
-                {
-                    instance = ctor.Invoke(Array.Empty<object?>());
-                }
-                else
-                {
-                    var args = parameters.Select(p =>
-                        p.HasDefaultValue
-                            ? p.DefaultValue
-                            : p.ParameterType == typeof(string)
-                                ? "test"
-                                : p.ParameterType.IsValueType
-                                    ? Activator.CreateInstance(p.ParameterType)
-                                    : null).ToArray();
-                    instance = ctor.Invoke(args);
-                }
+                var args = parameters.Select(CreateValidArgument).ToArray();
+                instance = ctor.Invoke(args);
             }
             catch (TargetInvocationException tie) when (tie.InnerException is not null)
             {
@@ -80,5 +71,42 @@ public sealed class AgentExceptionHierarchyTests
             var diagValue = (string)diagProp.GetValue(instance)!;
             await Assert.That(diagValue).IsEqualTo(code);
         }
+    }
+
+    // Produces a valid, non-null argument for a constructor parameter so reflection-based
+    // construction survives guard clauses (e.g. ThrowIfNegativeOrZero on int, ThrowIfNull
+    // on collection parameters). Without this, synthesizing 0 / null would trip the very
+    // guards the production constructors now enforce.
+    private static object? CreateValidArgument(ParameterInfo p)
+    {
+        if (p.HasDefaultValue)
+        {
+            return p.DefaultValue;
+        }
+
+        var type = p.ParameterType;
+        if (type == typeof(string))
+        {
+            return "test";
+        }
+
+        if (type.IsValueType)
+        {
+            // Integral guards reject the zero default, so hand back a positive sentinel.
+            return type == typeof(int) ? 1 : Activator.CreateInstance(type);
+        }
+
+        if (type.IsInterface && type.IsGenericType)
+        {
+            var definition = type.GetGenericTypeDefinition();
+            if (definition == typeof(IReadOnlyList<>) || definition == typeof(IReadOnlyCollection<>)
+                || definition == typeof(IList<>) || definition == typeof(ICollection<>)
+                || definition == typeof(IEnumerable<>))
+            {
+                return Array.CreateInstance(type.GetGenericArguments()[0], 0);
+            }
+        }
+
+        return null;
     }
 }

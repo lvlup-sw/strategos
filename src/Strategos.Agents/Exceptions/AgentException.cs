@@ -15,10 +15,19 @@ public abstract class AgentException : Exception
     /// <summary>Stable diagnostic identifier (AGAG###).</summary>
     public abstract string Diagnostic { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AgentException"/> class.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     protected AgentException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AgentException"/> class.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that is the cause of this exception.</param>
     protected AgentException(string message, Exception innerException) : base(message, innerException)
     {
     }

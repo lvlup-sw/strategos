@@ -271,6 +271,7 @@ First stable release of the Strategos library for building production-grade agen
 - Transactional outbox pattern
 - Time-travel debugging via event replay
 
+[2.7.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0
 [2.7.0-preview.1]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0-preview.1
 [2.6.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.6.0
 [1.1.1]: https://github.com/lvlup-sw/strategos/releases/tag/v1.1.1

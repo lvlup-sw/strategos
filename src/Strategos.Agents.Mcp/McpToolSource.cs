@@ -35,6 +35,7 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
     private readonly Uri _endpoint;
     private readonly TimeSpan _timeout;
     private readonly string _redactedEndpoint;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private McpClient? _client;
     private bool _disposed;
 
@@ -57,6 +58,22 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
     public static McpToolSource ForHttpEndpoint(Uri endpoint, TimeSpan timeout)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
+        if (!endpoint.IsAbsoluteUri)
+        {
+            throw new ArgumentException("Endpoint must be an absolute URI.", nameof(endpoint));
+        }
+
+        // Uri.Scheme is normalized to lower-case per RFC 3986, so an ordinal compare
+        // against the canonical http/https constants is sufficient. The constants are
+        // static readonly (not compile-time const), so they cannot appear in a pattern.
+        if (!string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
+            && !string.Equals(endpoint.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Endpoint scheme must be http or https, but was '{endpoint.Scheme}'.",
+                nameof(endpoint));
+        }
+
         if (timeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be positive.");
@@ -75,21 +92,9 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
 
         try
         {
-            if (_client is null)
-            {
-                var transportOptions = new HttpClientTransportOptions
-                {
-                    Endpoint = StripUserInfo(_endpoint),
-                };
-                var transport = new HttpClientTransport(transportOptions);
-                _client = await McpClient.CreateAsync(
-                    transport,
-                    clientOptions: null,
-                    loggerFactory: null,
-                    cancellationToken: cts.Token).ConfigureAwait(false);
-            }
+            var client = await GetOrCreateClientAsync(cts.Token).ConfigureAwait(false);
 
-            var tools = await _client.ListToolsAsync(options: null, cancellationToken: cts.Token).ConfigureAwait(false);
+            var tools = await client.ListToolsAsync(options: null, cancellationToken: cts.Token).ConfigureAwait(false);
 
             var result = new List<AIFunction>(tools.Count);
             foreach (var tool in tools)
@@ -104,6 +109,12 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
             // Caller-driven cancellation propagates unwrapped — only domain failures wrap.
             throw;
         }
+        catch (ObjectDisposedException)
+        {
+            // Disposal raced with this call; surface the lifecycle violation unwrapped
+            // rather than masking it as a domain MCP failure.
+            throw;
+        }
         catch (Exception ex)
         {
             throw new AgentMcpException(
@@ -113,20 +124,73 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
         }
     }
 
+    // Serializes lazy client creation against concurrent GetToolsAsync calls and against
+    // DisposeAsync. Without this, two concurrent first-callers could each construct an
+    // McpClient (leaking one), or a caller could observe _client mid-disposal. The network
+    // round-trip (ListToolsAsync) deliberately runs OUTSIDE the gate so tool discovery is
+    // not serialized once the client exists.
+    private async Task<McpClient> GetOrCreateClientAsync(CancellationToken cancellationToken)
+    {
+        var existing = _client;
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_client is null)
+            {
+                var transportOptions = new HttpClientTransportOptions
+                {
+                    Endpoint = StripUserInfo(_endpoint),
+                };
+                var transport = new HttpClientTransport(transportOptions);
+                _client = await McpClient.CreateAsync(
+                    transport,
+                    clientOptions: null,
+                    loggerFactory: null,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            return _client;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        // Swap out the client under the lifecycle gate so a concurrent GetToolsAsync
+        // initializer cannot resurrect _client after we decide to dispose it.
+        McpClient? client;
+        await _lifecycleGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            client = _client;
+            _client = null;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
         }
 
-        _disposed = true;
-        if (_client is not null)
+        if (client is not null)
         {
             try
             {
-                await _client.DisposeAsync().ConfigureAwait(false);
+                await client.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -136,9 +200,9 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
                 Trace.WriteLine(
                     $"AGAG004 swallowed dispose failure on McpToolSource: {ex.GetType().Name}: {ex.Message}");
             }
-
-            _client = null;
         }
+
+        _lifecycleGate.Dispose();
     }
 
     /// <summary>

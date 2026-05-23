@@ -1,0 +1,10 @@
+# actionlint configuration.
+#
+# Declares custom self-hosted runner labels so actionlint does not flag them as
+# unknown. `blacksmith-4vcpu-ubuntu-2204` is a Blacksmith-managed runner label
+# (https://blacksmith.sh); the Blacksmith GitHub App routes jobs targeting this
+# label, so it is registered as a self-hosted runner rather than a GitHub-hosted
+# image and must be declared here for static validation.
+self-hosted-runner:
+  labels:
+    - blacksmith-4vcpu-ubuntu-2204

@@ -196,9 +196,10 @@ public sealed class AgentStepBaseExecuteTests
 
         await Assert.That(thrown!.Diagnostic).IsEqualTo("AGAG006");
 
-        // State reference-equal pre/post throw — orchestrator must not have mutated or
-        // replaced the caller's state instance (DR-10 no-partial-mutation).
-        await Assert.That(ReferenceEquals(initialState, initialState)).IsTrue();
+        // DR-10 no-partial-mutation: the caller's state fields are untouched on the
+        // failure path (apply-result never runs to produce a new state).
+        await Assert.That(initialState.UserQuery).IsEqualTo("what's 2+2?");
+        await Assert.That(initialState.Answer).IsEqualTo(string.Empty);
 
         // apply-result hook MUST NEVER be invoked on the failure path.
         _ = applyResult.DidNotReceive().Invoke(
@@ -225,7 +226,9 @@ public sealed class AgentStepBaseExecuteTests
             .Returns(chatResponse);
 
         var initialState = new TestState { UserQuery = "what's 2+2?" };
-        var stateSnapshot = initialState;
+        // Pre-execution value copy: a distinct instance with equal field values, so the
+        // post-throw equality check actually verifies no mutation (not reference identity).
+        var stateSnapshot = initialState with { };
 
         var applyResult = Substitute.For<Func<TestState, TestDto, CancellationToken, Task<StepResult<TestState>>>>();
         applyResult
@@ -259,8 +262,9 @@ public sealed class AgentStepBaseExecuteTests
 
         await Assert.That(thrown!.Diagnostic).IsEqualTo("AGAG006");
 
-        // DR-10 no-partial-mutation: same TState instance the caller passed in.
-        await Assert.That(ReferenceEquals(stateSnapshot, initialState)).IsTrue();
+        // DR-10 no-partial-mutation: the caller's state is unchanged by value
+        // (stateSnapshot is a pre-execution copy taken before the throw).
+        await Assert.That(initialState).IsEqualTo(stateSnapshot);
 
         _ = applyResult.DidNotReceive().Invoke(
             Arg.Any<TestState>(),

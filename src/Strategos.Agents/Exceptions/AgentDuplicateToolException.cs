@@ -13,11 +13,16 @@ namespace Strategos.Agents.Exceptions;
 /// </summary>
 public sealed class AgentDuplicateToolException : AgentException
 {
+    /// <summary>Gets the stable diagnostic identifier (<see cref="AgentDiagnostics.AGAG003"/>).</summary>
     public override string Diagnostic => AgentDiagnostics.AGAG003;
 
     /// <summary>The colliding tool name.</summary>
     public string ToolName { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AgentDuplicateToolException"/> class.
+    /// </summary>
+    /// <param name="toolName">The duplicate AIFunction tool name that was registered.</param>
     public AgentDuplicateToolException(string toolName)
         : base($"Duplicate AIFunction tool name '{toolName}' registered on AgentStepBuilder. Diagnostic: {AgentDiagnostics.AGAG003}.")
     {

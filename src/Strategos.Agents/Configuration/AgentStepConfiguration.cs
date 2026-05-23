@@ -54,6 +54,11 @@ public sealed record AgentStepConfiguration<TState, TResult>
         Action<ChatClientBuilder>? ChatClientConfigurator,
         int? MaxToolIterations)
     {
+        ArgumentNullException.ThrowIfNull(SystemPrompt);
+        ArgumentNullException.ThrowIfNull(UserPrompt);
+        ArgumentNullException.ThrowIfNull(ApplyResult);
+        ArgumentNullException.ThrowIfNull(Tools);
+
         this.SystemPrompt = SystemPrompt;
         this.UserPrompt = UserPrompt;
         this.ApplyResult = ApplyResult;

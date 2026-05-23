@@ -49,6 +49,9 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
         StepContext context,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(context);
+
         var messages = BuildMessages(state);
 
         ChatResponse<TResult>? response;
@@ -127,6 +130,8 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
     /// <returns>The ordered system + user messages.</returns>
     internal IList<ChatMessage> BuildMessages(TState state)
     {
+        ArgumentNullException.ThrowIfNull(state);
+
         return new List<ChatMessage>
         {
             new(ChatRole.System, _configuration.SystemPrompt(state)),

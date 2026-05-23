@@ -41,4 +41,24 @@ public sealed class McpToolSourceTests
         await Assert.That(source is IAsyncDisposable).IsTrue();
         await source.DisposeAsync();
     }
+
+    [Test]
+    public async Task ForHttpEndpoint_RelativeUri_ThrowsArgumentException()
+    {
+        // The documented contract is an absolute HTTP/HTTPS URI; a relative URI must
+        // fail fast at construction rather than surfacing later as a transport error.
+        var ex = Assert.Throws<ArgumentException>(() =>
+            McpToolSource.ForHttpEndpoint(new Uri("/mcp", UriKind.Relative), TimeSpan.FromSeconds(2)));
+
+        await Assert.That(ex!.ParamName).IsEqualTo("endpoint");
+    }
+
+    [Test]
+    public async Task ForHttpEndpoint_NonHttpScheme_ThrowsArgumentException()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            McpToolSource.ForHttpEndpoint(new Uri("ftp://example.com/mcp"), TimeSpan.FromSeconds(2)));
+
+        await Assert.That(ex!.ParamName).IsEqualTo("endpoint");
+    }
 }

@@ -77,23 +77,18 @@ for file in "${FILES[@]}"; do
         para_idx = 1;
         para = "";
       }
-      function flush(    text, count, lc, work, m) {
+      function flush(    text, count, lc, padded) {
         text = para;
         count = 0;
         lc = tolower(text);
-        work = lc;
-        while (match(work, "[^a-z0-9_]" term_re "[^a-z0-9_]")) {
+        # Pad with newlines so the [^a-z0-9_] boundary guard is satisfied even for
+        # terms anchored at the very start/end of the paragraph. Scanning the padded
+        # text unconditionally means edge terms are counted whether or not interior
+        # matches already exist (a count==0 guard would have skipped them).
+        padded = "\n" lc "\n";
+        while (match(padded, "[^a-z0-9_]" term_re "[^a-z0-9_]")) {
           count++;
-          work = substr(work, RSTART + RLENGTH);
-        }
-        # Edge case: also check anchored at start/end of paragraph.
-        # Pad with newlines so the [^a-z0-9_] guard is satisfied.
-        if (count == 0) {
-          padded = "\n" lc "\n";
-          while (match(padded, "[^a-z0-9_]" term_re "[^a-z0-9_]")) {
-            count++;
-            padded = substr(padded, RSTART + RLENGTH);
-          }
+          padded = substr(padded, RSTART + RLENGTH);
         }
         if (count >= 3) {
           printf("paragraph#%d: %d hits\n", para_idx, count);

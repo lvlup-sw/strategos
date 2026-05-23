@@ -34,8 +34,8 @@ internal sealed class InProcessTestMcpToolSource : IMcpToolSource
     private int _calls;
 
     /// <summary>
-    /// Creates a fake that returns <paramref name="tools"/> from
-    /// <see cref="GetToolsAsync(CancellationToken)"/>.
+    /// Initializes a new instance of the <see cref="InProcessTestMcpToolSource"/> class
+    /// that returns <paramref name="tools"/> from <see cref="GetToolsAsync(CancellationToken)"/>.
     /// </summary>
     /// <param name="tools">Tools to surface on each invocation.</param>
     public InProcessTestMcpToolSource(IReadOnlyList<AIFunction> tools)
@@ -45,7 +45,8 @@ internal sealed class InProcessTestMcpToolSource : IMcpToolSource
     }
 
     /// <summary>
-    /// Creates a fake whose <see cref="GetToolsAsync(CancellationToken)"/> throws
+    /// Initializes a new instance of the <see cref="InProcessTestMcpToolSource"/> class
+    /// whose <see cref="GetToolsAsync(CancellationToken)"/> throws
     /// <paramref name="throwOnResolve"/>. Used to exercise the MCP handshake-failure
     /// re-classification path.
     /// </summary>
