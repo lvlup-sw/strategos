@@ -3,11 +3,29 @@
   <PropertyGroup>
     <PackageId>LevelUp.Strategos.Contracts</PackageId>
     <Description>Cross-product schema substrate: TypeSpec-canonical SDLC event, workflow-IR, and invariant contracts emitted as C# records (this DLL) and JSON Schema (NuGet content, consumed by Exarchos).</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsAotCompatible>true</IsAotCompatible>
     <!-- Generated records carry their own auto-generated banner; suppress
          doc-comment requirements on the emitted partial surface only. -->
     <ContractsSchemasDir>$(MSBuildProjectDirectory)/schemas/json-schema</ContractsSchemasDir>
     <ContractsGeneratedDir>$(MSBuildProjectDirectory)/Generated</ContractsGeneratedDir>
+  </PropertyGroup>
+
+  <!-- T32: pin the package to 0.2.0. MinVer otherwise derives the version from
+       the repo's `v*` release tag (which currently floats at 2.7.x for the
+       Strategos core line). The contracts substrate is a NEW, independently
+       versioned cross-product artifact whose first published release is 0.2.0
+       (no 0.1.0 — see CHANGELOG: it must not publish until events + IR both
+       land, which they have). MinVer silently overwrites a bare <Version>, so
+       per repo convention (cf. Strategos.Agents smoke-pin) we also set
+       <MinVerSkip>true</MinVerSkip> + <PackageVersion>. The CONTRACTS_VERSION
+       property keeps the three in lockstep and lets the release pipeline bump
+       in one place. -->
+  <PropertyGroup>
+    <ContractsVersion>0.2.0</ContractsVersion>
+    <MinVerSkip>true</MinVerSkip>
+    <Version>$(ContractsVersion)</Version>
+    <PackageVersion>$(ContractsVersion)</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,10 +36,34 @@
        default Compile glob. They are the consumer-facing contract surface,
        compiled into the DLL, and emitter-owned (see codegen-guard CI); never edit. -->
 
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="CHANGELOG.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
   <!-- JSON Schema is embedded as NuGet content so language-neutral consumers
        (Exarchos) receive it with the package (T4). -->
   <ItemGroup>
     <Content Include="schemas/**/*.json" Pack="true" PackagePath="contentFiles/any/any/schemas/" />
+  </ItemGroup>
+
+  <!-- T32: embed the #53 builder-fixture corpus under contentFiles/.../fixtures/
+       so Exarchos can extract the ≥100 WorkflowDefinitionV1 fixtures from the
+       package. The corpus is produced by the fixture-export test
+       (artifacts/builder-fixtures/, repo-root, gitignored); it must exist at
+       pack time. We do NOT add it to the default Content compile/items globs
+       (Pack-only) and reference it by absolute repo path so the working copy is
+       unaffected. -->
+  <PropertyGroup>
+    <ContractsFixturesDir>$(MSBuildProjectDirectory)/../../artifacts/builder-fixtures</ContractsFixturesDir>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(ContractsFixturesDir)')">
+    <Content Include="$(ContractsFixturesDir)/**/*.json"
+             Pack="true"
+             PackagePath="contentFiles/any/any/fixtures/"
+             CopyToOutputDirectory="Never">
+      <Visible>false</Visible>
+    </Content>
   </ItemGroup>
 
 </Project>
