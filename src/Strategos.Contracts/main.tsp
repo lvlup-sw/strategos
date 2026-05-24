@@ -7,6 +7,7 @@ import "./Events/FabricDelegation.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Diagnostics/CheckNode.tsp";
 import "./Diagnostics/Enforcement.tsp";
+import "./Diagnostics/InvariantEntry.tsp";
 
 using JsonSchema;
 
