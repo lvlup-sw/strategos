@@ -30,6 +30,12 @@ echo "[contracts-codegen] tsp compile ..."
 rm -f "$CONTRACTS_DIR/schemas/json-schema/"*.json
 npx tsp compile .
 
+echo "[contracts-codegen] bundling workflow IR schema ..."
+# Inline the per-model workflow schemas reachable from WorkflowDefinitionV1 into
+# a single self-contained workflow-definition-v1.schema.json (stable $id) — the
+# equivalence-gate target every #53 fixture validates against (T17/T23).
+node scripts/bundle-workflow-schema.mjs
+
 echo "[contracts-codegen] emitting C# records ..."
 dotnet run --project "$CODEGEN_PROJ" -- \
   "$CONTRACTS_DIR/schemas/json-schema" \

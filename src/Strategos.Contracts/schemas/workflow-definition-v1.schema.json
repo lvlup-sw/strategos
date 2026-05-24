@@ -1,0 +1,809 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json",
+    "$ref": "#/$defs/WorkflowDefinitionV1",
+    "$defs": {
+        "ApprovalDefinition": {
+            "type": "object",
+            "properties": {
+                "approvalPointId": {
+                    "type": "string",
+                    "description": "Stable approval-point identifier."
+                },
+                "approverType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the approver type (LB-2)."
+                },
+                "precedingStepId": {
+                    "type": "string",
+                    "description": "Step id immediately preceding this approval gate."
+                },
+                "escalationHandler": {
+                    "$ref": "#/$defs/ApprovalEscalationDefinition",
+                    "description": "Optional escalation handler."
+                },
+                "rejectionHandler": {
+                    "$ref": "#/$defs/ApprovalRejectionDefinition",
+                    "description": "Optional rejection handler."
+                }
+            },
+            "required": [
+                "approvalPointId",
+                "approverType",
+                "precedingStepId"
+            ],
+            "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's runtime context factory (a CLR\nexpression) is intentionally **not** carried on the wire (declarative-only,\nLB-1)."
+        },
+        "ApprovalEscalationDefinition": {
+            "type": "object",
+            "properties": {
+                "escalationId": {
+                    "type": "string",
+                    "description": "Stable escalation identifier."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps run on escalation."
+                },
+                "nestedApprovals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ApprovalDefinition"
+                    },
+                    "description": "Nested approval gates within the escalation, if any."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether escalation terminates the workflow."
+                }
+            },
+            "required": [
+                "escalationId",
+                "steps",
+                "nestedApprovals",
+                "isTerminal"
+            ],
+            "description": "Wire-IR approval-escalation handler — steps run when an approval escalates\n(mirrors the builder's `ApprovalEscalationDefinition`)."
+        },
+        "ApprovalRejectionDefinition": {
+            "type": "object",
+            "properties": {
+                "rejectionHandlerId": {
+                    "type": "string",
+                    "description": "Stable rejection-handler identifier."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps run on rejection."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether rejection terminates the workflow."
+                }
+            },
+            "required": [
+                "rejectionHandlerId",
+                "steps",
+                "isTerminal"
+            ],
+            "description": "Wire-IR approval-rejection handler — steps run when an approval is rejected\n(mirrors the builder's `ApprovalRejectionDefinition`)."
+        },
+        "ApprovalStep": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "approval"
+                },
+                "stepId": {
+                    "type": "string",
+                    "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+                },
+                "stepName": {
+                    "type": "string",
+                    "description": "Step name (the builder's `StepDefinition.StepName`)."
+                },
+                "instanceName": {
+                    "type": "string",
+                    "description": "Optional instance name distinguishing the same step type across contexts."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this step terminates the workflow."
+                },
+                "runtime": {
+                    "$ref": "#/$defs/StepRuntime",
+                    "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+                },
+                "configuration": {
+                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "approverType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the approver type (LB-2)."
+                }
+            },
+            "required": [
+                "kind",
+                "stepId",
+                "stepName",
+                "isTerminal",
+                "approverType"
+            ],
+            "description": "Approval step — a human-approval pause point. `approverType` is the simple-name\nmoniker of the approver CLR type (LB-2)."
+        },
+        "BranchPathDefinition": {
+            "type": "object",
+            "properties": {
+                "pathId": {
+                    "type": "string",
+                    "description": "Stable branch-path identifier."
+                },
+                "conditionDescription": {
+                    "type": "string",
+                    "description": "Human-readable condition description (for visualization / diff)."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps executed on this path."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this path terminates without rejoining."
+                },
+                "approval": {
+                    "$ref": "#/$defs/ApprovalDefinition",
+                    "description": "Optional approval gate guarding this path."
+                }
+            },
+            "required": [
+                "pathId",
+                "conditionDescription",
+                "steps",
+                "isTerminal"
+            ],
+            "description": "Wire-IR branch path — one route through a conditional branch (mirrors the\nbuilder's `BranchPathDefinition`)."
+        },
+        "BranchPointDefinition": {
+            "type": "object",
+            "properties": {
+                "branchPointId": {
+                    "type": "string",
+                    "description": "Stable branch-point identifier."
+                },
+                "fromStepId": {
+                    "type": "string",
+                    "description": "Step id where the branch originates."
+                },
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/BranchPathDefinition"
+                    },
+                    "description": "Available branch paths."
+                },
+                "rejoinStepId": {
+                    "type": "string",
+                    "description": "Step id where branches rejoin (absent if they do not rejoin)."
+                }
+            },
+            "required": [
+                "branchPointId",
+                "fromStepId",
+                "paths"
+            ],
+            "description": "Wire-IR branch point — a decision point fanning out to branch paths (mirrors\nthe builder's `BranchPointDefinition`)."
+        },
+        "CompensationConfiguration": {
+            "type": "object",
+            "properties": {
+                "compensationStepType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
+                },
+                "requiredOnFailure": {
+                    "type": "boolean",
+                    "description": "Whether compensation is required on failure."
+                },
+                "timeout": {
+                    "type": "string",
+                    "description": "Compensation timeout (ISO-8601 duration), if set."
+                }
+            },
+            "required": [
+                "compensationStepType"
+            ],
+            "description": "Wire-IR compensation configuration (mirrors the builder's\n`CompensationConfiguration`). The compensation step CLR type reduces to a\nsimple-name moniker (LB-2)."
+        },
+        "DelegateStep": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "delegate"
+                },
+                "stepId": {
+                    "type": "string",
+                    "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+                },
+                "stepName": {
+                    "type": "string",
+                    "description": "Step name (the builder's `StepDefinition.StepName`)."
+                },
+                "instanceName": {
+                    "type": "string",
+                    "description": "Optional instance name distinguishing the same step type across contexts."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this step terminates the workflow."
+                },
+                "runtime": {
+                    "$ref": "#/$defs/StepRuntime",
+                    "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+                },
+                "configuration": {
+                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "lambda": {
+                    "type": "boolean",
+                    "const": true,
+                    "description": "Declares this step was a lambda whose body was dropped (LB-1). Always true."
+                }
+            },
+            "required": [
+                "kind",
+                "stepId",
+                "stepName",
+                "isTerminal",
+                "lambda"
+            ],
+            "description": "Delegate (lambda) step — built via `StepDefinition.CreateFromLambda` (LB-1).\nThe wire contract **never carries executable code**: the `Delegate` body is\ndropped and its loss made visible by the `lambda: true` marker. There is no\nfield on this arm that can hold a delegate or executable."
+        },
+        "FailureHandlerDefinition": {
+            "type": "object",
+            "properties": {
+                "handlerId": {
+                    "type": "string",
+                    "description": "Stable handler identifier."
+                },
+                "scope": {
+                    "$ref": "#/$defs/FailureHandlerScope",
+                    "description": "Handler scope (workflow | step | forkPath)."
+                },
+                "triggerStepId": {
+                    "type": "string",
+                    "description": "Step id that triggers this handler, if step-scoped."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Recovery steps."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether the handler terminates the workflow."
+                }
+            },
+            "required": [
+                "handlerId",
+                "scope",
+                "steps",
+                "isTerminal"
+            ],
+            "description": "Wire-IR failure handler — scoped recovery steps (mirrors the builder's\n`FailureHandlerDefinition`)."
+        },
+        "FailureHandlerScope": {
+            "type": "string",
+            "enum": [
+                "workflow",
+                "step",
+                "forkPath"
+            ],
+            "description": "Scope of a failure handler (mirrors the builder's `FailureHandlerScope`):\nthe whole workflow, a single step, or one fork path."
+        },
+        "ForkPathDefinition": {
+            "type": "object",
+            "properties": {
+                "pathId": {
+                    "type": "string",
+                    "description": "Stable fork-path identifier."
+                },
+                "pathIndex": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                    "description": "Zero-based path index within the fork."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps executed on this concurrent path."
+                },
+                "failureHandler": {
+                    "$ref": "#/$defs/FailureHandlerDefinition",
+                    "description": "Optional per-path failure handler."
+                }
+            },
+            "required": [
+                "pathId",
+                "pathIndex",
+                "steps"
+            ],
+            "description": "Wire-IR fork path — one concurrent branch of a fork (mirrors the builder's\n`ForkPathDefinition`)."
+        },
+        "ForkPointDefinition": {
+            "type": "object",
+            "properties": {
+                "forkPointId": {
+                    "type": "string",
+                    "description": "Stable fork-point identifier."
+                },
+                "fromStepId": {
+                    "type": "string",
+                    "description": "Step id where the fork originates."
+                },
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ForkPathDefinition"
+                    },
+                    "description": "Concurrent fork paths."
+                },
+                "joinStepId": {
+                    "type": "string",
+                    "description": "Step id where the concurrent paths rejoin."
+                }
+            },
+            "required": [
+                "forkPointId",
+                "fromStepId",
+                "paths",
+                "joinStepId"
+            ],
+            "description": "Wire-IR fork point — a fan-out into concurrent paths that rejoin at a join\nstep (mirrors the builder's `ForkPointDefinition`)."
+        },
+        "GateStep": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "gate"
+                },
+                "stepId": {
+                    "type": "string",
+                    "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+                },
+                "stepName": {
+                    "type": "string",
+                    "description": "Step name (the builder's `StepDefinition.StepName`)."
+                },
+                "instanceName": {
+                    "type": "string",
+                    "description": "Optional instance name distinguishing the same step type across contexts."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this step terminates the workflow."
+                },
+                "runtime": {
+                    "$ref": "#/$defs/StepRuntime",
+                    "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+                },
+                "configuration": {
+                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "stepType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the step type (LB-2)."
+                }
+            },
+            "required": [
+                "kind",
+                "stepId",
+                "stepName",
+                "isTerminal",
+                "stepType"
+            ],
+            "description": "Gate step — a CLR step type acting as a structural gate."
+        },
+        "HandlerStep": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "handler"
+                },
+                "stepId": {
+                    "type": "string",
+                    "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+                },
+                "stepName": {
+                    "type": "string",
+                    "description": "Step name (the builder's `StepDefinition.StepName`)."
+                },
+                "instanceName": {
+                    "type": "string",
+                    "description": "Optional instance name distinguishing the same step type across contexts."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this step terminates the workflow."
+                },
+                "runtime": {
+                    "$ref": "#/$defs/StepRuntime",
+                    "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+                },
+                "configuration": {
+                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "stepType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the step type (LB-2)."
+                }
+            },
+            "required": [
+                "kind",
+                "stepId",
+                "stepName",
+                "isTerminal",
+                "stepType"
+            ],
+            "description": "Handler step — a CLR step type. Same wire shape as a skill step; the kind is\ncarried so consumers can route on the builder's semantic intent."
+        },
+        "LoopDefinition": {
+            "type": "object",
+            "properties": {
+                "loopId": {
+                    "type": "string",
+                    "description": "Stable loop identifier."
+                },
+                "loopName": {
+                    "type": "string",
+                    "description": "Loop name (used for phase enum prefixing)."
+                },
+                "fromStepId": {
+                    "type": "string",
+                    "description": "Step id where the loop originates."
+                },
+                "maxIterations": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                    "description": "Maximum iterations (infinite-loop guard)."
+                },
+                "bodySteps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps in the loop body."
+                },
+                "continuationStepId": {
+                    "type": "string",
+                    "description": "Step id to continue to after the loop exits, if set."
+                }
+            },
+            "required": [
+                "loopId",
+                "loopName",
+                "fromStepId",
+                "maxIterations",
+                "bodySteps"
+            ],
+            "description": "Wire-IR loop — a RepeatUntil construct (mirrors the builder's\n`LoopDefinition`)."
+        },
+        "LowConfidenceHandlerDefinition": {
+            "type": "object",
+            "properties": {
+                "handlerId": {
+                    "type": "string",
+                    "description": "Stable handler identifier."
+                },
+                "handlerSteps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Steps run when confidence is below threshold."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether the handler terminates the workflow."
+                },
+                "rejoinStepId": {
+                    "type": "string",
+                    "description": "Step id where the handler rejoins the main flow, if any."
+                }
+            },
+            "required": [
+                "handlerId",
+                "handlerSteps",
+                "isTerminal"
+            ],
+            "description": "Wire-IR low-confidence handler (mirrors the builder's\n`LowConfidenceHandlerDefinition`)."
+        },
+        "RetryConfiguration": {
+            "type": "object",
+            "properties": {
+                "maxAttempts": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                    "description": "Maximum retry attempts."
+                },
+                "initialDelay": {
+                    "type": "string",
+                    "description": "Initial backoff delay (ISO-8601 duration)."
+                },
+                "backoffMultiplier": {
+                    "type": "number",
+                    "description": "Exponential backoff multiplier."
+                },
+                "maxDelay": {
+                    "type": "string",
+                    "description": "Maximum backoff delay (ISO-8601 duration)."
+                },
+                "useJitter": {
+                    "type": "boolean",
+                    "description": "Whether to apply jitter to backoff."
+                }
+            },
+            "required": [
+                "maxAttempts"
+            ],
+            "description": "Wire-IR retry configuration (mirrors the builder's `RetryConfiguration`).\nDurations are serialized as ISO-8601 duration strings (language-neutral; not\na .NET `TimeSpan`)."
+        },
+        "SkillStep": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "skill"
+                },
+                "stepId": {
+                    "type": "string",
+                    "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+                },
+                "stepName": {
+                    "type": "string",
+                    "description": "Step name (the builder's `StepDefinition.StepName`)."
+                },
+                "instanceName": {
+                    "type": "string",
+                    "description": "Optional instance name distinguishing the same step type across contexts."
+                },
+                "isTerminal": {
+                    "type": "boolean",
+                    "description": "Whether this step terminates the workflow."
+                },
+                "runtime": {
+                    "$ref": "#/$defs/StepRuntime",
+                    "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+                },
+                "configuration": {
+                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "stepType": {
+                    "type": "string",
+                    "description": "Simple-name CLR moniker of the step type (LB-2)."
+                }
+            },
+            "required": [
+                "kind",
+                "stepId",
+                "stepName",
+                "isTerminal",
+                "stepType"
+            ],
+            "description": "Skill step — a CLR step type implementing the skill protocol. `stepType` is\nthe **simple type name** moniker (LB-2): language-neutral, not assembly- or\nnamespace-qualified."
+        },
+        "StepConfigurationDefinition": {
+            "type": "object",
+            "properties": {
+                "confidenceThreshold": {
+                    "type": "number",
+                    "description": "Confidence threshold below which the low-confidence handler fires."
+                },
+                "onLowConfidence": {
+                    "$ref": "#/$defs/LowConfidenceHandlerDefinition",
+                    "description": "Low-confidence handler."
+                },
+                "compensation": {
+                    "$ref": "#/$defs/CompensationConfiguration",
+                    "description": "Compensation configuration."
+                },
+                "retry": {
+                    "$ref": "#/$defs/RetryConfiguration",
+                    "description": "Retry configuration."
+                },
+                "timeout": {
+                    "type": "string",
+                    "description": "Step timeout (ISO-8601 duration), if set."
+                },
+                "validation": {
+                    "$ref": "#/$defs/ValidationDefinition",
+                    "description": "Validation guard."
+                }
+            },
+            "description": "Wire-IR step configuration tree (mirrors the builder's\n`StepConfigurationDefinition`). All members are optional — an unconfigured\nstep omits the whole object."
+        },
+        "StepDefinition": {
+            "anyOf": [
+                {
+                    "$ref": "#/$defs/SkillStep"
+                },
+                {
+                    "$ref": "#/$defs/HandlerStep"
+                },
+                {
+                    "$ref": "#/$defs/GateStep"
+                },
+                {
+                    "$ref": "#/$defs/DelegateStep"
+                },
+                {
+                    "$ref": "#/$defs/ApprovalStep"
+                }
+            ],
+            "description": "Wire-IR step definition (issue #50): a discriminated union over the five step\nkinds. Each arm pins its `kind` discriminator const and spreads the shared\n`StepCommon` fields. This is the wire shape both consumers (Exarchos Zod,\nBasileus) derive from."
+        },
+        "StepRuntime": {
+            "type": "string",
+            "enum": [
+                "exarchos",
+                "strategos",
+                "remote"
+            ],
+            "description": "Reserved runtime placement for a step (v3.3.0 federation forward-compat slot).\nOptional on every step kind; absence means the default `exarchos`. No behavior\nis attached in 0.2.0 — the slot exists so a future federation release is an\nadditive minor, not a breaking V2."
+        },
+        "TransitionDefinition": {
+            "type": "object",
+            "properties": {
+                "transitionId": {
+                    "type": "string",
+                    "description": "Stable transition identifier."
+                },
+                "fromStepId": {
+                    "type": "string",
+                    "description": "Step id this transition originates from."
+                },
+                "toStepId": {
+                    "type": "string",
+                    "description": "Step id this transition targets."
+                },
+                "isDefault": {
+                    "type": "boolean",
+                    "description": "Whether this is the default (fallthrough) transition."
+                }
+            },
+            "required": [
+                "transitionId",
+                "fromStepId",
+                "toStepId",
+                "isDefault"
+            ],
+            "description": "Wire-IR transition — a directed edge between two steps (mirrors the builder's\n`TransitionDefinition`)."
+        },
+        "ValidationDefinition": {
+            "type": "object",
+            "properties": {
+                "predicateExpression": {
+                    "type": "string",
+                    "description": "Declarative predicate description (not executable code, LB-1)."
+                },
+                "errorMessage": {
+                    "type": "string",
+                    "description": "Error message surfaced when validation fails."
+                }
+            },
+            "required": [
+                "predicateExpression",
+                "errorMessage"
+            ],
+            "description": "Wire-IR validation definition (mirrors the builder's `ValidationDefinition`).\n`predicateExpression` is a **declarative description** of the predicate, not\nexecutable code (LB-1) — it is the same string the builder stores for\nvisualization / diagnostics."
+        },
+        "WorkflowDefinitionV1": {
+            "type": "object",
+            "properties": {
+                "schemaVersion": {
+                    "type": "string",
+                    "const": "1.0",
+                    "description": "Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2."
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/StepDefinition"
+                    },
+                    "description": "Ordered step definitions (the discriminated `StepDefinition` union)."
+                },
+                "transitions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/TransitionDefinition"
+                    },
+                    "description": "Directed transitions between steps."
+                },
+                "branchPoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/BranchPointDefinition"
+                    },
+                    "description": "Branch points (conditional fan-out)."
+                },
+                "loops": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/LoopDefinition"
+                    },
+                    "description": "Loops (RepeatUntil constructs)."
+                },
+                "forkPoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ForkPointDefinition"
+                    },
+                    "description": "Fork points (concurrent fan-out / join)."
+                },
+                "failureHandlers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/FailureHandlerDefinition"
+                    },
+                    "description": "Workflow-scoped failure handlers."
+                },
+                "approvalPoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ApprovalDefinition"
+                    },
+                    "description": "Approval points (human-approval pauses)."
+                },
+                "entryStepId": {
+                    "type": "string",
+                    "description": "Step id of the workflow entry step, if set."
+                },
+                "terminalStepId": {
+                    "type": "string",
+                    "description": "Step id of the workflow terminal step, if set."
+                }
+            },
+            "required": [
+                "schemaVersion",
+                "name",
+                "steps",
+                "transitions",
+                "branchPoints",
+                "loops",
+                "forkPoints",
+                "failureHandlers",
+                "approvalPoints"
+            ],
+            "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is pinned to the literal `\"1.0\"`. Future minors are\nadditive-only; a breaking change requires a `WorkflowDefinitionV2` root."
+        }
+    }
+}
