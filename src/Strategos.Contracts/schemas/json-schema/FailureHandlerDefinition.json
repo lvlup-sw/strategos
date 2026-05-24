@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FailureHandlerDefinition.json",
+    "type": "object",
+    "properties": {
+        "handlerId": {
+            "type": "string",
+            "description": "Stable handler identifier."
+        }
+    },
+    "required": [
+        "handlerId"
+    ],
+    "description": "Wire-IR failure handler (issue #50). Placeholder shape — the full failure /\nconfiguration sub-definitions land in T16."
+}

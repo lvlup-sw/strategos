@@ -1,0 +1,34 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ForkPathDefinition.json",
+    "type": "object",
+    "properties": {
+        "pathId": {
+            "type": "string",
+            "description": "Stable fork-path identifier."
+        },
+        "pathIndex": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "description": "Zero-based path index within the fork."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps executed on this concurrent path."
+        },
+        "failureHandler": {
+            "$ref": "FailureHandlerDefinition.json",
+            "description": "Optional per-path failure handler."
+        }
+    },
+    "required": [
+        "pathId",
+        "pathIndex",
+        "steps"
+    ],
+    "description": "Wire-IR fork path — one concurrent branch of a fork (mirrors the builder's\n`ForkPathDefinition`)."
+}

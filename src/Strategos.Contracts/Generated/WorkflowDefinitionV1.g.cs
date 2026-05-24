@@ -45,6 +45,42 @@ public sealed record WorkflowDefinitionV1
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
+    /// Directed transitions between steps.
+    /// </summary>
+    [JsonPropertyName("transitions")]
+    public IReadOnlyList<TransitionDefinition> Transitions { get; init; } = default!;
+
+    /// <summary>
+    /// Branch points (conditional fan-out).
+    /// </summary>
+    [JsonPropertyName("branchPoints")]
+    public IReadOnlyList<BranchPointDefinition> BranchPoints { get; init; } = default!;
+
+    /// <summary>
+    /// Loops (RepeatUntil constructs).
+    /// </summary>
+    [JsonPropertyName("loops")]
+    public IReadOnlyList<LoopDefinition> Loops { get; init; } = default!;
+
+    /// <summary>
+    /// Fork points (concurrent fan-out / join).
+    /// </summary>
+    [JsonPropertyName("forkPoints")]
+    public IReadOnlyList<ForkPointDefinition> ForkPoints { get; init; } = default!;
+
+    /// <summary>
+    /// Workflow-scoped failure handlers.
+    /// </summary>
+    [JsonPropertyName("failureHandlers")]
+    public IReadOnlyList<FailureHandlerDefinition> FailureHandlers { get; init; } = default!;
+
+    /// <summary>
+    /// Approval points (human-approval pauses).
+    /// </summary>
+    [JsonPropertyName("approvalPoints")]
+    public IReadOnlyList<ApprovalDefinition> ApprovalPoints { get; init; } = default!;
+
+    /// <summary>
     /// Step id of the workflow entry step, if set.
     /// </summary>
     [JsonPropertyName("entryStepId")]

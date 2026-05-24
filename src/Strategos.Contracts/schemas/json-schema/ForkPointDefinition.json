@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ForkPointDefinition.json",
+    "type": "object",
+    "properties": {
+        "forkPointId": {
+            "type": "string",
+            "description": "Stable fork-point identifier."
+        },
+        "fromStepId": {
+            "type": "string",
+            "description": "Step id where the fork originates."
+        },
+        "paths": {
+            "type": "array",
+            "items": {
+                "$ref": "ForkPathDefinition.json"
+            },
+            "description": "Concurrent fork paths."
+        },
+        "joinStepId": {
+            "type": "string",
+            "description": "Step id where the concurrent paths rejoin."
+        }
+    },
+    "required": [
+        "forkPointId",
+        "fromStepId",
+        "paths",
+        "joinStepId"
+    ],
+    "description": "Wire-IR fork point — a fan-out into concurrent paths that rejoin at a join\nstep (mirrors the builder's `ForkPointDefinition`)."
+}

@@ -20,6 +20,48 @@
             },
             "description": "Ordered step definitions (the discriminated `StepDefinition` union)."
         },
+        "transitions": {
+            "type": "array",
+            "items": {
+                "$ref": "TransitionDefinition.json"
+            },
+            "description": "Directed transitions between steps."
+        },
+        "branchPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "BranchPointDefinition.json"
+            },
+            "description": "Branch points (conditional fan-out)."
+        },
+        "loops": {
+            "type": "array",
+            "items": {
+                "$ref": "LoopDefinition.json"
+            },
+            "description": "Loops (RepeatUntil constructs)."
+        },
+        "forkPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "ForkPointDefinition.json"
+            },
+            "description": "Fork points (concurrent fan-out / join)."
+        },
+        "failureHandlers": {
+            "type": "array",
+            "items": {
+                "$ref": "FailureHandlerDefinition.json"
+            },
+            "description": "Workflow-scoped failure handlers."
+        },
+        "approvalPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "ApprovalDefinition.json"
+            },
+            "description": "Approval points (human-approval pauses)."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."
@@ -32,7 +74,13 @@
     "required": [
         "schemaVersion",
         "name",
-        "steps"
+        "steps",
+        "transitions",
+        "branchPoints",
+        "loops",
+        "forkPoints",
+        "failureHandlers",
+        "approvalPoints"
     ],
     "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is pinned to the literal `\"1.0\"`. Future minors are\nadditive-only; a breaking change requires a `WorkflowDefinitionV2` root."
 }

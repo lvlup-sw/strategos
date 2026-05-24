@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ApprovalDefinition.json",
+    "type": "object",
+    "properties": {
+        "approvalPointId": {
+            "type": "string",
+            "description": "Stable approval-point identifier."
+        },
+        "approverType": {
+            "type": "string",
+            "description": "Simple-name CLR moniker of the approver type (LB-2)."
+        },
+        "precedingStepId": {
+            "type": "string",
+            "description": "Step id immediately preceding this approval gate."
+        }
+    },
+    "required": [
+        "approvalPointId",
+        "approverType",
+        "precedingStepId"
+    ],
+    "description": "Wire-IR approval point (issue #50). Placeholder shape — the full approval /\nescalation / rejection sub-definitions land in T16."
+}

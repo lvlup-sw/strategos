@@ -1,5 +1,6 @@
 import "@typespec/json-schema";
 import "./StepDefinition.tsp";
+import "./Structural.tsp";
 
 using JsonSchema;
 
@@ -29,6 +30,24 @@ model WorkflowDefinitionV1 {
 
   /** Ordered step definitions (the discriminated `StepDefinition` union). */
   steps: StepDefinition[];
+
+  /** Directed transitions between steps. */
+  transitions: TransitionDefinition[];
+
+  /** Branch points (conditional fan-out). */
+  branchPoints: BranchPointDefinition[];
+
+  /** Loops (RepeatUntil constructs). */
+  loops: LoopDefinition[];
+
+  /** Fork points (concurrent fan-out / join). */
+  forkPoints: ForkPointDefinition[];
+
+  /** Workflow-scoped failure handlers. */
+  failureHandlers: FailureHandlerDefinition[];
+
+  /** Approval points (human-approval pauses). */
+  approvalPoints: ApprovalDefinition[];
 
   /** Step id of the workflow entry step, if set. */
   entryStepId?: string;
