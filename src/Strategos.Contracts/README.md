@@ -72,7 +72,7 @@ automatically; no per-family emitter wiring is needed, but any new wire-name
 encoding (e.g. `@encodedName` kebab-case for #98) must round-trip through the
 `JsonPropertyName` the template emits.
 
-### Emitter capabilities (extended in Family 1 / #36)
+### Emitter capabilities (extended in Family 1 / #36, Family 2 / #50, Family 3 / #98)
 
 The emitter reads the raw JSON Schema directly (NJsonSchema is no longer on the
 emit path) and classifies each document as enum / record / open-object:
@@ -89,6 +89,21 @@ emit path) and classifies each document as enum / record / open-object:
   INV-7 null-forgiving default).
 - **Open objects** (`Record<unknown>`) are not emitted as standalone records;
   they surface as `object`-typed payload properties on their referrers.
+- **Discriminated unions** (a top-level `anyOf` of `$ref` arms, the TypeSpec
+  `union` form) → an `abstract record` base carrying
+  `[JsonPolymorphic(TypeDiscriminatorPropertyName = "<discriminator>")]` and one
+  `[JsonDerivedType]` per arm; each arm is a `sealed record` deriving from the
+  base. The discriminator property is resolved **generically** — the const-pinned
+  member shared by all arms, preferring `kind` — so the workflow-IR `kind` unions
+  (#50) and the invariant `Enforcement` `mode` union (#98) both round-trip
+  without hard-coding a single discriminator name.
+- **Recursive types** (Family 3 / #98 `CheckNode`). A self-referential model (an
+  arm whose `children`/`child` `$ref`s the union it belongs to) needs no special
+  handling: `$ref` resolution is **by document name**, not by recursive descent,
+  so a cycle resolves to the generated type name (`IReadOnlyList<CheckNode>` /
+  `CheckNode`) without infinite recursion. The combinator tree is declarative-only
+  (LB-1 / INV-4) — no arm admits an executable member — a guarantee asserted
+  structurally by `SandboxGuaranteeTests`.
 
 `scripts/contracts-codegen.sh` now prunes stale `schemas/json-schema/*.json`
 before `tsp compile`, so a removed/renamed TypeSpec model does not linger as an
