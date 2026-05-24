@@ -1,0 +1,48 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskEscalationData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "escalationTarget": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "exarchos"
+                },
+                {
+                    "type": "string",
+                    "const": "human"
+                }
+            ]
+        },
+        "suggestedAction": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "local-teammate"
+                },
+                {
+                    "type": "string",
+                    "const": "human-guidance"
+                },
+                {
+                    "type": "string",
+                    "const": "re-dispatch"
+                }
+            ]
+        },
+        "reason": {
+            "type": "string",
+            "maxLength": 500
+        }
+    },
+    "required": [
+        "taskId",
+        "escalationTarget",
+        "suggestedAction"
+    ],
+    "description": "Data payload for `task.escalation` events — remediation exhausted, hand-off requested."
+}

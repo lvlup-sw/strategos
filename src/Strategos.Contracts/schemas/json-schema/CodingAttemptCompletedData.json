@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CodingAttemptCompletedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "attemptNumber": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "outcome": {
+            "$ref": "CodingAttemptOutcome.json"
+        },
+        "testResults": {
+            "$ref": "TestResultSummary.json"
+        }
+    },
+    "required": [
+        "taskId",
+        "attemptNumber",
+        "outcome"
+    ],
+    "description": "Data payload for `CodingAttemptCompleted` events."
+}

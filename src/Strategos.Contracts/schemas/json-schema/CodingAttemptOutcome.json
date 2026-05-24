@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CodingAttemptOutcome.json",
+    "type": "string",
+    "enum": [
+        "success",
+        "tests_failed",
+        "budget_exhausted",
+        "loop_detected"
+    ],
+    "description": "Outcome of a coding attempt."
+}
