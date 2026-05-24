@@ -5,10 +5,6 @@
     <PackageId>LevelUp.Strategos.Agents</PackageId>
     <Description>Microsoft Agent Framework integration for Strategos. Provides abstractions for LLM-powered workflow steps with conversation continuity, streaming responses, and agent selection.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- Explicit override of MinVer-derived version for DR-11 migration smoke (T-022). MinVer takes over after v2.7.0-preview.2 release tag lands. -->
-    <MinVerSkip>true</MinVerSkip>
-    <Version>2.7.0-preview.2</Version>
-    <PackageVersion>2.7.0-preview.2</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
