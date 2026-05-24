@@ -109,3 +109,49 @@ emit path) and classifies each document as enum / record / open-object:
 before `tsp compile`, so a removed/renamed TypeSpec model does not linger as an
 orphan schema/record (the json-schema emitter does not prune its own output) —
 keeping the codegen-guard diff honest across P2/P3 renames.
+
+## Cross-product round-trip (T31, exarchos#1247)
+
+`scripts/cross-product-roundtrip.mjs` is the offline equivalence harness
+(design §Resilience item 2). It generates Zod from **our own** bundled JSON
+Schema (`schemas/workflow-definition-v1.schema.json`) via the proven zod-smoke
+pipeline and asserts every exported `#53` workflow-IR fixture parses against it;
+the C# side (`CrossProductRoundTripTests`) additionally validates a
+representative IR against our NJsonSchema schema.
+
+**External-coordination seam (exarchos#1247) — out of scope here.** The
+*production* gate must run our fixtures against Exarchos's **published, pinned**
+Zod snapshot — proving the two products agree on the wire shape, not just that
+our schema round-trips with itself. That snapshot pin is coordinated in
+exarchos#1247 and is deliberately NOT done in this milestone. The harness
+already exposes the seam as a flag so the production swap is a CI-config change,
+not a code change:
+
+```
+--zod-source self      # (default) derive Zod from our own JSON Schema — offline
+--zod-source <dir>     # production: Exarchos's pinned Zod barrel (exarchos#1247)
+```
+
+## Breaking-change schema diff (T30)
+
+`scripts/contracts-schema-diff.mjs` + `.github/workflows/contracts-schema-diff.yml`
+classify a removed / narrowed / newly-required property as **BREAKING** and an
+added optional property as **NON-BREAKING** against the previous tag's emitted
+schemas (design §Resilience item 3: additive-only minors; breaking ⇒ major
+bump). The classification rules are unit-tested in C# by `SchemaDiffTests` /
+`JsonSchemaDiff` — the authoritative spec — and mirrored by the Node CI driver
+over the schema file set.
+
+## Versioning & publishing (T32)
+
+This package versions at **0.2.0** (see `Strategos.Contracts.csproj`). Per the
+repo convention, MinVer derives versions from the `v*` release tag; to pin
+0.2.0 explicitly we set `<MinVerSkip>true</MinVerSkip>` + `<Version>` +
+`<PackageVersion>` (MinVer silently overwrites a bare `<Version>` otherwise).
+
+**Do not publish 0.2.0 until both the events and workflow-IR families have
+landed** (they have, in this milestone — there is intentionally no 0.1.0). The
+package embeds all three schema families under
+`contentFiles/any/any/schemas/` and the builder-fixture corpus under
+`contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`
+→ "Cross-product breaking changes".

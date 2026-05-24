@@ -7,6 +7,10 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
+    <!-- T31 cross-product round-trip: validate a representative IR against the
+         emitted workflow JSON Schema on the C# side (same validator as the T23
+         equivalence gate). -->
+    <PackageReference Include="NJsonSchema" />
   </ItemGroup>
 
   <ItemGroup>

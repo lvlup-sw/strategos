@@ -20,6 +20,17 @@ internal static class RepoLayout
     public static string ContractsProjectDir { get; } =
         Path.Combine(RepoRoot, "src", "Strategos.Contracts");
 
+    /// <summary>Gets the absolute path to the exported <c>artifacts/builder-fixtures</c>
+    /// directory (the #53 fixture corpus; produced by the fixture-export tests).</summary>
+    public static string BuilderFixturesDir { get; } =
+        Path.Combine(RepoRoot, "artifacts", "builder-fixtures");
+
+    /// <summary>Gets the absolute path to the bundled workflow IR JSON Schema
+    /// (<c>schemas/workflow-definition-v1.schema.json</c>) — the equivalence-gate
+    /// target every fixture validates against.</summary>
+    public static string WorkflowSchemaPath { get; } =
+        Path.Combine(ContractsProjectDir, "schemas", "workflow-definition-v1.schema.json");
+
     private static string FindRepoRoot()
     {
         var dir = AppContext.BaseDirectory;
