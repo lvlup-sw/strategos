@@ -20,7 +20,17 @@ public sealed class AgentToolLoopException : AgentException
     /// <summary>Maximum iterations that was hit.</summary>
     public int MaxIterations { get; }
 
-    /// <summary>Partial trace of tool-call messages observed before the limit fired.</summary>
+    /// <summary>
+    /// Partial trace of tool-call messages observed before the limit fired.
+    /// </summary>
+    /// <remarks>
+    /// The payload is <see cref="IReadOnlyList{ChatMessage}"/>. Each entry maps to
+    /// OpenTelemetry gen-ai span event fields (<c>gen_ai.tool.name</c>,
+    /// <c>gen_ai.tool.call.id</c>) for exporters that want to surface partial
+    /// call history as span events. A structured <c>ToolCallTrace</c> record
+    /// is deferred until a consumer with concrete projection requirements emerges;
+    /// the raw message list is sufficient for current diagnostic and OTel use (#92).
+    /// </remarks>
     public IReadOnlyList<ChatMessage> PartialTrace { get; }
 
     /// <summary>

@@ -40,7 +40,6 @@ public sealed class AgentStepConfigurationTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         await Assert.That(config.SystemPrompt).IsEqualTo(systemPrompt);
@@ -49,7 +48,6 @@ public sealed class AgentStepConfigurationTests
         await Assert.That(config.Tools.Count).IsEqualTo(0);
         await Assert.That(config.ToolSources.Count).IsEqualTo(0);
         await Assert.That(config.ChatOptions).IsNull();
-        await Assert.That(config.ChatClientConfigurator).IsNull();
         await Assert.That(config.MaxToolIterations).IsNull();
 
         // Constructor accessibility — internal (the builder is the only sanctioned creator)
@@ -75,7 +73,6 @@ public sealed class AgentStepConfigurationTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: new IToolSource[] { null! },
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null));
 
         await Assert.That(ex!.ParamName).IsEqualTo("ToolSources");
@@ -97,7 +94,6 @@ public sealed class AgentStepConfigurationTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         await Assert.That(defaultConfig.StreamingHandler).IsNull();
@@ -110,7 +106,6 @@ public sealed class AgentStepConfigurationTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null,
             StreamingHandler: handler);
 
@@ -124,6 +119,19 @@ public sealed class AgentStepConfigurationTests
         var openGeneric = typeof(AgentStepConfiguration<,>);
         var legacy = openGeneric.GetProperty("McpToolSource", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         await Assert.That(legacy).IsNull();
+    }
+
+    [Test]
+    public async Task Configuration_NoChatClientConfiguratorMember()
+    {
+        // T5 / #84: the dead ChatClientConfigurator property is removed; the
+        // configurator is applied at compose-time in AgentStepBuilder.ComposeChatClient
+        // and does not need to be stored on the configuration record.
+        var openGeneric = typeof(AgentStepConfiguration<,>);
+        var dead = openGeneric.GetProperty(
+            "ChatClientConfigurator",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        await Assert.That(dead).IsNull();
     }
 
     private sealed record DummyState : IWorkflowState
