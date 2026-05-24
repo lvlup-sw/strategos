@@ -35,7 +35,17 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
     private readonly Uri _endpoint;
     private readonly TimeSpan _timeout;
     private readonly string _redactedEndpoint;
+
+    // Gates lazy client creation against concurrent GetToolsAsync calls and DisposeAsync.
+    // Intentionally never disposed (hence the CA2213 suppression): we never touch its
+    // AvailableWaitHandle, so the SemaphoreSlim allocates no unmanaged resource that needs
+    // releasing. Crucially, NOT disposing it means a GetToolsAsync call that races past the
+    // entry guard while DisposeAsync runs still acquires the gate cleanly and then observes
+    // the inner ObjectDisposedException guard — rather than an ObjectDisposedException thrown
+    // by WaitAsync on a disposed semaphore.
+#pragma warning disable CA2213 // Disposable fields should be disposed
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+#pragma warning restore CA2213
     private McpClient? _client;
     private bool _disposed;
 
@@ -201,8 +211,6 @@ public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
                     $"AGAG004 swallowed dispose failure on McpToolSource: {ex.GetType().Name}: {ex.Message}");
             }
         }
-
-        _lifecycleGate.Dispose();
     }
 
     /// <summary>

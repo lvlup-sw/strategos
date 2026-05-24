@@ -58,6 +58,21 @@ public sealed record AgentStepConfiguration<TState, TResult>
         ArgumentNullException.ThrowIfNull(UserPrompt);
         ArgumentNullException.ThrowIfNull(ApplyResult);
         ArgumentNullException.ThrowIfNull(Tools);
+        if (Tools.Any(static tool => tool is null))
+        {
+            throw new ArgumentException("Tools cannot contain null entries.", nameof(Tools));
+        }
+
+        // MaxToolIterations is optional (null = use the default), but when specified it
+        // must be a positive bound. The builder's WithMaxToolIterations guards this too;
+        // enforcing it here keeps the configuration self-validating on any construction path.
+        if (MaxToolIterations is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxToolIterations),
+                MaxToolIterations,
+                "MaxToolIterations must be greater than zero when specified.");
+        }
 
         this.SystemPrompt = SystemPrompt;
         this.UserPrompt = UserPrompt;
