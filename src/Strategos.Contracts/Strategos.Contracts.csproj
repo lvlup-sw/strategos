@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>LevelUp.Strategos.Contracts</PackageId>
+    <Description>Cross-product schema substrate: TypeSpec-canonical SDLC event, workflow-IR, and invariant contracts emitted as C# records (this DLL) and JSON Schema (NuGet content, consumed by Exarchos).</Description>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+  </ItemGroup>
+
+</Project>
