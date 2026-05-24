@@ -9,8 +9,7 @@
     <CollectCoverage>false</CollectCoverage>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="NJsonSchema" />
-  </ItemGroup>
+  <!-- No package references: the emitter reads the TypeSpec-emitted JSON Schema
+       with raw System.Text.Json (JsonDocument), not a third-party resolver. -->
 
 </Project>

@@ -16,8 +16,9 @@ using Strategos.Contracts.Codegen;
 // @typespec/http operation definitions and emits mutable model classes with
 // { get; set; }. It cannot produce sealed/init-only/IReadOnlyList records from
 // plain @jsonSchema data models. We therefore generate from the emitted JSON
-// Schema using NJsonSchema (parsing + $ref resolution) with a template tuned
-// to the exact INV-6/INV-7 shape.
+// Schema ourselves: RecordEmitter reads the raw JSON with System.Text.Json
+// (JsonDocument) — no third-party resolver — and resolves cross-file $refs by
+// document name, emitting directly into the exact INV-6/INV-7 shape.
 
 if (args.Length != 2)
 {
