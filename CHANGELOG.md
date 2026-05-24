@@ -7,22 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Changed — Ontology hybrid retrieval polish (#78)
-
-- **`HybridMeta.Degraded` gains `"sparse-empty"`** (#78 item 1). When the sparse
-  keyword leg runs cleanly but returns zero candidates, `OntologyQueryTool` now
-  surfaces `HybridMeta { Hybrid = false, Degraded = "sparse-empty" }` instead of a
-  `Hybrid = true` envelope with a null `sparseTopScore`. This makes the wire honor
-  the documented invariant that `Hybrid = true` ⇔ the sparse leg actually
-  contributed to fusion (design §6.6, DIM-7). An empty sparse result is not a
-  fault, so — unlike `"sparse-failed"` — it is not logged.
-- **Missing-provider warn-once is now per-process** (#78 item 4). The
-  "`HybridQueryOptions` supplied but no `IKeywordSearchProvider` registered"
-  warning is latched on a process-wide `static` flag (moved off `OntologyQueryTool`
-  onto the new `HybridQueryCoordinator`), so hosts that construct multiple tool
-  instances no longer emit one warning per instance. Public API unchanged.
-
-## [2.7.0] - 2026-05-18
+## [2.7.0] - 2026-05-24
 
 ### Changed (BREAKING) — Agent step contract
 
@@ -89,6 +74,25 @@ design rationale.
   buffered path — tokens fire before `ApplyResult`, and the typed return
   shape is unchanged. A handler that throws mid-stream raises
   `AgentStreamingException` (`AGAG009`) with state untouched.
+
+### Changed — Ontology hybrid retrieval polish (#78)
+
+- **`HybridMeta.Degraded` gains `"sparse-empty"`** (#78 item 1). When the sparse
+  keyword leg runs cleanly but returns zero candidates, `OntologyQueryTool` now
+  surfaces `HybridMeta { Hybrid = false, Degraded = "sparse-empty" }` instead of a
+  `Hybrid = true` envelope with a null `sparseTopScore`. This makes the wire honor
+  the documented invariant that `Hybrid = true` ⇔ the sparse leg actually
+  contributed to fusion (design §6.6, DIM-7). An empty sparse result is not a
+  fault, so — unlike `"sparse-failed"` — it is not logged.
+- **Missing-provider warn-once is now per-process** (#78 item 4). The
+  "`HybridQueryOptions` supplied but no `IKeywordSearchProvider` registered"
+  warning is latched on a process-wide `static` flag (moved off `OntologyQueryTool`
+  onto the new `HybridQueryCoordinator`), so hosts that construct multiple tool
+  instances no longer emit one warning per instance. Public API unchanged.
+- **Internal refactors (#78 items 5/6).** `OntologyQueryTool`'s hybrid path was
+  extracted into a sealed `HybridQueryCoordinator` (file back under the 500-line
+  bar) and its private helpers now take an internal `SemanticQueryRequest`
+  parameter object. No public surface change.
 
 ## [2.7.0-preview.1] - 2026-05-17
 
