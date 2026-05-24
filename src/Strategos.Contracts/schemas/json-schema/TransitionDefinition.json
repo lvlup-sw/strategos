@@ -1,0 +1,30 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TransitionDefinition.json",
+    "type": "object",
+    "properties": {
+        "transitionId": {
+            "type": "string",
+            "description": "Stable transition identifier."
+        },
+        "fromStepId": {
+            "type": "string",
+            "description": "Step id this transition originates from."
+        },
+        "toStepId": {
+            "type": "string",
+            "description": "Step id this transition targets."
+        },
+        "isDefault": {
+            "type": "boolean",
+            "description": "Whether this is the default (fallthrough) transition."
+        }
+    },
+    "required": [
+        "transitionId",
+        "fromStepId",
+        "toStepId",
+        "isDefault"
+    ],
+    "description": "Wire-IR transition — a directed edge between two steps (mirrors the builder's\n`TransitionDefinition`)."
+}

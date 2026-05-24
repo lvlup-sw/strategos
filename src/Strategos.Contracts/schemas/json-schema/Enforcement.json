@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "Enforcement.json",
+    "anyOf": [
+        {
+            "$ref": "CheckEnforcement.json"
+        },
+        {
+            "$ref": "AuditEnforcement.json"
+        }
+    ],
+    "description": "How an invariant is enforced (#98): a discriminated union on `mode` —\n`check` (a declarative `CheckNode`) or `audit` (a natural-language prompt).\nReuses the discriminated-union emitter path; the discriminator property is\n`mode` (not `kind`), which the emitter resolves generically."
+}

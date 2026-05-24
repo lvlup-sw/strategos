@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <!-- T31 cross-product round-trip: validate a representative IR against the
+         emitted workflow JSON Schema on the C# side (same validator as the T23
+         equivalence gate). -->
+    <PackageReference Include="NJsonSchema" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Strategos.Contracts/Strategos.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

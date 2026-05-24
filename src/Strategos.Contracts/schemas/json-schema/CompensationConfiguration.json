@@ -1,0 +1,23 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CompensationConfiguration.json",
+    "type": "object",
+    "properties": {
+        "compensationStepType": {
+            "type": "string",
+            "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
+        },
+        "requiredOnFailure": {
+            "type": "boolean",
+            "description": "Whether compensation is required on failure."
+        },
+        "timeout": {
+            "type": "string",
+            "description": "Compensation timeout (ISO-8601 duration), if set."
+        }
+    },
+    "required": [
+        "compensationStepType"
+    ],
+    "description": "Wire-IR compensation configuration (mirrors the builder's\n`CompensationConfiguration`). The compensation step CLR type reduces to a\nsimple-name moniker (LB-2)."
+}

@@ -1,0 +1,100 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InvariantEntry.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Stable invariant identifier (e.g. `INV-4`)."
+        },
+        "dimension": {
+            "type": "string",
+            "description": "Design dimension the invariant belongs to (e.g. `DIM-3`)."
+        },
+        "axis": {
+            "type": "string",
+            "description": "Axis within the dimension."
+        },
+        "cost-of-load": {
+            "type": "string",
+            "description": "Relative cost of loading/checking the invariant (kebab-case wire name)."
+        },
+        "applies-to": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Scopes the invariant applies to (kebab-case wire name)."
+        },
+        "summary": {
+            "type": "string",
+            "description": "Human-readable summary of the invariant."
+        },
+        "axiom_overlap": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Overlapping axioms (snake_case wire name preserved verbatim)."
+        },
+        "citations": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Supporting citations."
+        },
+        "references": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Cross-references to related material."
+        },
+        "phase-affinity": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "SDLC phases the invariant is most relevant to (kebab-case wire name)."
+        },
+        "workflow-affinity": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Workflows the invariant is most relevant to (kebab-case wire name)."
+        },
+        "state-affinity": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Ontological states the invariant is most relevant to (kebab-case wire name)."
+        },
+        "enforcement": {
+            "$ref": "Enforcement.json",
+            "description": "How the invariant is enforced (check tree or audit prompt)."
+        },
+        "severity": {
+            "type": "string",
+            "description": "Severity of a violation."
+        },
+        "integrity-class": {
+            "type": "string",
+            "description": "Integrity class the invariant guards (kebab-case wire name)."
+        }
+    },
+    "required": [
+        "id",
+        "dimension",
+        "axis",
+        "cost-of-load",
+        "applies-to",
+        "summary",
+        "axiom_overlap",
+        "citations",
+        "references"
+    ],
+    "description": "A single invariant-catalog entry (#98), v3. Carries the v2 fields plus the\nadditive v3 fields. **Every v3 field is optional** so a v2 catalog parses\nunchanged (back-compat).\n\nWire names are preserved verbatim — kebab-case (`cost-of-load`, `applies-to`,\nthe affinities, `integrity-class`) and snake_case (`axiom_overlap`) — via\nquoted TypeSpec identifiers, so the generated decoder validates Exarchos's\nYAML frontmatter without re-casing. Declarative-only (LB-1 / INV-4): the only\nenforcement payload is the `Enforcement` union, which itself carries no\nexecutable code."
+}

@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "NotNode.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "not"
+        },
+        "child": {
+            "description": "The single child check to negate (recurses into CheckNode).",
+            "$ref": "CheckNode.json"
+        }
+    },
+    "required": [
+        "kind",
+        "child"
+    ],
+    "description": "Combinator: `not` — the negation of a single child check. Recurses into\n`CheckNode` via `child`."
+}

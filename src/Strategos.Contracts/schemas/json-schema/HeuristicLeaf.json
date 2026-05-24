@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "HeuristicLeaf.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "heuristic"
+        },
+        "threshold": {
+            "type": "number",
+            "description": "Numeric gate the heuristic compares against (e.g. a ratio/count)."
+        }
+    },
+    "required": [
+        "kind",
+        "threshold"
+    ],
+    "description": "Leaf: a `heuristic` check — a bounded numeric heuristic gated by a threshold.\nDeclarative-only: the only payload is the numeric `threshold`; there is no\nmember admitting code or a command (LB-1 / INV-4)."
+}

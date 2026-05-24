@@ -1,0 +1,48 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DelegateStep.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "delegate"
+        },
+        "stepId": {
+            "type": "string",
+            "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+        },
+        "stepName": {
+            "type": "string",
+            "description": "Step name (the builder's `StepDefinition.StepName`)."
+        },
+        "instanceName": {
+            "type": "string",
+            "description": "Optional instance name distinguishing the same step type across contexts."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether this step terminates the workflow."
+        },
+        "runtime": {
+            "$ref": "StepRuntime.json",
+            "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+        },
+        "configuration": {
+            "$ref": "StepConfigurationDefinition.json",
+            "description": "Optional step configuration (confidence / retry / compensation / …)."
+        },
+        "lambda": {
+            "type": "boolean",
+            "const": true,
+            "description": "Declares this step was a lambda whose body was dropped (LB-1). Always true."
+        }
+    },
+    "required": [
+        "kind",
+        "stepId",
+        "stepName",
+        "isTerminal",
+        "lambda"
+    ],
+    "description": "Delegate (lambda) step — built via `StepDefinition.CreateFromLambda` (LB-1).\nThe wire contract **never carries executable code**: the `Delegate` body is\ndropped and its loss made visible by the `lambda: true` marker. There is no\nfield on this arm that can hold a delegate or executable."
+}

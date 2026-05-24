@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "BranchPointDefinition.json",
+    "type": "object",
+    "properties": {
+        "branchPointId": {
+            "type": "string",
+            "description": "Stable branch-point identifier."
+        },
+        "fromStepId": {
+            "type": "string",
+            "description": "Step id where the branch originates."
+        },
+        "paths": {
+            "type": "array",
+            "items": {
+                "$ref": "BranchPathDefinition.json"
+            },
+            "description": "Available branch paths."
+        },
+        "rejoinStepId": {
+            "type": "string",
+            "description": "Step id where branches rejoin (absent if they do not rejoin)."
+        }
+    },
+    "required": [
+        "branchPointId",
+        "fromStepId",
+        "paths"
+    ],
+    "description": "Wire-IR branch point — a decision point fanning out to branch paths (mirrors\nthe builder's `BranchPointDefinition`)."
+}

@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FailureHandlerScope.json",
+    "type": "string",
+    "enum": [
+        "workflow",
+        "step",
+        "forkPath"
+    ],
+    "description": "Scope of a failure handler (mirrors the builder's `FailureHandlerScope`):\nthe whole workflow, a single step, or one fork path."
+}

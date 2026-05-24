@@ -1,0 +1,52 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskDelegatedRemoteData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "target": {
+            "type": "string",
+            "const": "basileus",
+            "description": "Delegation target — Basileus is the only remote tier in 0.2.0."
+        },
+        "agentRole": {
+            "type": "string"
+        },
+        "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why the router chose remote placement."
+        },
+        "blastRadiusScope": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "Local"
+                },
+                {
+                    "type": "string",
+                    "const": "CrossDomain"
+                },
+                {
+                    "type": "string",
+                    "const": "Global"
+                }
+            ],
+            "description": "Blast-radius scope that biased the placement decision (Local | CrossDomain | Global)."
+        }
+    },
+    "required": [
+        "taskId",
+        "featureId",
+        "target",
+        "agentRole",
+        "reason",
+        "blastRadiusScope"
+    ],
+    "description": "Data payload for `task.delegated.remote` events — a task was routed to the\nBasileus tier rather than executed locally."
+}

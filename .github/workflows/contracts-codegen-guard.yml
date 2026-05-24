@@ -1,0 +1,56 @@
+name: Contracts codegen guard
+
+# DIM-6: the emitted JSON Schema (schemas/) and C# records (Generated/) are
+# emitter-owned. This guard regenerates them from the canonical TypeSpec source
+# and fails if the committed output differs — i.e. someone hand-edited generated
+# output or forgot to regenerate after a .tsp change.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/Strategos.Contracts/**'
+      - 'src/Strategos.Contracts.Codegen/**'
+      - 'scripts/contracts-codegen.sh'
+      - '.github/workflows/contracts-codegen-guard.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/Strategos.Contracts/**'
+      - 'src/Strategos.Contracts.Codegen/**'
+      - 'scripts/contracts-codegen.sh'
+
+jobs:
+  codegen-guard:
+    name: Regenerate + diff (Generated/, schemas/)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Restore TypeSpec toolchain
+        working-directory: src/Strategos.Contracts
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Regenerate schemas + C# records
+        run: bash scripts/contracts-codegen.sh
+
+      - name: Fail on hand-edited or stale generated output
+        # If `tsp compile` + ContractsCodegen produced anything different from
+        # what is committed under Generated/ or schemas/, the working tree is
+        # dirty and this fails — rejecting hand-edits and stale codegen.
+        run: |
+          git diff --exit-code -- \
+            src/Strategos.Contracts/Generated \
+            src/Strategos.Contracts/schemas

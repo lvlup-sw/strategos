@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ApprovalRejectionDefinition.json",
+    "type": "object",
+    "properties": {
+        "rejectionHandlerId": {
+            "type": "string",
+            "description": "Stable rejection-handler identifier."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps run on rejection."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether rejection terminates the workflow."
+        }
+    },
+    "required": [
+        "rejectionHandlerId",
+        "steps",
+        "isTerminal"
+    ],
+    "description": "Wire-IR approval-rejection handler — steps run when an approval is rejected\n(mirrors the builder's `ApprovalRejectionDefinition`)."
+}

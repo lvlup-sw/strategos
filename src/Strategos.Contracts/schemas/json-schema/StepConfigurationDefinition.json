@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "StepConfigurationDefinition.json",
+    "type": "object",
+    "properties": {
+        "confidenceThreshold": {
+            "type": "number",
+            "description": "Confidence threshold below which the low-confidence handler fires."
+        },
+        "onLowConfidence": {
+            "$ref": "LowConfidenceHandlerDefinition.json",
+            "description": "Low-confidence handler."
+        },
+        "compensation": {
+            "$ref": "CompensationConfiguration.json",
+            "description": "Compensation configuration."
+        },
+        "retry": {
+            "$ref": "RetryConfiguration.json",
+            "description": "Retry configuration."
+        },
+        "timeout": {
+            "type": "string",
+            "description": "Step timeout (ISO-8601 duration), if set."
+        },
+        "validation": {
+            "$ref": "ValidationDefinition.json",
+            "description": "Validation guard."
+        }
+    },
+    "description": "Wire-IR step configuration tree (mirrors the builder's\n`StepConfigurationDefinition`). All members are optional — an unconfigured\nstep omits the whole object."
+}

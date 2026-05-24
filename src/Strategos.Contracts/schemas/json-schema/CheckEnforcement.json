@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CheckEnforcement.json",
+    "type": "object",
+    "properties": {
+        "mode": {
+            "type": "string",
+            "const": "check"
+        },
+        "check": {
+            "$ref": "CheckNode.json",
+            "description": "The declarative check tree evaluated to enforce the invariant."
+        }
+    },
+    "required": [
+        "mode",
+        "check"
+    ],
+    "description": "Enforcement arm: `check` — the invariant is enforced by evaluating a\ndeclarative `CheckNode` combinator tree. Carries no executable code (LB-1 /\nINV-4); the `check` is the inert combinator tree."
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- Build-time code generator: not part of the shipped surface, so the
+         coverage threshold and AOT constraints of the package don't apply. -->
+    <CollectCoverage>false</CollectCoverage>
+  </PropertyGroup>
+
+  <!-- No package references: the emitter reads the TypeSpec-emitted JSON Schema
+       with raw System.Text.Json (JsonDocument), not a third-party resolver. -->
+
+</Project>

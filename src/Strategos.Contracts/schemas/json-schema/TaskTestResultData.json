@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TaskTestResultData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "passed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "failed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "coverage": {
+            "type": "number"
+        }
+    },
+    "required": [
+        "taskId",
+        "passed",
+        "failed"
+    ],
+    "description": "Data payload for `TestResult` events — raw test-run counts."
+}

@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "StepRuntime.json",
+    "type": "string",
+    "enum": [
+        "exarchos",
+        "strategos",
+        "remote"
+    ],
+    "description": "Reserved runtime placement for a step (v3.3.0 federation forward-compat slot).\nOptional on every step kind; absence means the default `exarchos`. No behavior\nis attached in 0.2.0 — the slot exists so a future federation release is an\nadditive minor, not a breaking V2."
+}

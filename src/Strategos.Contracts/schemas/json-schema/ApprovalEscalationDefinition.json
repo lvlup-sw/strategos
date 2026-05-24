@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ApprovalEscalationDefinition.json",
+    "type": "object",
+    "properties": {
+        "escalationId": {
+            "type": "string",
+            "description": "Stable escalation identifier."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps run on escalation."
+        },
+        "nestedApprovals": {
+            "type": "array",
+            "items": {
+                "$ref": "ApprovalDefinition.json"
+            },
+            "description": "Nested approval gates within the escalation, if any."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether escalation terminates the workflow."
+        }
+    },
+    "required": [
+        "escalationId",
+        "steps",
+        "nestedApprovals",
+        "isTerminal"
+    ],
+    "description": "Wire-IR approval-escalation handler — steps run when an approval escalates\n(mirrors the builder's `ApprovalEscalationDefinition`)."
+}

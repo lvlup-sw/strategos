@@ -1,0 +1,44 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "LoopDefinition.json",
+    "type": "object",
+    "properties": {
+        "loopId": {
+            "type": "string",
+            "description": "Stable loop identifier."
+        },
+        "loopName": {
+            "type": "string",
+            "description": "Loop name (used for phase enum prefixing)."
+        },
+        "fromStepId": {
+            "type": "string",
+            "description": "Step id where the loop originates."
+        },
+        "maxIterations": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "description": "Maximum iterations (infinite-loop guard)."
+        },
+        "bodySteps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps in the loop body."
+        },
+        "continuationStepId": {
+            "type": "string",
+            "description": "Step id to continue to after the loop exits, if set."
+        }
+    },
+    "required": [
+        "loopId",
+        "loopName",
+        "fromStepId",
+        "maxIterations",
+        "bodySteps"
+    ],
+    "description": "Wire-IR loop — a RepeatUntil construct (mirrors the builder's\n`LoopDefinition`)."
+}

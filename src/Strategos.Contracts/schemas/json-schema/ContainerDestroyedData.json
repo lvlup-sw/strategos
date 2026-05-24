@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ContainerDestroyedData.json",
+    "type": "object",
+    "properties": {
+        "taskId": {
+            "type": "string"
+        },
+        "containerId": {
+            "type": "string"
+        },
+        "totalDuration": {
+            "type": "number"
+        },
+        "totalTokens": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        }
+    },
+    "required": [
+        "taskId",
+        "containerId",
+        "totalDuration",
+        "totalTokens"
+    ],
+    "description": "Data payload for `ContainerDestroyed` events — a coding container was torn down."
+}

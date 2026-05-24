@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "RetryConfiguration.json",
+    "type": "object",
+    "properties": {
+        "maxAttempts": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "description": "Maximum retry attempts."
+        },
+        "initialDelay": {
+            "type": "string",
+            "description": "Initial backoff delay (ISO-8601 duration)."
+        },
+        "backoffMultiplier": {
+            "type": "number",
+            "description": "Exponential backoff multiplier."
+        },
+        "maxDelay": {
+            "type": "string",
+            "description": "Maximum backoff delay (ISO-8601 duration)."
+        },
+        "useJitter": {
+            "type": "boolean",
+            "description": "Whether to apply jitter to backoff."
+        }
+    },
+    "required": [
+        "maxAttempts"
+    ],
+    "description": "Wire-IR retry configuration (mirrors the builder's `RetryConfiguration`).\nDurations are serialized as ISO-8601 duration strings (language-neutral; not\na .NET `TimeSpan`)."
+}

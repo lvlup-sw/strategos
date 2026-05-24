@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "LowConfidenceHandlerDefinition.json",
+    "type": "object",
+    "properties": {
+        "handlerId": {
+            "type": "string",
+            "description": "Stable handler identifier."
+        },
+        "handlerSteps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps run when confidence is below threshold."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether the handler terminates the workflow."
+        },
+        "rejoinStepId": {
+            "type": "string",
+            "description": "Step id where the handler rejoins the main flow, if any."
+        }
+    },
+    "required": [
+        "handlerId",
+        "handlerSteps",
+        "isTerminal"
+    ],
+    "description": "Wire-IR low-confidence handler (mirrors the builder's\n`LowConfidenceHandlerDefinition`)."
+}

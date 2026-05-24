@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "StepDefinition.json",
+    "anyOf": [
+        {
+            "$ref": "SkillStep.json"
+        },
+        {
+            "$ref": "HandlerStep.json"
+        },
+        {
+            "$ref": "GateStep.json"
+        },
+        {
+            "$ref": "DelegateStep.json"
+        },
+        {
+            "$ref": "ApprovalStep.json"
+        }
+    ],
+    "description": "Wire-IR step definition (issue #50): a discriminated union over the five step\nkinds. Each arm pins its `kind` discriminator const and spreads the shared\n`StepCommon` fields. This is the wire shape both consumers (Exarchos Zod,\nBasileus) derive from."
+}

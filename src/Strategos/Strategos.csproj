@@ -31,6 +31,13 @@
       via this single explicit edge. (G1 v2.7.0-preview.1)
     -->
     <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
+    <!--
+      The workflow wire-IR contract (LevelUp.Strategos.Contracts) is the export
+      target of WorkflowDefinitionProjection.ToContract(). The dependency is a
+      one-way fan-in (core DSL → contract); the contract never depends on core.
+      (Strategos.Contracts 0.2.0, #50)
+    -->
+    <ProjectReference Include="..\Strategos.Contracts\Strategos.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

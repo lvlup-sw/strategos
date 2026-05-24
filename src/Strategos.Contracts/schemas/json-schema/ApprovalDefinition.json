@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ApprovalDefinition.json",
+    "type": "object",
+    "properties": {
+        "approvalPointId": {
+            "type": "string",
+            "description": "Stable approval-point identifier."
+        },
+        "approverType": {
+            "type": "string",
+            "description": "Simple-name CLR moniker of the approver type (LB-2)."
+        },
+        "precedingStepId": {
+            "type": "string",
+            "description": "Step id immediately preceding this approval gate."
+        },
+        "escalationHandler": {
+            "$ref": "ApprovalEscalationDefinition.json",
+            "description": "Optional escalation handler."
+        },
+        "rejectionHandler": {
+            "$ref": "ApprovalRejectionDefinition.json",
+            "description": "Optional rejection handler."
+        }
+    },
+    "required": [
+        "approvalPointId",
+        "approverType",
+        "precedingStepId"
+    ],
+    "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's runtime context factory (a CLR\nexpression) is intentionally **not** carried on the wire (declarative-only,\nLB-1)."
+}

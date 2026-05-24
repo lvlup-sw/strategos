@@ -60,6 +60,9 @@ secrets.json
 # Node.js
 node_modules/
 
+# Contracts cross-product round-trip harness scratch (T31)
+src/Strategos.Contracts/.roundtrip-zod.tmp/
+
 # Astro / Starlight (replaces VitePress)
 docs/.astro/
 docs/dist/

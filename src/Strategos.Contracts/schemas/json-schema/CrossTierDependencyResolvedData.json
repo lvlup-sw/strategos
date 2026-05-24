@@ -1,0 +1,40 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CrossTierDependencyResolvedData.json",
+    "type": "object",
+    "properties": {
+        "dependentTaskId": {
+            "type": "string"
+        },
+        "resolvedByTaskId": {
+            "type": "string"
+        },
+        "resolvedByTier": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "const": "exarchos"
+                },
+                {
+                    "type": "string",
+                    "const": "basileus"
+                }
+            ],
+            "description": "Tier that resolved the dependency."
+        },
+        "branch": {
+            "type": "string"
+        },
+        "commitSha": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "dependentTaskId",
+        "resolvedByTaskId",
+        "resolvedByTier",
+        "branch",
+        "commitSha"
+    ],
+    "description": "Data payload for `dependency.cross-tier.resolved` events — a dependency was\nsatisfied by work that completed on another tier."
+}

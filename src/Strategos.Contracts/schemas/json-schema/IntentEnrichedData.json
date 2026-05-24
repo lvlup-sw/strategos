@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "IntentEnrichedData.json",
+    "type": "object",
+    "properties": {
+        "recordId": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "domainLayer": {
+            "$ref": "DomainLayerData.json"
+        }
+    },
+    "required": [
+        "recordId",
+        "featureId",
+        "domainLayer"
+    ],
+    "description": "Data payload for `intent.enriched` events."
+}

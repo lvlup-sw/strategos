@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "RecordStatus.json",
+    "type": "string",
+    "enum": [
+        "proposed",
+        "validated",
+        "enriched",
+        "executing",
+        "completed",
+        "failed"
+    ],
+    "description": "Lifecycle status of an ontological record (ADR §2.5). The Wolverine saga\ntransitions a record through these states as intent events are applied."
+}

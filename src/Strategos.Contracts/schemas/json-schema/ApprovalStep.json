@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ApprovalStep.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "approval"
+        },
+        "stepId": {
+            "type": "string",
+            "description": "Stable step identifier (the builder's `StepDefinition.StepId`)."
+        },
+        "stepName": {
+            "type": "string",
+            "description": "Step name (the builder's `StepDefinition.StepName`)."
+        },
+        "instanceName": {
+            "type": "string",
+            "description": "Optional instance name distinguishing the same step type across contexts."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether this step terminates the workflow."
+        },
+        "runtime": {
+            "$ref": "StepRuntime.json",
+            "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
+        },
+        "configuration": {
+            "$ref": "StepConfigurationDefinition.json",
+            "description": "Optional step configuration (confidence / retry / compensation / …)."
+        },
+        "approverType": {
+            "type": "string",
+            "description": "Simple-name CLR moniker of the approver type (LB-2)."
+        }
+    },
+    "required": [
+        "kind",
+        "stepId",
+        "stepName",
+        "isTerminal",
+        "approverType"
+    ],
+    "description": "Approval step — a human-approval pause point. `approverType` is the simple-name\nmoniker of the approver CLR type (LB-2)."
+}

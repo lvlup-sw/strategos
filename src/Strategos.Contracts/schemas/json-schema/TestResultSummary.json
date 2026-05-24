@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TestResultSummary.json",
+    "type": "object",
+    "properties": {
+        "passed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "failed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "coverage": {
+            "type": "number"
+        }
+    },
+    "required": [
+        "passed",
+        "failed"
+    ],
+    "description": "Aggregate test counts for a coding attempt."
+}

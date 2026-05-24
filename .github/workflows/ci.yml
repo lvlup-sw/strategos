@@ -15,9 +15,48 @@ jobs:
         src/*Tests/*.csproj
       skip-patterns: |
         *Benchmarks.Tests*
+        *Contracts.Tests*
       runner: 'blacksmith-4vcpu-ubuntu-2204'
       dotnet-version: '10.0.x'
       dotnet-quality: 'preview'
+
+  contracts-test:
+    # Strategos.Contracts.Tests drives the TypeSpec Node toolchain (npx tsp
+    # compile) to assert emitted schema shape. The shared build-and-test
+    # reusable workflow provisions only .NET, so these tests are skipped there
+    # (skip-patterns above) and run here in a Node-provisioned job — co-locating
+    # the test project with the toolchain it depends on. @typespec/compiler 1.11
+    # requires Node 22+ (it imports `glob` from `fs/promises`), matching the
+    # Node 24 the codegen guard already pins.
+    name: Contracts tests (Node toolchain)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Restore TypeSpec toolchain
+        working-directory: src/Strategos.Contracts
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Run Contracts tests
+        # TUnit uses the Microsoft.Testing.Platform exe entrypoint (the project
+        # sets OutputType=Exe); invoke via `dotnet run`, mirroring basileus-smoke.
+        run: dotnet run --project src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj --configuration Release
 
   pack-verify:
     name: Pack (verify)

@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DelegationPolicy.json",
+    "type": "string",
+    "enum": [
+        "local",
+        "remote",
+        "auto"
+    ],
+    "description": "Delegation policy carried by an ontological record's process layer (ADR §2.5,\n§2.6). Governs whether the router may place tasks locally or remotely."
+}

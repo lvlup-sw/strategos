@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ValidationDefinition.json",
+    "type": "object",
+    "properties": {
+        "predicateExpression": {
+            "type": "string",
+            "description": "Declarative predicate description (not executable code, LB-1)."
+        },
+        "errorMessage": {
+            "type": "string",
+            "description": "Error message surfaced when validation fails."
+        }
+    },
+    "required": [
+        "predicateExpression",
+        "errorMessage"
+    ],
+    "description": "Wire-IR validation definition (mirrors the builder's `ValidationDefinition`).\n`predicateExpression` is a **declarative description** of the predicate, not\nexecutable code (LB-1) — it is the same string the builder stores for\nvisualization / diagnostics."
+}

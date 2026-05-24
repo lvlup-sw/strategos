@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CheckNode.json",
+    "anyOf": [
+        {
+            "$ref": "GrepLeaf.json"
+        },
+        {
+            "$ref": "StructuralLeaf.json"
+        },
+        {
+            "$ref": "HeuristicLeaf.json"
+        },
+        {
+            "$ref": "AllOfNode.json"
+        },
+        {
+            "$ref": "AnyOfNode.json"
+        },
+        {
+            "$ref": "NotNode.json"
+        },
+        {
+            "$ref": "ScopeNode.json"
+        }
+    ],
+    "description": "Recursive combinator tree (#98) describing a declarative check. A\ndiscriminated union over three leaf kinds (`grep` / `structural` / `heuristic`)\nand four combinator arms (`all-of` / `any-of` / `not` / `scope`) whose children\nrecurse back into `CheckNode`.\n\nDeclarative-only (LB-1 / INV-4 — the sandbox guarantee): every arm carries only\ninert match data (`pattern`, `file-glob`, `threshold`) or child `CheckNode`s.\n**No arm admits an arbitrary-code / command / exec member.** The schema is\ntherefore structurally incapable of expressing an embedded executable — the\nsandbox guarantee is a property of the shape, not of downstream validation."
+}

@@ -1,0 +1,37 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "BranchPathDefinition.json",
+    "type": "object",
+    "properties": {
+        "pathId": {
+            "type": "string",
+            "description": "Stable branch-path identifier."
+        },
+        "conditionDescription": {
+            "type": "string",
+            "description": "Human-readable condition description (for visualization / diff)."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Steps executed on this path."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether this path terminates without rejoining."
+        },
+        "approval": {
+            "$ref": "ApprovalDefinition.json",
+            "description": "Optional approval gate guarding this path."
+        }
+    },
+    "required": [
+        "pathId",
+        "conditionDescription",
+        "steps",
+        "isTerminal"
+    ],
+    "description": "Wire-IR branch path — one route through a conditional branch (mirrors the\nbuilder's `BranchPathDefinition`)."
+}

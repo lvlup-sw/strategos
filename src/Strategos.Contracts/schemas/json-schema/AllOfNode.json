@@ -1,0 +1,23 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AllOfNode.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "all-of"
+        },
+        "children": {
+            "type": "array",
+            "items": {
+                "$ref": "CheckNode.json"
+            },
+            "description": "Child checks; all must hold (recurses into CheckNode)."
+        }
+    },
+    "required": [
+        "kind",
+        "children"
+    ],
+    "description": "Combinator: `all-of` — the conjunction of its child checks. Recurses back into\n`CheckNode` via the `children` array (the self-referential arm of the tree)."
+}

@@ -1,0 +1,62 @@
+name: Contracts schema breaking-change diff
+
+# T30 — design §Resilience item 3: "additive-only minors; breaking change ⇒
+# major bump. Breaking-change detection via JSON Schema structural diff in CI."
+#
+# Compares the emitted schemas on this ref against the schemas published at the
+# previous release tag. A removed/narrowed/newly-required property fails the
+# build (it demands a major bump); an added optional property passes.
+#
+# The classification rules are unit-tested in C# (JsonSchemaDiff /
+# SchemaDiffTests); this workflow drives the same rules over the file set via
+# scripts/contracts-schema-diff.mjs.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/Strategos.Contracts/schemas/**'
+      - 'scripts/contracts-schema-diff.mjs'
+      - '.github/workflows/contracts-schema-diff.yml'
+
+jobs:
+  schema-diff:
+    name: Structural diff vs previous tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Extract previous tag's schemas
+        id: prev
+        run: |
+          set -euo pipefail
+          SCHEMAS=src/Strategos.Contracts/schemas/json-schema
+          PREV_TAG="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          PREV_DIR="$(mktemp -d)"
+          if [ -z "$PREV_TAG" ]; then
+            echo "no previous v* tag found — treating current schemas as the baseline (no diff to run)."
+            echo "have_prev=false" >> "$GITHUB_OUTPUT"
+          elif git cat-file -e "$PREV_TAG:$SCHEMAS" 2>/dev/null; then
+            git archive "$PREV_TAG" "$SCHEMAS" | tar -x -C "$PREV_DIR"
+            echo "prev_dir=$PREV_DIR/$SCHEMAS" >> "$GITHUB_OUTPUT"
+            echo "have_prev=true" >> "$GITHUB_OUTPUT"
+            echo "comparing against $PREV_TAG"
+          else
+            echo "previous tag $PREV_TAG predates the schemas dir — no diff to run."
+            echo "have_prev=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Structural breaking-change diff
+        if: steps.prev.outputs.have_prev == 'true'
+        run: |
+          node scripts/contracts-schema-diff.mjs \
+            "${{ steps.prev.outputs.prev_dir }}" \
+            "src/Strategos.Contracts/schemas/json-schema"
