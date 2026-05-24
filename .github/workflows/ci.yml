@@ -30,9 +30,13 @@ jobs:
     # Node 24 the codegen guard already pins.
     name: Contracts tests (Node toolchain)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

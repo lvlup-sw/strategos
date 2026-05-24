@@ -68,7 +68,15 @@ internal static class FixtureExporter
         Action<WorkflowCorpus.Case>? caseTransform = null,
         Action? onBeforePublish = null)
     {
-        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(destination))!;
+        ArgumentNullException.ThrowIfNull(cases);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destination);
+
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(destination));
+        if (string.IsNullOrWhiteSpace(parent))
+        {
+            throw new ArgumentException("Destination must include a parent directory.", nameof(destination));
+        }
+
         Directory.CreateDirectory(parent);
         var temp = Path.Combine(parent, ".builder-fixtures.tmp-" + Guid.NewGuid().ToString("N"));
         var moveAside = Path.Combine(parent, ".builder-fixtures.old-" + Guid.NewGuid().ToString("N"));
