@@ -1,0 +1,31 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "PipelineProbe.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable identifier for the probe instance."
+        },
+        "sequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Monotonic sequence — int32 (not int64) to avoid the JSON Schema string coercion."
+        },
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Free-form tags, proving collection emission."
+        }
+    },
+    "required": [
+        "id",
+        "sequence",
+        "tags"
+    ],
+    "description": "Phase 0 pipeline probe — the minimal model that exercises the full toolchain:\na scalar, a bounded int32 sequence (int64 is avoided per the spike finding),\nand a collection (proving `IReadOnlyList<T>` emission for INV-7)."
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@lvlup-sw/strategos-contracts",
+  "version": "0.2.0",
+  "private": true,
+  "description": "TypeSpec-canonical cross-product schema substrate: emits JSON Schema (NuGet content) and C# records (compiled into LevelUp.Strategos.Contracts).",
+  "scripts": {
+    "compile": "tsp compile .",
+    "compile:json-schema": "tsp compile . --emit @typespec/json-schema"
+  },
+  "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "^11.7.0",
+    "@typespec/compiler": "^1.11.0",
+    "@typespec/json-schema": "^1.11.0"
+  }
+}
