@@ -14,6 +14,14 @@
         "precedingStepId": {
             "type": "string",
             "description": "Step id immediately preceding this approval gate."
+        },
+        "escalationHandler": {
+            "$ref": "ApprovalEscalationDefinition.json",
+            "description": "Optional escalation handler."
+        },
+        "rejectionHandler": {
+            "$ref": "ApprovalRejectionDefinition.json",
+            "description": "Optional rejection handler."
         }
     },
     "required": [
@@ -21,5 +29,5 @@
         "approverType",
         "precedingStepId"
     ],
-    "description": "Wire-IR approval point (issue #50). Placeholder shape — the full approval /\nescalation / rejection sub-definitions land in T16."
+    "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's runtime context factory (a CLR\nexpression) is intentionally **not** carried on the wire (declarative-only,\nLB-1)."
 }

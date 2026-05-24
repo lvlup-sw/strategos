@@ -5,8 +5,28 @@
     "properties": {
         "confidenceThreshold": {
             "type": "number",
-            "description": "Confidence threshold below which the low-confidence handler fires, if set."
+            "description": "Confidence threshold below which the low-confidence handler fires."
+        },
+        "onLowConfidence": {
+            "$ref": "LowConfidenceHandlerDefinition.json",
+            "description": "Low-confidence handler."
+        },
+        "compensation": {
+            "$ref": "CompensationConfiguration.json",
+            "description": "Compensation configuration."
+        },
+        "retry": {
+            "$ref": "RetryConfiguration.json",
+            "description": "Retry configuration."
+        },
+        "timeout": {
+            "type": "string",
+            "description": "Step timeout (ISO-8601 duration), if set."
+        },
+        "validation": {
+            "$ref": "ValidationDefinition.json",
+            "description": "Validation guard."
         }
     },
-    "description": "Wire-IR step configuration (issue #50). Placeholder shape — the full\nconfidence / retry / compensation / validation sub-definitions land in T16."
+    "description": "Wire-IR step configuration tree (mirrors the builder's\n`StepConfigurationDefinition`). All members are optional — an unconfigured\nstep omits the whole object."
 }

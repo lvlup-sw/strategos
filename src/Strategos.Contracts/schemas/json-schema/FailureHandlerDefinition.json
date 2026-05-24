@@ -6,10 +6,32 @@
         "handlerId": {
             "type": "string",
             "description": "Stable handler identifier."
+        },
+        "scope": {
+            "$ref": "FailureHandlerScope.json",
+            "description": "Handler scope (workflow | step | forkPath)."
+        },
+        "triggerStepId": {
+            "type": "string",
+            "description": "Step id that triggers this handler, if step-scoped."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Recovery steps."
+        },
+        "isTerminal": {
+            "type": "boolean",
+            "description": "Whether the handler terminates the workflow."
         }
     },
     "required": [
-        "handlerId"
+        "handlerId",
+        "scope",
+        "steps",
+        "isTerminal"
     ],
-    "description": "Wire-IR failure handler (issue #50). Placeholder shape — the full failure /\nconfiguration sub-definitions land in T16."
+    "description": "Wire-IR failure handler — scoped recovery steps (mirrors the builder's\n`FailureHandlerDefinition`)."
 }

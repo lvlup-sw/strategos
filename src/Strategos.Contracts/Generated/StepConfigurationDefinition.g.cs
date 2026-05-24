@@ -12,14 +12,45 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Wire-IR step configuration (issue #50). Placeholder shape — the full
-/// confidence / retry / compensation / validation sub-definitions land in T16.
+/// Wire-IR step configuration tree (mirrors the builder&apos;s
+/// `StepConfigurationDefinition`). All members are optional — an unconfigured
+/// step omits the whole object.
 /// </summary>
 public sealed record StepConfigurationDefinition
 {
     /// <summary>
-    /// Confidence threshold below which the low-confidence handler fires, if set.
+    /// Confidence threshold below which the low-confidence handler fires.
     /// </summary>
     [JsonPropertyName("confidenceThreshold")]
     public double? ConfidenceThreshold { get; init; }
+
+    /// <summary>
+    /// Low-confidence handler.
+    /// </summary>
+    [JsonPropertyName("onLowConfidence")]
+    public LowConfidenceHandlerDefinition? OnLowConfidence { get; init; }
+
+    /// <summary>
+    /// Compensation configuration.
+    /// </summary>
+    [JsonPropertyName("compensation")]
+    public CompensationConfiguration? Compensation { get; init; }
+
+    /// <summary>
+    /// Retry configuration.
+    /// </summary>
+    [JsonPropertyName("retry")]
+    public RetryConfiguration? Retry { get; init; }
+
+    /// <summary>
+    /// Step timeout (ISO-8601 duration), if set.
+    /// </summary>
+    [JsonPropertyName("timeout")]
+    public string? Timeout { get; init; }
+
+    /// <summary>
+    /// Validation guard.
+    /// </summary>
+    [JsonPropertyName("validation")]
+    public ValidationDefinition? Validation { get; init; }
 }

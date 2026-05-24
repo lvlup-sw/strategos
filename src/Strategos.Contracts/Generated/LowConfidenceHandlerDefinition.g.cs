@@ -12,10 +12,10 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Wire-IR failure handler — scoped recovery steps (mirrors the builder&apos;s
-/// `FailureHandlerDefinition`).
+/// Wire-IR low-confidence handler (mirrors the builder&apos;s
+/// `LowConfidenceHandlerDefinition`).
 /// </summary>
-public sealed record FailureHandlerDefinition
+public sealed record LowConfidenceHandlerDefinition
 {
     /// <summary>
     /// Stable handler identifier.
@@ -24,26 +24,20 @@ public sealed record FailureHandlerDefinition
     public string HandlerId { get; init; } = default!;
 
     /// <summary>
-    /// Handler scope (workflow | step | forkPath).
+    /// Steps run when confidence is below threshold.
     /// </summary>
-    [JsonPropertyName("scope")]
-    public FailureHandlerScope Scope { get; init; }
-
-    /// <summary>
-    /// Step id that triggers this handler, if step-scoped.
-    /// </summary>
-    [JsonPropertyName("triggerStepId")]
-    public string? TriggerStepId { get; init; }
-
-    /// <summary>
-    /// Recovery steps.
-    /// </summary>
-    [JsonPropertyName("steps")]
-    public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
+    [JsonPropertyName("handlerSteps")]
+    public IReadOnlyList<StepDefinition> HandlerSteps { get; init; } = default!;
 
     /// <summary>
     /// Whether the handler terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
     public bool IsTerminal { get; init; }
+
+    /// <summary>
+    /// Step id where the handler rejoins the main flow, if any.
+    /// </summary>
+    [JsonPropertyName("rejoinStepId")]
+    public string? RejoinStepId { get; init; }
 }

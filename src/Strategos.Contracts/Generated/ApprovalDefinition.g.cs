@@ -12,8 +12,11 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Wire-IR approval point (issue #50). Placeholder shape — the full approval /
-/// escalation / rejection sub-definitions land in T16.
+/// Wire-IR approval point — a human-approval pause (mirrors the builder&apos;s
+/// `ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker
+/// (LB-2); the approval configuration&apos;s runtime context factory (a CLR
+/// expression) is intentionally **not** carried on the wire (declarative-only,
+/// LB-1).
 /// </summary>
 public sealed record ApprovalDefinition
 {
@@ -34,4 +37,16 @@ public sealed record ApprovalDefinition
     /// </summary>
     [JsonPropertyName("precedingStepId")]
     public string PrecedingStepId { get; init; } = default!;
+
+    /// <summary>
+    /// Optional escalation handler.
+    /// </summary>
+    [JsonPropertyName("escalationHandler")]
+    public ApprovalEscalationDefinition? EscalationHandler { get; init; }
+
+    /// <summary>
+    /// Optional rejection handler.
+    /// </summary>
+    [JsonPropertyName("rejectionHandler")]
+    public ApprovalRejectionDefinition? RejectionHandler { get; init; }
 }

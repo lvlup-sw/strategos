@@ -12,37 +12,25 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Wire-IR failure handler — scoped recovery steps (mirrors the builder&apos;s
-/// `FailureHandlerDefinition`).
+/// Wire-IR approval-rejection handler — steps run when an approval is rejected
+/// (mirrors the builder&apos;s `ApprovalRejectionDefinition`).
 /// </summary>
-public sealed record FailureHandlerDefinition
+public sealed record ApprovalRejectionDefinition
 {
     /// <summary>
-    /// Stable handler identifier.
+    /// Stable rejection-handler identifier.
     /// </summary>
-    [JsonPropertyName("handlerId")]
-    public string HandlerId { get; init; } = default!;
+    [JsonPropertyName("rejectionHandlerId")]
+    public string RejectionHandlerId { get; init; } = default!;
 
     /// <summary>
-    /// Handler scope (workflow | step | forkPath).
-    /// </summary>
-    [JsonPropertyName("scope")]
-    public FailureHandlerScope Scope { get; init; }
-
-    /// <summary>
-    /// Step id that triggers this handler, if step-scoped.
-    /// </summary>
-    [JsonPropertyName("triggerStepId")]
-    public string? TriggerStepId { get; init; }
-
-    /// <summary>
-    /// Recovery steps.
+    /// Steps run on rejection.
     /// </summary>
     [JsonPropertyName("steps")]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
-    /// Whether the handler terminates the workflow.
+    /// Whether rejection terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
     public bool IsTerminal { get; init; }
