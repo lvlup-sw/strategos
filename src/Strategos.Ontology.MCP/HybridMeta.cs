@@ -19,8 +19,10 @@ namespace Strategos.Ontology.MCP;
 /// </param>
 /// <param name="Degraded">
 /// Degradation reason tag when the hybrid path declined to its dense-only
-/// fallback. Values: <c>"no-keyword-provider"</c> or <c>"sparse-failed"</c>.
-/// Null on healthy paths; omitted from the wire when null.
+/// fallback. Values: <c>"no-keyword-provider"</c> (no provider registered),
+/// <c>"sparse-failed"</c> (sparse leg threw), or <c>"sparse-empty"</c> (sparse
+/// leg succeeded but returned no candidates, so it could not contribute to
+/// fusion). Null on healthy paths; omitted from the wire when null.
 /// </param>
 /// <param name="DenseTopScore">
 /// Highest dense-leg similarity score observed for this query. Null on degraded

@@ -24,6 +24,9 @@ public sealed class OntologyQueryToolHybridMetaSnapshotTests
     [Before(Test)]
     public void Setup()
     {
+        // Reset the process-wide warn-once latch (issue #78 item 4) so the
+        // no-provider snapshot does not consume the warning another suite asserts on.
+        HybridQueryCoordinator.ResetWarnOnceLatch();
         _graph = TestOntologyGraphFactory.CreateTradingGraph();
         _objectSetProvider = Substitute.For<IObjectSetProvider>();
         _eventStreamProvider = Substitute.For<IEventStreamProvider>();
@@ -133,7 +136,10 @@ public sealed class OntologyQueryToolHybridMetaSnapshotTests
 
     // ---- Snapshot 4: degraded no-keyword-provider ----
 
+    // Trips the process-wide warn-once latch (item 4); serialized with the
+    // warn-count assertions in OntologyQueryToolHybridTests via the shared key.
     [Test]
+    [NotInParallel("HybridWarnOnceLatch")]
     public async Task Snapshot_HybridDegradedNoKeywordProvider()
     {
         var items = new List<object> { new TestItem("doc-a", "AAPL") };
@@ -181,6 +187,36 @@ public sealed class OntologyQueryToolHybridMetaSnapshotTests
         var json = SerializeMeta(result.Meta);
         await Assert.That(json).Contains("\"hybrid\":false");
         await Assert.That(json).Contains("\"degraded\":\"sparse-failed\"");
+        await Assert.That(json).DoesNotContain("\"fusionMethod\"");
+        await Assert.That(json).DoesNotContain("\"denseTopScore\"");
+        await Assert.That(json).DoesNotContain("\"sparseTopScore\"");
+        await Assert.That(json).DoesNotContain("\"bmSaturationThreshold\"");
+    }
+
+    // ---- Snapshot 6: degraded sparse-empty (issue #78 item 1) ----
+
+    [Test]
+    public async Task Snapshot_HybridDegradedSparseEmpty()
+    {
+        var items = new List<object> { new TestItem("doc-a", "AAPL") };
+        var scores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(Array.Empty<KeywordSearchResult>()));
+
+        var tool = BuildTool(keywordProvider);
+        var result = (SemanticQueryResult)await tool.QueryAsync(
+            objectType: "TestPosition", domain: "trading",
+            semanticQuery: "q", hybridOptions: new HybridQueryOptions());
+
+        var json = SerializeMeta(result.Meta);
+        await Assert.That(json).Contains("\"hybrid\":false");
+        await Assert.That(json).Contains("\"degraded\":\"sparse-empty\"");
         await Assert.That(json).DoesNotContain("\"fusionMethod\"");
         await Assert.That(json).DoesNotContain("\"denseTopScore\"");
         await Assert.That(json).DoesNotContain("\"sparseTopScore\"");

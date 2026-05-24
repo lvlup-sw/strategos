@@ -20,4 +20,30 @@ public sealed record SemanticQueryResult(
 
     /// <summary>Minimum relevance threshold applied to filter results.</summary>
     public double MinRelevance { get; init; }
+
+    /// <summary>
+    /// Assembles a <see cref="SemanticQueryResult"/> from a
+    /// <see cref="SemanticQueryRequest"/>, the projected items/scores, an optional
+    /// <see cref="HybridMeta"/>, and the base <see cref="ResponseMeta"/>. Single
+    /// construction site shared by <see cref="OntologyQueryTool"/>'s dense-only
+    /// semantic path and <see cref="HybridQueryCoordinator"/>'s hybrid/degraded
+    /// paths so the wire shape cannot diverge between them (DIM-5).
+    /// </summary>
+    internal static SemanticQueryResult FromRequest(
+        SemanticQueryRequest request,
+        IReadOnlyList<object> items,
+        IReadOnlyList<double> scores,
+        HybridMeta? hybridMeta,
+        ResponseMeta baseMeta) =>
+        new(request.ObjectType, items, hybridMeta is null ? baseMeta : baseMeta with { Hybrid = hybridMeta })
+        {
+            Scores = scores,
+            SemanticQuery = request.SemanticQuery,
+            TopK = request.TopK,
+            MinRelevance = request.MinRelevance,
+            Filter = request.Filter,
+            TraverseLink = request.TraverseLink,
+            InterfaceName = request.InterfaceName,
+            Include = request.Include,
+        };
 }
