@@ -465,7 +465,9 @@ hybridOptions non-null AND semanticQuery non-null
       │   ├─ dense throws → propagate (baseline)
       │   └─ sparse throws → catch, log with stack, fall back to dense-only.
       │       └─ HybridMeta { Hybrid = false, Degraded = "sparse-failed" }
-      ├─ both complete → fuse:
+      ├─ sparse succeeds but returns zero rows → dense-only (fusion is a no-op).
+      │       └─ HybridMeta { Hybrid = false, Degraded = "sparse-empty" }
+      ├─ both complete with sparse rows → fuse:
       │   ├─ Reciprocal → RankFusion.Reciprocal(rankedLists, SourceWeights, RrfK, topK)
       │   └─ DistributionBased → RankFusion.DistributionBased(scoredLists, SourceWeights, topK)
       └─ HybridMeta {
@@ -476,6 +478,24 @@ hybridOptions non-null AND semanticQuery non-null
             Degraded = null
         }
 ```
+
+> **2.7.0 reconciliation (#78, item 1).** The `sparse-empty` leaf was added so the
+> `Hybrid = true` ⇔ "sparse contributed" invariant (§6.6, DIM-7) holds literally: a
+> sparse leg that runs cleanly but returns no candidates cannot reorder the dense
+> ranking, so it degrades to dense-only with the distinct `Degraded = "sparse-empty"`
+> reason rather than emitting a `Hybrid = true` envelope carrying a null
+> `sparseTopScore`. Empty is not a fault, so unlike `sparse-failed` it logs nothing.
+
+**Sparse-only document drop policy (#78, item 3).** When fusion runs, a document
+that appears *only* on the sparse leg — i.e. its `DocumentId` has no matching dense
+item with a reflection-extractable `Id` — is **dropped from the projected result**.
+The 2.5.0 `SemanticQueryResult` wire shape is `items` + `scores` over ontology
+objects, and Strategos cannot synthesize an ontology object from a bare sparse
+`DocumentId`. Such a document still influences fusion *ranking* (it occupies a rank
+slot and shifts reciprocal/score contributions for the documents around it) but is
+absent from the returned `items`. Consequently the projected item count can be less
+than the fused candidate count. Materializing sparse-only documents is out of scope
+for 2.6.0/2.7.0 and belongs to a future reranker/hydration layer (§9.3).
 
 ### 6.5 Extended ResponseMeta
 
@@ -534,15 +554,15 @@ Wire shape:
 |---|---|
 | Backward compat (DIM-3) | 2.5.0 `OntologyQueryTool` test suite passes unmodified. **Hard gate.** |
 | Default fusion | `FusionMethod.Reciprocal` (production default). |
-| `HybridMeta.Hybrid` | `true` only when sparse path actually contributed results. |
+| `HybridMeta.Hybrid` | `true` only when the sparse leg actually contributed results to fusion. A sparse leg that returns zero rows does not contribute (see `"sparse-empty"`, #78 item 1). |
 | `HybridMeta.FusionMethod` | Present when `Hybrid = true`. Values: `"reciprocal"` or `"distribution_based"`. |
-| `HybridMeta.Degraded` | Present only on degraded paths (`"no-keyword-provider"`, `"sparse-failed"`). Null on healthy. |
+| `HybridMeta.Degraded` | Present only on degraded paths (`"no-keyword-provider"`, `"sparse-failed"`, `"sparse-empty"`). Null on healthy. (`"sparse-empty"` added 2.7.0, #78 item 1.) |
 | Cancellation | Single `ct` propagated to both legs via `Task.WhenAll`. |
 | Parallelism | `Task.WhenAll(denseTask, sparseTask)` — both await before fusion. |
 | Argument validation | `SparseTopK >= 0`, `DenseTopK >= 0`, `RrfK > 0`, `SourceWeights` (when non-null) length = 2, all weights ≥ 0. Otherwise `ArgumentOutOfRangeException` / `ArgumentException`. |
 | `SourceWeights` order | `[denseWeight, sparseWeight]`. Documented in XML. |
 | `BmSaturationThreshold` | Surfaces in `HybridMeta.BmSaturationThreshold`. **Does not affect fusion math in 2.6.0.** |
-| Warning-once | Missing provider warning emitted exactly once per process via `Interlocked.CompareExchange` flag on the tool. |
+| Warning-once | Missing-provider warning emitted exactly once **per process** via a `static` `Interlocked.CompareExchange` latch on `HybridQueryCoordinator`. (2.7.0, #78 item 4: promoted from a per-instance field on `OntologyQueryTool`, which relied on the unenforced singleton-DI convention; a test-only `ResetWarnOnceLatch()` seam restores per-test isolation under the parallel runner.) |
 
 ### 6.7 Test strategy
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed — Ontology hybrid retrieval polish (#78)
+
+- **`HybridMeta.Degraded` gains `"sparse-empty"`** (#78 item 1). When the sparse
+  keyword leg runs cleanly but returns zero candidates, `OntologyQueryTool` now
+  surfaces `HybridMeta { Hybrid = false, Degraded = "sparse-empty" }` instead of a
+  `Hybrid = true` envelope with a null `sparseTopScore`. This makes the wire honor
+  the documented invariant that `Hybrid = true` ⇔ the sparse leg actually
+  contributed to fusion (design §6.6, DIM-7). An empty sparse result is not a
+  fault, so — unlike `"sparse-failed"` — it is not logged.
+- **Missing-provider warn-once is now per-process** (#78 item 4). The
+  "`HybridQueryOptions` supplied but no `IKeywordSearchProvider` registered"
+  warning is latched on a process-wide `static` flag (moved off `OntologyQueryTool`
+  onto the new `HybridQueryCoordinator`), so hosts that construct multiple tool
+  instances no longer emit one warning per instance. Public API unchanged.
+
 ## [2.7.0] - 2026-05-18
 
 ### Changed (BREAKING) — Agent step contract
@@ -159,6 +174,10 @@ design rationale.
   Supporting records: `RankedCandidate`, `ScoredCandidate`, `FusedResult`.
 - **`HybridQueryOptions`** + **`FusionMethod`** enum (PR-C) — additive optional
   per-call configuration for `OntologyQueryTool.QueryAsync`.
+- **`HybridQueryOptions.Validate()`** (PR-C) — public validation method invoked at
+  `QueryAsync` entry. Throws `ArgumentOutOfRangeException` for a negative
+  `SparseTopK` / `DenseTopK`, a non-positive `RrfK`, or an undefined `FusionMethod`;
+  throws `ArgumentException` for `SourceWeights` with length ≠ 2 or a negative weight.
 - **`HybridMeta`** typed sub-record (PR-C) — attached to `ResponseMeta.Hybrid`
   whenever the hybrid path was engaged. Omitted from JSON when null, preserving
   byte-for-byte 2.5.0 `_meta` snapshots.

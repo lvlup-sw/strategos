@@ -21,6 +21,10 @@ public sealed class OntologyQueryToolHybridTests
     [Before(Test)]
     public void Setup()
     {
+        // The missing-provider warn-once latch is process-wide static (issue #78
+        // item 4), so reset it per test to keep the "warns exactly once" assertion
+        // independent of test execution order.
+        HybridQueryCoordinator.ResetWarnOnceLatch();
         _graph = TestOntologyGraphFactory.CreateTradingGraph();
         _objectSetProvider = Substitute.For<IObjectSetProvider>();
         _eventStreamProvider = Substitute.For<IEventStreamProvider>();
@@ -102,7 +106,10 @@ public sealed class OntologyQueryToolHybridTests
 
     // ---- Task 31: semantic + hybridOptions + no provider → degraded ----
 
+    // Serialized against every other test that trips the process-wide warn-once
+    // latch (item 4) so the warning-count assertions are not raced by parallel tests.
     [Test]
+    [NotInParallel("HybridWarnOnceLatch")]
     public async Task QueryAsync_SemanticWithHybridOptions_NoProviderRegistered_DenseOnly_DegradedNoKeywordProvider_WarnsOnce()
     {
         var items = new List<object> { new { Id = "p1" } };
@@ -461,6 +468,79 @@ public sealed class OntologyQueryToolHybridTests
         var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).ToList();
         await Assert.That(errors.Count).IsEqualTo(1);
         await Assert.That(errors[0].Exception).IsSameReferenceAs(sparseFault);
+    }
+
+    // ---- Issue #78 item 1: Sparse empty (non-null, zero rows) → dense-only, Degraded="sparse-empty" ----
+
+    [Test]
+    public async Task QueryAsync_HybridSparseReturnsEmpty_DenseOnly_DegradedSparseEmpty_NoWarnOrError()
+    {
+        // The sparse leg succeeds but contributes no candidates. Per design §6.6 /
+        // DIM-7, HybridMeta.Hybrid is true only when sparse actually contributed,
+        // so this surfaces as dense-only with Degraded="sparse-empty" — NOT a
+        // Hybrid=true envelope with a null sparseTopScore. Empty is not a failure,
+        // so nothing is logged.
+        var denseItems = new List<object> { new TestItem("doc-a", "AAPL") };
+        var denseScores = new List<double> { 0.91 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(denseItems, denseItems.Count, ObjectSetInclusion.Properties, denseScores));
+
+        var keywordProvider = Substitute.For<IKeywordSearchProvider>();
+        keywordProvider
+            .SearchAsync(Arg.Any<KeywordSearchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<KeywordSearchResult>>(Array.Empty<KeywordSearchResult>()));
+
+        var logger = new CapturingLogger<OntologyQueryTool>();
+        var tool = BuildTool(logger, keywordProvider: keywordProvider);
+
+        var union = await tool.QueryAsync(
+            objectType: "TestPosition",
+            domain: "trading",
+            semanticQuery: "tech stocks",
+            hybridOptions: new HybridQueryOptions());
+
+        var result = (SemanticQueryResult)union;
+        await Assert.That(result.Items.Cast<TestItem>().Select(i => i.Id).ToList())
+            .IsEquivalentTo(new[] { "doc-a" });
+        await Assert.That(result.Items).HasCount().EqualTo(1);
+        await Assert.That(result.Scores).IsEquivalentTo(new[] { 0.91 });
+        await Assert.That(result.Meta.Hybrid).IsNotNull();
+        await Assert.That(result.Meta.Hybrid!.Hybrid).IsFalse();
+        await Assert.That(result.Meta.Hybrid.Degraded).IsEqualTo("sparse-empty");
+        await Assert.That(result.Meta.Hybrid.FusionMethod).IsNull();
+        await Assert.That(result.Meta.Hybrid.SparseTopScore).IsNull();
+        // Empty is a legitimate result, not a fault — no warning, no error.
+        await Assert.That(logger.Entries.Count).IsEqualTo(0);
+    }
+
+    // ---- Issue #78 item 4: warn-once is per-process (static), not per-instance ----
+
+    [Test]
+    [NotInParallel("HybridWarnOnceLatch")]
+    public async Task QueryAsync_NoProvider_AcrossTwoToolInstances_WarnsOncePerProcess()
+    {
+        // Item 4: the missing-provider warning is latched per process (static), so a
+        // second OntologyQueryTool instance sharing the process does NOT re-warn.
+        // Setup() reset the latch, so the first instance owns the single warning.
+        var items = new List<object> { new { Id = "p1" } };
+        var scores = new List<double> { 0.9 };
+        _objectSetProvider
+            .ExecuteSimilarityAsync<object>(Arg.Any<SimilarityExpression>(), Arg.Any<CancellationToken>())
+            .Returns(new ScoredObjectSetResult<object>(items, items.Count, ObjectSetInclusion.Properties, scores));
+
+        var loggerA = new CapturingLogger<OntologyQueryTool>();
+        var loggerB = new CapturingLogger<OntologyQueryTool>();
+        var toolA = BuildTool(loggerA, keywordProvider: null);
+        var toolB = BuildTool(loggerB, keywordProvider: null);
+
+        await toolA.QueryAsync(objectType: "TestPosition", domain: "trading",
+            semanticQuery: "q", hybridOptions: new HybridQueryOptions());
+        await toolB.QueryAsync(objectType: "TestPosition", domain: "trading",
+            semanticQuery: "q", hybridOptions: new HybridQueryOptions());
+
+        await Assert.That(loggerA.Entries.Count(e => e.Level == LogLevel.Warning)).IsEqualTo(1);
+        await Assert.That(loggerB.Entries.Count(e => e.Level == LogLevel.Warning)).IsEqualTo(0);
     }
 
     // ---- Task 38: Dense failure → propagates (no fallback to sparse-only) ----
