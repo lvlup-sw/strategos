@@ -125,4 +125,70 @@ public class ProjectionTests
         await Assert.That(skill.StepType).DoesNotContain("Strategos.Tests")
             .Because("LB-2: the moniker must not leak the CLR namespace.");
     }
+
+    /// <summary>
+    /// T21 — LB-2: the projection is <b>export-only</b> in 0.2.0. Reflection
+    /// asserts there is no public rehydration API (no <c>FromContract</c> /
+    /// deserialize-to-<c>WorkflowDefinition&lt;TState&gt;</c> member) anywhere on
+    /// the projection surface — that space is reserved for a future V-next, not
+    /// shipped now.
+    /// </summary>
+    [Test]
+    public async Task Projection_ExposesNoRehydrationApi_In_0_2_0()
+    {
+        var projectionType = typeof(WorkflowDefinitionProjection);
+
+        var publicMethods = projectionType.GetMethods(
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
+
+        foreach (var method in publicMethods)
+        {
+            // No method named like a rehydration / deserialize entry point.
+            var name = method.Name;
+            var looksLikeRehydration =
+                name.Contains("FromContract", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Deserialize", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Rehydrate", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ToWorkflow", StringComparison.Ordinal)
+                || name.StartsWith("ToBuilder", StringComparison.Ordinal);
+            await Assert.That(looksLikeRehydration).IsFalse()
+                .Because($"LB-2: {name} would be a rehydration API; none ships in 0.2.0.");
+
+            // No public method returns a builder WorkflowDefinition<T> (the
+            // export direction returns the wire type only).
+            var returnType = method.ReturnType;
+            var returnsBuilderIr = returnType.IsGenericType
+                && returnType.GetGenericTypeDefinition() == typeof(WorkflowDefinition<>);
+            await Assert.That(returnsBuilderIr).IsFalse()
+                .Because($"LB-2: {name} must not reconstruct the builder IR (export-only).");
+        }
+    }
+
+    /// <summary>
+    /// T21 hygiene — the #50 swap correction: the builder IR in
+    /// <c>src/Strategos/Definitions/</c> is the build/execution authority and is
+    /// <b>retained</b>, never deleted in favour of the wire records. Asserts the
+    /// load-bearing builder definitions still exist as compiled types.
+    /// </summary>
+    [Test]
+    public async Task BuilderDefinitions_AreRetained_NotDeletedForWireContract()
+    {
+        // The generic builder root and the CLR-typed / lambda-bearing step
+        // definition cannot be generated wire records — they must remain.
+        await Assert.That(typeof(WorkflowDefinition<>).IsClass).IsTrue();
+        await Assert.That(typeof(Strategos.Definitions.StepDefinition)).IsNotNull();
+
+        // StepDefinition retains the live CLR handle and the delegate the wire
+        // contract deliberately cannot carry (proving the two IRs are distinct).
+        var stepTypeProp = typeof(Strategos.Definitions.StepDefinition)
+            .GetProperty(nameof(Strategos.Definitions.StepDefinition.StepType));
+        await Assert.That(stepTypeProp!.PropertyType).IsEqualTo(typeof(Type))
+            .Because("the builder StepDefinition keeps StepType as a live System.Type.");
+        var lambdaProp = typeof(Strategos.Definitions.StepDefinition)
+            .GetProperty(nameof(Strategos.Definitions.StepDefinition.LambdaDelegate));
+        await Assert.That(typeof(Delegate).IsAssignableFrom(
+                Nullable.GetUnderlyingType(lambdaProp!.PropertyType) ?? lambdaProp.PropertyType))
+            .IsTrue()
+            .Because("the builder StepDefinition keeps the executable Delegate the wire IR drops.");
+    }
 }
