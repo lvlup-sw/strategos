@@ -49,7 +49,7 @@ jobs:
   basileus-smoke:
     # DR-11 / T-022 release-readiness gate.
     #
-    # Packs LevelUp.Strategos.Agents at the pinned 2.7.0
+    # Packs LevelUp.Strategos.Agents at a synthetic 2.7.0-smoke version
     # version into a directory-based local feed, then restores + builds
     # + runs the smoke project at tests/basileus-smoke/. The smoke
     # project's BasileusConsumedSurfaceTests asserts (a) the basileus-

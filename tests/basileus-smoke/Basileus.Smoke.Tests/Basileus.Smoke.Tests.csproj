@@ -36,11 +36,13 @@
   <ItemGroup>
     <!--
       Pulled from sibling local-feed/ via nuget.config in this directory.
-      Pin to 2.7.0 explicitly: this project's job is to fail restore
-      loudly the moment the production csproj's <Version> drifts off the
-      version basileus expects.
+      Pinned to the synthetic 2.7.0-smoke version that
+      scripts/pack-to-local-feed.sh stamps onto the packed artifact. That
+      version exists only in the local feed (nuget.org will never carry it), so
+      this resolves the freshly-packed Agents unambiguously and fails restore
+      loudly if the pack step did not run.
     -->
-    <PackageReference Include="LevelUp.Strategos.Agents" Version="2.7.0" />
+    <PackageReference Include="LevelUp.Strategos.Agents" Version="2.7.0-smoke" />
     <PackageReference Include="TUnit" Version="1.2.11" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
   </ItemGroup>
