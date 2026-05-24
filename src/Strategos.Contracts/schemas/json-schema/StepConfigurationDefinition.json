@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "StepConfigurationDefinition.json",
+    "type": "object",
+    "properties": {
+        "confidenceThreshold": {
+            "type": "number",
+            "description": "Confidence threshold below which the low-confidence handler fires, if set."
+        }
+    },
+    "description": "Wire-IR step configuration (issue #50). Placeholder shape — the full\nconfidence / retry / compensation / validation sub-definitions land in T16."
+}

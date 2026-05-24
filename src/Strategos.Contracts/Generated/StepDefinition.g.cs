@@ -6,27 +6,20 @@
 // =============================================================================
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Wire-IR step definition (issue #50). Placeholder shape — the 5-kind
-/// discriminated union (`skill | handler | gate | delegate | approval`) and the
-/// reserved `runtime` slot land in T14.
+/// Wire-IR step definition (issue #50): a discriminated union over the five step
+/// kinds. Each arm pins its `kind` discriminator const and spreads the shared
+/// `StepCommon` fields. This is the wire shape both consumers (Exarchos Zod,
+/// Basileus) derive from.
 /// </summary>
-public sealed record StepDefinition
-{
-    /// <summary>
-    /// Stable step identifier.
-    /// </summary>
-    [JsonPropertyName("stepId")]
-    public string StepId { get; init; } = default!;
-
-    /// <summary>
-    /// Step name (the builder&apos;s `StepDefinition.StepName`).
-    /// </summary>
-    [JsonPropertyName("stepName")]
-    public string StepName { get; init; } = default!;
-}
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(SkillStep), "skill")]
+[JsonDerivedType(typeof(HandlerStep), "handler")]
+[JsonDerivedType(typeof(GateStep), "gate")]
+[JsonDerivedType(typeof(DelegateStep), "delegate")]
+[JsonDerivedType(typeof(ApprovalStep), "approval")]
+public abstract record StepDefinition;

@@ -1,20 +1,22 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "StepDefinition.json",
-    "type": "object",
-    "properties": {
-        "stepId": {
-            "type": "string",
-            "description": "Stable step identifier."
+    "anyOf": [
+        {
+            "$ref": "SkillStep.json"
         },
-        "stepName": {
-            "type": "string",
-            "description": "Step name (the builder's `StepDefinition.StepName`)."
+        {
+            "$ref": "HandlerStep.json"
+        },
+        {
+            "$ref": "GateStep.json"
+        },
+        {
+            "$ref": "DelegateStep.json"
+        },
+        {
+            "$ref": "ApprovalStep.json"
         }
-    },
-    "required": [
-        "stepId",
-        "stepName"
     ],
-    "description": "Wire-IR step definition (issue #50). Placeholder shape — the 5-kind\ndiscriminated union (`skill | handler | gate | delegate | approval`) and the\nreserved `runtime` slot land in T14."
+    "description": "Wire-IR step definition (issue #50): a discriminated union over the five step\nkinds. Each arm pins its `kind` discriminator const and spreads the shared\n`StepCommon` fields. This is the wire shape both consumers (Exarchos Zod,\nBasileus) derive from."
 }

@@ -61,12 +61,19 @@ public static class RecordEmitter
             docs[fileName] = SchemaDoc.Classify(fileName, parsed.RootElement);
         }
 
+        // Second pass — index every discriminated-union arm to the union it
+        // belongs to (and the discriminator value its `kind` const carries), so
+        // the arm record can be emitted as a derived type of the union base and
+        // System.Text.Json polymorphism round-trips on `kind`.
+        var armToUnion = BuildArmIndex(docs);
+
         foreach (var doc in docs.Values)
         {
             string? source = doc.Kind switch
             {
                 SchemaKind.Enum => EmitEnum(doc),
-                SchemaKind.Record => EmitRecord(doc, docs),
+                SchemaKind.DiscriminatedUnion => EmitUnionBase(doc, docs),
+                SchemaKind.Record => EmitRecord(doc, docs, armToUnion),
                 _ => null, // open object / scalar alias: not a standalone type.
             };
 
@@ -78,6 +85,84 @@ public static class RecordEmitter
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Maps each union-arm document name to the union it belongs to: the union's
+    /// generated base type name and the discriminator value carried by the arm's
+    /// <c>kind</c> const. Arms not part of any union are absent from the map.
+    /// </summary>
+    private static IReadOnlyDictionary<string, ArmBinding> BuildArmIndex(
+        IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        var index = new Dictionary<string, ArmBinding>(StringComparer.Ordinal);
+        foreach (var doc in docs.Values)
+        {
+            if (doc.Kind != SchemaKind.DiscriminatedUnion)
+            {
+                continue;
+            }
+
+            foreach (var armFile in doc.UnionArmRefs)
+            {
+                if (!docs.TryGetValue(armFile, out var arm))
+                {
+                    continue;
+                }
+
+                // The discriminator value is the arm's `kind` const literal.
+                var discriminator = arm.Properties
+                    .FirstOrDefault(p => string.Equals(p.WireName, "kind", StringComparison.Ordinal))
+                    ?.ConstValue;
+
+                if (discriminator is not null)
+                {
+                    index[armFile] = new ArmBinding(doc.TypeName, discriminator);
+                }
+            }
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// Emits the union base as an abstract record carrying the
+    /// <c>[JsonPolymorphic]</c> discriminator and one <c>[JsonDerivedType]</c>
+    /// per arm, so a serialized arm round-trips through the base-typed property
+    /// (e.g. <c>WorkflowDefinitionV1.Steps</c>).
+    /// </summary>
+    private static string EmitUnionBase(SchemaDoc doc, IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        var sb = new StringBuilder();
+        AppendHeader(sb, usings: ["System.Text.Json.Serialization"]);
+
+        if (!string.IsNullOrEmpty(doc.Description))
+        {
+            AppendXmlDoc(sb, doc.Description!, indent: string.Empty);
+        }
+
+        sb.AppendLine("[JsonPolymorphic(TypeDiscriminatorPropertyName = \"kind\")]");
+        foreach (var armFile in doc.UnionArmRefs)
+        {
+            if (!docs.TryGetValue(armFile, out var arm))
+            {
+                continue;
+            }
+
+            var discriminator = arm.Properties
+                .FirstOrDefault(p => string.Equals(p.WireName, "kind", StringComparison.Ordinal))
+                ?.ConstValue;
+            if (discriminator is null)
+            {
+                continue;
+            }
+
+            sb.Append("[JsonDerivedType(typeof(").Append(arm.TypeName)
+              .Append("), \"").Append(discriminator).AppendLine("\")]");
+        }
+
+        sb.Append("public abstract record ").Append(doc.TypeName).AppendLine(";");
+        return sb.ToString();
     }
 
     private static string EmitEnum(SchemaDoc doc)
@@ -123,7 +208,10 @@ public static class RecordEmitter
         return sb.ToString();
     }
 
-    private static string EmitRecord(SchemaDoc doc, IReadOnlyDictionary<string, SchemaDoc> docs)
+    private static string EmitRecord(
+        SchemaDoc doc,
+        IReadOnlyDictionary<string, SchemaDoc> docs,
+        IReadOnlyDictionary<string, ArmBinding> armToUnion)
     {
         var sb = new StringBuilder();
         AppendHeader(sb, usings: ["System.Collections.Generic", "System.Text.Json.Serialization"]);
@@ -133,12 +221,26 @@ public static class RecordEmitter
             AppendXmlDoc(sb, doc.Description!, indent: string.Empty);
         }
 
-        sb.Append("public sealed record ").Append(doc.TypeName).AppendLine();
+        // A discriminated-union arm derives from the union base and lets
+        // System.Text.Json own the `kind` discriminator (so the arm must not
+        // re-declare it as an ordinary property).
+        var isUnionArm = armToUnion.TryGetValue(doc.FileName, out var binding);
+        var emitProps = isUnionArm
+            ? doc.Properties.Where(p => !string.Equals(p.WireName, "kind", StringComparison.Ordinal)).ToList()
+            : doc.Properties;
+
+        sb.Append("public sealed record ").Append(doc.TypeName);
+        if (isUnionArm)
+        {
+            sb.Append(" : ").Append(binding!.BaseTypeName);
+        }
+
+        sb.AppendLine();
         sb.AppendLine("{");
 
-        for (var i = 0; i < doc.Properties.Count; i++)
+        for (var i = 0; i < emitProps.Count; i++)
         {
-            var prop = doc.Properties[i];
+            var prop = emitProps[i];
             var propName = ToPascalCase(prop.WireName);
             var clrType = MapType(prop, docs, out var isValueEnum, out var isReference);
 
@@ -160,7 +262,7 @@ public static class RecordEmitter
             }
 
             sb.AppendLine();
-            if (i < doc.Properties.Count - 1)
+            if (i < emitProps.Count - 1)
             {
                 sb.AppendLine();
             }
@@ -220,6 +322,8 @@ public static class RecordEmitter
                     isEnum = true;
                     return target.TypeName;
                 case SchemaKind.Record:
+                case SchemaKind.DiscriminatedUnion:
+                    // A union ref resolves to the [JsonPolymorphic] base record.
                     return target.TypeName;
             }
         }
@@ -289,7 +393,15 @@ public static class RecordEmitter
         OpenObjectOrScalar,
         Enum,
         Record,
+        DiscriminatedUnion,
     }
+
+    /// <summary>
+    /// Binds a discriminated-union arm to its union: the generated base type the
+    /// arm derives from, and the discriminator value (the arm's <c>kind</c>
+    /// const) System.Text.Json writes/reads.
+    /// </summary>
+    private sealed record ArmBinding(string BaseTypeName, string Discriminator);
 
     /// <summary>A property of an object schema, flattened from the raw JSON.</summary>
     private sealed record PropertyInfo
@@ -299,6 +411,9 @@ public static class RecordEmitter
         public string? Description { get; init; }
 
         public bool Required { get; init; }
+
+        /// <summary>The <c>const</c> literal value of the property, if any (e.g. a union arm's <c>kind</c>).</summary>
+        public string? ConstValue { get; init; }
 
         /// <summary>Document name a non-array property <c>$ref</c>s, if any.</summary>
         public string? Ref { get; init; }
@@ -330,6 +445,9 @@ public static class RecordEmitter
 
         public IReadOnlyList<PropertyInfo> Properties { get; init; } = [];
 
+        /// <summary>Arm document names (file names) for a discriminated-union document.</summary>
+        public IReadOnlyList<string> UnionArmRefs { get; init; } = [];
+
         public static SchemaDoc Classify(string fileName, JsonElement root)
         {
             var typeName = ToPascalCase(Path.GetFileNameWithoutExtension(fileName));
@@ -350,6 +468,29 @@ public static class RecordEmitter
                     Description = description,
                     EnumValues = values,
                 };
+            }
+
+            // Top-level anyOf of $refs → discriminated union (the TypeSpec
+            // `union` form). Each arm carries its own `kind` const; the union
+            // base is emitted as a [JsonPolymorphic] abstract record.
+            if (root.TryGetProperty("anyOf", out var anyOfEl)
+                && anyOfEl.ValueKind == JsonValueKind.Array)
+            {
+                var armRefs = anyOfEl.EnumerateArray()
+                    .Where(a => a.TryGetProperty("$ref", out _))
+                    .Select(a => Path.GetFileName(a.GetProperty("$ref").GetString())!)
+                    .ToList();
+                if (armRefs.Count > 0)
+                {
+                    return new SchemaDoc
+                    {
+                        FileName = fileName,
+                        TypeName = typeName,
+                        Kind = SchemaKind.DiscriminatedUnion,
+                        Description = description,
+                        UnionArmRefs = armRefs,
+                    };
+                }
             }
 
             // Object with named properties → record. Open objects (no
@@ -442,12 +583,19 @@ public static class RecordEmitter
                 ? st.GetString()
                 : null;
 
+            // String const (e.g. a union arm's `kind` discriminator literal, or
+            // the IR root's `schemaVersion: "1.0"`).
+            string? constValue = prop.TryGetProperty("const", out var c) && c.ValueKind == JsonValueKind.String
+                ? c.GetString()
+                : null;
+
             return new PropertyInfo
             {
                 WireName = wireName,
                 Description = description,
                 Required = required,
                 ScalarType = scalar,
+                ConstValue = constValue,
             };
         }
     }
