@@ -105,4 +105,66 @@ public class AtomicityTests
             }
         }
     }
+
+    /// <summary>
+    /// Injects a failure in the publish window — after the prior export has been
+    /// moved aside but before the staged export lands at the destination — and
+    /// asserts the prior good export is recovered (restored to the destination
+    /// with its original contents), never destroyed.
+    /// </summary>
+    [Test]
+    public async Task FixtureExport_PublishPhaseFailure_RecoversPriorExport()
+    {
+        var destination = Path.Combine(
+            Path.GetTempPath(), "strategos-fixture-atomicity-" + Guid.NewGuid().ToString("N"));
+        var parent = Path.GetDirectoryName(destination)!;
+
+        try
+        {
+            // 1. Establish a good prior export and record a sentinel file count.
+            var good = FixtureExporter.Export(WorkflowCorpus.All(), destination);
+            var goodFileCount = Directory.GetFiles(destination, "*.json", SearchOption.AllDirectories).Length;
+            await Assert.That(goodFileCount).IsGreaterThan(0);
+
+            // 2. Re-export, failing in the publish window: staging completed and
+            //    the prior dest was moved aside, but the temp has not yet landed.
+            await Assert.That(() => FixtureExporter.Export(
+                    WorkflowCorpus.All(),
+                    destination,
+                    onBeforePublish: () =>
+                        throw new InvalidOperationException("injected publish-phase failure")))
+                .Throws<InvalidOperationException>();
+
+            // 3. The prior good export is recovered at the destination — not lost.
+            await Assert.That(Directory.Exists(destination)).IsTrue()
+                .Because("a publish-phase failure must restore the prior export, not destroy it.");
+            var afterFileCount = Directory.GetFiles(destination, "*.json", SearchOption.AllDirectories).Length;
+            await Assert.That(afterFileCount).IsEqualTo(goodFileCount)
+                .Because("the recovered destination must hold the prior export's contents intact.");
+            await Assert.That(File.Exists(Path.Combine(destination, "index.json"))).IsTrue();
+
+            // 4. No staging or move-aside residue leaks after recovery.
+            await Assert.That(Directory.GetDirectories(parent, ".builder-fixtures.tmp-*").Length).IsEqualTo(0)
+                .Because("a failed publish must clean up its temp staging directory.");
+            await Assert.That(Directory.GetDirectories(parent, ".builder-fixtures.old-*").Length).IsEqualTo(0)
+                .Because("a recovered publish must not leak a move-aside (.old) directory.");
+        }
+        finally
+        {
+            if (Directory.Exists(destination))
+            {
+                Directory.Delete(destination, recursive: true);
+            }
+
+            foreach (var tmp in Directory.GetDirectories(parent, ".builder-fixtures.tmp-*"))
+            {
+                Directory.Delete(tmp, recursive: true);
+            }
+
+            foreach (var old in Directory.GetDirectories(parent, ".builder-fixtures.old-*"))
+            {
+                Directory.Delete(old, recursive: true);
+            }
+        }
+    }
 }

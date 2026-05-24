@@ -55,16 +55,24 @@ internal static class FixtureExporter
     /// Optional hook (test seam) applied to each case before serialization; used
     /// by the atomicity test to inject a mid-export failure.
     /// </param>
+    /// <param name="onBeforePublish">
+    /// Optional hook (test seam) invoked after the existing destination has been
+    /// moved aside but before the staged temp is moved into place; used by the
+    /// atomicity test to inject a publish-phase failure and assert the prior
+    /// export is recovered rather than destroyed.
+    /// </param>
     /// <returns>The written manifest.</returns>
     public static Manifest Export(
         IReadOnlyList<WorkflowCorpus.Case> cases,
         string destination,
-        Action<WorkflowCorpus.Case>? caseTransform = null)
+        Action<WorkflowCorpus.Case>? caseTransform = null,
+        Action? onBeforePublish = null)
     {
         var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(destination))!;
         Directory.CreateDirectory(parent);
         var temp = Path.Combine(parent, ".builder-fixtures.tmp-" + Guid.NewGuid().ToString("N"));
         var moveAside = Path.Combine(parent, ".builder-fixtures.old-" + Guid.NewGuid().ToString("N"));
+        var published = false;
 
         try
         {
@@ -106,7 +114,13 @@ internal static class FixtureExporter
                 Directory.Move(destination, moveAside);
             }
 
+            // Test seam: simulate a crash in the window where the prior export is
+            // aside but the new one is not yet in place — the path that must not
+            // destroy the last good export.
+            onBeforePublish?.Invoke();
+
             Directory.Move(temp, destination);
+            published = true;
 
             if (hadExisting)
             {
@@ -122,11 +136,21 @@ internal static class FixtureExporter
                 Directory.Delete(temp, recursive: true);
             }
 
-            // Reclaim the aside copy if publish failed after moving the prior
-            // destination aside but before deleting it.
-            if (Directory.Exists(moveAside))
+            // If publish failed after moving the prior destination aside but
+            // before the temp landed at destination, the aside copy is the last
+            // good export. Restore it rather than deleting it; only reclaim the
+            // aside copy on the success path (where destination is already in
+            // place and the prior copy is genuinely redundant).
+            if (!published && Directory.Exists(moveAside))
             {
-                Directory.Delete(moveAside, recursive: true);
+                if (!Directory.Exists(destination))
+                {
+                    Directory.Move(moveAside, destination);
+                }
+                else
+                {
+                    Directory.Delete(moveAside, recursive: true);
+                }
             }
         }
     }
