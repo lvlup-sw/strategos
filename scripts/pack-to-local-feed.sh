@@ -65,10 +65,19 @@ echo "Expecting: $EXPECTED_NUPKG_NAME"
 rm -f "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.nupkg \
       "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.snupkg
 
+# NoWarn NU5104: this smoke gate packs Strategos.Agents *in isolation* in a
+# tagless CI checkout (--no-tags --depth=1), so MinVer resolves the core
+# LevelUp.Strategos dependency to a prerelease (0.0.0-alpha.0). A stable Agents
+# 2.7.0 depending on that prerelease trips NU5104, but here it is a false
+# positive — the smoke only validates the basileus-consumed surface against the
+# packed artifact. Real release dependency hygiene is enforced by the publish
+# job (which checks out the v-tag → core is stable 2.7.0) and the Pack (verify)
+# CI gate.
 if ! dotnet pack "$AGENTS_CSPROJ" \
        -c Release \
        -o "$FEED_DIR_ABS" \
        --nologo \
+       -p:NoWarn=NU5104 \
        -v:m; then
   echo "FAIL: dotnet pack of $AGENTS_CSPROJ failed." >&2
   exit 2
