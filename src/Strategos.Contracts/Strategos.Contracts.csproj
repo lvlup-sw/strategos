@@ -4,10 +4,24 @@
     <PackageId>LevelUp.Strategos.Contracts</PackageId>
     <Description>Cross-product schema substrate: TypeSpec-canonical SDLC event, workflow-IR, and invariant contracts emitted as C# records (this DLL) and JSON Schema (NuGet content, consumed by Exarchos).</Description>
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Generated records carry their own auto-generated banner; suppress
+         doc-comment requirements on the emitted partial surface only. -->
+    <ContractsSchemasDir>$(MSBuildProjectDirectory)/schemas/json-schema</ContractsSchemasDir>
+    <ContractsGeneratedDir>$(MSBuildProjectDirectory)/Generated</ContractsGeneratedDir>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+  </ItemGroup>
+
+  <!-- The emitted records under Generated/*.g.cs are picked up by the SDK's
+       default Compile glob. They are the consumer-facing contract surface,
+       compiled into the DLL, and emitter-owned (see codegen-guard CI); never edit. -->
+
+  <!-- JSON Schema is embedded as NuGet content so language-neutral consumers
+       (Exarchos) receive it with the package (T4). -->
+  <ItemGroup>
+    <Content Include="schemas/**/*.json" Pack="true" PackagePath="contentFiles/any/any/schemas/" />
   </ItemGroup>
 
 </Project>

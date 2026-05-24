@@ -22,6 +22,9 @@
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <!-- Analyzers provided by Lvlup.Build -->
     <PackageVersion Include="TUnit" Version="1.2.11" />
+    <!-- Contracts C# emitter: NJsonSchema parses emitted JSON Schema; records are
+         emitted from a template tuned to INV-6/INV-7 (sealed record + init + IReadOnlyList). -->
+    <PackageVersion Include="NJsonSchema" Version="11.6.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
     <!-- PostgreSQL / pgvector -->
