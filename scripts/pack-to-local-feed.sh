@@ -31,14 +31,23 @@
 #   0  pack succeeded and the expected nupkg is present
 #   1  invalid arguments / setup error
 #   2  pack failed (regression in Strategos.Agents.csproj)
-#   3  pack succeeded but produced an unexpected version (likely
-#      <Version> override drifted off 2.7.0-preview.2)
+#   3  pack succeeded but produced an unexpected version
+#
+# Versioning note: Strategos.Agents.csproj is MinVer-derived (no explicit
+# <Version> pin) so it ships 2.7.0 at the release tag and 0.0.0-alpha.0 on
+# tagless CI, uniform with every sibling. The smoke gate does not care about the
+# real shipping version — it validates the basileus-consumed surface against a
+# packed artifact — so we pack at a deterministic SYNTHETIC prerelease version
+# here (overriding MinVer for this pack only). It is prerelease, so it may depend
+# on the prerelease core MinVer produces on tagless CI without tripping NU5104;
+# and nuget.org will never carry it, so the smoke project's PackageReference
+# resolves it unambiguously from the local feed.
 # -----------------------------------------------------------------------
 set -euo pipefail
 
 FEED_DIR="${1:-./local-feed}"
-EXPECTED_VERSION="2.7.0-preview.2"
-EXPECTED_NUPKG_NAME="LevelUp.Strategos.Agents.${EXPECTED_VERSION}.nupkg"
+SMOKE_VERSION="2.7.0-smoke"
+EXPECTED_NUPKG_NAME="LevelUp.Strategos.Agents.${SMOKE_VERSION}.nupkg"
 
 # Resolve to absolute path so downstream messages are unambiguous, even
 # if the script is invoked from a deeper cwd.
@@ -65,10 +74,16 @@ echo "Expecting: $EXPECTED_NUPKG_NAME"
 rm -f "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.nupkg \
       "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.snupkg
 
+# Pack at the synthetic prerelease SMOKE_VERSION. AgentsSmokeVersion is consumed
+# only by Strategos.Agents.csproj (a guarded PropertyGroup), so the override does
+# NOT propagate to the core LevelUp.Strategos ProjectReference — core stays
+# MinVer-derived and the stamped dependency floats low (prerelease on tagless CI),
+# which is why a prerelease SMOKE_VERSION avoids NU5104.
 if ! dotnet pack "$AGENTS_CSPROJ" \
        -c Release \
        -o "$FEED_DIR_ABS" \
        --nologo \
+       -p:AgentsSmokeVersion="$SMOKE_VERSION" \
        -v:m; then
   echo "FAIL: dotnet pack of $AGENTS_CSPROJ failed." >&2
   exit 2
@@ -78,7 +93,7 @@ if [[ ! -f "$FEED_DIR_ABS/$EXPECTED_NUPKG_NAME" ]]; then
   echo "FAIL: expected nupkg $EXPECTED_NUPKG_NAME not produced in $FEED_DIR_ABS." >&2
   echo "Produced packages:" >&2
   ls -1 "$FEED_DIR_ABS" >&2 || true
-  echo "Hint: check <Version> in src/Strategos.Agents/Strategos.Agents.csproj." >&2
+  echo "Hint: SMOKE_VERSION ($SMOKE_VERSION) must match the smoke project's PackageReference." >&2
   exit 3
 fi
 

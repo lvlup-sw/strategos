@@ -5,10 +5,24 @@
     <PackageId>LevelUp.Strategos.Agents</PackageId>
     <Description>Microsoft Agent Framework integration for Strategos. Provides abstractions for LLM-powered workflow steps with conversation continuity, streaming responses, and agent selection.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- Explicit override of MinVer-derived version for DR-11 migration smoke (T-022). MinVer takes over after v2.7.0-preview.2 release tag lands. -->
+    <!-- Version is MinVer-derived from the release tag, uniform with every sibling
+         package (2.7.0 at v2.7.0; 0.0.0-alpha.0 on tagless CI). The earlier
+         explicit 2.7.0-preview.2 / 2.7.0 pin was removed at GA: a stable pin made
+         tagless pack gates (Pack verify) emit NU5104, since a stable package
+         cannot depend on the prerelease (0.0.0-alpha.0) core that MinVer produces
+         without a tag. -->
+  </PropertyGroup>
+
+  <!-- Basileus release-readiness smoke gate (scripts/pack-to-local-feed.sh) packs
+       THIS project at a deterministic synthetic prerelease version by passing
+       -p:AgentsSmokeVersion=…. The property is consumed only here, so it does not
+       leak onto the core LevelUp.Strategos ProjectReference dependency (which stays
+       MinVer-derived and floats low on tagless CI). Empty in every normal build,
+       so MinVer governs the real shipped version. -->
+  <PropertyGroup Condition="'$(AgentsSmokeVersion)' != ''">
     <MinVerSkip>true</MinVerSkip>
-    <Version>2.7.0-preview.2</Version>
-    <PackageVersion>2.7.0-preview.2</PackageVersion>
+    <Version>$(AgentsSmokeVersion)</Version>
+    <PackageVersion>$(AgentsSmokeVersion)</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
