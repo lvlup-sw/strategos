@@ -4,6 +4,7 @@ import "./Events/Envelope.tsp";
 import "./Events/Lifecycle.tsp";
 import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";
+import "./Workflow/WorkflowDefinitionV1.tsp";
 
 using JsonSchema;
 

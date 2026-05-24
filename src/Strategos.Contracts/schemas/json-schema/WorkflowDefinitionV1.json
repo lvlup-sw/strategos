@@ -1,0 +1,38 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowDefinitionV1.json",
+    "type": "object",
+    "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "const": "1.0",
+            "description": "Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2."
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "StepDefinition.json"
+            },
+            "description": "Ordered step definitions (the discriminated `StepDefinition` union)."
+        },
+        "entryStepId": {
+            "type": "string",
+            "description": "Step id of the workflow entry step, if set."
+        },
+        "terminalStepId": {
+            "type": "string",
+            "description": "Step id of the workflow terminal step, if set."
+        }
+    },
+    "required": [
+        "schemaVersion",
+        "name",
+        "steps"
+    ],
+    "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is pinned to the literal `\"1.0\"`. Future minors are\nadditive-only; a breaking change requires a `WorkflowDefinitionV2` root."
+}
