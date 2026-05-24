@@ -13,6 +13,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// Kind of fabric query recorded by a `fabric.query` audit event (ADR §4.2).
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<FabricQueryType>))]
 public enum FabricQueryType
 {
     [JsonStringEnumMemberName("ontologyQuery")]

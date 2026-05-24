@@ -14,6 +14,7 @@ namespace Strategos.Contracts.Generated;
 /// Delegation policy carried by an ontological record&apos;s process layer (ADR §2.5,
 /// §2.6). Governs whether the router may place tasks locally or remotely.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<DelegationPolicy>))]
 public enum DelegationPolicy
 {
     [JsonStringEnumMemberName("local")]

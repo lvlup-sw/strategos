@@ -90,6 +90,11 @@ public static class RecordEmitter
             AppendXmlDoc(sb, doc.Description!, indent: string.Empty);
         }
 
+        // Serialize as the string wire value (honouring [JsonStringEnumMemberName]),
+        // not the numeric ordinal — cross-product consumers (Basileus, Zod) read
+        // these as strings.
+        sb.Append("[JsonConverter(typeof(JsonStringEnumConverter<")
+          .Append(doc.TypeName).AppendLine(">))]");
         sb.Append("public enum ").Append(doc.TypeName).AppendLine();
         sb.AppendLine("{");
 

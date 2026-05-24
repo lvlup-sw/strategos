@@ -14,6 +14,7 @@ namespace Strategos.Contracts.Generated;
 /// Source system that emitted an SDLC event. Constrains the envelope&apos;s
 /// `source` field to the two products on the contract boundary.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<EventSource>))]
 public enum EventSource
 {
     [JsonStringEnumMemberName("exarchos")]

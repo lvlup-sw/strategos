@@ -13,6 +13,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// Outcome of a coding attempt.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CodingAttemptOutcome>))]
 public enum CodingAttemptOutcome
 {
     [JsonStringEnumMemberName("success")]

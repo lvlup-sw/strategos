@@ -14,6 +14,7 @@ namespace Strategos.Contracts.Generated;
 /// Lifecycle status of an ontological record (ADR §2.5). The Wolverine saga
 /// transitions a record through these states as intent events are applied.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<RecordStatus>))]
 public enum RecordStatus
 {
     [JsonStringEnumMemberName("proposed")]

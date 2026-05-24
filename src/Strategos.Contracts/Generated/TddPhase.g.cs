@@ -13,6 +13,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// TDD cycle phase carried by `task.progressed` events.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TddPhase>))]
 public enum TddPhase
 {
     [JsonStringEnumMemberName("red")]
