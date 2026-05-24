@@ -5,6 +5,14 @@
     <PackageId>LevelUp.Strategos.Agents</PackageId>
     <Description>Microsoft Agent Framework integration for Strategos. Provides abstractions for LLM-powered workflow steps with conversation continuity, streaming responses, and agent selection.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Explicit, deterministic package version for the basileus release-readiness
+         smoke gate (scripts/pack-to-local-feed.sh + tests/basileus-smoke), which
+         pins to this exact version to fail loudly if it drifts. Bumped to the
+         2.7.0 GA. Keep this, the script's EXPECTED_VERSION, and the smoke
+         project's PackageReference in lockstep. -->
+    <MinVerSkip>true</MinVerSkip>
+    <Version>2.7.0</Version>
+    <PackageVersion>2.7.0</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>

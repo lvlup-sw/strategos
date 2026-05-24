@@ -36,11 +36,11 @@
   <ItemGroup>
     <!--
       Pulled from sibling local-feed/ via nuget.config in this directory.
-      Pin to 2.7.0-preview.2 explicitly: this project's job is to fail
-      restore loudly the moment the production csproj's <Version> drifts
-      off the version basileus expects.
+      Pin to 2.7.0 explicitly: this project's job is to fail restore
+      loudly the moment the production csproj's <Version> drifts off the
+      version basileus expects.
     -->
-    <PackageReference Include="LevelUp.Strategos.Agents" Version="2.7.0-preview.2" />
+    <PackageReference Include="LevelUp.Strategos.Agents" Version="2.7.0" />
     <PackageReference Include="TUnit" Version="1.2.11" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
   </ItemGroup>

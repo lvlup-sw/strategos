@@ -37,7 +37,7 @@
 set -euo pipefail
 
 FEED_DIR="${1:-./local-feed}"
-EXPECTED_VERSION="2.7.0-preview.2"
+EXPECTED_VERSION="2.7.0"
 EXPECTED_NUPKG_NAME="LevelUp.Strategos.Agents.${EXPECTED_VERSION}.nupkg"
 
 # Resolve to absolute path so downstream messages are unambiguous, even

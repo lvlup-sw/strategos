@@ -11,7 +11,7 @@
 // src/strategos.sln. Two reasons:
 //
 //   1) Chicken-and-egg with CI: the smoke project's <PackageReference>
-//      to LevelUp.Strategos.Agents 2.7.0-preview.2 only resolves AFTER
+//      to LevelUp.Strategos.Agents 2.7.0 only resolves AFTER
 //      `dotnet pack` populates the sibling local-feed/. The main
 //      build-test job restores src/strategos.sln before any pack step,
 //      so including this csproj there would break that job.
