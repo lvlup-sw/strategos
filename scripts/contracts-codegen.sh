@@ -23,6 +23,11 @@ if [ ! -d node_modules/@typespec ]; then
 fi
 
 echo "[contracts-codegen] tsp compile ..."
+# Clean stale emitted schemas so a removed/renamed TypeSpec model does not
+# linger as an orphan JSON Schema (the json-schema emitter does not prune its
+# own output). This keeps the codegen-guard diff honest: a deletion in TypeSpec
+# propagates to schemas/ + Generated/ in one regeneration.
+rm -f "$CONTRACTS_DIR/schemas/json-schema/"*.json
 npx tsp compile .
 
 echo "[contracts-codegen] emitting C# records ..."
