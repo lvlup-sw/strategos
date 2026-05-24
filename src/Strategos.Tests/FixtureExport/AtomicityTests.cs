@@ -7,9 +7,12 @@
 namespace Strategos.Tests.FixtureExport;
 
 /// <summary>
-/// T24 — fixture-export atomicity. A failure part-way through the export must
-/// leave no half-written artifacts directory: fixtures are staged in a temp
-/// directory and published with a single atomic move only on full success.
+/// T24 — fixture-export staging + recoverable publish. A failure part-way
+/// through the export must leave no half-written artifacts directory: fixtures
+/// are staged in a temp directory and published move-aside (existing dest moved
+/// to <c>.old</c>, temp moved into place, <c>.old</c> deleted) only on full
+/// success — so a publish crash leaves the prior destination recoverable rather
+/// than destroyed.
 /// </summary>
 [Property("Category", "FixtureExport")]
 [NotInParallel("fixture-export")]
@@ -55,8 +58,15 @@ public class AtomicityTests
             await Assert.That(tempDirs.Length).IsEqualTo(0)
                 .Because("a failed export must clean up its temp staging directory.");
 
-            // 4. The previously-good destination is untouched (atomic publish:
-            //    the failed run never replaced it).
+            // 3b. No move-aside (.old) directory leaks — the failure happened
+            //     during staging (before publish), so the prior dest was never
+            //     moved aside; and a publish-time aside is reclaimed in finally.
+            var oldDirs = Directory.GetDirectories(parent, ".builder-fixtures.old-*");
+            await Assert.That(oldDirs.Length).IsEqualTo(0)
+                .Because("a failed export must not leak a move-aside (.old) directory.");
+
+            // 4. The previously-good destination is untouched: the failed run
+            //    failed during staging and never reached the publish step.
             await Assert.That(Directory.Exists(destination)).IsTrue();
             var afterFileCount = Directory.GetFiles(destination, "*.json", SearchOption.AllDirectories).Length;
             await Assert.That(afterFileCount).IsEqualTo(goodFileCount)
@@ -65,6 +75,17 @@ public class AtomicityTests
             // The index manifest from the good run is still present and complete.
             await Assert.That(File.Exists(Path.Combine(destination, "index.json"))).IsTrue();
             await Assert.That(good.Count).IsGreaterThanOrEqualTo(100);
+
+            // 5. A successful re-export over an existing destination exercises the
+            //    move-aside publish path and leaves no .old residue.
+            var republished = FixtureExporter.Export(WorkflowCorpus.All(), destination);
+            await Assert.That(republished.Count).IsEqualTo(good.Count);
+            await Assert.That(Directory.GetDirectories(parent, ".builder-fixtures.old-*").Length).IsEqualTo(0)
+                .Because("a successful move-aside publish must delete its .old copy.");
+            await Assert.That(Directory.GetDirectories(parent, ".builder-fixtures.tmp-*").Length).IsEqualTo(0)
+                .Because("a successful publish must leave no temp staging directory.");
+            var republishedFileCount = Directory.GetFiles(destination, "*.json", SearchOption.AllDirectories).Length;
+            await Assert.That(republishedFileCount).IsEqualTo(goodFileCount);
         }
         finally
         {
@@ -76,6 +97,11 @@ public class AtomicityTests
             foreach (var tmp in Directory.GetDirectories(parent, ".builder-fixtures.tmp-*"))
             {
                 Directory.Delete(tmp, recursive: true);
+            }
+
+            foreach (var old in Directory.GetDirectories(parent, ".builder-fixtures.old-*"))
+            {
+                Directory.Delete(old, recursive: true);
             }
         }
     }

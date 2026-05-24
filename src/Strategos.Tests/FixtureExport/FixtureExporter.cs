@@ -17,10 +17,14 @@ namespace Strategos.Tests.FixtureExport;
 /// <c>index.json</c> manifest carrying per-fixture combinator-coverage tags.
 /// </summary>
 /// <remarks>
-/// The export is <b>atomic</b> (T24): every fixture is written into a sibling
-/// temp directory first; only on full success is the destination replaced by a
-/// single move. A failure part-way through leaves no half-written
-/// <c>artifacts/</c> directory.
+/// The export is <b>staged and recoverable</b> (T24): every fixture is written
+/// into a sibling temp directory first; only on full success is the destination
+/// published. Publish is <b>move-aside</b> — the existing destination (if any) is
+/// moved to a <c>.old</c> sibling, the staged temp is moved into place, then the
+/// <c>.old</c> is deleted. A crash during publish therefore leaves the prior
+/// destination recoverable as <c>.old</c> rather than destroyed by a
+/// delete-then-move. A failure part-way through the staging step leaves no
+/// half-written <c>artifacts/</c> directory at all.
 /// </remarks>
 internal static class FixtureExporter
 {
@@ -60,6 +64,7 @@ internal static class FixtureExporter
         var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(destination))!;
         Directory.CreateDirectory(parent);
         var temp = Path.Combine(parent, ".builder-fixtures.tmp-" + Guid.NewGuid().ToString("N"));
+        var moveAside = Path.Combine(parent, ".builder-fixtures.old-" + Guid.NewGuid().ToString("N"));
 
         try
         {
@@ -91,13 +96,23 @@ internal static class FixtureExporter
                 Path.Combine(temp, "index.json"),
                 JsonSerializer.Serialize(manifest, ManifestOptions));
 
-            // Atomic publish: replace the destination in a single move (T24).
-            if (Directory.Exists(destination))
+            // Move-aside publish (T24): move the existing destination aside, move
+            // the staged temp into place, then delete the aside copy. A single
+            // failed Move leaves the prior destination recoverable as `.old`
+            // rather than destroyed (delete-then-move would lose it on a crash).
+            var hadExisting = Directory.Exists(destination);
+            if (hadExisting)
             {
-                Directory.Delete(destination, recursive: true);
+                Directory.Move(destination, moveAside);
             }
 
             Directory.Move(temp, destination);
+
+            if (hadExisting)
+            {
+                Directory.Delete(moveAside, recursive: true);
+            }
+
             return manifest;
         }
         finally
@@ -105,6 +120,13 @@ internal static class FixtureExporter
             if (Directory.Exists(temp))
             {
                 Directory.Delete(temp, recursive: true);
+            }
+
+            // Reclaim the aside copy if publish failed after moving the prior
+            // destination aside but before deleting it.
+            if (Directory.Exists(moveAside))
+            {
+                Directory.Delete(moveAside, recursive: true);
             }
         }
     }
