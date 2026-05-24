@@ -74,7 +74,7 @@ public sealed record SdlcEventEnvelope
     /// Source system that emitted this event.
     /// </summary>
     [JsonPropertyName("source")]
-    public string? Source { get; init; }
+    public EventSource? Source { get; init; }
 
     /// <summary>
     /// Schema version for forward compatibility.

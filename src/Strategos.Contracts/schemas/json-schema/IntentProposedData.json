@@ -1,0 +1,38 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "IntentProposedData.json",
+    "type": "object",
+    "properties": {
+        "recordId": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "processLayer": {
+            "$ref": "ProcessLayerData.json"
+        },
+        "delegationPolicy": {
+            "$ref": "DelegationPolicy.json"
+        },
+        "ontologyVersion": {
+            "type": "string"
+        },
+        "branch": {
+            "type": "string"
+        },
+        "prNumber": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        }
+    },
+    "required": [
+        "recordId",
+        "featureId",
+        "processLayer",
+        "delegationPolicy",
+        "ontologyVersion"
+    ],
+    "description": "Data payload for `intent.proposed` events."
+}

@@ -6,22 +6,19 @@
 // =============================================================================
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Data payload for `TaskProgressed` events — a TDD phase transition.
+/// Source system that emitted an SDLC event. Constrains the envelope&apos;s
+/// `source` field to the two products on the contract boundary.
 /// </summary>
-public sealed record TaskProgressedData
+public enum EventSource
 {
-    [JsonPropertyName("taskId")]
-    public string TaskId { get; init; } = default!;
+    [JsonStringEnumMemberName("exarchos")]
+    Exarchos,
 
-    [JsonPropertyName("tddPhase")]
-    public TddPhase TddPhase { get; init; }
-
-    [JsonPropertyName("detail")]
-    public string? Detail { get; init; }
+    [JsonStringEnumMemberName("basileus")]
+    Basileus,
 }

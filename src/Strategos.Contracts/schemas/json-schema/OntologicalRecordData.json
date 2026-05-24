@@ -1,0 +1,54 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "OntologicalRecordData.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "status": {
+            "$ref": "RecordStatus.json"
+        },
+        "createdAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "ontologyVersion": {
+            "type": "string",
+            "description": "Pins the ontology graph version the record was created against."
+        },
+        "branch": {
+            "type": "string",
+            "description": "VCS branch the record is scoped to."
+        },
+        "prNumber": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "description": "Correlated GitHub PR number (null until a PR exists)."
+        },
+        "processLayer": {
+            "$ref": "ProcessLayerData.json"
+        },
+        "domainLayer": {
+            "$ref": "DomainLayerData.json"
+        }
+    },
+    "required": [
+        "id",
+        "featureId",
+        "status",
+        "createdAt",
+        "updatedAt",
+        "ontologyVersion",
+        "processLayer"
+    ],
+    "description": "Composite ontological record (ADR §2.5) — a Marten event-sourced aggregate.\nCarries the process layer (Exarchos) and, once enriched, the domain layer\n(Basileus)."
+}

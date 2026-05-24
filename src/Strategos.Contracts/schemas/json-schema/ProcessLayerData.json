@@ -1,0 +1,48 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ProcessLayerData.json",
+    "type": "object",
+    "properties": {
+        "designRef": {
+            "type": "string",
+            "description": "Reference to the design document the process layer derives from."
+        },
+        "taskLedger": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Ordered task ledger (TaskSpec shapes land with §4.4)."
+        },
+        "qualityGates": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Quality gates the work must clear (QualityGateSpec shapes land with §4.4)."
+        },
+        "dependencies": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Cross-task dependencies (DependencySpec shapes land with §4.4)."
+        },
+        "delegationPolicy": {
+            "$ref": "DelegationPolicy.json",
+            "description": "Governs local-vs-remote task placement."
+        },
+        "budgetConstraints": {
+            "$ref": "RecordUnknown.json",
+            "description": "Optional budget constraints."
+        }
+    },
+    "required": [
+        "designRef",
+        "taskLedger",
+        "qualityGates",
+        "dependencies",
+        "delegationPolicy"
+    ],
+    "description": "Process layer of an ontological record — authored by Exarchos at `/plan`."
+}

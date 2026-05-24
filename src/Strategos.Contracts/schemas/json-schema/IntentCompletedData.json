@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "IntentCompletedData.json",
+    "type": "object",
+    "properties": {
+        "recordId": {
+            "type": "string"
+        },
+        "featureId": {
+            "type": "string"
+        },
+        "tasksCompleted": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "tasksFailed": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+        },
+        "duration": {
+            "type": "number"
+        }
+    },
+    "required": [
+        "recordId",
+        "featureId",
+        "tasksCompleted",
+        "tasksFailed"
+    ],
+    "description": "Data payload for `intent.completed` events."
+}

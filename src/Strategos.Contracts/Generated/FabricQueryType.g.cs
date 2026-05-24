@@ -6,22 +6,24 @@
 // =============================================================================
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Data payload for `TaskProgressed` events — a TDD phase transition.
+/// Kind of fabric query recorded by a `fabric.query` audit event (ADR §4.2).
 /// </summary>
-public sealed record TaskProgressedData
+public enum FabricQueryType
 {
-    [JsonPropertyName("taskId")]
-    public string TaskId { get; init; } = default!;
+    [JsonStringEnumMemberName("ontologyQuery")]
+    OntologyQuery,
 
-    [JsonPropertyName("tddPhase")]
-    public TddPhase TddPhase { get; init; }
+    [JsonStringEnumMemberName("designValidation")]
+    DesignValidation,
 
-    [JsonPropertyName("detail")]
-    public string? Detail { get; init; }
+    [JsonStringEnumMemberName("domainStateResolution")]
+    DomainStateResolution,
+
+    [JsonStringEnumMemberName("intentRegister")]
+    IntentRegister,
 }

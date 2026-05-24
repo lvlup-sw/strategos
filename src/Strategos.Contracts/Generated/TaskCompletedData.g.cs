@@ -29,7 +29,7 @@ public sealed record TaskCompletedData
     public double? Duration { get; init; }
 
     [JsonPropertyName("evidence")]
-    public object? Evidence { get; init; }
+    public TestEvidence? Evidence { get; init; }
 
     [JsonPropertyName("verified")]
     public bool? Verified { get; init; }
@@ -38,7 +38,7 @@ public sealed record TaskCompletedData
     public IReadOnlyList<string>? Implements { get; init; }
 
     [JsonPropertyName("tests")]
-    public IReadOnlyList<object>? Tests { get; init; }
+    public IReadOnlyList<TestRef>? Tests { get; init; }
 
     [JsonPropertyName("files")]
     public IReadOnlyList<string>? Files { get; init; }

@@ -23,8 +23,8 @@ public sealed record CodingAttemptCompletedData
     public int AttemptNumber { get; init; }
 
     [JsonPropertyName("outcome")]
-    public string Outcome { get; init; } = default!;
+    public CodingAttemptOutcome Outcome { get; init; }
 
     [JsonPropertyName("testResults")]
-    public object? TestResults { get; init; }
+    public TestResultSummary? TestResults { get; init; }
 }

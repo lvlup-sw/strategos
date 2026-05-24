@@ -6,22 +6,22 @@
 // =============================================================================
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Data payload for `TaskProgressed` events — a TDD phase transition.
+/// Delegation policy carried by an ontological record&apos;s process layer (ADR §2.5,
+/// §2.6). Governs whether the router may place tasks locally or remotely.
 /// </summary>
-public sealed record TaskProgressedData
+public enum DelegationPolicy
 {
-    [JsonPropertyName("taskId")]
-    public string TaskId { get; init; } = default!;
+    [JsonStringEnumMemberName("local")]
+    Local,
 
-    [JsonPropertyName("tddPhase")]
-    public TddPhase TddPhase { get; init; }
+    [JsonStringEnumMemberName("remote")]
+    Remote,
 
-    [JsonPropertyName("detail")]
-    public string? Detail { get; init; }
+    [JsonStringEnumMemberName("auto")]
+    Auto,
 }

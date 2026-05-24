@@ -1,0 +1,40 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DomainLayerData.json",
+    "type": "object",
+    "properties": {
+        "affectedNodes": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Ontology nodes the change touches (OntologyNodeRef lands with §4.4)."
+        },
+        "validationVerdict": {
+            "$ref": "RecordUnknown.json",
+            "description": "Validation verdict (ValidationVerdict lands with §4.4)."
+        },
+        "blastRadius": {
+            "$ref": "RecordUnknown.json",
+            "description": "Blast radius of the change (BlastRadius lands with §4.4)."
+        },
+        "patternViolations": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Pattern violations surfaced by validation."
+        },
+        "existingPatterns": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordUnknown.json"
+            },
+            "description": "Existing patterns the change should follow."
+        }
+    },
+    "required": [
+        "affectedNodes"
+    ],
+    "description": "Domain layer of an ontological record — enriched by Basileus on\n`intent.proposed` via ontology validation."
+}

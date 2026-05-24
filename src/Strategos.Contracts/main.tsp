@@ -2,6 +2,7 @@ import "@typespec/json-schema";
 import "./Events/Enums.tsp";
 import "./Events/Envelope.tsp";
 import "./Events/Lifecycle.tsp";
+import "./Events/OntologicalLifecycle.tsp";
 
 using JsonSchema;
 

@@ -6,22 +6,24 @@
 // =============================================================================
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Data payload for `TaskProgressed` events — a TDD phase transition.
+/// Outcome of a coding attempt.
 /// </summary>
-public sealed record TaskProgressedData
+public enum CodingAttemptOutcome
 {
-    [JsonPropertyName("taskId")]
-    public string TaskId { get; init; } = default!;
+    [JsonStringEnumMemberName("success")]
+    Success,
 
-    [JsonPropertyName("tddPhase")]
-    public TddPhase TddPhase { get; init; }
+    [JsonStringEnumMemberName("tests_failed")]
+    TestsFailed,
 
-    [JsonPropertyName("detail")]
-    public string? Detail { get; init; }
+    [JsonStringEnumMemberName("budget_exhausted")]
+    BudgetExhausted,
+
+    [JsonStringEnumMemberName("loop_detected")]
+    LoopDetected,
 }

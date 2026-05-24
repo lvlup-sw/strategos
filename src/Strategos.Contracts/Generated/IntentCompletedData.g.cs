@@ -12,16 +12,22 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Data payload for `TaskProgressed` events — a TDD phase transition.
+/// Data payload for `intent.completed` events.
 /// </summary>
-public sealed record TaskProgressedData
+public sealed record IntentCompletedData
 {
-    [JsonPropertyName("taskId")]
-    public string TaskId { get; init; } = default!;
+    [JsonPropertyName("recordId")]
+    public string RecordId { get; init; } = default!;
 
-    [JsonPropertyName("tddPhase")]
-    public TddPhase TddPhase { get; init; }
+    [JsonPropertyName("featureId")]
+    public string FeatureId { get; init; } = default!;
 
-    [JsonPropertyName("detail")]
-    public string? Detail { get; init; }
+    [JsonPropertyName("tasksCompleted")]
+    public int TasksCompleted { get; init; }
+
+    [JsonPropertyName("tasksFailed")]
+    public int TasksFailed { get; init; }
+
+    [JsonPropertyName("duration")]
+    public double? Duration { get; init; }
 }
