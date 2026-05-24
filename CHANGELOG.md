@@ -47,6 +47,34 @@ See `src/Strategos.Agents/README.md` for the canonical example and
 `docs/designs/2026-05-17-strategos-agents-meai-10-5.md` for the
 design rationale.
 
+### Added — Tool sources and streaming (DR-9, DR-1)
+
+- **`IToolSource` port + `AgentToolSource` in-process adapter.** Agent
+  steps can register lazily-resolved tool providers via
+  `AgentStepBuilder.WithToolSource(IToolSource)`. `AgentToolSource`
+  builds `AIFunction`s from ordinary CLR members — either by reflecting
+  `[AgentTool]`-annotated methods (`AgentToolSource.FromObject`) or by
+  wrapping explicit delegates (`AgentToolSource.FromDelegates`) — with
+  no `ModelContextProtocol` dependency. The MCP tool-source port was
+  generalized to `IToolSource` during 2.7.0 development; the
+  MCP-specific `McpToolSource` (in `Strategos.Agents.Mcp`) now
+  implements `IToolSource`. Sources merge after `WithTool` tools in
+  registration order, each resolved at most once and cached for the
+  middleware lifetime. Resolution failures surface as
+  `AgentToolSourceException` (`AGAG007`) for the in-process adapter and
+  `AgentMcpException` (`AGAG004`) for the MCP adapter.
+- **`McpToolSource` pins `ModelContextProtocol` 1.3.0** (see
+  `src/Directory.Packages.props`). The MCP adapter is isolated in the
+  `Strategos.Agents.Mcp` package so the core `Strategos.Agents` surface
+  carries no MCP dependency.
+- **Streaming observability via `WithStreaming(IStreamingHandler)`.**
+  When a handler is configured, the step drives the streaming chat path
+  and forwards tokens to the handler as a non-durable side-channel.
+  Streaming funnels into the same terminal typed-result contract as the
+  buffered path — tokens fire before `ApplyResult`, and the typed return
+  shape is unchanged. A handler that throws mid-stream raises
+  `AgentStreamingException` (`AGAG009`) with state untouched.
+
 ## [2.7.0-preview.1] - 2026-05-17
 
 ### G1 — Agent Identity Seam (DR-1..DR-10, supersedes #67/#68/#69, design 2026-05-16-g1-agent-identity-seam)
