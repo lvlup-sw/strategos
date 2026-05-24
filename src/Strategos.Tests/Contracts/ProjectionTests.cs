@@ -4,8 +4,10 @@
 // </copyright>
 // =============================================================================
 
+using System.Reflection;
 using Strategos.Contracts;
 using Strategos.Contracts.Generated;
+using Strategos.Steps;
 using Strategos.Tests.Fixtures;
 
 namespace Strategos.Tests.Contracts;
@@ -51,5 +53,46 @@ public class ProjectionTests
 
         // The entry step is preserved by id.
         await Assert.That(v1.EntryStepId).IsNotNull();
+    }
+
+    /// <summary>
+    /// T19 — LB-1: a lambda step (built via <c>Then(name, delegate)</c>)
+    /// projects to a <c>delegate</c>-kind wire step carrying <c>lambda: true</c>,
+    /// with the delegate body dropped. The projected wire object must expose
+    /// <b>no</b> member capable of holding a delegate / executable.
+    /// </summary>
+    [Test]
+    public async Task ToContract_LambdaStep_EmitsDelegateKindWithMarker_NoCode()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("lambda-workflow")
+            .StartWith<ValidateStep>()
+            .Then("InlineProcess", (state, context, ct) =>
+                Task.FromResult(StepResult<TestWorkflowState>.FromState(state)))
+            .Finally<CompleteStep>();
+
+        var v1 = workflow.ToContract();
+
+        // The inline lambda step projects to a DelegateStep arm.
+        var delegateStep = v1.Steps.OfType<DelegateStep>().SingleOrDefault();
+        await Assert.That(delegateStep).IsNotNull()
+            .Because("the lambda step must project to a single delegate-kind arm.");
+        await Assert.That(delegateStep!.StepName).IsEqualTo("InlineProcess");
+        await Assert.That(delegateStep.Lambda).IsTrue()
+            .Because("LB-1: the dropped body must be made visible by lambda: true.");
+
+        // LB-1 structural guarantee: no member of any projected step arm can
+        // hold executable code — assert no property is a Delegate (or assignable
+        // from one) across the entire generated step type hierarchy.
+        foreach (var step in v1.Steps)
+        {
+            foreach (var prop in step.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var isExecutable = typeof(Delegate).IsAssignableFrom(prop.PropertyType)
+                    || prop.PropertyType == typeof(Delegate);
+                await Assert.That(isExecutable).IsFalse()
+                    .Because($"LB-1: {step.GetType().Name}.{prop.Name} must not carry executable code.");
+            }
+        }
     }
 }
