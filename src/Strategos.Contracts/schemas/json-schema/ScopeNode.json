@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ScopeNode.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "scope"
+        },
+        "file-glob": {
+            "type": "string",
+            "description": "File glob the child check is scoped to (kebab-case wire name)."
+        },
+        "child": {
+            "description": "The child check evaluated within the scope (recurses into CheckNode).",
+            "$ref": "CheckNode.json"
+        }
+    },
+    "required": [
+        "kind",
+        "file-glob",
+        "child"
+    ],
+    "description": "Combinator: `scope` — narrows a child check to files matching a glob. Recurses\ninto `CheckNode` via `child`."
+}

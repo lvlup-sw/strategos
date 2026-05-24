@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "GrepLeaf.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "grep"
+        },
+        "pattern": {
+            "type": "string",
+            "description": "The pattern to match (regex/literal); inert match data, not a command."
+        },
+        "file-glob": {
+            "type": "string",
+            "description": "Optional file glob scoping the match (kebab-case wire name)."
+        }
+    },
+    "required": [
+        "kind",
+        "pattern"
+    ],
+    "description": "Leaf: a `grep` check — a literal/regex pattern match over files selected by an\noptional glob. Declarative-only (LB-1 / INV-4): `pattern` and `file-glob` are\ninert match data, never an executable command. There is no field on this arm\nthat can carry code."
+}
