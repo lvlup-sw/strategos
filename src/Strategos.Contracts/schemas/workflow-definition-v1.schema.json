@@ -1,8 +1,89 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json",
-    "$ref": "#/$defs/WorkflowDefinitionV1",
-    "$defs": {
+    "type": "object",
+    "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "const": "1.0",
+            "description": "Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2."
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/StepDefinition"
+            },
+            "description": "Ordered step definitions (the discriminated `StepDefinition` union)."
+        },
+        "transitions": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/TransitionDefinition"
+            },
+            "description": "Directed transitions between steps."
+        },
+        "branchPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/BranchPointDefinition"
+            },
+            "description": "Branch points (conditional fan-out)."
+        },
+        "loops": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/LoopDefinition"
+            },
+            "description": "Loops (RepeatUntil constructs)."
+        },
+        "forkPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/ForkPointDefinition"
+            },
+            "description": "Fork points (concurrent fan-out / join)."
+        },
+        "failureHandlers": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/FailureHandlerDefinition"
+            },
+            "description": "Workflow-scoped failure handlers."
+        },
+        "approvalPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/ApprovalDefinition"
+            },
+            "description": "Approval points (human-approval pauses)."
+        },
+        "entryStepId": {
+            "type": "string",
+            "description": "Step id of the workflow entry step, if set."
+        },
+        "terminalStepId": {
+            "type": "string",
+            "description": "Step id of the workflow terminal step, if set."
+        }
+    },
+    "required": [
+        "schemaVersion",
+        "name",
+        "steps",
+        "transitions",
+        "branchPoints",
+        "loops",
+        "forkPoints",
+        "failureHandlers",
+        "approvalPoints"
+    ],
+    "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is pinned to the literal `\"1.0\"`. Future minors are\nadditive-only; a breaking change requires a `WorkflowDefinitionV2` root.",
+    "definitions": {
         "ApprovalDefinition": {
             "type": "object",
             "properties": {
@@ -19,11 +100,11 @@
                     "description": "Step id immediately preceding this approval gate."
                 },
                 "escalationHandler": {
-                    "$ref": "#/$defs/ApprovalEscalationDefinition",
+                    "$ref": "#/definitions/ApprovalEscalationDefinition",
                     "description": "Optional escalation handler."
                 },
                 "rejectionHandler": {
-                    "$ref": "#/$defs/ApprovalRejectionDefinition",
+                    "$ref": "#/definitions/ApprovalRejectionDefinition",
                     "description": "Optional rejection handler."
                 }
             },
@@ -44,14 +125,14 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps run on escalation."
                 },
                 "nestedApprovals": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/ApprovalDefinition"
+                        "$ref": "#/definitions/ApprovalDefinition"
                     },
                     "description": "Nested approval gates within the escalation, if any."
                 },
@@ -78,7 +159,7 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps run on rejection."
                 },
@@ -118,11 +199,11 @@
                     "description": "Whether this step terminates the workflow."
                 },
                 "runtime": {
-                    "$ref": "#/$defs/StepRuntime",
+                    "$ref": "#/definitions/StepRuntime",
                     "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
                 },
                 "configuration": {
-                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
                 "approverType": {
@@ -153,7 +234,7 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps executed on this path."
                 },
@@ -162,7 +243,7 @@
                     "description": "Whether this path terminates without rejoining."
                 },
                 "approval": {
-                    "$ref": "#/$defs/ApprovalDefinition",
+                    "$ref": "#/definitions/ApprovalDefinition",
                     "description": "Optional approval gate guarding this path."
                 }
             },
@@ -188,7 +269,7 @@
                 "paths": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/BranchPathDefinition"
+                        "$ref": "#/definitions/BranchPathDefinition"
                     },
                     "description": "Available branch paths."
                 },
@@ -249,11 +330,11 @@
                     "description": "Whether this step terminates the workflow."
                 },
                 "runtime": {
-                    "$ref": "#/$defs/StepRuntime",
+                    "$ref": "#/definitions/StepRuntime",
                     "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
                 },
                 "configuration": {
-                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
                 "lambda": {
@@ -279,7 +360,7 @@
                     "description": "Stable handler identifier."
                 },
                 "scope": {
-                    "$ref": "#/$defs/FailureHandlerScope",
+                    "$ref": "#/definitions/FailureHandlerScope",
                     "description": "Handler scope (workflow | step | forkPath)."
                 },
                 "triggerStepId": {
@@ -289,7 +370,7 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Recovery steps."
                 },
@@ -331,12 +412,12 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps executed on this concurrent path."
                 },
                 "failureHandler": {
-                    "$ref": "#/$defs/FailureHandlerDefinition",
+                    "$ref": "#/definitions/FailureHandlerDefinition",
                     "description": "Optional per-path failure handler."
                 }
             },
@@ -361,7 +442,7 @@
                 "paths": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/ForkPathDefinition"
+                        "$ref": "#/definitions/ForkPathDefinition"
                     },
                     "description": "Concurrent fork paths."
                 },
@@ -402,11 +483,11 @@
                     "description": "Whether this step terminates the workflow."
                 },
                 "runtime": {
-                    "$ref": "#/$defs/StepRuntime",
+                    "$ref": "#/definitions/StepRuntime",
                     "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
                 },
                 "configuration": {
-                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
                 "stepType": {
@@ -447,11 +528,11 @@
                     "description": "Whether this step terminates the workflow."
                 },
                 "runtime": {
-                    "$ref": "#/$defs/StepRuntime",
+                    "$ref": "#/definitions/StepRuntime",
                     "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
                 },
                 "configuration": {
-                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
                 "stepType": {
@@ -492,7 +573,7 @@
                 "bodySteps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps in the loop body."
                 },
@@ -520,7 +601,7 @@
                 "handlerSteps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Steps run when confidence is below threshold."
                 },
@@ -595,11 +676,11 @@
                     "description": "Whether this step terminates the workflow."
                 },
                 "runtime": {
-                    "$ref": "#/$defs/StepRuntime",
+                    "$ref": "#/definitions/StepRuntime",
                     "description": "Reserved federation placement (default `exarchos`); no behavior in 0.2.0."
                 },
                 "configuration": {
-                    "$ref": "#/$defs/StepConfigurationDefinition",
+                    "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
                 "stepType": {
@@ -624,15 +705,15 @@
                     "description": "Confidence threshold below which the low-confidence handler fires."
                 },
                 "onLowConfidence": {
-                    "$ref": "#/$defs/LowConfidenceHandlerDefinition",
+                    "$ref": "#/definitions/LowConfidenceHandlerDefinition",
                     "description": "Low-confidence handler."
                 },
                 "compensation": {
-                    "$ref": "#/$defs/CompensationConfiguration",
+                    "$ref": "#/definitions/CompensationConfiguration",
                     "description": "Compensation configuration."
                 },
                 "retry": {
-                    "$ref": "#/$defs/RetryConfiguration",
+                    "$ref": "#/definitions/RetryConfiguration",
                     "description": "Retry configuration."
                 },
                 "timeout": {
@@ -640,7 +721,7 @@
                     "description": "Step timeout (ISO-8601 duration), if set."
                 },
                 "validation": {
-                    "$ref": "#/$defs/ValidationDefinition",
+                    "$ref": "#/definitions/ValidationDefinition",
                     "description": "Validation guard."
                 }
             },
@@ -649,19 +730,19 @@
         "StepDefinition": {
             "anyOf": [
                 {
-                    "$ref": "#/$defs/SkillStep"
+                    "$ref": "#/definitions/SkillStep"
                 },
                 {
-                    "$ref": "#/$defs/HandlerStep"
+                    "$ref": "#/definitions/HandlerStep"
                 },
                 {
-                    "$ref": "#/$defs/GateStep"
+                    "$ref": "#/definitions/GateStep"
                 },
                 {
-                    "$ref": "#/$defs/DelegateStep"
+                    "$ref": "#/definitions/DelegateStep"
                 },
                 {
-                    "$ref": "#/$defs/ApprovalStep"
+                    "$ref": "#/definitions/ApprovalStep"
                 }
             ],
             "description": "Wire-IR step definition (issue #50): a discriminated union over the five step\nkinds. Each arm pins its `kind` discriminator const and spreads the shared\n`StepCommon` fields. This is the wire shape both consumers (Exarchos Zod,\nBasileus) derive from."
@@ -737,49 +818,49 @@
                 "steps": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/StepDefinition"
+                        "$ref": "#/definitions/StepDefinition"
                     },
                     "description": "Ordered step definitions (the discriminated `StepDefinition` union)."
                 },
                 "transitions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/TransitionDefinition"
+                        "$ref": "#/definitions/TransitionDefinition"
                     },
                     "description": "Directed transitions between steps."
                 },
                 "branchPoints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/BranchPointDefinition"
+                        "$ref": "#/definitions/BranchPointDefinition"
                     },
                     "description": "Branch points (conditional fan-out)."
                 },
                 "loops": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/LoopDefinition"
+                        "$ref": "#/definitions/LoopDefinition"
                     },
                     "description": "Loops (RepeatUntil constructs)."
                 },
                 "forkPoints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/ForkPointDefinition"
+                        "$ref": "#/definitions/ForkPointDefinition"
                     },
                     "description": "Fork points (concurrent fan-out / join)."
                 },
                 "failureHandlers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/FailureHandlerDefinition"
+                        "$ref": "#/definitions/FailureHandlerDefinition"
                     },
                     "description": "Workflow-scoped failure handlers."
                 },
                 "approvalPoints": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/ApprovalDefinition"
+                        "$ref": "#/definitions/ApprovalDefinition"
                     },
                     "description": "Approval points (human-approval pauses)."
                 },

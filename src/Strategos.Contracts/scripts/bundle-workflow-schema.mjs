@@ -26,7 +26,13 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const schemaDir = path.join(projectRoot, "schemas", "json-schema");
 const outPath = path.join(projectRoot, "schemas", "workflow-definition-v1.schema.json");
 
-/** Rewrite every `<Name>.json` $ref to a local `#/$defs/<Name>` pointer. */
+// Use `definitions` (not `$defs`) as the local store: it is the keyword the
+// broadest set of validators — including NJsonSchema, the in-repo C# validator
+// behind the equivalence gate (T23) — resolve `#/definitions/*` against
+// reliably, including sibling references inside a discriminated-union arm.
+const DEFS_KEY = "definitions";
+
+/** Rewrite every `<Name>.json` $ref to a local `#/definitions/<Name>` pointer. */
 function rewriteRefs(node) {
   if (Array.isArray(node)) {
     return node.map(rewriteRefs);
@@ -35,7 +41,7 @@ function rewriteRefs(node) {
     const out = {};
     for (const [k, v] of Object.entries(node)) {
       if (k === "$ref" && typeof v === "string" && v.endsWith(".json")) {
-        out.$ref = `#/$defs/${path.basename(v, ".json")}`;
+        out.$ref = `#/${DEFS_KEY}/${path.basename(v, ".json")}`;
       } else {
         out[k] = rewriteRefs(v);
       }
@@ -91,7 +97,7 @@ async function main() {
     }
   }
 
-  // Build $defs (drop per-doc $schema/$id; rewrite refs to local pointers).
+  // Build definitions (drop per-doc $schema/$id; rewrite refs to local pointers).
   const defs = {};
   for (const name of [...reachable].sort()) {
     const doc = rewriteRefs(await loadSchema(name));
@@ -100,11 +106,17 @@ async function main() {
     defs[name] = doc;
   }
 
+  // Inline the root schema's body at the top level (rather than a bare `$ref`
+  // root) so validators resolve `#/definitions/*` against this document without
+  // a separate registration step. The root's own definition is also retained
+  // under definitions for completeness.
+  const rootBody = defs[ROOT];
+
   const bundle = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: STABLE_ID,
-    $ref: `#/$defs/${ROOT}`,
-    $defs: defs,
+    ...rootBody,
+    [DEFS_KEY]: defs,
   };
 
   await writeFile(outPath, JSON.stringify(bundle, null, 4) + "\n", "utf8");

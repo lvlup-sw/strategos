@@ -75,9 +75,9 @@ public class IrCompletenessTests
             .Because("the $id must identify the workflow IR v1 contract.");
 
         // The bundle is rooted at WorkflowDefinitionV1 and carries the sub-defs
-        // under $defs (a self-contained document for offline validation).
-        await Assert.That(root.TryGetProperty("$defs", out var defs)).IsTrue();
+        // under definitions (a self-contained document for offline validation).
+        await Assert.That(root.TryGetProperty("definitions", out var defs)).IsTrue();
         await Assert.That(defs.TryGetProperty("WorkflowDefinitionV1", out _)).IsTrue()
-            .Because("the bundle must define the IR root under $defs.");
+            .Because("the bundle must define the IR root under definitions.");
     }
 }

@@ -9,6 +9,9 @@
     <PackageReference Include="TUnit" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="MemoryPack" />
+    <!-- #53 equivalence gate (T23): validates every exported builder fixture
+         against the bundled workflow-definition-v1.schema.json. -->
+    <PackageReference Include="NJsonSchema" />
   </ItemGroup>
 
   <ItemGroup>
