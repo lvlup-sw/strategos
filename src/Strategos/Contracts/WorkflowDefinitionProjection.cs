@@ -78,18 +78,69 @@ public static class WorkflowDefinitionProjection
     }
 
     /// <summary>
+    /// The builder-IR step classifications this projection knows how to map onto
+    /// a wire step arm. The builder IR exposes <b>no richer kind discriminator
+    /// today</b> than <see cref="StepDefinition.IsLambdaStep"/>: a step is either
+    /// a lambda step (LB-1 → <c>delegate</c> arm) or a typed/CLR step (LB-2 →
+    /// <c>skill</c> arm). The wire union additionally defines <c>handler</c>,
+    /// <c>gate</c>, and <c>approval</c> arms; those are <b>deliberately not
+    /// produced</b> in 0.2.0 because the builder cannot yet distinguish them. The
+    /// 2-of-5 subset is therefore an <i>asserted decision</i>, not an accident —
+    /// see <c>ProjectionStepKindMappingTests</c>.
+    /// </summary>
+    private enum BuilderStepKind
+    {
+        /// <summary>A typed/CLR step → wire <c>skill</c> arm (LB-2).</summary>
+        Skill,
+
+        /// <summary>A lambda step → wire <c>delegate</c> arm (LB-1).</summary>
+        Delegate,
+    }
+
+    /// <summary>
+    /// Classifies a builder step into one of the recognized
+    /// <see cref="BuilderStepKind"/> values. This is the single place where the
+    /// builder's discriminator is read; growing the builder with a richer kind
+    /// signal means extending this method <b>and</b> the <see cref="ProjectStep"/>
+    /// switch (whose <c>default</c> arm throws so a new, unmapped classification
+    /// can never silently fall through to <c>skill</c>).
+    /// </summary>
+    private static BuilderStepKind ClassifyStep(StepDefinition step) =>
+        step.IsLambdaStep ? BuilderStepKind.Delegate : BuilderStepKind.Skill;
+
+    /// <summary>
     /// Projects a builder step to its discriminated wire arm. A lambda step
     /// (<see cref="StepDefinition.IsLambdaStep"/>) becomes a <c>delegate</c> arm
-    /// with the body dropped (LB-1); every other step becomes a <c>skill</c> arm
-    /// carrying the simple-name CLR moniker (LB-2).
+    /// with the body dropped (LB-1); a typed step becomes a <c>skill</c> arm
+    /// carrying the simple-name CLR moniker (LB-2). The mapping is
+    /// <b>explicit and non-silent</b>: an unrecognized classification hits the
+    /// <c>default</c> arm and throws rather than defaulting to <c>skill</c>, so a
+    /// future builder kind that is added to <see cref="BuilderStepKind"/> but not
+    /// wired here fails loudly instead of being silently mis-projected.
     /// </summary>
-    private static Wire.StepDefinition ProjectStep(StepDefinition step)
-    {
-        if (step.IsLambdaStep)
+    private static Wire.StepDefinition ProjectStep(StepDefinition step) =>
+        ProjectMappedKind(ClassifyStep(step), step);
+
+    /// <summary>
+    /// Maps an explicitly classified <see cref="BuilderStepKind"/> to its wire
+    /// arm. This is the single, non-silent dispatch point: every recognized kind
+    /// has an explicit arm, and the <c>default</c> arm <b>throws</b>
+    /// <see cref="NotSupportedException"/> naming the unmapped kind. A future kind
+    /// added to <see cref="BuilderStepKind"/> without a matching arm here fails
+    /// loudly instead of being silently mis-projected to <c>skill</c>.
+    /// </summary>
+    /// <param name="kind">The classified builder step kind.</param>
+    /// <param name="step">The builder step being projected.</param>
+    /// <returns>The wire step arm for <paramref name="kind"/>.</returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when <paramref name="kind"/> has no explicit wire mapping.
+    /// </exception>
+    private static Wire.StepDefinition ProjectMappedKind(BuilderStepKind kind, StepDefinition step) =>
+        kind switch
         {
             // LB-1: the Delegate body is intentionally not carried — only the
             // structure and a lambda marker survive to the wire.
-            return new Wire.DelegateStep
+            BuilderStepKind.Delegate => new Wire.DelegateStep
             {
                 StepId = step.StepId,
                 StepName = step.StepName,
@@ -97,21 +148,28 @@ public static class WorkflowDefinitionProjection
                 IsTerminal = step.IsTerminal,
                 Configuration = ProjectConfiguration(step.Configuration),
                 Lambda = true,
-            };
-        }
+            },
 
-        return new Wire.SkillStep
-        {
-            StepId = step.StepId,
-            StepName = step.StepName,
-            InstanceName = step.InstanceName,
-            IsTerminal = step.IsTerminal,
-            Configuration = ProjectConfiguration(step.Configuration),
+            BuilderStepKind.Skill => new Wire.SkillStep
+            {
+                StepId = step.StepId,
+                StepName = step.StepName,
+                InstanceName = step.InstanceName,
+                IsTerminal = step.IsTerminal,
+                Configuration = ProjectConfiguration(step.Configuration),
 
-            // LB-2: simple type name, not assembly- or namespace-qualified.
-            StepType = step.StepType.Name,
+                // LB-2: simple type name, not assembly- or namespace-qualified.
+                StepType = step.StepType.Name,
+            },
+
+            // Non-silent guard: any BuilderStepKind not explicitly mapped above
+            // is a projection gap, not a skill step. Throw naming the unmapped
+            // kind rather than silently emitting the wrong wire arm.
+            _ => throw new NotSupportedException(
+                $"No wire-step mapping for builder step kind '{(int)kind}'. " +
+                "Add an explicit arm to WorkflowDefinitionProjection.ProjectMappedKind; " +
+                "the projection must never silently default an unrecognized kind."),
         };
-    }
 
     private static Wire.TransitionDefinition ProjectTransition(TransitionDefinition t) => new()
     {
