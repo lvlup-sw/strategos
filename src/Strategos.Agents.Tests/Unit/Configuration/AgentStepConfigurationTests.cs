@@ -37,7 +37,7 @@ public sealed class AgentStepConfigurationTests
             UserPrompt: userPrompt,
             ApplyResult: apply,
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);
@@ -46,7 +46,7 @@ public sealed class AgentStepConfigurationTests
         await Assert.That(config.UserPrompt).IsEqualTo(userPrompt);
         await Assert.That(config.ApplyResult).IsEqualTo(apply);
         await Assert.That(config.Tools.Count).IsEqualTo(0);
-        await Assert.That(config.McpToolSource).IsNull();
+        await Assert.That(config.ToolSources.Count).IsEqualTo(0);
         await Assert.That(config.ChatOptions).IsNull();
         await Assert.That(config.ChatClientConfigurator).IsNull();
         await Assert.That(config.MaxToolIterations).IsNull();
@@ -56,6 +56,37 @@ public sealed class AgentStepConfigurationTests
         await Assert.That(ctors.Length).IsEqualTo(0); // no public constructors
         var internalCtors = openGeneric.GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance);
         await Assert.That(internalCtors.Length).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Configuration_ToolSources_RejectsNullEntries()
+    {
+        // DR-9: ToolSources is a non-null list that mirrors the Tools null-entry guard.
+        Func<DummyState, string> systemPrompt = _ => "sys";
+        Func<DummyState, string> userPrompt = _ => "user";
+        Func<DummyState, DummyResult, CancellationToken, Task<StepResult<DummyState>>> apply =
+            (s, _, _) => Task.FromResult(new StepResult<DummyState>(s));
+
+        var ex = Assert.Throws<ArgumentException>(() => new AgentStepConfiguration<DummyState, DummyResult>(
+            SystemPrompt: systemPrompt,
+            UserPrompt: userPrompt,
+            ApplyResult: apply,
+            Tools: Array.Empty<AIFunction>(),
+            ToolSources: new IToolSource[] { null! },
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null));
+
+        await Assert.That(ex!.ParamName).IsEqualTo("ToolSources");
+    }
+
+    [Test]
+    public async Task Configuration_NoMcpToolSourceMember()
+    {
+        // Clean break (DR-9): the old MCP-specific member must be gone.
+        var openGeneric = typeof(AgentStepConfiguration<,>);
+        var legacy = openGeneric.GetProperty("McpToolSource", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        await Assert.That(legacy).IsNull();
     }
 
     private sealed record DummyState : IWorkflowState

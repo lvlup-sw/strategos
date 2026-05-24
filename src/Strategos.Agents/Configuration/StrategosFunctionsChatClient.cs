@@ -28,42 +28,45 @@ namespace Strategos.Agents.Configuration;
 /// <c>Strategos.Agents.Tests</c> see it through <c>InternalsVisibleTo</c>.
 /// </para>
 /// <para>
-/// MCP source resolution (DR-5): when an <see cref="IMcpToolSource"/> is supplied,
-/// the resolver is invoked lazily on the first per-request call to
-/// <c>GetResponseAsync</c> / <c>GetStreamingResponseAsync</c>. The resolved
-/// <see cref="AIFunction"/>s are cached for the lifetime of this middleware
-/// instance and merged into <see cref="ChatOptions.Tools"/> as a third source
-/// (after host-supplied and Strategos-registered tools). If resolution fails,
-/// the cache stays empty and the next request retries; the failure is rethrown
-/// wrapped as an <see cref="AgentMcpException"/> (AGAG004). Cancellation flows
-/// through unwrapped.
+/// Tool-source resolution (DR-9): each registered <see cref="IToolSource"/> is
+/// resolved lazily on the first per-request call to <c>GetResponseAsync</c> /
+/// <c>GetStreamingResponseAsync</c>. Each source is resolved at most once and the
+/// aggregated <see cref="AIFunction"/>s are cached for the lifetime of this
+/// middleware instance, then merged into <see cref="ChatOptions.Tools"/> after the
+/// host-supplied and Strategos-registered tools. If resolution fails, the cache
+/// stays empty and the next request retries; the source's own exception propagates
+/// unchanged (the MCP adapter raises <see cref="AgentMcpException"/>/AGAG004; the
+/// in-process adapter raises <c>AgentToolSourceException</c>/AGAG007) — the
+/// middleware does NOT reclassify. Cancellation flows through unwrapped.
 /// </para>
 /// <para>
-/// Name-collision precedence (host &gt; Strategos &gt; MCP): the host's
+/// Name-collision precedence (host &gt; Strategos &gt; tool-sources): the host's
 /// per-request <see cref="ChatOptions.Tools"/> express the most specific intent
-/// and win. Strategos in-process tools win over externally-discovered MCP tools
-/// because the agent owns its own contract while MCP is a fallback skill source.
+/// and win. Strategos in-process tools win over source-discovered tools because the
+/// agent owns its own contract while sources are fallback skill providers. Among
+/// tool-sources, registration order decides.
 /// </para>
 /// </remarks>
 internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
 {
-    private readonly IMcpToolSource? _mcpToolSource;
+    private readonly IReadOnlyList<IToolSource> _toolSources;
     private readonly SemaphoreSlim _resolveLock = new(1, 1);
-    private IReadOnlyList<AIFunction>? _resolvedMcpTools;
+    private IReadOnlyList<AIFunction>? _resolvedSourceTools;
 
     /// <summary>Initializes a new instance of the <see cref="StrategosFunctionsChatClient"/> class.</summary>
     /// <param name="innerClient">The wrapped inner chat client.</param>
     /// <param name="tools">The Strategos-registered <see cref="AIFunction"/> tools.</param>
-    /// <param name="mcpToolSource">Optional MCP tool source (DR-5); resolved lazily on first request.</param>
+    /// <param name="toolSources">Registered tool sources (DR-9); each resolved lazily on first request. Never null; may be empty.</param>
     public StrategosFunctionsChatClient(
         IChatClient innerClient,
         IReadOnlyList<AIFunction> tools,
-        IMcpToolSource? mcpToolSource = null)
+        IReadOnlyList<IToolSource> toolSources)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(tools);
+        ArgumentNullException.ThrowIfNull(toolSources);
         Tools = tools;
-        _mcpToolSource = mcpToolSource;
+        _toolSources = toolSources;
     }
 
     /// <summary>Gets the Strategos-registered AIFunction tools carried by this chain step.</summary>
@@ -110,18 +113,19 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
     /// sources into the caller-supplied <paramref name="options"/> without
     /// mutating the original: (1) host-supplied tools already on
     /// <see cref="ChatOptions.Tools"/>, (2) Strategos-registered <see cref="Tools"/>,
-    /// and (3) MCP-discovered tools (resolved lazily on first call and cached).
-    /// Merge order is [host, Strategos, MCP]; tools whose <see cref="AITool.Name"/>
-    /// is already present are skipped (host wins, then Strategos, then MCP).
+    /// and (3) tool-source-discovered tools (resolved lazily on first call and
+    /// cached). Merge order is [host, Strategos, sources]; tools whose
+    /// <see cref="AITool.Name"/> is already present are skipped (host wins, then
+    /// Strategos, then sources in registration order).
     /// </summary>
     private async Task<ChatOptions> MergeToolsAsync(ChatOptions? options, CancellationToken cancellationToken)
     {
         // Clone so we never mutate caller state — MEAI 10.5 exposes Clone() on ChatOptions.
         var clone = options?.Clone() ?? new ChatOptions();
 
-        var mcpTools = await ResolveMcpToolsAsync(cancellationToken).ConfigureAwait(false);
+        var sourceTools = await ResolveToolsAsync(cancellationToken).ConfigureAwait(false);
 
-        if (Tools.Count == 0 && mcpTools.Count == 0)
+        if (Tools.Count == 0 && sourceTools.Count == 0)
         {
             return clone;
         }
@@ -129,11 +133,11 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
         clone.Tools ??= new List<AITool>();
         var (existingRefs, existingNames) = BuildExistingToolSet(clone.Tools);
 
-        // Source 2: Strategos-registered tools (wins over MCP, loses to host).
+        // Source 2: Strategos-registered tools (wins over tool-sources, loses to host).
         AppendIfAbsent(clone.Tools, Tools, existingRefs, existingNames);
 
-        // Source 3: MCP-discovered tools (lowest precedence).
-        AppendIfAbsent(clone.Tools, mcpTools, existingRefs, existingNames);
+        // Source 3: tool-source-discovered tools (lowest precedence, registration order).
+        AppendIfAbsent(clone.Tools, sourceTools, existingRefs, existingNames);
 
         return clone;
     }
@@ -182,50 +186,47 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
     }
 
     /// <summary>
-    /// Resolves MCP tools lazily on first call. Subsequent successful calls reuse
-    /// the cached list. On failure the cache stays empty so the next call retries;
-    /// the failure is wrapped as an <see cref="AgentMcpException"/>. Cancellation
-    /// is propagated unwrapped.
+    /// Resolves every registered tool source lazily on first call, each at most once,
+    /// aggregating their <see cref="AIFunction"/>s in registration order. Subsequent
+    /// successful calls reuse the cached list. On failure the cache stays empty so the
+    /// next call retries; the failing source's own exception propagates UNCHANGED — the
+    /// MCP adapter raises <see cref="AgentMcpException"/> (AGAG004) and the in-process
+    /// adapter raises <c>AgentToolSourceException</c> (AGAG007); this middleware does
+    /// not reclassify. Cancellation is propagated unwrapped.
     /// </summary>
-    private async Task<IReadOnlyList<AIFunction>> ResolveMcpToolsAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<AIFunction>> ResolveToolsAsync(CancellationToken cancellationToken)
     {
-        if (_mcpToolSource is null)
+        if (_toolSources.Count == 0)
         {
             return Array.Empty<AIFunction>();
         }
 
-        if (_resolvedMcpTools is not null)
+        if (_resolvedSourceTools is not null)
         {
-            return _resolvedMcpTools;
+            return _resolvedSourceTools;
         }
 
         await _resolveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_resolvedMcpTools is not null)
+            if (_resolvedSourceTools is not null)
             {
-                return _resolvedMcpTools;
+                return _resolvedSourceTools;
             }
 
-            IReadOnlyList<AIFunction> resolved;
-            try
+            var aggregated = new List<AIFunction>();
+            foreach (var source in _toolSources)
             {
-                resolved = await _mcpToolSource.GetToolsAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new AgentMcpException(
-                    "MCP tool source failed to resolve tools.",
-                    redactedEndpoint: null,
-                    innerException: ex);
+                // Each source surfaces its own diagnostic; propagate unchanged.
+                var resolved = await source.GetToolsAsync(cancellationToken).ConfigureAwait(false);
+                if (resolved is not null)
+                {
+                    aggregated.AddRange(resolved);
+                }
             }
 
-            _resolvedMcpTools = resolved ?? Array.Empty<AIFunction>();
-            return _resolvedMcpTools;
+            _resolvedSourceTools = aggregated;
+            return _resolvedSourceTools;
         }
         finally
         {
@@ -244,22 +245,23 @@ internal static class StrategosFunctionsChatClientBuilderExtensions
     /// Adds a <see cref="StrategosFunctionsChatClient"/> to the chat pipeline. The
     /// wrapper carries the registered <paramref name="tools"/> forward so a
     /// subsequent <c>UseFunctionInvocation</c> sees them on per-request
-    /// <see cref="ChatOptions.Tools"/>. When <paramref name="mcpToolSource"/> is
-    /// non-null, its tools are resolved lazily on first request and merged as
-    /// a third source (DR-5).
+    /// <see cref="ChatOptions.Tools"/>. Each source in <paramref name="toolSources"/>
+    /// is resolved lazily on first request and merged after the host- and
+    /// Strategos-supplied tools (DR-9).
     /// </summary>
     /// <param name="builder">The <see cref="ChatClientBuilder"/>.</param>
     /// <param name="tools">The accumulated AIFunction tools from the builder.</param>
-    /// <param name="mcpToolSource">Optional MCP tool source; resolved lazily.</param>
+    /// <param name="toolSources">Registered tool sources; resolved lazily. Never null; may be empty.</param>
     /// <returns>The same <paramref name="builder"/> for fluent chaining.</returns>
     public static ChatClientBuilder UseStrategosFunctions(
         this ChatClientBuilder builder,
         IReadOnlyList<AIFunction> tools,
-        IMcpToolSource? mcpToolSource = null)
+        IReadOnlyList<IToolSource> toolSources)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(tools);
+        ArgumentNullException.ThrowIfNull(toolSources);
 
-        return builder.Use(inner => new StrategosFunctionsChatClient(inner, tools, mcpToolSource));
+        return builder.Use(inner => new StrategosFunctionsChatClient(inner, tools, toolSources));
     }
 }

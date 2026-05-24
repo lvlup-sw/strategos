@@ -7,6 +7,7 @@
 using System.Text.Json;
 using Strategos.Abstractions;
 using Strategos.Agents;
+using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
 using Strategos.Agents.Exceptions;
 using Strategos.Steps;
@@ -59,7 +60,7 @@ public sealed class AgentStepBaseExecuteTests
                 return Task.FromResult(new StepResult<TestState>(state with { Answer = result.Answer }));
             },
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);
@@ -116,7 +117,7 @@ public sealed class AgentStepBaseExecuteTests
             UserPrompt: state => state.UserQuery,
             ApplyResult: applyResult,
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);
@@ -174,7 +175,7 @@ public sealed class AgentStepBaseExecuteTests
             UserPrompt: state => state.UserQuery,
             ApplyResult: applyResult,
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);
@@ -240,7 +241,7 @@ public sealed class AgentStepBaseExecuteTests
             UserPrompt: state => state.UserQuery,
             ApplyResult: applyResult,
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);
@@ -293,7 +294,7 @@ public sealed class AgentStepBaseExecuteTests
             UserPrompt: state => state.UserQuery,
             ApplyResult: (state, _, _) => Task.FromResult(new StepResult<TestState>(state)),
             Tools: Array.Empty<AIFunction>(),
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
             ChatClientConfigurator: null,
             MaxToolIterations: null);

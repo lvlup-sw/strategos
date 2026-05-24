@@ -4,11 +4,14 @@
 // </copyright>
 // =============================================================================
 
+using System.Reflection;
 using Microsoft.Extensions.AI;
 using Strategos.Abstractions;
 using Strategos.Agents;
+using Strategos.Agents.Abstractions;
 using Strategos.Agents.Diagnostics;
 using Strategos.Agents.Exceptions;
+using Strategos.Agents.Tests.Fixtures;
 using Strategos.Steps;
 
 namespace Strategos.Agents.Tests.Unit;
@@ -61,6 +64,47 @@ public sealed class AgentStepBuilderToolsTests
 
         await Assert.That(ex.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG003);
         await Assert.That(ex.ToolName).IsEqualTo("collide");
+    }
+
+    [Test]
+    public async Task WithToolSource_MultipleCalls_Accumulate()
+    {
+        // DR-9: WithToolSource accumulates each registered source in order.
+        var sourceA = new InProcessTestToolSource(Array.Empty<AIFunction>());
+        var sourceB = new InProcessTestToolSource(Array.Empty<AIFunction>());
+
+        var builder = new AgentStepBuilder<TestState, string>();
+        builder.WithSystemPrompt(_ => "sys");
+        builder.WithUserPrompt(_ => "user");
+        builder.WithApplyResult((state, _, _) => Task.FromResult(new StepResult<TestState>(state)));
+        builder.WithToolSource(sourceA);
+        builder.WithToolSource(sourceB);
+
+        var step = (AgentStepBase<TestState, string>)builder.Build(FakeChatClient());
+        var configuration = step.Configuration;
+
+        await Assert.That(configuration.ToolSources.Count).IsEqualTo(2);
+        await Assert.That(configuration.ToolSources[0]).IsSameReferenceAs((IToolSource)sourceA);
+        await Assert.That(configuration.ToolSources[1]).IsSameReferenceAs((IToolSource)sourceB);
+    }
+
+    [Test]
+    public async Task WithToolSource_Null_ThrowsArgumentNull()
+    {
+        var builder = new AgentStepBuilder<TestState, string>();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => builder.WithToolSource(null!));
+
+        await Assert.That(ex!.ParamName).IsEqualTo("source");
+    }
+
+    [Test]
+    public async Task WithMcpToolSource_DoesNotExist()
+    {
+        // Clean break (DR-9): the old builder method must be gone — no [Obsolete] shim.
+        var method = typeof(AgentStepBuilder<TestState, string>)
+            .GetMethod("WithMcpToolSource", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        await Assert.That(method).IsNull();
     }
 
     private static IChatClient FakeChatClient()

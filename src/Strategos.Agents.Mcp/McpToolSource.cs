@@ -13,7 +13,7 @@ using Strategos.Agents.Exceptions;
 namespace Strategos.Agents.Mcp;
 
 /// <summary>
-/// Default <see cref="IMcpToolSource"/> implementation wrapping the official C# MCP SDK
+/// Default <see cref="IToolSource"/> implementation wrapping the official C# MCP SDK
 /// (<c>ModelContextProtocol.Client</c>). Resolves <see cref="AIFunction"/>s from a remote
 /// MCP server so Strategos agents can consume external skill providers.
 /// </summary>
@@ -30,7 +30,7 @@ namespace Strategos.Agents.Mcp;
 /// <see cref="OperationCanceledException"/>; only domain-level MCP failures are wrapped.
 /// </para>
 /// </remarks>
-public sealed class McpToolSource : IMcpToolSource, IAsyncDisposable
+public sealed class McpToolSource : IToolSource, IAsyncDisposable
 {
     private readonly Uri _endpoint;
     private readonly TimeSpan _timeout;

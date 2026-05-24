@@ -5,6 +5,7 @@
 // =============================================================================
 
 using Microsoft.Extensions.AI;
+using Strategos.Agents.Abstractions;
 using Strategos.Agents.Diagnostics;
 using Strategos.Agents.Exceptions;
 using Strategos.Agents.Mcp;
@@ -32,6 +33,15 @@ public sealed class McpToolSourceTests
         await Assert.That(ex.RedactedEndpoint).IsNotNull();
         await Assert.That(ex.RedactedEndpoint!.Contains("secret-token")).IsFalse();
         await Assert.That(ex.RedactedEndpoint.Contains("nobody")).IsFalse();
+    }
+
+    [Test]
+    public async Task McpToolSource_Implements_IToolSource()
+    {
+        // DR-7: the MCP adapter implements the generalized IToolSource port.
+        var source = McpToolSource.ForHttpEndpoint(new Uri("http://127.0.0.1:1/mcp"), TimeSpan.FromSeconds(2));
+        await using var _ = source;
+        await Assert.That(source is IToolSource).IsTrue();
     }
 
     [Test]

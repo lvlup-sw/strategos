@@ -210,7 +210,7 @@ public sealed class AgentStepBaseIntegrationTests
         //
         // T-020 acceptance for DR-9 (iii) MCP tool resolution + (iv) host-middleware-
         // injection ordering. The `multiply` tool is supplied ONLY through the
-        // IMcpToolSource adapter (no .WithTool(...) call for it) so a successful
+        // IToolSource adapter (no .WithTool(...) call for it) so a successful
         // round-trip mechanically proves the MCP path is live.
         //
         // The host middleware (UseLogging) is injected via .ConfigureChatClient(...)
@@ -244,10 +244,10 @@ public sealed class AgentStepBaseIntegrationTests
             },
             name: "multiply");
 
-        // In-process IMcpToolSource adapter (hand-rolled — NOT the production
+        // In-process IToolSource adapter (hand-rolled — NOT the production
         // McpToolSource). Yields the multiply tool and counts resolver calls so
         // the cache assertion can be made directly against the adapter.
-        var adapter = new InProcessTestMcpToolSource(new[] { multiplyTool });
+        var adapter = new InProcessTestToolSource(new[] { multiplyTool });
 
         // Fake terminal IChatClient. Same pattern as the T-019 GREEN test but
         // emits multiply(3, 4) instead of add(2, 3) and returns {"product": 12}.
@@ -303,8 +303,8 @@ public sealed class AgentStepBaseIntegrationTests
         });
 
         // MCP path ONLY — no WithTool(multiplyTool). If multiply ever fires, it
-        // *must* have come through the IMcpToolSource adapter.
-        builder.WithMcpToolSource(adapter);
+        // *must* have come through the IToolSource adapter.
+        builder.WithToolSource(adapter);
 
         // Host configurator: UseLogging wraps the entire downstream chain, so the
         // LoggingChatClient entry-side log fires before descending into
@@ -332,7 +332,7 @@ public sealed class AgentStepBaseIntegrationTests
         await Assert.That(fakeCallCount).IsEqualTo(2);
 
         // The multiply tool was invoked exactly once during this ExecuteAsync.
-        // It was ONLY supplied via the IMcpToolSource adapter — no .WithTool(...).
+        // It was ONLY supplied via the IToolSource adapter — no .WithTool(...).
         // Any invocation here proves the MCP-discovered tool surfaced to
         // FunctionInvokingChatClient through the real builder chain.
         await Assert.That(toolInvocations).IsEqualTo(1);
