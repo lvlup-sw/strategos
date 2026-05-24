@@ -1,4 +1,6 @@
 import "@typespec/json-schema";
+import "./Events/Enums.tsp";
+import "./Events/Envelope.tsp";
 
 using JsonSchema;
 

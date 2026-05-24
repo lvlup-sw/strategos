@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FabricQueryType.json",
+    "type": "string",
+    "enum": [
+        "ontologyQuery",
+        "designValidation",
+        "domainStateResolution",
+        "intentRegister"
+    ],
+    "description": "Kind of fabric query recorded by a `fabric.query` audit event (ADR §4.2)."
+}
