@@ -63,7 +63,7 @@ design rationale.
   middleware lifetime. Resolution failures surface as
   `AgentToolSourceException` (`AGAG007`) for the in-process adapter and
   `AgentMcpException` (`AGAG004`) for the MCP adapter.
-- **`McpToolSource` pins `ModelContextProtocol` 1.3.0** (see
+- **`McpToolSource` pins `ModelContextProtocol` 1.3.0** (2025-11-25 MCP spec revision; see
   `src/Directory.Packages.props`). The MCP adapter is isolated in the
   `Strategos.Agents.Mcp` package so the core `Strategos.Agents` surface
   carries no MCP dependency.

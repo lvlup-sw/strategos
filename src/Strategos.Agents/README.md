@@ -117,6 +117,10 @@ services.AddStrategosAgents()
     .AddStreamingCallback<WebSocketStreamingCallback>();
 ```
 
+> `AddStreamingCallback`/`IStreamingCallback` wire the legacy specialist-agent
+> streaming surface. For `AgentStep` streaming, use
+> `.WithStreaming(IStreamingHandler)` — see [Streaming Responses](#streaming-responses).
+
 ## Core Abstractions
 
 | Interface | Purpose |
@@ -125,7 +129,7 @@ services.AddStrategosAgents()
 | `AgentStepBuilder<TState, TResult>` | Fluent builder; the only sanctioned construction path |
 | `IConversationalState` | State with per-agent conversation threads |
 | `IConversationThreadManager` | Manages conversation thread lifecycle |
-| `IStreamingCallback` | Handles real-time token streaming |
+| `IStreamingCallback` | Token streaming for the legacy specialist-agent surface (distinct from `WithStreaming`/`IStreamingHandler` on agent steps) |
 
 ## Documentation
 

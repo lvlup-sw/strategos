@@ -96,7 +96,8 @@ public sealed class AgentStepBuilderOptionsTests
         var assembly = typeof(AgentStepBuilder<,>).Assembly;
         var streamingTypes = assembly.GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract)
-            .Where(t => t.Name.Contains("Streaming", StringComparison.Ordinal))
+            .Where(t => t.Name.Contains("Streaming", StringComparison.Ordinal)
+                     || t.Name.Contains("ToolSource", StringComparison.Ordinal))
             .ToArray();
 
         await Assert.That(streamingTypes).IsNotEmpty();
