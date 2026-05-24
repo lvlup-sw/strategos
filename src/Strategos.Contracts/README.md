@@ -71,3 +71,26 @@ plugin. New `.tsp` models flow through `scripts/contracts-codegen.sh`
 automatically; no per-family emitter wiring is needed, but any new wire-name
 encoding (e.g. `@encodedName` kebab-case for #98) must round-trip through the
 `JsonPropertyName` the template emits.
+
+### Emitter capabilities (extended in Family 1 / #36)
+
+The emitter reads the raw JSON Schema directly (NJsonSchema is no longer on the
+emit path) and classifies each document as enum / record / open-object:
+
+- **String enums → C# `enum`.** Each member carries
+  `[JsonStringEnumMemberName("<wire>")]` when the C# name diverges from the wire
+  value (kebab/snake/camel/reserved-word), and the enum type carries
+  `[JsonConverter(typeof(JsonStringEnumConverter<T>))]` so it serializes to its
+  **string** wire value — never a numeric ordinal — for Basileus and Zod. This
+  is the `@encodedName` round-trip path #98 (kebab-case wire names) inherits.
+- **`$ref` resolution.** A property `$ref`-ing another document resolves to the
+  generated enum/record type (was `object`/`string`); enum refs are value types,
+  record refs are reference types (so required record refs get the `= default!`
+  INV-7 null-forgiving default).
+- **Open objects** (`Record<unknown>`) are not emitted as standalone records;
+  they surface as `object`-typed payload properties on their referrers.
+
+`scripts/contracts-codegen.sh` now prunes stale `schemas/json-schema/*.json`
+before `tsp compile`, so a removed/renamed TypeSpec model does not linger as an
+orphan schema/record (the json-schema emitter does not prune its own output) —
+keeping the codegen-guard diff honest across P2/P3 renames.
