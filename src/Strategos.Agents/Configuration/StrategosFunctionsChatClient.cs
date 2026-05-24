@@ -252,9 +252,10 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
                 }
                 catch (Exception ex)
                 {
-                    // Foreign (non-conforming) adapter: redact URI user-info and wrap.
+                    // Foreign adapter: redact, and never retain the raw ex as inner — it re-leaks the credential via ToString(). (PR #94)
                     var redacted = UriRedaction.RedactUserInfo(ex.Message);
-                    throw new AgentToolSourceException(redacted, source.GetType().FullName, ex);
+                    var safeInner = redacted == ex.Message ? ex : new Exception($"{ex.GetType().Name}: {redacted}");
+                    throw new AgentToolSourceException(redacted, source.GetType().FullName, safeInner);
                 }
 
                 if (resolved is not null)

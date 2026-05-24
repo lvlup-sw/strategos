@@ -195,8 +195,19 @@ public sealed class StrategosFunctionsChatClientToolSourceInjectionTests
         await Assert.That(caught.Message).Contains("mcp.example");
         await Assert.That(caught.Message).DoesNotContain("s3cr3t");
         await Assert.That(caught.Message).DoesNotContain("alice:s3cr3t");
+
+        // #85 leak guard (CodeRabbit, PR #94): redacting only the outer Message is
+        // insufficient — Exception.ToString() recurses into InnerException, so a raw
+        // foreign exception retained as the inner re-surfaces the credential. The full
+        // string projection must therefore stay clean.
+        await Assert.That(caught.ToString()).DoesNotContain("s3cr3t");
+        await Assert.That(caught.ToString()).DoesNotContain("alice:s3cr3t");
+
+        // A non-null inner is retained for diagnosis, but redacted and carrying only the
+        // original exception type name (no secret).
         await Assert.That(caught.InnerException).IsNotNull();
-        await Assert.That(caught.InnerException).IsTypeOf<InvalidOperationException>();
+        await Assert.That(caught.InnerException!.Message).DoesNotContain("s3cr3t");
+        await Assert.That(caught.InnerException.Message).Contains(nameof(InvalidOperationException));
     }
 
     [Test]
