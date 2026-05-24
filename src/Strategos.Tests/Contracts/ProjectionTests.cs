@@ -95,4 +95,34 @@ public class ProjectionTests
             }
         }
     }
+
+    /// <summary>
+    /// T20 — LB-2: a typed (CLR) step projects its <see cref="System.Type"/> to
+    /// the <b>simple type name</b> moniker, never assembly- or namespace-
+    /// qualified, keeping the wire contract language-neutral for the TS/Zod
+    /// consumer.
+    /// </summary>
+    [Test]
+    public async Task ToContract_TypedStep_UsesSimpleNameMoniker_NotAssemblyQualified()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("typed-workflow")
+            .StartWith<ValidateStep>()
+            .Finally<CompleteStep>();
+
+        var v1 = workflow.ToContract();
+
+        var skill = v1.Steps.OfType<SkillStep>().First();
+
+        // Exactly the simple name — equal to typeof(T).Name.
+        await Assert.That(skill.StepType).IsEqualTo(typeof(ValidateStep).Name);
+
+        // No namespace qualifier, no assembly qualifier, no CLR path leakage.
+        await Assert.That(skill.StepType).DoesNotContain(".")
+            .Because("LB-2: the moniker must not be namespace-qualified.");
+        await Assert.That(skill.StepType).DoesNotContain(",")
+            .Because("LB-2: the moniker must not be assembly-qualified.");
+        await Assert.That(skill.StepType).DoesNotContain("Strategos.Tests")
+            .Because("LB-2: the moniker must not leak the CLR namespace.");
+    }
 }
