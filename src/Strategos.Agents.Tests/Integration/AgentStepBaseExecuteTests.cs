@@ -62,7 +62,6 @@ public sealed class AgentStepBaseExecuteTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
@@ -119,7 +118,6 @@ public sealed class AgentStepBaseExecuteTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
@@ -177,7 +175,6 @@ public sealed class AgentStepBaseExecuteTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
@@ -243,7 +240,6 @@ public sealed class AgentStepBaseExecuteTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);
@@ -296,7 +292,6 @@ public sealed class AgentStepBaseExecuteTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(chatClient, configuration);

@@ -94,7 +94,6 @@ public sealed class AgentStepBaseToolLoopTests
             Tools: new[] { fakeTool },
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: chatOptions,
-            ChatClientConfigurator: null,
             MaxToolIterations: 8);
 
         var orchestrator = new AgentStepBase<TestState, TestDto>(composedClient, configuration);

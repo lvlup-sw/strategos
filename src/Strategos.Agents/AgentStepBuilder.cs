@@ -155,7 +155,14 @@ public sealed class AgentStepBuilder<TState, TResult>
     /// Construct the configured <see cref="IAgentStep{TState, TResult}"/>. Throws
     /// <see cref="AgentBuilderValidationException"/> (AGAG001) if any required hook is missing.
     /// </summary>
-    /// <param name="chatClient">The MEAI chat client to invoke.</param>
+    /// <param name="chatClient">
+    /// The MEAI chat client placed at the bottom of the composed pipeline. The builder
+    /// wraps it with <c>UseStrategosFunctions</c> (tool-list injection) and
+    /// <c>UseFunctionInvocation</c> (bounded tool-call loop) in that fixed order, then
+    /// applies the optional host configurator outermost. Tool names registered via
+    /// <see cref="WithTool"/> must be unique at this point — duplicate names cause
+    /// <see cref="AgentDuplicateToolException"/> (AGAG003) before the pipeline is built.
+    /// </param>
     /// <returns>The configured agent step.</returns>
     public IAgentStep<TState, TResult> Build(IChatClient chatClient)
     {
@@ -193,7 +200,6 @@ public sealed class AgentStepBuilder<TState, TResult>
             Tools: toolList,
             ToolSources: toolSources,
             ChatOptions: _chatOptions,
-            ChatClientConfigurator: _chatClientConfigurator,
             MaxToolIterations: _maxToolIterations,
             StreamingHandler: _streamingHandler);
 
@@ -205,6 +211,25 @@ public sealed class AgentStepBuilder<TState, TResult>
     /// Composes the IChatClient pipeline in fixed order (DR-6):
     /// host configurator → <c>UseStrategosFunctions</c> → <c>UseFunctionInvocation</c>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Uses <see cref="ChatClientBuilder"/> directly rather than a DI container so
+    /// that the builder remains dependency-injection-agnostic (DR-6 escape hatch).
+    /// The host supplies the outermost middleware via <see cref="ConfigureChatClient"/>
+    /// and the <paramref name="innerClient"/> at the bottom via <see cref="Build"/>;
+    /// everything in between is Strategos-owned and applied here in a fixed sequence.
+    /// </para>
+    /// <para>
+    /// Pipeline order (outermost → innermost, matching call order on the builder):
+    /// <list type="number">
+    /// <item><description>Host configurator (logging, OTel, distributed cache, etc.).</description></item>
+    /// <item><description><c>UseStrategosFunctions</c> — injects the accumulated tool list and
+    /// resolves tool sources into <c>ChatOptions.Tools</c> on each request.</description></item>
+    /// <item><description><c>UseFunctionInvocation</c> — runs the tool-call loop bounded by
+    /// <c>MaxToolIterations</c> (default: <see cref="AgentStepBase{TState, TResult}.DefaultMaxToolIterations"/>).</description></item>
+    /// </list>
+    /// </para>
+    /// </remarks>
     private IChatClient ComposeChatClient(
         IChatClient innerClient,
         IReadOnlyList<AIFunction> tools,

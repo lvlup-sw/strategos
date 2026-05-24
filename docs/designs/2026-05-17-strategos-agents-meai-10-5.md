@@ -35,10 +35,10 @@ Alternatives A (keep abstract base, add generic) and B (parallel base classes) a
                     │   .WithUserPrompt(Func<TState, string>)              │
                     │   .WithApplyResult(Func<TState, TResult, CT, Task<StepResult<TState>>>)
                     │   .WithTool(AIFunction)                              │
-                    │   .WithMcpToolSource(IMcpToolSource)                 │
+                    │   .WithToolSource(IToolSource)                       │
                     │   .WithChatOptions(ChatOptions)                      │
                     │   .ConfigureChatClient(Action<ChatClientBuilder>)    │
-                    │   .Build() → IAgentStep<TState, TResult>             │
+                    │   .Build(IChatClient) → IAgentStep<TState, TResult>  │
                     └──────────────────────────────────────────────────────┘
                                             │
                                             ▼
