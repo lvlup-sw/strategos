@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.7.0] - 2026-05-18
+
+### Changed (BREAKING) — Agent step contract
+
+The single-arity `IAgentStep<TState>` / `AgentStepBase<TState>` types
+have been removed (DR-11, see `meai-10-5/T-021`). LLM-powered steps now
+implement `IAgentStep<TState, TResult>` and are built exclusively
+through `AgentStepBuilder<TState, TResult>`. The builder enforces the
+`SystemPrompt` / `UserPrompt` / `ApplyResult` hooks at `Build()` time
+(AGAG001) and produces a sealed `AgentStepBase<TState, TResult>` —
+subclassing is no longer the construction path.
+
+Before (deleted):
+
+```csharp
+public class AnalyzeStep : IAgentStep<DocumentState>
+{
+    public string GetSystemPrompt() => "...";
+    public Type? GetOutputSchemaType() => typeof(DocumentAnalysis);
+
+    public async Task<StepResult<DocumentState>> ExecuteAsync(
+        DocumentState state, StepContext ctx, CancellationToken ct) => ...;
+}
+```
+
+After:
+
+```csharp
+var step = new AgentStepBuilder<DocumentState, DocumentAnalysis>()
+    .WithSystemPrompt(_ => "...")
+    .WithUserPrompt(s => s.DocumentText)
+    .WithApplyResult((state, result, _) =>
+        Task.FromResult(new StepResult<DocumentState>(state with { Analysis = result })))
+    .Build(chatClient);
+```
+
+See `src/Strategos.Agents/README.md` for the canonical example and
+`docs/designs/2026-05-17-strategos-agents-meai-10-5.md` for the
+design rationale.
+
 ## [2.7.0-preview.1] - 2026-05-17
 
 ### G1 — Agent Identity Seam (DR-1..DR-10, supersedes #67/#68/#69, design 2026-05-16-g1-agent-identity-seam)
@@ -231,6 +271,7 @@ First stable release of the Strategos library for building production-grade agen
 - Transactional outbox pattern
 - Time-travel debugging via event replay
 
+[2.7.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0
 [2.7.0-preview.1]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0-preview.1
 [2.6.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.6.0
 [1.1.1]: https://github.com/lvlup-sw/strategos/releases/tag/v1.1.1

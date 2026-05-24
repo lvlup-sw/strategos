@@ -46,6 +46,44 @@ jobs:
         # the abstractions package from the consumer's compile classpath.
         run: bash scripts/verify-generator-consumer-build.sh ./packages
 
+  basileus-smoke:
+    # DR-11 / T-022 release-readiness gate.
+    #
+    # Packs LevelUp.Strategos.Agents at the pinned v2.7.0-preview.2
+    # version into a directory-based local feed, then restores + builds
+    # + runs the smoke project at tests/basileus-smoke/. The smoke
+    # project's BasileusConsumedSurfaceTests asserts (a) the basileus-
+    # consumed public surface (IConversationThreadManager,
+    # IWorkflowAgentFactory, IStreamingHandler) still compiles against
+    # a mock implementation and (b) the post-DR-11 deletion of the
+    # single-arity IAgentStep<>/AgentStepBase<> types is reflected in
+    # the packed artifact (not just the in-repo build).
+    name: Basileus smoke (release-readiness)
+    needs: build-test
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Pack Strategos.Agents to local feed
+        run: bash scripts/pack-to-local-feed.sh ./local-feed
+
+      - name: Restore + build + test smoke project
+        # TUnit uses the Microsoft.Testing.Platform exe entrypoint, not the
+        # vstest host — invoke via `dotnet run` (the project sets
+        # OutputType=Exe). `dotnet test` was rejected by the .NET 10 SDK
+        # ("Specifying a project for 'dotnet test' should be via '--project'")
+        # AND would not surface TUnit's source-generated test list anyway.
+        run: |
+          dotnet restore tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj
+          dotnet run --project tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj --configuration Release --no-restore
+
   coverage-gate:
     needs: build-test
     if: github.event_name == 'pull_request'
@@ -59,6 +97,25 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
+
+  quality-gates:
+    # T-023 / DR-7, DR-10, DR-11 grep gates. Pure shell — no .NET needed,
+    # runs as a parallel job (NOT `needs: build-test`) so the slowest gate
+    # doesn't block the others.
+    name: Quality gates (grep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: AGAG hygiene (DR-7)
+        run: bash scripts/check-agag-hygiene.sh
+
+      - name: Catch discipline (DR-10)
+        run: bash scripts/check-catch-discipline.sh
+
+      - name: Prose discipline (DIM-8)
+        run: bash scripts/check-prose.sh
 
   dbsf-parity-guard:
     # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
