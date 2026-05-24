@@ -34,8 +34,8 @@ internal sealed class InProcessTestToolSource : IToolSource
     private int _calls;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InProcessTestToolSource"/> class
-    /// that returns <paramref name="tools"/> from <see cref="GetToolsAsync(CancellationToken)"/>.
+    /// Initializes a new instance of the <see cref="InProcessTestToolSource"/> class.
+    /// Returns <paramref name="tools"/> from <see cref="GetToolsAsync(CancellationToken)"/>.
     /// </summary>
     /// <param name="tools">Tools to surface on each invocation.</param>
     public InProcessTestToolSource(IReadOnlyList<AIFunction> tools)
@@ -45,9 +45,9 @@ internal sealed class InProcessTestToolSource : IToolSource
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="InProcessTestToolSource"/> class
-    /// whose <see cref="GetToolsAsync(CancellationToken)"/> throws
-    /// <paramref name="throwOnResolve"/>. Used to exercise the resolution-failure path.
+    /// Initializes a new instance of the <see cref="InProcessTestToolSource"/> class.
+    /// Its <see cref="GetToolsAsync(CancellationToken)"/> throws
+    /// <paramref name="throwOnResolve"/>, exercising the resolution-failure path.
     /// </summary>
     /// <param name="throwOnResolve">Exception to throw on resolve.</param>
     public InProcessTestToolSource(Exception throwOnResolve)

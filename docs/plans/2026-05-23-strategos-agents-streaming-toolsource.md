@@ -353,7 +353,7 @@ Every DR → ≥1 task. Provenance chain complete.
 **Phase:** GREEN · **Test Layer:** integration · **Implements:** DR-12
 
 1. [RED] Already RED from T-001.
-2. [GREEN] Implement the assertions against the now-complete chain; reuse the in-process `InProcessTestMcpToolSource` fixture (retargeted to `IToolSource`).
+2. [GREEN] Implement the assertions against the now-complete chain; reuse the in-process `InProcessTestToolSource` fixture (an `IToolSource` fake).
    - File: `src/Strategos.Agents.Tests/Integration/AgentStepBaseIntegrationTests.cs`
 3. [REFACTOR] Deduplicate fixture wiring with existing integration helpers.
 

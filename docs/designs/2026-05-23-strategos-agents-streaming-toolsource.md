@@ -37,7 +37,7 @@ This design was audited against `/axiom:design` (DIM-1..8) and `/strategos-desig
 
 ## Technical Design
 
-```
+```text
  AgentStepBuilder<TState, TResult>
    .WithSystemPrompt / .WithUserPrompt / .WithApplyResult   (required, unchanged)
    .WithTool(AIFunction)                                    (unchanged)
