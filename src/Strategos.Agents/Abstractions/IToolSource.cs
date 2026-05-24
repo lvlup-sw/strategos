@@ -17,6 +17,22 @@ namespace Strategos.Agents.Abstractions;
 /// reflection adapter (<c>AgentToolSource</c>) ships here — so the
 /// <c>LevelUp.Strategos.Agents</c> assembly stays free of any MCP dependency.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <strong>Failure contract.</strong> Conforming adapters throw an
+/// <c>AgentException</c> subtype (e.g. <c>AgentToolSourceException</c> / AGAG007,
+/// or <c>AgentMcpException</c> / AGAG004) and apply credential redaction before
+/// constructing the exception message. The <c>ResolveToolsAsync</c> boundary in
+/// <c>StrategosFunctionsChatClient</c> propagates those exceptions unchanged.
+/// Any other exception thrown by an adapter is treated as foreign: the boundary
+/// wraps it in <c>AgentToolSourceException</c> (AGAG007) and applies URI
+/// user-info redaction to the message (<c>scheme://user:pass@host</c> →
+/// <c>scheme://host</c>) before propagating. That redaction covers only URI
+/// user-info — it does not claim to scrub arbitrary secrets from foreign message
+/// text. Cancellation (<see cref="OperationCanceledException"/>) is always
+/// propagated unwrapped regardless of adapter type.
+/// </para>
+/// </remarks>
 public interface IToolSource
 {
     /// <summary>

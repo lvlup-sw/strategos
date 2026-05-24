@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using NSubstitute;
 using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
+using Strategos.Agents.Diagnostics;
 using Strategos.Agents.Exceptions;
 using Strategos.Agents.Tests.Fixtures;
 
@@ -171,6 +172,73 @@ public sealed class StrategosFunctionsChatClientToolSourceInjectionTests
                 cancellationToken: CancellationToken.None));
 
         await Assert.That(caught).IsSameReferenceAs(innerEx);
+    }
+
+    [Test]
+    public async Task ResolveTools_ForeignSourceThrows_WrapsInAgentToolSourceExceptionWithRedactedMessage()
+    {
+        // T1 / #85: a foreign IToolSource (not an AgentException thrower) whose message
+        // embeds credentials must NOT leak them. The boundary must wrap in
+        // AgentToolSourceException (AGAG007) and redact URI user-info.
+        var inner = OkClient();
+        var source = new ForeignThrowingToolSource();
+        var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), new IToolSource[] { source });
+
+        var caught = await Assert.ThrowsAsync<AgentToolSourceException>(async () =>
+            await client.GetResponseAsync(
+                new[] { new ChatMessage(ChatRole.User, "hi") },
+                options: null,
+                cancellationToken: CancellationToken.None));
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG007);
+        await Assert.That(caught.Message).Contains("mcp.example");
+        await Assert.That(caught.Message).DoesNotContain("s3cr3t");
+        await Assert.That(caught.Message).DoesNotContain("alice:s3cr3t");
+        await Assert.That(caught.InnerException).IsNotNull();
+        await Assert.That(caught.InnerException).IsTypeOf<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task ResolveTools_AgentExceptionSource_PropagatesUnchanged()
+    {
+        // T2 / #85: a conforming source that already throws an AgentToolSourceException
+        // must be propagated UNCHANGED — not wrapped in a second AGAG007 layer.
+        var inner = OkClient();
+        var originalEx = new AgentToolSourceException("boom", "CustomSource");
+        var source = new AgentExceptionThrowingToolSource(originalEx);
+        var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), new IToolSource[] { source });
+
+        var caught = await Assert.ThrowsAsync<AgentToolSourceException>(async () =>
+            await client.GetResponseAsync(
+                new[] { new ChatMessage(ChatRole.User, "hi") },
+                options: null,
+                cancellationToken: CancellationToken.None));
+
+        // Must be the exact same instance — not a re-wrapper.
+        await Assert.That(caught).IsSameReferenceAs(originalEx);
+        // Must not have an outer AGAG007-wrapping-AGAG007 nesting.
+        await Assert.That(caught!.InnerException).IsNull();
+    }
+
+    [Test]
+    public async Task ResolveTools_SourceThrowsOperationCanceled_PropagatesUnwrapped()
+    {
+        // T3 / #85: cancellation propagates through the boundary unwrapped —
+        // NOT wrapped in AgentToolSourceException.
+        var inner = OkClient();
+        var source = new InProcessTestToolSource(new OperationCanceledException("cancelled"));
+        var client = new StrategosFunctionsChatClient(inner, Array.Empty<AIFunction>(), new IToolSource[] { source });
+
+        var caught = await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await client.GetResponseAsync(
+                new[] { new ChatMessage(ChatRole.User, "hi") },
+                options: null,
+                cancellationToken: CancellationToken.None));
+
+        await Assert.That(caught).IsNotNull();
+        // Cancellation must escape as-is — not wrapped in AgentToolSourceException.
+        await Assert.That(caught!.Message).IsEqualTo("cancelled");
     }
 
     private static IChatClient OkClient()

@@ -7,6 +7,7 @@
 using Microsoft.Extensions.AI;
 using Strategos.Agents.Abstractions;
 using Strategos.Agents.Exceptions;
+using Strategos.Agents.Extensions;
 
 namespace Strategos.Agents.Configuration;
 
@@ -34,10 +35,10 @@ namespace Strategos.Agents.Configuration;
 /// aggregated <see cref="AIFunction"/>s are cached for the lifetime of this
 /// middleware instance, then merged into <see cref="ChatOptions.Tools"/> after the
 /// host-supplied and Strategos-registered tools. If resolution fails, the cache
-/// stays empty and the next request retries; the source's own exception propagates
-/// unchanged (the MCP adapter raises <see cref="AgentMcpException"/>/AGAG004; the
-/// in-process adapter raises <c>AgentToolSourceException</c>/AGAG007) — the
-/// middleware does NOT reclassify. Cancellation flows through unwrapped.
+/// stays empty and the next request retries. Conforming adapters (those that throw
+/// an <see cref="AgentException"/> subtype) propagate unchanged; foreign exceptions
+/// are wrapped in <see cref="AgentToolSourceException"/> (AGAG007) after URI
+/// user-info redaction (DR-10 / #85). Cancellation flows through unwrapped.
 /// </para>
 /// <para>
 /// Name-collision precedence (host &gt; Strategos &gt; tool-sources): the host's
@@ -189,11 +190,28 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
     /// Resolves every registered tool source lazily on first call, each at most once,
     /// aggregating their <see cref="AIFunction"/>s in registration order. Subsequent
     /// successful calls reuse the cached list. On failure the cache stays empty so the
-    /// next call retries; the failing source's own exception propagates UNCHANGED — the
-    /// MCP adapter raises <see cref="AgentMcpException"/> (AGAG004) and the in-process
-    /// adapter raises <c>AgentToolSourceException</c> (AGAG007); this middleware does
-    /// not reclassify. Cancellation is propagated unwrapped.
+    /// next call retries.
     /// </summary>
+    /// <remarks>
+    /// Exception-propagation contract at this boundary (catch order is significant):
+    /// <list type="number">
+    /// <item><description>
+    /// <see cref="OperationCanceledException"/> — propagated unwrapped. Cancellation is not a
+    /// domain failure and must never be classified as <see cref="AgentToolSourceException"/>.
+    /// </description></item>
+    /// <item><description>
+    /// <see cref="AgentException"/> subtypes — propagated unchanged. Conforming adapters
+    /// (e.g. <see cref="AgentMcpException"/> AGAG004, <see cref="AgentToolSourceException"/>
+    /// AGAG007) have already applied their own redaction; re-wrapping them would produce
+    /// nested AGAG007 payloads.
+    /// </description></item>
+    /// <item><description>
+    /// Any other exception — wrapped in <see cref="AgentToolSourceException"/> (AGAG007) with
+    /// <see cref="UriRedaction.RedactUserInfo"/> applied to the message. This guards against
+    /// third-party adapters that embed raw credentials in exception messages (DR-10 / #85).
+    /// </description></item>
+    /// </list>
+    /// </remarks>
     private async Task<IReadOnlyList<AIFunction>> ResolveToolsAsync(CancellationToken cancellationToken)
     {
         if (_toolSources.Count == 0)
@@ -217,8 +235,28 @@ internal sealed class StrategosFunctionsChatClient : DelegatingChatClient
             var aggregated = new List<AIFunction>();
             foreach (var source in _toolSources)
             {
-                // Each source surfaces its own diagnostic; propagate unchanged.
-                var resolved = await source.GetToolsAsync(cancellationToken).ConfigureAwait(false);
+                IReadOnlyList<AIFunction>? resolved;
+                try
+                {
+                    resolved = await source.GetToolsAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation is not a domain failure — propagate unwrapped.
+                    throw;
+                }
+                catch (AgentException)
+                {
+                    // Conforming adapter: already self-redacted; propagate unchanged.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Foreign (non-conforming) adapter: redact URI user-info and wrap.
+                    var redacted = UriRedaction.RedactUserInfo(ex.Message);
+                    throw new AgentToolSourceException(redacted, source.GetType().FullName, ex);
+                }
+
                 if (resolved is not null)
                 {
                     aggregated.AddRange(resolved);
