@@ -9,6 +9,7 @@ using Microsoft.Extensions.AI;
 using Strategos.Abstractions;
 using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
+using Strategos.Agents.Tests.Fixtures;
 using Strategos.Steps;
 
 namespace Strategos.Agents.Tests.Unit.Configuration;
@@ -78,6 +79,42 @@ public sealed class AgentStepConfigurationTests
             MaxToolIterations: null));
 
         await Assert.That(ex!.ParamName).IsEqualTo("ToolSources");
+    }
+
+    [Test]
+    public async Task Configuration_StreamingHandler_RoundTrips()
+    {
+        // DR-2: the optional streaming handler defaults to null and round-trips when supplied.
+        Func<DummyState, string> systemPrompt = _ => "sys";
+        Func<DummyState, string> userPrompt = _ => "user";
+        Func<DummyState, DummyResult, CancellationToken, Task<StepResult<DummyState>>> apply =
+            (s, _, _) => Task.FromResult(new StepResult<DummyState>(s));
+
+        var defaultConfig = new AgentStepConfiguration<DummyState, DummyResult>(
+            SystemPrompt: systemPrompt,
+            UserPrompt: userPrompt,
+            ApplyResult: apply,
+            Tools: Array.Empty<AIFunction>(),
+            ToolSources: Array.Empty<IToolSource>(),
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null);
+
+        await Assert.That(defaultConfig.StreamingHandler).IsNull();
+
+        var handler = new RecordingStreamingHandler();
+        var withHandler = new AgentStepConfiguration<DummyState, DummyResult>(
+            SystemPrompt: systemPrompt,
+            UserPrompt: userPrompt,
+            ApplyResult: apply,
+            Tools: Array.Empty<AIFunction>(),
+            ToolSources: Array.Empty<IToolSource>(),
+            ChatOptions: null,
+            ChatClientConfigurator: null,
+            MaxToolIterations: null,
+            StreamingHandler: handler);
+
+        await Assert.That(withHandler.StreamingHandler).IsSameReferenceAs((IStreamingHandler)handler);
     }
 
     [Test]

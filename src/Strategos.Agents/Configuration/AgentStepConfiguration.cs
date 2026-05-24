@@ -44,6 +44,14 @@ public sealed record AgentStepConfiguration<TState, TResult>
     /// <summary>Optional override for the tool-iteration bound (default 8; see AgentStepBase.DefaultMaxToolIterations).</summary>
     public int? MaxToolIterations { get; }
 
+    /// <summary>
+    /// Optional streaming observer (DR-2). When present, the orchestrator drives the
+    /// streaming chat path and forwards tokens to this handler as a non-durable
+    /// side-channel; the durable artifact remains the terminal StepResult. Null means
+    /// the buffered (non-streaming) path is used unchanged.
+    /// </summary>
+    public IStreamingHandler? StreamingHandler { get; }
+
     internal AgentStepConfiguration(
         Func<TState, string> SystemPrompt,
         Func<TState, string> UserPrompt,
@@ -52,7 +60,8 @@ public sealed record AgentStepConfiguration<TState, TResult>
         IReadOnlyList<IToolSource> ToolSources,
         ChatOptions? ChatOptions,
         Action<ChatClientBuilder>? ChatClientConfigurator,
-        int? MaxToolIterations)
+        int? MaxToolIterations,
+        IStreamingHandler? StreamingHandler = null)
     {
         ArgumentNullException.ThrowIfNull(SystemPrompt);
         ArgumentNullException.ThrowIfNull(UserPrompt);
@@ -88,5 +97,6 @@ public sealed record AgentStepConfiguration<TState, TResult>
         this.ChatOptions = ChatOptions;
         this.ChatClientConfigurator = ChatClientConfigurator;
         this.MaxToolIterations = MaxToolIterations;
+        this.StreamingHandler = StreamingHandler;
     }
 }
