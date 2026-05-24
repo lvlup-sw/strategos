@@ -27,9 +27,32 @@ public sealed class AgentDiagnosticsTests
             await Assert.That(value).IsEqualTo(code); // value == name
         }
 
-        // No additional AGAG* fields beyond the six.
+        // The original six core codes plus the two added for tool-source / streaming
+        // (AGAG007, AGAG009). AGAG008 is intentionally reserved and not declared.
         var allAgag = diagType.GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => f.Name.StartsWith("AGAG")).Select(f => f.Name).ToArray();
-        await Assert.That(allAgag.Length).IsEqualTo(6);
+        await Assert.That(allAgag.Length).IsEqualTo(8);
+    }
+
+    [Test]
+    public async Task AgentDiagnostics_AGAG007AndAGAG009_DeclaredAsConstMatchingPattern()
+    {
+        var diagType = typeof(Strategos.Agents.Diagnostics.AgentDiagnostics);
+        var pattern = new System.Text.RegularExpressions.Regex("^AGAG\\d{3}$");
+
+        foreach (var code in new[] { "AGAG007", "AGAG009" })
+        {
+            var field = diagType.GetField(code, BindingFlags.Public | BindingFlags.Static);
+            await Assert.That(field).IsNotNull();
+            await Assert.That(field!.IsLiteral && !field.IsInitOnly).IsTrue(); // const
+            await Assert.That(field.FieldType).IsEqualTo(typeof(string));
+            var value = (string)field.GetValue(null)!;
+            await Assert.That(pattern.IsMatch(value)).IsTrue();
+            await Assert.That(value).IsEqualTo(code); // value == name
+        }
+
+        // AGAG008 is intentionally reserved — pending a build-time validation case.
+        var reserved = diagType.GetField("AGAG008", BindingFlags.Public | BindingFlags.Static);
+        await Assert.That(reserved).IsNull();
     }
 }
