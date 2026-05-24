@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- NuGet Package Configuration -->
     <PackageId>LevelUp.Strategos.Agents.Mcp</PackageId>
-    <Description>Model Context Protocol adapter for Strategos.Agents. Provides the default IMcpToolSource implementation wrapping the ModelContextProtocol C# SDK.</Description>
+    <Description>Model Context Protocol adapter for Strategos.Agents. Provides the McpToolSource IToolSource implementation wrapping the ModelContextProtocol C# SDK.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 

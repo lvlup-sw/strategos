@@ -9,7 +9,7 @@ using Strategos.Agents.Diagnostics;
 namespace Strategos.Agents.Exceptions;
 
 /// <summary>
-/// Thrown by IMcpToolSource adapters on handshake or tool-discovery failure (DR-5).
+/// Thrown by the MCP IToolSource adapter on handshake or tool-discovery failure (DR-7).
 /// </summary>
 public sealed class AgentMcpException : AgentException
 {

@@ -11,6 +11,9 @@ namespace Strategos.Agents.Events;
 
 /// <summary>
 /// Event raised when a token is received during streaming LLM response generation.
+/// Legacy specialist-agent surface — NOT emitted by the <c>AgentStep</c>
+/// <c>WithStreaming</c>/<c>IStreamingHandler</c> path (that path is a non-durable
+/// side-channel and writes no progress events; see INV-1).
 /// </summary>
 /// <remarks>
 /// <para>

@@ -26,11 +26,13 @@ public sealed class AgentStepBuilder<TState, TResult>
     private Func<TState, string>? _userPrompt;
     private Func<TState, TResult, CancellationToken, Task<StepResult<TState>>>? _applyResult;
     private readonly List<AIFunction> _tools = new();
-    private IMcpToolSource? _mcpToolSource;
+    private readonly List<IToolSource> _toolSources = new();
     private ChatOptions? _chatOptions;
     private bool _chatOptionsSet;
     private int? _maxToolIterations;
     private Action<ChatClientBuilder>? _chatClientConfigurator;
+    private IStreamingHandler? _streamingHandler;
+    private bool _streamingHandlerSet;
 
     /// <summary>Configure the system prompt hook (required).</summary>
     public AgentStepBuilder<TState, TResult> WithSystemPrompt(Func<TState, string> systemPrompt)
@@ -88,15 +90,38 @@ public sealed class AgentStepBuilder<TState, TResult>
     }
 
     /// <summary>
-    /// Register an <see cref="IMcpToolSource"/> port (DR-5). The configured source is stored
-    /// on the produced <see cref="AgentStepConfiguration{TState, TResult}"/> and resolved lazily
-    /// at first execution by the runtime.
+    /// Register an <see cref="IToolSource"/> port (DR-9). Multiple calls accumulate in
+    /// registration order; each configured source is stored on the produced
+    /// <see cref="AgentStepConfiguration{TState, TResult}"/> and resolved lazily at first
+    /// execution by the runtime.
     /// </summary>
-    /// <param name="source">The MCP tool source port.</param>
-    public AgentStepBuilder<TState, TResult> WithMcpToolSource(IMcpToolSource source)
+    /// <param name="source">The tool source port (MCP, in-process reflection, etc.).</param>
+    public AgentStepBuilder<TState, TResult> WithToolSource(IToolSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        _mcpToolSource = source;
+        _toolSources.Add(source);
+        return this;
+    }
+
+    /// <summary>
+    /// Register an <see cref="IStreamingHandler"/> streaming observer (DR-2). May only be called
+    /// once; a second call throws <see cref="InvalidOperationException"/> (mirroring
+    /// <see cref="WithChatOptions"/>) so that an observer is never silently replaced. When set,
+    /// the orchestrator drives the streaming chat path and forwards tokens to the handler as a
+    /// non-durable side-channel; the terminal typed result contract is unchanged.
+    /// </summary>
+    /// <param name="handler">The streaming handler to receive token and completion callbacks.</param>
+    public AgentStepBuilder<TState, TResult> WithStreaming(IStreamingHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+
+        if (_streamingHandlerSet)
+        {
+            throw new InvalidOperationException("WithStreaming has already been called on this builder.");
+        }
+
+        _streamingHandler = handler;
+        _streamingHandlerSet = true;
         return this;
     }
 
@@ -160,17 +185,19 @@ public sealed class AgentStepBuilder<TState, TResult>
         }
 
         var toolList = _tools.ToArray();
+        var toolSources = _toolSources.ToArray();
         var configuration = new AgentStepConfiguration<TState, TResult>(
             SystemPrompt: _systemPrompt,
             UserPrompt: _userPrompt,
             ApplyResult: _applyResult,
             Tools: toolList,
-            McpToolSource: _mcpToolSource,
+            ToolSources: toolSources,
             ChatOptions: _chatOptions,
             ChatClientConfigurator: _chatClientConfigurator,
-            MaxToolIterations: _maxToolIterations);
+            MaxToolIterations: _maxToolIterations,
+            StreamingHandler: _streamingHandler);
 
-        var composedChatClient = ComposeChatClient(chatClient, toolList);
+        var composedChatClient = ComposeChatClient(chatClient, toolList, toolSources);
         return new AgentStepBase<TState, TResult>(composedChatClient, configuration);
     }
 
@@ -178,7 +205,10 @@ public sealed class AgentStepBuilder<TState, TResult>
     /// Composes the IChatClient pipeline in fixed order (DR-6):
     /// host configurator → <c>UseStrategosFunctions</c> → <c>UseFunctionInvocation</c>.
     /// </summary>
-    private IChatClient ComposeChatClient(IChatClient innerClient, IReadOnlyList<AIFunction> tools)
+    private IChatClient ComposeChatClient(
+        IChatClient innerClient,
+        IReadOnlyList<AIFunction> tools,
+        IReadOnlyList<IToolSource> toolSources)
     {
         var maxIterations = _maxToolIterations ?? AgentStepBase<TState, TResult>.DefaultMaxToolIterations;
         var builder = new ChatClientBuilder(innerClient);
@@ -187,9 +217,9 @@ public sealed class AgentStepBuilder<TState, TResult>
         _chatClientConfigurator?.Invoke(builder);
 
         // 2. Surface the Strategos-registered AIFunctions as an inspectable chain step.
-        //    The MCP tool source (if any) is resolved lazily on first request by the
+        //    Registered tool sources (if any) are resolved lazily on first request by the
         //    middleware itself — Build() stays sync (T-016 invariant).
-        builder.UseStrategosFunctions(tools, _mcpToolSource);
+        builder.UseStrategosFunctions(tools, toolSources);
 
         // 3. Automatic function-call invocation, bounded by _maxToolIterations (DR-8).
         builder.UseFunctionInvocation(

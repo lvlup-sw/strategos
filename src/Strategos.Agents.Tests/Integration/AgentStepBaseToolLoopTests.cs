@@ -92,7 +92,7 @@ public sealed class AgentStepBaseToolLoopTests
             UserPrompt: state => state.UserQuery,
             ApplyResult: applyResult,
             Tools: new[] { fakeTool },
-            McpToolSource: null,
+            ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: chatOptions,
             ChatClientConfigurator: null,
             MaxToolIterations: 8);

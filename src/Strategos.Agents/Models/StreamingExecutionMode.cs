@@ -8,6 +8,8 @@ namespace Strategos.Agents.Models;
 
 /// <summary>
 /// Specifies the execution mode for specialist agent responses.
+/// Legacy specialist-agent surface — distinct from the <c>AgentStep</c>
+/// streaming opt-in (<c>WithStreaming</c>/<c>IStreamingHandler</c>).
 /// </summary>
 /// <remarks>
 /// <para>

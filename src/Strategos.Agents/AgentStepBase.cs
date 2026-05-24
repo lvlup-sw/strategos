@@ -54,6 +54,21 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
 
         var messages = BuildMessages(state);
 
+        // DR-1/DR-2: when a streaming observer is configured, drive the streaming chat
+        // path. Streaming is purely an observability layer — it funnels into the SAME
+        // terminal checks (FinalizeAsync) as the buffered path and does NOT change the
+        // step's typed return shape.
+        if (_configuration.StreamingHandler is not null)
+        {
+            var streamedResponse = await DriveStreamingAsync(
+                    messages,
+                    _configuration.StreamingHandler,
+                    context,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return await FinalizeAsync(streamedResponse, state, cancellationToken).ConfigureAwait(false);
+        }
+
         ChatResponse<TResult>? response;
         try
         {
@@ -85,6 +100,19 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
                 "Chat client returned a null response.");
         }
 
+        return await FinalizeAsync(response, state, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Terminal contract block shared by the buffered and streaming paths (DR-1). Runs the
+    /// DR-8 tool-loop-cap check, the DR-10 empty-payload check (AGAG006), the AGAG002
+    /// structured-output check, and finally the apply-result hook — exactly once.
+    /// </summary>
+    private async Task<StepResult<TState>> FinalizeAsync(
+        ChatResponse<TResult> response,
+        TState state,
+        CancellationToken cancellationToken)
+    {
         // DR-8: detect the FunctionInvokingChatClient iteration cap. MEAI 10.5 does not
         // throw when it reaches MaximumIterationsPerRequest — it logs
         // "Reached maximum iteration count of {N}. Stopping function invocation loop."
@@ -121,6 +149,97 @@ public sealed class AgentStepBase<TState, TResult> : IAgentStep<TState, TResult>
         }
 
         return await _configuration.ApplyResult(state, typedResult!, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Drives the streaming chat path (DR-1/DR-3/DR-4). Each update with non-empty text is
+    /// forwarded to the handler in arrival order; after the stream completes the full
+    /// accumulated text is delivered once via <c>OnResponseCompletedAsync</c>. The accumulated
+    /// updates are then materialized into a <see cref="ChatResponse{TResult}"/> the SAME way the
+    /// buffered typed extension does, so the shared <see cref="FinalizeAsync"/> contract applies
+    /// identically (FinishReason / TryGetResult / empty-payload).
+    /// </summary>
+    /// <remarks>
+    /// INV-1: tokens are a non-durable side-channel — this path references neither a progress
+    /// event store nor any durable streaming-token record. The only durable artifact is the
+    /// terminal StepResult produced by <see cref="FinalizeAsync"/>.
+    /// </remarks>
+    private async Task<ChatResponse<TResult>> DriveStreamingAsync(
+        IList<ChatMessage> messages,
+        IStreamingHandler handler,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        var updates = new List<ChatResponseUpdate>();
+
+        // Enumerate the streaming response. OperationCanceledException is NOT a domain failure
+        // (DR-11) and must propagate unwrapped; a handler fault is wrapped as AGAG009 (DR-4).
+        var enumerator = _chatClient
+            .GetStreamingResponseAsync(messages, _configuration.ChatOptions, cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (true)
+            {
+                // MoveNext faults (e.g. cancellation, transport errors) surface here; we do
+                // NOT wrap them as streaming-handler failures.
+                if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                var update = enumerator.Current;
+                updates.Add(update);
+
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    try
+                    {
+                        await handler
+                            .OnTokenReceivedAsync(update.Text, context.WorkflowId, context.StepName, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cancellation flowing through the handler is still cancellation — unwrapped.
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new AgentStreamingException(
+                            "Streaming token handler failed mid-stream.", ex);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+
+        // Materialize the accumulated updates into a typed response, mirroring the buffered
+        // GetResponseAsync<TResult> path (which wraps a ChatResponse via the AIJsonUtilities
+        // default serializer options).
+        var aggregate = updates.ToChatResponse();
+        var fullText = aggregate.Text;
+
+        try
+        {
+            await handler
+                .OnResponseCompletedAsync(fullText, context.WorkflowId, context.StepName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new AgentStreamingException(
+                "Streaming completion handler failed.", ex);
+        }
+
+        return new ChatResponse<TResult>(aggregate, AIJsonUtilities.DefaultOptions);
     }
 
     /// <summary>

@@ -28,4 +28,12 @@ public static class AgentDiagnostics
 
     /// <summary>Chat client returned a null or empty ChatResponse&lt;T&gt;.</summary>
     public const string AGAG006 = "AGAG006";
+
+    /// <summary>In-process tool-source resolution failure.</summary>
+    public const string AGAG007 = "AGAG007";
+
+    // AGAG008 reserved — pending a build-time validation case.
+
+    /// <summary>Streaming response handler failure.</summary>
+    public const string AGAG009 = "AGAG009";
 }

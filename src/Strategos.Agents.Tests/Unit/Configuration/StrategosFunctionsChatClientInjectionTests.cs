@@ -6,6 +6,7 @@
 
 using Microsoft.Extensions.AI;
 using NSubstitute;
+using Strategos.Agents.Abstractions;
 using Strategos.Agents.Configuration;
 
 namespace Strategos.Agents.Tests.Unit.Configuration;
@@ -42,7 +43,7 @@ public sealed class StrategosFunctionsChatClientInjectionTests
         var toolA = AIFunctionFactory.Create(() => "A", name: "tool_a");
         var toolB = AIFunctionFactory.Create(() => "B", name: "tool_b");
 
-        var client = new StrategosFunctionsChatClient(inner, new[] { toolA, toolB });
+        var client = new StrategosFunctionsChatClient(inner, new[] { toolA, toolB }, Array.Empty<IToolSource>());
 
         await client.GetResponseAsync(
             new[] { new ChatMessage(ChatRole.User, "hi") },
@@ -75,7 +76,7 @@ public sealed class StrategosFunctionsChatClientInjectionTests
         var hostTool = AIFunctionFactory.Create(() => "host", name: "host_tool");
         var strategosTool = AIFunctionFactory.Create(() => "strat", name: "strategos_tool");
 
-        var client = new StrategosFunctionsChatClient(inner, new[] { strategosTool });
+        var client = new StrategosFunctionsChatClient(inner, new[] { strategosTool }, Array.Empty<IToolSource>());
 
         var hostSupplied = new ChatOptions
         {
@@ -108,7 +109,7 @@ public sealed class StrategosFunctionsChatClientInjectionTests
         var hostTool = AIFunctionFactory.Create(() => "host", name: "host_tool");
         var strategosTool = AIFunctionFactory.Create(() => "strat", name: "strategos_tool");
 
-        var client = new StrategosFunctionsChatClient(inner, new[] { strategosTool });
+        var client = new StrategosFunctionsChatClient(inner, new[] { strategosTool }, Array.Empty<IToolSource>());
 
         var hostTools = new List<AITool> { hostTool };
         var hostSupplied = new ChatOptions { Tools = hostTools };
