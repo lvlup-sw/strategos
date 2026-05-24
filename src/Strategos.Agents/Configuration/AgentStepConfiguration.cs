@@ -38,9 +38,6 @@ public sealed record AgentStepConfiguration<TState, TResult>
     /// <summary>Optional explicit ChatOptions. The builder still applies defaults if null.</summary>
     public ChatOptions? ChatOptions { get; }
 
-    /// <summary>Optional host-side ChatClientBuilder configurator (logging, OTel, distributed cache, etc.).</summary>
-    public Action<ChatClientBuilder>? ChatClientConfigurator { get; }
-
     /// <summary>Optional override for the tool-iteration bound (default 8; see AgentStepBase.DefaultMaxToolIterations).</summary>
     public int? MaxToolIterations { get; }
 
@@ -59,7 +56,6 @@ public sealed record AgentStepConfiguration<TState, TResult>
         IReadOnlyList<AIFunction> Tools,
         IReadOnlyList<IToolSource> ToolSources,
         ChatOptions? ChatOptions,
-        Action<ChatClientBuilder>? ChatClientConfigurator,
         int? MaxToolIterations,
         IStreamingHandler? StreamingHandler = null)
     {
@@ -95,7 +91,6 @@ public sealed record AgentStepConfiguration<TState, TResult>
         this.Tools = Tools;
         this.ToolSources = ToolSources;
         this.ChatOptions = ChatOptions;
-        this.ChatClientConfigurator = ChatClientConfigurator;
         this.MaxToolIterations = MaxToolIterations;
         this.StreamingHandler = StreamingHandler;
     }

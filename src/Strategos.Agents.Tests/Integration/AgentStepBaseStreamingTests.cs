@@ -80,7 +80,6 @@ public sealed class AgentStepBaseStreamingTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null,
             StreamingHandler: handler);
 
@@ -164,7 +163,6 @@ public sealed class AgentStepBaseStreamingTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null,
             StreamingHandler: handler);
 
@@ -210,7 +208,6 @@ public sealed class AgentStepBaseStreamingTests
             Tools: Array.Empty<AIFunction>(),
             ToolSources: Array.Empty<IToolSource>(),
             ChatOptions: null,
-            ChatClientConfigurator: null,
             MaxToolIterations: null,
             StreamingHandler: handler);
 
