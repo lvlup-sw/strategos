@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FabricQueryData.json",
+    "type": "object",
+    "properties": {
+        "queryType": {
+            "$ref": "FabricQueryType.json",
+            "description": "Kind of fabric query that was executed."
+        },
+        "objectType": {
+            "type": "string",
+            "description": "Object type the query targeted, if applicable."
+        },
+        "resultCount": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "description": "Number of results returned."
+        },
+        "degraded": {
+            "type": "boolean",
+            "description": "True if the query was served from a degraded / partial fabric."
+        },
+        "ontologyVersion": {
+            "type": "string",
+            "description": "Ontology graph version the query resolved against."
+        }
+    },
+    "required": [
+        "queryType",
+        "resultCount",
+        "degraded",
+        "ontologyVersion"
+    ],
+    "description": "Data payload for `fabric.query` audit events — records a query against the\ndata fabric / ontology, including whether the result was served degraded."
+}
