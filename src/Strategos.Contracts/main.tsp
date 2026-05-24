@@ -6,6 +6,7 @@ import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Diagnostics/CheckNode.tsp";
+import "./Diagnostics/Enforcement.tsp";
 
 using JsonSchema;
 

@@ -89,8 +89,9 @@ public static class RecordEmitter
 
     /// <summary>
     /// Maps each union-arm document name to the union it belongs to: the union's
-    /// generated base type name and the discriminator value carried by the arm's
-    /// <c>kind</c> const. Arms not part of any union are absent from the map.
+    /// generated base type name, the discriminator property's wire name, and the
+    /// discriminator value the arm pins. Arms not part of any union are absent
+    /// from the map.
     /// </summary>
     private static IReadOnlyDictionary<string, ArmBinding> BuildArmIndex(
         IReadOnlyDictionary<string, SchemaDoc> docs)
@@ -103,6 +104,8 @@ public static class RecordEmitter
                 continue;
             }
 
+            var discriminatorName = ResolveDiscriminatorName(doc, docs);
+
             foreach (var armFile in doc.UnionArmRefs)
             {
                 if (!docs.TryGetValue(armFile, out var arm))
@@ -110,19 +113,60 @@ public static class RecordEmitter
                     continue;
                 }
 
-                // The discriminator value is the arm's `kind` const literal.
                 var discriminator = arm.Properties
-                    .FirstOrDefault(p => string.Equals(p.WireName, "kind", StringComparison.Ordinal))
+                    .FirstOrDefault(p => string.Equals(p.WireName, discriminatorName, StringComparison.Ordinal))
                     ?.ConstValue;
 
                 if (discriminator is not null)
                 {
-                    index[armFile] = new ArmBinding(doc.TypeName, discriminator);
+                    index[armFile] = new ArmBinding(doc.TypeName, discriminatorName, discriminator);
                 }
             }
         }
 
         return index;
+    }
+
+    /// <summary>
+    /// Resolves the discriminator property's wire name for a union: the property
+    /// every arm pins with a <c>const</c> literal. Prefers <c>kind</c> when
+    /// present (the workflow-IR convention); otherwise picks the single
+    /// const-pinned property common to all arms (e.g. <c>mode</c> for
+    /// <c>Enforcement</c>). This keeps the emitter union-agnostic rather than
+    /// hard-coding one discriminator name.
+    /// </summary>
+    private static string ResolveDiscriminatorName(
+        SchemaDoc union, IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        var arms = union.UnionArmRefs
+            .Select(f => docs.TryGetValue(f, out var a) ? a : null)
+            .Where(a => a is not null)
+            .Select(a => a!)
+            .ToList();
+
+        if (arms.Count == 0)
+        {
+            return "kind";
+        }
+
+        // Candidate = a property pinned to a const on EVERY arm.
+        bool PinnedOnAllArms(string wireName) => arms.All(a =>
+            a.Properties.Any(p =>
+                string.Equals(p.WireName, wireName, StringComparison.Ordinal) && p.ConstValue is not null));
+
+        if (PinnedOnAllArms("kind"))
+        {
+            return "kind";
+        }
+
+        var candidates = arms[0].Properties
+            .Where(p => p.ConstValue is not null)
+            .Select(p => p.WireName)
+            .Where(PinnedOnAllArms)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return candidates.Count == 1 ? candidates[0] : "kind";
     }
 
     /// <summary>
@@ -141,7 +185,9 @@ public static class RecordEmitter
             AppendXmlDoc(sb, doc.Description!, indent: string.Empty);
         }
 
-        sb.AppendLine("[JsonPolymorphic(TypeDiscriminatorPropertyName = \"kind\")]");
+        var discriminatorName = ResolveDiscriminatorName(doc, docs);
+        sb.Append("[JsonPolymorphic(TypeDiscriminatorPropertyName = \"")
+          .Append(discriminatorName).AppendLine("\")]");
         foreach (var armFile in doc.UnionArmRefs)
         {
             if (!docs.TryGetValue(armFile, out var arm))
@@ -150,7 +196,7 @@ public static class RecordEmitter
             }
 
             var discriminator = arm.Properties
-                .FirstOrDefault(p => string.Equals(p.WireName, "kind", StringComparison.Ordinal))
+                .FirstOrDefault(p => string.Equals(p.WireName, discriminatorName, StringComparison.Ordinal))
                 ?.ConstValue;
             if (discriminator is null)
             {
@@ -226,7 +272,7 @@ public static class RecordEmitter
         // re-declare it as an ordinary property).
         var isUnionArm = armToUnion.TryGetValue(doc.FileName, out var binding);
         var emitProps = isUnionArm
-            ? doc.Properties.Where(p => !string.Equals(p.WireName, "kind", StringComparison.Ordinal)).ToList()
+            ? doc.Properties.Where(p => !string.Equals(p.WireName, binding!.DiscriminatorName, StringComparison.Ordinal)).ToList()
             : doc.Properties;
 
         sb.Append("public sealed record ").Append(doc.TypeName);
@@ -398,10 +444,11 @@ public static class RecordEmitter
 
     /// <summary>
     /// Binds a discriminated-union arm to its union: the generated base type the
-    /// arm derives from, and the discriminator value (the arm's <c>kind</c>
-    /// const) System.Text.Json writes/reads.
+    /// arm derives from, the discriminator property's wire name (e.g. <c>kind</c>
+    /// or <c>mode</c>), and the discriminator value (the arm's pinned const)
+    /// System.Text.Json writes/reads.
     /// </summary>
-    private sealed record ArmBinding(string BaseTypeName, string Discriminator);
+    private sealed record ArmBinding(string BaseTypeName, string DiscriminatorName, string Discriminator);
 
     /// <summary>A property of an object schema, flattened from the raw JSON.</summary>
     private sealed record PropertyInfo

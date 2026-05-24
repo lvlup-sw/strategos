@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuditEnforcement.json",
+    "type": "object",
+    "properties": {
+        "mode": {
+            "type": "string",
+            "const": "audit"
+        },
+        "audit-prompt": {
+            "type": "string",
+            "description": "Natural-language audit prompt (kebab-case wire name); inert prose."
+        }
+    },
+    "required": [
+        "mode",
+        "audit-prompt"
+    ],
+    "description": "Enforcement arm: `audit` — the invariant is enforced by a natural-language\naudit prompt (an LLM/agent reviews against it). The `audit-prompt` is inert\nprose, never executable code."
+}
