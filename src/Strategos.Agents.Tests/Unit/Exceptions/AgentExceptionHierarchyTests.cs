@@ -36,6 +36,8 @@ public sealed class AgentExceptionHierarchyTests
             (typeof(AgentMcpException),               AgentDiagnostics.AGAG004),
             (typeof(AgentToolLoopException),          AgentDiagnostics.AGAG005),
             (typeof(AgentChatResponseException),      AgentDiagnostics.AGAG006),
+            (typeof(AgentToolSourceException),        AgentDiagnostics.AGAG007),
+            (typeof(AgentStreamingException),         AgentDiagnostics.AGAG009),
         };
 
         foreach (var (t, code) in expected)
@@ -71,6 +73,37 @@ public sealed class AgentExceptionHierarchyTests
             var diagValue = (string)diagProp.GetValue(instance)!;
             await Assert.That(diagValue).IsEqualTo(code);
         }
+    }
+
+    [Test]
+    public async Task AgentToolSourceException_Always_CarriesAGAG007()
+    {
+        var withoutInner = new AgentToolSourceException("resolution failed", "InProcessSource");
+        await Assert.That(withoutInner.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG007);
+        await Assert.That(withoutInner.SourceType).IsEqualTo("InProcessSource");
+        await Assert.That(withoutInner.Message.Contains(AgentDiagnostics.AGAG007)).IsTrue();
+        await Assert.That(withoutInner.Message.Contains("InProcessSource")).IsTrue();
+
+        var inner = new InvalidOperationException("boom");
+        var withInner = new AgentToolSourceException("resolution failed", "InProcessSource", inner);
+        await Assert.That(withInner.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG007);
+        await Assert.That(withInner.SourceType).IsEqualTo("InProcessSource");
+        await Assert.That(withInner.InnerException).IsEqualTo(inner);
+        await Assert.That(withInner.Message.Contains(AgentDiagnostics.AGAG007)).IsTrue();
+    }
+
+    [Test]
+    public async Task AgentStreamingException_Always_CarriesAGAG009()
+    {
+        var withoutInner = new AgentStreamingException("stream broke");
+        await Assert.That(withoutInner.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG009);
+        await Assert.That(withoutInner.Message.Contains(AgentDiagnostics.AGAG009)).IsTrue();
+
+        var inner = new InvalidOperationException("boom");
+        var withInner = new AgentStreamingException("stream broke", inner);
+        await Assert.That(withInner.Diagnostic).IsEqualTo(AgentDiagnostics.AGAG009);
+        await Assert.That(withInner.InnerException).IsEqualTo(inner);
+        await Assert.That(withInner.Message.Contains(AgentDiagnostics.AGAG009)).IsTrue();
     }
 
     // Produces a valid, non-null argument for a constructor parameter so reflection-based
