@@ -31,6 +31,8 @@ public sealed class AgentStepBuilder<TState, TResult>
     private bool _chatOptionsSet;
     private int? _maxToolIterations;
     private Action<ChatClientBuilder>? _chatClientConfigurator;
+    private IStreamingHandler? _streamingHandler;
+    private bool _streamingHandlerSet;
 
     /// <summary>Configure the system prompt hook (required).</summary>
     public AgentStepBuilder<TState, TResult> WithSystemPrompt(Func<TState, string> systemPrompt)
@@ -98,6 +100,28 @@ public sealed class AgentStepBuilder<TState, TResult>
     {
         ArgumentNullException.ThrowIfNull(source);
         _toolSources.Add(source);
+        return this;
+    }
+
+    /// <summary>
+    /// Register an <see cref="IStreamingHandler"/> streaming observer (DR-2). May only be called
+    /// once; a second call throws <see cref="InvalidOperationException"/> (mirroring
+    /// <see cref="WithChatOptions"/>) so that an observer is never silently replaced. When set,
+    /// the orchestrator drives the streaming chat path and forwards tokens to the handler as a
+    /// non-durable side-channel; the terminal typed result contract is unchanged.
+    /// </summary>
+    /// <param name="handler">The streaming handler to receive token and completion callbacks.</param>
+    public AgentStepBuilder<TState, TResult> WithStreaming(IStreamingHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+
+        if (_streamingHandlerSet)
+        {
+            throw new InvalidOperationException("WithStreaming has already been called on this builder.");
+        }
+
+        _streamingHandler = handler;
+        _streamingHandlerSet = true;
         return this;
     }
 
@@ -170,7 +194,8 @@ public sealed class AgentStepBuilder<TState, TResult>
             ToolSources: toolSources,
             ChatOptions: _chatOptions,
             ChatClientConfigurator: _chatClientConfigurator,
-            MaxToolIterations: _maxToolIterations);
+            MaxToolIterations: _maxToolIterations,
+            StreamingHandler: _streamingHandler);
 
         var composedChatClient = ComposeChatClient(chatClient, toolList, toolSources);
         return new AgentStepBase<TState, TResult>(composedChatClient, configuration);

@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using System;
+using System.Linq;
 using Microsoft.Extensions.AI;
 using NSubstitute;
 using Strategos.Abstractions;
@@ -48,6 +50,62 @@ public sealed class AgentStepBuilderOptionsTests
 
         await Assert.That(configuration.ToolSources.Count).IsEqualTo(1);
         await Assert.That(configuration.ToolSources[0]).IsSameReferenceAs((IToolSource)port);
+    }
+
+    [Test]
+    public void WithStreaming_Null_ThrowsArgumentNull()
+    {
+        var builder = new AgentStepBuilder<TestState, string>();
+
+        _ = Assert.Throws<ArgumentNullException>(() => builder.WithStreaming(null!));
+    }
+
+    [Test]
+    public async Task WithStreaming_CalledTwice_ThrowsInvalidOperation()
+    {
+        var builder = new AgentStepBuilder<TestState, string>();
+        builder.WithStreaming(new RecordingStreamingHandler());
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => builder.WithStreaming(new RecordingStreamingHandler()));
+
+        await Assert.That(ex).IsNotNull();
+    }
+
+    [Test]
+    public async Task WithStreaming_ReachesConfiguration()
+    {
+        var handler = new RecordingStreamingHandler();
+
+        var builder = new AgentStepBuilder<TestState, string>();
+        builder.WithSystemPrompt(_ => "sys");
+        builder.WithUserPrompt(_ => "user");
+        builder.WithApplyResult((state, _, _) => Task.FromResult(new StepResult<TestState>(state)));
+        builder.WithStreaming(handler);
+
+        var step = (AgentStepBase<TestState, string>)builder.Build(FakeChatClient());
+
+        await Assert.That(step.Configuration.StreamingHandler).IsSameReferenceAs((IStreamingHandler)handler);
+    }
+
+    [Test]
+    public async Task NewStreamingTypes_AreSealed()
+    {
+        // INV-6: every newly introduced concrete streaming type must be sealed.
+        // We scope to the production assembly's types whose name relates to streaming.
+        var assembly = typeof(AgentStepBuilder<,>).Assembly;
+        var streamingTypes = assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract)
+            .Where(t => t.Name.Contains("Streaming", StringComparison.Ordinal))
+            .ToArray();
+
+        await Assert.That(streamingTypes).IsNotEmpty();
+        foreach (var type in streamingTypes)
+        {
+            await Assert.That(type.IsSealed)
+                .IsTrue()
+                .Because($"{type.FullName} must be sealed (INV-6).");
+        }
     }
 
     [Test]
