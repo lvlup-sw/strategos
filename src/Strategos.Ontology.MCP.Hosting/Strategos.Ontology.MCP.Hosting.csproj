@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>LevelUp.Strategos.Ontology.MCP.Hosting</PackageId>
+    <Description>MCP server hosting bridge for Strategos ontology. Adapts ontology tool descriptors into ModelContextProtocol server tools and registers them on an MCP server builder.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Strategos.Ontology.MCP\Strategos.Ontology.MCP.csproj" />
+  </ItemGroup>
+
+</Project>
