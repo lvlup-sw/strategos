@@ -27,6 +27,42 @@ the change here so the downstream exarchos mirror can re-baseline deliberately.
 
 _(none this release)_
 
+## [2.8.0] - 2026-05-25
+
+The **cross-product schema substrate** release. TypeSpec remains the single
+canonical source; the build emits JSON Schema (exarchos derives Zod) and C#
+records (basileus consumes the DLL).
+
+### Cross-product breaking changes
+
+_(none this release)_ — the 7 `Strategos.Builders` interfaces are now baselined
+in `PublicAPI.Shipped.txt` and frozen by `PublicApiAnalyzers` (#51); this
+release establishes the baseline without changing any signature.
+
+### Added
+
+- **Ontology MCP registration bridge** (#104) — new
+  `LevelUp.Strategos.Ontology.MCP.Hosting` package adapts ontology tool
+  descriptors into `ModelContextProtocol` server tools and registers them on an
+  MCP server builder, preserving `OutputSchema` + `ToolAnnotations`.
+- **Builder API-stability gate** (#51) — `Microsoft.CodeAnalysis.PublicApiAnalyzers`
+  wired from zero with a populated baseline; a CI gate fails closed on builder
+  signature drift and opens a re-baseline issue against exarchos's
+  `strategos-api-mirror.test.ts`.
+- **AGWF single-source catalog** (#52) — the 10 `AGWF*` diagnostic codes are
+  now generated from a single TypeSpec-sourced catalog (`agwf-catalog.json` +
+  `AgwfCode` enum), giving exarchos (#1256) a 1:1 mapping target. Drift
+  hardening across the #51/#52 follow-ups (#105, #106, #107).
+
+### Cross-product schemas (`LevelUp.Strategos.Contracts` 0.3.0, published separately)
+
+- **Semantic-merge-queue surface** (#63–#66) — `MergeGateDecision`,
+  `JourneyResult`, the `WorkflowRef` discriminated union, and `WorkflowCatalog`,
+  all extending a shared response envelope carrying `_meta.degraded` +
+  `DegradedReason` (fallback is always visible, never silent).
+- Contracts is independently versioned (`contracts-v*` tag); 0.3.0 is an
+  additive minor over 0.2.0 (events + workflow IR).
+
 ## [2.7.0] - 2026-05-24
 
 ### Changed (BREAKING) — Agent step contract
