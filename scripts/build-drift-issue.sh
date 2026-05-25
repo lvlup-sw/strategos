@@ -79,6 +79,15 @@ if [ -z "${EXARCHOS_ISSUES_PAT:-}" ]; then
   exit 0
 fi
 
+# Idempotent, fail-open label create (#107): a fresh exarchos environment may
+# not have the cross-product:strategos label yet, which would make the
+# `gh issue create --label` below fail. Create it first; never fatal.
+GH_TOKEN="${EXARCHOS_ISSUES_PAT}" gh label create "${LABEL}" \
+  --repo "${REPO}" \
+  --color "5319e7" \
+  --description "Cross-product drift notifications from lvlup-sw/strategos" \
+  || true
+
 # Real path: invoke gh (the live workflow, or a mocked gh shim on PATH in the
 # T14 dry-run job). GH_TOKEN authenticates gh against the exarchos repo.
 GH_TOKEN="${EXARCHOS_ISSUES_PAT}" gh "${GH_ARGS[@]}"
