@@ -19,7 +19,7 @@ namespace Strategos.Contracts.Tests.Pipeline;
 /// <c>WorkflowRef</c> against a given manifest.
 /// </summary>
 [Property("Category", "Pipeline")]
-public class WorkflowCatalogTests
+public sealed class WorkflowCatalogTests
 {
     /// <summary>
     /// Asserts the manifest carries <c>CatalogVersion</c> and a read-only list of
