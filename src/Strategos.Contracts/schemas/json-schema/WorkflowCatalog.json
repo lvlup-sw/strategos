@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowCatalog.json",
+    "type": "object",
+    "properties": {
+        "catalogVersion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Version of this catalog manifest."
+        },
+        "entries": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowCatalogEntry.json"
+            },
+            "description": "The published catalog entries."
+        }
+    },
+    "required": [
+        "catalogVersion",
+        "entries"
+    ],
+    "description": "The published workflow catalog manifest (#65) — the set of workflow journeys a\nsemantic-merge-queue producer may reference via a catalog `WorkflowRef`. It\npins a `catalogVersion` (the manifest's own version) and the list of entries.\n\nA catalog `WorkflowRef` is valid against a manifest iff its\n`(workflowId, catalogVersion)` pair matches some entry (see\n`WorkflowCatalogResolver`)."
+}

@@ -7,6 +7,7 @@ import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Workflow/WorkflowRef.tsp";
+import "./Workflow/WorkflowCatalog.tsp";
 import "./Diagnostics/CheckNode.tsp";
 import "./Diagnostics/Enforcement.tsp";
 import "./Diagnostics/InvariantEntry.tsp";

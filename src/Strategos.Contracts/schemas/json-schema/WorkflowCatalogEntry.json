@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowCatalogEntry.json",
+    "type": "object",
+    "properties": {
+        "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Catalog workflow identity (the lookup key for a catalog `WorkflowRef`)."
+        },
+        "catalogVersion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Catalog version this entry was published at (the second half of the key)."
+        },
+        "definition": {
+            "$ref": "WorkflowDefinitionV1.json",
+            "description": "The serialized workflow-IR payload for this catalog entry."
+        }
+    },
+    "required": [
+        "workflowId",
+        "catalogVersion",
+        "definition"
+    ],
+    "description": "A single published catalog entry (#65): a `(workflowId, catalogVersion)`\nidentity paired with its `WorkflowDefinitionV1` IR payload. A catalog\n`WorkflowRef` resolves to exactly one entry whose identity pair matches."
+}
