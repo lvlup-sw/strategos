@@ -1,0 +1,122 @@
+name: Publish Contracts
+
+# Publishes ONLY LevelUp.Strategos.Contracts, decoupled from the product-line
+# release. The contracts package is independently versioned (MinVerSkip + a
+# pinned <ContractsVersion>; see Strategos.Contracts.csproj T32), so its cadence
+# must not be tied to the `v*` product tag that MinVer-versions every sibling.
+#
+# Trigger: a dedicated `contracts-v<version>` tag (e.g. contracts-v0.2.0). This
+# does NOT match the product publish workflow's `v*` trigger, and MinVer ignores
+# it (tag prefix is `v`), so cutting it touches no other package.
+
+on:
+  push:
+    tags:
+      - 'contracts-v*'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_QUALITY: 'preview'
+  CONTRACTS_PROJECT: 'src/Strategos.Contracts/Strategos.Contracts.csproj'
+  TESTS_PROJECT: 'src/Strategos.Tests/Strategos.Tests.csproj'
+
+# Mirrors the product publish workflow's trusted-publishing setup.
+permissions:
+  id-token: write   # OIDC token for NuGet trusted publishing
+  contents: write   # Create the GitHub Release
+  packages: write   # Push packages
+
+jobs:
+  publish-contracts:
+    name: Publish LevelUp.Strategos.Contracts to NuGet
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    environment: nuget-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-quality: ${{ env.DOTNET_QUALITY }}
+
+      - name: Verify tag matches pinned ContractsVersion
+        # The package version is pinned in the csproj, not derived from the tag.
+        # Fail loudly if the tag and the pinned version disagree, so a mistyped
+        # tag can never publish a mislabeled release.
+        run: |
+          tag_version="${GITHUB_REF_NAME#contracts-v}"
+          pinned="$(grep -oP '(?<=<ContractsVersion>)[^<]+' "$CONTRACTS_PROJECT")"
+          echo "tag=$tag_version pinned=$pinned"
+          if [[ "$tag_version" != "$pinned" ]]; then
+            echo "::error::Tag contracts-v$tag_version does not match pinned <ContractsVersion>$pinned. Update the csproj or retag."
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore "$CONTRACTS_PROJECT"
+
+      - name: Generate builder-fixture corpus (T24/#53)
+        # The package embeds the >=100-case WorkflowDefinitionV1 fixture corpus
+        # under contentFiles/ for downstream (Exarchos) consumption. The corpus
+        # lives in artifacts/builder-fixtures/ (gitignored) and is produced by
+        # the fixture-export test; it must exist before pack, or the csproj's
+        # Exists()-guarded Content glob silently ships a corpus-less package.
+        run: |
+          dotnet run --project "$TESTS_PROJECT" --configuration Release \
+            -- --treenode-filter "/*/*/FixtureExportTests/*"
+
+      - name: Verify corpus is present and complete
+        run: |
+          index="artifacts/builder-fixtures/index.json"
+          if [[ ! -f "$index" ]]; then
+            echo "::error::Fixture corpus missing ($index); aborting before pack."
+            exit 1
+          fi
+          count="$(grep -oP '(?<="count":\s)\d+' "$index" | head -1)"
+          echo "fixture count=$count"
+          if [[ -z "$count" || "$count" -lt 100 ]]; then
+            echo "::error::Fixture corpus has <100 cases ($count); aborting before pack."
+            exit 1
+          fi
+
+      - name: Pack
+        # No --no-build: pack builds the contracts project (committed Generated/
+        # records + schemas; no TypeSpec/Node needed) and globs the now-present
+        # fixture corpus into the package.
+        run: dotnet pack "$CONTRACTS_PROJECT" --configuration Release --output ./packages
+
+      - name: List packages
+        run: ls -la ./packages/
+
+      - name: Push to NuGet
+        run: |
+          for package in ./packages/*.nupkg; do
+            echo "Pushing $package..."
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+      - name: Push symbols
+        run: |
+          for package in ./packages/*.snupkg; do
+            if [ -f "$package" ]; then
+              echo "Pushing symbols $package..."
+              dotnet nuget push "$package" \
+                --api-key ${{ secrets.NUGET_API_KEY }} \
+                --source https://api.nuget.org/v3/index.json \
+                --skip-duplicate
+            fi
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./packages/*
+          generate_release_notes: true
