@@ -1,0 +1,18 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "BuildkitePipelineParams.json",
+    "type": "object",
+    "properties": {
+        "journeys": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowRef.json"
+            },
+            "description": "The journeys to run in the pipeline, typed as `WorkflowRef` (INV-8)."
+        }
+    },
+    "required": [
+        "journeys"
+    ],
+    "description": "Typed params for the `run_buildkite_pipeline` next-action (#63): the journeys\nto run, each a typed `WorkflowRef` (no string indirection)."
+}

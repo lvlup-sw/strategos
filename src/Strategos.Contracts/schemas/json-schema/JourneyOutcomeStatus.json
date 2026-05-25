@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "JourneyOutcomeStatus.json",
+    "type": "string",
+    "enum": [
+        "all_passed",
+        "partial",
+        "all_failed",
+        "not_executed"
+    ],
+    "description": "The outcome status of a journey run (#63). Member names are PascalCase; wire\nVALUES are the exact snake_case tokens cross-repo consumers match on. Reused\nboth as the overall `JourneyResult.outcome` and per-journey on `JourneyOutcome`."
+}

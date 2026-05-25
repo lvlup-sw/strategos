@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthoredWorkflowRef.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "authored",
+            "description": "Discriminator: a free-form authored journey (not a catalog lookup)."
+        },
+        "journeyDescription": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Natural-language description of the journey to author/run."
+        }
+    },
+    "required": [
+        "kind",
+        "journeyDescription"
+    ],
+    "description": "Authored journey reference (#66) — a free-form description rather than a\ncatalog lookup.\n\nOPERATIONALLY DEFERRED: the TYPE is defined now so the wire contract is\ncomplete, but no consumer exercises it in this milestone. The execution path\nfor authored journeys ships later (basileus#179 / exarchos#1255). Until then\nproducers emit only the `catalog` variant."
+}

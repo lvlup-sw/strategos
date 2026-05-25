@@ -154,6 +154,73 @@ public class PackagingTests
     }
 
     /// <summary>
+    /// S1–S4 (#63–#66) — the SMQ schemas are embedded as NuGet content. Packs the
+    /// project and asserts the four new top-level schemas (and the union arm
+    /// schemas) land under <c>contentFiles/any/any/schemas/</c> so language-neutral
+    /// consumers (Exarchos) receive them with the package and can derive Zod.
+    /// </summary>
+    [Test]
+    [Property("Category", "Pack")]
+    public async Task Packaging_SmqSchemas_EmbeddedAsContent()
+    {
+        var projectDir = RepoLayout.ContractsProjectDir;
+        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-smq-").FullName;
+
+        try
+        {
+            var pack = await Cli.RunAsync(
+                "dotnet",
+                $"pack \"{Path.Combine(projectDir, "Strategos.Contracts.csproj")}\" -c Release -o \"{outputDir}\"");
+
+            await Assert.That(pack.ExitCode).IsEqualTo(0).Because(pack.Output);
+
+            var nupkg = Directory.GetFiles(outputDir, "LevelUp.Strategos.Contracts.*.nupkg")
+                .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
+            await Assert.That(nupkg).IsNotNull();
+
+            using var archive = ZipFile.OpenRead(nupkg!);
+            string[] entries = [.. archive.Entries.Select(e => e.FullName)];
+
+            const string schemaPath = "contentFiles/any/any/schemas/";
+            string[] required =
+            [
+                "MergeGateDecision.json",
+                "JourneyResult.json",
+                "WorkflowCatalog.json",
+                "WorkflowRef.json",
+                "ResponseMetaV1.json",
+                "DegradedReason.json",
+                "NextAction.json",
+                "RunBuildkitePipelineAction.json",
+                "EscalateHumanAction.json",
+                "BuildkitePipelineParams.json",
+                "CatalogWorkflowRef.json",
+                "AuthoredWorkflowRef.json",
+                "MergeQueueMetaV1.json",
+                "PerfMetaV1.json",
+                "JourneyOutcome.json",
+                "BudgetConsumedV1.json",
+                "MergeDecision.json",
+                "DiffClassification.json",
+                "FallbackReason.json",
+                "JourneyOutcomeStatus.json",
+            ];
+
+            foreach (var schema in required)
+            {
+                await Assert.That(entries).Contains(e =>
+                    e.StartsWith(schemaPath, StringComparison.Ordinal)
+                    && e.EndsWith("/" + schema, StringComparison.Ordinal))
+                    .Because($"the SMQ schema {schema} must be embedded under {schemaPath}.");
+            }
+        }
+        finally
+        {
+            Directory.Delete(outputDir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Ensures the #53 builder fixtures are present on disk (the packaging step
     /// embeds them as content). Runs the fixture-export entry point if absent.
     /// </summary>

@@ -1,0 +1,16 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DegradedReason.json",
+    "type": "string",
+    "enum": [
+        "model_timeout",
+        "model_5xx",
+        "rate_limit",
+        "malformed_output",
+        "low_confidence",
+        "judge_unavailable",
+        "budget_exhausted",
+        "sandbox_unavailable"
+    ],
+    "description": "Closed enum of reasons a semantic-merge-queue response is **degraded** (#64).\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these **by value** (INV-8 polyglot identity) — never by\nordinal. Adding a reason is an additive minor; renaming or removing one is a\nbreaking major."
+}

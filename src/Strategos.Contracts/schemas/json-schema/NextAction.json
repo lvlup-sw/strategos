@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "NextAction.json",
+    "anyOf": [
+        {
+            "$ref": "RunBuildkitePipelineAction.json"
+        },
+        {
+            "$ref": "EscalateHumanAction.json"
+        }
+    ],
+    "description": "The discriminated `next_actions` pattern (#63): a union of TYPED action\nbranches keyed on `verb`. Each branch carries its own structured payload rather\nthan a string-typed indirection, so a consumer routes on the discriminator and\ngets the branch's fields directly."
+}

@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "JourneyOutcome.json",
+    "type": "object",
+    "properties": {
+        "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Catalog workflow identity of the journey that ran."
+        },
+        "catalogVersion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pinned catalog version of the journey that ran."
+        },
+        "outcome": {
+            "$ref": "JourneyOutcomeStatus.json",
+            "description": "The outcome of this individual journey."
+        },
+        "evidenceRef": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Reference to the evidence (logs/artifacts) this journey produced."
+        }
+    },
+    "required": [
+        "workflowId",
+        "catalogVersion",
+        "outcome",
+        "evidenceRef"
+    ],
+    "description": "A per-journey outcome record (#63): the catalog identity of the journey that\nran, its individual outcome status, and a reference to the evidence it produced."
+}

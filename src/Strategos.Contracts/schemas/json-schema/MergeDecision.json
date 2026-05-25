@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "MergeDecision.json",
+    "type": "string",
+    "enum": [
+        "skip",
+        "run_e2e",
+        "run_e2e_focused",
+        "escalate_human"
+    ],
+    "description": "The merge-gate decision verdict (#63). Member names are PascalCase; the wire\nVALUES are the exact snake_case tokens cross-repo consumers match on."
+}

@@ -1,0 +1,16 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DiffClassification.json",
+    "type": "string",
+    "enum": [
+        "docs",
+        "test_only",
+        "refactor",
+        "feature",
+        "infra",
+        "schema",
+        "config",
+        "mixed"
+    ],
+    "description": "How the diff under evaluation was classified (#63). Member names are\nPascalCase; wire VALUES are the exact snake_case tokens."
+}

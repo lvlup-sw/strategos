@@ -1,0 +1,38 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "PerfMetaV1.json",
+    "type": "object",
+    "properties": {
+        "ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Wall-clock duration the producer took to compute the response, milliseconds."
+        },
+        "inputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Input (prompt) tokens consumed while computing the response."
+        },
+        "outputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Output (completion) tokens produced while computing the response."
+        },
+        "cacheReadTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Prompt-cache read tokens served while computing the response."
+        }
+    },
+    "required": [
+        "ms",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens"
+    ],
+    "description": "Shared `_perf` block for every S-series response envelope (#63/#64).\n\nCarries coarse performance telemetry for the response: wall-clock `ms` and the\ntoken accounting the producer measured. All counters are int32 (not int64) to\navoid JSON Schema string coercion."
+}

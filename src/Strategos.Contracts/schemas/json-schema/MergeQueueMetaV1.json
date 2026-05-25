@@ -1,0 +1,43 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "MergeQueueMetaV1.json",
+    "type": "object",
+    "properties": {
+        "degraded": {
+            "type": "boolean",
+            "description": "When true, the producer fell back: downstream consumers MUST NOT treat the\ndecision as authoritative and MUST short-circuit \"use the decision\" logic."
+        },
+        "degradedReason": {
+            "$ref": "DegradedReason.json",
+            "description": "Why the response degraded (present only when `degraded` is true)."
+        },
+        "headSha": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The commit SHA at the head of the change under evaluation."
+        },
+        "baseSha": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The base commit SHA the change merges into."
+        },
+        "mergeGroupId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The merge group / queue batch this evaluation belongs to."
+        },
+        "evaluatorTier": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The evaluator tier that produced the response (e.g. Tier 1 merge-gate, Tier 2 e2e)."
+        }
+    },
+    "required": [
+        "degraded",
+        "headSha",
+        "baseSha",
+        "mergeGroupId",
+        "evaluatorTier"
+    ],
+    "description": "The semantic-merge-queue `_meta` block (#63). Spreads the universal\n`ResponseMetaV1` degraded seam and adds the merge-context fields that pin a\nresponse to a specific merge attempt: the head/base SHAs, the merge group, and\nthe evaluator tier (Tier 1 merge-gate / Tier 2 e2e) that produced it."
+}

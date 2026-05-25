@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ResponseMetaV1.json",
+    "type": "object",
+    "properties": {
+        "degraded": {
+            "type": "boolean",
+            "description": "When true, the producer fell back: downstream consumers MUST NOT treat the\ndecision as authoritative and MUST short-circuit \"use the decision\" logic."
+        },
+        "degradedReason": {
+            "$ref": "DegradedReason.json",
+            "description": "Why the response degraded (present only when `degraded` is true)."
+        }
+    },
+    "required": [
+        "degraded"
+    ],
+    "description": "Shared `_meta` block for every S-series response envelope (#64).\n\n`degraded == true` is the OBSERVABILITY SEAM: it instructs downstream consumers\nto **short-circuit any \"use the decision\" logic** and fall back. The fallback\nmust be visible, never silent — a degraded response is still a well-formed\nenvelope, but its decision payload is advisory at best. `degradedReason` names\n*why* the response degraded when `degraded` is true; it is absent otherwise."
+}
