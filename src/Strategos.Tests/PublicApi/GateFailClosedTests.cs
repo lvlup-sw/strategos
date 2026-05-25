@@ -114,7 +114,23 @@ public sealed class GateFailClosedTests
         using var proc = Process.Start(psi)!;
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();
         var stderrTask = proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
+
+        // Bound the wait so a wedged gate (e.g. a hung `dotnet build`) fails the
+        // test deterministically instead of hanging CI. 5 min comfortably covers
+        // a cold restore+build while still being a hard ceiling.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            proc.Kill(entireProcessTree: true);
+            var timedOutStdout = await stdoutTask;
+            var timedOutStderr = await stderrTask;
+            return (-1, $"TIMEOUT: gate did not exit within 5 minutes.\n{timedOutStdout}{timedOutStderr}");
+        }
+
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
 

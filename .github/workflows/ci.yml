@@ -166,9 +166,13 @@ jobs:
     # are the surface exarchos's strategos-api-mirror.test.ts mirrors.
     name: Builder API stability (#51)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

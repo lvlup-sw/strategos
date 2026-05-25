@@ -28,7 +28,14 @@ namespace Strategos.Tests.PublicApi;
 /// build time; this suite guards the file-level invariants the analyzer config
 /// depends on, in a fast deterministic unit test.
 /// </para>
+/// <para>
+/// Shares the <c>PublicAPI.Shipped.txt-mutation</c> non-parallel key with
+/// <see cref="GateFailClosedTests"/>: that suite transiently mutates the
+/// on-disk baseline during its fail-closed proof, so these readers must be
+/// serialized against it or they can observe the file mid-mutation and flake.
+/// </para>
 /// </summary>
+[NotInParallel("PublicAPI.Shipped.txt-mutation")]
 public sealed class BuilderApiBaselineTests
 {
     /// <summary>The exactly-7 builder interface types that form the tracked surface.</summary>
@@ -157,16 +164,24 @@ public sealed class BuilderApiBaselineTests
     {
         var baseline = await File.ReadAllTextAsync(ShippedBaselinePath);
 
+        var baselineLines = baseline.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
         foreach (var iface in TrackedInterfaces)
         {
+            // Qualify by the DECLARING interface so a method name shared across
+            // builder interfaces (e.g. Build/Complete) can't satisfy the check
+            // via a different interface's line — a cross-interface false positive.
+            var ownerPrefix = $"{iface.Namespace}.{iface.Name.Split('`')[0]}<";
             foreach (var member in iface.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
-                // The baseline records each member's simple name on its line; a
-                // missing member would be exactly the RS0016 the analyzer raises
-                // at build time. We assert the member name appears so the
-                // baseline can never silently drop a builder method.
-                await Assert.That(baseline)
-                    .Contains(member.Name);
+                // A member missing from its owner's baseline lines is exactly the
+                // RS0016 the analyzer raises at build time; assert the
+                // interface-qualified member line is present so the baseline can
+                // never silently drop a builder member.
+                var found = baselineLines.Any(l =>
+                    l.StartsWith(ownerPrefix, StringComparison.Ordinal) &&
+                    l.Contains($".{member.Name}", StringComparison.Ordinal));
+                await Assert.That(found).IsTrue();
             }
         }
     }
