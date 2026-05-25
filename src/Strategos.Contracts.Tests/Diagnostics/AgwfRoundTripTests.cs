@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// This is the exact relation Exarchos's generated TypeScript enum must satisfy.
 /// </summary>
 [Property("Category", "Diagnostics")]
-public class AgwfRoundTripTests
+public sealed class AgwfRoundTripTests
 {
     /// <summary>
     /// For each catalog entry: (1) its <c>name</c> is a real <c>AgwfCode</c>

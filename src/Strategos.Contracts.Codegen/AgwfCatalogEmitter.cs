@@ -50,6 +50,15 @@ public static class AgwfCatalogEmitter
     /// <returns>Process exit code (0 on success).</returns>
     public static async Task<int> RunAsync(string schemasDir, string outputDir)
     {
+        // Guard before the filesystem call so a null/empty/missing schemasDir
+        // takes the intended non-zero exit path rather than throwing out of
+        // Directory.GetFiles (matches RecordEmitter.RunAsync's guard).
+        if (string.IsNullOrWhiteSpace(schemasDir) || !Directory.Exists(schemasDir))
+        {
+            await Console.Error.WriteLineAsync($"schemas dir not found: {schemasDir}").ConfigureAwait(false);
+            return 1;
+        }
+
         var entryFiles = Directory.GetFiles(schemasDir, EntryPrefix + "*.json");
         if (entryFiles.Length == 0)
         {

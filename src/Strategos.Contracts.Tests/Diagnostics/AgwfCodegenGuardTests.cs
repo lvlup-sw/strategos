@@ -17,7 +17,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// </summary>
 [Property("Category", "Pipeline")]
 [NotInParallel("tsp-compile")]
-public class AgwfCodegenGuardTests
+public sealed class AgwfCodegenGuardTests
 {
     /// <summary>
     /// Verifies the guard workflow regenerates AND diffs the AGWF artifact paths,

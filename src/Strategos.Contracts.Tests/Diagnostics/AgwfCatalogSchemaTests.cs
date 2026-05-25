@@ -19,7 +19,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// </summary>
 [Property("Category", "Diagnostics")]
 [NotInParallel("tsp-compile")]
-public class AgwfCatalogSchemaTests
+public sealed class AgwfCatalogSchemaTests
 {
     /// <summary>The 10 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
     private static readonly string[] GroundTruthCodes =

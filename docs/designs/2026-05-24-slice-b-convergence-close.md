@@ -92,7 +92,7 @@ spike the decorator-read against the compiler API first.
 
 ### 5.2 Pipeline & outputs
 
-```
+```text
 AgwfCatalog.tsp  ──tsp compile──▶  agwf-catalog.schema.json  (shape, into schemas/)
        │                                      │
        │  (compiled program read via @typespec/compiler API)
@@ -143,7 +143,7 @@ section — present even when empty (forces author intent). Documented in `CONTR
 
 ### 6.3 Cross-repo auto-issue (fail-soft, secret-gated)
 
-```
+```text
 push to main ──▶ public-api-drift.yml
    │  diff PublicAPI.Shipped.txt vs previous tag
    ├─ no change ──▶ no-op

@@ -13,7 +13,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// ground-truth code, sorted by ID.
 /// </summary>
 [Property("Category", "Diagnostics")]
-public class AgwfMarkdownTests
+public sealed class AgwfMarkdownTests
 {
     private static readonly string[] GroundTruthCodes =
     [

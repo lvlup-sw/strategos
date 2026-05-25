@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Tests.Pipeline;
 /// </summary>
 [Property("Category", "Pipeline")]
 [NotInParallel("tsp-compile")]
-public class CodegenGuardTests
+public sealed class CodegenGuardTests
 {
     /// <summary>
     /// Verifies the codegen-guard workflow exists and encodes the

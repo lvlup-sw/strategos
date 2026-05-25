@@ -22,7 +22,7 @@ namespace Strategos.Generators.Tests.Diagnostics;
 /// authoring surface the single-source gate guards.
 /// </summary>
 [Property("Category", "Unit")]
-public class AgwfSingleSourceTests
+public sealed class AgwfSingleSourceTests
 {
     // Mirrors the issue's grep AC verbatim: any AGWF0xx token (code literal OR
     // doc-comment) in production source is a parallel-authoring surface.

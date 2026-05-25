@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// via the <c>[JsonStringEnumMemberName]</c> path.
 /// </summary>
 [Property("Category", "Diagnostics")]
-public class AgwfCodeEnumTests
+public sealed class AgwfCodeEnumTests
 {
     // name -> wire value (the ground-truth identity map, symbolic names + gaps).
     private static readonly (string Name, string Wire)[] Expected =

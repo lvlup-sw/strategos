@@ -18,7 +18,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// </summary>
 [Property("Category", "Diagnostics")]
 [NotInParallel("tsp-compile")]
-public class AgwfCatalogEmitterTests
+public sealed class AgwfCatalogEmitterTests
 {
     private static readonly string[] GroundTruthCodes =
     [
