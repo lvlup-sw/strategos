@@ -88,8 +88,11 @@ public sealed class DriftDryRunTests
         all="$*"
         fail() { echo "MOCK gh FAIL: $1" >&2; exit 1; }
         case "$1 $2" in
+          # Idempotent fail-open label create (#107) runs first; accept it
+          # cleanly — it carries no --label/--body/diff flags to assert.
+          "label create") echo "MOCK gh OK: label create accepted"; exit 0;;
           "issue create") ;;
-          *) fail "expected 'issue create', got '$1 $2'";;
+          *) fail "expected 'issue create' or 'label create', got '$1 $2'";;
         esac
         [[ "$all" == *"--repo lvlup-sw/exarchos"* ]] || fail "missing --repo lvlup-sw/exarchos"
         [[ "$all" == *"--label cross-product:strategos"* ]] || fail "missing --label cross-product:strategos"

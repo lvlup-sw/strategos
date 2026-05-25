@@ -14,6 +14,25 @@ name: Public API drift (cross-repo notify)
 # an OUT-OF-BAND manual step the maintainer runs before closing #51 — it is NOT
 # run by this workflow.
 
+# Gated surface boundary (#106)
+# -----------------------------
+# This gate tracks the SEVEN top-level Strategos.Builders entrypoint interfaces
+# declared in PublicAPI.Shipped.txt:
+#   IApprovalBuilder, IBranchBuilder, IFailureBuilder, IForkJoinBuilder,
+#   ILoopBuilder, IStepConfiguration, IWorkflowBuilder.
+#
+# The FIVE continuation interfaces reachable THROUGH those entrypoints —
+#   IForkPathBuilder, ILoopForkJoinBuilder, IApprovalEscalationBuilder,
+#   IApprovalRejectionBuilder, IContextBuilder —
+# are intentionally NOT separately gated. The downstream exarchos
+# strategos-api-mirror parses only the seven entrypoint *signatures*,
+# not the transitive type graph: a change to a continuation interface therefore
+# surfaces through the entrypoint signature that references it (e.g. a return
+# type or parameter change on an entrypoint method). There is consequently no
+# cross-product blind spot from leaving the five continuations ungated.
+#
+# Re-baseline scope is therefore the seven entrypoints (PublicAPI.Shipped.txt).
+
 on:
   push:
     branches: [main]
@@ -88,8 +107,11 @@ jobs:
           all="$*"
           fail() { echo "MOCK gh FAIL: $1" >&2; exit 1; }
           case "$1 $2" in
+            # Idempotent fail-open label create (#107) runs first; accept it
+            # cleanly — it carries no --label/--body/diff flags to assert.
+            "label create") echo "MOCK gh OK: label create accepted"; exit 0;;
             "issue create") ;;
-            *) fail "expected 'issue create', got '$1 $2'";;
+            *) fail "expected 'issue create' or 'label create', got '$1 $2'";;
           esac
           [[ "$all" == *"--repo lvlup-sw/exarchos"* ]] || fail "missing --repo lvlup-sw/exarchos"
           [[ "$all" == *"--label cross-product:strategos"* ]] || fail "missing --label cross-product:strategos"
