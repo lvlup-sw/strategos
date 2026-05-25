@@ -1,0 +1,110 @@
+name: Public API drift (cross-repo notify)
+
+# #51 builder API-stability gate (PR-B), tasks T13/T14.
+#
+# On push to main, diff src/Strategos/PublicAPI/PublicAPI.Shipped.txt (the 7
+# Strategos.Builders interfaces baseline) against the previous release tag. If
+# the builder surface changed, file a tracking issue on lvlup-sw/exarchos so the
+# downstream strategos-api-mirror.test.ts mirror can re-baseline deliberately.
+#
+# FAIL-SOFT ON THE SECRET (design §6.3): if EXARCHOS_ISSUES_PAT is absent the
+# notify step warns and is skipped — it NEVER fails the main push. The notify
+# logic itself is proved in CI by the mocked-gh dry-run job below (T14), which
+# needs no live token. The LIVE cross-repo dry-run against lvlup-sw/exarchos is
+# an OUT-OF-BAND manual step the maintainer runs before closing #51 — it is NOT
+# run by this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Strategos/PublicAPI/**'
+      - 'scripts/build-drift-issue.sh'
+      - '.github/workflows/public-api-drift.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  notify-on-drift:
+    name: Diff baseline + notify exarchos (fail-soft)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for tag diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Diff shipped baseline vs previous tag
+        id: diff
+        run: |
+          set -euo pipefail
+          baseline='src/Strategos/PublicAPI/PublicAPI.Shipped.txt'
+          prev_tag="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
+          if [ -z "${prev_tag}" ]; then
+            echo "No previous v* tag found — nothing to diff against; skipping."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Comparing ${baseline} : ${prev_tag}..HEAD"
+          if git diff --quiet "${prev_tag}" HEAD -- "${baseline}"; then
+            echo "Builder baseline unchanged since ${prev_tag}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Builder baseline CHANGED since ${prev_tag}."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "diff_url=${{ github.server_url }}/${{ github.repository }}/compare/${prev_tag}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File cross-repo tracking issue (fail-soft on PAT)
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          EXARCHOS_ISSUES_PAT: ${{ secrets.EXARCHOS_ISSUES_PAT }}
+        run: bash scripts/build-drift-issue.sh --diff-url "${{ steps.diff.outputs.diff_url }}"
+
+  mocked-gh-dry-run:
+    # T14: proves the notify wiring (--repo/--label/body) end-to-end WITHOUT a
+    # live token, using a `gh` shim on PATH that asserts the invocation. Runs on
+    # every push to main (alongside notify-on-drift) so the wiring can never
+    # silently rot.
+    name: Mocked-gh notify dry-run (#51 T14)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install mocked gh shim on PATH
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/mockbin"
+          cat > "${RUNNER_TEMP}/mockbin/gh" <<'SHIM'
+          #!/usr/bin/env bash
+          # Mocked gh: assert the issue-create invocation, do not hit the network.
+          set -euo pipefail
+          all="$*"
+          fail() { echo "MOCK gh FAIL: $1" >&2; exit 1; }
+          case "$1 $2" in
+            "issue create") ;;
+            *) fail "expected 'issue create', got '$1 $2'";;
+          esac
+          [[ "$all" == *"--repo lvlup-sw/exarchos"* ]] || fail "missing --repo lvlup-sw/exarchos"
+          [[ "$all" == *"--label cross-product:strategos"* ]] || fail "missing --label cross-product:strategos"
+          [[ "$all" == *"--body"* ]] || fail "missing --body"
+          [[ "$all" == *"compare/"* ]] || fail "body missing diff link"
+          echo "MOCK gh OK: issue create asserted (--repo/--label/body/diff-link)"
+          SHIM
+          chmod +x "${RUNNER_TEMP}/mockbin/gh"
+          echo "${RUNNER_TEMP}/mockbin" >> "$GITHUB_PATH"
+
+      - name: Run notify against synthetic divergence (mocked gh, fake PAT)
+        env:
+          # Non-empty fake PAT so the script takes the gh branch; the mocked
+          # gh shim never authenticates, so no live token is involved.
+          EXARCHOS_ISSUES_PAT: 'dry-run-fake-token'
+        run: |
+          bash scripts/build-drift-issue.sh \
+            --diff-url "${{ github.server_url }}/${{ github.repository }}/compare/v0.0.0...${{ github.sha }}"
