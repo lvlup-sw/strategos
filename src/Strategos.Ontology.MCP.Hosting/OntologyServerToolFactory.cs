@@ -4,8 +4,6 @@ using System.Text.Json.Nodes;
 
 using ModelContextProtocol.Server;
 
-using Strategos.Ontology.Descriptors;
-
 namespace Strategos.Ontology.MCP.Hosting;
 
 /// <summary>
