@@ -73,20 +73,45 @@ public sealed class BuilderApiBaselineTests
     public async Task ShippedBaseline_DoesNotLeakNonBuilderTypes_Inv1()
     {
         var baseline = await File.ReadAllTextAsync(ShippedBaselinePath);
-        var typeDeclarationLines = baseline
+        var nonDirectiveLines = baseline
             .Split('\n')
             .Select(static l => l.Trim())
             .Where(static l => l.Length > 0 && !l.StartsWith('#'))
             .ToArray();
 
-        // Every non-directive line must reference the Strategos.Builders
-        // namespace — the only namespace any of the 7 tracked interfaces lives
-        // in. A line outside it would mean a non-builder (e.g. SG-internal or
-        // orchestration) type leaked into the cross-product baseline (INV-1).
-        foreach (var line in typeDeclarationLines)
+        // Every non-directive line declares a member OF one of the 7 tracked
+        // interfaces, so its owning symbol is always in Strategos.Builders.
+        // (Member signatures may *reference* types from other namespaces, e.g.
+        // a return type — that is not a tracked type, just a reference.)
+        foreach (var line in nonDirectiveLines)
         {
             await Assert.That(line)
                 .Contains("Strategos.Builders");
+        }
+
+        // The hard INV-1 contract: the analyzer tracks EXACTLY 7 top-level
+        // TYPE declarations and nothing else. A PublicAPI type-declaration line
+        // is a bare fully-qualified type name with no member ('.' after the
+        // type) and no signature arrow ('->'). If a source-generator-internal
+        // or orchestration type leaked into scope it would add an 8th such line.
+        var typeDeclarationLines = nonDirectiveLines
+            .Where(static l => !l.Contains("->", StringComparison.Ordinal))
+            .Where(static l =>
+            {
+                // Strip the generic argument list before counting member dots,
+                // so "IApprovalBuilder<TState, TApprover>" is a type decl but
+                // "IApprovalBuilder<TState, TApprover>.Build(...)" is not.
+                var afterGenerics = l.Contains('>', StringComparison.Ordinal)
+                    ? l[(l.LastIndexOf('>') + 1)..]
+                    : l;
+                return !afterGenerics.Contains('.', StringComparison.Ordinal);
+            })
+            .ToArray();
+
+        await Assert.That(typeDeclarationLines.Length).IsEqualTo(7);
+        foreach (var decl in typeDeclarationLines)
+        {
+            await Assert.That(decl).StartsWith("Strategos.Builders.I");
         }
     }
 
