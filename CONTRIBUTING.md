@@ -33,6 +33,42 @@ We use StyleCop analyzers to enforce consistent code style across the codebase.
 - Interfaces prefixed with `I`
 - Async methods suffixed with `Async`
 
+## Cross-product API stability (builder interfaces)
+
+The 7 `Strategos.Builders` interfaces — `IWorkflowBuilder<TState>`,
+`IBranchBuilder<TState>`, `ILoopBuilder<TState>`, `IForkJoinBuilder<TState>`,
+`IApprovalBuilder<TState, TApprover>`, `IFailureBuilder<TState>`, and
+`IStepConfiguration<TState>` — are a **cross-product contract**. exarchos's
+`strategos-api-mirror.test.ts` parses their signatures; an unguarded breaking
+change here is invisible until exarchos CI fails downstream.
+
+These interfaces are baselined in
+`src/Strategos/PublicAPI/PublicAPI.Shipped.txt` and enforced by
+`Microsoft.CodeAnalysis.PublicApiAnalyzers`. The baseline is scoped to **only**
+those 7 interfaces (INV-1) via `src/Strategos/PublicApi.globalconfig` (silences
+the analyzer assembly-wide, covering in-memory source-generator output) and
+`src/Strategos/.editorconfig` (re-enables RS0016/RS0017 as build-breaking
+errors for just the 7 interface files).
+
+**When you change a builder signature**, the build fails (RS0016/RS0017) with:
+
+> Update PublicAPI.Unshipped.txt and add a CHANGELOG entry under Cross-product breaking changes.
+
+To satisfy the gate:
+
+1. Run `dotnet format analyzers src/Strategos/Strategos.csproj --diagnostics
+   RS0016` (or apply the IDE code-fix) to add the new/changed lines to
+   `src/Strategos/PublicAPI/PublicAPI.Unshipped.txt`.
+2. Add an entry under the `### Cross-product breaking changes` section of
+   `CHANGELOG.md` describing the change.
+3. Adding a member is a **minor** bump; renaming or removing one is a **major**
+   bump (the diagnostic IDs and builder surface are public contract, INV-5).
+
+On push to `main`, `.github/workflows/public-api-drift.yml` diffs the shipped
+baseline against the previous tag and (if the `EXARCHOS_ISSUES_PAT` secret is
+present) opens a tracking issue on `lvlup-sw/exarchos` so the downstream mirror
+can re-baseline deliberately.
+
 ## Pull Request Process
 
 1. **Fork the repository** and create a feature branch from `main`

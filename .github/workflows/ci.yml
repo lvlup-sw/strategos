@@ -156,6 +156,29 @@ jobs:
       - name: Prose discipline (DIM-8)
         run: bash scripts/check-prose.sh
 
+  builder-api-stability:
+    # #51 builder API-stability gate (PR-B / T11). Fail-closed: builds
+    # src/Strategos with Microsoft.CodeAnalysis.PublicApiAnalyzers, which
+    # baselines ONLY the 7 Strategos.Builders interfaces (INV-1, scoped via
+    # PublicApi.globalconfig + .editorconfig). A builder-signature change with no
+    # matching PublicAPI.Unshipped.txt entry raises RS0016/RS0017 and the build
+    # fails with the verbatim cross-product remediation message. The 7 interfaces
+    # are the surface exarchos's strategos-api-mirror.test.ts mirrors.
+    name: Builder API stability (#51)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Builder public API gate (RS0016/RS0017 fail-closed)
+        run: bash scripts/check-builder-api-stability.sh
+
   dbsf-parity-guard:
     # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
     # still matches the output of qdrant_client.hybrid.fusion.distribution_based_score_fusion
