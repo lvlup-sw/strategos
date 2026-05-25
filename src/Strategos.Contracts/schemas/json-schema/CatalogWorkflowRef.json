@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "CatalogWorkflowRef.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "catalog",
+            "description": "Discriminator: a reference into a published `WorkflowCatalog`."
+        },
+        "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Catalog workflow identity (resolves against `WorkflowCatalogEntry.workflowId`)."
+        },
+        "catalogVersion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pinned catalog version (resolves against `WorkflowCatalog.catalogVersion`)."
+        }
+    },
+    "required": [
+        "kind",
+        "workflowId",
+        "catalogVersion"
+    ],
+    "description": "A reference to a workflow journey (#66) — the language-neutral wire contract\nthat crosses from Exarchos's CI coordinator (TypeScript) into Basileus's\nAgentHost (C#). It is a discriminated union on `kind` carrying ONLY string\nmonikers: never a CLR type name, assembly-qualified handle, or executable\n(INV-8 polyglot identity).\n\n`catalog` references a workflow pinned in a `WorkflowCatalog` by its\n`(workflowId, catalogVersion)` pair (the operational path). `authored`\nreferences a free-form journey description."
+}

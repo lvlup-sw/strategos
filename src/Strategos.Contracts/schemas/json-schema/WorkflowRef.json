@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowRef.json",
+    "anyOf": [
+        {
+            "$ref": "CatalogWorkflowRef.json"
+        },
+        {
+            "$ref": "AuthoredWorkflowRef.json"
+        }
+    ],
+    "description": "Discriminated union over the two workflow-reference kinds (#66), discriminated\non `kind`. Wire-neutral: string monikers only, no CLR identity."
+}
