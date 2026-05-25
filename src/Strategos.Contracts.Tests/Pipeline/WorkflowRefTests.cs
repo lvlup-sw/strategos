@@ -17,7 +17,7 @@ namespace Strategos.Contracts.Tests.Pipeline;
 /// CLR type names cross the wire (INV-8 polyglot identity).
 /// </summary>
 [Property("Category", "Pipeline")]
-public class WorkflowRefTests
+public sealed class WorkflowRefTests
 {
     /// <summary>
     /// Asserts the <c>catalog</c> variant is a sealed record carrying
@@ -55,8 +55,11 @@ public class WorkflowRefTests
         catalog.GetProperty("WorkflowId")!.SetValue(instance, "merge-gate");
         catalog.GetProperty("CatalogVersion")!.SetValue(instance, "1.4.0");
         var json = JsonSerializer.Serialize(instance, baseType, ContractsJson.Options);
-        await Assert.That(json).Contains("\"kind\": \"catalog\"")
-            .Because($"the catalog variant must carry its discriminator: {json}");
+        using (var doc = JsonDocument.Parse(json))
+        {
+            await Assert.That(doc.RootElement.GetProperty("kind").GetString()).IsEqualTo("catalog")
+                .Because($"the catalog variant must carry its discriminator: {json}");
+        }
 
         var back = JsonSerializer.Deserialize(json, baseType, ContractsJson.Options);
         await Assert.That(back!.GetType()).IsEqualTo(catalog)
@@ -88,8 +91,11 @@ public class WorkflowRefTests
         var instance = Activator.CreateInstance(authored)!;
         authored.GetProperty("JourneyDescription")!.SetValue(instance, "spike the new gate flow");
         var json = JsonSerializer.Serialize(instance, baseType, ContractsJson.Options);
-        await Assert.That(json).Contains("\"kind\": \"authored\"")
-            .Because($"the authored variant must carry its discriminator: {json}");
+        using (var doc = JsonDocument.Parse(json))
+        {
+            await Assert.That(doc.RootElement.GetProperty("kind").GetString()).IsEqualTo("authored")
+                .Because($"the authored variant must carry its discriminator: {json}");
+        }
 
         var back = JsonSerializer.Deserialize(json, baseType, ContractsJson.Options);
         await Assert.That(back!.GetType()).IsEqualTo(authored);

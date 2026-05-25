@@ -152,23 +152,74 @@ public class CrossProductRoundTripTests
     {
         var catalogRef = new CatalogWorkflowRef { WorkflowId = "merge-gate", CatalogVersion = "1.4.0" };
 
-        var meta = new ResponseMetaV1 { Degraded = false };
-        var perf = new PerfMetaV1 { Ms = 42 };
+        var meta = new MergeQueueMetaV1
+        {
+            Degraded = false,
+            HeadSha = "abc123",
+            BaseSha = "def456",
+            MergeGroupId = "mg-7",
+            EvaluatorTier = "tier-1",
+        };
+        var perf = new PerfMetaV1
+        {
+            Ms = 42,
+            InputTokens = 1200,
+            OutputTokens = 340,
+            CacheReadTokens = 80,
+        };
 
         var decision = new MergeGateDecision
         {
+            SchemaVersion = "merge-gate.v1",
+            Decision = MergeDecision.RunE2e,
+            Confidence = 0.87,
+            Rationale = "schema change touches the wire contract; run e2e",
+            DiffClassification = DiffClassification.Schema,
+            RiskSignals = ["touches-contract", "cross-repo"],
+            SuggestedJourneys = [catalogRef],
+            PromptId = "merge-gate-prompt.v3",
+            ModelId = "claude-opus-4-7",
             Meta = meta,
             Perf = perf,
-            SuggestedJourneys = [catalogRef],
-            NextActions = [new RunJourneyAction { Journey = catalogRef }, new BlockAction { Reason = "diff too large" }],
+            NextActions =
+            [
+                new RunBuildkitePipelineAction { Params = new BuildkitePipelineParams { Journeys = [catalogRef] } },
+                new EscalateHumanAction { Reason = "diff too large" },
+            ],
         };
 
         var result = new JourneyResult
         {
-            Meta = new ResponseMetaV1 { Degraded = true, DegradedReason = DegradedReason.JudgeTimeout },
+            Outcome = JourneyOutcomeStatus.Partial,
+            JourneyOutcomes =
+            [
+                new JourneyOutcome
+                {
+                    WorkflowId = "merge-gate",
+                    CatalogVersion = "1.4.0",
+                    Outcome = JourneyOutcomeStatus.AllFailed,
+                    EvidenceRef = "s3://evidence/run-7",
+                },
+            ],
+            BudgetConsumed = new BudgetConsumedV1
+            {
+                InputTokens = 9000,
+                OutputTokens = 2200,
+                CacheReadTokens = 500,
+                CostUsd = 0.42,
+            },
+            ProvenanceRef = "provenance://g3/run-7",
+            Meta = new MergeQueueMetaV1
+            {
+                Degraded = true,
+                DegradedReason = DegradedReason.JudgeUnavailable,
+                HeadSha = "abc123",
+                BaseSha = "def456",
+                MergeGroupId = "mg-7",
+                EvaluatorTier = "tier-2",
+            },
             Perf = perf,
-            JourneyOutcomes = [catalogRef],
-            NextActions = [new BlockAction { Reason = "journey failed" }],
+            NextActions = [new EscalateHumanAction { Reason = "journey failed" }],
         };
 
         var catalog = new WorkflowCatalog

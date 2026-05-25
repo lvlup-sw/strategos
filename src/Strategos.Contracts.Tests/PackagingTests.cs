@@ -190,6 +190,20 @@ public class PackagingTests
                 "WorkflowRef.json",
                 "ResponseMetaV1.json",
                 "DegradedReason.json",
+                "NextAction.json",
+                "RunBuildkitePipelineAction.json",
+                "EscalateHumanAction.json",
+                "BuildkitePipelineParams.json",
+                "CatalogWorkflowRef.json",
+                "AuthoredWorkflowRef.json",
+                "MergeQueueMetaV1.json",
+                "PerfMetaV1.json",
+                "JourneyOutcome.json",
+                "BudgetConsumedV1.json",
+                "MergeDecision.json",
+                "DiffClassification.json",
+                "FallbackReason.json",
+                "JourneyOutcomeStatus.json",
             ];
 
             foreach (var schema in required)
