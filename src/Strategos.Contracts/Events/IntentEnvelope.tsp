@@ -7,21 +7,37 @@ namespace LevelUp.Strategos.Contracts;
 /**
  * Closed enum of reasons a semantic-merge-queue response is **degraded** (#64).
  *
- * Member names are the contract Exarchos's TypeScript enum and Basileus's C# enum
- * round-trip against **by name** (INV-8 polyglot identity) — never by ordinal. The
- * wire monikers are kebab-case. Adding a reason is an additive minor; renaming or
- * removing one is a breaking major.
+ * Member names are PascalCase; the wire VALUES are the exact snake_case tokens
+ * cross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#
+ * enum round-trip against these **by value** (INV-8 polyglot identity) — never by
+ * ordinal. Adding a reason is an additive minor; renaming or removing one is a
+ * breaking major.
  */
 @jsonSchema
 enum DegradedReason {
-  /** A downstream dependency (judge, catalog, AgentHost) could not be reached. */
-  DownstreamUnreachable: "downstream-unreachable",
+  /** The model did not return a response within its deadline. */
+  ModelTimeout: "model_timeout",
 
-  /** The semantic judge did not return a decision within its deadline. */
-  JudgeTimeout: "judge-timeout",
+  /** The model endpoint returned a 5xx server error. */
+  Model5xx: "model_5xx",
 
-  /** The judge returned output that could not be parsed into a decision. */
-  MalformedOutput: "malformed-output",
+  /** The producer was rate-limited by the model endpoint. */
+  RateLimit: "rate_limit",
+
+  /** The model returned output that could not be parsed into a decision. */
+  MalformedOutput: "malformed_output",
+
+  /** The model's confidence was below the actionable threshold. */
+  LowConfidence: "low_confidence",
+
+  /** The semantic judge could not be reached. */
+  JudgeUnavailable: "judge_unavailable",
+
+  /** The token/cost budget for the evaluation was exhausted. */
+  BudgetExhausted: "budget_exhausted",
+
+  /** The execution sandbox could not be reached or provisioned. */
+  SandboxUnavailable: "sandbox_unavailable",
 }
 
 /**
@@ -46,11 +62,38 @@ model ResponseMetaV1 {
 }
 
 /**
- * Shared `_perf` block for every S-series response envelope (#64).
+ * The semantic-merge-queue `_meta` block (#63). Spreads the universal
+ * `ResponseMetaV1` degraded seam and adds the merge-context fields that pin a
+ * response to a specific merge attempt: the head/base SHAs, the merge group, and
+ * the evaluator tier (Tier 1 merge-gate / Tier 2 e2e) that produced it.
+ */
+@jsonSchema
+model MergeQueueMetaV1 {
+  ...ResponseMetaV1;
+
+  /** The commit SHA at the head of the change under evaluation. */
+  @minLength(1)
+  headSha: string;
+
+  /** The base commit SHA the change merges into. */
+  @minLength(1)
+  baseSha: string;
+
+  /** The merge group / queue batch this evaluation belongs to. */
+  @minLength(1)
+  mergeGroupId: string;
+
+  /** The evaluator tier that produced the response (e.g. Tier 1 merge-gate, Tier 2 e2e). */
+  @minLength(1)
+  evaluatorTier: string;
+}
+
+/**
+ * Shared `_perf` block for every S-series response envelope (#63/#64).
  *
- * Carries coarse performance telemetry for the response: wall-clock `ms`, and
- * optional `bytes`/`tokens` accounting where the producer measured them. All
- * counters are int32 (not int64) to avoid JSON Schema string coercion.
+ * Carries coarse performance telemetry for the response: wall-clock `ms` and the
+ * token accounting the producer measured. All counters are int32 (not int64) to
+ * avoid JSON Schema string coercion.
  */
 @jsonSchema
 model PerfMetaV1 {
@@ -58,11 +101,15 @@ model PerfMetaV1 {
   @minValue(0)
   ms: int32;
 
-  /** Optional byte count processed while computing the response. */
+  /** Input (prompt) tokens consumed while computing the response. */
   @minValue(0)
-  bytes?: int32;
+  inputTokens: int32;
 
-  /** Optional token count consumed while computing the response. */
+  /** Output (completion) tokens produced while computing the response. */
   @minValue(0)
-  tokens?: int32;
+  outputTokens: int32;
+
+  /** Prompt-cache read tokens served while computing the response. */
+  @minValue(0)
+  cacheReadTokens: int32;
 }

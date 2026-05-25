@@ -12,11 +12,11 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Shared `_perf` block for every S-series response envelope (#64).
+/// Shared `_perf` block for every S-series response envelope (#63/#64).
 /// 
-/// Carries coarse performance telemetry for the response: wall-clock `ms`, and
-/// optional `bytes`/`tokens` accounting where the producer measured them. All
-/// counters are int32 (not int64) to avoid JSON Schema string coercion.
+/// Carries coarse performance telemetry for the response: wall-clock `ms` and the
+/// token accounting the producer measured. All counters are int32 (not int64) to
+/// avoid JSON Schema string coercion.
 /// </summary>
 public sealed record PerfMetaV1
 {
@@ -27,14 +27,20 @@ public sealed record PerfMetaV1
     public int Ms { get; init; }
 
     /// <summary>
-    /// Optional byte count processed while computing the response.
+    /// Input (prompt) tokens consumed while computing the response.
     /// </summary>
-    [JsonPropertyName("bytes")]
-    public int? Bytes { get; init; }
+    [JsonPropertyName("inputTokens")]
+    public int InputTokens { get; init; }
 
     /// <summary>
-    /// Optional token count consumed while computing the response.
+    /// Output (completion) tokens produced while computing the response.
     /// </summary>
-    [JsonPropertyName("tokens")]
-    public int? Tokens { get; init; }
+    [JsonPropertyName("outputTokens")]
+    public int OutputTokens { get; init; }
+
+    /// <summary>
+    /// Prompt-cache read tokens served while computing the response.
+    /// </summary>
+    [JsonPropertyName("cacheReadTokens")]
+    public int CacheReadTokens { get; init; }
 }

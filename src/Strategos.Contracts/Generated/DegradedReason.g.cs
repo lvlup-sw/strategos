@@ -13,20 +13,36 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// Closed enum of reasons a semantic-merge-queue response is **degraded** (#64).
 /// 
-/// Member names are the contract Exarchos&apos;s TypeScript enum and Basileus&apos;s C# enum
-/// round-trip against **by name** (INV-8 polyglot identity) — never by ordinal. The
-/// wire monikers are kebab-case. Adding a reason is an additive minor; renaming or
-/// removing one is a breaking major.
+/// Member names are PascalCase; the wire VALUES are the exact snake_case tokens
+/// cross-repo consumers match on. Exarchos&apos;s TypeScript enum and Basileus&apos;s C#
+/// enum round-trip against these **by value** (INV-8 polyglot identity) — never by
+/// ordinal. Adding a reason is an additive minor; renaming or removing one is a
+/// breaking major.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<DegradedReason>))]
 public enum DegradedReason
 {
-    [JsonStringEnumMemberName("downstream-unreachable")]
-    DownstreamUnreachable,
+    [JsonStringEnumMemberName("model_timeout")]
+    ModelTimeout,
 
-    [JsonStringEnumMemberName("judge-timeout")]
-    JudgeTimeout,
+    [JsonStringEnumMemberName("model_5xx")]
+    Model5xx,
 
-    [JsonStringEnumMemberName("malformed-output")]
+    [JsonStringEnumMemberName("rate_limit")]
+    RateLimit,
+
+    [JsonStringEnumMemberName("malformed_output")]
     MalformedOutput,
+
+    [JsonStringEnumMemberName("low_confidence")]
+    LowConfidence,
+
+    [JsonStringEnumMemberName("judge_unavailable")]
+    JudgeUnavailable,
+
+    [JsonStringEnumMemberName("budget_exhausted")]
+    BudgetExhausted,
+
+    [JsonStringEnumMemberName("sandbox_unavailable")]
+    SandboxUnavailable,
 }
