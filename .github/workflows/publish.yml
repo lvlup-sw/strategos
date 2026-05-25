@@ -41,9 +41,21 @@ jobs:
         run: dotnet build ${{ env.SOLUTION_PATH }} --no-restore --configuration Release
 
       - name: Test (verify before publish)
+        # Mirror ci.yml's skip-patterns. This .NET-only publish runner does not
+        # provision Node, so *Contracts.Tests* (which shell out to `npx tsp
+        # compile` — @typespec/compiler needs Node 22+) false-fail here; they are
+        # already gated in ci.yml's Node-provisioned job and re-run by the
+        # contracts-v* publish workflow, and this workflow does not publish the
+        # version-pinned Contracts package anyway. *Benchmarks.Tests* are perf,
+        # not a release gate (skipped in ci.yml too).
         run: |
           for proj in src/*Tests/*.csproj; do
-            echo "Testing $(basename $proj)..."
+            case "$proj" in
+              *Benchmarks.Tests*|*Contracts.Tests*)
+                echo "Skipping $(basename "$proj") (verified elsewhere; see step comment)"
+                continue ;;
+            esac
+            echo "Testing $(basename "$proj")..."
             dotnet run --project "$proj" --configuration Release --no-build
           done
 
