@@ -22,6 +22,18 @@
     <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
+  <!-- #52 AGWF single-source: link the generated AgwfCodes constants (plain
+       netstandard2.0-safe `const string` map, authored once in AgwfCatalog.tsp
+       and emitted by Strategos.Contracts.Codegen) as source. WorkflowDiagnostics
+       sources its diagnostic IDs from these constants instead of hand-authoring
+       AGWF0xx literals (the grep gate / INV-5). Linked rather than referenced:
+       the generator is an isolated netstandard2.0 analyzer and cannot take a
+       project/package dependency on the net-current Contracts assembly. -->
+  <ItemGroup>
+    <Compile Include="..\Strategos.Contracts\Generated\AgwfCodes.g.cs"
+             Link="Generated\AgwfCodes.g.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers">
