@@ -15,9 +15,11 @@ namespace Strategos.Contracts.Generated;
 /// S1 semantic-merge-queue **JourneyResult** response envelope (#63).
 /// 
 /// Reports the outcome of having run one or more workflow journeys. Like
-/// `MergeGateDecision` it composes the shared S2 base blocks — `_meta` (degraded
-/// seam) and `_perf` (telemetry) — types its journey outcomes as `WorkflowRef`,
-/// and carries the discriminated `next_actions` list.
+/// `MergeGateDecision` it composes the SMQ `_meta` (`MergeQueueMetaV1`) and `_perf`
+/// blocks. It carries the overall `outcome`, a per-journey `journeyOutcomes` list
+/// (typed `JourneyOutcome`, not bare `WorkflowRef`), token/cost accounting in
+/// `budgetConsumed`, a `provenanceRef` to the G3 provenance envelope, and the
+/// shared verb-discriminated `next_actions` list.
 /// 
 /// When `_meta.degraded` is true the result is advisory: consumers short-circuit
 /// &quot;use the result&quot; logic (the observability seam — see `ResponseMetaV1`).
@@ -25,10 +27,34 @@ namespace Strategos.Contracts.Generated;
 public sealed record JourneyResult
 {
     /// <summary>
-    /// Shared response metadata block (degraded seam).
+    /// The overall outcome across all journeys.
+    /// </summary>
+    [JsonPropertyName("outcome")]
+    public JourneyOutcomeStatus Outcome { get; init; }
+
+    /// <summary>
+    /// Per-journey outcomes, typed as `JourneyOutcome` records.
+    /// </summary>
+    [JsonPropertyName("journeyOutcomes")]
+    public IReadOnlyList<JourneyOutcome> JourneyOutcomes { get; init; } = default!;
+
+    /// <summary>
+    /// Token/cost accounting for the journey run.
+    /// </summary>
+    [JsonPropertyName("budgetConsumed")]
+    public BudgetConsumedV1 BudgetConsumed { get; init; } = default!;
+
+    /// <summary>
+    /// Reference to the G3 provenance envelope for this run.
+    /// </summary>
+    [JsonPropertyName("provenanceRef")]
+    public string ProvenanceRef { get; init; } = default!;
+
+    /// <summary>
+    /// Shared SMQ response metadata block (degraded seam + merge context).
     /// </summary>
     [JsonPropertyName("_meta")]
-    public ResponseMetaV1 Meta { get; init; } = default!;
+    public MergeQueueMetaV1 Meta { get; init; } = default!;
 
     /// <summary>
     /// Shared performance telemetry block.
@@ -37,13 +63,7 @@ public sealed record JourneyResult
     public PerfMetaV1 Perf { get; init; } = default!;
 
     /// <summary>
-    /// The journeys whose outcomes this result reports, typed as `WorkflowRef`.
-    /// </summary>
-    [JsonPropertyName("journeyOutcomes")]
-    public IReadOnlyList<WorkflowRef> JourneyOutcomes { get; init; } = default!;
-
-    /// <summary>
-    /// Ordered next actions for the consumer, as a discriminated `NextAction` union.
+    /// Ordered next actions for the consumer, as a verb-discriminated `NextAction` union.
     /// </summary>
     [JsonPropertyName("nextActions")]
     public IReadOnlyList<NextAction> NextActions { get; init; } = default!;

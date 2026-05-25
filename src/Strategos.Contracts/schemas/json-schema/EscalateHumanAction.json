@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "EscalateHumanAction.json",
+    "type": "object",
+    "properties": {
+        "verb": {
+            "type": "string",
+            "const": "escalate_human",
+            "description": "Discriminator: escalate to a human."
+        },
+        "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why the action escalates to a human."
+        }
+    },
+    "required": [
+        "verb",
+        "reason"
+    ],
+    "description": "`next_actions` branch (#63): escalate to a human. Mirrors the `escalate_human`\ndecision — terminal, no journey to run, carries a human-readable reason."
+}

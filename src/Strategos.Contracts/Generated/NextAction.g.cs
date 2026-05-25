@@ -12,11 +12,11 @@ namespace Strategos.Contracts.Generated;
 
 /// <summary>
 /// The discriminated `next_actions` pattern (#63): a union of TYPED action
-/// branches on `kind`. Each branch carries its own structured payload rather than
-/// a string-typed indirection, so a consumer routes on the discriminator and gets
-/// the branch&apos;s fields directly.
+/// branches keyed on `verb`. Each branch carries its own structured payload rather
+/// than a string-typed indirection, so a consumer routes on the discriminator and
+/// gets the branch&apos;s fields directly.
 /// </summary>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
-[JsonDerivedType(typeof(RunJourneyAction), "run-journey")]
-[JsonDerivedType(typeof(BlockAction), "block")]
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "verb")]
+[JsonDerivedType(typeof(RunBuildkitePipelineAction), "run_buildkite_pipeline")]
+[JsonDerivedType(typeof(EscalateHumanAction), "escalate_human")]
 public abstract record NextAction;

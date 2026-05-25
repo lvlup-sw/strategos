@@ -1,0 +1,21 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "RunBuildkitePipelineAction.json",
+    "type": "object",
+    "properties": {
+        "verb": {
+            "type": "string",
+            "const": "run_buildkite_pipeline",
+            "description": "Discriminator: run a Buildkite pipeline."
+        },
+        "params": {
+            "$ref": "BuildkitePipelineParams.json",
+            "description": "The pipeline params (the journeys to run)."
+        }
+    },
+    "required": [
+        "verb",
+        "params"
+    ],
+    "description": "`next_actions` branch (#63): run a Buildkite pipeline over a set of journeys.\nVerb-discriminated; carries its typed params directly."
+}

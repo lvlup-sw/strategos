@@ -3,11 +3,11 @@
     "$id": "NextAction.json",
     "anyOf": [
         {
-            "$ref": "RunJourneyAction.json"
+            "$ref": "RunBuildkitePipelineAction.json"
         },
         {
-            "$ref": "BlockAction.json"
+            "$ref": "EscalateHumanAction.json"
         }
     ],
-    "description": "The discriminated `next_actions` pattern (#63): a union of TYPED action\nbranches on `kind`. Each branch carries its own structured payload rather than\na string-typed indirection, so a consumer routes on the discriminator and gets\nthe branch's fields directly."
+    "description": "The discriminated `next_actions` pattern (#63): a union of TYPED action\nbranches keyed on `verb`. Each branch carries its own structured payload rather\nthan a string-typed indirection, so a consumer routes on the discriminator and\ngets the branch's fields directly."
 }

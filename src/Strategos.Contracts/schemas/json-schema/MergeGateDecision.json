@@ -3,13 +3,35 @@
     "$id": "MergeGateDecision.json",
     "type": "object",
     "properties": {
-        "_meta": {
-            "$ref": "ResponseMetaV1.json",
-            "description": "Shared response metadata block (degraded seam)."
+        "schemaVersion": {
+            "type": "string",
+            "const": "merge-gate.v1",
+            "description": "Wire schema version literal."
         },
-        "_perf": {
-            "$ref": "PerfMetaV1.json",
-            "description": "Shared performance telemetry block."
+        "decision": {
+            "$ref": "MergeDecision.json",
+            "description": "The gate's verdict."
+        },
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Model confidence in the decision, in the unit interval."
+        },
+        "rationale": {
+            "type": "string",
+            "description": "Human-readable rationale for the decision."
+        },
+        "diffClassification": {
+            "$ref": "DiffClassification.json",
+            "description": "How the evaluated diff was classified."
+        },
+        "riskSignals": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Risk signals the gate surfaced (free-form monikers)."
         },
         "suggestedJourneys": {
             "type": "array",
@@ -18,19 +40,47 @@
             },
             "description": "Journeys the gate suggests running, typed as `WorkflowRef` (INV-8)."
         },
+        "fallbackReason": {
+            "$ref": "FallbackReason.json",
+            "description": "Why the gate fell back to a non-autonomous decision (present only on fallback)."
+        },
+        "promptId": {
+            "type": "string",
+            "description": "The prompt that produced this decision."
+        },
+        "modelId": {
+            "type": "string",
+            "description": "The model that produced this decision."
+        },
+        "_meta": {
+            "$ref": "MergeQueueMetaV1.json",
+            "description": "Shared SMQ response metadata block (degraded seam + merge context)."
+        },
+        "_perf": {
+            "$ref": "PerfMetaV1.json",
+            "description": "Shared performance telemetry block."
+        },
         "nextActions": {
             "type": "array",
             "items": {
                 "$ref": "NextAction.json"
             },
-            "description": "Ordered next actions for the consumer, as a discriminated `NextAction` union."
+            "description": "Ordered next actions for the consumer, as a verb-discriminated `NextAction` union."
         }
     },
     "required": [
+        "schemaVersion",
+        "decision",
+        "confidence",
+        "rationale",
+        "diffClassification",
+        "riskSignals",
+        "suggestedJourneys",
+        "promptId",
+        "modelId",
         "_meta",
         "_perf",
-        "suggestedJourneys",
         "nextActions"
     ],
-    "description": "S1 semantic-merge-queue **MergeGateDecision** response envelope (#63).\n\nThe decision the CI coordinator (Exarchos) receives from the semantic judge\n(Basileus AgentHost). It composes the shared S2 base blocks — `_meta`\n(degraded seam) and `_perf` (telemetry) — types its suggested journeys as\n`WorkflowRef`, and carries the discriminated `next_actions` list.\n\nWhen `_meta.degraded` is true the decision is advisory: consumers short-circuit\n\"use the decision\" logic (the observability seam — see `ResponseMetaV1`)."
+    "description": "S1 semantic-merge-queue **MergeGateDecision** response envelope (#63).\n\nThe decision the CI coordinator (Exarchos) receives from the semantic judge\n(Basileus AgentHost). It composes the SMQ `_meta` (`MergeQueueMetaV1`, degraded\nseam + merge context) and `_perf` (telemetry) blocks, classifies the diff,\ntypes its suggested journeys as `WorkflowRef`, and carries the verb-discriminated\n`next_actions` list.\n\nWhen `_meta.degraded` is true the decision is advisory: consumers short-circuit\n\"use the decision\" logic (the observability seam — see `ResponseMetaV1`)."
 }

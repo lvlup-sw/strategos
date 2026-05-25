@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "FallbackReason.json",
+    "type": "string",
+    "enum": [
+        "model_timeout",
+        "model_5xx",
+        "rate_limit",
+        "malformed_output",
+        "low_confidence",
+        "judge_unavailable"
+    ],
+    "description": "Why the gate fell back to a non-autonomous decision (#63). A subset of the\nmodel-side degradation reasons. Member names are PascalCase; wire VALUES are\nthe exact snake_case tokens."
+}

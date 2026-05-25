@@ -12,15 +12,14 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// `next_actions` branch (#63): run a catalog/authored journey. Carries a TYPED
-/// `WorkflowRef` — no string indirection. The consumer (Basileus AgentHost)
-/// resolves the ref and runs the journey.
+/// `next_actions` branch (#63): escalate to a human. Mirrors the `escalate_human`
+/// decision — terminal, no journey to run, carries a human-readable reason.
 /// </summary>
-public sealed record RunJourneyAction : NextAction
+public sealed record EscalateHumanAction : NextAction
 {
     /// <summary>
-    /// The journey to run, typed as a WorkflowRef (catalog or authored).
+    /// Why the action escalates to a human.
     /// </summary>
-    [JsonPropertyName("journey")]
-    public WorkflowRef Journey { get; init; } = default!;
+    [JsonPropertyName("reason")]
+    public string Reason { get; init; } = default!;
 }

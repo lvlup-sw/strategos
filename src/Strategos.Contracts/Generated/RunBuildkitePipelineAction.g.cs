@@ -12,14 +12,14 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// `next_actions` branch (#63): block the merge. Carries a human-readable reason
-/// (not a typed ref — blocking is terminal, there is no journey to run).
+/// `next_actions` branch (#63): run a Buildkite pipeline over a set of journeys.
+/// Verb-discriminated; carries its typed params directly.
 /// </summary>
-public sealed record BlockAction : NextAction
+public sealed record RunBuildkitePipelineAction : NextAction
 {
     /// <summary>
-    /// Why the merge is blocked.
+    /// The pipeline params (the journeys to run).
     /// </summary>
-    [JsonPropertyName("reason")]
-    public string Reason { get; init; } = default!;
+    [JsonPropertyName("params")]
+    public BuildkitePipelineParams Params { get; init; } = default!;
 }

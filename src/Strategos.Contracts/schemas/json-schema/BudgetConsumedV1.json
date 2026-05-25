@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "BudgetConsumedV1.json",
+    "type": "object",
+    "properties": {
+        "inputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Input (prompt) tokens consumed across the journey run."
+        },
+        "outputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Output (completion) tokens produced across the journey run."
+        },
+        "cacheReadTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Prompt-cache read tokens served across the journey run."
+        },
+        "costUsd": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Optional dollar cost of the journey run."
+        }
+    },
+    "required": [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens"
+    ],
+    "description": "Token/cost accounting for a journey run (#63). Token counters are int32 (not\nint64) to avoid JSON Schema string coercion; `costUsd` is an optional float."
+}

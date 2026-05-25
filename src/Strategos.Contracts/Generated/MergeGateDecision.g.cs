@@ -15,9 +15,10 @@ namespace Strategos.Contracts.Generated;
 /// S1 semantic-merge-queue **MergeGateDecision** response envelope (#63).
 /// 
 /// The decision the CI coordinator (Exarchos) receives from the semantic judge
-/// (Basileus AgentHost). It composes the shared S2 base blocks — `_meta`
-/// (degraded seam) and `_perf` (telemetry) — types its suggested journeys as
-/// `WorkflowRef`, and carries the discriminated `next_actions` list.
+/// (Basileus AgentHost). It composes the SMQ `_meta` (`MergeQueueMetaV1`, degraded
+/// seam + merge context) and `_perf` (telemetry) blocks, classifies the diff,
+/// types its suggested journeys as `WorkflowRef`, and carries the verb-discriminated
+/// `next_actions` list.
 /// 
 /// When `_meta.degraded` is true the decision is advisory: consumers short-circuit
 /// &quot;use the decision&quot; logic (the observability seam — see `ResponseMetaV1`).
@@ -25,16 +26,40 @@ namespace Strategos.Contracts.Generated;
 public sealed record MergeGateDecision
 {
     /// <summary>
-    /// Shared response metadata block (degraded seam).
+    /// Wire schema version literal.
     /// </summary>
-    [JsonPropertyName("_meta")]
-    public ResponseMetaV1 Meta { get; init; } = default!;
+    [JsonPropertyName("schemaVersion")]
+    public string SchemaVersion { get; init; } = default!;
 
     /// <summary>
-    /// Shared performance telemetry block.
+    /// The gate&apos;s verdict.
     /// </summary>
-    [JsonPropertyName("_perf")]
-    public PerfMetaV1 Perf { get; init; } = default!;
+    [JsonPropertyName("decision")]
+    public MergeDecision Decision { get; init; }
+
+    /// <summary>
+    /// Model confidence in the decision, in the unit interval.
+    /// </summary>
+    [JsonPropertyName("confidence")]
+    public double Confidence { get; init; }
+
+    /// <summary>
+    /// Human-readable rationale for the decision.
+    /// </summary>
+    [JsonPropertyName("rationale")]
+    public string Rationale { get; init; } = default!;
+
+    /// <summary>
+    /// How the evaluated diff was classified.
+    /// </summary>
+    [JsonPropertyName("diffClassification")]
+    public DiffClassification DiffClassification { get; init; }
+
+    /// <summary>
+    /// Risk signals the gate surfaced (free-form monikers).
+    /// </summary>
+    [JsonPropertyName("riskSignals")]
+    public IReadOnlyList<string> RiskSignals { get; init; } = default!;
 
     /// <summary>
     /// Journeys the gate suggests running, typed as `WorkflowRef` (INV-8).
@@ -43,7 +68,37 @@ public sealed record MergeGateDecision
     public IReadOnlyList<WorkflowRef> SuggestedJourneys { get; init; } = default!;
 
     /// <summary>
-    /// Ordered next actions for the consumer, as a discriminated `NextAction` union.
+    /// Why the gate fell back to a non-autonomous decision (present only on fallback).
+    /// </summary>
+    [JsonPropertyName("fallbackReason")]
+    public FallbackReason? FallbackReason { get; init; }
+
+    /// <summary>
+    /// The prompt that produced this decision.
+    /// </summary>
+    [JsonPropertyName("promptId")]
+    public string PromptId { get; init; } = default!;
+
+    /// <summary>
+    /// The model that produced this decision.
+    /// </summary>
+    [JsonPropertyName("modelId")]
+    public string ModelId { get; init; } = default!;
+
+    /// <summary>
+    /// Shared SMQ response metadata block (degraded seam + merge context).
+    /// </summary>
+    [JsonPropertyName("_meta")]
+    public MergeQueueMetaV1 Meta { get; init; } = default!;
+
+    /// <summary>
+    /// Shared performance telemetry block.
+    /// </summary>
+    [JsonPropertyName("_perf")]
+    public PerfMetaV1 Perf { get; init; } = default!;
+
+    /// <summary>
+    /// Ordered next actions for the consumer, as a verb-discriminated `NextAction` union.
     /// </summary>
     [JsonPropertyName("nextActions")]
     public IReadOnlyList<NextAction> NextActions { get; init; } = default!;
