@@ -49,7 +49,15 @@ public static class RecordEmitter
             File.Delete(stale);
         }
 
-        var schemaFiles = Directory.GetFiles(schemasDir, "*.json").OrderBy(f => f, StringComparer.Ordinal).ToList();
+        // The AGWF catalog schemas (the AgwfCode enum + the AgwfEntry* data
+        // models) are owned by AgwfCatalogEmitter, not the general record/enum
+        // pass: it emits the enum with *symbolic* member names (the AgwfEntry*
+        // files are pure data carriers, not consumer-facing C# types). Exclude
+        // them here so they never surface as ordinary records/enums.
+        var schemaFiles = Directory.GetFiles(schemasDir, "*.json")
+            .Where(f => !IsAgwfCatalogSchema(Path.GetFileName(f)))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
 
         // First pass — classify every document so $ref targets resolve to the
         // right generated kind (enum vs record vs open-object).
@@ -84,8 +92,19 @@ public static class RecordEmitter
             }
         }
 
-        return 0;
+        // AGWF single-source catalog (#52): emit the AgwfCode enum (symbolic
+        // member names), the canonical agwf-catalog.json data artifact, and the
+        // docs/diagnostics/agwf.md reference from the AgwfEntry* schema consts.
+        return await AgwfCatalogEmitter.RunAsync(schemasDir, outputDir).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// True for the AGWF catalog schemas owned by <see cref="AgwfCatalogEmitter"/>
+    /// (the <c>AgwfCode</c> enum and every <c>AgwfEntry*</c> data model).
+    /// </summary>
+    private static bool IsAgwfCatalogSchema(string fileName) =>
+        string.Equals(fileName, AgwfCatalogEmitter.EnumSchemaFileName, StringComparison.Ordinal)
+        || fileName.StartsWith(AgwfCatalogEmitter.EntryPrefix, StringComparison.Ordinal);
 
     /// <summary>
     /// Maps each union-arm document name to the union it belongs to: the union's

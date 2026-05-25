@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryNoStepsFound.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF002"
+        },
+        "severity": {
+            "type": "string",
+            "const": "warning"
+        },
+        "summary": {
+            "type": "string",
+            "const": "No workflow steps found"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Could not find any steps in workflow '{0}'. Ensure the workflow uses StartWith<T>(), Then<T>(), and Finally<T>() methods."
+        },
+        "since": {
+            "type": "string",
+            "const": "0.2.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF002 — No workflow steps found."
+}
