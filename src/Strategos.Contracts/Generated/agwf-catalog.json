@@ -1,0 +1,86 @@
+{
+  "catalog_version": "0.2.0",
+  "count": 10,
+  "entries": [
+    {
+      "name": "EmptyWorkflowName",
+      "id": "AGWF001",
+      "severity": "error",
+      "summary": "Empty workflow name",
+      "remediation": "Workflow name cannot be empty or whitespace",
+      "since": "0.2.0"
+    },
+    {
+      "name": "NoStepsFound",
+      "id": "AGWF002",
+      "severity": "warning",
+      "summary": "No workflow steps found",
+      "remediation": "Could not find any steps in workflow '{0}'. Ensure the workflow uses StartWith<T>(), Then<T>(), and Finally<T>() methods.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "DuplicateStepName",
+      "id": "AGWF003",
+      "severity": "error",
+      "summary": "Duplicate step name",
+      "remediation": "Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "InvalidNamespace",
+      "id": "AGWF004",
+      "severity": "error",
+      "summary": "Invalid namespace",
+      "remediation": "Workflow '{0}' must be declared in a namespace. Global namespace is not supported.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "MissingStartWith",
+      "id": "AGWF009",
+      "severity": "error",
+      "summary": "Missing StartWith",
+      "remediation": "Workflow '{0}' must begin with StartWith<T>(). Found '{1}' instead.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "MissingFinally",
+      "id": "AGWF010",
+      "severity": "warning",
+      "summary": "Missing Finally",
+      "remediation": "Workflow '{0}' does not end with Finally<T>(). Consider adding a Finally step to mark workflow completion.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "ForkWithoutJoin",
+      "id": "AGWF012",
+      "severity": "error",
+      "summary": "Fork without Join",
+      "remediation": "Workflow '{0}' has a Fork that is not followed by Join. Every Fork must be closed with a Join<T>() call.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "LoopWithoutBody",
+      "id": "AGWF014",
+      "severity": "error",
+      "summary": "Loop without body",
+      "remediation": "Loop '{0}' in workflow '{1}' has no steps in its body. A loop must contain at least one step.",
+      "since": "0.2.0"
+    },
+    {
+      "name": "InvalidPersistenceMode",
+      "id": "AGWF015",
+      "severity": "error",
+      "summary": "Invalid persistence mode",
+      "remediation": "Workflow '{0}' specifies an unrecognized Persistence value ({1}). Valid values are SagaDocument (0) and EventSourced (1).",
+      "since": "0.2.0"
+    },
+    {
+      "name": "EventSourcedRequiresState",
+      "id": "AGWF016",
+      "severity": "error",
+      "summary": "Event-sourced workflow requires state type",
+      "remediation": "Workflow '{0}' uses PersistenceMode.EventSourced but no state type was found. Event-sourced workflows require a state type that implements IEventSourcedState<TState> with an ApplyEvent method.",
+      "since": "0.2.0"
+    }
+  ]
+}

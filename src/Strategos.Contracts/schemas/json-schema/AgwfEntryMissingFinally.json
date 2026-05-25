@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryMissingFinally.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF010"
+        },
+        "severity": {
+            "type": "string",
+            "const": "warning"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Missing Finally"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow '{0}' does not end with Finally<T>(). Consider adding a Finally step to mark workflow completion."
+        },
+        "since": {
+            "type": "string",
+            "const": "0.2.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF010 — Missing Finally."
+}

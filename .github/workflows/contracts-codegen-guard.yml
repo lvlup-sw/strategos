@@ -11,6 +11,7 @@ on:
     paths:
       - 'src/Strategos.Contracts/**'
       - 'src/Strategos.Contracts.Codegen/**'
+      - 'docs/diagnostics/**'
       - 'scripts/contracts-codegen.sh'
       - '.github/workflows/contracts-codegen-guard.yml'
   push:
@@ -18,6 +19,7 @@ on:
     paths:
       - 'src/Strategos.Contracts/**'
       - 'src/Strategos.Contracts.Codegen/**'
+      - 'docs/diagnostics/**'
       - 'scripts/contracts-codegen.sh'
 
 jobs:
@@ -48,9 +50,11 @@ jobs:
 
       - name: Fail on hand-edited or stale generated output
         # If `tsp compile` + ContractsCodegen produced anything different from
-        # what is committed under Generated/ or schemas/, the working tree is
-        # dirty and this fails — rejecting hand-edits and stale codegen.
+        # what is committed under Generated/, schemas/, or the externally-emitted
+        # docs/diagnostics/ AGWF reference (#52), the working tree is dirty and
+        # this fails — rejecting hand-edits and stale codegen.
         run: |
           git diff --exit-code -- \
             src/Strategos.Contracts/Generated \
-            src/Strategos.Contracts/schemas
+            src/Strategos.Contracts/schemas \
+            docs/diagnostics

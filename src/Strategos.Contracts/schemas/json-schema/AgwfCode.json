@@ -1,0 +1,18 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfCode.json",
+    "type": "string",
+    "enum": [
+        "AGWF001",
+        "AGWF002",
+        "AGWF003",
+        "AGWF004",
+        "AGWF009",
+        "AGWF010",
+        "AGWF012",
+        "AGWF014",
+        "AGWF015",
+        "AGWF016"
+    ],
+    "description": "AGWF — the workflow source-generator diagnostic codes. **Single canonical\nsource** (#52): the codes and their metadata live here in TypeSpec; the\nRoslyn analyzer (`WorkflowDiagnostics`) sources its `id` strings from the\ngenerated `AgwfCode` C# enum, and the codegen pipeline emits the canonical\n`agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.\n\nGround truth = exactly **10 defined codes** with gaps preserved as gaps\n(INV-5: never renumber). Member names are the contract Exarchos's TypeScript\nenum round-trips against *by name* (not ordinal).\n\nRepresentation = **R-lit** (DR-1): each entry is a literal-typed model whose\nfields emit as JSON Schema `const`, read by `AgwfCatalogEmitter`. Adding a\ncode is a minor bump; renaming/removing one is a major bump."
+}
