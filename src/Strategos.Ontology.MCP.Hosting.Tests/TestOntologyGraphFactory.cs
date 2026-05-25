@@ -5,36 +5,39 @@ using Strategos.Ontology.Descriptors;
 namespace Strategos.Ontology.MCP.Hosting.Tests;
 
 // Test domain types mirroring the rich fixture used by Strategos.Ontology.MCP.Tests.
-public class TestPosition
+// Colocated in one fixture file (matching the sibling test project's
+// TestOntologyGraphFactory.cs); DTO-like types are immutable records, the
+// ontology classes are sealed.
+public sealed record TestPosition
 {
-    public string Id { get; set; } = "";
-    public string Symbol { get; set; } = "";
-    public decimal Quantity { get; set; }
+    public string Id { get; init; } = "";
+    public string Symbol { get; init; } = "";
+    public decimal Quantity { get; init; }
 }
 
-public class TestOrder
+public sealed record TestOrder
 {
-    public string OrderId { get; set; } = "";
-    public string PositionId { get; set; } = "";
-    public decimal Amount { get; set; }
+    public string OrderId { get; init; } = "";
+    public string PositionId { get; init; } = "";
+    public decimal Amount { get; init; }
 }
 
-public class TestTradeExecutionRequest
+public sealed record TestTradeExecutionRequest
 {
-    public string Symbol { get; set; } = "";
-    public decimal Quantity { get; set; }
+    public string Symbol { get; init; } = "";
+    public decimal Quantity { get; init; }
 }
 
-public class TestTradeExecutionResult
+public sealed record TestTradeExecutionResult
 {
-    public bool Success { get; set; }
-    public string TradeId { get; set; } = "";
+    public bool Success { get; init; }
+    public string TradeId { get; init; } = "";
 }
 
-public class TestTradeExecutedEvent
+public sealed record TestTradeExecutedEvent
 {
-    public string TradeId { get; set; } = "";
-    public string OrderId { get; set; } = "";
+    public string TradeId { get; init; } = "";
+    public string OrderId { get; init; } = "";
 }
 
 public interface ISearchable
@@ -45,7 +48,7 @@ public interface ISearchable
 /// <summary>
 /// A rich test domain ontology that exercises properties, links, actions, events, interfaces.
 /// </summary>
-public class TestTradingDomainOntology : DomainOntology
+public sealed class TestTradingDomainOntology : DomainOntology
 {
     public override string DomainName => "trading";
 
@@ -110,35 +113,35 @@ public static class TestOntologyGraphFactory
 
 // Test domain types for constrained action tests.
 
-public class TestAccount
+public sealed record TestAccount
 {
-    public string Id { get; set; } = "";
-    public string Status { get; set; } = "active";
-    public decimal Balance { get; set; }
+    public string Id { get; init; } = "";
+    public string Status { get; init; } = "active";
+    public decimal Balance { get; init; }
 }
 
-public class TestTransaction
+public sealed record TestTransaction
 {
-    public string TransactionId { get; set; } = "";
-    public string AccountId { get; set; } = "";
-    public decimal Amount { get; set; }
+    public string TransactionId { get; init; } = "";
+    public string AccountId { get; init; } = "";
+    public decimal Amount { get; init; }
 }
 
-public class TestCloseAccountRequest
+public sealed record TestCloseAccountRequest
 {
-    public string Reason { get; set; } = "";
+    public string Reason { get; init; } = "";
 }
 
-public class TestCloseAccountResult
+public sealed record TestCloseAccountResult
 {
-    public bool Success { get; set; }
+    public bool Success { get; init; }
 }
 
 /// <summary>
 /// A test domain ontology with actions that carry preconditions, used to verify
 /// constraint summaries survive the server-tool adapter.
 /// </summary>
-public class ConstrainedDomainOntology : DomainOntology
+public sealed class ConstrainedDomainOntology : DomainOntology
 {
     public override string DomainName => "banking";
 
