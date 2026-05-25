@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DegradedReason.json",
+    "type": "string",
+    "enum": [
+        "downstream-unreachable",
+        "judge-timeout",
+        "malformed-output"
+    ],
+    "description": "Closed enum of reasons a semantic-merge-queue response is **degraded** (#64).\n\nMember names are the contract Exarchos's TypeScript enum and Basileus's C# enum\nround-trip against **by name** (INV-8 polyglot identity) — never by ordinal. The\nwire monikers are kebab-case. Adding a reason is an additive minor; renaming or\nremoving one is a breaking major."
+}
