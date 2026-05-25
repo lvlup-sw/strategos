@@ -14,6 +14,25 @@ name: Public API drift (cross-repo notify)
 # an OUT-OF-BAND manual step the maintainer runs before closing #51 — it is NOT
 # run by this workflow.
 
+# Gated surface boundary (#106)
+# -----------------------------
+# This gate tracks the SEVEN top-level Strategos.Builders entrypoint interfaces
+# declared in PublicAPI.Shipped.txt:
+#   IApprovalBuilder, IBranchBuilder, IFailureBuilder, IForkJoinBuilder,
+#   ILoopBuilder, IStepConfiguration, IWorkflowBuilder.
+#
+# The FIVE continuation interfaces reachable THROUGH those entrypoints —
+#   IForkPathBuilder, ILoopForkJoinBuilder, IApprovalEscalationBuilder,
+#   IApprovalRejectionBuilder, IContextBuilder —
+# are intentionally NOT separately gated. The downstream exarchos
+# strategos-api-mirror parses only the seven entrypoint *signatures*,
+# not the transitive type graph: a change to a continuation interface therefore
+# surfaces through the entrypoint signature that references it (e.g. a return
+# type or parameter change on an entrypoint method). There is consequently no
+# cross-product blind spot from leaving the five continuations ungated.
+#
+# Re-baseline scope is therefore the seven entrypoints (PublicAPI.Shipped.txt).
+
 on:
   push:
     branches: [main]
