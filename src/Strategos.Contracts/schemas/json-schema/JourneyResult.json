@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "JourneyResult.json",
+    "type": "object",
+    "properties": {
+        "_meta": {
+            "$ref": "ResponseMetaV1.json",
+            "description": "Shared response metadata block (degraded seam)."
+        },
+        "_perf": {
+            "$ref": "PerfMetaV1.json",
+            "description": "Shared performance telemetry block."
+        },
+        "journeyOutcomes": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowRef.json"
+            },
+            "description": "The journeys whose outcomes this result reports, typed as `WorkflowRef`."
+        },
+        "nextActions": {
+            "type": "array",
+            "items": {
+                "$ref": "NextAction.json"
+            },
+            "description": "Ordered next actions for the consumer, as a discriminated `NextAction` union."
+        }
+    },
+    "required": [
+        "_meta",
+        "_perf",
+        "journeyOutcomes",
+        "nextActions"
+    ],
+    "description": "S1 semantic-merge-queue **JourneyResult** response envelope (#63).\n\nReports the outcome of having run one or more workflow journeys. Like\n`MergeGateDecision` it composes the shared S2 base blocks — `_meta` (degraded\nseam) and `_perf` (telemetry) — types its journey outcomes as `WorkflowRef`,\nand carries the discriminated `next_actions` list.\n\nWhen `_meta.degraded` is true the result is advisory: consumers short-circuit\n\"use the result\" logic (the observability seam — see `ResponseMetaV1`)."
+}

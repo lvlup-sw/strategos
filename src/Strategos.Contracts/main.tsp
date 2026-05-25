@@ -2,6 +2,8 @@ import "@typespec/json-schema";
 import "./Events/Enums.tsp";
 import "./Events/Envelope.tsp";
 import "./Events/IntentEnvelope.tsp";
+import "./Events/MergeGateDecision.tsp";
+import "./Events/JourneyResult.tsp";
 import "./Events/Lifecycle.tsp";
 import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";

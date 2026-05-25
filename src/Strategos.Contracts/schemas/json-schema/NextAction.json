@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "NextAction.json",
+    "anyOf": [
+        {
+            "$ref": "RunJourneyAction.json"
+        },
+        {
+            "$ref": "BlockAction.json"
+        }
+    ],
+    "description": "The discriminated `next_actions` pattern (#63): a union of TYPED action\nbranches on `kind`. Each branch carries its own structured payload rather than\na string-typed indirection, so a consumer routes on the discriminator and gets\nthe branch's fields directly."
+}

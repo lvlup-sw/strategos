@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "MergeGateDecision.json",
+    "type": "object",
+    "properties": {
+        "_meta": {
+            "$ref": "ResponseMetaV1.json",
+            "description": "Shared response metadata block (degraded seam)."
+        },
+        "_perf": {
+            "$ref": "PerfMetaV1.json",
+            "description": "Shared performance telemetry block."
+        },
+        "suggestedJourneys": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowRef.json"
+            },
+            "description": "Journeys the gate suggests running, typed as `WorkflowRef` (INV-8)."
+        },
+        "nextActions": {
+            "type": "array",
+            "items": {
+                "$ref": "NextAction.json"
+            },
+            "description": "Ordered next actions for the consumer, as a discriminated `NextAction` union."
+        }
+    },
+    "required": [
+        "_meta",
+        "_perf",
+        "suggestedJourneys",
+        "nextActions"
+    ],
+    "description": "S1 semantic-merge-queue **MergeGateDecision** response envelope (#63).\n\nThe decision the CI coordinator (Exarchos) receives from the semantic judge\n(Basileus AgentHost). It composes the shared S2 base blocks — `_meta`\n(degraded seam) and `_perf` (telemetry) — types its suggested journeys as\n`WorkflowRef`, and carries the discriminated `next_actions` list.\n\nWhen `_meta.degraded` is true the decision is advisory: consumers short-circuit\n\"use the decision\" logic (the observability seam — see `ResponseMetaV1`)."
+}
