@@ -90,9 +90,17 @@ public static class AgwfCatalogEmitter
         await File.WriteAllTextAsync(
             Path.Combine(outputDir, "agwf-catalog.json"), EmitCatalogJson(entries)).ConfigureAwait(false);
 
-        var docPath = ResolveDocPath(outputDir);
-        Directory.CreateDirectory(Path.GetDirectoryName(docPath)!);
-        await File.WriteAllTextAsync(docPath, EmitMarkdown(entries)).ConfigureAwait(false);
+        // The reference page lives at the repo root (docs/diagnostics/agwf.md),
+        // not under the output dir. When the emitter runs against a throwaway
+        // output dir outside the repo (the codegen-guard's regenerate-into-temp
+        // diff path), the repo root is unreachable — skip the doc in that case;
+        // the JSON + C# under the temp dir are all the guard diffs.
+        var docPath = TryResolveDocPath(outputDir);
+        if (docPath is not null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(docPath)!);
+            await File.WriteAllTextAsync(docPath, EmitMarkdown(entries)).ConfigureAwait(false);
+        }
 
         return 0;
     }
@@ -103,8 +111,10 @@ public static class AgwfCatalogEmitter
     /// <summary>
     /// Resolves <c>docs/diagnostics/agwf.md</c> at the repo root by walking up
     /// from the output directory to the directory containing <c>src/strategos.sln</c>.
+    /// Returns <see langword="null"/> when no repo root is found (e.g. the emitter
+    /// is running against a throwaway output dir outside the repository).
     /// </summary>
-    private static string ResolveDocPath(string outputDir)
+    private static string? TryResolveDocPath(string outputDir)
     {
         var dir = Path.GetFullPath(outputDir);
         while (dir is not null)
@@ -117,8 +127,7 @@ public static class AgwfCatalogEmitter
             dir = Directory.GetParent(dir)?.FullName;
         }
 
-        throw new InvalidOperationException(
-            "Could not locate repo root (no src/strategos.sln) walking up from " + outputDir);
+        return null;
     }
 
     private static string EmitEnum(IReadOnlyList<AgwfEntry> entries)

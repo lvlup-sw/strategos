@@ -47,6 +47,20 @@
     <Content Include="schemas/**/*.json" Pack="true" PackagePath="contentFiles/any/any/schemas/" />
   </ItemGroup>
 
+  <!-- #52: the canonical AGWF catalog data artifact (Generated/agwf-catalog.json)
+       is embedded as NuGet content alongside the JSON Schema, so Exarchos (#1256)
+       extracts it from the package to derive its TypeScript AgwfCode enum. It is
+       emitter-owned (codegen-guard) and Pack-only — NOT added to the default
+       Compile/Content globs (the Generated/ glob compiles only *.g.cs). -->
+  <ItemGroup>
+    <Content Include="Generated/agwf-catalog.json"
+             Pack="true"
+             PackagePath="contentFiles/any/any/diagnostics/"
+             CopyToOutputDirectory="Never">
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+
   <!-- T32: embed the #53 builder-fixture corpus under contentFiles/.../fixtures/
        so Exarchos can extract the ≥100 WorkflowDefinitionV1 fixtures from the
        package. The corpus is produced by the fixture-export test
