@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Cross-product breaking changes
+
+This section is **present on every release that touches the builder public
+surface, even when empty** — it forces deliberate author intent. The 7
+`Strategos.Builders` interfaces (`IWorkflowBuilder<TState>`,
+`IBranchBuilder<TState>`, `ILoopBuilder<TState>`, `IForkJoinBuilder<TState>`,
+`IApprovalBuilder<TState, TApprover>`, `IFailureBuilder<TState>`,
+`IStepConfiguration<TState>`) are a cross-product contract mirrored by
+exarchos's `strategos-api-mirror.test.ts`. They are baselined in
+`src/Strategos/PublicAPI/PublicAPI.Shipped.txt` and enforced by
+`Microsoft.CodeAnalysis.PublicApiAnalyzers` (RS0016/RS0017). When a builder
+signature changes, the CI gate fails closed with the message:
+
+> Update PublicAPI.Unshipped.txt and add a CHANGELOG entry under Cross-product breaking changes.
+
+Follow it: move the new/changed lines into `PublicAPI.Unshipped.txt` and record
+the change here so the downstream exarchos mirror can re-baseline deliberately.
+
+_(none this release)_
+
 ## [2.7.0] - 2026-05-24
 
 ### Changed (BREAKING) — Agent step contract

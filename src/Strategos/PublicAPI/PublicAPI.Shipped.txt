@@ -1,0 +1,51 @@
+#nullable enable
+Strategos.Builders.IApprovalBuilder<TState, TApprover>
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.Build() -> Strategos.Definitions.ApprovalDefinition!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.OnRejection(System.Action<Strategos.Builders.IApprovalRejectionBuilder<TState!>!>! configure) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.OnTimeout(System.Action<Strategos.Builders.IApprovalEscalationBuilder<TState!>!>! configure) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithContextFrom(System.Func<TState!, string!>! contextFactory) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithContext(string! context) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithMetadataFrom(string! key, System.Func<TState!, object!>! valueFactory) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithMetadata(string! key, object! value) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithOption(string! optionId, string! label, string! description, bool isDefault = false) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithTimeout(System.TimeSpan timeout) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IBranchBuilder<TState>
+Strategos.Builders.IBranchBuilder<TState>.AwaitApproval<TApprover>(System.Action<Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!>! configure) -> Strategos.Builders.IBranchBuilder<TState!>!
+Strategos.Builders.IBranchBuilder<TState>.Complete() -> void
+Strategos.Builders.IBranchBuilder<TState>.Then<TStep>() -> Strategos.Builders.IBranchBuilder<TState!>!
+Strategos.Builders.IBranchBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IBranchBuilder<TState!>!
+Strategos.Builders.IFailureBuilder<TState>
+Strategos.Builders.IFailureBuilder<TState>.Complete() -> void
+Strategos.Builders.IFailureBuilder<TState>.Then<TStep>() -> Strategos.Builders.IFailureBuilder<TState!>!
+Strategos.Builders.IFailureBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IFailureBuilder<TState!>!
+Strategos.Builders.IForkJoinBuilder<TState>
+Strategos.Builders.IForkJoinBuilder<TState>.Join<TJoinStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>
+Strategos.Builders.ILoopBuilder<TState>.Branch<TDiscriminator>(System.Func<TState!, TDiscriminator>! discriminator, params Strategos.Definitions.BranchCase<TState!, TDiscriminator>![]! cases) -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>.Fork(params System.Action<Strategos.Builders.IForkPathBuilder<TState!>!>![]! paths) -> Strategos.Builders.ILoopForkJoinBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>.RepeatUntil(System.Func<TState!, bool>! condition, string! loopName, System.Action<Strategos.Builders.ILoopBuilder<TState!>!>! body, int maxIterations = 100) -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>.Then<TStep>() -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.ILoopBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.IStepConfiguration<TState>
+Strategos.Builders.IStepConfiguration<TState>.Compensate<TCompensation>() -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.OnLowConfidence(System.Action<Strategos.Builders.IBranchBuilder<TState!>!>! handler) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.RequireConfidence(double threshold) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.ValidateState(System.Linq.Expressions.Expression<System.Func<TState!, bool>!>! predicate, string! errorMessage) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.WithContext(System.Action<Strategos.Builders.IContextBuilder<TState!>!>! configure) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.WithRetry(int maxAttempts) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.WithRetry(int maxAttempts, System.TimeSpan initialDelay) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.WithTimeout(System.TimeSpan timeout) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>
+Strategos.Builders.IWorkflowBuilder<TState>.AwaitApproval<TApprover>(System.Action<Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Branch<TDiscriminator>(System.Func<TState!, TDiscriminator>! discriminator, params Strategos.Definitions.BranchCase<TState!, TDiscriminator>![]! cases) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Finally<TStep>() -> Strategos.Definitions.WorkflowDefinition<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Fork(params System.Action<Strategos.Builders.IForkPathBuilder<TState!>!>![]! paths) -> Strategos.Builders.IForkJoinBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.OnFailure(System.Action<Strategos.Builders.IFailureBuilder<TState!>!>! handler) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.RepeatUntil(System.Func<TState!, bool>! condition, string! loopName, System.Action<Strategos.Builders.ILoopBuilder<TState!>!>! body, int maxIterations = 100) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>(string! instanceName) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Then(string! stepName, Strategos.Steps.StepDelegate<TState!>! stepDelegate) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!

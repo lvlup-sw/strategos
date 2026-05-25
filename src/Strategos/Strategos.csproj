@@ -17,6 +17,35 @@
     <InternalsVisibleTo Include="$(AssemblyName).Tests" />
   </ItemGroup>
 
+  <!--
+    #51 builder API-stability gate (PR-B). Microsoft.CodeAnalysis.PublicApiAnalyzers
+    tracks the public surface against PublicAPI.{Shipped,Unshipped}.txt. INV-1
+    requires the baseline be scoped to ONLY the 7 Strategos.Builders interfaces
+    (IWorkflowBuilder, IBranchBuilder, ILoopBuilder, IForkJoinBuilder,
+    IApprovalBuilder, IFailureBuilder, IStepConfiguration) so no source-generator-
+    internal types leak into the cross-product baseline. The analyzer is
+    all-or-nothing per project, so the SCOPING is enforced in .editorconfig:
+    RS0016/RS0017/RS0024/RS0025/RS0026/RS0027 are disabled assembly-wide and
+    re-enabled ONLY for the 7 interface files under Abstractions/. The baseline
+    files therefore contain exactly the 7 interfaces' members and nothing else.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Baseline tracking the 7 builder interfaces (INV-1: builder surface only). -->
+    <AdditionalFiles Include="PublicAPI\PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI\PublicAPI.Unshipped.txt" />
+    <!-- Layer 1 of the INV-1 scoping: globally silence PublicApiAnalyzers so
+         in-memory generator output cannot leak; .editorconfig re-enables the
+         7 builder files as errors (layer 2). -->
+    <GlobalAnalyzerConfigFiles Include="PublicApi.globalconfig" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MemoryPack" />
     <!--

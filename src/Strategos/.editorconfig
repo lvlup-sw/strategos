@@ -1,0 +1,46 @@
+# =============================================================================
+# #51 builder API-stability gate (PR-B) — INV-1 scoping.
+#
+# Microsoft.CodeAnalysis.PublicApiAnalyzers tracks the WHOLE assembly public
+# surface by default. INV-1 requires the cross-product baseline cover ONLY the
+# 7 Strategos.Builders interfaces (so no source-generator-internal types leak
+# into the baseline exarchos's strategos-api-mirror.test.ts consumes).
+#
+# Mechanism: the analyzer is all-or-nothing per project, so we disable its
+# diagnostics assembly-wide here, then re-enable them ONLY for the 7 interface
+# files under Abstractions/. The PublicAPI.{Shipped,Unshipped}.txt baseline
+# therefore contains exactly the 7 interfaces' members — nothing else.
+#
+# RS0016 declare-public-api / RS0017 remove / RS0024 list / RS0025 dup
+# RS0026 obsolete / RS0027 nullability annotations.
+# =============================================================================
+
+# Disable PublicApiAnalyzers assembly-wide (off by default for every file).
+# NOTE: the assembly-wide OFF default is set in PublicApi.globalconfig (a
+# non-path-scoped global config) so it also covers IN-MEMORY source-generator
+# output (MemoryPack formatters) whose synthetic paths never match an
+# .editorconfig section. This [*.cs] block keeps the hand-authored tree quiet
+# for editor tooling; the build-breaking scope is the per-file block below.
+[*.cs]
+dotnet_diagnostic.RS0016.severity = none
+dotnet_diagnostic.RS0017.severity = none
+dotnet_diagnostic.RS0024.severity = none
+dotnet_diagnostic.RS0025.severity = none
+dotnet_diagnostic.RS0026.severity = none
+dotnet_diagnostic.RS0027.severity = none
+dotnet_diagnostic.RS0036.severity = none
+dotnet_diagnostic.RS0037.severity = none
+dotnet_diagnostic.RS0041.severity = none
+
+# Re-enable as build-breaking errors ONLY for the 7 tracked builder interfaces.
+# These are the cross-product public surface exarchos mirrors (#51 / R4).
+[Abstractions/{IWorkflowBuilder,IBranchBuilder,ILoopBuilder,IForkJoinBuilder,IApprovalBuilder,IFailureBuilder,IStepConfiguration}.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error

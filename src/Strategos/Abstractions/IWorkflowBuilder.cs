@@ -26,6 +26,18 @@ namespace Strategos.Builders;
 /// <para>
 /// Methods are added incrementally as the DSL evolves.
 /// </para>
+/// <para>
+/// <b>Cross-product API stability (#51).</b> This interface is one of the 7
+/// <c>Strategos.Builders</c> builder interfaces that form a cross-product
+/// contract mirrored by exarchos's <c>strategos-api-mirror.test.ts</c>. Its
+/// public surface is baselined in
+/// <c>src/Strategos/PublicAPI/PublicAPI.Shipped.txt</c> and enforced by
+/// <c>Microsoft.CodeAnalysis.PublicApiAnalyzers</c>. A signature change that is
+/// not declared in the baseline fails the build (RS0016/RS0017) with:
+/// <i>"Update PublicAPI.Unshipped.txt and add a CHANGELOG entry under
+/// Cross-product breaking changes."</i> See <c>CONTRIBUTING.md</c> §
+/// "Cross-product API stability".
+/// </para>
 /// </remarks>
 public interface IWorkflowBuilder<TState>
     where TState : class, IWorkflowState

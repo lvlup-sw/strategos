@@ -1,0 +1,32 @@
+# =============================================================================
+# #51 builder API-stability gate (PR-B) — INV-1 scoping, layer 1 of 2.
+#
+# This GLOBAL analyzer config disables every PublicApiAnalyzers rule for the
+# WHOLE compilation, unconditionally and without path matching. That is the
+# only way to silence IN-MEMORY source-generator output (e.g. MemoryPack
+# formatters under Strategos.Orchestration.*), whose synthetic file paths
+# never match an .editorconfig `[glob]` section.
+#
+# Layer 2 (.editorconfig, this directory) then RE-ENABLES these rules as
+# build-breaking errors for ONLY the 7 Strategos.Builders interface files.
+# .editorconfig section-scoped severities override this global config, so the
+# net tracked surface is exactly those 7 interfaces — INV-1 satisfied.
+#
+# Precedence: globalconfig < .editorconfig section. See
+# https://learn.microsoft.com/dotnet/fundamentals/code-analysis/configuration-files
+# =============================================================================
+is_global = true
+
+dotnet_diagnostic.RS0016.severity = none
+dotnet_diagnostic.RS0017.severity = none
+dotnet_diagnostic.RS0022.severity = none
+dotnet_diagnostic.RS0024.severity = none
+dotnet_diagnostic.RS0025.severity = none
+dotnet_diagnostic.RS0026.severity = none
+dotnet_diagnostic.RS0027.severity = none
+dotnet_diagnostic.RS0036.severity = none
+dotnet_diagnostic.RS0037.severity = none
+dotnet_diagnostic.RS0041.severity = none
+dotnet_diagnostic.RS0048.severity = none
+dotnet_diagnostic.RS0050.severity = none
+dotnet_diagnostic.RS0061.severity = none
