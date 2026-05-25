@@ -6,6 +6,9 @@
 
 using NJsonSchema;
 
+using Strategos.Contracts;
+using Strategos.Contracts.Generated;
+
 namespace Strategos.Contracts.Tests.Pipeline;
 
 /// <summary>
@@ -79,6 +82,127 @@ public class CrossProductRoundTripTests
         await Assert.That(errors.Count).IsEqualTo(0)
             .Because("a representative IR must validate against our C# (NJsonSchema) schema:\n"
                 + string.Join("\n", errors.Select(e => e.ToString())));
+    }
+
+    /// <summary>
+    /// S1–S4 (issues #63/#64/#65/#66) — the SMQ cross-product round-trip. For each
+    /// of the four new top-level types (MergeGateDecision, JourneyResult,
+    /// WorkflowCatalog, WorkflowRef), a C# binding serializes to JSON that
+    /// validates against the emitted JSON Schema (C# direction, NJsonSchema), and
+    /// the same fixtures parse against schema-derived Zod (TS direction, via the
+    /// .mjs harness). Both directions must pass.
+    /// </summary>
+    [Test]
+    public async Task CrossProductRoundTrip_SmqEnvelopes_ValidateBothDirections()
+    {
+        var fixturesDir = Path.Combine(
+            Directory.CreateTempSubdirectory("smq-fixtures-").FullName, "smq");
+        Directory.CreateDirectory(fixturesDir);
+
+        try
+        {
+            // Build consumer-faithful bindings for each new top-level type.
+            var bindings = SmqBindings();
+
+            // Direction 1 — C# binding → JSON validates against its emitted JSON Schema.
+            var schemaDir = EventSchemas.SchemaDir;
+            foreach (var (typeName, value) in bindings)
+            {
+                var json = ContractsJson.Serialize(value);
+                await File.WriteAllTextAsync(Path.Combine(fixturesDir, typeName + ".json"), json);
+
+                var schemaPath = Path.Combine(schemaDir, typeName + ".json");
+                var schema = await JsonSchema.FromFileAsync(schemaPath);
+                var errors = schema.Validate(json);
+                await Assert.That(errors.Count).IsEqualTo(0)
+                    .Because($"{typeName} binding must validate against its emitted JSON Schema:\n"
+                        + string.Join("\n", errors.Select(e => e.ToString())) + "\n" + json);
+
+                // Deserialize the fixture back into the binding (round-trips).
+                var back = System.Text.Json.JsonSerializer.Deserialize(
+                    json, value!.GetType(), ContractsJson.Options);
+                await Assert.That(back).IsNotNull()
+                    .Because($"{typeName} fixture must deserialize back into its binding.");
+            }
+
+            // Direction 2 — the same fixtures parse against schema-derived Zod.
+            var harness = Path.Combine(
+                RepoLayout.ContractsProjectDir, "scripts", "cross-product-roundtrip.mjs");
+            var run = await Cli.RunAsync(
+                "node",
+                $"\"{harness}\" --smq-fixtures \"{fixturesDir}\"",
+                RepoLayout.ContractsProjectDir);
+
+            await Assert.That(run.ExitCode).IsEqualTo(0)
+                .Because($"every SMQ fixture must parse against schema-derived Zod (offline):\n{run.Output}");
+            await Assert.That(run.Output).Contains("SMQ fixtures parsed")
+                .Because(run.Output);
+        }
+        finally
+        {
+            Directory.Delete(Directory.GetParent(fixturesDir)!.FullName, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Consumer-faithful bindings for the four new top-level SMQ types, keyed by
+    /// the emitted schema/type name they validate against.
+    /// </summary>
+    private static IReadOnlyList<(string TypeName, object Value)> SmqBindings()
+    {
+        var catalogRef = new CatalogWorkflowRef { WorkflowId = "merge-gate", CatalogVersion = "1.4.0" };
+
+        var meta = new ResponseMetaV1 { Degraded = false };
+        var perf = new PerfMetaV1 { Ms = 42 };
+
+        var decision = new MergeGateDecision
+        {
+            Meta = meta,
+            Perf = perf,
+            SuggestedJourneys = [catalogRef],
+            NextActions = [new RunJourneyAction { Journey = catalogRef }, new BlockAction { Reason = "diff too large" }],
+        };
+
+        var result = new JourneyResult
+        {
+            Meta = new ResponseMetaV1 { Degraded = true, DegradedReason = DegradedReason.JudgeTimeout },
+            Perf = perf,
+            JourneyOutcomes = [catalogRef],
+            NextActions = [new BlockAction { Reason = "journey failed" }],
+        };
+
+        var catalog = new WorkflowCatalog
+        {
+            CatalogVersion = "1.4.0",
+            Entries =
+            [
+                new WorkflowCatalogEntry
+                {
+                    WorkflowId = "merge-gate",
+                    CatalogVersion = "1.4.0",
+                    Definition = new WorkflowDefinitionV1
+                    {
+                        SchemaVersion = "1.0",
+                        Name = "merge-gate",
+                        Steps = [],
+                        Transitions = [],
+                        BranchPoints = [],
+                        Loops = [],
+                        ForkPoints = [],
+                        FailureHandlers = [],
+                        ApprovalPoints = [],
+                    },
+                },
+            ],
+        };
+
+        return
+        [
+            ("MergeGateDecision", decision),
+            ("JourneyResult", result),
+            ("WorkflowCatalog", catalog),
+            ("WorkflowRef", catalogRef),
+        ];
     }
 
     private static string FirstFixture(string fixturesDir)
