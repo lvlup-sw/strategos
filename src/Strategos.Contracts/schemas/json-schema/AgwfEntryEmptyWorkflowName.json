@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryEmptyWorkflowName.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF001"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Empty workflow name"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow name cannot be empty or whitespace"
+        },
+        "since": {
+            "type": "string",
+            "const": "0.2.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF001 — Empty workflow name."
+}

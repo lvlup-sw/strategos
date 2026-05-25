@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryMissingStartWith.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF009"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Missing StartWith"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow '{0}' must begin with StartWith<T>(). Found '{1}' instead."
+        },
+        "since": {
+            "type": "string",
+            "const": "0.2.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF009 — Missing StartWith."
+}

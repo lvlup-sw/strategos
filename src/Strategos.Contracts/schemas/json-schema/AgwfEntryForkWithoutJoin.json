@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryForkWithoutJoin.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF012"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Fork without Join"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow '{0}' has a Fork that is not followed by Join. Every Fork must be closed with a Join<T>() call."
+        },
+        "since": {
+            "type": "string",
+            "const": "0.2.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF012 — Fork without Join."
+}
