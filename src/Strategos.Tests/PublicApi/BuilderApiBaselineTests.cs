@@ -5,6 +5,7 @@
 // =============================================================================
 
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 using Strategos.Builders;
 using Strategos.Tests.FixtureExport;
@@ -42,8 +43,44 @@ public sealed class BuilderApiBaselineTests
         typeof(IStepConfiguration<>),
     ];
 
+    /// <summary>
+    /// DIM-5: the INTENDED gate scope, encoded as an explicit allowlist of the
+    /// 7 builder-interface file stems (no <c>.cs</c>). This is the source of
+    /// truth the <c>.editorconfig</c> re-enable section must match exactly.
+    /// <para>
+    /// The design scopes the cross-product gate to "7 entrypoints" (the
+    /// <c>IWorkflowBuilder</c> family). Five more public builder interfaces
+    /// (<c>IForkPathBuilder, ILoopForkJoinBuilder, IApprovalEscalationBuilder,
+    /// IApprovalRejectionBuilder, IContextBuilder</c>) exist and appear as
+    /// param/return types in the baseline but are INTENTIONALLY ungated — they
+    /// are nested-fluent continuations reached only through the 7 entrypoints,
+    /// not standalone surface exarchos mirrors. We therefore encode the
+    /// intended-7 as an explicit allowlist (rather than "every interface under
+    /// Abstractions/") and assert <c>.editorconfig == this set</c>, so renaming,
+    /// moving, or adding an entrypoint interface without updating the
+    /// <c>.editorconfig</c> glob converts the silent fail-open into a loud test
+    /// failure. See docs/designs/2026-05-24-slice-b-convergence-close.md (DIM-5).
+    /// </para>
+    /// </summary>
+    private static readonly string[] IntendedGatedFileStems =
+    [
+        "IWorkflowBuilder",
+        "IBranchBuilder",
+        "ILoopBuilder",
+        "IForkJoinBuilder",
+        "IApprovalBuilder",
+        "IFailureBuilder",
+        "IStepConfiguration",
+    ];
+
     private static string ShippedBaselinePath { get; } = Path.Combine(
         FixturePaths.RepoRoot, "src", "Strategos", "PublicAPI", "PublicAPI.Shipped.txt");
+
+    private static string EditorConfigPath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos", ".editorconfig");
+
+    private static string AbstractionsDir { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos", "Abstractions");
 
     [Test]
     public async Task ShippedBaseline_Exists()
@@ -132,5 +169,93 @@ public sealed class BuilderApiBaselineTests
                     .Contains(member.Name);
             }
         }
+    }
+
+    /// <summary>
+    /// DIM-5 consistency check: the reflection-driven <see cref="TrackedInterfaces"/>
+    /// list and the file-stem <see cref="IntendedGatedFileStems"/> allowlist must
+    /// describe the SAME 7 interfaces. Keeps the two intent encodings in lockstep.
+    /// </summary>
+    [Test]
+    public async Task TrackedInterfaces_AndIntendedFileStems_DescribeSameSeven()
+    {
+        var typeStems = TrackedInterfaces
+            .Select(static t => t.Name.Split('`')[0])
+            .OrderBy(static s => s, StringComparer.Ordinal)
+            .ToArray();
+
+        var allowlistStems = IntendedGatedFileStems
+            .OrderBy(static s => s, StringComparer.Ordinal)
+            .ToArray();
+
+        await Assert.That(typeStems).IsEquivalentTo(allowlistStems);
+    }
+
+    /// <summary>
+    /// DIM-5: close the INV-1 fail-OPEN scoping hole. The <c>.editorconfig</c>
+    /// re-enables the build-breaking RS00xx diagnostics for ONLY a hardcoded
+    /// brace-list of filenames under <c>Abstractions/</c>. If a builder
+    /// entrypoint interface is renamed/moved/added without updating that glob, it
+    /// silently drops out of the gate (fail-open). This asserts the brace-list
+    /// EXACTLY equals the intended-7 allowlist, so any drift fails this test loudly.
+    /// </summary>
+    [Test]
+    public async Task EditorConfig_ReEnableGlob_ExactlyMatchesIntendedSeven()
+    {
+        var glob = await ReadEditorConfigBuilderGlobStemsAsync();
+
+        var expected = IntendedGatedFileStems
+            .OrderBy(static s => s, StringComparer.Ordinal)
+            .ToArray();
+        var actual = glob
+            .OrderBy(static s => s, StringComparer.Ordinal)
+            .ToArray();
+
+        // Exact set equality: no missing entry (fail-open) and no extra entry
+        // (gate scope creep beyond the design's 7 entrypoints).
+        await Assert.That(actual).IsEquivalentTo(expected);
+    }
+
+    /// <summary>
+    /// DIM-5 guard: every file the <c>.editorconfig</c> glob names must actually
+    /// exist under <c>Abstractions/</c>. A glob entry that matches no file is a
+    /// silent fail-open (the diagnostic is re-enabled for nothing), so a
+    /// rename/move that left a stale glob entry behind fails here.
+    /// </summary>
+    [Test]
+    public async Task EditorConfig_ReEnableGlob_NamesOnlyExistingAbstractionsFiles()
+    {
+        var glob = await ReadEditorConfigBuilderGlobStemsAsync();
+
+        foreach (var stem in glob)
+        {
+            var path = Path.Combine(AbstractionsDir, stem + ".cs");
+            await Assert.That(File.Exists(path))
+                .IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// Parses the single <c>[Abstractions/{...}.cs]</c> brace-list section header
+    /// from <c>src/Strategos/.editorconfig</c> and returns the file stems it names.
+    /// </summary>
+    private static async Task<string[]> ReadEditorConfigBuilderGlobStemsAsync()
+    {
+        var text = await File.ReadAllTextAsync(EditorConfigPath);
+
+        // Match the builder re-enable section header, e.g.
+        //   [Abstractions/{IWorkflowBuilder,IBranchBuilder,...}.cs]
+        var match = Regex.Match(
+            text,
+            @"\[Abstractions/\{(?<stems>[^}]+)\}\.cs\]",
+            RegexOptions.None,
+            TimeSpan.FromSeconds(2));
+
+        await Assert.That(match.Success)
+            .IsTrue();
+
+        return match.Groups["stems"].Value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
     }
 }
