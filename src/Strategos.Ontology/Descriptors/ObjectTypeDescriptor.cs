@@ -128,6 +128,17 @@ public sealed record ObjectTypeDescriptor
 
     public PropertyDescriptor? KeyProperty { get; init; }
 
+    /// <summary>
+    /// Reflection-free projector of an instance to its key value. For
+    /// hand-authored descriptors this is compiled from the
+    /// <c>Key(...)</c> selector expression at build time; for ingested
+    /// (<see cref="SymbolKey"/>-only) descriptors it is supplied by the
+    /// contributing <c>IOntologySource</c>. Either way the accessor is the
+    /// single id-resolution path — no per-call reflection on the instance
+    /// type is ever performed (INV-8). Null when no key has been declared.
+    /// </summary>
+    public Func<object, object?>? IdAccessor { get; init; }
+
     public IReadOnlyList<PropertyDescriptor> Properties { get; init; } = [];
 
     public IReadOnlyList<LinkDescriptor> Links { get; init; } = [];

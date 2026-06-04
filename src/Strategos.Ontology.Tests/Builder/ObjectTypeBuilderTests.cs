@@ -18,6 +18,21 @@ public class ObjectTypeBuilderTests
     }
 
     [Test]
+    public async Task Key_Selector_RetainsCompiledIdAccessor()
+    {
+        var builder = new ObjectTypeBuilder<TestPosition>("Trading");
+
+        builder.Key(p => p.Id);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.IdAccessor).IsNotNull();
+
+        var id = Guid.NewGuid();
+        var instance = new TestPosition(id, "AAPL", 1m, 0m, "");
+        await Assert.That(descriptor.IdAccessor!(instance)).IsEqualTo(id);
+    }
+
+    [Test]
     public async Task ObjectTypeBuilder_Property_AddsPropertyDescriptor()
     {
         var builder = new ObjectTypeBuilder<TestPosition>("Trading");
