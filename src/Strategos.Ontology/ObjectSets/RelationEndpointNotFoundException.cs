@@ -14,8 +14,8 @@ namespace Strategos.Ontology.ObjectSets;
 public sealed class RelationEndpointNotFoundException : Exception
 {
     /// <summary>
-    /// Initializes a new instance naming the missing endpoint's descriptor
-    /// and id so the message is actionable.
+    /// Initializes a new instance of the <see cref="RelationEndpointNotFoundException"/> class,
+    /// naming the missing endpoint's descriptor and id so the message is actionable.
     /// </summary>
     /// <param name="descriptorName">Descriptor of the missing endpoint.</param>
     /// <param name="id">Projected id that resolved to no stored instance.</param>

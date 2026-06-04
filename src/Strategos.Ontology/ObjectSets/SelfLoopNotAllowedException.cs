@@ -12,8 +12,8 @@ namespace Strategos.Ontology.ObjectSets;
 public sealed class SelfLoopNotAllowedException : Exception
 {
     /// <summary>
-    /// Initializes a new instance naming the descriptor, the self-related id,
-    /// and the link so the message is actionable.
+    /// Initializes a new instance of the <see cref="SelfLoopNotAllowedException"/> class,
+    /// naming the descriptor, the self-related id, and the link so the message is actionable.
     /// </summary>
     /// <param name="descriptorName">Descriptor of the self-related endpoint.</param>
     /// <param name="id">Projected id related to itself.</param>
