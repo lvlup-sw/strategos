@@ -244,6 +244,42 @@ public class InMemoryRelateStoreTests
     }
 
     // -----------------------------------------------------------------------
+    // FIX-C (DR-4) — attributed relate is idempotent for the association OBJECT,
+    // not just the row. Repeating the same attributed triple must store exactly
+    // one association object (the object store must be deduped on the same key as
+    // the row), so a later unrelate that removes one row + one object cannot leave
+    // a stale duplicate behind.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateAsync_AttributedDuplicate_StoresSingleObjectAndRow()
+    {
+        // Arrange — both endpoints stored; the same attributed triple is related twice.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        // Act — relate the SAME attributed (src, link, tgt, association) twice.
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Assert — exactly one row.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].AssociationObjectId).IsEqualTo("emp-1");
+
+        // Assert — exactly one association object stored (not two).
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).HasCount().EqualTo(1);
+        await Assert.That(stored.Items[0].Id).IsEqualTo("emp-1");
+    }
+
+    // -----------------------------------------------------------------------
     // F-HIGH-1 (DR-4) — write/remove key symmetry + orphaned-association cleanup.
     //
     // The relate-store write key is (TargetDescriptor, TargetId, AssociationObjectId).

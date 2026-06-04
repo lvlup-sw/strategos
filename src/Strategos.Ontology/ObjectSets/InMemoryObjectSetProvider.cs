@@ -242,11 +242,17 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // (no per-call reflection on the instance type, INV-8).
         var associationObjectId = ProjectAssociationId(associationDescriptor, association);
 
-        // Store the association object under its descriptor partition.
-        await StoreAsync(associationDescriptor, association, ct).ConfigureAwait(false);
-
-        // Write the row referencing the stored association object.
-        WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId);
+        // Write the row first; it dedups on (TargetDescriptor, TargetId,
+        // AssociationObjectId). Only store the association object when the row was
+        // ACTUALLY new — repeating the same attributed relate must not stack
+        // duplicate association objects behind a single deduped row (FIX-C),
+        // because the symmetric unrelate removes exactly one row + one object and
+        // a duplicate would dangle.
+        var rowAdded = WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId);
+        if (rowAdded)
+        {
+            await StoreAsync(associationDescriptor, association, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -258,7 +264,12 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// attributed relate coexists with a plain row for the same endpoints when it
     /// carries a distinct association object (it never replaces the plain row).
     /// </summary>
-    private void WriteRelationRow(
+    /// <returns>
+    /// <c>true</c> when a NEW row was inserted; <c>false</c> when an identical row
+    /// already existed (the call was idempotent). The attributed overload uses
+    /// this to store the association object only on a genuinely new row (FIX-C).
+    /// </returns>
+    private bool WriteRelationRow(
         string srcDescriptor,
         string srcId,
         string linkName,
@@ -293,10 +304,13 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
             r.TargetDescriptor == tgtDescriptor
             && r.TargetId == tgtId
             && r.AssociationObjectId == associationObjectId);
-        if (!alreadyRelated)
+        if (alreadyRelated)
         {
-            rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
+            return false;
         }
+
+        rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
+        return true;
     }
 
     /// <summary>
