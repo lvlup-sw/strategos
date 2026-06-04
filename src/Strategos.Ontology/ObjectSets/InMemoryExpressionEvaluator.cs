@@ -460,6 +460,15 @@ public sealed class InMemoryExpressionEvaluator
     // rather than surfacing the filterable edge object. Polyglot association
     // traversal (matching by SymbolKey instead of CLR Type) is tracked under
     // DR-9 and intentionally NOT implemented here.
+    //
+    // MULTI-REGISTRATION limitation (strategos #128, deferred): this only
+    // answers "is SOME association backed by this CLR type?" — it does not
+    // identify WHICH descriptor. When one CLR type backs multiple association
+    // descriptors (descriptor-identity-through-the-chain), the boolean is
+    // ambiguous and the downstream partition resolution
+    // (TryResolveAssociationDescriptor) may pick the wrong partition. Carrying
+    // descriptor identity (rather than CLR Type) through the traversal chain is
+    // tracked under strategos #128 and intentionally NOT fixed here.
     private bool IsAssociationType(Type type) =>
         _descriptorIndex.Values.Any(d => d.Kind == ObjectKind.Association && d.ClrType == type);
 
@@ -543,6 +552,15 @@ public sealed class InMemoryExpressionEvaluator
     // resolves here and its TraverseLink degrades to plain target-endpoint
     // traversal. Polyglot association traversal (matching by SymbolKey rather
     // than CLR Type) is tracked under DR-9 and intentionally NOT implemented.
+    //
+    // MULTI-REGISTRATION limitation (strategos #128, deferred): when one CLR
+    // type backs MULTIPLE association descriptors, this returns the FIRST
+    // matching descriptor in _descriptorIndex enumeration order — which may be
+    // the wrong partition for the traversal in flight, surfacing edge objects
+    // from a sibling association. Resolving the correct partition requires
+    // carrying descriptor identity (not CLR Type) through the traversal chain;
+    // that is tracked under strategos #128 (descriptor-identity-through-the-chain)
+    // and intentionally NOT fixed here.
     private bool TryResolveAssociationDescriptor(Type requestedType, out string associationDescriptorName)
     {
         foreach (var descriptor in _descriptorIndex.Values)
@@ -577,6 +595,16 @@ public sealed class InMemoryExpressionEvaluator
     // lets a chained TraverseLink resolve its source as the IMMEDIATE prior hop —
     // e.g. an association hop routes through the far-endpoint path rather than
     // mistaking the chain root for the source.
+    //
+    // ALIAS-LOSS limitation (strategos #128, deferred): a TraverseLinkExpression
+    // hop resolves to traverse.ObjectType.Name, which is the CLR/object-type name
+    // rather than the descriptor ALIAS the prior hop was registered under. After
+    // a hop the descriptor alias is therefore lost, so a subsequent hop whose
+    // source was an aliased (multi-registered) descriptor resolves against the
+    // bare type name and may route to the wrong partition. Threading the prior
+    // hop's descriptor identity (alias-preserving) through the chain is tracked
+    // under strategos #128 (descriptor-identity-through-the-chain) and
+    // intentionally NOT fixed here.
     private static string ResolveImmediateSourceDescriptorName(ObjectSetExpression expression) =>
         expression switch
         {
