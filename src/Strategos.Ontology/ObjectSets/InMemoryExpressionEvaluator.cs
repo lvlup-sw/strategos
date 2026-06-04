@@ -390,32 +390,40 @@ public sealed class InMemoryExpressionEvaluator
     // For the source-role endpoint hop, find the originating source instance id
     // that produced this row. Walks the origin instances and returns the first
     // whose rows include this exact row (same association object id + target).
+    //
+    // F-MED-1: a row produced by the association traversal MUST have an
+    // originating source — so failing to find one is an inconsistency, not a
+    // routine miss. Returning string.Empty here would feed ResolveById(..., "")
+    // → null → a SILENT drop, diverging from the destination-role hop's
+    // never-silent-drop contract (DR-8). Throw a typed error instead.
     private string ProjectedSourceIdForRow(
         IReadOnlyList<object> originInstances,
         ObjectTypeDescriptor originSource,
         TraverseLinkExpression originatingTraversal,
         RelationRow row)
     {
-        if (_relationResolver is null)
+        if (_relationResolver is not null)
         {
-            return string.Empty;
-        }
-
-        foreach (var instance in originInstances)
-        {
-            var srcId = _idProjector.ProjectId(originSource, instance);
-            foreach (var candidate in _relationResolver(originSource.Name, srcId, originatingTraversal.LinkName))
+            foreach (var instance in originInstances)
             {
-                if (candidate.AssociationObjectId == row.AssociationObjectId
-                    && candidate.TargetDescriptor == row.TargetDescriptor
-                    && candidate.TargetId == row.TargetId)
+                var srcId = _idProjector.ProjectId(originSource, instance);
+                foreach (var candidate in _relationResolver(originSource.Name, srcId, originatingTraversal.LinkName))
                 {
-                    return srcId;
+                    if (candidate.AssociationObjectId == row.AssociationObjectId
+                        && candidate.TargetDescriptor == row.TargetDescriptor
+                        && candidate.TargetId == row.TargetId)
+                    {
+                        return srcId;
+                    }
                 }
             }
         }
 
-        return string.Empty;
+        throw new InvalidOperationException(
+            $"Source-role endpoint hop on association '{originSource.Name}' could not resolve the " +
+            $"originating source for row (target '{row.TargetDescriptor}':'{row.TargetId}', " +
+            $"association '{row.AssociationObjectId}'). The relation row has no originating source " +
+            $"instance under link '{originatingTraversal.LinkName}' — the relate-store is inconsistent.");
     }
 
     private static int IndexOfEndpointRole(ObjectTypeDescriptor associationDescriptor, string role)

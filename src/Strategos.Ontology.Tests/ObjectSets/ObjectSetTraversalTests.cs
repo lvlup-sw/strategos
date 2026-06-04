@@ -246,6 +246,42 @@ public class InstanceAnchoredTraversalTests
         var allFarIds = allFar.Items.Select(n => n.Id).OrderBy(s => s, StringComparer.Ordinal).ToList();
         await Assert.That(allFarIds).IsEquivalentTo(new[] { "y1", "y2" });
     }
+
+    [Test]
+    public async Task TraverseLink_OverAssociation_ToSourceRoleEndpoint_ReturnsSourceNode()
+    {
+        // F-MED-1: hopping to the SOURCE-role endpoint ("From", index 0) must
+        // resolve the originating source node — not silently drop. Two distinct
+        // sources (x1, x2) each relate to a shared far node via an edge, so the
+        // source-role hop must surface the correct originating node per edge.
+        var graph = BuildGraph();
+        var (provider, query) = BuildQuery(graph);
+        provider.Seed(new TravNode("x1"), "x1", nameof(TravNode));
+        provider.Seed(new TravNode("x2"), "x2", nameof(TravNode));
+        provider.Seed(new TravNode("y"), "y", nameof(TravNode));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            nameof(TravNode), "x1", "link", nameof(TravNode), "y",
+            "TravEdge", new TravEdge("e1", new TravNode("x1"), new TravNode("y"), "active"));
+        await writer.RelateAsync(
+            nameof(TravNode), "x2", "link", nameof(TravNode), "y",
+            "TravEdge", new TravEdge("e2", new TravNode("x2"), new TravNode("y"), "active"));
+
+        // Act — from x1, traverse to the edge then back to its SOURCE-role
+        // ("From") endpoint. The far node is x1, NOT the destination y.
+        var sourceFar = await query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x1")
+            .TraverseLink<TravEdge>("link")
+            .TraverseLink<TravNode>("From")
+            .ExecuteAsync();
+
+        // Assert — exactly {x1}: the source-role hop resolved the originating
+        // node rather than silently dropping it.
+        var sourceIds = sourceFar.Items.Select(n => n.Id).ToList();
+        await Assert.That(sourceIds).IsEquivalentTo(new[] { "x1" });
+    }
 }
 
 // ---------------------------------------------------------------------------
