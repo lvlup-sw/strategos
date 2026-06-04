@@ -38,6 +38,7 @@ internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAss
 
     public void Key(Expression<Func<TRel, object>> keySelector)
     {
+        ArgumentNullException.ThrowIfNull(keySelector);
         var memberName = ExpressionHelper.ExtractMemberName(keySelector);
         var memberType = ExpressionHelper.ExtractMemberType(keySelector);
         _keyProperty = new PropertyDescriptor(memberName, memberType);
@@ -66,6 +67,7 @@ internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAss
 
     public IPropertyBuilder<TRel> Property(Expression<Func<TRel, object>> propertySelector)
     {
+        ArgumentNullException.ThrowIfNull(propertySelector);
         var memberName = ExpressionHelper.ExtractMemberName(propertySelector);
         var memberType = ExpressionHelper.ExtractMemberType(propertySelector);
         var builder = new PropertyBuilder<TRel>(memberName, memberType);
@@ -75,6 +77,7 @@ internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAss
 
     public IAssociationBuilder<TRel> Property<TProp>(string name)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _namedProperties.Add(new PropertyDescriptor(name, typeof(TProp)));
         return this;
     }

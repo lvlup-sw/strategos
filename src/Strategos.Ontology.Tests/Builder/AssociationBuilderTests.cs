@@ -84,4 +84,65 @@ public class AssociationBuilderTests
         var instance = new Employment("e1", new AssocPerson("p1"), new AssocCompany("c1"), "Engineer");
         await Assert.That(descriptor.IdAccessor!(instance)).IsEqualTo("e1");
     }
+
+    // -----------------------------------------------------------------------
+    // FIX-F — upfront guard clauses on the fluent entry points, matching the
+    // other builders' convention so null/blank inputs fail with actionable
+    // errors at the call site rather than later as a NullReferenceException.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Property_ByName_Blank_ThrowsArgumentException()
+    {
+        IAssociationBuilder<Employment> builder = new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.Property<string>("   "))
+            .Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task Property_ByName_Null_ThrowsArgumentNullException()
+    {
+        IAssociationBuilder<Employment> builder = new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.Property<string>(null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task Key_NullSelector_ThrowsArgumentNullException()
+    {
+        IAssociationBuilder<Employment> builder = new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.Key(null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task PropertyBySelector_Null_ThrowsArgumentNullException()
+    {
+        IAssociationBuilder<Employment> builder = new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.Property(null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task Between_NullSelector_ThrowsArgumentNullException()
+    {
+        IAssociationBuilder<Employment> builder = new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.Between<AssocPerson>(null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task And_NullSelector_ThrowsArgumentNullException()
+    {
+        IAssociationEndpointBuilder<Employment> builder =
+            new AssociationBuilder<Employment>("assoc", "Employment");
+
+        await Assert.That(() => builder.And<AssocCompany>(null!))
+            .Throws<ArgumentNullException>();
+    }
 }
