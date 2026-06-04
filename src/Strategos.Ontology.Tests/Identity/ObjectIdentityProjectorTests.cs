@@ -90,6 +90,46 @@ public class ObjectIdentityProjectorTests
     }
 
     [Test]
+    public async Task ProjectId_CompositeKey_FormatsDeterministicallyWithSeparator()
+    {
+        var projector = new ObjectIdentityProjector();
+
+        // Composite key whose accessor yields a ValueTuple (ITuple). The id is
+        // its elements joined by the reserved Unit Separator; single-value keys
+        // are plain ToString(). Determinism: same elements => same id.
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "CompositeThing",
+            DomainName = "test",
+            SymbolKey = "py::CompositeThing",
+            IdAccessor = o => ((IReadOnlyDictionary<string, object>)o)["key"],
+        };
+
+        var instance = new Dictionary<string, object> { ["key"] = (tenant: "acme", id: 7) };
+
+        var projected = projector.ProjectId(descriptor, instance);
+        var again = projector.ProjectId(
+            descriptor,
+            new Dictionary<string, object> { ["key"] = (tenant: "acme", id: 7) });
+
+        var expected = $"acme{ObjectIdentityProjector.CompositeKeySeparator}7";
+        await Assert.That(projected).IsEqualTo(expected);
+        await Assert.That(projected).IsEqualTo(again);
+    }
+
+    [Test]
+    public async Task ProjectId_SingleValueKey_IsPlainToString()
+    {
+        var projector = new ObjectIdentityProjector();
+        var descriptor = ClrDescriptor();
+        var id = Guid.NewGuid();
+
+        var projected = projector.ProjectId(descriptor, new ClrThing(id, "x"));
+
+        await Assert.That(projected).IsEqualTo(id.ToString());
+    }
+
+    [Test]
     public async Task ProjectId_DescriptorWithoutIdAccessor_ThrowsNamingDescriptor()
     {
         var projector = new ObjectIdentityProjector();
