@@ -60,4 +60,38 @@ public interface IObjectSetWriter
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes when all items have been written.</returns>
     Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class;
+
+    /// <summary>
+    /// Materializes a relation (link instance) from the stored source instance
+    /// to the stored target instance under the named link.
+    /// </summary>
+    /// <remarks>
+    /// Endpoint validation is EAGER: both <paramref name="srcId"/> and
+    /// <paramref name="tgtId"/> must correspond to instances already stored for
+    /// their respective descriptors, or a
+    /// <see cref="RelationEndpointNotFoundException"/> is thrown and no row is
+    /// written. This eager posture is the contract the future Npgsql provider
+    /// mirrors via foreign-key constraints.
+    /// </remarks>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link being materialized.</param>
+    /// <param name="tgtDescriptor">Descriptor name of the target endpoint.</param>
+    /// <param name="tgtId">Projected id of the target instance.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the relation has been written.</returns>
+    Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a previously-materialized relation. Removing a relation that does
+    /// not exist is a no-op (no throw).
+    /// </summary>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link being removed.</param>
+    /// <param name="tgtDescriptor">Descriptor name of the target endpoint.</param>
+    /// <param name="tgtId">Projected id of the target instance.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the relation has been removed.</returns>
+    Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default);
 }

@@ -344,6 +344,31 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return StoreBatchAsyncCore<T>(tableName, items, ct);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// DR-2 (Ontology Edge Foundation) implements the relate-store only for the
+    /// in-memory provider. The Npgsql relation-table materialization (with the
+    /// foreign-key constraints that mirror the in-memory provider's eager
+    /// endpoint validation) is a later increment; until then this surface
+    /// throws rather than silently dropping a write.
+    /// </remarks>
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "RelateAsync is not yet implemented by PgVectorObjectSetProvider. "
+            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
+            + "materialization is a later increment.");
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// DR-2 (Ontology Edge Foundation): see <see cref="RelateAsync"/>. Not yet
+    /// implemented by the Npgsql provider.
+    /// </remarks>
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "UnrelateAsync is not yet implemented by PgVectorObjectSetProvider. "
+            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
+            + "materialization is a later increment.");
+
     /// <summary>
     /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
     /// so both the default <see cref="StoreAsync{T}(T, CancellationToken)"/> overload

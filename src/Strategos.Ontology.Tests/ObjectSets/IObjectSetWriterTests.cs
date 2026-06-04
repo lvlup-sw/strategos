@@ -41,6 +41,14 @@ public class StubObjectSetWriter : IObjectSetWriter
         StoredItems.AddRange(items);
         return Task.CompletedTask;
     }
+
+    // Relate-store methods added for DR-2 (Ontology Edge Foundation). Real behavior
+    // is exercised by InMemoryObjectSetProvider; this stub only satisfies the interface.
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+        => Task.CompletedTask;
 }
 
 public class IObjectSetWriterTests

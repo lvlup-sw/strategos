@@ -31,6 +31,13 @@ public class StubObjectSetWriterForDI : IObjectSetWriter
 
     public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
         Task.CompletedTask;
+
+    // Relate-store methods added for DR-2; this DI test double does not need relate behavior.
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        Task.CompletedTask;
 }
 
 public class DualProvider : IObjectSetProvider, IObjectSetWriter
@@ -59,6 +66,13 @@ public class DualProvider : IObjectSetProvider, IObjectSetWriter
         Task.CompletedTask;
 
     public Task StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, CancellationToken ct = default) where T : class =>
+        Task.CompletedTask;
+
+    // Relate-store methods added for DR-2; this DI test double does not need relate behavior.
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
         Task.CompletedTask;
 }
 

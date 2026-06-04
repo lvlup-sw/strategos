@@ -30,6 +30,13 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly ConcurrentDictionary<string, List<object>> _items = new();
     private readonly ConcurrentDictionary<string, List<string>> _searchableContent = new();
     private readonly ConcurrentDictionary<string, List<float[]>> _embeddings = new();
+
+    // Materialized relation rows (DR-2). Keyed by the relation triple's
+    // (srcDescriptor, srcId, linkName); the value is the list of target
+    // endpoints related to that source under that link. The raw store is
+    // insertion-ordered, but the READ path (GetRelations) never exposes that
+    // order — it sorts ordinal-by-TargetId so replay is deterministic (INV-7).
+    private readonly ConcurrentDictionary<(string SrcDescriptor, string SrcId, string LinkName), List<RelationRow>> _relations = new();
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly InMemoryExpressionEvaluator? _evaluator;
 
@@ -155,6 +162,65 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
             ct.ThrowIfCancellationRequested();
             await StoreAsync(descriptorName, item, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc />
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
+        rows.Add(new RelationRow(tgtDescriptor, tgtId));
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        {
+            rows.RemoveAll(r => r.TargetDescriptor == tgtDescriptor && r.TargetId == tgtId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reads the materialized relation rows for a given relation triple in a
+    /// deterministic, ordinal-by-<see cref="RelationRow.TargetId"/> order.
+    /// </summary>
+    /// <remarks>
+    /// INV-7: the returned list is a freshly-sorted snapshot — it never exposes
+    /// the relate-store's insertion order or raw
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>
+    /// enumeration order. DR-3 traversal consumes this accessor from the same
+    /// assembly.
+    /// </remarks>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link.</param>
+    /// <returns>Relation rows ordered by <see cref="RelationRow.TargetId"/>.</returns>
+    internal IReadOnlyList<RelationRow> GetRelations(string srcDescriptor, string srcId, string linkName)
+    {
+        if (!_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        {
+            return [];
+        }
+
+        return rows
+            .OrderBy(r => r.TargetId, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <inheritdoc />
