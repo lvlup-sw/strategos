@@ -19,10 +19,26 @@ public interface IObjectIdentityProjector
 {
     /// <summary>
     /// Projects <paramref name="instance"/> to a deterministic id under
-    /// <paramref name="descriptor"/>. Throws <see cref="System.InvalidOperationException"/>
-    /// (naming the descriptor) when the descriptor exposes no id accessor or
-    /// the accessor yields a null key value — never silently, never via a
-    /// reflection fallback.
+    /// <paramref name="descriptor"/> — never silently, never via a reflection
+    /// fallback.
     /// </summary>
+    /// <param name="descriptor">The descriptor supplying the id accessor.</param>
+    /// <param name="instance">The instance to project.</param>
+    /// <returns>The deterministic projected id.</returns>
+    /// <exception cref="MissingIdAccessorException">
+    /// The descriptor exposes no id accessor — a CONFIGURATION error (the
+    /// descriptor was assembled without a <c>Key(...)</c> selector or an
+    /// <c>IOntologySource</c>-supplied accessor).
+    /// </exception>
+    /// <exception cref="NullKeyValueException">
+    /// The accessor ran but yielded a null key value — a DATA error (the
+    /// descriptor is configured, but the instance carries a null key).
+    /// </exception>
+    /// <remarks>
+    /// Both exceptions name the descriptor and both derive from
+    /// <see cref="System.InvalidOperationException"/>, so existing callers that
+    /// catch the latter keep working while callers that need to distinguish a
+    /// config error from a data error can catch the two specific types.
+    /// </remarks>
     string ProjectId(ObjectTypeDescriptor descriptor, object instance);
 }

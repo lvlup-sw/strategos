@@ -186,6 +186,41 @@ public class InvariantGuardTests
         await Assert.That(offenders).IsEmpty();
     }
 
+    /// <summary>
+    /// INV-6 (sealed), DR-1 identity-failure surface (FIX-E): the two distinct
+    /// projection-failure exception types must be sealed. They split the former
+    /// shared <c>InvalidOperationException</c> into a misconfiguration error
+    /// (missing accessor) and a data error (null key value); a future edit that
+    /// unseals one fails the build.
+    /// </summary>
+    [Test]
+    public async Task IdentityExceptionTypes_AreSealed()
+    {
+        var names = new[]
+        {
+            "Strategos.Ontology.Identity.MissingIdAccessorException",
+            "Strategos.Ontology.Identity.NullKeyValueException",
+        };
+
+        var offenders = new List<string>();
+        foreach (var name in names)
+        {
+            var type = OntologyAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
+
     private static IEnumerable<Type> IdentityPublicTypes() =>
         OntologyAssembly.GetTypes()
             .Where(t => t.IsPublic && t.Namespace == "Strategos.Ontology.Identity");

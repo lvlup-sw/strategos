@@ -39,7 +39,7 @@ public class ObjectIdentityProjectorTests
     }
 
     [Test]
-    public async Task ProjectId_NullKeyValue_ThrowsNamingDescriptor()
+    public async Task ProjectId_NullKeyValue_ThrowsNullKeyValueException()
     {
         var projector = new ObjectIdentityProjector();
         var descriptor = new ObjectTypeDescriptor("NullableThing", typeof(NullableThing), "test")
@@ -47,9 +47,12 @@ public class ObjectIdentityProjectorTests
             IdAccessor = o => ((NullableThing)o).Id,
         };
 
+        // A null key value is a DATA error (distinct from a missing-accessor
+        // CONFIG error), so it surfaces as NullKeyValueException — not the
+        // shared InvalidOperationException of old.
         await Assert.That(() => projector.ProjectId(descriptor, new NullableThing(null)))
             .ThrowsException()
-            .WithExceptionType(typeof(InvalidOperationException));
+            .WithExceptionType(typeof(NullKeyValueException));
 
         await Assert.That(() => projector.ProjectId(descriptor, new NullableThing(null)))
             .ThrowsException()
@@ -182,7 +185,7 @@ public class ObjectIdentityProjectorTests
     }
 
     [Test]
-    public async Task ProjectId_DescriptorWithoutIdAccessor_ThrowsNamingDescriptor()
+    public async Task ProjectId_DescriptorWithoutIdAccessor_ThrowsMissingIdAccessorException()
     {
         var projector = new ObjectIdentityProjector();
         var descriptor = new ObjectTypeDescriptor
@@ -193,9 +196,12 @@ public class ObjectIdentityProjectorTests
             IdAccessor = null,
         };
 
+        // A missing accessor is a CONFIG error (descriptor misconfiguration),
+        // distinct from a null key VALUE (a data error). It surfaces as
+        // MissingIdAccessorException so callers can tell the two apart.
         await Assert.That(() => projector.ProjectId(descriptor, new object()))
             .ThrowsException()
-            .WithExceptionType(typeof(InvalidOperationException));
+            .WithExceptionType(typeof(MissingIdAccessorException));
 
         await Assert.That(() => projector.ProjectId(descriptor, new object()))
             .ThrowsException()

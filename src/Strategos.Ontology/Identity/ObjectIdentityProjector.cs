@@ -42,17 +42,15 @@ public sealed class ObjectIdentityProjector : IObjectIdentityProjector
         var accessor = descriptor.IdAccessor;
         if (accessor is null)
         {
-            throw new InvalidOperationException(
-                $"Cannot project id for descriptor '{descriptor.Name}': descriptor '{descriptor.Name}' has no id accessor. "
-                + "Hand-authored descriptors derive it from the Key(...) selector; "
-                + "ingested descriptors must have one supplied by their IOntologySource.");
+            // CONFIG error: the descriptor was assembled without an id accessor.
+            throw new MissingIdAccessorException(descriptor.Name);
         }
 
         var keyValue = accessor(instance);
         if (keyValue is null)
         {
-            throw new InvalidOperationException(
-                $"Cannot project id for descriptor '{descriptor.Name}': the key value resolved to null.");
+            // DATA error: the accessor ran but the instance's key was null.
+            throw new NullKeyValueException(descriptor.Name);
         }
 
         return Format(keyValue);
