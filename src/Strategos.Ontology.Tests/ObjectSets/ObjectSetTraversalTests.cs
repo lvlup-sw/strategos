@@ -155,4 +155,29 @@ public class InstanceAnchoredTraversalTests
         var ids = result.Items.Select(n => n.Id).OrderBy(s => s, StringComparer.Ordinal).ToList();
         await Assert.That(ids).IsEquivalentTo(new[] { "a", "b" });
     }
+
+    [Test]
+    public async Task TraverseLink_InstanceWithNoRelations_ReturnsEmptySet()
+    {
+        // #114 regression guard: an instance with NO relation rows must traverse
+        // to the EMPTY set — and crucially must NOT return all target-type items.
+        // Targets a, b exist in the store but the source x is related to none.
+        var graph = BuildGraph();
+        var (provider, query) = BuildQuery(graph);
+        provider.Seed(new TravNode("x"), "x", nameof(TravNode));
+        provider.Seed(new TravNode("a"), "a", nameof(TravNode));
+        provider.Seed(new TravNode("b"), "b", nameof(TravNode));
+
+        // No RelateAsync calls — x has zero relations under "link".
+
+        // Act
+        var traversed = query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x")
+            .TraverseLink<TravNode>("link");
+        var result = await traversed.ExecuteAsync();
+
+        // Assert — empty, NOT {a, b} (which the old type-based traversal returned).
+        await Assert.That(result.Items).IsEmpty();
+    }
 }
