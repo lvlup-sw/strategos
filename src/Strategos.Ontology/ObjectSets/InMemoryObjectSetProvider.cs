@@ -206,6 +206,16 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ValidateEndpointExists(srcDescriptor, srcId);
         ValidateEndpointExists(tgtDescriptor, tgtId);
 
+        // Self-loop policy (DR-8): relating an instance to itself is rejected
+        // unless the source descriptor's link declares AllowsSelfLoop. Runtime
+        // check only; analyzer promotion is a later task.
+        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+            && !SelfLoopAllowed(srcDescriptor, linkName))
+        {
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
+
         var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
 
         // Idempotent: relating the same (src, link, tgt) twice yields one row.
@@ -298,6 +308,24 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         throw new RelationEndpointNotFoundException(descriptorName, id);
+    }
+
+    /// <summary>
+    /// Resolves whether the named link on <paramref name="srcDescriptor"/>
+    /// permits self-loops (DR-8). Defaults to <c>false</c> — the safe posture —
+    /// when no descriptor index is present (graph-less mode) or the link is not
+    /// declared on the source descriptor.
+    /// </summary>
+    private bool SelfLoopAllowed(string srcDescriptor, string linkName)
+    {
+        if (_descriptorIndex is null
+            || !_descriptorIndex.TryGetValue(srcDescriptor, out var descriptor))
+        {
+            return false;
+        }
+
+        var link = descriptor.Links.FirstOrDefault(l => l.Name == linkName);
+        return link?.AllowsSelfLoop ?? false;
     }
 
     /// <inheritdoc />

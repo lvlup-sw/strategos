@@ -162,4 +162,69 @@ public class InMemoryRelateStoreTests
         var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
         await Assert.That(rows).IsEmpty();
     }
+
+    // -----------------------------------------------------------------------
+    // Task 9 (DR-8) — self-loop policy
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateAsync_SelfLoop_WhenDisallowed_ThrowsTypedError()
+    {
+        // Arrange — default "links_to" link has AllowsSelfLoop = false
+        var provider = SeededProvider("a");
+        IObjectSetWriter writer = provider;
+
+        // Act & Assert — relating an instance to itself is rejected
+        await Assert.That(async () =>
+                await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "a"))
+            .Throws<SelfLoopNotAllowedException>();
+
+        // Assert — no row was created
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+    }
+
+    [Test]
+    public async Task RelateAsync_SelfLoop_WhenAllowed_CreatesRow()
+    {
+        // Arrange — rewrite the "links_to" link to allow self-loops
+        var provider = SelfLoopAllowedProvider("a");
+        IObjectSetWriter writer = provider;
+
+        // Act
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "a");
+
+        // Assert — the self-loop row exists
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].TargetId).IsEqualTo("a");
+    }
+
+    private static InMemoryObjectSetProvider SelfLoopAllowedProvider(params string[] ids)
+    {
+        var baseGraph = BuildGraph();
+        var rewritten = baseGraph.ObjectTypes
+            .Select(ot => ot with
+            {
+                Links = ot.Links
+                    .Select(l => l with { AllowsSelfLoop = true })
+                    .ToList(),
+            })
+            .ToList();
+
+        var graph = new OntologyGraph(
+            domains: baseGraph.Domains,
+            objectTypes: rewritten,
+            interfaces: baseGraph.Interfaces,
+            crossDomainLinks: baseGraph.CrossDomainLinks,
+            workflowChains: baseGraph.WorkflowChains);
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        foreach (var id in ids)
+        {
+            provider.Seed(new RelateNode(id), id, nameof(RelateNode));
+        }
+
+        return provider;
+    }
 }

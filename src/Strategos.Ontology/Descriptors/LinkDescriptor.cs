@@ -33,4 +33,13 @@ public sealed record LinkDescriptor(
 
     /// <summary>Field-level provenance — hand-authored vs. ingested.</summary>
     public DescriptorSource Source { get; init; } = DescriptorSource.HandAuthored;
+
+    /// <summary>
+    /// Whether a relate instance may connect an object to itself along this
+    /// link. DR-2 (DR-8): defaults to <c>false</c> — a relate whose source and
+    /// target are the same (descriptor, id) is rejected at runtime in
+    /// <c>RelateAsync</c> unless this is set. Promotion to a compile-time
+    /// analyzer is a later task; the DR-2 enforcement is runtime-only.
+    /// </summary>
+    public bool AllowsSelfLoop { get; init; }
 }
