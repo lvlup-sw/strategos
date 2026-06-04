@@ -227,7 +227,12 @@ public sealed class InMemoryExpressionEvaluator
         TraverseLinkExpression traverse,
         Func<string, IReadOnlyList<object>> itemResolver)
     {
-        var sourceDescriptorName = ResolveSourceDescriptorName(traverse.Source);
+        // The source descriptor of a traversal is the descriptor of the IMMEDIATE
+        // upstream element type — not the chain root. A chained hop
+        // (.TraverseLink<TRel>("link").TraverseLink<TNode>("To")) must resolve its
+        // source as the association descriptor, so it routes through the
+        // far-endpoint hop rather than treating TNode as the source.
+        var sourceDescriptorName = ResolveImmediateSourceDescriptorName(traverse.Source);
 
         if (!_descriptorIndex.TryGetValue(sourceDescriptorName, out var sourceDescriptor))
         {
@@ -554,5 +559,24 @@ public sealed class InMemoryExpressionEvaluator
             RawFilterExpression raw => ResolveSourceDescriptorName(raw.Source),
             _ => throw new NotSupportedException(
                 $"Cannot resolve source descriptor from {expression.GetType().Name}"),
+        };
+
+    // Resolves the descriptor name of the IMMEDIATE upstream element type, unlike
+    // ResolveSourceDescriptorName which walks all the way to the chain root.
+    // Filters/includes preserve their source's element type, so we skip them to
+    // the nearest PRODUCING node: a traversal produces its linked type
+    // (ObjectType.Name); a root produces its declared descriptor name (which can
+    // differ from ObjectType.Name for a multi-registered type).
+    private static string ResolveImmediateSourceDescriptorName(ObjectSetExpression expression) =>
+        expression switch
+        {
+            RootExpression root => root.ObjectTypeName,
+            TraverseLinkExpression traverse => traverse.ObjectType.Name,
+            FilterExpression filter => ResolveImmediateSourceDescriptorName(filter.Source),
+            IncludeExpression include => ResolveImmediateSourceDescriptorName(include.Source),
+            InterfaceNarrowExpression narrow => narrow.InterfaceType.Name,
+            RawFilterExpression raw => ResolveImmediateSourceDescriptorName(raw.Source),
+            _ => throw new NotSupportedException(
+                $"Cannot resolve immediate source descriptor from {expression.GetType().Name}"),
         };
 }

@@ -93,6 +93,11 @@ public class ObjectSetTraversalTests
 
 public sealed record TravNode(string Id, int Weight = 0);
 
+// DR-4 reified association carrying a Status edge attribute, used by the
+// association-backed traversal test (Task 12). Endpoints From (source role,
+// index 0) and To (destination role, index 1).
+public sealed record TravEdge(string Id, TravNode From, TravNode To, string Status);
+
 public sealed class TravNodeOntology : DomainOntology
 {
     public override string DomainName => "trav";
@@ -104,6 +109,13 @@ public sealed class TravNodeOntology : DomainOntology
             obj.Key(n => n.Id);
             obj.Property(n => n.Weight);
             obj.HasMany<TravNode>("link");
+        });
+
+        builder.Association<TravEdge>("TravEdge", a =>
+        {
+            a.Key(e => e.Id);
+            a.Between(e => e.From).And(e => e.To);
+            a.Property(e => e.Status).Required();
         });
     }
 }
@@ -179,5 +191,58 @@ public class InstanceAnchoredTraversalTests
 
         // Assert — empty, NOT {a, b} (which the old type-based traversal returned).
         await Assert.That(result.Items).IsEmpty();
+    }
+
+    [Test]
+    public async Task TraverseLink_OverAssociation_ExposesEdgeAttributesForFilter()
+    {
+        // Arrange — x is related to y1 via an "active" edge and to y2 via an
+        // "inactive" edge. The association objects carry the Status edge attribute.
+        var graph = BuildGraph();
+        var (provider, query) = BuildQuery(graph);
+        provider.Seed(new TravNode("x"), "x", nameof(TravNode));
+        provider.Seed(new TravNode("y1"), "y1", nameof(TravNode));
+        provider.Seed(new TravNode("y2"), "y2", nameof(TravNode));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            nameof(TravNode), "x", "link", nameof(TravNode), "y1",
+            "TravEdge", new TravEdge("e1", new TravNode("x"), new TravNode("y1"), "active"));
+        await writer.RelateAsync(
+            nameof(TravNode), "x", "link", nameof(TravNode), "y2",
+            "TravEdge", new TravEdge("e2", new TravNode("x"), new TravNode("y2"), "inactive"));
+
+        // Act 1 — traverse to the association objects and assert the edge
+        // attributes are exposed for filtering.
+        var edges = query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x")
+            .TraverseLink<TravEdge>("link");
+        var allEdges = await edges.ExecuteAsync();
+        var statuses = allEdges.Items.Select(e => e.Status).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        await Assert.That(statuses).IsEquivalentTo(new[] { "active", "inactive" });
+
+        // Act 2 — filter on the edge attribute BEFORE the far hop, then hop to the
+        // destination endpoint ("To" role). Only the active edge's far node returns.
+        var activeFar = await query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x")
+            .TraverseLink<TravEdge>("link")
+            .Where(e => e.Status == "active")
+            .TraverseLink<TravNode>("To")
+            .ExecuteAsync();
+        var activeIds = activeFar.Items.Select(n => n.Id).ToList();
+        await Assert.That(activeIds).IsEquivalentTo(new[] { "y1" });
+
+        // Act 3 — the unfiltered far hop returns BOTH endpoints, proving the
+        // edge-attribute filter changed the far-endpoint result set.
+        var allFar = await query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x")
+            .TraverseLink<TravEdge>("link")
+            .TraverseLink<TravNode>("To")
+            .ExecuteAsync();
+        var allFarIds = allFar.Items.Select(n => n.Id).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        await Assert.That(allFarIds).IsEquivalentTo(new[] { "y1", "y2" });
     }
 }
