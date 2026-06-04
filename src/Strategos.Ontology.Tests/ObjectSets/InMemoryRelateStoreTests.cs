@@ -80,4 +80,39 @@ public class InMemoryRelateStoreTests
         // Assert
         await Assert.That(rows).IsEmpty();
     }
+
+    // -----------------------------------------------------------------------
+    // Task 6
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateAsync_DuplicateTriple_IsIdempotent()
+    {
+        // Arrange
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+
+        // Act — relate the same (src, link, tgt) twice
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+
+        // Assert — only one row exists
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].TargetId).IsEqualTo("b");
+    }
+
+    [Test]
+    public async Task UnrelateAsync_MissingRow_IsNoOp()
+    {
+        // Arrange
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+
+        // Act & Assert — unrelating an absent row does not throw
+        await writer.UnrelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+
+        await Assert.That(rows).IsEmpty();
+    }
 }

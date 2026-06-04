@@ -174,7 +174,15 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(tgtId);
 
         var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
-        rows.Add(new RelationRow(tgtDescriptor, tgtId));
+
+        // Idempotent: relating the same (src, link, tgt) twice yields one row.
+        // Endpoint identity is (TargetDescriptor, TargetId); DR-2 never sets the
+        // DR-4 AssociationObjectId, so it is not part of the duplicate key here.
+        var alreadyRelated = rows.Any(r => r.TargetDescriptor == tgtDescriptor && r.TargetId == tgtId);
+        if (!alreadyRelated)
+        {
+            rows.Add(new RelationRow(tgtDescriptor, tgtId));
+        }
 
         return Task.CompletedTask;
     }
