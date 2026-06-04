@@ -243,6 +243,109 @@ public class InMemoryRelateStoreTests
         await Assert.That(stored.Items[0].Id).IsEqualTo("emp-1");
     }
 
+    // -----------------------------------------------------------------------
+    // F-HIGH-1 (DR-4) — write/remove key symmetry + orphaned-association cleanup.
+    //
+    // The relate-store write key is (TargetDescriptor, TargetId, AssociationObjectId).
+    // Unrelate must remove on the SAME key: a plain unrelate removes ONLY the plain
+    // row (association id == null); an attributed unrelate removes the single row
+    // for its association id AND deletes the now-orphaned association object so it
+    // is no longer queryable or traversable.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task UnrelateAsync_Plain_LeavesAttributedRowAndObject()
+    {
+        // Arrange — relate plain x->y AND attributed x->y over the same endpoints.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Act — plain unrelate removes ONLY the plain row.
+        await writer.UnrelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+
+        // Assert — the attributed row survives intact.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].AssociationObjectId).IsEqualTo("emp-1");
+
+        // Assert — the association object is still queryable and traversable.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).HasCount().EqualTo(1);
+        await Assert.That(stored.Items[0].Id).IsEqualTo("emp-1");
+    }
+
+    [Test]
+    public async Task UnrelateAsync_Attributed_RemovesRowAndAssociationObject()
+    {
+        // Arrange — a single attributed relate.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Act — attributed unrelate removes the row AND the orphaned association object.
+        await writer.UnrelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", "emp-1");
+
+        // Assert — no row remains.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+
+        // Assert — the association object is no longer queryable.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).IsEmpty();
+    }
+
+    [Test]
+    public async Task UnrelateAsync_Attributed_LeavesPlainAndSiblingAttributed()
+    {
+        // Arrange — a plain row + two attributed rows (distinct association ids)
+        // over the same endpoint pair.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var first = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+        var second = new RelateAssociation("emp-2", new RelateNode("a"), new RelateNode("b"), "mentors");
+
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", first);
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", second);
+
+        // Act — attributed-unrelate of emp-1 removes ONLY that row + its object.
+        await writer.UnrelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", "emp-1");
+
+        // Assert — the plain row and the emp-2 attributed row survive.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(2);
+        var associationIds = rows.Select(r => r.AssociationObjectId).ToList();
+        await Assert.That(associationIds).Contains((string?)null);
+        await Assert.That(associationIds).Contains("emp-2");
+        await Assert.That(associationIds).DoesNotContain("emp-1");
+
+        // Assert — emp-2 survives as a stored object, emp-1 is gone.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        var storedIds = stored.Items.Select(r => r.Id).ToList();
+        await Assert.That(storedIds).IsEquivalentTo(new[] { "emp-2" });
+    }
+
     private static InMemoryObjectSetProvider SelfLoopAllowedProvider(params string[] ids)
     {
         var baseGraph = BuildGraph();

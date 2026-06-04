@@ -331,13 +331,95 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(linkName);
         ArgumentNullException.ThrowIfNull(tgtDescriptor);
         ArgumentNullException.ThrowIfNull(tgtId);
+        ct.ThrowIfCancellationRequested();
 
         if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
         {
-            rows.RemoveAll(r => r.TargetDescriptor == tgtDescriptor && r.TargetId == tgtId);
+            // Symmetric with the plain RelateAsync write key
+            // (TargetDescriptor, TargetId, AssociationObjectId == null): remove
+            // ONLY the plain row. An attributed row (non-null AssociationObjectId)
+            // for the same endpoint pair survives — it is removed via the
+            // attributed UnrelateAsync overload, which also cleans up the object.
+            rows.RemoveAll(r =>
+                r.TargetDescriptor == tgtDescriptor
+                && r.TargetId == tgtId
+                && r.AssociationObjectId is null);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(associationId);
+        ct.ThrowIfCancellationRequested();
+
+        if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        {
+            // Symmetric with the attributed RelateAsync<TRel> write key: remove the
+            // single row whose AssociationObjectId equals associationId. The plain
+            // row and any sibling attributed rows (different association ids) for
+            // the same endpoint pair are left intact.
+            rows.RemoveAll(r =>
+                r.TargetDescriptor == tgtDescriptor
+                && r.TargetId == tgtId
+                && r.AssociationObjectId == associationId);
+        }
+
+        // Delete the now-orphaned association object from its partition so it is no
+        // longer queryable or traversable (mirrors the attributed relate, which
+        // STORED the object alongside the row).
+        RemoveStoredInstance(associationDescriptor, associationId);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes the stored instance under <paramref name="descriptorName"/> whose
+    /// projected id (DR-1, reflection-free) equals <paramref name="id"/>, keeping
+    /// the parallel searchable-content and embedding lists index-aligned. A no-op
+    /// when the partition or matching instance is absent, or when the provider is
+    /// graph-less (no descriptor to project against).
+    /// </summary>
+    private void RemoveStoredInstance(string descriptorName, string id)
+    {
+        if (_descriptorIndex is null
+            || !_descriptorIndex.TryGetValue(descriptorName, out var descriptor)
+            || !_items.TryGetValue(descriptorName, out var items))
+        {
+            return;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (!string.Equals(_idProjector.ProjectId(descriptor, items[i]), id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            items.RemoveAt(i);
+
+            // Keep the parallel lists aligned with _items (same partition key,
+            // same index → searchable content / embedding for that instance).
+            if (_searchableContent.TryGetValue(descriptorName, out var content) && i < content.Count)
+            {
+                content.RemoveAt(i);
+            }
+
+            if (_embeddings.TryGetValue(descriptorName, out var embeddings) && i < embeddings.Count)
+            {
+                embeddings.RemoveAt(i);
+            }
+
+            return;
+        }
     }
 
     /// <summary>

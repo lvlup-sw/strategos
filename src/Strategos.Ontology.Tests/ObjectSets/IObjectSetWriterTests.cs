@@ -55,6 +55,10 @@ public class StubObjectSetWriter : IObjectSetWriter
 
     public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    // Attributed unrelate added for DR-4; this stub only satisfies the interface.
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default)
+        => Task.CompletedTask;
 }
 
 public class IObjectSetWriterTests

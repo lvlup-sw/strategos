@@ -371,6 +371,20 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     /// <inheritdoc />
     /// <remarks>
+    /// DR-4 (Ontology Edge Foundation): attributed unrelate (removing the
+    /// relation row and its orphaned association object) ships on
+    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization is the same
+    /// later increment as <see cref="RelateAsync"/>; until then this surface
+    /// throws rather than silently dropping a write.
+    /// </remarks>
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "Attributed UnrelateAsync is not yet implemented by PgVectorObjectSetProvider. "
+            + "The DR-4 association relate-store ships on InMemoryObjectSetProvider; the Npgsql "
+            + "association-table materialization is a later increment.");
+
+    /// <inheritdoc />
+    /// <remarks>
     /// DR-4 (Ontology Edge Foundation): attributed relate (storing a reified
     /// association object alongside the relation row) ships on
     /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization — an

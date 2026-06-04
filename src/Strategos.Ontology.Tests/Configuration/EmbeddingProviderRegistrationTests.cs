@@ -43,6 +43,10 @@ public class StubObjectSetWriterForDI : IObjectSetWriter
 
     public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
         Task.CompletedTask;
+
+    // Attributed unrelate added for DR-4; this DI test double does not need unrelate behavior.
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default) =>
+        Task.CompletedTask;
 }
 
 public class DualProvider : IObjectSetProvider, IObjectSetWriter
@@ -83,6 +87,10 @@ public class DualProvider : IObjectSetProvider, IObjectSetWriter
         Task.CompletedTask;
 
     public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    // Attributed unrelate added for DR-4; this DI test double does not need unrelate behavior.
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default) =>
         Task.CompletedTask;
 }
 

@@ -130,5 +130,41 @@ public interface IObjectSetWriter
     /// <param name="tgtId">Projected id of the target instance.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes when the relation has been removed.</returns>
+    /// <remarks>
+    /// Removal is symmetric with the plain
+    /// <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>
+    /// write key: this overload removes ONLY the plain (unattributed) row for the
+    /// endpoint pair. An attributed row backed by an association object is removed
+    /// via the
+    /// <see cref="UnrelateAsync(string, string, string, string, string, string, string, CancellationToken)"/>
+    /// overload, which also deletes the orphaned association object.
+    /// </remarks>
     Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a previously-materialized ATTRIBUTED relation (DR-4): the single
+    /// relation row whose <see cref="RelationRow.AssociationObjectId"/> equals
+    /// <paramref name="associationId"/>, and the now-orphaned association object
+    /// stored under <paramref name="associationDescriptor"/>. After removal the
+    /// association object is no longer queryable or traversable. Removing a
+    /// relation that does not exist is a no-op (no throw).
+    /// </summary>
+    /// <remarks>
+    /// This is the symmetric counterpart to the attributed
+    /// <see cref="RelateAsync{TRel}(string, string, string, string, string, string, TRel, CancellationToken)"/>:
+    /// the relate-store write key is
+    /// (TargetDescriptor, TargetId, AssociationObjectId), so removal targets that
+    /// same triple. Plain rows and sibling attributed rows (different association
+    /// ids) for the same endpoint pair are left intact.
+    /// </remarks>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link being removed.</param>
+    /// <param name="tgtDescriptor">Descriptor name of the target endpoint.</param>
+    /// <param name="tgtId">Projected id of the target instance.</param>
+    /// <param name="associationDescriptor">Descriptor name of the association object type.</param>
+    /// <param name="associationId">Projected id of the association object backing the row.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the relation and association object have been removed.</returns>
+    Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default);
 }
