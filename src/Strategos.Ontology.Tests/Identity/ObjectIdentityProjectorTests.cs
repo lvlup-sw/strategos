@@ -94,9 +94,10 @@ public class ObjectIdentityProjectorTests
     {
         var projector = new ObjectIdentityProjector();
 
-        // Composite key whose accessor yields a ValueTuple (ITuple). The id is
-        // its elements joined by the reserved Unit Separator; single-value keys
-        // are plain ToString(). Determinism: same elements => same id.
+        // Composite key whose accessor yields a ValueTuple (ITuple). Each element
+        // is length-prefixed (V<len>:<text>) and joined by the reserved Unit
+        // Separator so the encoding is injective; single-value keys are plain
+        // ToString(). Determinism: same elements => same id.
         var descriptor = new ObjectTypeDescriptor
         {
             Name = "CompositeThing",
@@ -112,9 +113,60 @@ public class ObjectIdentityProjectorTests
             descriptor,
             new Dictionary<string, object> { ["key"] = (tenant: "acme", id: 7) });
 
-        var expected = $"acme{ObjectIdentityProjector.CompositeKeySeparator}7";
+        var expected = $"V4:acme{ObjectIdentityProjector.CompositeKeySeparator}V1:7";
         await Assert.That(projected).IsEqualTo(expected);
         await Assert.That(projected).IsEqualTo(again);
+    }
+
+    [Test]
+    public async Task ProjectId_CompositeKey_IsCollisionFreeAcrossSeparatorBoundaries()
+    {
+        var projector = new ObjectIdentityProjector();
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "CompositeThing",
+            DomainName = "test",
+            SymbolKey = "py::CompositeThing",
+            IdAccessor = o => ((IReadOnlyDictionary<string, object>)o)["key"],
+        };
+
+        // Both tuples join to "a<US>b<US>c" under the naive join-on-separator
+        // encoding: the first sneaks the separator INTO a component, the second
+        // splits it ACROSS components. A collision-free (injective) encoding must
+        // keep them distinct so the relate-store never merges two instances.
+        var sep = ObjectIdentityProjector.CompositeKeySeparator;
+        var leftHasSeparator = new Dictionary<string, object> { ["key"] = ($"a{sep}b", "c") };
+        var rightSplitAcross = new Dictionary<string, object> { ["key"] = ("a", $"b{sep}c") };
+
+        var left = projector.ProjectId(descriptor, leftHasSeparator);
+        var right = projector.ProjectId(descriptor, rightSplitAcross);
+
+        await Assert.That(left).IsNotEqualTo(right);
+    }
+
+    [Test]
+    public async Task ProjectId_CompositeKey_NullElement_DistinctFromEmpty()
+    {
+        var projector = new ObjectIdentityProjector();
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "CompositeThing",
+            DomainName = "test",
+            SymbolKey = "py::CompositeThing",
+            IdAccessor = o => ((IReadOnlyDictionary<string, object>)o)["key"],
+        };
+
+        // ("a", null) and ("a", "") must project to DIFFERENT ids: a null element
+        // is semantically distinct from the empty string and the two tuples are
+        // distinct instances. The naive encoding collapses null to string.Empty,
+        // merging them.
+        var withNull = new Dictionary<string, object> { ["key"] = ("a", (string?)null) };
+        var withEmpty = new Dictionary<string, object> { ["key"] = ("a", string.Empty) };
+
+        var nullId = projector.ProjectId(descriptor, withNull);
+        var emptyId = projector.ProjectId(descriptor, withEmpty);
+
+        await Assert.That(nullId).IsNotEqualTo(emptyId);
     }
 
     [Test]
