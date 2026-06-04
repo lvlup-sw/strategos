@@ -202,6 +202,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(linkName);
         ArgumentNullException.ThrowIfNull(tgtDescriptor);
         ArgumentNullException.ThrowIfNull(tgtId);
+        ct.ThrowIfCancellationRequested();
 
         // Plain (unattributed) DR-2 relate: no association object backs the row.
         WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId: null);
@@ -227,6 +228,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(tgtId);
         ArgumentNullException.ThrowIfNull(associationDescriptor);
         ArgumentNullException.ThrowIfNull(association);
+        ct.ThrowIfCancellationRequested();
 
         // EAGER endpoint validation runs BEFORE the association object is stored,
         // so a failed attributed relate leaves neither a dangling association nor

@@ -346,6 +346,94 @@ public class InMemoryRelateStoreTests
         await Assert.That(storedIds).IsEquivalentTo(new[] { "emp-2" });
     }
 
+    // -----------------------------------------------------------------------
+    // F-MED-4 — cancellation is observed at entry of every relate-store write,
+    // matching StoreBatchAsync / StreamAsync.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateAsync_Plain_CanceledToken_Throws()
+    {
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.That(async () =>
+                await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b", cts.Token))
+            .Throws<OperationCanceledException>();
+
+        // No row was written under the canceled call.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+    }
+
+    [Test]
+    public async Task RelateAsync_Attributed_CanceledToken_Throws()
+    {
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.That(async () =>
+                await writer.RelateAsync(
+                    nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+                    "RelateAssociation", association, cts.Token))
+            .Throws<OperationCanceledException>();
+
+        // Neither the row nor the association object was written.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).IsEmpty();
+    }
+
+    [Test]
+    public async Task UnrelateAsync_Plain_CanceledToken_Throws()
+    {
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b");
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.That(async () =>
+                await writer.UnrelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b", cts.Token))
+            .Throws<OperationCanceledException>();
+
+        // The row survives the canceled unrelate.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+    }
+
+    [Test]
+    public async Task UnrelateAsync_Attributed_CanceledToken_Throws()
+    {
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages"));
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.That(async () =>
+                await writer.UnrelateAsync(
+                    nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+                    "RelateAssociation", "emp-1", cts.Token))
+            .Throws<OperationCanceledException>();
+
+        // The row and the association object both survive the canceled unrelate.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).HasCount().EqualTo(1);
+    }
+
     private static InMemoryObjectSetProvider SelfLoopAllowedProvider(params string[] ids)
     {
         var baseGraph = BuildGraph();
