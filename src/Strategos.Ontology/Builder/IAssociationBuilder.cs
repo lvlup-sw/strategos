@@ -52,7 +52,7 @@ public interface IAssociationBuilder<TRel>
 }
 
 /// <summary>
-/// The second step of the <see cref="IAssociationBuilder{TRel}.Between{L}"/>
+/// The second step of the <see cref="IAssociationBuilder{TRel}.Between{TLeft}"/>
 /// fluent chain: declares the RIGHT endpoint.
 /// </summary>
 /// <typeparam name="TRel">The CLR type backing the association object.</typeparam>
