@@ -112,6 +112,80 @@ public class InvariantGuardTests
         await Assert.That(offenders).IsEmpty();
     }
 
+    /// <summary>
+    /// INV-6 (sealed), DR-4 association surface: the new edge-authoring and
+    /// edge-descriptor types must be sealed. Covers the
+    /// <c>AssociationEndpoint</c> / <c>AssociationEdge</c> descriptor records and
+    /// the concrete <c>AssociationBuilder&lt;&gt;</c> (resolved by name so the
+    /// internal builder is included). Interfaces (<c>IAssociationBuilder</c>,
+    /// <c>IAssociationEndpointBuilder</c>) are exempt — sealing is inapplicable.
+    /// </summary>
+    [Test]
+    public async Task AssociationTypes_AreSealed()
+    {
+        // Resolved by name so the internal AssociationBuilder<> is covered too —
+        // a guard limited to public types would miss it.
+        var names = new[]
+        {
+            "Strategos.Ontology.Descriptors.AssociationEndpoint",
+            "Strategos.Ontology.AssociationEdge",
+            "Strategos.Ontology.Builder.AssociationBuilder`1",
+        };
+
+        var offenders = new List<string>();
+        foreach (var name in names)
+        {
+            var type = OntologyAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsInterface && !type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
+
+    /// <summary>
+    /// INV-6 (sealed), DR-2 edge surface: the relate-store edge types
+    /// introduced for the Ontology Edge Foundation must be sealed. DR-2 left
+    /// them sealed but uncovered by a guard; this closes that net mechanically
+    /// so a future edit that unseals one fails the build.
+    /// </summary>
+    [Test]
+    public async Task EdgeStoreTypes_AreSealed()
+    {
+        var names = new[]
+        {
+            "Strategos.Ontology.ObjectSets.RelationRow",
+            "Strategos.Ontology.ObjectSets.RelationEndpointNotFoundException",
+            "Strategos.Ontology.ObjectSets.SelfLoopNotAllowedException",
+        };
+
+        var offenders = new List<string>();
+        foreach (var name in names)
+        {
+            var type = OntologyAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
+
     private static IEnumerable<Type> IdentityPublicTypes() =>
         OntologyAssembly.GetTypes()
             .Where(t => t.IsPublic && t.Namespace == "Strategos.Ontology.Identity");
