@@ -80,7 +80,9 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public InMemoryObjectSetProvider(OntologyGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _evaluator = new InMemoryExpressionEvaluator(graph);
+        // DR-3: wire the evaluator to this provider's relate-store + id projector
+        // so TraverseLink resolves by source instance, not target type.
+        _evaluator = new InMemoryExpressionEvaluator(graph, GetRelations, _idProjector);
         _descriptorIndex = BuildDescriptorIndex(graph);
     }
 
@@ -97,7 +99,9 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public InMemoryObjectSetProvider(OntologyGraph graph, IEmbeddingProvider? embeddingProvider)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _evaluator = new InMemoryExpressionEvaluator(graph);
+        // DR-3: wire the evaluator to this provider's relate-store + id projector
+        // so TraverseLink resolves by source instance, not target type.
+        _evaluator = new InMemoryExpressionEvaluator(graph, GetRelations, _idProjector);
         _descriptorIndex = BuildDescriptorIndex(graph);
         _embeddingProvider = embeddingProvider;
     }

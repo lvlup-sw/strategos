@@ -244,15 +244,23 @@ public class InMemoryObjectSetProviderTests
     [Test]
     public async Task ExecuteAsync_WithGraph_TraverseLink_Works()
     {
-        // Arrange — build a graph with ProvSource -> "targets" -> ProvTarget
+        // Arrange — build a graph with ProvSource -> "targets" -> ProvTarget.
+        // DR-3: traversal is INSTANCE-ANCHORED. Seed an UNRELATED T3 of the same
+        // target type and relate S1 only to T1, T2 — the traversal must return
+        // exactly the related targets, never all ProvTarget items (#114).
         var graph = new OntologyGraphBuilder()
             .AddDomain<ProviderTestOntology>()
             .Build();
 
         var provider = new InMemoryObjectSetProvider(graph);
-        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvSource("S1", 10), "source 1", descriptorName: nameof(ProvSource));
         provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
         provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+        provider.Seed(new ProvTarget("T3"), "target 3", descriptorName: nameof(ProvTarget));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(nameof(ProvSource), "S1", "targets", nameof(ProvTarget), "T1");
+        await writer.RelateAsync(nameof(ProvSource), "S1", "targets", nameof(ProvTarget), "T2");
 
         var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
         var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
@@ -260,7 +268,7 @@ public class InMemoryObjectSetProviderTests
         // Act
         var result = await provider.ExecuteAsync<ProvTarget>(traverse);
 
-        // Assert
+        // Assert — only the related targets, ordered ordinal-by-id (INV-7).
         await Assert.That(result.Items).HasCount().EqualTo(2);
         await Assert.That(result.Items[0].Label).IsEqualTo("T1");
         await Assert.That(result.Items[1].Label).IsEqualTo("T2");
@@ -311,15 +319,20 @@ public class InMemoryObjectSetProviderTests
     [Test]
     public async Task StreamAsync_WithGraph_DelegatesToEvaluator()
     {
-        // Arrange
+        // Arrange — DR-3: StreamAsync routes through the same instance-anchored
+        // evaluator, so seed + relate then stream the related targets.
         var graph = new OntologyGraphBuilder()
             .AddDomain<ProviderTestOntology>()
             .Build();
 
         var provider = new InMemoryObjectSetProvider(graph);
-        provider.Seed(new ProvSource("S1", 10), "source 1");
+        provider.Seed(new ProvSource("S1", 10), "source 1", descriptorName: nameof(ProvSource));
         provider.Seed(new ProvTarget("T1"), "target 1", descriptorName: nameof(ProvTarget));
         provider.Seed(new ProvTarget("T2"), "target 2", descriptorName: nameof(ProvTarget));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(nameof(ProvSource), "S1", "targets", nameof(ProvTarget), "T1");
+        await writer.RelateAsync(nameof(ProvSource), "S1", "targets", nameof(ProvTarget), "T2");
 
         var root = new RootExpression(typeof(ProvSource), nameof(ProvSource));
         var traverse = new TraverseLinkExpression(root, "targets", typeof(ProvTarget));
@@ -419,7 +432,7 @@ public class ProviderTestOntology : DomainOntology
 
         builder.Object<ProvSource>(obj =>
         {
-            obj.Property(s => s.Name).Required();
+            obj.Key(s => s.Name);
             obj.Property(s => s.Value);
             obj.HasMany<ProvTarget>("targets");
             obj.Implements<IProvInterface>(map => { });
@@ -427,7 +440,7 @@ public class ProviderTestOntology : DomainOntology
 
         builder.Object<ProvTarget>(obj =>
         {
-            obj.Property(t => t.Label).Required();
+            obj.Key(t => t.Label);
         });
     }
 }

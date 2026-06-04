@@ -1,6 +1,8 @@
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
+using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
 
@@ -77,5 +79,80 @@ public class ObjectSetTraversalTests
         var narrowExpr = (InterfaceNarrowExpression)narrowed.Expression;
         await Assert.That(narrowExpr.InterfaceType).IsEqualTo(typeof(IDisposable));
         await Assert.That(narrowExpr.Source).IsTypeOf<RootExpression>();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DR-3 instance-anchored traversal (Tasks 10–13).
+//
+// These exercise the rewritten EvaluateTraverseLink end-to-end: a graph-aware
+// InMemoryObjectSetProvider stores instances, RelateAsync materializes rows,
+// and TraverseLink resolves by SOURCE INSTANCE (not target type) — closing
+// the #114 defect.
+// ---------------------------------------------------------------------------
+
+public sealed record TravNode(string Id, int Weight = 0);
+
+public sealed class TravNodeOntology : DomainOntology
+{
+    public override string DomainName => "trav";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TravNode>(obj =>
+        {
+            obj.Key(n => n.Id);
+            obj.Property(n => n.Weight);
+            obj.HasMany<TravNode>("link");
+        });
+    }
+}
+
+public class InstanceAnchoredTraversalTests
+{
+    private static OntologyGraph BuildGraph()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<TravNodeOntology>();
+        return graphBuilder.Build();
+    }
+
+    private static (InMemoryObjectSetProvider Provider, IOntologyQuery Query) BuildQuery(OntologyGraph graph)
+    {
+        var provider = new InMemoryObjectSetProvider(graph);
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+        return (provider, query);
+    }
+
+    [Test]
+    public async Task TraverseLink_FromInstance_ReturnsOnlyRelatedTargets()
+    {
+        // Arrange — source x, targets a and b, plus an UNRELATED c of the same
+        // target type. The old type-based traversal would have returned a, b AND c.
+        var graph = BuildGraph();
+        var (provider, query) = BuildQuery(graph);
+        provider.Seed(new TravNode("x"), "x", nameof(TravNode));
+        provider.Seed(new TravNode("a"), "a", nameof(TravNode));
+        provider.Seed(new TravNode("b"), "b", nameof(TravNode));
+        provider.Seed(new TravNode("c"), "c", nameof(TravNode));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(nameof(TravNode), "x", "link", nameof(TravNode), "a");
+        await writer.RelateAsync(nameof(TravNode), "x", "link", nameof(TravNode), "b");
+
+        // Act — traverse from the x instance.
+        var traversed = query
+            .GetObjectSet<TravNode>(nameof(TravNode))
+            .Where(t => t.Id == "x")
+            .TraverseLink<TravNode>("link");
+        var result = await traversed.ExecuteAsync();
+
+        // Assert — exactly {a, b}, NOT the unrelated c.
+        var ids = result.Items.Select(n => n.Id).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        await Assert.That(ids).IsEquivalentTo(new[] { "a", "b" });
     }
 }
