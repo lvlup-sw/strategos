@@ -369,6 +369,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
             + "materialization is a later increment.");
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// DR-4 (Ontology Edge Foundation): attributed relate (storing a reified
+    /// association object alongside the relation row) ships on
+    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization — an
+    /// association object table whose endpoint columns are foreign keys —
+    /// is the same later increment as <see cref="RelateAsync"/>; until then this
+    /// surface throws rather than silently dropping a write.
+    /// </remarks>
+    public Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)
+        where TRel : class =>
+        throw new NotSupportedException(
+            "Attributed RelateAsync<TRel> is not yet implemented by PgVectorObjectSetProvider. "
+            + "The DR-4 association relate-store ships on InMemoryObjectSetProvider; the Npgsql "
+            + "association-table materialization is a later increment.");
+
     /// <summary>
     /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
     /// so both the default <see cref="StoreAsync{T}(T, CancellationToken)"/> overload
