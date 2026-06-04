@@ -255,8 +255,8 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// self-loop policy check, and idempotent row insertion. The duplicate key
     /// is (TargetDescriptor, TargetId, AssociationObjectId): a plain relate
     /// (null association id) collapses to one row per endpoint pair, while an
-    /// attributed relate can coexist with — or replace — a plain row for the
-    /// same endpoints when it carries a distinct association object.
+    /// attributed relate coexists with a plain row for the same endpoints when it
+    /// carries a distinct association object (it never replaces the plain row).
     /// </summary>
     private void WriteRelationRow(
         string srcDescriptor,
