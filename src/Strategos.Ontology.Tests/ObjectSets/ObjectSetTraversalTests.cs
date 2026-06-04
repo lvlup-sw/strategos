@@ -369,3 +369,123 @@ public class SymbolKeyOnlyTraversalTests
         await Assert.That(rawIds).IsEquivalentTo(new[] { "a", "b" });
     }
 }
+
+// ---------------------------------------------------------------------------
+// F-MED-2 (DR-9, deferred): polyglot association detection is CLR-only.
+//
+// IsAssociationType / TryResolveAssociationDescriptor match on ClrType, so a
+// SymbolKey-only (ingested, ClrType == null) association is NOT recognized and
+// its TraverseLink degrades to PLAIN target-endpoint traversal. This pins that
+// documented limitation; polyglot association traversal is tracked under DR-9
+// and intentionally not implemented.
+// ---------------------------------------------------------------------------
+
+// A loaded CLR type used only to REQUEST the would-be edge view. The relate-store
+// row still carries an AssociationObjectId, but because the association descriptor
+// is SymbolKey-only its ClrType never matches this type, so the hop degrades.
+public sealed record PolyEdgeView(string Id);
+
+public class SymbolKeyOnlyAssociationDegradesTests
+{
+    private const string NodeDescriptor = "PolyAssocNode";
+    private const string EdgeDescriptor = "PolyAssocEdge";
+    private const string LinkName = "links";
+
+    private static OntologyGraph BuildSymbolKeyOnlyAssociationGraph()
+    {
+        // Node identity flows only through the supplied accessor (DR-1).
+        Func<object, object?> nodeId = instance => ((PolyglotNode)instance).RawId;
+
+        var node = new ObjectTypeDescriptor
+        {
+            Name = NodeDescriptor,
+            DomainName = "polyassoc",
+            ClrType = typeof(PolyglotNode),
+            Source = DescriptorSource.HandAuthored,
+            IdAccessor = nodeId,
+            Links =
+            [
+                new LinkDescriptor(LinkName, NodeDescriptor, LinkCardinality.OneToMany),
+            ],
+        };
+
+        // SymbolKey-only association: ClrType == null. Its IdAccessor reads the
+        // edge id off the same PolyglotNode shape used to store the edge object.
+        Func<object, object?> edgeId = instance => "edge:" + ((PolyglotNode)instance).RawId;
+
+        var edge = new ObjectTypeDescriptor
+        {
+            Name = EdgeDescriptor,
+            DomainName = "polyassoc",
+            ClrType = null, // SymbolKey-only: no loaded CLR identity.
+            SymbolKey = "scip-typescript ./poly.ts#PolyEdge",
+            LanguageId = "typescript",
+            Source = DescriptorSource.Ingested,
+            SourceId = "polyassoc-source",
+            IdAccessor = edgeId,
+            Kind = ObjectKind.Association,
+            AssociationEndpoints =
+            [
+                new AssociationEndpoint("From", NodeDescriptor),
+                new AssociationEndpoint("To", NodeDescriptor),
+            ],
+        };
+
+        return new OntologyGraph(
+            domains: [new DomainDescriptor("polyassoc") { ObjectTypes = [node, edge] }],
+            objectTypes: [node, edge],
+            interfaces: [],
+            crossDomainLinks: [],
+            workflowChains: []);
+    }
+
+    [Test]
+    public async Task TraverseLink_OverSymbolKeyOnlyAssociation_DegradesToPlainTargetEndpoint()
+    {
+        // Arrange — store nodes, then an attributed relate whose association is a
+        // SymbolKey-only descriptor. The row DOES carry an AssociationObjectId.
+        var graph = BuildSymbolKeyOnlyAssociationGraph();
+        var provider = new InMemoryObjectSetProvider(graph);
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        provider.Seed(new PolyglotNode("x"), "x", NodeDescriptor);
+        provider.Seed(new PolyglotNode("y"), "y", NodeDescriptor);
+        // The edge object stored under the SymbolKey-only association partition.
+        provider.Seed(new PolyglotNode("e1"), "e1", EdgeDescriptor);
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            NodeDescriptor, "x", LinkName, NodeDescriptor, "y",
+            EdgeDescriptor, new PolyglotNode("e1"));
+
+        // Act — traverse from x. Requesting the node type yields the far node, as
+        // always. The PINNED behavior is that the association is NOT surfaced as a
+        // filterable edge: since EdgeDescriptor.ClrType is null, no requested CLR
+        // type can resolve it, so every hop degrades to plain target-endpoint
+        // traversal and returns the far NODE {y}.
+        var traversed = await query
+            .GetObjectSet<PolyglotNode>(NodeDescriptor)
+            .Where(n => n.RawId == "x")
+            .TraverseLink<PolyglotNode>(LinkName)
+            .ExecuteAsync();
+
+        var ids = traversed.Items.Select(n => n.RawId).ToList();
+        await Assert.That(ids).IsEquivalentTo(new[] { "y" });
+
+        // Assert — the SymbolKey-only association is unresolvable by CLR type, so
+        // the edge-view request also degrades to the far target endpoint rather
+        // than surfacing the stored edge object (DR-9 not implemented). The far
+        // node "y" is a PolyglotNode, so requesting PolyEdgeView yields nothing
+        // castable — degraded plain traversal never produces the edge object.
+        var edgeView = query
+            .GetObjectSet<PolyglotNode>(NodeDescriptor)
+            .Where(n => n.RawId == "x")
+            .TraverseLink<PolyEdgeView>(LinkName);
+        await Assert.That(async () => await edgeView.ExecuteAsync())
+            .Throws<InvalidCastException>();
+    }
+}

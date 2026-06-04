@@ -453,6 +453,13 @@ public sealed class InMemoryExpressionEvaluator
             _ => null,
         };
 
+    // CLR-ONLY limitation (DR-9, deferred): association detection compares the
+    // requested CLR Type against each descriptor's ClrType. A SymbolKey-only
+    // (ingested, ClrType == null) association can therefore never match, so a
+    // TraverseLink<TRel> over it degrades to plain target-endpoint traversal
+    // rather than surfacing the filterable edge object. Polyglot association
+    // traversal (matching by SymbolKey instead of CLR Type) is tracked under
+    // DR-9 and intentionally NOT implemented here.
     private bool IsAssociationType(Type type) =>
         _descriptorIndex.Values.Any(d => d.Kind == ObjectKind.Association && d.ClrType == type);
 
@@ -530,6 +537,12 @@ public sealed class InMemoryExpressionEvaluator
     // descriptor (ObjectKind.Association). Drives the DR-4 association hop so a
     // TraverseLink&lt;TRel&gt; surfaces the filterable edge object, while a
     // TraverseLink&lt;FarEndpoint&gt; surfaces the far node.
+    //
+    // CLR-ONLY limitation (DR-9, deferred): resolution matches on ClrType, so a
+    // SymbolKey-only (ingested, ClrType == null) association descriptor never
+    // resolves here and its TraverseLink degrades to plain target-endpoint
+    // traversal. Polyglot association traversal (matching by SymbolKey rather
+    // than CLR Type) is tracked under DR-9 and intentionally NOT implemented.
     private bool TryResolveAssociationDescriptor(Type requestedType, out string associationDescriptorName)
     {
         foreach (var descriptor in _descriptorIndex.Values)
