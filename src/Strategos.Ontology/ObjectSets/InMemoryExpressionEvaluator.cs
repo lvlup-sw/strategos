@@ -345,7 +345,7 @@ public sealed class InMemoryExpressionEvaluator
                 $"Endpoint hop '{role}' has no originating association traversal in its source chain.");
 
         if (!_descriptorIndex.TryGetValue(
-                ResolveSourceDescriptorName(originatingTraversal.Source), out var originSource))
+                ResolveImmediateSourceDescriptorName(originatingTraversal.Source), out var originSource))
         {
             return [];
         }
@@ -548,25 +548,14 @@ public sealed class InMemoryExpressionEvaluator
             .ToList();
     }
 
-    private static string ResolveSourceDescriptorName(ObjectSetExpression expression) =>
-        expression switch
-        {
-            RootExpression root => root.ObjectTypeName,
-            FilterExpression filter => ResolveSourceDescriptorName(filter.Source),
-            IncludeExpression include => ResolveSourceDescriptorName(include.Source),
-            TraverseLinkExpression traverse => ResolveSourceDescriptorName(traverse.Source),
-            InterfaceNarrowExpression narrow => ResolveSourceDescriptorName(narrow.Source),
-            RawFilterExpression raw => ResolveSourceDescriptorName(raw.Source),
-            _ => throw new NotSupportedException(
-                $"Cannot resolve source descriptor from {expression.GetType().Name}"),
-        };
-
-    // Resolves the descriptor name of the IMMEDIATE upstream element type, unlike
-    // ResolveSourceDescriptorName which walks all the way to the chain root.
-    // Filters/includes preserve their source's element type, so we skip them to
-    // the nearest PRODUCING node: a traversal produces its linked type
-    // (ObjectType.Name); a root produces its declared descriptor name (which can
-    // differ from ObjectType.Name for a multi-registered type).
+    // Resolves the descriptor name of the IMMEDIATE upstream element type (not the
+    // chain root). Filters/includes preserve their source's element type, so we
+    // skip them to the nearest PRODUCING node: a traversal produces its linked
+    // type (ObjectType.Name); a root produces its declared descriptor name (which
+    // can differ from ObjectType.Name for a multi-registered type). This is what
+    // lets a chained TraverseLink resolve its source as the IMMEDIATE prior hop —
+    // e.g. an association hop routes through the far-endpoint path rather than
+    // mistaking the chain root for the source.
     private static string ResolveImmediateSourceDescriptorName(ObjectSetExpression expression) =>
         expression switch
         {
