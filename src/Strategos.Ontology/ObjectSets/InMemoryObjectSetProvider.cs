@@ -377,24 +377,54 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(associationId);
         ct.ThrowIfCancellationRequested();
 
+        var removed = 0;
         if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
         {
             // Symmetric with the attributed RelateAsync<TRel> write key: remove the
             // single row whose AssociationObjectId equals associationId. The plain
             // row and any sibling attributed rows (different association ids) for
             // the same endpoint pair are left intact.
-            rows.RemoveAll(r =>
+            removed = rows.RemoveAll(r =>
                 r.TargetDescriptor == tgtDescriptor
                 && r.TargetId == tgtId
                 && r.AssociationObjectId == associationId);
         }
 
-        // Delete the now-orphaned association object from its partition so it is no
-        // longer queryable or traversable (mirrors the attributed relate, which
-        // STORED the object alongside the row).
-        RemoveStoredInstance(associationDescriptor, associationId);
+        // Conditional cleanup (FIX-D): only delete the stored association object
+        // when this call ACTUALLY removed its row AND no remaining row anywhere
+        // still references that association id. An unrelate naming a wrong
+        // (src, link, tgt) tuple removes nothing, so deleting the object would
+        // dangle the surviving correct row; likewise, if another row still points
+        // at the same association object, the object must survive.
+        if (removed > 0 && !AnyRowReferencesAssociation(associationId))
+        {
+            RemoveStoredInstance(associationDescriptor, associationId);
+        }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// True when any relation row in any partition still references
+    /// <paramref name="associationId"/> via its
+    /// <see cref="RelationRow.AssociationObjectId"/>. Guards the attributed-unrelate
+    /// cleanup (FIX-D) so a shared association object is not deleted while a row
+    /// still points at it.
+    /// </summary>
+    private bool AnyRowReferencesAssociation(string associationId)
+    {
+        foreach (var partition in _relations.Values)
+        {
+            foreach (var row in partition)
+            {
+                if (string.Equals(row.AssociationObjectId, associationId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

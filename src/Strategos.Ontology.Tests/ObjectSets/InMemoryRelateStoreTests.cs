@@ -383,6 +383,72 @@ public class InMemoryRelateStoreTests
     }
 
     // -----------------------------------------------------------------------
+    // FIX-D (DR-4) — attributed unrelate cleanup is CONDITIONAL on the row
+    // removal actually matching. An unrelate naming a wrong (src, link, tgt)
+    // tuple removes no row, so it must NOT delete the stored association object
+    // (which would dangle the surviving correct row). The correct-tuple path
+    // still removes both row and object.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task UnrelateAsync_AttributedWrongTuple_DoesNotDeleteAssociationObject()
+    {
+        // Arrange — a single attributed relate a->b with association emp-1.
+        var provider = SeededProvider("a", "b", "c");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Act — unrelate names the WRONG target ("c"): no row matches that triple.
+        await writer.UnrelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "c",
+            "RelateAssociation", "emp-1");
+
+        // Assert — the correct row survives intact (no row was removed).
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].TargetId).IsEqualTo("b");
+        await Assert.That(rows[0].AssociationObjectId).IsEqualTo("emp-1");
+
+        // Assert — the association object is NOT deleted (no dangling reference):
+        // the surviving row still resolves to a stored object.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).HasCount().EqualTo(1);
+        await Assert.That(stored.Items[0].Id).IsEqualTo("emp-1");
+    }
+
+    [Test]
+    public async Task UnrelateAsync_AttributedCorrectTuple_RemovesBothRowAndObject()
+    {
+        // Arrange — a single attributed relate a->b with association emp-1.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Act — unrelate names the CORRECT triple.
+        await writer.UnrelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", "emp-1");
+
+        // Assert — the row is gone.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+
+        // Assert — and so is the now-orphaned association object.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).IsEmpty();
+    }
+
+    // -----------------------------------------------------------------------
     // F-MED-4 — cancellation is observed at entry of every relate-store write,
     // matching StoreBatchAsync / StreamAsync.
     // -----------------------------------------------------------------------
