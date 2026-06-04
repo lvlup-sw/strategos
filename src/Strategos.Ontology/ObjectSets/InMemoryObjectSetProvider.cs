@@ -199,6 +199,67 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(tgtDescriptor);
         ArgumentNullException.ThrowIfNull(tgtId);
 
+        // Plain (unattributed) DR-2 relate: no association object backs the row.
+        WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId: null);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public async Task RelateAsync<TRel>(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        string tgtDescriptor,
+        string tgtId,
+        string associationDescriptor,
+        TRel association,
+        CancellationToken ct = default)
+        where TRel : class
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(association);
+
+        // EAGER endpoint validation runs BEFORE the association object is stored,
+        // so a failed attributed relate leaves neither a dangling association nor
+        // a dangling row (mirrors the plain RelateAsync posture / DR-8).
+        ValidateEndpointExists(srcDescriptor, srcId);
+        ValidateEndpointExists(tgtDescriptor, tgtId);
+
+        // Project the association's id via the DR-1 projector. When the provider
+        // is graph-aware and the association descriptor is known, project through
+        // its IdAccessor; this is the same single id-resolution path DR-1 defines
+        // (no per-call reflection on the instance type, INV-8).
+        var associationObjectId = ProjectAssociationId(associationDescriptor, association);
+
+        // Store the association object under its descriptor partition.
+        await StoreAsync(associationDescriptor, association, ct).ConfigureAwait(false);
+
+        // Write the row referencing the stored association object.
+        WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId);
+    }
+
+    /// <summary>
+    /// Shared relate-row write path for both the plain and attributed
+    /// <c>RelateAsync</c> overloads. Performs eager endpoint validation, the
+    /// self-loop policy check, and idempotent row insertion. The duplicate key
+    /// is (TargetDescriptor, TargetId, AssociationObjectId): a plain relate
+    /// (null association id) collapses to one row per endpoint pair, while an
+    /// attributed relate can coexist with — or replace — a plain row for the
+    /// same endpoints when it carries a distinct association object.
+    /// </summary>
+    private void WriteRelationRow(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        string tgtDescriptor,
+        string tgtId,
+        string? associationObjectId)
+    {
         // EAGER endpoint validation (DR-8): both endpoints must correspond to a
         // stored instance BEFORE any row is written, so a failed relate never
         // leaves a dangling row. This in-memory posture is the contract the
@@ -218,16 +279,44 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
 
-        // Idempotent: relating the same (src, link, tgt) twice yields one row.
-        // Endpoint identity is (TargetDescriptor, TargetId); DR-2 never sets the
-        // DR-4 AssociationObjectId, so it is not part of the duplicate key here.
-        var alreadyRelated = rows.Any(r => r.TargetDescriptor == tgtDescriptor && r.TargetId == tgtId);
+        // Idempotent: relating the same (src, link, tgt, associationObjectId)
+        // twice yields one row. The DR-4 AssociationObjectId participates in the
+        // duplicate key so an attributed relate is distinguishable from a plain
+        // one over the same endpoint pair.
+        var alreadyRelated = rows.Any(r =>
+            r.TargetDescriptor == tgtDescriptor
+            && r.TargetId == tgtId
+            && r.AssociationObjectId == associationObjectId);
         if (!alreadyRelated)
         {
-            rows.Add(new RelationRow(tgtDescriptor, tgtId));
+            rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
+        }
+    }
+
+    /// <summary>
+    /// Projects an association instance to its id through the DR-1
+    /// <see cref="ObjectIdentityProjector"/> using the named descriptor's
+    /// <see cref="ObjectTypeDescriptor.IdAccessor"/>. Throws when the provider
+    /// is graph-aware but the descriptor is unknown — an attributed relate
+    /// against an undeclared association descriptor is a caller error, not a
+    /// silent no-op.
+    /// </summary>
+    private string ProjectAssociationId(string associationDescriptor, object association)
+    {
+        if (_descriptorIndex is null)
+        {
+            // Graph-less legacy mode: no descriptors, so fall back to the
+            // instance's own ToString() as the stable id (mirrors the seed-time
+            // posture for graph-less providers). DR-1 projection is unavailable.
+            return association.ToString() ?? string.Empty;
         }
 
-        return Task.CompletedTask;
+        if (!_descriptorIndex.TryGetValue(associationDescriptor, out var descriptor))
+        {
+            throw new RelationEndpointNotFoundException(associationDescriptor, "<association>");
+        }
+
+        return _idProjector.ProjectId(descriptor, association);
     }
 
     /// <inheritdoc />

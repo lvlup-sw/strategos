@@ -10,6 +10,10 @@ namespace Strategos.Ontology.Tests.ObjectSets;
 
 public sealed record RelateNode(string Id);
 
+// DR-4 (Task 17): a reified association linking two RelateNode endpoints with
+// its own key + edge attribute, for the attributed-relate seam.
+public sealed record RelateAssociation(string Id, RelateNode From, RelateNode To, string Label);
+
 public sealed class RelateTestOntology : DomainOntology
 {
     public override string DomainName => "relate";
@@ -20,6 +24,13 @@ public sealed class RelateTestOntology : DomainOntology
         {
             obj.Key(n => n.Id);
             obj.HasMany<RelateNode>("links_to");
+        });
+
+        builder.Association<RelateAssociation>("RelateAssociation", a =>
+        {
+            a.Key(r => r.Id);
+            a.Between(r => r.From).And(r => r.To);
+            a.Property(r => r.Label).Required();
         });
     }
 }
@@ -198,6 +209,38 @@ public class InMemoryRelateStoreTests
         var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
         await Assert.That(rows).HasCount().EqualTo(1);
         await Assert.That(rows[0].TargetId).IsEqualTo("a");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 17 (DR-4) — attributed relate stores the association object and a
+    // row referencing it via AssociationObjectId.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateWithAssociation_StoresObjectAndRowReferencingIt()
+    {
+        // Arrange — both endpoints stored; the association object carries its own id.
+        var provider = SeededProvider("a", "b");
+        IObjectSetWriter writer = provider;
+        var association = new RelateAssociation("emp-1", new RelateNode("a"), new RelateNode("b"), "manages");
+
+        // Act — attributed relate stores the association AND writes a row that points at it.
+        await writer.RelateAsync(
+            nameof(RelateNode), "a", "links_to", nameof(RelateNode), "b",
+            "RelateAssociation", association);
+
+        // Assert — the row references the association object's projected id.
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).HasCount().EqualTo(1);
+        await Assert.That(rows[0].TargetDescriptor).IsEqualTo(nameof(RelateNode));
+        await Assert.That(rows[0].TargetId).IsEqualTo("b");
+        await Assert.That(rows[0].AssociationObjectId).IsEqualTo("emp-1");
+
+        // Assert — the association object itself was stored under its descriptor.
+        var stored = await provider.ExecuteAsync<RelateAssociation>(
+            new RootExpression(typeof(RelateAssociation), "RelateAssociation"));
+        await Assert.That(stored.Items).HasCount().EqualTo(1);
+        await Assert.That(stored.Items[0].Id).IsEqualTo("emp-1");
     }
 
     private static InMemoryObjectSetProvider SelfLoopAllowedProvider(params string[] ids)

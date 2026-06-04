@@ -83,6 +83,43 @@ public interface IObjectSetWriter
     Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default);
 
     /// <summary>
+    /// Materializes an ATTRIBUTED relation (DR-4): a relation backed by a
+    /// reified association object that carries its own key and edge attributes.
+    /// Stores <paramref name="association"/> under
+    /// <paramref name="associationDescriptor"/>, projects its id via the DR-1
+    /// identity projector, and writes a relation row whose
+    /// <see cref="RelationRow.AssociationObjectId"/> equals that id.
+    /// </summary>
+    /// <remarks>
+    /// Endpoint validation is EAGER, identical to the plain
+    /// <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>:
+    /// both <paramref name="srcId"/> and <paramref name="tgtId"/> must correspond
+    /// to stored instances or a <see cref="RelationEndpointNotFoundException"/>
+    /// is thrown and neither the association nor a row is written. The self-loop
+    /// policy applies as well.
+    /// </remarks>
+    /// <typeparam name="TRel">CLR type backing the association object.</typeparam>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link being materialized.</param>
+    /// <param name="tgtDescriptor">Descriptor name of the target endpoint.</param>
+    /// <param name="tgtId">Projected id of the target instance.</param>
+    /// <param name="associationDescriptor">Descriptor name of the association object type.</param>
+    /// <param name="association">The association instance to store and reference.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the association and row are written.</returns>
+    Task RelateAsync<TRel>(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        string tgtDescriptor,
+        string tgtId,
+        string associationDescriptor,
+        TRel association,
+        CancellationToken ct = default)
+        where TRel : class;
+
+    /// <summary>
     /// Removes a previously-materialized relation. Removing a relation that does
     /// not exist is a no-op (no throw).
     /// </summary>
