@@ -1,5 +1,6 @@
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.ObjectSets;
+using TUnit.Assertions.Enums;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
 
@@ -114,5 +115,30 @@ public class InMemoryRelateStoreTests
         var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
 
         await Assert.That(rows).IsEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 7 — deterministic ordinal-by-id read order (INV-7 / replay)
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Relations_ReadOrder_IsOrdinalByTargetId()
+    {
+        // Arrange — seed targets and relate them in a deliberately non-sorted order
+        var provider = SeededProvider("src", "delta", "alpha", "charlie", "bravo");
+        IObjectSetWriter writer = provider;
+
+        await writer.RelateAsync(nameof(RelateNode), "src", "links_to", nameof(RelateNode), "delta");
+        await writer.RelateAsync(nameof(RelateNode), "src", "links_to", nameof(RelateNode), "alpha");
+        await writer.RelateAsync(nameof(RelateNode), "src", "links_to", nameof(RelateNode), "charlie");
+        await writer.RelateAsync(nameof(RelateNode), "src", "links_to", nameof(RelateNode), "bravo");
+
+        // Act
+        var rows = provider.GetRelations(nameof(RelateNode), "src", "links_to");
+
+        // Assert — read order is ordinal by TargetId, regardless of insert order
+        var targetIds = rows.Select(r => r.TargetId).ToList();
+        await Assert.That(targetIds)
+            .IsEquivalentTo(new[] { "alpha", "bravo", "charlie", "delta" }, CollectionOrdering.Matching);
     }
 }
