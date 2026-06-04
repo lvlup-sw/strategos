@@ -1,5 +1,6 @@
 using Strategos.Ontology.Actions;
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Query;
@@ -244,5 +245,91 @@ public class InstanceAnchoredTraversalTests
             .ExecuteAsync();
         var allFarIds = allFar.Items.Select(n => n.Id).OrderBy(s => s, StringComparer.Ordinal).ToList();
         await Assert.That(allFarIds).IsEquivalentTo(new[] { "y1", "y2" });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 13 (DR-8): SymbolKey-only (polyglot) relate -> traverse, NO reflection.
+//
+// An ingested descriptor has ClrType = null and SymbolKey set; its identity
+// flows ONLY through a source-supplied IdAccessor (DR-1). The instance below
+// hides its true id behind a transformation ("node:" + RawId) that NO
+// reflection-by-convention could reproduce, so any reflective id fallback
+// would yield the wrong id and the relate/traverse would resolve nothing. A
+// correct end-to-end result therefore proves the IdAccessor is the only id
+// path (INV-8).
+// ---------------------------------------------------------------------------
+
+public sealed record PolyglotNode(string RawId);
+
+public class SymbolKeyOnlyTraversalTests
+{
+    private const string Descriptor = "PolyNode";
+    private const string LinkName = "relates";
+
+    private static OntologyGraph BuildSymbolKeyOnlyGraph()
+    {
+        // The supplied accessor is the ONLY id path: id = "node:" + RawId.
+        Func<object, object?> idAccessor = instance => "node:" + ((PolyglotNode)instance).RawId;
+
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = Descriptor,
+            DomainName = "poly",
+            ClrType = null, // SymbolKey-only: no loaded CLR identity.
+            SymbolKey = "scip-typescript ./poly.ts#PolyNode",
+            LanguageId = "typescript",
+            Source = DescriptorSource.Ingested,
+            SourceId = "poly-source",
+            IdAccessor = idAccessor,
+            Links =
+            [
+                new LinkDescriptor(LinkName, Descriptor, LinkCardinality.OneToMany),
+            ],
+        };
+
+        return new OntologyGraph(
+            domains: [new DomainDescriptor("poly") { ObjectTypes = [descriptor] }],
+            objectTypes: [descriptor],
+            interfaces: [],
+            crossDomainLinks: [],
+            workflowChains: []);
+    }
+
+    [Test]
+    public async Task RelateThenTraverse_SymbolKeyOnlyDescriptor_NoReflection()
+    {
+        // Arrange — a SymbolKey-only graph, instances stored under the ingested
+        // descriptor. Projected ids are "node:x", "node:a", "node:b", "node:c".
+        var graph = BuildSymbolKeyOnlyGraph();
+        var provider = new InMemoryObjectSetProvider(graph);
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        provider.Seed(new PolyglotNode("x"), "x", Descriptor);
+        provider.Seed(new PolyglotNode("a"), "a", Descriptor);
+        provider.Seed(new PolyglotNode("b"), "b", Descriptor);
+        provider.Seed(new PolyglotNode("c"), "c", Descriptor); // unrelated
+
+        IObjectSetWriter writer = provider;
+        // Relate via the projected ids (the accessor's transformed form).
+        await writer.RelateAsync(Descriptor, "node:x", LinkName, Descriptor, "node:a");
+        await writer.RelateAsync(Descriptor, "node:x", LinkName, Descriptor, "node:b");
+
+        // Act — traverse from the x instance end-to-end through the polyglot path.
+        var traversed = query
+            .GetObjectSet<PolyglotNode>(Descriptor)
+            .Where(n => n.RawId == "x")
+            .TraverseLink<PolyglotNode>(LinkName);
+        var result = await traversed.ExecuteAsync();
+
+        // Assert — exactly the related {a, b}, NOT the unrelated c. Correct
+        // resolution is only possible if every id was projected via the supplied
+        // IdAccessor (no reflection on PolyglotNode's CLR shape).
+        var rawIds = result.Items.Select(n => n.RawId).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        await Assert.That(rawIds).IsEquivalentTo(new[] { "a", "b" });
     }
 }
