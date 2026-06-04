@@ -159,6 +159,15 @@ public sealed record ObjectTypeDescriptor
 
     public ObjectKind Kind { get; init; } = ObjectKind.Entity;
 
+    /// <summary>
+    /// The two endpoints of a reified association, present only when
+    /// <see cref="Kind"/> is <see cref="ObjectKind.Association"/> (DR-4).
+    /// Empty for entity/process descriptors. Endpoints reference their object
+    /// type by descriptor name (INV-8) — the list never carries a CLR
+    /// <see cref="Type"/> denoting endpoint identity.
+    /// </summary>
+    public IReadOnlyList<AssociationEndpoint> AssociationEndpoints { get; init; } = [];
+
     public Type? ParentType { get; init; }
 
     public string? ParentTypeName { get; init; }
