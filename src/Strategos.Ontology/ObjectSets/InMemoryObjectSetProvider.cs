@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Embeddings;
+using Strategos.Ontology.Identity;
 
 namespace Strategos.Ontology.ObjectSets;
 
@@ -40,6 +42,13 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly InMemoryExpressionEvaluator? _evaluator;
 
+    // Descriptor index by name, populated for graph-aware instances (DR-2).
+    // Used to resolve the IdAccessor for eager endpoint validation in
+    // RelateAsync and the LinkDescriptor for the self-loop policy. Null for
+    // graph-less instances, whose seeded items carry no key accessor.
+    private readonly IReadOnlyDictionary<string, ObjectTypeDescriptor>? _descriptorIndex;
+    private readonly ObjectIdentityProjector _idProjector = new();
+
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryObjectSetProvider"/> class.
     /// </summary>
@@ -72,6 +81,7 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(graph);
         _evaluator = new InMemoryExpressionEvaluator(graph);
+        _descriptorIndex = BuildDescriptorIndex(graph);
     }
 
     /// <summary>
@@ -88,7 +98,23 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(graph);
         _evaluator = new InMemoryExpressionEvaluator(graph);
+        _descriptorIndex = BuildDescriptorIndex(graph);
         _embeddingProvider = embeddingProvider;
+    }
+
+    // Name-keyed descriptor index for relate-time validation (DR-2). The
+    // evaluator constructed alongside this index already enforces globally
+    // unique descriptor names and throws on a collision, so by the time this
+    // runs the names are unique and last-write-wins is never reached.
+    private static IReadOnlyDictionary<string, ObjectTypeDescriptor> BuildDescriptorIndex(OntologyGraph graph)
+    {
+        var index = new Dictionary<string, ObjectTypeDescriptor>(StringComparer.Ordinal);
+        foreach (var objectType in graph.ObjectTypes)
+        {
+            index[objectType.Name] = objectType;
+        }
+
+        return index;
     }
 
     /// <summary>
@@ -173,6 +199,13 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(tgtDescriptor);
         ArgumentNullException.ThrowIfNull(tgtId);
 
+        // EAGER endpoint validation (DR-8): both endpoints must correspond to a
+        // stored instance BEFORE any row is written, so a failed relate never
+        // leaves a dangling row. This in-memory posture is the contract the
+        // future Npgsql provider mirrors via foreign-key constraints.
+        ValidateEndpointExists(srcDescriptor, srcId);
+        ValidateEndpointExists(tgtDescriptor, tgtId);
+
         var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
 
         // Idempotent: relating the same (src, link, tgt) twice yields one row.
@@ -229,6 +262,42 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return rows
             .OrderBy(r => r.TargetId, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// Eager endpoint check (DR-8): throws <see cref="RelationEndpointNotFoundException"/>
+    /// unless some instance stored under <paramref name="descriptorName"/> projects
+    /// (via the descriptor's reflection-free <see cref="ObjectTypeDescriptor.IdAccessor"/>)
+    /// to <paramref name="id"/>.
+    /// </summary>
+    private void ValidateEndpointExists(string descriptorName, string id)
+    {
+        // A graph-less provider carries no descriptors (and thus no IdAccessor),
+        // so there is nothing to project against; eager validation is a no-op
+        // for that legacy seeding mode.
+        if (_descriptorIndex is null)
+        {
+            return;
+        }
+
+        if (!_descriptorIndex.TryGetValue(descriptorName, out var descriptor))
+        {
+            throw new RelationEndpointNotFoundException(descriptorName, id);
+        }
+
+        var stored = _items.TryGetValue(descriptorName, out var items) ? items : null;
+        if (stored is not null)
+        {
+            foreach (var instance in stored)
+            {
+                if (string.Equals(_idProjector.ProjectId(descriptor, instance), id, StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+        }
+
+        throw new RelationEndpointNotFoundException(descriptorName, id);
     }
 
     /// <inheritdoc />

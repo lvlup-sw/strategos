@@ -141,4 +141,25 @@ public class InMemoryRelateStoreTests
         await Assert.That(targetIds)
             .IsEquivalentTo(new[] { "alpha", "bravo", "charlie", "delta" }, CollectionOrdering.Matching);
     }
+
+    // -----------------------------------------------------------------------
+    // Task 8 (DR-8) — eager endpoint validation
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task RelateAsync_NonExistentEndpoint_ThrowsTypedError()
+    {
+        // Arrange — only the source is stored; the target id has no stored instance
+        var provider = SeededProvider("a");
+        IObjectSetWriter writer = provider;
+
+        // Act & Assert — eager validation throws a typed error
+        await Assert.That(async () =>
+                await writer.RelateAsync(nameof(RelateNode), "a", "links_to", nameof(RelateNode), "ghost"))
+            .Throws<RelationEndpointNotFoundException>();
+
+        // Assert — no dangling row was created
+        var rows = provider.GetRelations(nameof(RelateNode), "a", "links_to");
+        await Assert.That(rows).IsEmpty();
+    }
 }
