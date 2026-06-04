@@ -144,4 +144,41 @@ public class MergeTwoIdentityTests
         await Assert.That(merged.Name).IsEqualTo("TradeOrder");
         await Assert.That(merged.DomainName).IsEqualTo("trading");
     }
+
+    [Test]
+    public async Task MergeTwo_IdAccessor_HandWinsOverIngested()
+    {
+        Func<object, object?> handAccessor = _ => "hand";
+        Func<object, object?> ingestedAccessor = _ => "ingested";
+        var hand = HandDescriptor() with { IdAccessor = handAccessor };
+        var ingested = IngestedDescriptor() with { IdAccessor = ingestedAccessor };
+
+        var merged = MergeTwo.Merge(hand, ingested);
+
+        await Assert.That(merged.IdAccessor).IsNotNull();
+        await Assert.That(merged.IdAccessor!(new object())).IsEqualTo("hand");
+    }
+
+    [Test]
+    public async Task MergeTwo_IdAccessor_FallsBackToIngestedWhenHandNull()
+    {
+        // Hand-authored descriptor with no compiled accessor (e.g. symbol-only
+        // hand registration); the ingested source supplied the accessor. Mirrors
+        // the ClrType lattice rule: hand wins, fallback to ingested (INV-8 — the
+        // merged descriptor must retain a reflection-free id path).
+        Func<object, object?> ingestedAccessor = _ => "ingested";
+        var hand = new ObjectTypeDescriptor
+        {
+            Name = "TradeOrder",
+            DomainName = "trading",
+            SymbolKey = "hand-only-symbol",
+            Source = DescriptorSource.HandAuthored,
+        };
+        var ingested = IngestedDescriptor() with { IdAccessor = ingestedAccessor };
+
+        var merged = MergeTwo.Merge(hand, ingested);
+
+        await Assert.That(merged.IdAccessor).IsNotNull();
+        await Assert.That(merged.IdAccessor!(new object())).IsEqualTo("ingested");
+    }
 }

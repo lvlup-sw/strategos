@@ -17,7 +17,16 @@ public sealed class ObjectIdentityProjector : IObjectIdentityProjector
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(instance);
 
-        var keyValue = descriptor.IdAccessor!(instance);
+        var accessor = descriptor.IdAccessor;
+        if (accessor is null)
+        {
+            throw new InvalidOperationException(
+                $"Cannot project id for descriptor '{descriptor.Name}': descriptor '{descriptor.Name}' has no id accessor. "
+                + "Hand-authored descriptors derive it from the Key(...) selector; "
+                + "ingested descriptors must have one supplied by their IOntologySource.");
+        }
+
+        var keyValue = accessor(instance);
         if (keyValue is null)
         {
             throw new InvalidOperationException(
