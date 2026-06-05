@@ -23,6 +23,8 @@ public sealed class RelationEndpointNotFoundException : Exception
         : base($"Relation endpoint not found: no instance with id '{id}' is stored under descriptor '{descriptorName}'. "
             + "Both endpoints must be stored before they can be related (eager validation).")
     {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(id);
         DescriptorName = descriptorName;
         Id = id;
     }

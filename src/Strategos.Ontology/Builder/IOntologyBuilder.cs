@@ -31,8 +31,8 @@ public interface IOntologyBuilder
     /// al. on <see cref="IObjectTypeBuilder{T}"/>), an association is a
     /// first-class object type that owns its own key and edge attributes and
     /// links two endpoints declared via
-    /// <see cref="IAssociationBuilder{TRel}.Between{L}"/> +
-    /// <see cref="IAssociationEndpointBuilder{TRel}.And{R}"/>. It produces an
+    /// <see cref="IAssociationBuilder{TRel}.Between{TLeft}"/> +
+    /// <see cref="IAssociationEndpointBuilder{TRel}.And{TRight}"/>. It produces an
     /// <see cref="ObjectTypeDescriptor"/> with
     /// <see cref="ObjectTypeDescriptor.Kind"/> = <see cref="ObjectKind.Association"/>.
     /// </summary>

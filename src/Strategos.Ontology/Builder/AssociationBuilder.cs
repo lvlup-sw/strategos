@@ -32,6 +32,8 @@ internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAss
 
     public AssociationBuilder(string domainName, string name)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domainName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _domainName = domainName;
         _name = name;
     }

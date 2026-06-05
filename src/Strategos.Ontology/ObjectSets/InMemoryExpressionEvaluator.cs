@@ -344,10 +344,12 @@ public sealed class InMemoryExpressionEvaluator
             ?? throw new InvalidOperationException(
                 $"Endpoint hop '{role}' has no originating association traversal in its source chain.");
 
-        if (!_descriptorIndex.TryGetValue(
-                ResolveImmediateSourceDescriptorName(originatingTraversal.Source), out var originSource))
+        var originSourceDescriptorName = ResolveImmediateSourceDescriptorName(originatingTraversal.Source);
+        if (!_descriptorIndex.TryGetValue(originSourceDescriptorName, out var originSource))
         {
-            return [];
+            var available = string.Join(", ", _descriptorIndex.Keys);
+            throw new InvalidOperationException(
+                $"Object type '{originSourceDescriptorName}' not found in ontology graph. Available types: {available}");
         }
 
         var originInstances = EvaluateUntyped(originatingTraversal.Source, itemResolver);

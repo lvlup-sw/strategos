@@ -22,6 +22,9 @@ public sealed class SelfLoopNotAllowedException : Exception
         : base($"Self-loop not allowed: cannot relate '{descriptorName}' instance '{id}' to itself "
             + $"along link '{linkName}'. Set LinkDescriptor.AllowsSelfLoop to permit self-loops on this link.")
     {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(linkName);
         DescriptorName = descriptorName;
         Id = id;
         LinkName = linkName;

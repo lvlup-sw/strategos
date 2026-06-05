@@ -177,7 +177,7 @@ public class InvariantGuardTests
                 continue;
             }
 
-            if (!type.IsSealed)
+            if (!type.IsInterface && !type.IsSealed)
             {
                 offenders.Add($"{type.FullName} is not sealed");
             }
@@ -212,7 +212,7 @@ public class InvariantGuardTests
                 continue;
             }
 
-            if (!type.IsSealed)
+            if (!type.IsInterface && !type.IsSealed)
             {
                 offenders.Add($"{type.FullName} is not sealed");
             }

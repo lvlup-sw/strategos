@@ -15,6 +15,10 @@ namespace Strategos.Ontology.ObjectSets;
 /// <remarks>
 /// <see cref="Seed{T}"/> is not thread-safe. Seed all items before querying,
 /// or synchronize access externally if seeding concurrently.
+/// The DR-2 relation store (relate/unrelate and traversal reads) IS safe to call
+/// concurrently — every access to a per-key <c>List&lt;RelationRow&gt;</c> is
+/// serialized by a single internal gate, so concurrent relate/unrelate stays
+/// idempotent and traversal never enumerates a list mid-mutation.
 /// When an <see cref="IEmbeddingProvider"/> is supplied, <see cref="ExecuteSimilarityAsync{T}"/>
 /// uses real cosine similarity against stored embeddings instead of keyword scoring.
 /// </remarks>
@@ -48,6 +52,15 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     // graph-less instances, whose seeded items carry no key accessor.
     private readonly IReadOnlyDictionary<string, ObjectTypeDescriptor>? _descriptorIndex;
     private readonly ObjectIdentityProjector _idProjector = new();
+
+    // Serializes all relation-store access. ConcurrentDictionary guards only the
+    // partition map; the per-key List<RelationRow> values are still read, mutated,
+    // and enumerated unsynchronized — and AnyRowReferencesAssociation scans across
+    // ALL partitions, so a per-key lock would not cover it. A single re-entrant
+    // gate makes relate/unrelate idempotent and traversal reads race-free without
+    // the partial-fix trap. The lock is held only over in-memory list operations
+    // (no awaits), so it never blocks across an async boundary.
+    private readonly object _relationsGate = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryObjectSetProvider"/> class.
@@ -294,23 +307,27 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
             throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
         }
 
-        var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
-
-        // Idempotent: relating the same (src, link, tgt, associationObjectId)
-        // twice yields one row. The DR-4 AssociationObjectId participates in the
-        // duplicate key so an attributed relate is distinguishable from a plain
-        // one over the same endpoint pair.
-        var alreadyRelated = rows.Any(r =>
-            r.TargetDescriptor == tgtDescriptor
-            && r.TargetId == tgtId
-            && r.AssociationObjectId == associationObjectId);
-        if (alreadyRelated)
+        lock (_relationsGate)
         {
-            return false;
-        }
+            var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
 
-        rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
-        return true;
+            // Idempotent: relating the same (src, link, tgt, associationObjectId)
+            // twice yields one row. The DR-4 AssociationObjectId participates in the
+            // duplicate key so an attributed relate is distinguishable from a plain
+            // one over the same endpoint pair. The check-then-add must be atomic, so
+            // it runs under the gate.
+            var alreadyRelated = rows.Any(r =>
+                r.TargetDescriptor == tgtDescriptor
+                && r.TargetId == tgtId
+                && r.AssociationObjectId == associationObjectId);
+            if (alreadyRelated)
+            {
+                return false;
+            }
+
+            rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
+            return true;
+        }
     }
 
     /// <summary>
@@ -349,17 +366,20 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(tgtId);
         ct.ThrowIfCancellationRequested();
 
-        if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        lock (_relationsGate)
         {
-            // Symmetric with the plain RelateAsync write key
-            // (TargetDescriptor, TargetId, AssociationObjectId == null): remove
-            // ONLY the plain row. An attributed row (non-null AssociationObjectId)
-            // for the same endpoint pair survives — it is removed via the
-            // attributed UnrelateAsync overload, which also cleans up the object.
-            rows.RemoveAll(r =>
-                r.TargetDescriptor == tgtDescriptor
-                && r.TargetId == tgtId
-                && r.AssociationObjectId is null);
+            if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                // Symmetric with the plain RelateAsync write key
+                // (TargetDescriptor, TargetId, AssociationObjectId == null): remove
+                // ONLY the plain row. An attributed row (non-null AssociationObjectId)
+                // for the same endpoint pair survives — it is removed via the
+                // attributed UnrelateAsync overload, which also cleans up the object.
+                rows.RemoveAll(r =>
+                    r.TargetDescriptor == tgtDescriptor
+                    && r.TargetId == tgtId
+                    && r.AssociationObjectId is null);
+            }
         }
 
         return Task.CompletedTask;
@@ -377,28 +397,33 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentNullException.ThrowIfNull(associationId);
         ct.ThrowIfCancellationRequested();
 
-        var removed = 0;
-        if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        lock (_relationsGate)
         {
-            // Symmetric with the attributed RelateAsync<TRel> write key: remove the
-            // single row whose AssociationObjectId equals associationId. The plain
-            // row and any sibling attributed rows (different association ids) for
-            // the same endpoint pair are left intact.
-            removed = rows.RemoveAll(r =>
-                r.TargetDescriptor == tgtDescriptor
-                && r.TargetId == tgtId
-                && r.AssociationObjectId == associationId);
-        }
+            var removed = 0;
+            if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                // Symmetric with the attributed RelateAsync<TRel> write key: remove the
+                // single row whose AssociationObjectId equals associationId. The plain
+                // row and any sibling attributed rows (different association ids) for
+                // the same endpoint pair are left intact.
+                removed = rows.RemoveAll(r =>
+                    r.TargetDescriptor == tgtDescriptor
+                    && r.TargetId == tgtId
+                    && r.AssociationObjectId == associationId);
+            }
 
-        // Conditional cleanup (FIX-D): only delete the stored association object
-        // when this call ACTUALLY removed its row AND no remaining row anywhere
-        // still references that association id. An unrelate naming a wrong
-        // (src, link, tgt) tuple removes nothing, so deleting the object would
-        // dangle the surviving correct row; likewise, if another row still points
-        // at the same association object, the object must survive.
-        if (removed > 0 && !AnyRowReferencesAssociation(associationId))
-        {
-            RemoveStoredInstance(associationDescriptor, associationId);
+            // Conditional cleanup (FIX-D): only delete the stored association object
+            // when this call ACTUALLY removed its row AND no remaining row anywhere
+            // still references that association id. The removal + cross-partition
+            // reference scan + delete run under one gate so a concurrent relate/unrelate
+            // cannot slip a referencing row in between the scan and the delete. An
+            // unrelate naming a wrong (src, link, tgt) tuple removes nothing, so
+            // deleting the object would dangle the surviving correct row; likewise, if
+            // another row still points at the same association object, it must survive.
+            if (removed > 0 && !AnyRowReferencesAssociation(associationId))
+            {
+                RemoveStoredInstance(associationDescriptor, associationId);
+            }
         }
 
         return Task.CompletedTask;
@@ -413,18 +438,23 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// </summary>
     private bool AnyRowReferencesAssociation(string associationId)
     {
-        foreach (var partition in _relations.Values)
+        // Re-entrant: callers already hold _relationsGate (attributed UnrelateAsync).
+        // Taking it here too keeps this scan safe if it is ever called standalone.
+        lock (_relationsGate)
         {
-            foreach (var row in partition)
+            foreach (var partition in _relations.Values)
             {
-                if (string.Equals(row.AssociationObjectId, associationId, StringComparison.Ordinal))
+                foreach (var row in partition)
                 {
-                    return true;
+                    if (string.Equals(row.AssociationObjectId, associationId, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
                 }
             }
-        }
 
-        return false;
+            return false;
+        }
     }
 
     /// <summary>
@@ -485,14 +515,19 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <returns>Relation rows ordered by <see cref="RelationRow.TargetId"/>.</returns>
     internal IReadOnlyList<RelationRow> GetRelations(string srcDescriptor, string srcId, string linkName)
     {
-        if (!_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+        lock (_relationsGate)
         {
-            return [];
-        }
+            if (!_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                return [];
+            }
 
-        return rows
-            .OrderBy(r => r.TargetId, StringComparer.Ordinal)
-            .ToList();
+            // Sort to a fresh list under the gate so the snapshot is taken without a
+            // concurrent relate/unrelate mutating the backing list mid-enumeration.
+            return rows
+                .OrderBy(r => r.TargetId, StringComparer.Ordinal)
+                .ToList();
+        }
     }
 
     /// <summary>
