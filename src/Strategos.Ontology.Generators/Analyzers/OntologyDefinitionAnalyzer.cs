@@ -51,7 +51,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointNoLinks,
             OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
             OntologyDiagnostics.ReadOnlyConflictsWithMutation,
-            OntologyDiagnostics.PolyglotInvariantViolated);
+            OntologyDiagnostics.PolyglotInvariantViolated,
+            OntologyDiagnostics.AssociationEndpointCardinalityInvalid);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -92,6 +93,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         CollectDomainInfo(body, context.SemanticModel, domainInfo);
         ReportDiagnostics(context, domainInfo);
         ReportPolyglotInvariantViolations(context, body);
+        ReportAssociationCardinalityViolations(context, body);
     }
 
     // AONT037: Polyglot identity invariant — descriptor-by-name overload
@@ -170,6 +172,108 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 invocation.GetLocation(),
                 descriptorName));
         }
+    }
+
+    // AONT210 (DR-6, #121): a reified association is a junction object — many
+    // association rows fold INTO one endpoint object on each side, so the only
+    // endpoint cardinality that forms a valid reified relation is ManyToOne.
+    // For each `builder.Association<TRel>(name, a => …)` registration, inspect
+    // the configure lambda for `WithCardinality(EndpointCardinality.X)` calls
+    // chained onto an endpoint (Between/And) and report any endpoint whose X is
+    // not ManyToOne. Reported at the Association declaration site, mirroring
+    // AONT037's syntactic, receiver-filtered style.
+    private static void ReportAssociationCardinalityViolations(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            // Member-access form `<receiver>.Association<TRel>(name, configure)`.
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            // The generic `Association<TRel>` uses a GenericNameSyntax name.
+            if (memberAccess.Name is not GenericNameSyntax genericName ||
+                genericName.Identifier.Text != "Association")
+            {
+                continue;
+            }
+
+            // Receiver must be an IOntologyBuilder. When the receiver type can't
+            // be resolved (broken source mid-edit), skip rather than false-fire.
+            var receiverType = context.SemanticModel
+                .GetTypeInfo(memberAccess.Expression, context.CancellationToken).Type;
+            if (receiverType is null || !IsOntologyBuilderType(receiverType.Name))
+            {
+                continue;
+            }
+
+            var args = invocation.ArgumentList.Arguments;
+            var associationName = args.Count > 0 ? (ExtractStringArg(invocation, 0) ?? "<unknown>") : "<unknown>";
+
+            // The configure lambda is the last argument.
+            if (args.Count == 0 || args.Last().Expression is not LambdaExpressionSyntax configureLambda)
+            {
+                continue;
+            }
+
+            foreach (var withCardinality in configureLambda.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (withCardinality.Expression is not MemberAccessExpressionSyntax wcMember ||
+                    wcMember.Name.Identifier.Text != "WithCardinality")
+                {
+                    continue;
+                }
+
+                var cardinalityName = ExtractEndpointCardinalityName(withCardinality);
+                if (cardinalityName is null || cardinalityName == "ManyToOne")
+                {
+                    // Conformant (or unrecognised — don't false-fire on a value
+                    // we can't read syntactically).
+                    continue;
+                }
+
+                var role = ExtractEndpointRoleFromCardinalityChain(wcMember.Expression) ?? "<endpoint>";
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
+                    invocation.GetLocation(),
+                    associationName,
+                    role,
+                    cardinalityName));
+            }
+        }
+    }
+
+    // Reads the simple member name from a `WithCardinality(EndpointCardinality.X)`
+    // argument (e.g. "OneToMany"). Purely syntactic, like AONT037's named-arg read.
+    private static string? ExtractEndpointCardinalityName(InvocationExpressionSyntax withCardinality)
+    {
+        if (withCardinality.ArgumentList.Arguments.Count == 0)
+        {
+            return null;
+        }
+
+        return withCardinality.ArgumentList.Arguments[0].Expression is MemberAccessExpressionSyntax enumAccess
+            ? enumAccess.Name.Identifier.Text
+            : null;
+    }
+
+    // Given the receiver of a `WithCardinality(...)` call, walk back to the
+    // immediately-preceding `Between(e => e.Role)` / `And(e => e.Role)` endpoint
+    // selector and return the member name it selects (the endpoint's Role).
+    private static string? ExtractEndpointRoleFromCardinalityChain(ExpressionSyntax receiver)
+    {
+        if (receiver is InvocationExpressionSyntax endpointInvocation &&
+            endpointInvocation.Expression is MemberAccessExpressionSyntax endpointMember &&
+            (endpointMember.Name.Identifier.Text == "Between" || endpointMember.Name.Identifier.Text == "And") &&
+            endpointInvocation.ArgumentList.Arguments.Count > 0)
+        {
+            return ExtractPropertyNameFromLambdaArg(endpointInvocation.ArgumentList.Arguments[0].Expression);
+        }
+
+        return null;
     }
 
     private static bool IsDomainOntologySubclass(INamedTypeSymbol? type)
