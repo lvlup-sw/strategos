@@ -18,25 +18,33 @@ namespace Strategos.Ontology.Npgsql.Tests.Integration;
 //
 // The companion in-memory half lives in
 // Strategos.Ontology.Tests/Integration/EdgeFailureModeMatrixTests. This file
-// asserts the SAME four modes against the PRODUCTION PgVectorObjectSetProvider,
-// proving the Npgsql backend fails IDENTICALLY (same typed errors, no silent
-// drops). Every mode here is DB-GATED via [SkipIfNoPostgres]: there is no local
-// Postgres in the default lane, so these SKIP unless STRATEGOS_PG_TEST_CONN names
-// a reachable database (they run + assert in a provisioned DB lane / Docker).
+// asserts the same four modes against the PRODUCTION PgVectorObjectSetProvider.
+// Modes 1-3 fail IDENTICALLY across backends (same typed errors, same empty-set
+// posture, no silent drops). Mode 4 is SAFE on both backends but DIVERGES on HOW
+// (review M2, see the Mode-4 remarks) — this file no longer claims parity for it.
+// Every mode here is DB-GATED via [SkipIfNoPostgres]: there is no local Postgres
+// in the default lane, so these SKIP unless STRATEGOS_PG_TEST_CONN names a
+// reachable database (they run + assert in a provisioned DB lane / Docker).
 //
 //   1. Relate_NonExistentEndpoint_ThrowsTypedError — the provider's eager
 //      SELECT EXISTS (T9) surfaces a typed RelationEndpointNotFoundException and
-//      writes NO junction row.
+//      writes NO junction row. IDENTICAL to in-memory.
 //   2. SelfLoop_WhenLinkDisallows_ThrowsTypedError_NeverSilentDrop — the provider
 //      refuses (x, link, x) with the SAME typed SelfLoopNotAllowedException the
-//      in-memory provider raises (parity), and writes NO row.
+//      in-memory provider raises (parity), and writes NO row. IDENTICAL.
 //   3. Traverse_ZeroRelations_ReturnsEmpty_NotAllTargets — instance-anchored
 //      traversal from a node with no junction rows returns EMPTY, never all
-//      target-type rows (#114).
+//      target-type rows (#114). IDENTICAL to in-memory.
 //   4. Traverse_AmbiguousMultiRegistrationWithoutOverride_ThrowsAtRuntime — the
 //      provider's graph-first hop resolver (ResolveHopTargetDescriptorName)
 //      REFUSES an unresolvable hop target with a typed InvalidOperationException
-//      rather than mis-routing. (Compile-time half: AONT211 / T5.)
+//      rather than mis-routing. This DIVERGES from the in-memory provider, which
+//      degrades to the relation row's own stored far-node target (no throw) — the
+//      SQL junction table records only a surrogate target_id, not a
+//      TargetDescriptor name, so there is nothing to degrade to and the provider
+//      refuses instead. Both are SAFE (neither mis-routes); they are NOT
+//      identical. KNOWN divergence, tracked for the #128 follow-up. (Compile-time
+//      half: AONT211 / T5.)
 //
 // INV-2: raw Npgsql throughout — no Marten/Wolverine. INV-8: identity by
 // descriptor name, never typeof.
@@ -137,7 +145,17 @@ public class EdgeFailureModeMatrixNpgsqlTests
     }
 
     // -----------------------------------------------------------------------
-    // Mode 4 — ambiguous / unresolvable hop target without override (DB-GATED)
+    // Mode 4 — ambiguous / unresolvable hop target without override (DB-GATED).
+    //
+    // M2 (honest parity): this asserts the Npgsql provider's ACTUAL behavior,
+    // which DIVERGES from the in-memory provider's for this mode. The in-memory
+    // evaluator degrades to the relation row's OWN stored far-node target and does
+    // NOT throw (it records a TargetDescriptor per row); the Npgsql junction table
+    // has no such stored descriptor (only a surrogate target_id FK), so its hop
+    // resolver REFUSES the unresolvable target with a typed
+    // InvalidOperationException. Both are SAFE (neither mis-routes), but they are
+    // NOT identical — the matrix no longer claims parity for Mode 4. KNOWN
+    // divergence, tracked for the #128 follow-up.
     // -----------------------------------------------------------------------
 
     [Test]

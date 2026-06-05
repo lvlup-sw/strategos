@@ -7,9 +7,10 @@ namespace Strategos.Ontology.Tests.Integration;
 // ---------------------------------------------------------------------------
 // DR-8 (t14): cross-provider FAILURE-MODE MATRIX — the IN-MEMORY half.
 //
-// The matrix asserts the four edge failure modes "fail safely, and IDENTICALLY"
-// across backends. This file pins the in-memory provider/evaluator side; the
-// Npgsql side (gated on STRATEGOS_PG_TEST_CONN) is asserted in
+// The matrix pins four edge failure modes. Modes 1-3 fail safely AND
+// IDENTICALLY across backends (same typed errors, same empty-set posture). This
+// file pins the in-memory provider/evaluator side; the Npgsql side (gated on
+// STRATEGOS_PG_TEST_CONN) is asserted in
 // Strategos.Ontology.Npgsql.Tests/Integration/EdgeFailureModeMatrixNpgsqlTests.
 //
 //   1. Non-existent endpoint — relating to an UNSTORED endpoint id surfaces a
@@ -18,10 +19,16 @@ namespace Strategos.Ontology.Tests.Integration;
 //      unless the link declares AllowsSelfLoop; NEVER a silent drop.
 //   3. Zero relations — traversal from an instance with no relation rows returns
 //      an EMPTY set, never all target-type items (the #114 regression).
-//   4. Ambiguous / unresolvable hop target without override — the evaluator's
-//      graph-first hop resolution REFUSES to resolve an association partition it
-//      cannot name from the graph rather than mis-routing to a wrong/arbitrary
-//      partition. (The compile-time half is AONT211, covered by T5.)
+//   4. Ambiguous / unresolvable hop target without override — both backends are
+//      SAFE (neither mis-routes to a wrong/arbitrary partition), but they
+//      DIVERGE on HOW (review M2, see the per-test remarks below): the in-memory
+//      evaluator degrades to the relation row's OWN stored far-node target
+//      (no throw), whereas the Npgsql provider's ResolveHopTargetDescriptorName
+//      REFUSES with a typed InvalidOperationException. This is a KNOWN backend
+//      divergence (not a parity claim) rooted in the storage model — the
+//      in-memory store records each row's TargetDescriptor, the SQL junction
+//      table does not (it derives the target from the graph link) — and is
+//      tracked for the #128 follow-up. (The compile-time half is AONT211, T5.)
 //
 // INV-8: identity by descriptor name, never typeof. INV-2 is an Npgsql concern.
 // ---------------------------------------------------------------------------
@@ -156,17 +163,30 @@ public class EdgeFailureModeMatrixTests
     // -----------------------------------------------------------------------
 
     [Test]
-    public async Task Traverse_AmbiguousMultiRegistrationWithoutOverride_ThrowsAtRuntime()
+    public async Task Traverse_AmbiguousMultiRegistrationWithoutOverride_DegradesToStoredFarNode_NoThrow()
     {
+        // M2 (honest parity): this asserts the IN-MEMORY provider's ACTUAL
+        // behavior, which DIVERGES from the Npgsql provider's for this mode — the
+        // two are NOT identical here, and the matrix no longer claims they are.
+        //
         // An edge-view link whose target is NOT graph-resolvable (empty
         // TargetTypeName, no TargetSymbolKey, no override) and whose source carries
         // a relation row. The evaluator's graph-first hop resolution
-        // (TryResolveAssociationHopDescriptor) must REFUSE to bind the hop to an
-        // association partition it cannot name from the graph: it never mis-routes
-        // the edge view to all MatrixEdge items. Here the row's far endpoint is a
-        // node, so the safe resolution yields exactly that far node — proving the
-        // edge-view request was refused, not silently fulfilled with the wrong
-        // partition.
+        // (TryResolveAssociationHopDescriptor) REFUSES to bind the hop to an
+        // association partition it cannot name from the graph — it never mis-routes
+        // the edge view to all MatrixEdge items. Crucially, the in-memory path then
+        // DEGRADES to the relation row's OWN stored far-node target
+        // (ResolveTargetEndpoints reads row.TargetDescriptor / row.TargetId) and
+        // does NOT throw: here the row's far endpoint is node "b", so the safe
+        // resolution yields exactly that far node.
+        //
+        // DIVERGENCE (review M2 / #128 follow-up): the Npgsql provider has no
+        // per-row stored target to degrade to (the SQL junction table records only
+        // surrogate target_id, not a TargetDescriptor name), so its
+        // ResolveHopTargetDescriptorName REFUSES the unresolvable hop with a typed
+        // InvalidOperationException instead of degrading. Both are SAFE (neither
+        // mis-routes), but they are not the SAME — see
+        // EdgeFailureModeMatrixNpgsqlTests.Traverse_AmbiguousMultiRegistrationWithoutOverride_ThrowsAtRuntime.
         var (graph, resolver, items) = AmbiguousEdgeViewGraph();
         var evaluator = new InMemoryExpressionEvaluator(graph, resolver, idProjector: null);
 
@@ -180,7 +200,7 @@ public class EdgeFailureModeMatrixTests
 
         // The edge-view hop was REFUSED (no association partition resolvable from
         // the graph), so NOT a single MatrixEdge association object came back; the
-        // result is the safe far-node resolution, never the mis-routed edge
+        // result is the safe far-node degradation, never the mis-routed edge
         // partition.
         await Assert.That(result.Any(o => o is MatrixEdge)).IsFalse();
         await Assert.That(result.OfType<MatrixNode>().Select(n => n.Id)).Contains("b");

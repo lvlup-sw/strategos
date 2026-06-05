@@ -151,6 +151,15 @@ The relationship layer fails safely and identically across backends.
 - **Bitemporal validity** — follow-on #126; the contract must not preclude layering it via the event stream later.
 - **MCP serve surface for edges** — v2.10.0 epic #124.
 
+### Known limitation — Mode-4 backend divergence on an unresolvable far-node hop (follow-up #128)
+
+DR-8's failure-mode matrix asserts the four edge failure modes fail safely across backends. Modes 1-3 fail **identically** (same typed errors, same empty-set posture). **Mode 4 is SAFE on both backends but DIVERGES on _how_**, and the matrix tests (`EdgeFailureModeMatrixTests` / `EdgeFailureModeMatrixNpgsqlTests`) document this rather than overclaiming parity:
+
+- For an **unresolvable far-node hop target** (link with no `TargetTypeName`/`TargetSymbolKey`, no override) whose source already carries a relation row, the **in-memory** evaluator degrades to the relation row's own stored `TargetDescriptor`/`TargetId` (`ResolveTargetEndpoints`) and does **not** throw.
+- The **Npgsql** provider has no per-row stored target descriptor — the SQL junction table records only a surrogate `target_id` FK, not a descriptor name — so its `ResolveHopTargetDescriptorName` **refuses** the unresolvable hop with a typed `InvalidOperationException` (it derives the target table from the graph link).
+
+Both are safe (neither mis-routes to a wrong/arbitrary partition). Closing the gap (so both throw, or both degrade) is deferred to **#128**: aligning would require either a junction-table schema change to carry the row's target descriptor, or a behavioral regression in the in-memory far-node degradation — neither is in v2.9.0 scope.
+
 ## Integration Points & Delegation shape
 
 Keystone-first, then two parallel tracks. Suggested task slicing for `/exarchos:plan`:
