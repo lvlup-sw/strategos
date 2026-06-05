@@ -1,4 +1,5 @@
 using System.Text;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Npgsql.Internal;
@@ -133,6 +134,125 @@ internal static class SqlGenerator
         }
 
         sb.Append(';');
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the DDL for a <b>pure link</b> lowered to a <b>junction table</b>
+    /// (DR-7). A pure link <c>(srcId, linkName, tgtId)</c> from one object type
+    /// to another becomes a row in a junction table whose two endpoint columns
+    /// (<c>source_id</c>, <c>target_id</c>) are foreign keys to the source and
+    /// target object tables, plus an <c>edge_id</c> identity column.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="sourceTableName">
+    /// The source endpoint's object table name (already snake_cased, as resolved
+    /// by <see cref="TypeMapper.ToSnakeCase(string)"/> at the call site for a
+    /// descriptor name).
+    /// </param>
+    /// <param name="linkName">
+    /// The link's descriptor name (e.g. <c>"WrittenBy"</c>); snake_cased here to
+    /// form the junction table name <c>{source}_{link}</c>.
+    /// </param>
+    /// <param name="targetTableName">The target endpoint's object table name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector DDL only — no Marten/Wolverine. The unique
+    /// constraint on <c>(source_id, target_id)</c> mirrors the in-memory
+    /// relate-store's idempotency on the <c>(src, link, tgt)</c> triple: the
+    /// table is scoped to a single link, so the endpoint pair is the triple's
+    /// natural key.
+    /// </remarks>
+    internal static string BuildJunctionTableDdl(
+        string schema,
+        string sourceTableName,
+        string linkName,
+        string targetTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+
+        var junctionTableName = $"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}";
+        var qSchema = QuoteIdentifier(schema);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(junctionTableName)} (");
+        sb.AppendLine("    edge_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
+        sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
+        sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
+        sb.AppendLine("    UNIQUE (source_id, target_id)");
+        sb.Append(");");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the DDL for a reified <b>association</b>
+    /// (<see cref="ObjectKind.Association"/>) lowered to an <b>object table</b>
+    /// (DR-7). An association is a standalone object that links two endpoints and
+    /// may carry its own edge attributes, so it gets an object table
+    /// (<c>id</c> + <c>data jsonb</c>) plus one foreign-key column per endpoint,
+    /// each named for the endpoint's role and referencing the endpoint's object
+    /// table.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="association">
+    /// The association descriptor. Must have <see cref="ObjectTypeDescriptor.Kind"/>
+    /// of <see cref="ObjectKind.Association"/> and exactly two
+    /// <see cref="ObjectTypeDescriptor.AssociationEndpoints"/> (DR-4).
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector DDL only. Each endpoint column is named
+    /// <c>{role}_id</c> (snake_cased) so a self-association — both endpoints the
+    /// same object type — still yields two distinct, role-disambiguated columns.
+    /// The endpoint table name is derived from the endpoint's
+    /// <see cref="AssociationEndpoint.DescriptorName"/> (INV-8: identity by
+    /// descriptor name, never <c>typeof</c>).
+    /// </remarks>
+    internal static string BuildAssociationObjectTableDdl(
+        string schema,
+        ObjectTypeDescriptor association)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentNullException.ThrowIfNull(association);
+
+        if (association.Kind != ObjectKind.Association)
+        {
+            throw new ArgumentException(
+                $"Descriptor '{association.Name}' has Kind '{association.Kind}', not "
+                + $"'{ObjectKind.Association}'; only association descriptors lower to an "
+                + "association-object table.",
+                nameof(association));
+        }
+
+        if (association.AssociationEndpoints.Count != 2)
+        {
+            throw new ArgumentException(
+                $"Association '{association.Name}' declares {association.AssociationEndpoints.Count} "
+                + "endpoint(s); a reified association object table requires exactly two (DR-4).",
+                nameof(association));
+        }
+
+        var qSchema = QuoteIdentifier(schema);
+        var tableName = TypeMapper.ToSnakeCase(association.Name);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine("    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
+        sb.AppendLine("    data jsonb NOT NULL,");
+
+        foreach (var endpoint in association.AssociationEndpoints)
+        {
+            var columnName = $"{TypeMapper.ToSnakeCase(endpoint.Role)}_id";
+            var endpointTable = TypeMapper.ToSnakeCase(endpoint.DescriptorName);
+            sb.AppendLine(
+                $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
+        }
+
+        sb.AppendLine("    created_at timestamptz DEFAULT now()");
+        sb.Append(");");
 
         return sb.ToString();
     }
