@@ -97,17 +97,6 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
         _linkBuilders.Add(new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany)));
     }
 
-    public void ManyToMany<TLinked>(string linkName, Action<IEdgeBuilder> edgeConfig)
-    {
-        var edgeBuilder = new EdgeBuilder();
-        edgeConfig(edgeBuilder);
-
-        _linkBuilders.Add(new LinkBuilder(new LinkDescriptor(linkName, typeof(TLinked).Name, LinkCardinality.ManyToMany)
-        {
-            EdgeProperties = edgeBuilder.Build(),
-        }));
-    }
-
     public IActionBuilder<T> Action(string actionName)
     {
         var builder = new ActionBuilder<T>(actionName);

@@ -18,8 +18,6 @@ public interface IObjectTypeBuilder<T>
 
     void ManyToMany<TLinked>(string linkName);
 
-    void ManyToMany<TLinked>(string linkName, Action<IEdgeBuilder> edgeConfig);
-
     IActionBuilder<T> Action(string actionName);
 
     void Event<TEvent>(Action<IEventBuilder<TEvent>> configure);

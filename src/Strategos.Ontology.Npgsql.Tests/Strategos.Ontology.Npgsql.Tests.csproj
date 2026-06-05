@@ -14,6 +14,14 @@
 
   <ItemGroup>
     <ProjectReference Include="../Strategos.Ontology.Npgsql/Strategos.Ontology.Npgsql.csproj" />
+    <!--
+      DR-9/DR-10 cross-provider parity (t13): consume T12's provider-agnostic
+      RationaleOntologyFixture (corpus + relate/traverse SCRIPT) from
+      Strategos.Ontology.Tests so the SAME SymbolKey-only ontology is replayed
+      against the Npgsql provider. Per T12's note, this is a project reference
+      rather than relocating the fixture to a shared spot.
+    -->
+    <ProjectReference Include="../Strategos.Ontology.Tests/Strategos.Ontology.Tests.csproj" />
   </ItemGroup>
 
 </Project>

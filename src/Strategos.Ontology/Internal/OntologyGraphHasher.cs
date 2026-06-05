@@ -24,7 +24,7 @@ internal static class OntologyGraphHasher
         //     Properties (Name/Kind/PropertyType/IsRequired/VectorDimensions),
         //     Actions (Name/AcceptsType/ReturnsType/BindingType/BoundWorkflowName/
         //     BoundToolName/BoundToolMethod/Preconditions/Postconditions),
-        //     Links (Name/TargetTypeName/Cardinality/EdgeProperties),
+        //     Links (Name/TargetTypeName/Cardinality),
         //     Events (EventType/Severity/MaterializedLinks/UpdatedProperties),
         //     Lifecycle (PropertyName/StateEnumTypeName/States/Transitions),
         //     ImplementedInterfaces (Name only — full interface definition lives
@@ -33,7 +33,7 @@ internal static class OntologyGraphHasher
         //     (InterfaceActionName/ConcreteActionName).
         //   - For each Interface (sorted by name): Name, Properties, Actions
         //     (Name/AcceptsTypeName/ReturnsTypeName).
-        //   - CrossDomainLinks (Source/Target/Cardinality/EdgeProperties).
+        //   - CrossDomainLinks (Source/Target/Cardinality).
         //   - WorkflowChains (Name/Consumed/Produced).
         //
         // What is deliberately NOT hashed (rationale):
@@ -231,12 +231,6 @@ internal static class OntologyGraphHasher
         WriteString(writer, l.Name);
         WriteString(writer, l.TargetTypeName);
         WriteString(writer, l.Cardinality.ToString());
-        writer.Write("|EDGE|");
-        foreach (var ep in l.EdgeProperties.OrderBy(p => p.Name, StringComparer.Ordinal))
-        {
-            WriteString(writer, ep.Name);
-            WriteString(writer, ep.Kind.ToString());
-        }
     }
 
     private static void WriteEvent(BinaryWriter writer, EventDescriptor e)
@@ -338,12 +332,6 @@ internal static class OntologyGraphHasher
             WriteString(writer, x.TargetDomain);
             WriteString(writer, x.TargetObjectType.Name);
             WriteString(writer, x.Cardinality.ToString());
-            writer.Write("|EDGE|");
-            foreach (var ep in x.EdgeProperties.OrderBy(p => p.Name, StringComparer.Ordinal))
-            {
-                WriteString(writer, ep.Name);
-                WriteString(writer, ep.Kind.ToString());
-            }
         }
 
         writer.Write("|END_XDL");

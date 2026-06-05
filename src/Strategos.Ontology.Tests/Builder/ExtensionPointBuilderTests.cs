@@ -53,18 +53,10 @@ public class ExtensionPointBuilderTests
         await Assert.That(extensionPoint.RequiredSourceDomain).IsEqualTo("style-engine");
     }
 
-    [Test]
-    public async Task RequiresEdgeProperty_AddsRequiredEdgeProperty()
-    {
-        var builder = new ExtensionPointBuilder("KnowledgeLinks");
-
-        builder.RequiresEdgeProperty<double>("Relevance");
-        var extensionPoint = builder.Build();
-
-        await Assert.That(extensionPoint.RequiredEdgeProperties.Count).IsEqualTo(1);
-        await Assert.That(extensionPoint.RequiredEdgeProperties[0].Name).IsEqualTo("Relevance");
-        await Assert.That(extensionPoint.RequiredEdgeProperties[0].TypeName).IsEqualTo("Double");
-    }
+    // RequiresEdgeProperty_AddsRequiredEdgeProperty was removed in DR-5 (#120,
+    // closes #114): IExtensionPointBuilder.RequiresEdgeProperty and
+    // ExternalLinkExtensionPoint.RequiredEdgeProperties no longer exist. Edge
+    // attributes now live on a reified Association<T>.
 
     [Test]
     public async Task MaxLinks_SetsMaxLinks()
@@ -85,14 +77,12 @@ public class ExtensionPointBuilderTests
         builder
             .FromInterface<ITestKnowledgeSource>()
             .Description("External knowledge sources")
-            .RequiresEdgeProperty<double>("Relevance")
             .MaxLinks(100);
 
         var extensionPoint = builder.Build();
 
         await Assert.That(extensionPoint.Name).IsEqualTo("KnowledgeLinks");
         await Assert.That(extensionPoint.RequiredSourceInterface).IsEqualTo("ITestKnowledgeSource");
-        await Assert.That(extensionPoint.RequiredEdgeProperties.Count).IsEqualTo(1);
         await Assert.That(extensionPoint.MaxLinks).IsEqualTo(100);
     }
 
@@ -106,7 +96,6 @@ public class ExtensionPointBuilderTests
         await Assert.That(extensionPoint.Description).IsNull();
         await Assert.That(extensionPoint.RequiredSourceInterface).IsNull();
         await Assert.That(extensionPoint.RequiredSourceDomain).IsNull();
-        await Assert.That(extensionPoint.RequiredEdgeProperties.Count).IsEqualTo(0);
         await Assert.That(extensionPoint.MaxLinks).IsNull();
         await Assert.That(extensionPoint.MatchedLinkNames.Count).IsEqualTo(0);
     }
@@ -122,7 +111,6 @@ public class ExtensionPointBuilderTests
         {
             ext.FromInterface<ITestKnowledgeSource>();
             ext.Description("External knowledge sources");
-            ext.RequiresEdgeProperty<double>("Relevance");
             ext.MaxLinks(100);
         });
 

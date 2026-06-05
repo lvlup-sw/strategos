@@ -17,7 +17,8 @@ namespace Strategos.Ontology.Builder;
 /// carries no CLR <see cref="System.Type"/>. INV-6: this builder is
 /// <c>sealed</c>. INV-7: it emits an immutable <see cref="ObjectTypeDescriptor"/>.
 /// </remarks>
-internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAssociationEndpointBuilder<TRel>
+internal sealed class AssociationBuilder<TRel>
+    : IAssociationBuilder<TRel>, IAssociationEndpointBuilder<TRel>, IAssociationRightEndpointBuilder<TRel>
     where TRel : class
 {
     private readonly string _domainName;
@@ -60,11 +61,38 @@ internal sealed class AssociationBuilder<TRel> : IAssociationBuilder<TRel>, IAss
         return this;
     }
 
-    public void And<TRight>(Expression<Func<TRel, TRight>> endpoint)
+    public IAssociationRightEndpointBuilder<TRel> And<TRight>(Expression<Func<TRel, TRight>> endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
         var role = ExpressionHelper.ExtractMemberName(endpoint);
         _right = new AssociationEndpoint(role, typeof(TRight).Name);
+        return this;
+    }
+
+    // DR-6: the LEFT endpoint's cardinality. WithCardinality on the
+    // IAssociationEndpointBuilder step (returned by Between) reshapes _left.
+    IAssociationEndpointBuilder<TRel> IAssociationEndpointBuilder<TRel>.WithCardinality(
+        EndpointCardinality cardinality)
+    {
+        if (_left is not null)
+        {
+            _left = _left with { Cardinality = cardinality };
+        }
+
+        return this;
+    }
+
+    // DR-6: the RIGHT endpoint's cardinality. WithCardinality on the
+    // IAssociationRightEndpointBuilder step (returned by And) reshapes _right.
+    IAssociationRightEndpointBuilder<TRel> IAssociationRightEndpointBuilder<TRel>.WithCardinality(
+        EndpointCardinality cardinality)
+    {
+        if (_right is not null)
+        {
+            _right = _right with { Cardinality = cardinality };
+        }
+
+        return this;
     }
 
     public IPropertyBuilder<TRel> Property(Expression<Func<TRel, object>> propertySelector)

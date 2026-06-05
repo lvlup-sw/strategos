@@ -80,21 +80,68 @@ public sealed class FilterExpression : ObjectSetExpression
 /// </summary>
 public sealed class TraverseLinkExpression : ObjectSetExpression
 {
-    public TraverseLinkExpression(ObjectSetExpression source, string linkName, Type linkedType)
+    /// <param name="targetDescriptorName">
+    /// DR-10: an OPTIONAL explicit ontology descriptor name for the traversal
+    /// target, carried through the expression tree and CONSUMED authoritatively by
+    /// the evaluators to dispatch against a specific registration. Mirrors the
+    /// <see cref="RootExpression"/>(<c>Type objectType, string objectTypeName</c>)
+    /// precedent, where the root carries an explicit descriptor name alongside the
+    /// CLR type. When supplied it is the highest-precedence hop-target seam —
+    /// <c>InMemoryExpressionEvaluator.ResolveHopTargetDescriptor</c> and
+    /// <c>PgVectorObjectSetProvider.ResolveHopTargetDescriptorName</c> both honor it
+    /// before consulting the link's declared target, so a CLR type backing several
+    /// descriptors routes to the named partition rather than a CLR-first match
+    /// (the #128 keystone). When <c>null</c> (the single-arg traversal path), no
+    /// override is supplied and the evaluators resolve the hop target from the
+    /// source link's declared target instead (never from <c>typeof(TLinked)</c>).
+    /// </param>
+    public TraverseLinkExpression(
+        ObjectSetExpression source,
+        string linkName,
+        Type linkedType,
+        string? targetDescriptorName = null)
         : base(linkedType)
     {
         Source = source;
         LinkName = linkName;
+        TargetDescriptorName = targetDescriptorName;
     }
 
     public ObjectSetExpression Source { get; }
     public string LinkName { get; }
 
     /// <summary>
+    /// DR-10: the EXPLICIT ontology descriptor name the caller selected for the
+    /// traversal target, or <c>null</c> when none was supplied. Get-only and
+    /// immutable (INV-7). Mirrors <see cref="RootExpression.ObjectTypeName"/>,
+    /// which carries the root's explicit descriptor name. The evaluators CONSUME
+    /// this field as the highest-precedence hop-target seam (see the constructor
+    /// param doc): when set it names the exact target partition authoritatively,
+    /// so identity no longer falls back to the CLR type under multi-registration
+    /// (the #128 keystone). <c>RootObjectTypeName</c> below is a separate concern —
+    /// it reports the post-hop element's CLR-simple name for chained walk-to-root,
+    /// not the resolved hop target.
+    /// </summary>
+    public string? TargetDescriptorName { get; }
+
+    /// <summary>
     /// Traversal breaks the walk-to-root chain: once we've traversed a link,
-    /// the query targets the linked type's descriptor, not the source root's.
-    /// Under Option X (multi-registered types cannot be link targets — enforced
-    /// by AONT041), <c>ObjectType.Name</c> is always unambiguous here.
+    /// the query targets the linked type's descriptor, not the source root's, so
+    /// this reports the post-hop element's CLR-simple name.
+    /// <para>
+    /// DR-10 / #128 note: do NOT read this as the resolved HOP TARGET. The earlier
+    /// assumption — that "multi-registered types cannot be link targets" makes
+    /// <c>ObjectType.Name</c> unambiguous here — was FALSE and is precisely the
+    /// #128 defect: a CLR type backing several descriptors does NOT have a unique
+    /// name, and <c>OntologyCompositionException</c>'s graph-build guard "AONT041"
+    /// (a composition-exception message prefix, NOT a registered Roslyn analyzer
+    /// id) only rejects a NARROW case — a link target registered under a
+    /// non-default name — not multi-registration generally. The authoritative
+    /// hop-target resolution lives in the evaluators, which consume
+    /// <see cref="TargetDescriptorName"/> (the explicit override) and otherwise
+    /// the source link's declared target — never <c>typeof(TLinked)</c> /
+    /// <c>ObjectType.Name</c>.
+    /// </para>
     /// </summary>
     public override string RootObjectTypeName => ObjectType.Name;
 }

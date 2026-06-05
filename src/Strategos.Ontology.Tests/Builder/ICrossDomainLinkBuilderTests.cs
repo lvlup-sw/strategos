@@ -39,18 +39,7 @@ public class ICrossDomainLinkBuilderTests
         await Assert.That(result).IsEqualTo(substitute);
     }
 
-    [Test]
-    public async Task ICrossDomainLinkBuilder_WithEdge_AllowsEdgeProperties()
-    {
-        var substitute = Substitute.For<ICrossDomainLinkBuilder>();
-        substitute.WithEdge(Arg.Any<Action<IEdgeBuilder>>()).Returns(substitute);
-
-        var result = substitute.WithEdge(edge =>
-        {
-            edge.Property<double>("Relevance");
-            edge.Property<string>("Rationale");
-        });
-
-        await Assert.That(result).IsEqualTo(substitute);
-    }
+    // ICrossDomainLinkBuilder_WithEdge_AllowsEdgeProperties was removed in DR-5
+    // (#120, closes #114): ICrossDomainLinkBuilder.WithEdge and IEdgeBuilder no
+    // longer exist. Edge attributes now live on a reified Association<T>.
 }

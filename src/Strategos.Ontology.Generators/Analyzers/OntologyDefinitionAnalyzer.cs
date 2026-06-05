@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -51,13 +52,123 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointNoLinks,
             OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
             OntologyDiagnostics.ReadOnlyConflictsWithMutation,
-            OntologyDiagnostics.PolyglotInvariantViolated);
+            OntologyDiagnostics.PolyglotInvariantViolated,
+            OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
+            OntologyDiagnostics.EdgePropertyAuthoringRemoved,
+            OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor);
 
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.MethodDeclaration);
+
+        // AONT211 needs a COMPILATION-WIDE view: the Object<T>(...) registrations
+        // that establish multi-registration live in Define() bodies, while the
+        // TraverseLink<TLinked>("role") call sites it guards live in arbitrary
+        // query code. A per-method action can't correlate the two, so we collect
+        // both across the whole compilation and decide at compilation end.
+        context.RegisterCompilationStartAction(RegisterAmbiguousTraversalGuard);
+    }
+
+    // AONT211 (DR-10/DR-6, #128/#121): the compile-time guard for the DR-10
+    // identity-flow fix (INV-5: earliest-tier). A one-arg
+    // TraverseLink<TLinked>("role") hop is ambiguous when TLinked is registered
+    // under two or more descriptor names (multi-registration, mirroring AONT041)
+    // and no descriptorName override disambiguates it. We accumulate per-CLR-type
+    // registration-name sets and the candidate traversal sites concurrently, then
+    // resolve which sites fire once the whole compilation has been walked. INV-2:
+    // analyzer-only — there is no runtime counterpart in this task.
+    private static void RegisterAmbiguousTraversalGuard(CompilationStartAnalysisContext startContext)
+    {
+        // CLR type name -> distinct descriptor names registered for it. A type
+        // with two or more distinct names is "ambiguously multi-registered".
+        var registrationNamesByType = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+
+        // Candidate one-arg TraverseLink sites: (target CLR type name, link name,
+        // location). The override (two-arg) form is filtered out at collection time.
+        var candidateTraversals = new ConcurrentBag<(string TargetType, string LinkName, Location Location)>();
+
+        startContext.RegisterSyntaxNodeAction(
+            ctx => CollectRegistrationsAndTraversals(ctx, registrationNamesByType, candidateTraversals),
+            SyntaxKind.InvocationExpression);
+
+        startContext.RegisterCompilationEndAction(endContext =>
+        {
+            foreach (var (targetType, linkName, location) in candidateTraversals)
+            {
+                if (registrationNamesByType.TryGetValue(targetType, out var names) && names.Count >= 2)
+                {
+                    endContext.ReportDiagnostic(Diagnostic.Create(
+                        OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor,
+                        location,
+                        targetType,
+                        linkName));
+                }
+            }
+        });
+    }
+
+    // Per-invocation collector for AONT211. Two shapes are recognised:
+    //   - builder.Object<T>(...) / builder.Object<T>(name, ...) registrations —
+    //     record T's CLR type name against its descriptor name (explicit string
+    //     literal, else typeof(T).Name as the default-name fallback).
+    //   - set.TraverseLink<TLinked>("role") (one arg) — record a candidate site.
+    //     The two-arg override TraverseLink<TLinked>("role", "descriptor") is
+    //     skipped: the override already disambiguates the hop.
+    private static void CollectRegistrationsAndTraversals(
+        SyntaxNodeAnalysisContext context,
+        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> registrationNamesByType,
+        ConcurrentBag<(string TargetType, string LinkName, Location Location)> candidateTraversals)
+    {
+        if (context.Node is not InvocationExpressionSyntax invocation ||
+            invocation.Expression is not MemberAccessExpressionSyntax memberAccess ||
+            memberAccess.Name is not GenericNameSyntax genericName ||
+            genericName.TypeArgumentList.Arguments.Count != 1)
+        {
+            return;
+        }
+
+        var symbol = context.SemanticModel
+            .GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
+        if (symbol is null || symbol.TypeArguments.Length != 1)
+        {
+            return;
+        }
+
+        var typeArgName = symbol.TypeArguments[0].Name;
+        var args = invocation.ArgumentList.Arguments;
+
+        switch (genericName.Identifier.Text)
+        {
+            // builder.Object<T>(...) — must be an IOntologyBuilder receiver so a
+            // stray .Object<T>(...) on an unrelated type doesn't poison the
+            // multi-registration set.
+            case "Object"
+                when IsOntologyBuilderType(symbol.ContainingType?.Name ?? string.Empty):
+            {
+                // The descriptor name is the leading string-literal argument when
+                // present (the Object<T>(name, configure) overload), else the
+                // typeof(T).Name fallback the parameterless overload uses.
+                var descriptorName =
+                    (args.Count > 0 ? ExtractStringArg(invocation, 0) : null) ?? typeArgName;
+
+                var names = registrationNamesByType.GetOrAdd(
+                    typeArgName, _ => new ConcurrentDictionary<string, byte>());
+                names.TryAdd(descriptorName, 0);
+                break;
+            }
+
+            // set.TraverseLink<TLinked>("role") — one-arg form only. The two-arg
+            // override carries an explicit descriptorName and is exempt.
+            case "TraverseLink"
+                when symbol.Name == "TraverseLink" && args.Count == 1:
+            {
+                var linkName = ExtractStringArg(invocation, 0) ?? "<link>";
+                candidateTraversals.Add((typeArgName, linkName, invocation.GetLocation()));
+                break;
+            }
+        }
     }
 
     private static void AnalyzeMethod(SyntaxNodeAnalysisContext context)
@@ -92,6 +203,63 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         CollectDomainInfo(body, context.SemanticModel, domainInfo);
         ReportDiagnostics(context, domainInfo);
         ReportPolyglotInvariantViolations(context, body);
+        ReportAssociationCardinalityViolations(context, body);
+        ReportEdgePropertyAuthoringRemoved(context, body);
+    }
+
+    // AONT209 (DR-5, #120, closes #114): the schema-only edge-properties
+    // surface was removed. Its authoring vectors no longer resolve to a
+    // symbol, so detection is purely SYNTACTIC (INV-2: analyzer only). We
+    // match the residual call shapes by member name inside a Define() body:
+    //
+    //   - `.ManyToMany<T>(name, edgeConfig)` — the removed two-arg overload.
+    //     The surviving one-arg `.ManyToMany<T>(name)` must NOT fire, so we
+    //     require a second argument.
+    //   - `.WithEdge(...)`               — removed ICrossDomainLinkBuilder member.
+    //   - `.RequiresEdgeProperty<T>(...)`— removed IExtensionPointBuilder member.
+    //
+    // The {0} placeholder names the specific removed vector so the fix-it is
+    // actionable. We deliberately do NOT consult the semantic model: post-
+    // removal these names are unbound, and a syntactic match is what steers
+    // an author mid-migration toward Association<T>.
+    private static void ReportEdgePropertyAuthoringRemoved(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            var memberName = memberAccess.Name switch
+            {
+                IdentifierNameSyntax id => id.Identifier.Text,
+                GenericNameSyntax generic => generic.Identifier.Text,
+                _ => null,
+            };
+
+            string? removedVector = memberName switch
+            {
+                // Two-arg `ManyToMany<T>(name, edgeConfig)` only — the surviving
+                // one-arg `ManyToMany<T>(name)` (no edge config) is allowed.
+                "ManyToMany" when invocation.ArgumentList.Arguments.Count >= 2
+                    => "ManyToMany<T>(name, edgeConfig)",
+                "WithEdge" => "ICrossDomainLinkBuilder.WithEdge",
+                "RequiresEdgeProperty" => "IExtensionPointBuilder.RequiresEdgeProperty",
+                _ => null,
+            };
+
+            if (removedVector is null)
+            {
+                continue;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                OntologyDiagnostics.EdgePropertyAuthoringRemoved,
+                invocation.GetLocation(),
+                removedVector));
+        }
     }
 
     // AONT037: Polyglot identity invariant — descriptor-by-name overload
@@ -170,6 +338,108 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 invocation.GetLocation(),
                 descriptorName));
         }
+    }
+
+    // AONT210 (DR-6, #121): a reified association is a junction object — many
+    // association rows fold INTO one endpoint object on each side, so the only
+    // endpoint cardinality that forms a valid reified relation is ManyToOne.
+    // For each `builder.Association<TRel>(name, a => …)` registration, inspect
+    // the configure lambda for `WithCardinality(EndpointCardinality.X)` calls
+    // chained onto an endpoint (Between/And) and report any endpoint whose X is
+    // not ManyToOne. Reported at the Association declaration site, mirroring
+    // AONT037's syntactic, receiver-filtered style.
+    private static void ReportAssociationCardinalityViolations(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            // Member-access form `<receiver>.Association<TRel>(name, configure)`.
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            // The generic `Association<TRel>` uses a GenericNameSyntax name.
+            if (memberAccess.Name is not GenericNameSyntax genericName ||
+                genericName.Identifier.Text != "Association")
+            {
+                continue;
+            }
+
+            // Receiver must be an IOntologyBuilder. When the receiver type can't
+            // be resolved (broken source mid-edit), skip rather than false-fire.
+            var receiverType = context.SemanticModel
+                .GetTypeInfo(memberAccess.Expression, context.CancellationToken).Type;
+            if (receiverType is null || !IsOntologyBuilderType(receiverType.Name))
+            {
+                continue;
+            }
+
+            var args = invocation.ArgumentList.Arguments;
+            var associationName = args.Count > 0 ? (ExtractStringArg(invocation, 0) ?? "<unknown>") : "<unknown>";
+
+            // The configure lambda is the last argument.
+            if (args.Count == 0 || args.Last().Expression is not LambdaExpressionSyntax configureLambda)
+            {
+                continue;
+            }
+
+            foreach (var withCardinality in configureLambda.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (withCardinality.Expression is not MemberAccessExpressionSyntax wcMember ||
+                    wcMember.Name.Identifier.Text != "WithCardinality")
+                {
+                    continue;
+                }
+
+                var cardinalityName = ExtractEndpointCardinalityName(withCardinality);
+                if (cardinalityName is null || cardinalityName == "ManyToOne")
+                {
+                    // Conformant (or unrecognised — don't false-fire on a value
+                    // we can't read syntactically).
+                    continue;
+                }
+
+                var role = ExtractEndpointRoleFromCardinalityChain(wcMember.Expression) ?? "<endpoint>";
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
+                    invocation.GetLocation(),
+                    associationName,
+                    role,
+                    cardinalityName));
+            }
+        }
+    }
+
+    // Reads the simple member name from a `WithCardinality(EndpointCardinality.X)`
+    // argument (e.g. "OneToMany"). Purely syntactic, like AONT037's named-arg read.
+    private static string? ExtractEndpointCardinalityName(InvocationExpressionSyntax withCardinality)
+    {
+        if (withCardinality.ArgumentList.Arguments.Count == 0)
+        {
+            return null;
+        }
+
+        return withCardinality.ArgumentList.Arguments[0].Expression is MemberAccessExpressionSyntax enumAccess
+            ? enumAccess.Name.Identifier.Text
+            : null;
+    }
+
+    // Given the receiver of a `WithCardinality(...)` call, walk back to the
+    // immediately-preceding `Between(e => e.Role)` / `And(e => e.Role)` endpoint
+    // selector and return the member name it selects (the endpoint's Role).
+    private static string? ExtractEndpointRoleFromCardinalityChain(ExpressionSyntax receiver)
+    {
+        if (receiver is InvocationExpressionSyntax endpointInvocation &&
+            endpointInvocation.Expression is MemberAccessExpressionSyntax endpointMember &&
+            (endpointMember.Name.Identifier.Text == "Between" || endpointMember.Name.Identifier.Text == "And") &&
+            endpointInvocation.ArgumentList.Arguments.Count > 0)
+        {
+            return ExtractPropertyNameFromLambdaArg(endpointInvocation.ArgumentList.Arguments[0].Expression);
+        }
+
+        return null;
     }
 
     private static bool IsDomainOntologySubclass(INamedTypeSymbol? type)
@@ -289,7 +559,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     break;
 
                 case "HasOne" or "HasMany" or "ManyToMany":
-                    CollectLinkDeclaration(invocation, model, calledMethod, methodName, info);
+                    CollectLinkDeclaration(invocation, calledMethod, info);
                     break;
 
                 case "Action" when IsObjectTypeBuilderMethod(calledMethod):
@@ -371,9 +641,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
     private static void CollectLinkDeclaration(
         InvocationExpressionSyntax invocation,
-        SemanticModel model,
         IMethodSymbol calledMethod,
-        string methodName,
         ObjectTypeInfo info)
     {
         var linkName = ExtractStringArg(invocation, 0);
@@ -388,38 +656,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             info.LinkTargets.Add((linkName ?? "", linkTargetType, invocation.GetLocation()));
         }
 
-        if (methodName == "ManyToMany" && invocation.ArgumentList.Arguments.Count >= 2)
-        {
-            CollectManyToManyEdgeInfo(invocation, model, linkName, info);
-        }
-    }
-
-    private static void CollectManyToManyEdgeInfo(
-        InvocationExpressionSyntax invocation,
-        SemanticModel model,
-        string? linkName,
-        ObjectTypeInfo info)
-    {
-        var edgeArg = invocation.ArgumentList.Arguments[1].Expression;
-        var hasEdgeProperty = false;
-        if (edgeArg is LambdaExpressionSyntax edgeLambda)
-        {
-            var edgeInvocations = edgeLambda.DescendantNodes().OfType<InvocationExpressionSyntax>();
-            foreach (var edgeInv in edgeInvocations)
-            {
-                var edgeSymbolInfo = model.GetSymbolInfo(edgeInv);
-                if (edgeSymbolInfo.Symbol is IMethodSymbol edgeMethod && edgeMethod.Name == "Property")
-                {
-                    hasEdgeProperty = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasEdgeProperty)
-        {
-            info.EdgesWithoutProperties.Add((linkName ?? "", invocation.GetLocation()));
-        }
+        // DR-5 (#120, closes #114): the schema-only edge-properties surface was
+        // removed. The two-arg ManyToMany<T>(name, edgeConfig) overload no
+        // longer exists, so there is no edge-on-link to validate here — residual
+        // authoring attempts are flagged syntactically by AONT209.
     }
 
     private static void CollectActionDeclaration(
@@ -686,31 +926,13 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
+            // DR-5 (#120, closes #114): ICrossDomainLinkBuilder.WithEdge was
+            // removed along with the rest of the schema-only edge-properties
+            // surface, so only the From<T> source-type capture remains.
             switch (method.Name)
             {
                 case "From" when method.TypeArguments.Length > 0:
                     linkInfo.SourceType = method.TypeArguments[0].Name;
-                    break;
-
-                case "WithEdge":
-                    if (inv.ArgumentList.Arguments.Count > 0 &&
-                        inv.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax edgeLambda)
-                    {
-                        var edgeInvocations = edgeLambda.DescendantNodes().OfType<InvocationExpressionSyntax>();
-                        foreach (var edgeInv in edgeInvocations)
-                        {
-                            var edgeSym = model.GetSymbolInfo(edgeInv);
-                            if (edgeSym.Symbol is IMethodSymbol edgeMethod && edgeMethod.Name == "Property")
-                            {
-                                var epName = ExtractStringArg(edgeInv, 0);
-                                if (epName != null)
-                                {
-                                    linkInfo.EdgeProperties.Add(epName);
-                                }
-                            }
-                        }
-                    }
-
                     break;
             }
         }
@@ -739,15 +961,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
                     break;
 
-                case "RequiresEdgeProperty":
-                    var edgePropName = ExtractStringArg(invocation, 0);
-                    if (edgePropName != null)
-                    {
-                        info.RequiredEdgeProperties.Add(edgePropName);
-                    }
-
-                    break;
-
+                // DR-5 (#120, closes #114): RequiresEdgeProperty removed with
+                // the schema-only edge-properties surface.
                 case "MaxLinks":
                     if (invocation.ArgumentList.Arguments.Count > 0 &&
                         invocation.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax maxLiteral &&
@@ -1031,12 +1246,11 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             }
         }
 
-        // AONT008: Edge type missing properties
-        foreach (var (linkName, location) in ot.EdgesWithoutProperties)
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                OntologyDiagnostics.EdgeTypeMissingProperty, location, linkName, ot.Name));
-        }
+        // AONT008 (EdgeTypeMissingProperty) is no longer reachable: the
+        // edge-on-link authoring surface it validated was removed in DR-5
+        // (#120, closes #114). The descriptor/id are retained (INV-5: ids
+        // are never reused) but dormant; residual authoring is now flagged
+        // syntactically by AONT209.
     }
 
     private static void ReportLinkDiagnostics(
@@ -1467,11 +1681,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             .Where(l => l.SourceType == ot.Name)
             .ToList();
 
-        // AONT033: Extension point requires edge property missing from link
-        if (ep.RequiredEdgeProperties.Count > 0)
-        {
-            ReportMissingEdgeProperties(context, ot, ep, matchingLinks);
-        }
+        // AONT033 (ExtensionPointEdgeMissing) is no longer reachable: the
+        // RequiresEdgeProperty authoring vector it validated was removed in
+        // DR-5 (#120, closes #114). The descriptor/id are retained (INV-5)
+        // but dormant; residual authoring is flagged by AONT209.
 
         // AONT034: Extension point declared but no links match
         if (matchingLinks.Count == 0)
@@ -1487,37 +1700,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(
                 OntologyDiagnostics.ExtensionPointMaxLinksExceeded, ep.Location,
                 ep.Name, ot.Name, ep.MaxLinks.Value.ToString(), matchingLinks.Count.ToString()));
-        }
-    }
-
-    private static void ReportMissingEdgeProperties(
-        SyntaxNodeAnalysisContext context,
-        ObjectTypeInfo ot,
-        ExtensionPointInfo ep,
-        List<CrossDomainLinkInfo> matchingLinks)
-    {
-        foreach (var link in matchingLinks)
-        {
-            foreach (var reqProp in ep.RequiredEdgeProperties)
-            {
-                if (!link.EdgeProperties.Contains(reqProp))
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        OntologyDiagnostics.ExtensionPointEdgeMissing, ep.Location,
-                        ep.Name, ot.Name, reqProp));
-                }
-            }
-        }
-
-        // Also report if there are required edge properties but no links to validate
-        if (matchingLinks.Count == 0)
-        {
-            foreach (var reqProp in ep.RequiredEdgeProperties)
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    OntologyDiagnostics.ExtensionPointEdgeMissing, ep.Location,
-                    ep.Name, ot.Name, reqProp));
-            }
         }
     }
 
@@ -1834,9 +2016,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public List<(string LinkName, string TargetType, Location Location)> LinkTargets { get; } =
             new List<(string, string, Location)>();
 
-        public List<(string LinkName, Location Location)> EdgesWithoutProperties { get; } =
-            new List<(string, Location)>();
-
         public Dictionary<string, Location> ActionLocations { get; } = new Dictionary<string, Location>();
 
         public Dictionary<string, string> ActionAcceptsTypes { get; } = new Dictionary<string, string>();
@@ -1906,7 +2085,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public string Name { get; }
         public Location Location { get; }
         public string? SourceType { get; set; }
-        public HashSet<string> EdgeProperties { get; } = new HashSet<string>();
     }
 
     private sealed class ExtensionPointInfo
@@ -1920,7 +2098,6 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         public string Name { get; }
         public Location Location { get; }
         public string? RequiredInterface { get; set; }
-        public HashSet<string> RequiredEdgeProperties { get; } = new HashSet<string>();
         public int? MaxLinks { get; set; }
     }
 

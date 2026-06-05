@@ -172,4 +172,31 @@ public class OntologyExploreToolTests
         await Assert.That(docType["isSemanticSearchable"]).IsEqualTo(true);
         await Assert.That(imgType["isSemanticSearchable"]).IsEqualTo(false);
     }
+
+    /// <summary>
+    /// Regression guard (DR-5, INV-3). The DR-5 edge-property removal (t6) stripped the
+    /// edge-property surface from <see cref="OntologyExploreTool"/>. This test pins the
+    /// invariant that the removal did NOT also strip the MCP first-class envelope: the
+    /// <c>Explore</c> response must still carry its non-null <c>_meta</c>
+    /// (<see cref="ResponseMeta"/>) and the discovered <c>ontology_explore</c> descriptor
+    /// must still expose a non-null <see cref="OntologyToolDescriptor.OutputSchema"/>.
+    /// A future edit cannot silently drop either without failing here.
+    /// </summary>
+    [Test]
+    public async Task ExploreTool_AfterEdgePropertyRemoval_RetainsMetaEnvelopeAndOutputSchema()
+    {
+        // Act — exercise a representative scope plus the descriptor-discovery path.
+        var result = _tool.Explore(scope: "domains");
+        var descriptor = new OntologyToolDiscovery(_graph)
+            .Discover()
+            .First(t => t.Name == "ontology_explore");
+
+        // Assert — the _meta / ResponseMeta envelope survives the edge-property removal.
+        await Assert.That(result.Meta).IsNotNull();
+        await Assert.That(result.Meta.OntologyVersion).IsNotNull();
+
+        // Assert — the explore descriptor still advertises a JSON-Schema OutputSchema.
+        await Assert.That(descriptor.OutputSchema.HasValue).IsTrue();
+        await Assert.That(descriptor.OutputSchema!.Value.GetRawText()).IsNotEmpty();
+    }
 }
