@@ -1,4 +1,3 @@
-using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Tests.Integration;
@@ -63,11 +62,12 @@ public class RationaleOntologyEdgeTests
         await Assert.That(supersedesEdges[0].Get("rationale"))
             .IsEqualTo("D1 obsoletes the earlier choice");
 
-        // --- TRAVERSE (far node): Decision D1 --Supersedes--> Decision D0 ---
-        // A chained hop through the association to its far endpoint resolves the
-        // superseded decision. Far-node identity also rides the IdAccessor only.
+        // --- TRAVERSE (far node): Decision D1 --supersededDecision--> Decision D0 ---
+        // A SEPARATE SymbolKey-only link whose target is the Decision NODE (not the
+        // association) resolves the superseded decision via the SAME reverse index.
+        // Far-node identity also rides the IdAccessor only — no reflection.
         var superseded = evaluator.Evaluate<RationaleNode>(
-            fixture.TraverseSupersedesTarget("D1"),
+            fixture.TraverseSupersededDecision("D1"),
             fixture.ResolveItems);
 
         await Assert.That(superseded).HasCount().EqualTo(1);
