@@ -58,8 +58,9 @@ public class PgVectorAssociationTests
             targetKeyProperty: "CompanyCode");
 
         // Inserts into the association-object table: id, data jsonb, both
-        // endpoint FK columns named for the roles.
-        await Assert.That(sql).Contains("INSERT INTO \"public\".\"employment\" (id, data, employee_id, employer_id)");
+        // endpoint FK columns named for the roles, QUOTE-DELIMITED so they stay
+        // identifier-identical with the T8 association-object DDL (review M1).
+        await Assert.That(sql).Contains("INSERT INTO \"public\".\"employment\" (id, data, \"employee_id\", \"employer_id\")");
 
         // The association id + attributes bind via parameters, never interpolated.
         await Assert.That(sql).Contains("@id");
@@ -99,7 +100,7 @@ public class PgVectorAssociationTests
             targetTableName: "person",
             targetKeyProperty: "PersonId");
 
-        await Assert.That(sql).Contains("INSERT INTO \"public\".\"reporting\" (id, data, manager_id, report_id)");
+        await Assert.That(sql).Contains("INSERT INTO \"public\".\"reporting\" (id, data, \"manager_id\", \"report_id\")");
         await Assert.That(sql).Contains("data->>'PersonId' = @srcId");
         await Assert.That(sql).Contains("data->>'PersonId' = @tgtId");
     }
@@ -215,7 +216,7 @@ public class PgVectorAssociationTests
             plan.TargetTable,
             plan.TargetKeyProperty);
 
-        await Assert.That(insert).Contains("INSERT INTO \"public\".\"employment\" (id, data, employee_id, employer_id)");
+        await Assert.That(insert).Contains("INSERT INTO \"public\".\"employment\" (id, data, \"employee_id\", \"employer_id\")");
         await Assert.That(insert).Contains("\"public\".\"assoc_person\"");
         await Assert.That(insert).Contains("\"public\".\"assoc_company\"");
     }

@@ -17,6 +17,18 @@ internal static class SqlGenerator
         $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     /// <summary>
+    /// Escapes a value destined for a single-quoted SQL string LITERAL by doubling
+    /// any embedded single quotes per the SQL standard. Used for descriptor-derived
+    /// key-property names that are interpolated into <c>data->>'...'</c> JSON-path
+    /// literals (those keys are NOT parameter-bindable, so they must be escaped at
+    /// generation time). Key names flow from C# member names today, but this layer
+    /// does not provably constrain them — escaping makes the generated SQL safe
+    /// regardless of the caller (review M1).
+    /// </summary>
+    internal static string EscapeStringLiteral(string literal) =>
+        literal.Replace("'", "''");
+
+    /// <summary>
     /// Returns the pgvector distance operator for the given metric.
     /// </summary>
     internal static string GetDistanceOperator(DistanceMetric metric) => metric switch
@@ -252,12 +264,14 @@ internal static class SqlGenerator
         var qJunction = QuoteIdentifier(junctionTableName);
         var qSource = QuoteIdentifier(sourceTableName);
         var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
 
         return
             $"INSERT INTO {qSchema}.{qJunction} (source_id, target_id) "
             + $"SELECT s.id, t.id "
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
-            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId AND t.data->>'{targetKeyProperty}' = @tgtId "
+            + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId "
             + "ON CONFLICT (source_id, target_id) DO NOTHING";
     }
 
@@ -298,11 +312,13 @@ internal static class SqlGenerator
         var qJunction = QuoteIdentifier(junctionTableName);
         var qSource = QuoteIdentifier(sourceTableName);
         var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
 
         return
             $"DELETE FROM {qSchema}.{qJunction} "
-            + $"WHERE source_id = (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{sourceKeyProperty}' = @srcId) "
-            + $"AND target_id = (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{targetKeyProperty}' = @tgtId)";
+            + $"WHERE source_id = (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{srcKey}' = @srcId) "
+            + $"AND target_id = (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{tgtKey}' = @tgtId)";
     }
 
     /// <summary>
@@ -341,10 +357,11 @@ internal static class SqlGenerator
 
         var qSchema = QuoteIdentifier(schema);
         var qTable = QuoteIdentifier(tableName);
+        var key = EscapeStringLiteral(keyProperty);
 
         return
             $"SELECT EXISTS(SELECT 1 FROM {qSchema}.{qTable} "
-            + $"WHERE data->>'{keyProperty}' = {parameterName})";
+            + $"WHERE data->>'{key}' = {parameterName})";
     }
 
     /// <summary>
@@ -406,13 +423,14 @@ internal static class SqlGenerator
         var qSource = QuoteIdentifier(sourceTableName);
         var qJunction = QuoteIdentifier(junctionTableName);
         var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
 
         return
             $"SELECT t.id, t.data "
             + $"FROM {qSchema}.{qSource} s "
             + $"JOIN {qSchema}.{qJunction} j ON j.source_id = s.id "
             + $"JOIN {qSchema}.{qTarget} t ON t.id = j.target_id "
-            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId";
+            + $"WHERE s.data->>'{srcKey}' = @srcId";
     }
 
     /// <summary>
@@ -472,7 +490,12 @@ internal static class SqlGenerator
 
         foreach (var endpoint in association.AssociationEndpoints)
         {
-            var columnName = $"{TypeMapper.ToSnakeCase(endpoint.Role)}_id";
+            // QuoteIdentifier the {role}_id column so it stays identifier-identical
+            // with the DML in BuildAssociationRelateInsertSql (review M1):
+            // ToSnakeCase only lowercases/underscores — it does not neutralize a
+            // quote or space in a role name. Quoting in BOTH positions keeps the
+            // DDL column and the INSERT column the SAME physical identifier.
+            var columnName = QuoteIdentifier($"{TypeMapper.ToSnakeCase(endpoint.Role)}_id");
             var endpointTable = TypeMapper.ToSnakeCase(endpoint.DescriptorName);
             sb.AppendLine(
                 $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
@@ -544,17 +567,23 @@ internal static class SqlGenerator
         var qAssoc = QuoteIdentifier(associationTableName);
         var qSource = QuoteIdentifier(sourceTableName);
         var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
 
-        // The {role}_id endpoint FK columns are emitted UNQUOTED to stay
-        // identifier-identical with the T8 association-object DDL
-        // (BuildAssociationObjectTableDdl), which declares them unquoted — the
-        // role is already snake_cased to a safe identifier. This mirrors the
-        // junction relate's unquoted system columns (source_id/target_id).
+        // The {role}_id endpoint FK columns are routed through QuoteIdentifier so
+        // they stay identifier-identical with the T8 association-object DDL
+        // (BuildAssociationObjectTableDdl), which now also quotes them (review
+        // M1). ToSnakeCase only lowercases/underscores — it does NOT neutralize a
+        // quote or space in a role name — so the column identifier must be quoted
+        // in BOTH the DDL and the DML to stay the SAME physical column.
+        var qSourceColumn = QuoteIdentifier(sourceColumn);
+        var qTargetColumn = QuoteIdentifier(targetColumn);
+
         return
-            $"INSERT INTO {qSchema}.{qAssoc} (id, data, {sourceColumn}, {targetColumn}) "
+            $"INSERT INTO {qSchema}.{qAssoc} (id, data, {qSourceColumn}, {qTargetColumn}) "
             + $"SELECT @id, @data::jsonb, s.id, t.id "
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
-            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId AND t.data->>'{targetKeyProperty}' = @tgtId";
+            + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId";
     }
 
     /// <summary>
@@ -586,9 +615,10 @@ internal static class SqlGenerator
 
         var qSchema = QuoteIdentifier(schema);
         var qAssoc = QuoteIdentifier(associationTableName);
+        var assocKey = EscapeStringLiteral(associationKeyProperty);
 
         return
             $"DELETE FROM {qSchema}.{qAssoc} "
-            + $"WHERE data->>'{associationKeyProperty}' = @associationId";
+            + $"WHERE data->>'{assocKey}' = @associationId";
     }
 }

@@ -110,11 +110,12 @@ public class PgVectorEdgeSchemaTests
         await Assert.That(ddl).Contains("id uuid PRIMARY KEY DEFAULT gen_random_uuid()");
         await Assert.That(ddl).Contains("data jsonb NOT NULL");
 
-        // One FK column per endpoint, named for the role (snake_cased), FK to
+        // One FK column per endpoint, named for the role (snake_cased) and
+        // QUOTE-DELIMITED (review M1: identifier-identical with the DML), FK to
         // the endpoint's object table.
-        await Assert.That(ddl).Contains("employee_id uuid NOT NULL");
+        await Assert.That(ddl).Contains("\"employee_id\" uuid NOT NULL");
         await Assert.That(ddl).Contains("REFERENCES \"public\".\"person\" (id)");
-        await Assert.That(ddl).Contains("employer_id uuid NOT NULL");
+        await Assert.That(ddl).Contains("\"employer_id\" uuid NOT NULL");
         await Assert.That(ddl).Contains("REFERENCES \"public\".\"company\" (id)");
 
         // INV-2: raw DDL only.
@@ -139,8 +140,8 @@ public class PgVectorEdgeSchemaTests
 
         var ddl = SqlGenerator.BuildAssociationObjectTableDdl("public", association);
 
-        await Assert.That(ddl).Contains("manager_id uuid NOT NULL");
-        await Assert.That(ddl).Contains("report_id uuid NOT NULL");
+        await Assert.That(ddl).Contains("\"manager_id\" uuid NOT NULL");
+        await Assert.That(ddl).Contains("\"report_id\" uuid NOT NULL");
         // Both FK to the same endpoint table.
         await Assert.That(ddl).Contains("REFERENCES \"public\".\"person\" (id)");
     }

@@ -165,7 +165,7 @@ public class RationaleOntologyParityTests
             supersedesPlan.TargetKeyProperty);
 
         await Assert.That(supersedesInsert)
-            .Contains("INSERT INTO \"public\".\"supersedes\" (id, data, from_id, to_id)");
+            .Contains("INSERT INTO \"public\".\"supersedes\" (id, data, \"from_id\", \"to_id\")");
         await Assert.That(supersedesInsert).Contains("s.data->>'Id' = @srcId");
         await Assert.That(supersedesInsert).Contains("t.data->>'Id' = @tgtId");
 

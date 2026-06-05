@@ -63,7 +63,9 @@ internal sealed class NpgsqlRationaleEvaluator : IRationaleEvaluator
     {
         var sourceEndpoint = association.AssociationEndpoints
             .First(e => e.DescriptorName == sourceDescriptor);
-        var sourceColumn = $"{TypeMapper.ToSnakeCase(sourceEndpoint.Role)}_id";
+        // QuoteIdentifier the {role}_id FK column to stay identifier-identical
+        // with the quoted DDL column (review M1).
+        var sourceColumn = SqlGenerator.QuoteIdentifier($"{TypeMapper.ToSnakeCase(sourceEndpoint.Role)}_id");
 
         var assocTable = TypeMapper.ToSnakeCase(association.Name);
         var sourceTable = TypeMapper.ToSnakeCase(sourceDescriptor);
