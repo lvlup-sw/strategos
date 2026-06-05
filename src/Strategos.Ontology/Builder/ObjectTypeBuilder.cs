@@ -37,6 +37,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
     }
 
     private PropertyDescriptor? _keyProperty;
+    private Func<object, object?>? _idAccessor;
     private readonly List<PropertyBuilder<T>> _propertyBuilders = [];
     private readonly List<LinkBuilder> _linkBuilders = [];
     private readonly List<ActionBuilder<T>> _actionBuilders = [];
@@ -55,6 +56,12 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
         var memberName = ExpressionHelper.ExtractMemberName(keySelector);
         var memberType = ExpressionHelper.ExtractMemberType(keySelector);
         _keyProperty = new PropertyDescriptor(memberName, memberType);
+
+        // Compile the already-captured key selector once and box it to the
+        // erased accessor shape, so the descriptor can project an instance's
+        // id with zero per-call reflection on the instance type (INV-8).
+        var compiled = keySelector.Compile();
+        _idAccessor = o => compiled((T)o);
     }
 
     public void Kind(ObjectKind kind)
@@ -167,6 +174,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
         {
             Kind = _objectKind,
             KeyProperty = _keyProperty,
+            IdAccessor = _idAccessor,
             Properties = _propertyBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
             Links = _linkBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
             Actions = actions.AsReadOnly(),

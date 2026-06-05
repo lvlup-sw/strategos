@@ -41,6 +41,24 @@ public class StubObjectSetWriter : IObjectSetWriter
         StoredItems.AddRange(items);
         return Task.CompletedTask;
     }
+
+    // Relate-store methods added for DR-2 (Ontology Edge Foundation). Real behavior
+    // is exercised by InMemoryObjectSetProvider; this stub only satisfies the interface.
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    // Attributed relate added for DR-4 (Ontology Edge Foundation). Real behavior
+    // is exercised by InMemoryObjectSetProvider; this stub only satisfies the interface.
+    public Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)
+        where TRel : class
+        => Task.CompletedTask;
+
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    // Attributed unrelate added for DR-4; this stub only satisfies the interface.
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default)
+        => Task.CompletedTask;
 }
 
 public class IObjectSetWriterTests

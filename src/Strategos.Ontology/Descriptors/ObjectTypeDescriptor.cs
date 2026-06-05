@@ -128,6 +128,17 @@ public sealed record ObjectTypeDescriptor
 
     public PropertyDescriptor? KeyProperty { get; init; }
 
+    /// <summary>
+    /// Reflection-free projector of an instance to its key value. For
+    /// hand-authored descriptors this is compiled from the
+    /// <c>Key(...)</c> selector expression at build time; for ingested
+    /// (<see cref="SymbolKey"/>-only) descriptors it is supplied by the
+    /// contributing <c>IOntologySource</c>. Either way the accessor is the
+    /// single id-resolution path — no per-call reflection on the instance
+    /// type is ever performed (INV-8). Null when no key has been declared.
+    /// </summary>
+    public Func<object, object?>? IdAccessor { get; init; }
+
     public IReadOnlyList<PropertyDescriptor> Properties { get; init; } = [];
 
     public IReadOnlyList<LinkDescriptor> Links { get; init; } = [];
@@ -147,6 +158,15 @@ public sealed record ObjectTypeDescriptor
     public IReadOnlyList<InterfacePropertyMapping> InterfacePropertyMappings { get; init; } = [];
 
     public ObjectKind Kind { get; init; } = ObjectKind.Entity;
+
+    /// <summary>
+    /// The two endpoints of a reified association, present only when
+    /// <see cref="Kind"/> is <see cref="ObjectKind.Association"/> (DR-4).
+    /// Empty for entity/process descriptors. Endpoints reference their object
+    /// type by descriptor name (INV-8) — the list never carries a CLR
+    /// <see cref="Type"/> denoting endpoint identity.
+    /// </summary>
+    public IReadOnlyList<AssociationEndpoint> AssociationEndpoints { get; init; } = [];
 
     public Type? ParentType { get; init; }
 

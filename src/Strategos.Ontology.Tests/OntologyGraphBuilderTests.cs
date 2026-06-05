@@ -362,8 +362,53 @@ public class UnambiguousDomainOntology : DomainOntology
     }
 }
 
+// ---------------------------------------------------------------------------
+// DR-4 (Task 16) — reified association exposed as a graph edge
+// ---------------------------------------------------------------------------
+
+public sealed record GraphAssocPerson(string Id);
+
+public sealed record GraphAssocCompany(string Id);
+
+public sealed record GraphEmployment(string Id, GraphAssocPerson Employee, GraphAssocCompany Employer);
+
+public class GraphAssociationOntology : DomainOntology
+{
+    public override string DomainName => "graph-assoc";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<GraphAssocPerson>(obj => obj.Key(p => p.Id));
+        builder.Object<GraphAssocCompany>(obj => obj.Key(c => c.Id));
+
+        builder.Association<GraphEmployment>("GraphEmployment", a =>
+        {
+            a.Key(e => e.Id);
+            a.Between(e => e.Employee).And(e => e.Employer);
+        });
+    }
+}
+
 public class OntologyGraphBuilderTests
 {
+    [Test]
+    public async Task OntologyGraph_AssociationObject_ExposesEndpointsAsEdge()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<GraphAssociationOntology>();
+
+        var graph = graphBuilder.Build();
+
+        var edges = graph.GetAssociationEdges();
+        await Assert.That(edges).HasCount().EqualTo(1);
+
+        var edge = edges[0];
+        await Assert.That(edge.AssociationName).IsEqualTo("GraphEmployment");
+        await Assert.That(edge.DomainName).IsEqualTo("graph-assoc");
+        await Assert.That(edge.SourceDescriptorName).IsEqualTo(nameof(GraphAssocPerson));
+        await Assert.That(edge.DestinationDescriptorName).IsEqualTo(nameof(GraphAssocCompany));
+    }
+
     [Test]
     public async Task OntologyGraphBuilder_AddDomain_RegistersDomainOntology()
     {

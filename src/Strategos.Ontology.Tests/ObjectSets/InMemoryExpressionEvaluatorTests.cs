@@ -166,32 +166,65 @@ public class InMemoryExpressionEvaluatorTests
 
     // -----------------------------------------------------------------------
     // Task 8 tests — TraverseLinkExpression
+    //
+    // DR-3 (Task 10): these were rewritten from the OLD type-based traversal
+    // (which returned ALL target-type items) to the new INSTANCE-ANCHORED
+    // semantics. The evaluator is now constructed with a RelationResolver and
+    // follows only the materialized rows for the source instance.
     // -----------------------------------------------------------------------
+
+    // Builds a relation resolver that returns the given rows for the
+    // (srcDescriptor, srcId, linkName) triple, empty for everything else.
+    private static RelationResolver BuildRelationResolver(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        params RelationRow[] rows)
+        => (sd, si, ln) =>
+            sd == srcDescriptor && si == srcId && ln == linkName
+                ? rows
+                : [];
 
     [Test]
     public async Task Evaluate_TraverseLink_ReturnsTargetTypeItems()
     {
-        var evaluator = new InMemoryExpressionEvaluator(_graph);
-        var root = new RootExpression(typeof(EvalSource), "EvalSource");
-        var traverse = new TraverseLinkExpression(root, "targets", typeof(EvalTarget));
+        // Instance-anchored: source "A" is related to target "X" only; the
+        // unrelated "Y" is NOT returned even though it is the same target type.
         var resolver = BuildTestResolver();
+        var relations = BuildRelationResolver(
+            "EvalSource", "A", "targets",
+            new RelationRow("EvalTarget", "X"));
+        var evaluator = new InMemoryExpressionEvaluator(_graph, relations, idProjector: null);
+
+        var root = new RootExpression(typeof(EvalSource), "EvalSource");
+        Expression<Func<EvalSource, bool>> only = s => s.Name == "A";
+        var filter = new FilterExpression(root, only);
+        var traverse = new TraverseLinkExpression(filter, "targets", typeof(EvalTarget));
 
         var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
 
-        await Assert.That(result).HasCount().EqualTo(2);
+        await Assert.That(result).HasCount().EqualTo(1);
         await Assert.That(result[0].Label).IsEqualTo("X");
-        await Assert.That(result[1].Label).IsEqualTo("Y");
     }
 
     [Test]
     public async Task Evaluate_TraverseLink_ThenFilter_FiltersTargetItems()
     {
-        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        // Instance-anchored: source "A" relates to both "X" and "Y"; the
+        // post-traversal filter narrows the related targets to "X".
+        var resolver = BuildTestResolver();
+        var relations = BuildRelationResolver(
+            "EvalSource", "A", "targets",
+            new RelationRow("EvalTarget", "X"),
+            new RelationRow("EvalTarget", "Y"));
+        var evaluator = new InMemoryExpressionEvaluator(_graph, relations, idProjector: null);
+
         var root = new RootExpression(typeof(EvalSource), "EvalSource");
-        var traverse = new TraverseLinkExpression(root, "targets", typeof(EvalTarget));
+        Expression<Func<EvalSource, bool>> only = s => s.Name == "A";
+        var sourceFilter = new FilterExpression(root, only);
+        var traverse = new TraverseLinkExpression(sourceFilter, "targets", typeof(EvalTarget));
         Expression<Func<EvalTarget, bool>> predicate = t => t.Label == "X";
         var filter = new FilterExpression(traverse, predicate);
-        var resolver = BuildTestResolver();
 
         var result = evaluator.Evaluate<EvalTarget>(filter, resolver);
 
@@ -255,22 +288,29 @@ public class InMemoryExpressionEvaluatorTests
     }
 
     [Test]
-    public async Task Evaluate_TraverseLink_WithFilterOnSource_IgnoresSourceFilter()
+    public async Task Evaluate_TraverseLink_WithFilterOnSource_HonorsSourceFilter()
     {
-        // Schema-level traversal: source filters don't affect target items.
-        // Even with a filter that eliminates all source items, traversal
-        // returns ALL target items because it follows the link schema.
-        var evaluator = new InMemoryExpressionEvaluator(_graph);
+        // DR-3 (Task 10): instance-anchored traversal HONORS the source filter —
+        // it is anchored to exactly the source instances the upstream query
+        // selected. A filter that eliminates every source instance therefore
+        // yields an EMPTY traversal (the old schema-level behavior, which ignored
+        // the filter and returned all target-type items, was the #114 bug).
+        var resolver = BuildTestResolver();
+        var relations = BuildRelationResolver(
+            "EvalSource", "A", "targets",
+            new RelationRow("EvalTarget", "X"),
+            new RelationRow("EvalTarget", "Y"));
+        var evaluator = new InMemoryExpressionEvaluator(_graph, relations, idProjector: null);
+
         var root = new RootExpression(typeof(EvalSource), "EvalSource");
         Expression<Func<EvalSource, bool>> predicate = s => s.Value > 9999; // matches nothing
         var filter = new FilterExpression(root, predicate);
         var traverse = new TraverseLinkExpression(filter, "targets", typeof(EvalTarget));
-        var resolver = BuildTestResolver();
 
         var result = evaluator.Evaluate<EvalTarget>(traverse, resolver);
 
-        // All target items returned despite source filter — schema-level traversal
-        await Assert.That(result).HasCount().EqualTo(2);
+        // No source instance survived the filter, so no rows are followed.
+        await Assert.That(result).HasCount().EqualTo(0);
     }
 
     [Test]

@@ -66,6 +66,21 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         _interfaces.Add(builder.Build());
     }
 
+    public void Association<TRel>(string name, Action<IAssociationBuilder<TRel>> configure)
+        where TRel : class
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new AssociationBuilder<TRel>(domainName, name);
+        configure(builder);
+
+        // Register the association descriptor through the same _objectTypes path
+        // every other object type uses, so downstream composition (AONT040 dup
+        // names, the graph lookup, DR-1 id projection) treats it uniformly.
+        _objectTypes.Add(builder.Build());
+    }
+
     public ICrossDomainLinkBuilder CrossDomainLink(string name)
     {
         var builder = new CrossDomainLinkBuilder(name);

@@ -143,6 +143,30 @@ public sealed class OntologyGraph
     public IReadOnlyList<ObjectTypeDescriptor> GetSubtypes(string objectType) =>
         ObjectTypes.Where(ot => ot.ParentTypeName == objectType).ToList().AsReadOnly();
 
+    /// <summary>
+    /// Projects every reified association (DR-4) — an object type with
+    /// <see cref="ObjectKind.Association"/> and two endpoints — into a directed
+    /// <see cref="AssociationEdge"/> whose source and destination are the two
+    /// endpoints (left ⇒ source, right ⇒ destination per authoring order).
+    /// </summary>
+    /// <remarks>
+    /// INV-8: edges name their endpoints by descriptor name, never by CLR type.
+    /// Edges are returned ordered by (DomainName, AssociationName) so the
+    /// projection is deterministic across processes (INV-7 / replay).
+    /// </remarks>
+    public IReadOnlyList<AssociationEdge> GetAssociationEdges() =>
+        ObjectTypes
+            .Where(ot => ot.Kind == ObjectKind.Association && ot.AssociationEndpoints.Count == 2)
+            .OrderBy(ot => ot.DomainName, StringComparer.Ordinal)
+            .ThenBy(ot => ot.Name, StringComparer.Ordinal)
+            .Select(ot => new AssociationEdge(
+                AssociationName: ot.Name,
+                DomainName: ot.DomainName,
+                SourceDescriptorName: ot.AssociationEndpoints[0].DescriptorName,
+                DestinationDescriptorName: ot.AssociationEndpoints[1].DescriptorName))
+            .ToList()
+            .AsReadOnly();
+
     public IReadOnlyList<WorkflowChain> FindWorkflowChains(string targetWorkflow) =>
         _workflowChainLookup.TryGetValue(targetWorkflow, out var chains)
             ? chains

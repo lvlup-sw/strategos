@@ -18,6 +18,7 @@ namespace Strategos.Ontology.Merge;
 /// <item><description><see cref="ObjectTypeDescriptor.LanguageId"/>: hand wins.</description></item>
 /// <item><description><see cref="ObjectTypeDescriptor.Source"/>: always <see cref="DescriptorSource.HandAuthored"/> — hand wins on composition.</description></item>
 /// <item><description><see cref="ObjectTypeDescriptor.Name"/> and <see cref="ObjectTypeDescriptor.DomainName"/>: taken from hand; mismatch with ingested surfaces as AONT006 upstream.</description></item>
+/// <item><description><see cref="ObjectTypeDescriptor.AssociationEndpoints"/> (DR-4): hand wins; fall back to ingested when hand's is empty.</description></item>
 /// </list>
 /// <para>
 /// Intent-only fields are always taken from hand:
@@ -62,6 +63,11 @@ public static class MergeTwo
             SourceId = hand.SourceId,
             IngestedAt = hand.IngestedAt,
             KeyProperty = hand.KeyProperty,
+            // IdAccessor follows the ClrType lattice rule: hand wins, fallback
+            // to ingested. The merged descriptor must retain a reflection-free
+            // id path (INV-8); silently dropping the accessor here would force
+            // a later reflection fallback that DR-1 forbids.
+            IdAccessor = hand.IdAccessor ?? ingested.IdAccessor,
             Properties = MergeProperties(hand.Properties, ingested.Properties),
             Links = MergeLinks(hand.Links, ingested.Links),
             Actions = hand.Actions,
@@ -72,6 +78,13 @@ public static class MergeTwo
             ExternalLinkExtensionPoints = hand.ExternalLinkExtensionPoints,
             InterfacePropertyMappings = hand.InterfacePropertyMappings,
             Kind = hand.Kind,
+            // AssociationEndpoints follow the same hand-wins lattice as the other
+            // structural fields: hand wins, fall back to ingested when hand's is
+            // empty. Dropping it (the prior behavior) silently emptied a merged
+            // association descriptor's endpoints, severing the edge.
+            AssociationEndpoints = hand.AssociationEndpoints.Count > 0
+                ? hand.AssociationEndpoints
+                : ingested.AssociationEndpoints,
             ParentType = hand.ParentType,
             ParentTypeName = hand.ParentTypeName,
         };

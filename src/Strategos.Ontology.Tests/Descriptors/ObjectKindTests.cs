@@ -69,4 +69,12 @@ public class ObjectKindTests
 
         await Assert.That(descriptor.Kind).IsEqualTo(ObjectKind.Entity);
     }
+
+    [Test]
+    public async Task ObjectKind_DefinesAssociationMember()
+    {
+        // DR-4 (Task 14): an association is a standalone object-with-two-endpoints,
+        // so the kind enum gains an Association member (additive, backward compatible).
+        await Assert.That(Enum.IsDefined(ObjectKind.Association)).IsTrue();
+    }
 }

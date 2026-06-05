@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Embeddings;
+using Strategos.Ontology.Identity;
 
 namespace Strategos.Ontology.ObjectSets;
 
@@ -13,6 +15,10 @@ namespace Strategos.Ontology.ObjectSets;
 /// <remarks>
 /// <see cref="Seed{T}"/> is not thread-safe. Seed all items before querying,
 /// or synchronize access externally if seeding concurrently.
+/// The DR-2 relation store (relate/unrelate and traversal reads) IS safe to call
+/// concurrently — every access to a per-key <c>List&lt;RelationRow&gt;</c> is
+/// serialized by a single internal gate, so concurrent relate/unrelate stays
+/// idempotent and traversal never enumerates a list mid-mutation.
 /// When an <see cref="IEmbeddingProvider"/> is supplied, <see cref="ExecuteSimilarityAsync{T}"/>
 /// uses real cosine similarity against stored embeddings instead of keyword scoring.
 /// </remarks>
@@ -30,8 +36,31 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private readonly ConcurrentDictionary<string, List<object>> _items = new();
     private readonly ConcurrentDictionary<string, List<string>> _searchableContent = new();
     private readonly ConcurrentDictionary<string, List<float[]>> _embeddings = new();
+
+    // Materialized relation rows (DR-2). Keyed by the relation triple's
+    // (srcDescriptor, srcId, linkName); the value is the list of target
+    // endpoints related to that source under that link. The raw store is
+    // insertion-ordered, but the READ path (GetRelations) never exposes that
+    // order — it sorts ordinal-by-TargetId so replay is deterministic (INV-7).
+    private readonly ConcurrentDictionary<(string SrcDescriptor, string SrcId, string LinkName), List<RelationRow>> _relations = new();
     private readonly IEmbeddingProvider? _embeddingProvider;
     private readonly InMemoryExpressionEvaluator? _evaluator;
+
+    // Descriptor index by name, populated for graph-aware instances (DR-2).
+    // Used to resolve the IdAccessor for eager endpoint validation in
+    // RelateAsync and the LinkDescriptor for the self-loop policy. Null for
+    // graph-less instances, whose seeded items carry no key accessor.
+    private readonly IReadOnlyDictionary<string, ObjectTypeDescriptor>? _descriptorIndex;
+    private readonly ObjectIdentityProjector _idProjector = new();
+
+    // Serializes all relation-store access. ConcurrentDictionary guards only the
+    // partition map; the per-key List<RelationRow> values are still read, mutated,
+    // and enumerated unsynchronized — and AnyRowReferencesAssociation scans across
+    // ALL partitions, so a per-key lock would not cover it. A single re-entrant
+    // gate makes relate/unrelate idempotent and traversal reads race-free without
+    // the partial-fix trap. The lock is held only over in-memory list operations
+    // (no awaits), so it never blocks across an async boundary.
+    private readonly object _relationsGate = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryObjectSetProvider"/> class.
@@ -64,7 +93,10 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public InMemoryObjectSetProvider(OntologyGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _evaluator = new InMemoryExpressionEvaluator(graph);
+        // DR-3: wire the evaluator to this provider's relate-store + id projector
+        // so TraverseLink resolves by source instance, not target type.
+        _evaluator = new InMemoryExpressionEvaluator(graph, GetRelations, _idProjector);
+        _descriptorIndex = BuildDescriptorIndex(graph);
     }
 
     /// <summary>
@@ -80,8 +112,26 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public InMemoryObjectSetProvider(OntologyGraph graph, IEmbeddingProvider? embeddingProvider)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        _evaluator = new InMemoryExpressionEvaluator(graph);
+        // DR-3: wire the evaluator to this provider's relate-store + id projector
+        // so TraverseLink resolves by source instance, not target type.
+        _evaluator = new InMemoryExpressionEvaluator(graph, GetRelations, _idProjector);
+        _descriptorIndex = BuildDescriptorIndex(graph);
         _embeddingProvider = embeddingProvider;
+    }
+
+    // Name-keyed descriptor index for relate-time validation (DR-2). The
+    // evaluator constructed alongside this index already enforces globally
+    // unique descriptor names and throws on a collision, so by the time this
+    // runs the names are unique and last-write-wins is never reached.
+    private static IReadOnlyDictionary<string, ObjectTypeDescriptor> BuildDescriptorIndex(OntologyGraph graph)
+    {
+        var index = new Dictionary<string, ObjectTypeDescriptor>(StringComparer.Ordinal);
+        foreach (var objectType in graph.ObjectTypes)
+        {
+            index[objectType.Name] = objectType;
+        }
+
+        return index;
     }
 
     /// <summary>
@@ -155,6 +205,383 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
             ct.ThrowIfCancellationRequested();
             await StoreAsync(descriptorName, item, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc />
+    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ct.ThrowIfCancellationRequested();
+
+        // Plain (unattributed) DR-2 relate: no association object backs the row.
+        WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId: null);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public async Task RelateAsync<TRel>(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        string tgtDescriptor,
+        string tgtId,
+        string associationDescriptor,
+        TRel association,
+        CancellationToken ct = default)
+        where TRel : class
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(association);
+        ct.ThrowIfCancellationRequested();
+
+        // EAGER endpoint validation runs BEFORE the association object is stored,
+        // so a failed attributed relate leaves neither a dangling association nor
+        // a dangling row (mirrors the plain RelateAsync posture / DR-8).
+        ValidateEndpointExists(srcDescriptor, srcId);
+        ValidateEndpointExists(tgtDescriptor, tgtId);
+
+        // Project the association's id via the DR-1 projector. When the provider
+        // is graph-aware and the association descriptor is known, project through
+        // its IdAccessor; this is the same single id-resolution path DR-1 defines
+        // (no per-call reflection on the instance type, INV-8).
+        var associationObjectId = ProjectAssociationId(associationDescriptor, association);
+
+        // Write the row first; it dedups on (TargetDescriptor, TargetId,
+        // AssociationObjectId). Only store the association object when the row was
+        // ACTUALLY new — repeating the same attributed relate must not stack
+        // duplicate association objects behind a single deduped row (FIX-C),
+        // because the symmetric unrelate removes exactly one row + one object and
+        // a duplicate would dangle.
+        var rowAdded = WriteRelationRow(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId, associationObjectId);
+        if (rowAdded)
+        {
+            await StoreAsync(associationDescriptor, association, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Shared relate-row write path for both the plain and attributed
+    /// <c>RelateAsync</c> overloads. Performs eager endpoint validation, the
+    /// self-loop policy check, and idempotent row insertion. The duplicate key
+    /// is (TargetDescriptor, TargetId, AssociationObjectId): a plain relate
+    /// (null association id) collapses to one row per endpoint pair, while an
+    /// attributed relate coexists with a plain row for the same endpoints when it
+    /// carries a distinct association object (it never replaces the plain row).
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> when a NEW row was inserted; <c>false</c> when an identical row
+    /// already existed (the call was idempotent). The attributed overload uses
+    /// this to store the association object only on a genuinely new row (FIX-C).
+    /// </returns>
+    private bool WriteRelationRow(
+        string srcDescriptor,
+        string srcId,
+        string linkName,
+        string tgtDescriptor,
+        string tgtId,
+        string? associationObjectId)
+    {
+        // EAGER endpoint validation (DR-8): both endpoints must correspond to a
+        // stored instance BEFORE any row is written, so a failed relate never
+        // leaves a dangling row. This in-memory posture is the contract the
+        // future Npgsql provider mirrors via foreign-key constraints.
+        ValidateEndpointExists(srcDescriptor, srcId);
+        ValidateEndpointExists(tgtDescriptor, tgtId);
+
+        // Self-loop policy (DR-8): relating an instance to itself is rejected
+        // unless the source descriptor's link declares AllowsSelfLoop. Runtime
+        // check only; analyzer promotion is a later task.
+        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+            && !SelfLoopAllowed(srcDescriptor, linkName))
+        {
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
+
+        lock (_relationsGate)
+        {
+            var rows = _relations.GetOrAdd((srcDescriptor, srcId, linkName), _ => new List<RelationRow>());
+
+            // Idempotent: relating the same (src, link, tgt, associationObjectId)
+            // twice yields one row. The DR-4 AssociationObjectId participates in the
+            // duplicate key so an attributed relate is distinguishable from a plain
+            // one over the same endpoint pair. The check-then-add must be atomic, so
+            // it runs under the gate.
+            var alreadyRelated = rows.Any(r =>
+                r.TargetDescriptor == tgtDescriptor
+                && r.TargetId == tgtId
+                && r.AssociationObjectId == associationObjectId);
+            if (alreadyRelated)
+            {
+                return false;
+            }
+
+            rows.Add(new RelationRow(tgtDescriptor, tgtId, associationObjectId));
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Projects an association instance to its id through the DR-1
+    /// <see cref="ObjectIdentityProjector"/> using the named descriptor's
+    /// <see cref="ObjectTypeDescriptor.IdAccessor"/>. Throws when the provider
+    /// is graph-aware but the descriptor is unknown — an attributed relate
+    /// against an undeclared association descriptor is a caller error, not a
+    /// silent no-op.
+    /// </summary>
+    private string ProjectAssociationId(string associationDescriptor, object association)
+    {
+        if (_descriptorIndex is null)
+        {
+            // Graph-less legacy mode: no descriptors, so fall back to the
+            // instance's own ToString() as the stable id (mirrors the seed-time
+            // posture for graph-less providers). DR-1 projection is unavailable.
+            return association.ToString() ?? string.Empty;
+        }
+
+        if (!_descriptorIndex.TryGetValue(associationDescriptor, out var descriptor))
+        {
+            throw new RelationEndpointNotFoundException(associationDescriptor, "<association>");
+        }
+
+        return _idProjector.ProjectId(descriptor, association);
+    }
+
+    /// <inheritdoc />
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ct.ThrowIfCancellationRequested();
+
+        lock (_relationsGate)
+        {
+            if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                // Symmetric with the plain RelateAsync write key
+                // (TargetDescriptor, TargetId, AssociationObjectId == null): remove
+                // ONLY the plain row. An attributed row (non-null AssociationObjectId)
+                // for the same endpoint pair survives — it is removed via the
+                // attributed UnrelateAsync overload, which also cleans up the object.
+                rows.RemoveAll(r =>
+                    r.TargetDescriptor == tgtDescriptor
+                    && r.TargetId == tgtId
+                    && r.AssociationObjectId is null);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(associationId);
+        ct.ThrowIfCancellationRequested();
+
+        lock (_relationsGate)
+        {
+            var removed = 0;
+            if (_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                // Symmetric with the attributed RelateAsync<TRel> write key: remove the
+                // single row whose AssociationObjectId equals associationId. The plain
+                // row and any sibling attributed rows (different association ids) for
+                // the same endpoint pair are left intact.
+                removed = rows.RemoveAll(r =>
+                    r.TargetDescriptor == tgtDescriptor
+                    && r.TargetId == tgtId
+                    && r.AssociationObjectId == associationId);
+            }
+
+            // Conditional cleanup (FIX-D): only delete the stored association object
+            // when this call ACTUALLY removed its row AND no remaining row anywhere
+            // still references that association id. The removal + cross-partition
+            // reference scan + delete run under one gate so a concurrent relate/unrelate
+            // cannot slip a referencing row in between the scan and the delete. An
+            // unrelate naming a wrong (src, link, tgt) tuple removes nothing, so
+            // deleting the object would dangle the surviving correct row; likewise, if
+            // another row still points at the same association object, it must survive.
+            if (removed > 0 && !AnyRowReferencesAssociation(associationId))
+            {
+                RemoveStoredInstance(associationDescriptor, associationId);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// True when any relation row in any partition still references
+    /// <paramref name="associationId"/> via its
+    /// <see cref="RelationRow.AssociationObjectId"/>. Guards the attributed-unrelate
+    /// cleanup (FIX-D) so a shared association object is not deleted while a row
+    /// still points at it.
+    /// </summary>
+    private bool AnyRowReferencesAssociation(string associationId)
+    {
+        // Re-entrant: callers already hold _relationsGate (attributed UnrelateAsync).
+        // Taking it here too keeps this scan safe if it is ever called standalone.
+        lock (_relationsGate)
+        {
+            foreach (var partition in _relations.Values)
+            {
+                foreach (var row in partition)
+                {
+                    if (string.Equals(row.AssociationObjectId, associationId, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Removes the stored instance under <paramref name="descriptorName"/> whose
+    /// projected id (DR-1, reflection-free) equals <paramref name="id"/>, keeping
+    /// the parallel searchable-content and embedding lists index-aligned. A no-op
+    /// when the partition or matching instance is absent, or when the provider is
+    /// graph-less (no descriptor to project against).
+    /// </summary>
+    private void RemoveStoredInstance(string descriptorName, string id)
+    {
+        if (_descriptorIndex is null
+            || !_descriptorIndex.TryGetValue(descriptorName, out var descriptor)
+            || !_items.TryGetValue(descriptorName, out var items))
+        {
+            return;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (!string.Equals(_idProjector.ProjectId(descriptor, items[i]), id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            items.RemoveAt(i);
+
+            // Keep the parallel lists aligned with _items (same partition key,
+            // same index → searchable content / embedding for that instance).
+            if (_searchableContent.TryGetValue(descriptorName, out var content) && i < content.Count)
+            {
+                content.RemoveAt(i);
+            }
+
+            if (_embeddings.TryGetValue(descriptorName, out var embeddings) && i < embeddings.Count)
+            {
+                embeddings.RemoveAt(i);
+            }
+
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Reads the materialized relation rows for a given relation triple in a
+    /// deterministic, ordinal-by-<see cref="RelationRow.TargetId"/> order.
+    /// </summary>
+    /// <remarks>
+    /// INV-7: the returned list is a freshly-sorted snapshot — it never exposes
+    /// the relate-store's insertion order or raw
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>
+    /// enumeration order. DR-3 traversal consumes this accessor from the same
+    /// assembly.
+    /// </remarks>
+    /// <param name="srcDescriptor">Descriptor name of the source endpoint.</param>
+    /// <param name="srcId">Projected id of the source instance.</param>
+    /// <param name="linkName">Name of the link.</param>
+    /// <returns>Relation rows ordered by <see cref="RelationRow.TargetId"/>.</returns>
+    internal IReadOnlyList<RelationRow> GetRelations(string srcDescriptor, string srcId, string linkName)
+    {
+        lock (_relationsGate)
+        {
+            if (!_relations.TryGetValue((srcDescriptor, srcId, linkName), out var rows))
+            {
+                return [];
+            }
+
+            // Sort to a fresh list under the gate so the snapshot is taken without a
+            // concurrent relate/unrelate mutating the backing list mid-enumeration.
+            return rows
+                .OrderBy(r => r.TargetId, StringComparer.Ordinal)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Eager endpoint check (DR-8): throws <see cref="RelationEndpointNotFoundException"/>
+    /// unless some instance stored under <paramref name="descriptorName"/> projects
+    /// (via the descriptor's reflection-free <see cref="ObjectTypeDescriptor.IdAccessor"/>)
+    /// to <paramref name="id"/>.
+    /// </summary>
+    private void ValidateEndpointExists(string descriptorName, string id)
+    {
+        // A graph-less provider carries no descriptors (and thus no IdAccessor),
+        // so there is nothing to project against; eager validation is a no-op
+        // for that legacy seeding mode.
+        if (_descriptorIndex is null)
+        {
+            return;
+        }
+
+        if (!_descriptorIndex.TryGetValue(descriptorName, out var descriptor))
+        {
+            throw new RelationEndpointNotFoundException(descriptorName, id);
+        }
+
+        var stored = _items.TryGetValue(descriptorName, out var items) ? items : null;
+        if (stored is not null)
+        {
+            foreach (var instance in stored)
+            {
+                if (string.Equals(_idProjector.ProjectId(descriptor, instance), id, StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+        }
+
+        throw new RelationEndpointNotFoundException(descriptorName, id);
+    }
+
+    /// <summary>
+    /// Resolves whether the named link on <paramref name="srcDescriptor"/>
+    /// permits self-loops (DR-8). Defaults to <c>false</c> — the safe posture —
+    /// when no descriptor index is present (graph-less mode) or the link is not
+    /// declared on the source descriptor.
+    /// </summary>
+    private bool SelfLoopAllowed(string srcDescriptor, string linkName)
+    {
+        if (_descriptorIndex is null
+            || !_descriptorIndex.TryGetValue(srcDescriptor, out var descriptor))
+        {
+            return false;
+        }
+
+        var link = descriptor.Links.FirstOrDefault(l => l.Name == linkName);
+        return link?.AllowsSelfLoop ?? false;
     }
 
     /// <inheritdoc />
