@@ -51,7 +51,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointNoLinks,
             OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
             OntologyDiagnostics.ReadOnlyConflictsWithMutation,
-            OntologyDiagnostics.PolyglotInvariantViolated);
+            OntologyDiagnostics.PolyglotInvariantViolated,
+            OntologyDiagnostics.AssociationEndpointCardinalityInvalid);
 
     public override void Initialize(AnalysisContext context)
     {

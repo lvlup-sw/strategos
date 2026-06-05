@@ -22,4 +22,14 @@ namespace Strategos.Ontology.Descriptors;
 /// <param name="DescriptorName">
 /// The descriptor name of the endpoint's object type (e.g. <c>AssocPerson</c>).
 /// </param>
-public sealed record AssociationEndpoint(string Role, string DescriptorName);
+/// <param name="Cardinality">
+/// The multiplicity of this endpoint relative to the association object
+/// (DR-6). A valid reified relation requires <see cref="EndpointCardinality.ManyToOne"/>
+/// on both endpoints — many association rows folding INTO one endpoint object.
+/// The authoring default is <see cref="EndpointCardinality.ManyToOne"/>; the
+/// analyzer rule <c>AONT210</c> flags any other value.
+/// </param>
+public sealed record AssociationEndpoint(
+    string Role,
+    string DescriptorName,
+    EndpointCardinality Cardinality = EndpointCardinality.ManyToOne);

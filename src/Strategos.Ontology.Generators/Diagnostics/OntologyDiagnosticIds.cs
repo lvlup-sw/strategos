@@ -64,4 +64,12 @@ internal static class OntologyDiagnosticIds
     public const string HandPropertyAlsoIngestedHygieneHint = "AONT206";
     public const string BranchHandConflict = "AONT207";
     public const string LanguageIdDisagreement = "AONT208";
+
+    // Reified-association endpoint cardinality (AONT210) — DR-6 (#121).
+    // A reified association is a junction object: a valid reified relation
+    // requires two ManyToOne endpoints folding INTO the association object.
+    // AONT210 flags an endpoint declared with any other cardinality.
+    // (AONT209 is reserved for a sibling task; ids are monotonic, never
+    // reused — INV-5.)
+    public const string AssociationEndpointCardinalityInvalid = "AONT210";
 }

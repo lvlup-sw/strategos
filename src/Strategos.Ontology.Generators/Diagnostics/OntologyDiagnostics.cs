@@ -383,4 +383,14 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    // --- Reified-association endpoint cardinality (AONT210) — DR-6 (#121) ---
+
+    public static readonly DiagnosticDescriptor AssociationEndpointCardinalityInvalid = new(
+        OntologyDiagnosticIds.AssociationEndpointCardinalityInvalid,
+        "Association endpoint cardinality cannot form a valid reified relation",
+        "Association '{0}' declares endpoint '{1}' with cardinality '{2}'; a reified relation requires both endpoints to be ManyToOne (many association rows folding into one endpoint object)",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
