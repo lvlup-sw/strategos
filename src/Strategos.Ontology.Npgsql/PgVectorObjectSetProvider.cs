@@ -373,6 +373,13 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
         await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
 
+        // SELF-LOOP policy (DR-8 parity, t14): relating an instance to itself along
+        // a link whose AllowsSelfLoop is false is REFUSED with the SAME typed error
+        // the in-memory provider raises — never silently written. Checked AFTER
+        // eager endpoint validation so the ordering matches the in-memory
+        // WriteRelationRow guard (a missing endpoint still surfaces first).
+        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
+
         var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
         var sql = SqlGenerator.BuildRelateInsertSql(
             _options.Schema,
@@ -513,6 +520,46 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
     }
 
+    /// <summary>
+    /// Self-loop policy (DR-8 parity, t14): throws
+    /// <see cref="SelfLoopNotAllowedException"/> when the relate connects an
+    /// instance to ITSELF — same (descriptor, id) on both endpoints — along a link
+    /// whose <see cref="Descriptors.LinkDescriptor.AllowsSelfLoop"/> is
+    /// <c>false</c>. Mirrors the in-memory provider's
+    /// <c>WriteRelationRow</c> self-loop guard so a disallowed self-loop surfaces
+    /// the SAME typed error across backends rather than a silent junction row.
+    /// </summary>
+    private void ThrowIfDisallowedSelfLoop(
+        string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId)
+    {
+        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+            && !SelfLoopAllowed(srcDescriptor, linkName))
+        {
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
+    }
+
+    /// <summary>
+    /// Resolves whether the named link on <paramref name="srcDescriptor"/> permits
+    /// self-loops (DR-8). Defaults to <c>false</c> — the safe posture — when no
+    /// graph is present, the source descriptor is unknown, or the link is not
+    /// declared on it. Mirrors the in-memory provider's <c>SelfLoopAllowed</c>.
+    /// </summary>
+    private bool SelfLoopAllowed(string srcDescriptor, string linkName)
+    {
+        if (_graph is null)
+        {
+            return false;
+        }
+
+        var descriptor = _graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, srcDescriptor, StringComparison.Ordinal));
+        var link = descriptor?.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        return link?.AllowsSelfLoop ?? false;
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// DR-4/DR-8 (Ontology Edge Foundation, t11): removes an ATTRIBUTED relation
@@ -589,6 +636,12 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // provider).
         await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
         await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+
+        // SELF-LOOP policy (DR-8 parity, t14): an attributed relate routes through
+        // the SAME self-loop guard as the plain path (the in-memory provider
+        // enforces both via WriteRelationRow), so a disallowed (x, link, x) is
+        // refused with the same typed error before any association row is written.
+        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
 
         var sql = SqlGenerator.BuildAssociationRelateInsertSql(
             _options.Schema,
