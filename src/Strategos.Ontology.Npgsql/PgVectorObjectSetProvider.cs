@@ -356,6 +356,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// is written (mirroring the in-memory provider / DR-8). Idempotency rides
     /// the T8 <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
     /// INV-2: raw Npgsql only.
+    /// <para>
+    /// TOCTOU (review L): the two eager <c>SELECT EXISTS</c> probes and the
+    /// <c>INSERT … ON CONFLICT</c> are separate commands on no shared transaction,
+    /// so a concurrent delete of an endpoint between the probe and the insert opens
+    /// a check-to-use window. The typed
+    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/> guarantee is
+    /// therefore BEST-EFFORT under concurrency: a racing delete can turn an
+    /// expected typed error into the insert resolving zero endpoint rows (a silent
+    /// no-op) instead. It is never CORRUPTING — the insert's endpoint-resolving
+    /// subquery plus the junction's foreign keys reject any row whose endpoints no
+    /// longer exist, so a dangling junction row can never be written, and
+    /// <c>ON CONFLICT DO NOTHING</c> keeps re-relates idempotent. Wrapping the
+    /// probe + insert in one transaction (or folding the existence check into the
+    /// insert's <c>RETURNING</c>) would close the window; it is intentionally
+    /// deferred — not restructured here — to keep the change minimal.
+    /// </para>
     /// </remarks>
     public async Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
     {
