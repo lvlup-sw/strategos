@@ -87,6 +87,13 @@ public sealed class RationaleOntologyFixture
     public const string LinkMotivatesEdge = "motivatesEdge";
     public const string LinkConflictsWithEdge = "conflictsWithEdge";
 
+    // The shared polyglot key field every partition is keyed by. It NAMES the id
+    // field (the carrier's Id, also exposed via IdAccessor); it is NOT a CLR
+    // member, so ClrType stays null on every descriptor (INV-8). A SymbolKey-only
+    // corpus still needs a named key so a cross-provider replay (T13) can resolve
+    // each stored row by its business id (data->>'Id').
+    private static readonly PropertyDescriptor IdKey = new("Id", typeof(string));
+
     private RationaleOntologyFixture(
         OntologyGraph graph,
         IReadOnlyDictionary<string, IReadOnlyList<RationaleNode>> instancesByDescriptor,
@@ -186,6 +193,12 @@ public sealed class RationaleOntologyFixture
             Source = DescriptorSource.Ingested,
             SourceId = "rationale-source",
             IdAccessor = id,
+            // The polyglot key field: the instances' business id lives under this
+            // jsonb key. ClrType stays null (INV-8) — the key NAMES the field, it
+            // is not a CLR member. T13's Npgsql replay resolves each endpoint's
+            // stored row via data->>'Id' from this descriptor, the same id the
+            // reflection-free IdAccessor projects in-memory.
+            KeyProperty = IdKey,
             Links =
             [
                 // Edge-view link: target is the Supersedes ASSOCIATION, named by
@@ -220,6 +233,7 @@ public sealed class RationaleOntologyFixture
             Source = DescriptorSource.Ingested,
             SourceId = "rationale-source",
             IdAccessor = id,
+            KeyProperty = IdKey,
             Links =
             [
                 new LinkDescriptor(LinkMotivatesEdge, string.Empty, LinkCardinality.OneToMany)
@@ -305,6 +319,7 @@ public sealed class RationaleOntologyFixture
             Source = DescriptorSource.Ingested,
             SourceId = "rationale-source",
             IdAccessor = idAccessor,
+            KeyProperty = IdKey,
             Kind = ObjectKind.Association,
             AssociationEndpoints =
             [

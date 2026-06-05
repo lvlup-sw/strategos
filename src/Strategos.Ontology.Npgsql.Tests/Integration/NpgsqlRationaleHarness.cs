@@ -86,17 +86,28 @@ internal sealed class NpgsqlRationaleHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Seeds the corpus into the object tables under the SAME descriptor
-    /// partitions the in-memory store uses, writing each carrier's full attribute
-    /// bag as <c>data jsonb</c> (Id plus the node/edge attributes).
+    /// Seeds the corpus's NODE partitions into their object tables (Id plus node
+    /// attributes as <c>data jsonb</c>). ASSOCIATION partitions are NOT seeded as
+    /// standalone rows: a reified association object is materialized BY its
+    /// attributed relate (the association-object INSERT writes its data + endpoint
+    /// FKs together), so its attribute bag is recovered from
+    /// <see cref="_seeded"/> during the relate replay, not pre-inserted.
     /// </summary>
     public async Task SeedAsync(
         IReadOnlyDictionary<string, IReadOnlyList<RationaleNode>> instancesByDescriptor)
     {
+        // Retain ALL partitions (incl. associations) so the attributed-relate
+        // replay can recover an association object's bag by its business id.
         _seeded = instancesByDescriptor;
 
         foreach (var (descriptorName, nodes) in instancesByDescriptor)
         {
+            var descriptor = _graph.ObjectTypes.Single(d => d.Name == descriptorName);
+            if (descriptor.Kind == ObjectKind.Association)
+            {
+                continue;
+            }
+
             var table = TypeMapper.ToSnakeCase(descriptorName);
             foreach (var node in nodes)
             {
@@ -145,15 +156,27 @@ internal sealed class NpgsqlRationaleHarness : IAsyncDisposable
             await ExecuteAsync($"DROP TABLE IF EXISTS \"{Schema}\".\"{table}\" CASCADE;").ConfigureAwait(false);
         }
 
-        foreach (var descriptor in _graph.ObjectTypes)
+        // NODE object tables get a minimal (id + data jsonb) table. ASSOCIATION
+        // descriptors are NOT plain object tables — they lower to association-OBJECT
+        // tables (id + data + endpoint FK columns) created below, so creating a
+        // plain table here first would shadow the FK columns (CREATE ... IF NOT
+        // EXISTS would no-op the richer DDL).
+        foreach (var descriptor in _graph.ObjectTypes.Where(d => d.Kind != ObjectKind.Association))
         {
             var table = TypeMapper.ToSnakeCase(descriptor.Name);
-            // A minimal object table (id + data jsonb) — the same id/data shape the
-            // provider's object tables carry, sans the optional embedding.
             await ExecuteAsync(
                 $"CREATE TABLE \"{Schema}\".\"{table}\" "
                 + "(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), data jsonb NOT NULL);")
                 .ConfigureAwait(false);
+        }
+
+        // Association-object tables for the reified associations (id + data +
+        // role-named endpoint FK columns). These reference the node tables, so they
+        // must be created AFTER the node tables above.
+        foreach (var association in _graph.ObjectTypes.Where(d => d.Kind == ObjectKind.Association))
+        {
+            var ddl = SqlGenerator.BuildAssociationObjectTableDdl(Schema, association);
+            await ExecuteAsync(ddl).ConfigureAwait(false);
         }
 
         // Junction tables for the plain (DR-2) links — those whose corpus relate
@@ -165,13 +188,6 @@ internal sealed class NpgsqlRationaleHarness : IAsyncDisposable
                 TypeMapper.ToSnakeCase(sourceDescriptor),
                 link,
                 TypeMapper.ToSnakeCase(targetDescriptor));
-            await ExecuteAsync(ddl).ConfigureAwait(false);
-        }
-
-        // Association-object tables for the reified associations.
-        foreach (var association in _graph.ObjectTypes.Where(d => d.Kind == ObjectKind.Association))
-        {
-            var ddl = SqlGenerator.BuildAssociationObjectTableDdl(Schema, association);
             await ExecuteAsync(ddl).ConfigureAwait(false);
         }
     }
