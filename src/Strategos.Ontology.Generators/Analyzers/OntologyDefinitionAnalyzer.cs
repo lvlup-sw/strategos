@@ -51,7 +51,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ExtensionPointNoLinks,
             OntologyDiagnostics.ExtensionPointMaxLinksExceeded,
             OntologyDiagnostics.ReadOnlyConflictsWithMutation,
-            OntologyDiagnostics.PolyglotInvariantViolated);
+            OntologyDiagnostics.PolyglotInvariantViolated,
+            OntologyDiagnostics.EdgePropertyAuthoringRemoved);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -92,6 +93,62 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         CollectDomainInfo(body, context.SemanticModel, domainInfo);
         ReportDiagnostics(context, domainInfo);
         ReportPolyglotInvariantViolations(context, body);
+        ReportEdgePropertyAuthoringRemoved(context, body);
+    }
+
+    // AONT209 (DR-5, #120, closes #114): the schema-only edge-properties
+    // surface was removed. Its authoring vectors no longer resolve to a
+    // symbol, so detection is purely SYNTACTIC (INV-2: analyzer only). We
+    // match the residual call shapes by member name inside a Define() body:
+    //
+    //   - `.ManyToMany<T>(name, edgeConfig)` — the removed two-arg overload.
+    //     The surviving one-arg `.ManyToMany<T>(name)` must NOT fire, so we
+    //     require a second argument.
+    //   - `.WithEdge(...)`               — removed ICrossDomainLinkBuilder member.
+    //   - `.RequiresEdgeProperty<T>(...)`— removed IExtensionPointBuilder member.
+    //
+    // The {0} placeholder names the specific removed vector so the fix-it is
+    // actionable. We deliberately do NOT consult the semantic model: post-
+    // removal these names are unbound, and a syntactic match is what steers
+    // an author mid-migration toward Association<T>.
+    private static void ReportEdgePropertyAuthoringRemoved(
+        SyntaxNodeAnalysisContext context, SyntaxNode body)
+    {
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            {
+                continue;
+            }
+
+            var memberName = memberAccess.Name switch
+            {
+                IdentifierNameSyntax id => id.Identifier.Text,
+                GenericNameSyntax generic => generic.Identifier.Text,
+                _ => null,
+            };
+
+            string? removedVector = memberName switch
+            {
+                // Two-arg `ManyToMany<T>(name, edgeConfig)` only — the surviving
+                // one-arg `ManyToMany<T>(name)` (no edge config) is allowed.
+                "ManyToMany" when invocation.ArgumentList.Arguments.Count >= 2
+                    => "ManyToMany<T>(name, edgeConfig)",
+                "WithEdge" => "ICrossDomainLinkBuilder.WithEdge",
+                "RequiresEdgeProperty" => "IExtensionPointBuilder.RequiresEdgeProperty",
+                _ => null,
+            };
+
+            if (removedVector is null)
+            {
+                continue;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                OntologyDiagnostics.EdgePropertyAuthoringRemoved,
+                invocation.GetLocation(),
+                removedVector));
+        }
     }
 
     // AONT037: Polyglot identity invariant — descriptor-by-name overload

@@ -383,4 +383,20 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    // --- Edge-property removal migration (AONT209) — DR-5 (#120, closes #114) ---
+
+    public static readonly DiagnosticDescriptor EdgePropertyAuthoringRemoved = new(
+        OntologyDiagnosticIds.EdgePropertyAuthoringRemoved,
+        "Schema-only edge-property authoring has been removed (DR-5)",
+        "Edge-property authoring via '{0}' was removed (DR-5, design 2026-06-03-ontology-edge-foundation). "
+            + "Edge attributes now live on a reified Association<T> declared with builder.Association<T>(...); "
+            + "model the relationship as an Association<T> object instead of attaching properties to a link.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The schema-only edge-properties surface (IEdgeBuilder, the "
+            + "ManyToMany<T>(name, edgeConfig) overload, ICrossDomainLinkBuilder.WithEdge, and "
+            + "IExtensionPointBuilder.RequiresEdgeProperty) was removed in DR-5 (#120, closes #114). "
+            + "Use the reified Association<T> authoring surface (builder.Association<T>) to carry edge attributes.");
 }

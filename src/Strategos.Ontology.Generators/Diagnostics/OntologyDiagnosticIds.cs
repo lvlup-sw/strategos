@@ -64,4 +64,7 @@ internal static class OntologyDiagnosticIds
     public const string HandPropertyAlsoIngestedHygieneHint = "AONT206";
     public const string BranchHandConflict = "AONT207";
     public const string LanguageIdDisagreement = "AONT208";
+
+    // Edge-property removal migration (AONT209) — DR-5 (#120, closes #114)
+    public const string EdgePropertyAuthoringRemoved = "AONT209";
 }
