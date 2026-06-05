@@ -1,3 +1,4 @@
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Npgsql.Internal;
 
 namespace Strategos.Ontology.Npgsql.Tests;
@@ -68,8 +69,9 @@ public class PgVectorRelateTests
 
         // Resolves each endpoint's surrogate id uuid from its object table by the
         // BUSINESS id stored in data jsonb — parameterized, never interpolated.
-        await Assert.That(sql).Contains("FROM \"public\".\"document\"");
-        await Assert.That(sql).Contains("FROM \"public\".\"author\"");
+        // Both endpoint tables are joined (aliased) in the SELECT source.
+        await Assert.That(sql).Contains("\"public\".\"document\" s");
+        await Assert.That(sql).Contains("\"public\".\"author\" t");
         await Assert.That(sql).Contains("data->>'Id' = @srcId");
         await Assert.That(sql).Contains("data->>'Id' = @tgtId");
 
@@ -178,5 +180,108 @@ public class PgVectorRelateTests
 
         await Assert.That(sql).Contains("data->>'CompanyCode' = @tgtId");
         await Assert.That(sql).DoesNotContain("@id");
+    }
+
+    // -----------------------------------------------------------------------
+    // Provider-level endpoint resolution (graph -> table name + key property)
+    //
+    // RelateAsync/UnrelateAsync resolve each descriptor name to its physical
+    // table name AND its key property name (for the data->>'key' subqueries).
+    // The dispatch step is exposed as PgVectorObjectSetProvider's internal
+    // static ResolveRelateEndpoint helper so the full code path is pinned
+    // without a live NpgsqlDataSource.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ResolveRelateEndpoint_ResolvesTableAndKeyProperty_FromGraph()
+    {
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<RelateDomainOntology>()
+            .Build();
+
+        var (table, keyProperty) =
+            PgVectorObjectSetProvider.ResolveRelateEndpoint(graph, "Document");
+
+        await Assert.That(table).IsEqualTo("document");
+        await Assert.That(keyProperty).IsEqualTo("Id");
+    }
+
+    [Test]
+    public async Task ResolveRelateEndpoint_UnknownDescriptor_Throws()
+    {
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<RelateDomainOntology>()
+            .Build();
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveRelateEndpoint(graph, "NoSuchType"))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+    }
+
+    [Test]
+    public async Task ResolveRelateEndpoint_NullGraph_Throws()
+    {
+        // Relate is a graph-aware operation: it needs the descriptors' key
+        // property names to resolve endpoints. A graph-less provider cannot
+        // serve it, so the resolver throws rather than emitting wrong SQL.
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveRelateEndpoint(graph: null, "Document"))
+            .ThrowsException()
+            .WithExceptionType(typeof(InvalidOperationException));
+    }
+
+    [Test]
+    public async Task ResolveRelateEndpoint_FeedsRelateInsertSql_EndToEnd()
+    {
+        // The resolver output feeds the SQL builders unchanged: pin the full
+        // provider dispatch -> SQL path the production RelateAsync walks.
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<RelateDomainOntology>()
+            .Build();
+
+        var (srcTable, srcKey) = PgVectorObjectSetProvider.ResolveRelateEndpoint(graph, "Document");
+        var (tgtTable, tgtKey) = PgVectorObjectSetProvider.ResolveRelateEndpoint(graph, "Author");
+        var junction = SqlGenerator.JunctionTableName(srcTable, "WrittenBy");
+
+        var insert = SqlGenerator.BuildRelateInsertSql(
+            "public", junction, srcTable, srcKey, tgtTable, tgtKey);
+
+        await Assert.That(junction).IsEqualTo("document_written_by");
+        await Assert.That(insert).Contains("INSERT INTO \"public\".\"document_written_by\"");
+        await Assert.That(insert).Contains("\"public\".\"document\" s");
+        await Assert.That(insert).Contains("\"public\".\"author\" t");
+        await Assert.That(insert).Contains("ON CONFLICT (source_id, target_id) DO NOTHING");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Relate test fixtures — top-level so OntologyGraphBuilder.AddDomain<T>()
+// can instantiate them (requires a public parameterless constructor).
+// ---------------------------------------------------------------------------
+
+public sealed class RelateDocument
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public sealed class RelateAuthor
+{
+    public string Id { get; set; } = string.Empty;
+}
+
+public class RelateDomainOntology : DomainOntology
+{
+    public override string DomainName => "relate-domain";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<RelateDocument>("Document", obj =>
+        {
+            obj.Key(d => d.Id);
+        });
+
+        builder.Object<RelateAuthor>("Author", obj =>
+        {
+            obj.Key(a => a.Id);
+        });
     }
 }

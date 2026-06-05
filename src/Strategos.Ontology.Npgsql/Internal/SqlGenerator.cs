@@ -189,6 +189,165 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// Resolves the snake_cased junction table name for a pure link
+    /// <c>(source, link)</c> — the SAME identifier
+    /// <see cref="BuildJunctionTableDdl"/> creates, so relate/unrelate writes
+    /// and the schema DDL can never drift (DR-7).
+    /// </summary>
+    /// <param name="sourceTableName">
+    /// The source endpoint's object table name (already snake_cased).
+    /// </param>
+    /// <param name="linkName">The link's descriptor name; snake_cased here.</param>
+    internal static string JunctionTableName(string sourceTableName, string linkName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
+        return $"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}";
+    }
+
+    /// <summary>
+    /// Builds the idempotent INSERT that materializes a pure-link relation
+    /// (DR-7) into the T8 junction table. The in-memory relate-store addresses
+    /// endpoints by their projected BUSINESS id (a string), so this resolves
+    /// each endpoint row's surrogate <c>id uuid</c> via a subquery against the
+    /// endpoint object table's <c>data jsonb</c> key field, then inserts the
+    /// resolved <c>(source_id, target_id)</c> pair.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="junctionTableName">
+    /// The junction table name, as produced by
+    /// <see cref="JunctionTableName(string, string)"/>.
+    /// </param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">
+    /// The source descriptor's key property name — the <c>data jsonb</c> field
+    /// holding the source's business id (INV-8: identity by descriptor).
+    /// </param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. Idempotency rides the T8
+    /// <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>,
+    /// mirroring the in-memory store's idempotency on the <c>(src, link, tgt)</c>
+    /// triple (the junction table is scoped to one link). Endpoint business ids
+    /// are bound via the <c>@srcId</c> / <c>@tgtId</c> parameters, never
+    /// interpolated, so the statement is injection-safe.
+    /// </remarks>
+    internal static string BuildRelateInsertSql(
+        string schema,
+        string junctionTableName,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qJunction = QuoteIdentifier(junctionTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+
+        return
+            $"INSERT INTO {qSchema}.{qJunction} (source_id, target_id) "
+            + $"SELECT s.id, t.id "
+            + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
+            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId AND t.data->>'{targetKeyProperty}' = @tgtId "
+            + "ON CONFLICT (source_id, target_id) DO NOTHING";
+    }
+
+    /// <summary>
+    /// Builds the DELETE that removes a pure-link relation (DR-7) from the T8
+    /// junction table, keyed on the endpoint pair resolved from business ids via
+    /// the same <c>data->>'key'</c> subqueries as
+    /// <see cref="BuildRelateInsertSql"/>. Removing a relation that does not
+    /// exist deletes zero rows — a no-op (no throw), mirroring the in-memory
+    /// store's unrelate posture.
+    /// </summary>
+    /// <param name="schema">The Postgres schema.</param>
+    /// <param name="junctionTableName">The junction table name.</param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">The source descriptor's key property name.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. Endpoint business ids bind via
+    /// <c>@srcId</c> / <c>@tgtId</c>, never interpolated.
+    /// </remarks>
+    internal static string BuildUnrelateDeleteSql(
+        string schema,
+        string junctionTableName,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qJunction = QuoteIdentifier(junctionTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+
+        return
+            $"DELETE FROM {qSchema}.{qJunction} "
+            + $"WHERE source_id = (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{sourceKeyProperty}' = @srcId) "
+            + $"AND target_id = (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{targetKeyProperty}' = @tgtId)";
+    }
+
+    /// <summary>
+    /// Builds the eager endpoint-existence probe (DR-8): a <c>SELECT EXISTS</c>
+    /// over the endpoint object table testing whether some stored row's
+    /// <c>data jsonb</c> key field equals the parameter-bound business id. The
+    /// provider runs this for BOTH endpoints BEFORE the relate insert so a
+    /// missing endpoint surfaces a typed
+    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/> and no junction
+    /// row is written — the same eager posture the in-memory provider enforces.
+    /// </summary>
+    /// <param name="schema">The Postgres schema.</param>
+    /// <param name="tableName">The endpoint object table name.</param>
+    /// <param name="keyProperty">
+    /// The endpoint descriptor's key property name (the <c>data jsonb</c> field
+    /// holding the business id).
+    /// </param>
+    /// <param name="parameterName">
+    /// The bound parameter name carrying the business id (e.g. <c>"@srcId"</c> /
+    /// <c>"@tgtId"</c>) so the source and target probes are distinguishable.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The id is bound via
+    /// <paramref name="parameterName"/>, never interpolated.
+    /// </remarks>
+    internal static string BuildEndpointExistsSql(
+        string schema,
+        string tableName,
+        string keyProperty,
+        string parameterName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(parameterName);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qTable = QuoteIdentifier(tableName);
+
+        return
+            $"SELECT EXISTS(SELECT 1 FROM {qSchema}.{qTable} "
+            + $"WHERE data->>'{keyProperty}' = {parameterName})";
+    }
+
+    /// <summary>
     /// Builds the DDL for a reified <b>association</b>
     /// (<see cref="ObjectKind.Association"/>) lowered to an <b>object table</b>
     /// (DR-7). An association is a standalone object that links two endpoints and

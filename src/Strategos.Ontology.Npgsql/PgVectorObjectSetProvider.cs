@@ -346,36 +346,167 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-2 (Ontology Edge Foundation) implements the relate-store only for the
-    /// in-memory provider. The Npgsql relation-table materialization (with the
-    /// foreign-key constraints that mirror the in-memory provider's eager
-    /// endpoint validation) is a later increment; until then this surface
-    /// throws rather than silently dropping a write.
+    /// DR-7/DR-8 (Ontology Edge Foundation): materializes a pure-link relation
+    /// into the T8 junction table. Endpoints are addressed by their projected
+    /// BUSINESS id (the in-memory relate-store contract), so each endpoint's
+    /// surrogate <c>id uuid</c> is resolved via a <c>data->>'key'</c> subquery
+    /// against its object table. Validation is EAGER: both endpoints are probed
+    /// via <c>SELECT EXISTS</c> BEFORE the insert, so a missing endpoint surfaces
+    /// a typed <see cref="RelationEndpointNotFoundException"/> and no junction row
+    /// is written (mirroring the in-memory provider / DR-8). Idempotency rides
+    /// the T8 <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// INV-2: raw Npgsql only.
     /// </remarks>
-    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "RelateAsync is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
-            + "materialization is a later increment.");
+    public async Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        var source = ResolveRelateEndpoint(_graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
+
+        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
+        // any row, so a failed relate never leaves a dangling junction row.
+        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+
+        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        var sql = SqlGenerator.BuildRelateInsertSql(
+            _options.Schema,
+            junctionTableName,
+            source.TableName,
+            source.KeyProperty,
+            target.TableName,
+            target.KeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("srcId", srcId);
+        cmd.Parameters.AddWithValue("tgtId", tgtId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-2 (Ontology Edge Foundation): see <see cref="RelateAsync"/>. Not yet
-    /// implemented by the Npgsql provider.
+    /// DR-7 (Ontology Edge Foundation): removes a pure-link relation from the T8
+    /// junction table. Symmetric with the plain <see cref="RelateAsync"/> write
+    /// key: deletes the single junction row for the endpoint pair resolved from
+    /// business ids. Removing a relation that does not exist deletes zero rows —
+    /// a no-op (no throw). INV-2: raw Npgsql only.
     /// </remarks>
-    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "UnrelateAsync is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
-            + "materialization is a later increment.");
+    public async Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        var source = ResolveRelateEndpoint(_graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
+
+        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        var sql = SqlGenerator.BuildUnrelateDeleteSql(
+            _options.Schema,
+            junctionTableName,
+            source.TableName,
+            source.KeyProperty,
+            target.TableName,
+            target.KeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("srcId", srcId);
+        cmd.Parameters.AddWithValue("tgtId", tgtId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves a relate endpoint descriptor name to the physical
+    /// <see cref="RelateEndpoint.TableName"/> (snake_cased) and the
+    /// <see cref="RelateEndpoint.KeyProperty"/> name (the <c>data jsonb</c> field
+    /// holding the endpoint's business id) from the ontology graph. Relate is a
+    /// graph-aware operation — it needs the key property names to build the
+    /// <c>data->>'key'</c> subqueries — so a null graph or an unknown/keyless
+    /// descriptor throws <see cref="InvalidOperationException"/> rather than
+    /// emitting wrong SQL. INV-8: identity by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior and
+    /// the resulting SQL without a live <see cref="NpgsqlDataSource"/>, matching
+    /// the seam used by the read/write table-name resolvers.
+    /// </remarks>
+    internal static RelateEndpoint ResolveRelateEndpoint(OntologyGraph? graph, string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+
+        if (graph is null)
+        {
+            throw new InvalidOperationException(
+                $"RelateAsync/UnrelateAsync require an ontology graph to resolve endpoint "
+                + $"descriptor '{descriptorName}' (table name and key property). Construct "
+                + $"PgVectorObjectSetProvider with the registered OntologyGraph.");
+        }
+
+        var descriptor = graph.ObjectTypes.FirstOrDefault(o => string.Equals(o.Name, descriptorName, StringComparison.Ordinal));
+        if (descriptor is null)
+        {
+            throw new InvalidOperationException(
+                $"Relate endpoint descriptor '{descriptorName}' is not registered in the "
+                + $"ontology graph. Register it via Object<T>(...) in a DomainOntology.");
+        }
+
+        if (descriptor.KeyProperty is null)
+        {
+            throw new InvalidOperationException(
+                $"Relate endpoint descriptor '{descriptorName}' declares no key property; "
+                + $"a key is required to resolve the endpoint's stored row by business id. "
+                + $"Declare one via obj.Key(...) in the DomainOntology.");
+        }
+
+        return new RelateEndpoint(
+            TypeMapper.ToSnakeCase(descriptorName),
+            descriptor.KeyProperty.Name);
+    }
+
+    /// <summary>
+    /// Eager endpoint-existence probe (DR-8). Runs the
+    /// <see cref="SqlGenerator.BuildEndpointExistsSql"/> <c>SELECT EXISTS</c> and
+    /// throws <see cref="RelationEndpointNotFoundException"/> when no stored row
+    /// under <paramref name="descriptorName"/> carries the business id
+    /// <paramref name="id"/>. Surfaces the SAME typed error the in-memory
+    /// provider raises, so the caller error is identical across backends.
+    /// </summary>
+    private async Task ValidateEndpointExistsAsync(
+        string descriptorName,
+        RelateEndpoint endpoint,
+        string id,
+        string parameterName,
+        CancellationToken ct)
+    {
+        var sql = SqlGenerator.BuildEndpointExistsSql(
+            _options.Schema, endpoint.TableName, endpoint.KeyProperty, parameterName);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(parameterName.TrimStart('@'), id);
+        var exists = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as bool?;
+
+        if (exists != true)
+        {
+            throw new RelationEndpointNotFoundException(descriptorName, id);
+        }
+    }
 
     /// <inheritdoc />
     /// <remarks>
     /// DR-4 (Ontology Edge Foundation): attributed unrelate (removing the
     /// relation row and its orphaned association object) ships on
-    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization is the same
-    /// later increment as <see cref="RelateAsync"/>; until then this surface
-    /// throws rather than silently dropping a write.
+    /// <c>InMemoryObjectSetProvider</c>. Unlike the plain pure-link
+    /// <see cref="UnrelateAsync(string, string, string, string, string, CancellationToken)"/>
+    /// (implemented over the T8 junction tables, DR-7), the attributed Npgsql
+    /// materialization over association-object tables is a later increment;
+    /// until then this surface throws rather than silently dropping a write.
     /// </remarks>
     public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default) =>
         throw new NotSupportedException(
@@ -387,10 +518,12 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <remarks>
     /// DR-4 (Ontology Edge Foundation): attributed relate (storing a reified
     /// association object alongside the relation row) ships on
-    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization — an
-    /// association object table whose endpoint columns are foreign keys —
-    /// is the same later increment as <see cref="RelateAsync"/>; until then this
-    /// surface throws rather than silently dropping a write.
+    /// <c>InMemoryObjectSetProvider</c>. Unlike the plain pure-link
+    /// <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>
+    /// (implemented over the T8 junction tables, DR-7/DR-8), the attributed
+    /// Npgsql materialization — an association-object table whose endpoint
+    /// columns are foreign keys — is a later increment; until then this surface
+    /// throws rather than silently dropping a write.
     /// </remarks>
     public Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)
         where TRel : class =>
@@ -552,4 +685,16 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             cmd.Parameters.AddWithValue(p.Name.TrimStart('@'), p.Value);
         }
     }
+
+    /// <summary>
+    /// A resolved relate endpoint: the physical snake_cased
+    /// <see cref="TableName"/> of the endpoint's object table and the
+    /// <see cref="KeyProperty"/> name (the <c>data jsonb</c> field holding the
+    /// endpoint's business id), produced by
+    /// <see cref="ResolveRelateEndpoint(OntologyGraph?, string)"/> and fed
+    /// unchanged into the relate/unrelate SQL builders.
+    /// </summary>
+    /// <param name="TableName">The endpoint object table name (snake_cased).</param>
+    /// <param name="KeyProperty">The descriptor's key property name.</param>
+    internal sealed record RelateEndpoint(string TableName, string KeyProperty);
 }
