@@ -13,6 +13,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+    <!-- The Npgsql traversal SQL-shape tests (t10, DR-7/DR-10) construct
+         adversarial multi-registration / SymbolKey-only ontology graphs via the
+         internal OntologyGraph constructor — the SAME fixtures the in-memory
+         traversal-identity tests use — to prove the Npgsql hop-target resolver
+         shares the graph-not-typeof posture (INV-8). -->
+    <InternalsVisibleTo Include="$(AssemblyName).Npgsql.Tests" />
   </ItemGroup>
 
   <ItemGroup>
