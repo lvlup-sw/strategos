@@ -25,7 +25,34 @@ signature changes, the CI gate fails closed with the message:
 Follow it: move the new/changed lines into `PublicAPI.Unshipped.txt` and record
 the change here so the downstream exarchos mirror can re-baseline deliberately.
 
-_(none this release)_
+**Ontology edge-properties surface removed (DR-5, #120, closes #114).** The
+schema-only edge-properties footgun — attaching ad-hoc properties to a *link*
+rather than modeling the relationship as a first-class object — has been removed
+outright. The following public `Strategos.Ontology` members are gone:
+
+- `IEdgeBuilder` and its internal `EdgeBuilder` implementation.
+- The `IObjectTypeBuilder<T>.ManyToMany<TLinked>(string, Action<IEdgeBuilder>)`
+  edge-config overload (the plain `ManyToMany<TLinked>(string)` is retained).
+- `ICrossDomainLinkBuilder.WithEdge(Action<IEdgeBuilder>)`.
+- `IExtensionPointBuilder.RequiresEdgeProperty<T>(string)` and the
+  `ExternalLinkExtensionPoint.RequiredEdgeProperties` collection (and the
+  backing `RequiredEdgeProperty` record).
+- `LinkDescriptor.EdgeProperties`, `CrossDomainLinkDescriptor.EdgeProperties`,
+  and the `ResolvedCrossDomainLink.EdgeProperties` constructor parameter.
+
+**Migration:** model edge attributes on a reified `Association<T>` declared with
+`builder.Association<T>(...)` (DR-4) — an association is a standalone
+object-with-two-endpoints that carries its own key and its own edge-attribute
+properties. A new analyzer diagnostic **`AONT209`** (error) fires on any residual
+edge-property authoring attempt and points to `Association<T>`.
+
+These types are not part of the `src/Strategos` builder PublicAPI baseline (which
+is scoped to the 7 `Strategos.Builders` interfaces), so no `PublicAPI.*.txt`
+re-baseline is required. The ontology graph version hash changed: the `|EDGE|`
+framing was removed from `OntologyGraphHasher`, so cached graph versions will
+differ. The two now-unreachable diagnostics that validated the deleted surface,
+`AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
+remain registered but dormant (INV-5: ids are never reused).
 
 ## [2.8.0] - 2026-05-25
 

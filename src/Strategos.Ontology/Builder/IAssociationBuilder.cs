@@ -45,8 +45,10 @@ public interface IAssociationBuilder<TRel>
 
     /// <summary>
     /// Declares an edge-attribute property on the association by name and
-    /// CLR type, for callers that prefer the by-name form
-    /// (parity with <see cref="IEdgeBuilder.Property{TProp}"/>).
+    /// CLR type, for callers that prefer the by-name form. This reified
+    /// <c>Association&lt;T&gt;</c> surface (DR-4/DR-5) is the supported home
+    /// for edge attributes — the schema-only edge-property surface was
+    /// removed in DR-5 (#120, closes #114).
     /// </summary>
     IAssociationBuilder<TRel> Property<TProp>(string name);
 }

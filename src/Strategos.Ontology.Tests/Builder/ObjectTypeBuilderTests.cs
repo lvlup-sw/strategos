@@ -85,22 +85,10 @@ public class ObjectTypeBuilderTests
         await Assert.That(descriptor.Links[0].Cardinality).IsEqualTo(LinkCardinality.ManyToMany);
     }
 
-    [Test]
-    public async Task ObjectTypeBuilder_ManyToManyWithEdge_RecordsEdgeProperties()
-    {
-        var builder = new ObjectTypeBuilder<TestPosition>("Trading");
-
-        builder.ManyToMany<TestTradeOrder>("RelatedOrders", edge =>
-        {
-            edge.Property<double>("Relevance");
-            edge.Property<string>("Rationale");
-        });
-        var descriptor = builder.Build();
-
-        await Assert.That(descriptor.Links[0].EdgeProperties.Count).IsEqualTo(2);
-        await Assert.That(descriptor.Links[0].EdgeProperties[0].Name).IsEqualTo("Relevance");
-        await Assert.That(descriptor.Links[0].EdgeProperties[1].Name).IsEqualTo("Rationale");
-    }
+    // ObjectTypeBuilder_ManyToManyWithEdge_RecordsEdgeProperties was removed in
+    // DR-5 (#120, closes #114): the two-arg ManyToMany<T>(name, edgeConfig)
+    // overload and LinkDescriptor.EdgeProperties it exercised no longer exist.
+    // Edge attributes now live on a reified Association<T>.
 
     [Test]
     public async Task ObjectTypeBuilder_Action_AddsActionDescriptor()

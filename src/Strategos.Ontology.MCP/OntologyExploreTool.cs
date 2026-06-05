@@ -110,7 +110,6 @@ public sealed class OntologyExploreTool
             ["name"] = l.Name,
             ["targetTypeName"] = l.TargetTypeName,
             ["cardinality"] = l.Cardinality.ToString(),
-            ["edgePropertyCount"] = l.EdgeProperties.Count,
             ["description"] = l.Description,
         }).ToList();
 
