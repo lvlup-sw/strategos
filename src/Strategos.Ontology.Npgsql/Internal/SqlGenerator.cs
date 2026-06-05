@@ -483,4 +483,112 @@ internal static class SqlGenerator
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Builds the INSERT that materializes an ATTRIBUTED relation (DR-4/DR-8,
+    /// t11) into a T8 association-OBJECT table. Unlike the pure-link junction
+    /// insert (<see cref="BuildRelateInsertSql"/>), an association row carries
+    /// its OWN identity and edge attributes, so this writes a fresh
+    /// <c>id uuid</c>, the serialized association payload as <c>data jsonb</c>,
+    /// and one <c>{role}_id</c> endpoint FK per endpoint — each resolved from
+    /// the endpoint's BUSINESS id via the same <c>data->>'key'</c> subquery
+    /// against its object table that the junction relate uses (the in-memory
+    /// store addresses endpoints by their projected business id).
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="associationTableName">
+    /// The association-object table name, as produced for the association
+    /// descriptor by <see cref="BuildAssociationObjectTableDdl"/> /
+    /// <see cref="TypeMapper.ToSnakeCase(string)"/>.
+    /// </param>
+    /// <param name="sourceColumn">
+    /// The <c>{role}_id</c> FK column for the SOURCE endpoint (the
+    /// role-disambiguated column from the T8 association-object DDL).
+    /// </param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">
+    /// The source descriptor's key property name — the <c>data jsonb</c> field
+    /// holding the source's business id (INV-8: identity by descriptor).
+    /// </param>
+    /// <param name="targetColumn">The <c>{role}_id</c> FK column for the TARGET endpoint.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The association id and attribute payload
+    /// bind via <c>@id</c> / <c>@data</c>; the endpoint business ids bind via
+    /// <c>@srcId</c> / <c>@tgtId</c> — never interpolated, so the statement is
+    /// injection-safe. The endpoint FK columns are role-disambiguated so a
+    /// self-association (both endpoints the same object table) still routes each
+    /// surrogate id to its own column.
+    /// </remarks>
+    internal static string BuildAssociationRelateInsertSql(
+        string schema,
+        string associationTableName,
+        string sourceColumn,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetColumn,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+
+        // The {role}_id endpoint FK columns are emitted UNQUOTED to stay
+        // identifier-identical with the T8 association-object DDL
+        // (BuildAssociationObjectTableDdl), which declares them unquoted — the
+        // role is already snake_cased to a safe identifier. This mirrors the
+        // junction relate's unquoted system columns (source_id/target_id).
+        return
+            $"INSERT INTO {qSchema}.{qAssoc} (id, data, {sourceColumn}, {targetColumn}) "
+            + $"SELECT @id, @data::jsonb, s.id, t.id "
+            + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
+            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId AND t.data->>'{targetKeyProperty}' = @tgtId";
+    }
+
+    /// <summary>
+    /// Builds the DELETE that removes an ATTRIBUTED relation (DR-4, t11) from a
+    /// T8 association-OBJECT table, keyed on the association's BUSINESS id (its
+    /// <c>data jsonb</c> key field) — the symmetric counterpart to
+    /// <see cref="BuildAssociationRelateInsertSql"/>. Removing an association
+    /// that does not exist deletes zero rows — a no-op (no throw), mirroring the
+    /// in-memory store's attributed-unrelate posture.
+    /// </summary>
+    /// <param name="schema">The Postgres schema.</param>
+    /// <param name="associationTableName">The association-object table name.</param>
+    /// <param name="associationKeyProperty">
+    /// The association descriptor's key property name — the <c>data jsonb</c>
+    /// field holding the association's business id (INV-8).
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The association business id binds via
+    /// <c>@associationId</c>, never interpolated.
+    /// </remarks>
+    internal static string BuildAssociationUnrelateDeleteSql(
+        string schema,
+        string associationTableName,
+        string associationKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+
+        return
+            $"DELETE FROM {qSchema}.{qAssoc} "
+            + $"WHERE data->>'{associationKeyProperty}' = @associationId";
+    }
 }
