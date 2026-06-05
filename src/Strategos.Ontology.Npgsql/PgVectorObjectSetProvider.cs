@@ -697,4 +697,182 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <param name="TableName">The endpoint object table name (snake_cased).</param>
     /// <param name="KeyProperty">The descriptor's key property name.</param>
     internal sealed record RelateEndpoint(string TableName, string KeyProperty);
+
+    /// <summary>
+    /// Resolves an instance-anchored <c>TraverseLink</c> hop (DR-7/DR-10) from
+    /// the ontology graph into the physical join operands: the SOURCE endpoint
+    /// table + its key property, the T8 JUNCTION table for <c>(source, link)</c>,
+    /// and the TARGET endpoint table + its resolved descriptor name. The output
+    /// feeds <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/> unchanged.
+    /// </summary>
+    /// <param name="graph">
+    /// The ontology graph. Traversal is a graph-aware operation — it needs the
+    /// link's declared target and the descriptors' key properties — so a null
+    /// graph throws <see cref="InvalidOperationException"/> rather than emitting
+    /// wrong SQL.
+    /// </param>
+    /// <param name="sourceDescriptorName">
+    /// The IMMEDIATE source descriptor name the traversal is anchored at.
+    /// </param>
+    /// <param name="linkName">The traversed link's descriptor name.</param>
+    /// <param name="targetDescriptorOverride">
+    /// An OPTIONAL explicit target descriptor name (the caller's
+    /// <c>.TraverseLink(link, descriptorName)</c> selection). When supplied it is
+    /// AUTHORITATIVE — it names the exact target partition, so no CLR Type
+    /// participates in resolution. Mirrors
+    /// <see cref="ObjectSets.TraverseLinkExpression.TargetDescriptorName"/>.
+    /// </param>
+    /// <remarks>
+    /// DR-10 keystone (INV-8): the hop's TARGET descriptor is resolved from the
+    /// GRAPH via the source link, NEVER from <c>typeof(TLinked)</c>. Precedence
+    /// mirrors T2's
+    /// <c>InMemoryExpressionEvaluator.ResolveHopTargetDescriptor</c>:
+    /// <list type="number">
+    /// <item>an explicit <paramref name="targetDescriptorOverride"/>;</item>
+    /// <item>otherwise the source link's <c>TargetTypeName</c> (the canonical
+    /// hand-authored target name);</item>
+    /// <item>falling back to the descriptor named by the link's
+    /// <c>TargetSymbolKey</c> (the polyglot, SymbolKey-only target).</item>
+    /// </list>
+    /// Adopting T2's posture, an UNRESOLVED target — no override, no
+    /// graph-resolvable link target — is REFUSED with a typed
+    /// <see cref="InvalidOperationException"/> rather than mis-routed to a
+    /// first-CLR-match partition. INV-8: identity by descriptor name, never
+    /// <c>typeof</c>.
+    /// </remarks>
+    internal static TraversalHop ResolveTraversalHop(
+        OntologyGraph? graph,
+        string sourceDescriptorName,
+        string linkName,
+        string? targetDescriptorOverride)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDescriptorName);
+        ArgumentNullException.ThrowIfNull(linkName);
+
+        if (graph is null)
+        {
+            throw new InvalidOperationException(
+                $"Instance-anchored TraverseLink requires an ontology graph to resolve the "
+                + $"hop from source '{sourceDescriptorName}' along link '{linkName}' (source/target "
+                + $"tables and key properties). Construct PgVectorObjectSetProvider with the "
+                + $"registered OntologyGraph.");
+        }
+
+        var source = ResolveRelateEndpoint(graph, sourceDescriptorName);
+
+        var sourceDescriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, sourceDescriptorName, StringComparison.Ordinal))!;
+        // ResolveRelateEndpoint already proved the source descriptor exists; the
+        // null-forgiving above is safe.
+
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (link is null)
+        {
+            var available = string.Join(", ", sourceDescriptor.Links.Select(l => l.Name));
+            throw new InvalidOperationException(
+                $"Link '{linkName}' is not declared on source descriptor '{sourceDescriptorName}'. "
+                + $"Available links: {available}. Declare it via HasOne/HasMany/ManyToMany in the "
+                + $"DomainOntology.");
+        }
+
+        var targetDescriptorName = ResolveHopTargetDescriptorName(
+            graph, link, targetDescriptorOverride);
+        var target = ResolveRelateEndpoint(graph, targetDescriptorName);
+
+        var junction = SqlGenerator.JunctionTableName(source.TableName, linkName);
+
+        return new TraversalHop(
+            source.TableName,
+            source.KeyProperty,
+            junction,
+            target.TableName,
+            targetDescriptorName);
+    }
+
+    /// <summary>
+    /// Resolves the hop's TARGET descriptor NAME from the ontology graph (DR-10),
+    /// mirroring T2's
+    /// <c>InMemoryExpressionEvaluator.ResolveHopTargetDescriptor</c> precedence:
+    /// explicit override → link <c>TargetTypeName</c> → link
+    /// <c>TargetSymbolKey</c> reverse index. Never consults
+    /// <c>typeof(TLinked)</c> (INV-8). Refuses with a typed error when no
+    /// graph-registered descriptor backs the resolved name — adopting T2's
+    /// posture of failing rather than mis-routing under ambiguity.
+    /// </summary>
+    private static string ResolveHopTargetDescriptorName(
+        OntologyGraph graph,
+        Descriptors.LinkDescriptor link,
+        string? targetDescriptorOverride)
+    {
+        // Seam 1: an explicit override is authoritative.
+        if (targetDescriptorOverride is { } explicitName)
+        {
+            if (!graph.ObjectTypes.Any(o => string.Equals(o.Name, explicitName, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(
+                    $"Explicit traversal target descriptor '{explicitName}' is not registered in "
+                    + $"the ontology graph. Register it via Object<T>(...) in a DomainOntology.");
+            }
+
+            return explicitName;
+        }
+
+        // Seam 2: the link's canonical hand-authored target name.
+        if (!string.IsNullOrEmpty(link.TargetTypeName)
+            && graph.ObjectTypes.Any(o => string.Equals(o.Name, link.TargetTypeName, StringComparison.Ordinal)))
+        {
+            return link.TargetTypeName;
+        }
+
+        // Seam 3: the polyglot SymbolKey-only target, resolved via the graph's
+        // SymbolKey -> descriptor-name reverse mapping (no CLR Type, INV-8).
+        if (link.TargetSymbolKey is { } symbolKey)
+        {
+            var bySymbol = graph.ObjectTypes.FirstOrDefault(
+                o => string.Equals(o.SymbolKey, symbolKey, StringComparison.Ordinal));
+            if (bySymbol is not null)
+            {
+                return bySymbol.Name;
+            }
+        }
+
+        // T2 posture: refuse rather than mis-route to a first-CLR-match partition.
+        throw new InvalidOperationException(
+            $"Traversal link '{link.Name}' has no graph-resolvable target descriptor "
+            + $"(TargetTypeName '{link.TargetTypeName}', TargetSymbolKey '{link.TargetSymbolKey}'). "
+            + $"Supply an explicit target descriptor name to disambiguate, or register the link's "
+            + $"declared target. The hop target is NEVER inferred from the CLR type (INV-8).");
+    }
+
+    /// <summary>
+    /// A resolved instance-anchored traversal hop (DR-7/DR-10): the physical join
+    /// operands produced by
+    /// <see cref="ResolveTraversalHop(OntologyGraph?, string, string, string?)"/>
+    /// and fed unchanged into
+    /// <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/>. New sealed,
+    /// <c>init</c>-only positional record (INV-6/INV-7).
+    /// </summary>
+    /// <param name="SourceTable">The source endpoint object table (snake_cased).</param>
+    /// <param name="SourceKeyProperty">
+    /// The source descriptor's key property — the <c>data jsonb</c> field holding
+    /// the anchor instance's business id.
+    /// </param>
+    /// <param name="JunctionTable">
+    /// The T8 junction table for <c>(source, link)</c>.
+    /// </param>
+    /// <param name="TargetTable">
+    /// The TARGET endpoint object table (snake_cased) — derived from the
+    /// GRAPH-resolved <see cref="TargetDescriptorName"/>, never
+    /// <c>typeof(TLinked)</c> (INV-8).
+    /// </param>
+    /// <param name="TargetDescriptorName">
+    /// The graph-resolved hop-target descriptor name (DR-10).
+    /// </param>
+    internal sealed record TraversalHop(
+        string SourceTable,
+        string SourceKeyProperty,
+        string JunctionTable,
+        string TargetTable,
+        string TargetDescriptorName);
 }

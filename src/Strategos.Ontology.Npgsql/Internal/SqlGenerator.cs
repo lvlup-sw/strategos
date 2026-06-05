@@ -348,6 +348,74 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// Builds the instance-anchored <c>TraverseLink</c> lowering (DR-7/DR-10): a
+    /// <c>vertex ⋈ junction ⋈ vertex</c> SQL join that, given a source instance
+    /// addressed by its BUSINESS id, joins its endpoint object table → the T8
+    /// junction table → the target endpoint object table on the surrogate
+    /// <c>id uuid</c> columns and projects the target rows.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="sourceTableName">
+    /// The source endpoint's object table name (snake_cased), aliased <c>s</c>.
+    /// </param>
+    /// <param name="sourceKeyProperty">
+    /// The source descriptor's key property name — the <c>data jsonb</c> field
+    /// holding the source's business id (INV-8: identity by descriptor). The
+    /// traversal is ANCHORED to the single source whose stored row carries the
+    /// <c>@srcId</c> business id.
+    /// </param>
+    /// <param name="junctionTableName">
+    /// The junction table name, as produced by
+    /// <see cref="JunctionTableName(string, string)"/> — the SAME physical table
+    /// the relate/unrelate writes and the T8 DDL target, aliased <c>j</c>.
+    /// </param>
+    /// <param name="targetTableName">
+    /// The TARGET endpoint's object table name (snake_cased), aliased <c>t</c>.
+    /// DR-10 (INV-8): the target table is the GRAPH-resolved hop-target
+    /// descriptor's table (see
+    /// <c>PgVectorObjectSetProvider.ResolveTraversalHop</c>), NEVER
+    /// <c>typeof(TLinked)</c>.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only — no Marten/Wolverine. The source business
+    /// id binds via the <c>@srcId</c> parameter, never interpolated, so the
+    /// statement is injection-safe.
+    /// <para>
+    /// #114 / DR-8 guard at the SQL level: the junction is on the INNER join path,
+    /// so a source with ZERO junction rows yields ZERO result rows — instance-
+    /// anchored traversal never falls back to an all-targets scan (there is no
+    /// LEFT/OUTER join and the target table is never the FROM root). This mirrors
+    /// the in-memory evaluator's posture: an instance with no relation rows yields
+    /// an empty set, never every object of the link's target type.
+    /// </para>
+    /// </remarks>
+    internal static string BuildInstanceAnchoredTraversalSql(
+        string schema,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string junctionTableName,
+        string targetTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qJunction = QuoteIdentifier(junctionTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+
+        return
+            $"SELECT t.id, t.data "
+            + $"FROM {qSchema}.{qSource} s "
+            + $"JOIN {qSchema}.{qJunction} j ON j.source_id = s.id "
+            + $"JOIN {qSchema}.{qTarget} t ON t.id = j.target_id "
+            + $"WHERE s.data->>'{sourceKeyProperty}' = @srcId";
+    }
+
+    /// <summary>
     /// Builds the DDL for a reified <b>association</b>
     /// (<see cref="ObjectKind.Association"/>) lowered to an <b>object table</b>
     /// (DR-7). An association is a standalone object that links two endpoints and
