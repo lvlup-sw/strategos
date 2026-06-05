@@ -74,4 +74,15 @@ internal static class OntologyDiagnosticIds
     public const string AssociationEndpointCardinalityInvalid = "AONT210";
     // Edge-property removal migration (AONT209) — DR-5 (#120, closes #114)
     public const string EdgePropertyAuthoringRemoved = "AONT209";
+
+    // Ambiguous-traversal-without-override guard (AONT211) — DR-10/DR-6
+    // (#128, #121). Compile-time half of the DR-10 identity-flow fix
+    // (INV-5: earliest-tier). Fires when TraverseLink<TLinked>("role")
+    // targets an ambiguously multi-registered descriptor (same CLR type
+    // registered under 2+ names, mirroring AONT041 multi-registration
+    // detection) AND no descriptorName override is supplied to disambiguate.
+    // An override → no diagnostic; a single-registered target → no diagnostic.
+    // INV-2: analyzer-only (no runtime counterpart in this task). Ids are
+    // monotonic and never reused (INV-5) — AONT209/AONT210 are untouched.
+    public const string AmbiguousTraversalWithoutDescriptor = "AONT211";
 }
