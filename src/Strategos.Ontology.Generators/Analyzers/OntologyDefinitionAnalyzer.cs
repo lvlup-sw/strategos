@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -53,13 +54,121 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.ReadOnlyConflictsWithMutation,
             OntologyDiagnostics.PolyglotInvariantViolated,
             OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
-            OntologyDiagnostics.EdgePropertyAuthoringRemoved);
+            OntologyDiagnostics.EdgePropertyAuthoringRemoved,
+            OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor);
 
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.MethodDeclaration);
+
+        // AONT211 needs a COMPILATION-WIDE view: the Object<T>(...) registrations
+        // that establish multi-registration live in Define() bodies, while the
+        // TraverseLink<TLinked>("role") call sites it guards live in arbitrary
+        // query code. A per-method action can't correlate the two, so we collect
+        // both across the whole compilation and decide at compilation end.
+        context.RegisterCompilationStartAction(RegisterAmbiguousTraversalGuard);
+    }
+
+    // AONT211 (DR-10/DR-6, #128/#121): the compile-time guard for the DR-10
+    // identity-flow fix (INV-5: earliest-tier). A one-arg
+    // TraverseLink<TLinked>("role") hop is ambiguous when TLinked is registered
+    // under two or more descriptor names (multi-registration, mirroring AONT041)
+    // and no descriptorName override disambiguates it. We accumulate per-CLR-type
+    // registration-name sets and the candidate traversal sites concurrently, then
+    // resolve which sites fire once the whole compilation has been walked. INV-2:
+    // analyzer-only — there is no runtime counterpart in this task.
+    private static void RegisterAmbiguousTraversalGuard(CompilationStartAnalysisContext startContext)
+    {
+        // CLR type name -> distinct descriptor names registered for it. A type
+        // with two or more distinct names is "ambiguously multi-registered".
+        var registrationNamesByType = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+
+        // Candidate one-arg TraverseLink sites: (target CLR type name, link name,
+        // location). The override (two-arg) form is filtered out at collection time.
+        var candidateTraversals = new ConcurrentBag<(string TargetType, string LinkName, Location Location)>();
+
+        startContext.RegisterSyntaxNodeAction(
+            ctx => CollectRegistrationsAndTraversals(ctx, registrationNamesByType, candidateTraversals),
+            SyntaxKind.InvocationExpression);
+
+        startContext.RegisterCompilationEndAction(endContext =>
+        {
+            foreach (var (targetType, linkName, location) in candidateTraversals)
+            {
+                if (registrationNamesByType.TryGetValue(targetType, out var names) && names.Count >= 2)
+                {
+                    endContext.ReportDiagnostic(Diagnostic.Create(
+                        OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor,
+                        location,
+                        targetType,
+                        linkName));
+                }
+            }
+        });
+    }
+
+    // Per-invocation collector for AONT211. Two shapes are recognised:
+    //   - builder.Object<T>(...) / builder.Object<T>(name, ...) registrations —
+    //     record T's CLR type name against its descriptor name (explicit string
+    //     literal, else typeof(T).Name as the default-name fallback).
+    //   - set.TraverseLink<TLinked>("role") (one arg) — record a candidate site.
+    //     The two-arg override TraverseLink<TLinked>("role", "descriptor") is
+    //     skipped: the override already disambiguates the hop.
+    private static void CollectRegistrationsAndTraversals(
+        SyntaxNodeAnalysisContext context,
+        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> registrationNamesByType,
+        ConcurrentBag<(string TargetType, string LinkName, Location Location)> candidateTraversals)
+    {
+        if (context.Node is not InvocationExpressionSyntax invocation ||
+            invocation.Expression is not MemberAccessExpressionSyntax memberAccess ||
+            memberAccess.Name is not GenericNameSyntax genericName ||
+            genericName.TypeArgumentList.Arguments.Count != 1)
+        {
+            return;
+        }
+
+        var symbol = context.SemanticModel
+            .GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
+        if (symbol is null || symbol.TypeArguments.Length != 1)
+        {
+            return;
+        }
+
+        var typeArgName = symbol.TypeArguments[0].Name;
+        var args = invocation.ArgumentList.Arguments;
+
+        switch (genericName.Identifier.Text)
+        {
+            // builder.Object<T>(...) — must be an IOntologyBuilder receiver so a
+            // stray .Object<T>(...) on an unrelated type doesn't poison the
+            // multi-registration set.
+            case "Object"
+                when IsOntologyBuilderType(symbol.ContainingType?.Name ?? string.Empty):
+            {
+                // The descriptor name is the leading string-literal argument when
+                // present (the Object<T>(name, configure) overload), else the
+                // typeof(T).Name fallback the parameterless overload uses.
+                var descriptorName =
+                    (args.Count > 0 ? ExtractStringArg(invocation, 0) : null) ?? typeArgName;
+
+                var names = registrationNamesByType.GetOrAdd(
+                    typeArgName, _ => new ConcurrentDictionary<string, byte>());
+                names.TryAdd(descriptorName, 0);
+                break;
+            }
+
+            // set.TraverseLink<TLinked>("role") — one-arg form only. The two-arg
+            // override carries an explicit descriptorName and is exempt.
+            case "TraverseLink"
+                when symbol.Name == "TraverseLink" && args.Count == 1:
+            {
+                var linkName = ExtractStringArg(invocation, 0) ?? "<link>";
+                candidateTraversals.Add((typeArgName, linkName, invocation.GetLocation()));
+                break;
+            }
+        }
     }
 
     private static void AnalyzeMethod(SyntaxNodeAnalysisContext context)
