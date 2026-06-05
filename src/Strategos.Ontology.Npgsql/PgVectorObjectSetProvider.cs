@@ -423,6 +423,27 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <summary>
+    /// Resolves a descriptor by NAME from the ontology graph (INV-8: identity by
+    /// descriptor name, never <c>typeof</c>), throwing a typed
+    /// <see cref="InvalidOperationException"/> when it is not registered. Shared
+    /// by the relate-endpoint and traversal-hop resolvers so a descriptor name
+    /// denotes the same descriptor in both, with a single lookup and message.
+    /// </summary>
+    private static Descriptors.ObjectTypeDescriptor RequireDescriptor(OntologyGraph graph, string descriptorName)
+    {
+        var descriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, descriptorName, StringComparison.Ordinal));
+        if (descriptor is null)
+        {
+            throw new InvalidOperationException(
+                $"Descriptor '{descriptorName}' is not registered in the ontology graph. "
+                + $"Register it via Object<T>(...) in a DomainOntology.");
+        }
+
+        return descriptor;
+    }
+
+    /// <summary>
     /// Resolves a relate endpoint descriptor name to the physical
     /// <see cref="RelateEndpoint.TableName"/> (snake_cased) and the
     /// <see cref="RelateEndpoint.KeyProperty"/> name (the <c>data jsonb</c> field
@@ -449,13 +470,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 + $"PgVectorObjectSetProvider with the registered OntologyGraph.");
         }
 
-        var descriptor = graph.ObjectTypes.FirstOrDefault(o => string.Equals(o.Name, descriptorName, StringComparison.Ordinal));
-        if (descriptor is null)
-        {
-            throw new InvalidOperationException(
-                $"Relate endpoint descriptor '{descriptorName}' is not registered in the "
-                + $"ontology graph. Register it via Object<T>(...) in a DomainOntology.");
-        }
+        var descriptor = RequireDescriptor(graph, descriptorName);
 
         if (descriptor.KeyProperty is null)
         {
@@ -758,12 +773,12 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 + $"registered OntologyGraph.");
         }
 
+        // Reuse the relate-path endpoint resolution for the SOURCE (table + key
+        // property), then resolve the source descriptor once more to read its
+        // links. Both share the same graph-by-name lookup, so they agree on which
+        // descriptor a name denotes (INV-8).
         var source = ResolveRelateEndpoint(graph, sourceDescriptorName);
-
-        var sourceDescriptor = graph.ObjectTypes.FirstOrDefault(
-            o => string.Equals(o.Name, sourceDescriptorName, StringComparison.Ordinal))!;
-        // ResolveRelateEndpoint already proved the source descriptor exists; the
-        // null-forgiving above is safe.
+        var sourceDescriptor = RequireDescriptor(graph, sourceDescriptorName);
 
         var link = sourceDescriptor.Links.FirstOrDefault(
             l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
