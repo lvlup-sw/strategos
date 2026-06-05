@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 using Strategos.Ontology.Generators.Diagnostics;
 
 namespace Strategos.Ontology.Generators.Tests.Analyzers;
@@ -20,6 +22,20 @@ namespace Strategos.Ontology.Generators.Tests.Analyzers;
 /// </remarks>
 public class AONT210CardinalityAnalyzerTests
 {
+    [Test]
+    public async Task Diagnostic_AONT210_IsRegistered()
+    {
+        // INV-5: the id is stable and documented in the diagnostic vocabulary;
+        // this pins the id/severity so a later edit can't silently renumber it.
+        await Assert.That(OntologyDiagnosticIds.AssociationEndpointCardinalityInvalid)
+            .IsEqualTo("AONT210");
+
+        var descriptor = OntologyDiagnostics.AssociationEndpointCardinalityInvalid;
+        await Assert.That(descriptor.Id).IsEqualTo("AONT210");
+        await Assert.That(descriptor.DefaultSeverity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(descriptor.IsEnabledByDefault).IsTrue();
+    }
+
     [Test]
     public async Task Analyze_AssociationWithInvalidEndpointCardinality_FiresAONT210()
     {
