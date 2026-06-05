@@ -62,11 +62,30 @@ public sealed class ObjectSet<T> where T : class
     }
 
     /// <summary>
-    /// Traverses a named link to produce an ObjectSet of the linked type.
+    /// Traverses a named link to produce an ObjectSet of the linked type. No
+    /// explicit target descriptor name is supplied, so
+    /// <see cref="TraverseLinkExpression.TargetDescriptorName"/> is left <c>null</c>
+    /// and traversal behavior is unchanged.
     /// </summary>
     public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName) where TLinked : class
     {
-        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked));
+        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), targetDescriptorName: null);
+        return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
+    }
+
+    /// <summary>
+    /// DR-10: traverses a named link to produce an ObjectSet of the linked type,
+    /// carrying an EXPLICIT ontology descriptor name for the traversal target. This
+    /// mirrors the <see cref="RootExpression"/>(<c>Type objectType, string objectTypeName</c>)
+    /// precedent — where the root carries an explicit descriptor name alongside the
+    /// CLR type — so an instance-anchored traversal can later be dispatched against a
+    /// specific registration. This overload only PLUMBS the name onto
+    /// <see cref="TraverseLinkExpression.TargetDescriptorName"/>; it does not change
+    /// how evaluators resolve identity (that is a later DR-10 task).
+    /// </summary>
+    public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName, string descriptorName) where TLinked : class
+    {
+        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), descriptorName);
         return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
     }
 

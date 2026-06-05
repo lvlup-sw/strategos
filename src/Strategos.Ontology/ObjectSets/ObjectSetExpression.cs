@@ -80,15 +80,42 @@ public sealed class FilterExpression : ObjectSetExpression
 /// </summary>
 public sealed class TraverseLinkExpression : ObjectSetExpression
 {
-    public TraverseLinkExpression(ObjectSetExpression source, string linkName, Type linkedType)
+    /// <param name="targetDescriptorName">
+    /// DR-10: an OPTIONAL explicit ontology descriptor name for the traversal
+    /// target, plumbed through the expression tree so a later identity-resolution
+    /// task can dispatch against a specific registration. Mirrors the
+    /// <see cref="RootExpression"/>(<c>Type objectType, string objectTypeName</c>)
+    /// precedent, where the root carries an explicit descriptor name alongside the
+    /// CLR type. When <c>null</c> (the single-arg traversal path), no override is
+    /// supplied and behavior is unchanged — evaluators fall back to
+    /// <c>ObjectType.Name</c> exactly as before. This node only CARRIES the name;
+    /// it does not change how identity is resolved (that is a later DR-10 task).
+    /// </param>
+    public TraverseLinkExpression(
+        ObjectSetExpression source,
+        string linkName,
+        Type linkedType,
+        string? targetDescriptorName = null)
         : base(linkedType)
     {
         Source = source;
         LinkName = linkName;
+        TargetDescriptorName = targetDescriptorName;
     }
 
     public ObjectSetExpression Source { get; }
     public string LinkName { get; }
+
+    /// <summary>
+    /// DR-10: the EXPLICIT ontology descriptor name the caller selected for the
+    /// traversal target, or <c>null</c> when none was supplied. Get-only and
+    /// immutable (INV-7). Mirrors <see cref="RootExpression.ObjectTypeName"/>,
+    /// which carries the root's explicit descriptor name. This task only plumbs
+    /// the value; <c>RootObjectTypeName</c> below is intentionally left unchanged
+    /// so existing behavior stays green — consuming this field to resolve identity
+    /// is a later DR-10 task.
+    /// </summary>
+    public string? TargetDescriptorName { get; }
 
     /// <summary>
     /// Traversal breaks the walk-to-root chain: once we've traversed a link,
