@@ -72,4 +72,6 @@ internal static class OntologyDiagnosticIds
     // (AONT209 is reserved for a sibling task; ids are monotonic, never
     // reused — INV-5.)
     public const string AssociationEndpointCardinalityInvalid = "AONT210";
+    // Edge-property removal migration (AONT209) — DR-5 (#120, closes #114)
+    public const string EdgePropertyAuthoringRemoved = "AONT209";
 }

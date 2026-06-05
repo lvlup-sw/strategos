@@ -287,66 +287,10 @@ public class TestDomain : DomainOntology
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
-    [Test]
-    public async Task AONT008_ManyToManyEdgeNoProperties_ReportsError()
-    {
-        var source = @"
-using Strategos.Ontology;
-using Strategos.Ontology.Builder;
-
-public class TestModel { public System.Guid Id { get; set; } }
-public class OtherModel { public System.Guid Id { get; set; } }
-
-public class TestDomain : DomainOntology
-{
-    public override string DomainName => ""test"";
-    protected override void Define(IOntologyBuilder builder)
-    {
-        builder.Object<TestModel>(obj =>
-        {
-            obj.Key(p => p.Id);
-            obj.ManyToMany<OtherModel>(""Others"", edge => { });
-        });
-        builder.Object<OtherModel>(obj => { obj.Key(p => p.Id); });
-    }
-}";
-
-        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.EdgeTypeMissingProperty);
-
-        await Assert.That(diagnostics.Length).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task AONT008_EdgeWithProperties_NoDiagnostic()
-    {
-        var source = @"
-using Strategos.Ontology;
-using Strategos.Ontology.Builder;
-
-public class TestModel { public System.Guid Id { get; set; } }
-public class OtherModel { public System.Guid Id { get; set; } }
-
-public class TestDomain : DomainOntology
-{
-    public override string DomainName => ""test"";
-    protected override void Define(IOntologyBuilder builder)
-    {
-        builder.Object<TestModel>(obj =>
-        {
-            obj.Key(p => p.Id);
-            obj.ManyToMany<OtherModel>(""Others"", edge =>
-            {
-                edge.Property<decimal>(""Weight"");
-            });
-        });
-        builder.Object<OtherModel>(obj => { obj.Key(p => p.Id); });
-    }
-}";
-
-        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.EdgeTypeMissingProperty);
-
-        await Assert.That(diagnostics.Length).IsEqualTo(0);
-    }
+    // AONT008 (EdgeTypeMissingProperty) trigger tests were removed in DR-5
+    // (#120, closes #114): they authored the now-deleted two-arg
+    // ManyToMany<T>(name, edgeConfig) edge-property surface, which AONT209 now
+    // flags. The AONT008 descriptor/id remain registered (INV-5) but dormant.
 
     [Test]
     public async Task AONT003_LinkTargetNotRegistered_ReportsError()

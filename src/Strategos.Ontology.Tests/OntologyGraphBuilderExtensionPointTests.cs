@@ -47,7 +47,6 @@ public class ExtTestTradingDomainOntology : DomainOntology
             {
                 ext.FromInterface<ITestKnowledgeSource>();
                 ext.Description("External knowledge sources that inform this strategy");
-                ext.RequiresEdgeProperty<double>("Relevance");
                 ext.MaxLinks(100);
             });
         });
@@ -108,21 +107,10 @@ public class OntologyGraphBuilderExtensionPointTests
         await Assert.That(strategy.ExternalLinkExtensionPoints[0].MatchedLinkNames.Count).IsEqualTo(1);
     }
 
-    [Test]
-    public async Task ExtensionPointMatching_MissingEdgeProperty_ProducesWarning()
-    {
-        // KnowledgeInformsStrategy has no edge properties
-        // but the extension point requires "Relevance"
-        var graphBuilder = new OntologyGraphBuilder();
-        graphBuilder.AddDomain(new ExtTestKnowledgeDomainOntology());
-        graphBuilder.AddDomain(new ExtTestTradingDomainOntology());
-
-        var graph = graphBuilder.Build();
-
-        await Assert.That(graph.Warnings.Count).IsGreaterThan(0);
-        var edgeWarning = graph.Warnings.FirstOrDefault(w => w.Contains("Relevance"));
-        await Assert.That(edgeWarning).IsNotNull();
-    }
+    // ExtensionPointMatching_MissingEdgeProperty_ProducesWarning was removed in
+    // DR-5 (#120, closes #114): the RequiresEdgeProperty / EdgeProperties
+    // extension-point edge-matching surface that produced the warning was
+    // removed. Edge attributes now live on a reified Association<T>.
 
     [Test]
     public async Task NoExtensionPoints_BuildsSuccessfully()

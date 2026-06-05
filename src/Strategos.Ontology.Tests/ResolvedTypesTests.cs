@@ -19,8 +19,7 @@ public class ResolvedTypesTests
             SourceObjectType: sourceType,
             TargetDomain: "market-data",
             TargetObjectType: targetType,
-            Cardinality: LinkCardinality.OneToOne,
-            EdgeProperties: []);
+            Cardinality: LinkCardinality.OneToOne);
 
         await Assert.That(link.SourceDomain).IsEqualTo("trading");
         await Assert.That(link.TargetDomain).IsEqualTo("market-data");
@@ -34,24 +33,16 @@ public class ResolvedTypesTests
         var sourceType = CreateObjectType("Position", "trading");
         var targetType = CreateObjectType("Instrument", "market-data");
 
-        var edgeProps = new List<PropertyDescriptor>
-        {
-            new("Weight", typeof(decimal)),
-        };
-
         var link = new ResolvedCrossDomainLink(
             Name: "PositionToInstrument",
             SourceDomain: "trading",
             SourceObjectType: sourceType,
             TargetDomain: "market-data",
             TargetObjectType: targetType,
-            Cardinality: LinkCardinality.ManyToMany,
-            EdgeProperties: edgeProps);
+            Cardinality: LinkCardinality.ManyToMany);
 
         await Assert.That(link.SourceObjectType).IsEqualTo(sourceType);
         await Assert.That(link.TargetObjectType).IsEqualTo(targetType);
-        await Assert.That(link.EdgeProperties).HasCount().EqualTo(1);
-        await Assert.That(link.EdgeProperties[0].Name).IsEqualTo("Weight");
     }
 
     [Test]

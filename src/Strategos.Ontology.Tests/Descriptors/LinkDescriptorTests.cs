@@ -25,16 +25,9 @@ public class LinkDescriptorTests
         await Assert.That(descriptor.Cardinality).IsEqualTo(LinkCardinality.OneToMany);
     }
 
-    [Test]
-    public async Task LinkDescriptor_EdgeProperties_DefaultsEmpty()
-    {
-        // Arrange & Act
-        var descriptor = new LinkDescriptor("Orders", "TradeOrder", LinkCardinality.OneToMany);
-
-        // Assert
-        await Assert.That(descriptor.EdgeProperties).IsNotNull();
-        await Assert.That(descriptor.EdgeProperties.Count).IsEqualTo(0);
-    }
+    // LinkDescriptor_EdgeProperties_DefaultsEmpty was removed in DR-5 (#120,
+    // closes #114): LinkDescriptor.EdgeProperties no longer exists. Edge
+    // attributes now live on a reified Association<T>.
 
     [Test]
     public async Task LinkDescriptor_Description_DefaultsToNull()

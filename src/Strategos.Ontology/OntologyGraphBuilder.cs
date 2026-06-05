@@ -697,7 +697,6 @@ public sealed class OntologyGraphBuilder
                 TargetDomain: descriptor.TargetDomain,
                 TargetObjectType: targetObjectType,
                 Cardinality: descriptor.Cardinality,
-                EdgeProperties: descriptor.EdgeProperties,
                 Description: descriptor.Description));
         }
 
@@ -751,21 +750,6 @@ public sealed class OntologyGraphBuilder
                             isMatch = false;
                             warnings.Add(
                                 $"Cross-domain link '{link.Name}' targets extension point '{extensionPoint.Name}' on '{objectType.Name}' but source type '{link.SourceObjectType.Name}' does not implement required interface '{extensionPoint.RequiredSourceInterface}'.");
-                        }
-                    }
-
-                    // Check edge property constraints
-                    if (isMatch)
-                    {
-                        foreach (var requiredEdgeProp in extensionPoint.RequiredEdgeProperties)
-                        {
-                            var hasEdgeProp = link.EdgeProperties
-                                .Any(ep => ep.Name == requiredEdgeProp.Name);
-                            if (!hasEdgeProp)
-                            {
-                                warnings.Add(
-                                    $"Cross-domain link '{link.Name}' matched extension point '{extensionPoint.Name}' on '{objectType.Name}' but is missing required edge property '{requiredEdgeProp.Name}'.");
-                            }
                         }
                     }
 

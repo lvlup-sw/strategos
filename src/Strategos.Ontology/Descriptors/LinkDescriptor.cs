@@ -14,12 +14,8 @@ namespace Strategos.Ontology.Descriptors;
 public sealed record LinkDescriptor(
     string Name,
     string TargetTypeName,
-    LinkCardinality Cardinality,
-    IReadOnlyList<PropertyDescriptor>? EdgeProperties = null)
+    LinkCardinality Cardinality)
 {
-    public IReadOnlyList<PropertyDescriptor> EdgeProperties { get; init; } =
-        EdgeProperties ?? [];
-
     public string? InverseLinkName { get; init; }
 
     public string? Description { get; init; }

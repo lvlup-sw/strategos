@@ -8,7 +8,5 @@ public interface IExtensionPointBuilder
 
     IExtensionPointBuilder Description(string description);
 
-    IExtensionPointBuilder RequiresEdgeProperty<T>(string name);
-
     IExtensionPointBuilder MaxLinks(int max);
 }

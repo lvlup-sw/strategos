@@ -8,7 +8,5 @@ public interface ICrossDomainLinkBuilder
 
     ICrossDomainLinkBuilder ManyToMany();
 
-    ICrossDomainLinkBuilder WithEdge(Action<IEdgeBuilder> configure);
-
     ICrossDomainLinkBuilder Description(string description);
 }
