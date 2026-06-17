@@ -965,12 +965,59 @@ internal static class StepExtractor
 
             foreach (var inv in pathInvocations)
             {
-                if (TryGetStepModel(inv, semanticModel, currentPrefix, null, null, out var stepModel))
+                // Thread per-step ValidateState configuration declared via the
+                // Then<TStep>(step => step.ValidateState(...)) configure-lambda overload
+                // into the StepModel, so the fork-path step's validation guard lowers into
+                // the saga exactly as a top-level/loop step's does. The validation lives in
+                // this Then call's own configure lambda, so scope the lookup to its arguments.
+                var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(inv);
+
+                if (TryGetStepModel(inv, semanticModel, currentPrefix, validationPredicate, validationErrorMessage, out var stepModel))
                 {
                     stepModels.Add(stepModel);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Extracts validation info from a step's configure lambda, e.g.
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.ValidateState(s =&gt; ..., "message"))</c>.
+    /// </summary>
+    /// <param name="thenInvocation">The <c>Then</c> invocation whose configure lambda is inspected.</param>
+    /// <returns>
+    /// The predicate/message pair from the first <c>ValidateState</c> call found inside the
+    /// configure lambda, or <c>(null, null)</c> if the step is not configured with validation.
+    /// </returns>
+    private static (string? Predicate, string? ErrorMessage) ExtractConfiguredValidation(
+        InvocationExpressionSyntax thenInvocation)
+    {
+        var arguments = thenInvocation.ArgumentList?.Arguments;
+        if (arguments is null)
+        {
+            return (null, null);
+        }
+
+        foreach (var arg in arguments.Value)
+        {
+            // The configure lambda is the Action<IStepConfiguration<TState>> argument.
+            if (arg.Expression is not LambdaExpressionSyntax)
+            {
+                continue;
+            }
+
+            var validateCall = arg.Expression
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .FirstOrDefault(call => SyntaxHelper.IsMethodCall(call, "ValidateState"));
+
+            if (validateCall is not null)
+            {
+                return ValidationParser.Extract(validateCall);
+            }
+        }
+
+        return (null, null);
     }
 
     /// <summary>
