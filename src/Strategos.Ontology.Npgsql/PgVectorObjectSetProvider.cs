@@ -1237,13 +1237,15 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <summary>
     /// Resolves the SET of concrete target descriptor names a link lowers to
     /// (DR-11b, #128). A link whose declared <see cref="Descriptors.LinkDescriptor.TargetTypeName"/>
-    /// names a registered INTERFACE resolves POLYMORPHICALLY to that interface's
-    /// implementor descriptors (one per implementor); any other link resolves
-    /// MONOMORPHICALLY to the single descriptor named by
+    /// names a registered INTERFACE resolves to that interface's implementor
+    /// descriptors (one per implementor — the polymorphic fan-out); any other link
+    /// resolves to the single descriptor named by
     /// <see cref="ResolveHopTargetDescriptorName"/> (TargetTypeName →
-    /// TargetSymbolKey). The result drives both the relate write-routing and the
-    /// traversal read fan-out: a count &gt; 1 means the link is polymorphic and its
-    /// junction tables are disambiguated per target descriptor (Posture 2).
+    /// TargetSymbolKey). This drives the traversal read fan-out — one hop per
+    /// returned descriptor, each routed to its own per-(link, target) junction
+    /// table (Posture 2). Whether a link is polymorphic is decided up front by the
+    /// interface-typed <c>IsPolymorphicLink</c> predicate, so this resolver is
+    /// invoked only for links already known to fan out.
     /// </summary>
     /// <remarks>
     /// INV-8: identity by descriptor NAME, never <c>typeof</c>. The interface
