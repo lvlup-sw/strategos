@@ -119,6 +119,53 @@ public sealed class StepExtractorResilienceTests
     }
 
     // =========================================================================
+    // Task 004 — loop + fork-path parse parity
+    // =========================================================================
+
+    /// <summary>
+    /// Verifies that resilience config declared on a step inside a <c>RepeatUntil</c>
+    /// loop body is parsed identically to a top-level step (loop parse parity).
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_WithRetryInsideLoopStep_PopulatesRetryModel()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ResilienceLoopWorkflow);
+
+        // Act - the loop body step is prefixed with its loop name
+        var refineStep = stepModels.Single(s => s.StepName == "RefineDraft");
+
+        // Assert
+        await Assert.That(refineStep.LoopName).IsEqualTo("Refinement");
+        await Assert.That(refineStep.Retry).IsNotNull();
+        await Assert.That(refineStep.Retry!.MaxAttempts).IsEqualTo(4);
+        await Assert.That(refineStep.Retry!.InitialDelay).IsEqualTo(TimeSpan.FromSeconds(3));
+        await Assert.That(refineStep.Timeout).IsNotNull();
+        await Assert.That(refineStep.Timeout!.Timeout).IsEqualTo(TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>
+    /// Verifies that resilience config declared on a step inside a <c>Fork</c> path
+    /// is parsed identically to a top-level step (fork-path parse parity).
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_WithRetryInsideForkPathStep_PopulatesRetryModel()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ResilienceForkWorkflow);
+
+        // Act
+        var paymentStep = stepModels.Single(s => s.StepName == "ChargeCard");
+
+        // Assert
+        await Assert.That(paymentStep.Retry).IsNotNull();
+        await Assert.That(paymentStep.Retry!.MaxAttempts).IsEqualTo(5);
+        await Assert.That(paymentStep.Retry!.InitialDelay).IsEqualTo(TimeSpan.FromSeconds(2));
+        await Assert.That(paymentStep.Timeout).IsNotNull();
+        await Assert.That(paymentStep.Timeout!.Timeout).IsEqualTo(TimeSpan.FromSeconds(30));
+    }
+
+    // =========================================================================
     // Test source workflows
     // =========================================================================
 
@@ -248,6 +295,135 @@ public sealed class StepExtractorResilienceTests
                     .OnLowConfidence(alt => alt.Then<HumanReview>())
                     .Compensate<RollbackAssessment>())
                 .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow with a <c>RepeatUntil</c> loop whose body step declares retry/timeout via
+    /// the configure lambda, exercising loop-body resilience parse parity.
+    /// </summary>
+    private const string ResilienceLoopWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record DraftState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public decimal QualityScore { get; init; }
+        }
+
+        public class StartDraft : IWorkflowStep<DraftState>
+        {
+            public Task<StepResult<DraftState>> ExecuteAsync(
+                DraftState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<DraftState>.FromState(state));
+        }
+
+        public class RefineDraft : IWorkflowStep<DraftState>
+        {
+            public Task<StepResult<DraftState>> ExecuteAsync(
+                DraftState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<DraftState>.FromState(state));
+        }
+
+        public class PublishDraft : IWorkflowStep<DraftState>
+        {
+            public Task<StepResult<DraftState>> ExecuteAsync(
+                DraftState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<DraftState>.FromState(state));
+        }
+
+        [Workflow("resilience-loop")]
+        public static partial class ResilienceLoopWorkflow
+        {
+            public static WorkflowDefinition<DraftState> Definition => Workflow<DraftState>
+                .Create("resilience-loop")
+                .StartWith<StartDraft>()
+                .RepeatUntil(
+                    condition: state => state.QualityScore >= 0.9m,
+                    loopName: "Refinement",
+                    body: loop => loop
+                        .Then<RefineDraft>(step => step
+                            .WithRetry(4, TimeSpan.FromSeconds(3))
+                            .WithTimeout(TimeSpan.FromMinutes(1))),
+                    maxIterations: 5)
+                .Finally<PublishDraft>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow with a <c>Fork</c> whose path step declares retry/timeout via the configure
+    /// lambda, exercising fork-path resilience parse parity.
+    /// </summary>
+    private const string ResilienceForkWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record CheckoutState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateCart : IWorkflowStep<CheckoutState>
+        {
+            public Task<StepResult<CheckoutState>> ExecuteAsync(
+                CheckoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<CheckoutState>.FromState(state));
+        }
+
+        public class ChargeCard : IWorkflowStep<CheckoutState>
+        {
+            public Task<StepResult<CheckoutState>> ExecuteAsync(
+                CheckoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<CheckoutState>.FromState(state));
+        }
+
+        public class ReserveStock : IWorkflowStep<CheckoutState>
+        {
+            public Task<StepResult<CheckoutState>> ExecuteAsync(
+                CheckoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<CheckoutState>.FromState(state));
+        }
+
+        public class FinalizeOrder : IWorkflowStep<CheckoutState>
+        {
+            public Task<StepResult<CheckoutState>> ExecuteAsync(
+                CheckoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<CheckoutState>.FromState(state));
+        }
+
+        public class CompleteCheckout : IWorkflowStep<CheckoutState>
+        {
+            public Task<StepResult<CheckoutState>> ExecuteAsync(
+                CheckoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<CheckoutState>.FromState(state));
+        }
+
+        [Workflow("resilience-fork")]
+        public static partial class ResilienceForkWorkflow
+        {
+            public static WorkflowDefinition<CheckoutState> Definition => Workflow<CheckoutState>
+                .Create("resilience-fork")
+                .StartWith<ValidateCart>()
+                .Fork(
+                    path => path.Then<ChargeCard>(step => step
+                        .WithRetry(5, TimeSpan.FromSeconds(2))
+                        .WithTimeout(TimeSpan.FromSeconds(30))),
+                    path => path.Then<ReserveStock>())
+                .Join<FinalizeOrder>()
+                .Finally<CompleteCheckout>();
         }
         """;
 }
