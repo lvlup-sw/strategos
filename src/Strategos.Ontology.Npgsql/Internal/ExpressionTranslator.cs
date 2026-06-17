@@ -128,8 +128,12 @@ internal static class ExpressionTranslator
         parameters.Add(new SqlParameter(paramName, value));
 
         // Use JSONB accessor for property access: data->>'PropertyName'
-        // Cast to appropriate type for correct comparison semantics (e.g., numeric ordering)
-        var jsonbAccessor = $"data->>'{propertyName}'";
+        // Cast to appropriate type for correct comparison semantics (e.g., numeric ordering).
+        // The key is interpolated into a single-quoted JSON-path literal (NOT a bindable
+        // parameter), so it must be escaped the same way the rest of the generator routes
+        // descriptor-derived keys — single-quote doubling via SqlGenerator.EscapeStringLiteral
+        // (review F4). No-op for legal member names; keeps the SQL safe regardless of caller.
+        var jsonbAccessor = $"data->>'{SqlGenerator.EscapeStringLiteral(propertyName)}'";
         var cast = GetJsonbCast(value);
         var lhs = cast.Length > 0 ? $"({jsonbAccessor}){cast}" : jsonbAccessor;
         return $"{lhs} {sqlOp} {paramName}";
@@ -149,7 +153,11 @@ internal static class ExpressionTranslator
                 ? s.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_")
                 : value;
             parameters.Add(new SqlParameter(paramName, escapedValue));
-            return $"data->>'{propertyName}' LIKE '%' || {paramName} || '%' ESCAPE '\\'";
+
+            // The key is interpolated into a single-quoted JSON-path literal (NOT a bindable
+            // parameter), so escape it via SqlGenerator.EscapeStringLiteral exactly as the
+            // binary-comparison accessor does (review F4).
+            return $"data->>'{SqlGenerator.EscapeStringLiteral(propertyName)}' LIKE '%' || {paramName} || '%' ESCAPE '\\'";
         }
 
         throw new NotSupportedException($"Method {methodCall.Method.Name} is not supported for SQL translation.");

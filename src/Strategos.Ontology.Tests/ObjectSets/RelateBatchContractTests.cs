@@ -91,6 +91,42 @@ public class RelateBatchContractTests
     }
 
     [Test]
+    public async Task RelateBatchAsync_InMemory_FailingItem_TagsBatchItemIndex()
+    {
+        // F6: a mid-batch failure must KEEP its typed exception
+        // (RelationEndpointNotFoundException) AND carry the failing item's position.
+        // Items 0 and 2 are valid; item 1 names a non-existent target, so the throw
+        // must originate at index 1 — not 0 — proving the index reflects the actual
+        // failing request rather than the loop start.
+        var provider = SeededProvider("a", "b", "c", "t");
+        IObjectSetWriter writer = provider;
+
+        var requests = new List<RelateRequest>
+        {
+            new() { SourceDescriptor = nameof(BatchNode), SourceId = "a", LinkName = "links_to", TargetDescriptor = nameof(BatchNode), TargetId = "t" },
+            new() { SourceDescriptor = nameof(BatchNode), SourceId = "b", LinkName = "links_to", TargetDescriptor = nameof(BatchNode), TargetId = "ghost" },
+            new() { SourceDescriptor = nameof(BatchNode), SourceId = "c", LinkName = "links_to", TargetDescriptor = nameof(BatchNode), TargetId = "t" },
+        };
+
+        RelationEndpointNotFoundException? caught = null;
+        try
+        {
+            await writer.RelateBatchAsync(requests);
+        }
+        catch (RelationEndpointNotFoundException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Data["BatchItemIndex"]).IsEqualTo(1);
+        // The offending endpoint identifiers are surfaced too, so the caller can
+        // locate the bad request without re-deriving it from the index alone.
+        await Assert.That(caught!.Data["BatchItemTargetId"]).IsEqualTo("ghost");
+        await Assert.That(caught!.Data["BatchItemSourceId"]).IsEqualTo("b");
+    }
+
+    [Test]
     public async Task RelateBatchAsync_InMemory_EmptyBatch_IsNoOp()
     {
         var provider = SeededProvider("a", "t");

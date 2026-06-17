@@ -75,4 +75,33 @@ public class IdentifierGuardTests
         // The two distinct inputs derive DISTINCT identifiers — no silent collision.
         await Assert.That(derivedFirst).IsNotEqualTo(derivedSecond);
     }
+
+    [Test]
+    public async Task IdentifierGuard_TwoInputsDerivingSameIdentifier_ThrowsTyped()
+    {
+        // F7: force the residual collision MECHANICALLY (no brute-force search). The
+        // two-arg Derive throws OntologySchemaIdentifierException when two DISTINCT
+        // inputs derive the SAME identifier. A deterministic such pair:
+        //   N    = an over-long name (> 63 bytes), and
+        //   D    = Derive(N), which is exactly 63 ASCII bytes (54-byte truncated
+        //          prefix + '_' + 8 hex chars).
+        // Derive(N) == D by construction, and because D already fits the 63-byte cap
+        // Derive(D) returns D verbatim — so Derive(N) == Derive(D) == D while N != D.
+        // That is precisely the (first != second) AND (derivedFirst == derivedSecond)
+        // condition the guard rejects.
+        var longName = new string('a', 80);
+        var derivedLong = JunctionIdentifier.Derive(longName);
+
+        // Sanity: the derived identifier is a DISTINCT input that sits within the cap
+        // (so it passes through verbatim) yet collides with longName's derivation.
+        await Assert.That(derivedLong).IsNotEqualTo(longName);
+        await Assert.That(Encoding.UTF8.GetByteCount(derivedLong))
+            .IsLessThanOrEqualTo(PostgresIdentifierByteLimit);
+        await Assert.That(JunctionIdentifier.Derive(derivedLong)).IsEqualTo(derivedLong);
+
+        // The two distinct inputs derive the same identifier — the guard makes it a
+        // loud, typed, catchable error rather than a silent table merge.
+        await Assert.That(() => JunctionIdentifier.Derive(longName, derivedLong))
+            .Throws<OntologySchemaIdentifierException>();
+    }
 }
