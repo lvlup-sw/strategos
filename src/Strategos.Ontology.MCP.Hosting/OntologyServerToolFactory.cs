@@ -285,6 +285,7 @@ public static class OntologyServerToolFactory
             string direction = "ToDestination",
             int depth = 1,
             string? domain = null,
+            string? cursor = null,
             CancellationToken ct = default) =>
         {
             // A malformed direction is a closed-vocabulary violation -> isError (NOT a
@@ -303,7 +304,10 @@ public static class OntologyServerToolFactory
                 LinkName: linkName,
                 Direction: parsedDirection,
                 Depth: depth,
-                Domain: domain);
+                Domain: domain,
+                // F3: forward an incoming continuation cursor so a paged re-call
+                // advances past the prior page rather than restarting at offset 0.
+                Cursor: cursor);
 
             var result = await tool.TraverseAsync(request, ct).ConfigureAwait(false);
             return MapTraversalResult(result);

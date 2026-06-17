@@ -127,26 +127,50 @@ public sealed class OntologyTraverseTool
             ?? ResolveDescriptor(request.Domain, farRole.DescriptorName);
         var farClrType = farDescriptor?.ClrType ?? typeof(object);
 
-        var expression = BuildTraversalExpression(sourceDescriptor, request, association, farRole, farClrType);
+        // F2: real multi-hop chaining — the far node of each level is re-rooted as
+        // the source of the next association hop, matching the in-memory chained
+        // traversal (.TraverseLink(association).TraverseLink(farRole) per level).
+        var farExpression = BuildTraversalExpression(sourceDescriptor, request, association, farRole, farClrType);
 
-        var result = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
+        // F1: an edge-view sub-expression that stops one hop short of the far hop —
+        // it surfaces the surviving association objects in the SAME GetRelations-
+        // ordered, edge-filtered row order as the far endpoints. The two lists pair
+        // positionally, so we zip them and read edge-attribute values off each
+        // association object (reflection getters; INV-8 governs IDENTITY only).
+        var edgeExpression = BuildEdgeViewExpression(sourceDescriptor, request, association, farRole, farClrType);
 
-        var endpoints = ProjectEndpoints(result.Items, farRole.DescriptorName, farDescriptor);
+        var farResult = await _objectSetProvider.ExecuteAsync<object>(farExpression, ct).ConfigureAwait(false);
+        var edgeResult = await _objectSetProvider.ExecuteAsync<object>(edgeExpression, ct).ConfigureAwait(false);
 
-        // Self-imposed row budget: truncate and flag so the host emits a
-        // resource_link + opaque cursor for the full subgraph.
-        if (endpoints.Count > RowBudget)
+        var edgeAttributeReaders = ResolveEdgeAttributeReaders(association);
+
+        var endpoints = ProjectEndpoints(
+            farResult.Items,
+            edgeResult.Items,
+            farRole.DescriptorName,
+            farDescriptor,
+            edgeAttributeReaders);
+
+        // F3: decode any incoming cursor to an offset, page from it, and emit the
+        // next offset as the continuation cursor. The first page has offset 0.
+        var offset = DecodeCursorOffset(request);
+
+        // Self-imposed row budget: page the endpoints from the decoded offset and,
+        // when more remain, flag truncation so the host emits a resource_link + the
+        // opaque continuation cursor for the next page.
+        var paged = endpoints.Skip(offset).Take(RowBudget).ToList();
+        var hasMore = endpoints.Count > offset + RowBudget;
+        if (hasMore)
         {
-            var page = endpoints.Take(RowBudget).ToList();
             return new TraversalResult(meta)
             {
-                Endpoints = page,
+                Endpoints = paged,
                 Truncated = true,
-                NextCursor = EncodeCursor(request, RowBudget),
+                NextCursor = EncodeCursor(request, offset + RowBudget),
             };
         }
 
-        return new TraversalResult(meta) { Endpoints = endpoints };
+        return new TraversalResult(meta) { Endpoints = paged };
     }
 
     private static TraversalResult Error(ResponseMeta meta, string message) =>
@@ -195,6 +219,13 @@ public sealed class OntologyTraverseTool
             : association.AssociationEndpoints[0];
     }
 
+    // F2: builds the FULL far-endpoint chain — Root → anchor filter, then one
+    // association/edge-filter/far-role level per requested depth. Each subsequent
+    // level re-roots its association hop at the prior far node (whose descriptor is
+    // the SAME farRole.DescriptorName, since a level repeats the same link), so a
+    // depth-N request walks N hops rather than a fixed 2-hop chain. The in-memory
+    // evaluator re-derives each hop's immediate source descriptor from the prior
+    // node, so the chain evaluates against the provider unchanged.
     [RequiresUnreferencedCode("Builds an edge-attribute filter that reflects over the association CLR type.")]
     private ObjectSetExpression BuildTraversalExpression(
         ObjectTypeDescriptor sourceDescriptor,
@@ -203,27 +234,78 @@ public sealed class OntologyTraverseTool
         AssociationEndpoint farRole,
         Type farClrType)
     {
+        var expression = BuildAnchoredChain(sourceDescriptor, request, association, farRole, farClrType, request.Depth, stopBeforeFinalFarHop: false);
+        return expression;
+    }
+
+    // F1: builds the chain ONE hop shorter than the far chain — it stops after the
+    // final association hop's edge filter, BEFORE the final far-role hop, so its
+    // result is the surviving association objects (the edge view) in the same
+    // GetRelations-ordered, edge-filtered order as the far endpoints. The far and
+    // edge results therefore pair positionally and can be zipped.
+    [RequiresUnreferencedCode("Builds an edge-attribute filter that reflects over the association CLR type.")]
+    private ObjectSetExpression BuildEdgeViewExpression(
+        ObjectTypeDescriptor sourceDescriptor,
+        TraversalRequest request,
+        ObjectTypeDescriptor association,
+        AssociationEndpoint farRole,
+        Type farClrType)
+    {
+        var expression = BuildAnchoredChain(sourceDescriptor, request, association, farRole, farClrType, request.Depth, stopBeforeFinalFarHop: true);
+        return expression;
+    }
+
+    // Shared builder for the anchored traversal chain. Emits the Root → anchor
+    // filter, then <paramref name="levels"/> association/edge-filter/far-role
+    // levels. When <paramref name="stopBeforeFinalFarHop"/> is true the LAST level
+    // omits its far-role hop, leaving the chain at the surviving association objects
+    // (the F1 edge view); otherwise every level ends at its far endpoint (the F2
+    // far chain).
+    [RequiresUnreferencedCode("Builds an edge-attribute filter that reflects over the association CLR type.")]
+    private ObjectSetExpression BuildAnchoredChain(
+        ObjectTypeDescriptor sourceDescriptor,
+        TraversalRequest request,
+        ObjectTypeDescriptor association,
+        AssociationEndpoint farRole,
+        Type farClrType,
+        int levels,
+        bool stopBeforeFinalFarHop)
+    {
         var sourceClrType = sourceDescriptor.ClrType ?? typeof(object);
+        var edgeClrType = association.ClrType ?? typeof(object);
 
         // Root → anchor filter (id == objectId), via the reflection-free IdAccessor.
         ObjectSetExpression expression = new RootExpression(sourceClrType, sourceDescriptor.Name);
         expression = new FilterExpression(expression, BuildIdAnchorPredicate(sourceDescriptor.IdAccessor!, request.ObjectId));
 
-        // Hop to the association objects (the edge view) so edge attributes are
-        // filterable BEFORE the far hop — mirrors the in-process
-        // .TraverseLink<TEdge>(link) step.
-        var edgeClrType = association.ClrType ?? typeof(object);
-        expression = new TraverseLinkExpression(expression, request.LinkName, edgeClrType, association.Name);
-
-        // Optional edge-attribute equality filter on the association objects.
-        if (request.EdgeFilter is { Count: > 0 })
+        for (var level = 0; level < levels; level++)
         {
-            expression = new FilterExpression(expression, BuildEdgeFilterPredicate(edgeClrType, request.EdgeFilter));
-        }
+            var isFinalLevel = level == levels - 1;
 
-        // Hop to the far endpoint by role — mirrors the in-process
-        // .TraverseLink<TFar>(role) step.
-        expression = new TraverseLinkExpression(expression, farRole.Role, farClrType, farRole.DescriptorName);
+            // Hop to the association objects (the edge view) so edge attributes are
+            // filterable BEFORE the far hop — mirrors the in-process
+            // .TraverseLink<TEdge>(link) step. Each subsequent level re-roots this
+            // association hop at the prior far node's descriptor: the in-memory
+            // evaluator resolves the immediate source from the prior hop, and a
+            // repeated link keeps the source descriptor stable across levels.
+            expression = new TraverseLinkExpression(expression, request.LinkName, edgeClrType, association.Name);
+
+            // Optional edge-attribute equality filter on the association objects.
+            if (request.EdgeFilter is { Count: > 0 })
+            {
+                expression = new FilterExpression(expression, BuildEdgeFilterPredicate(edgeClrType, request.EdgeFilter));
+            }
+
+            // The F1 edge view stops at the surviving association objects of the
+            // final level (no far-role hop); the far chain always hops to the far
+            // endpoint by role — mirrors the in-process .TraverseLink<TFar>(role).
+            if (isFinalLevel && stopBeforeFinalFarHop)
+            {
+                break;
+            }
+
+            expression = new TraverseLinkExpression(expression, farRole.Role, farClrType, farRole.DescriptorName);
+        }
 
         return expression;
     }
@@ -272,21 +354,81 @@ public sealed class OntologyTraverseTool
     // Canonical string form of an id/attribute value for closed-vocabulary equality.
     internal static string ToIdString(object? value) => value?.ToString() ?? string.Empty;
 
-    private static IReadOnlyList<TraversalEndpoint> ProjectEndpoints(
-        IReadOnlyList<object> items,
-        string farDescriptorName,
-        ObjectTypeDescriptor? farDescriptor)
+    // F1: resolve a getter per declared edge-attribute property of the association,
+    // once (reflection at build time, never per row). Reading edge-attribute VALUES
+    // off the association CLR type is permitted — INV-8 governs descriptor IDENTITY
+    // (names), not property reads. Properties that do not resolve are skipped.
+    [RequiresUnreferencedCode("Reflects over the association CLR type to resolve edge-attribute getters.")]
+    private static IReadOnlyList<(string Name, Func<object, object?> Getter)> ResolveEdgeAttributeReaders(
+        ObjectTypeDescriptor association)
     {
-        var endpoints = new List<TraversalEndpoint>(items.Count);
-        foreach (var item in items)
+        var edgeClrType = association.ClrType;
+        if (edgeClrType is null)
         {
+            return [];
+        }
+
+        var readers = new List<(string, Func<object, object?>)>(association.Properties.Count);
+        foreach (var property in association.Properties)
+        {
+            if (ResolveGetter(edgeClrType, property.Name) is { } getter)
+            {
+                readers.Add((property.Name, getter));
+            }
+        }
+
+        return readers;
+    }
+
+    // F1: project the far endpoints, zipping each with the surviving association
+    // object that produced it (lockstep row order — the edge view and the far
+    // chain both iterate the same GetRelations-ordered, edge-filtered rows). Edge-
+    // attribute VALUES are read off the paired association object via the resolved
+    // getters; an endpoint with no paired association carries an empty attribute map.
+    private static IReadOnlyList<TraversalEndpoint> ProjectEndpoints(
+        IReadOnlyList<object> farItems,
+        IReadOnlyList<object> edgeItems,
+        string farDescriptorName,
+        ObjectTypeDescriptor? farDescriptor,
+        IReadOnlyList<(string Name, Func<object, object?> Getter)> edgeAttributeReaders)
+    {
+        var endpoints = new List<TraversalEndpoint>(farItems.Count);
+        for (var i = 0; i < farItems.Count; i++)
+        {
+            var item = farItems[i];
             var id = farDescriptor?.IdAccessor is { } accessor
                 ? ToIdString(accessor(item))
                 : ToIdString(item);
-            endpoints.Add(new TraversalEndpoint(farDescriptorName, id));
+
+            var edgeAttributes = i < edgeItems.Count
+                ? ReadEdgeAttributes(edgeItems[i], edgeAttributeReaders)
+                : EmptyEdgeAttributes;
+
+            endpoints.Add(new TraversalEndpoint(farDescriptorName, id) { EdgeAttributes = edgeAttributes });
         }
 
         return endpoints;
+    }
+
+    private static readonly IReadOnlyDictionary<string, object?> EmptyEdgeAttributes =
+        new Dictionary<string, object?>();
+
+    private static IReadOnlyDictionary<string, object?> ReadEdgeAttributes(
+        object associationObject,
+        IReadOnlyList<(string Name, Func<object, object?> Getter)> readers)
+    {
+        if (readers.Count == 0)
+        {
+            return EmptyEdgeAttributes;
+        }
+
+        var attributes = new Dictionary<string, object?>(readers.Count, StringComparer.Ordinal);
+        foreach (var (name, getter) in readers)
+        {
+            attributes[name] = getter(associationObject);
+        }
+
+        return attributes;
     }
 
     // Opaque cursor: an offset into the far-endpoint set, encoded so the agent
@@ -296,5 +438,36 @@ public sealed class OntologyTraverseTool
     {
         var raw = $"{request.ObjectType}|{request.ObjectId}|{request.LinkName}|{(int)request.Direction}|{offset}";
         return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(raw));
+    }
+
+    // F3: decode the offset carried by an incoming cursor (the trailing field of
+    // the EncodeCursor payload). A null/blank/malformed cursor yields offset 0 —
+    // the first page — so a tampered token degrades to the start rather than
+    // throwing. Only the offset is consumed; the other fields are provenance the
+    // agent must not have to reconstruct.
+    private static int DecodeCursorOffset(TraversalRequest request)
+    {
+        if (string.IsNullOrEmpty(request.Cursor))
+        {
+            return 0;
+        }
+
+        try
+        {
+            var raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(request.Cursor));
+            var lastSeparator = raw.LastIndexOf('|');
+            if (lastSeparator >= 0
+                && int.TryParse(raw.AsSpan(lastSeparator + 1), out var offset)
+                && offset >= 0)
+            {
+                return offset;
+            }
+        }
+        catch (FormatException)
+        {
+            // Not valid base64 — treat as a missing cursor (first page).
+        }
+
+        return 0;
     }
 }
