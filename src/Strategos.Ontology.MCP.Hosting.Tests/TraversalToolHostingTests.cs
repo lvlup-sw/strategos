@@ -164,6 +164,40 @@ public sealed class TraversalToolHostingTests
     }
 
     [Test]
+    public async Task TraversalTool_NumericDirectionToken_ReturnsIsErrorTrue()
+    {
+        var (graph, provider) = BuildSeeded(farCount: 1);
+        var (client, disposables) = await ConnectAsync(graph, provider);
+        try
+        {
+            // A numeric direction token ("1") must be rejected: Enum.TryParse would
+            // otherwise accept it and silently select an out-of-vocabulary direction.
+            // It comes back as isError:true (NOT a thrown protocol error).
+            var result = await client.CallToolAsync(
+                "ontology_traverse",
+                new Dictionary<string, object?>
+                {
+                    ["objectType"] = "TravNode",
+                    ["objectId"] = "x",
+                    ["linkName"] = "link",
+                    ["direction"] = "1",
+                    ["depth"] = 1,
+                });
+
+            await Assert.That(result.IsError ?? false).IsTrue();
+            var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+            await Assert.That(text).Contains("direction");
+        }
+        finally
+        {
+            foreach (var d in disposables)
+            {
+                await d.DisposeAsync();
+            }
+        }
+    }
+
+    [Test]
     public async Task TraversalTool_LargeResult_ReturnsResourceLink_WithCursor()
     {
         // Far-endpoint count exceeds the tool's row budget, so the host emits a

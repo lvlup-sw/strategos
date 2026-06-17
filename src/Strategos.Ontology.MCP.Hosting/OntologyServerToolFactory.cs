@@ -298,7 +298,12 @@ public static class OntologyServerToolFactory
         {
             // A malformed direction is a closed-vocabulary violation -> isError (NOT a
             // thrown protocol error), consistent with the other validation failures.
-            if (!Enum.TryParse<TraversalDirection>(direction, ignoreCase: true, out var parsedDirection))
+            // Reject NUMERIC tokens explicitly: Enum.TryParse accepts "0"/"1" (and an
+            // out-of-range "5" yields an undefined value), which would bypass the closed
+            // ToDestination|ToSource NAME vocabulary. Names-only => anything that parses
+            // as an integer is invalid.
+            if (int.TryParse(direction, out _)
+                || !Enum.TryParse<TraversalDirection>(direction, ignoreCase: true, out var parsedDirection))
             {
                 return ErrorResult(
                     ResponseMeta.ForGraph(graph),
