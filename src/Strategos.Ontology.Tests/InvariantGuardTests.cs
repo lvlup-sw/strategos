@@ -221,6 +221,43 @@ public class InvariantGuardTests
         await Assert.That(offenders).IsEmpty();
     }
 
+    /// <summary>
+    /// INV-6 (sealed) / INV-7 (immutable, event-derived), DR-16 bitemporal
+    /// surface: the temporal event/row/projection records must be sealed.
+    /// Structural record equality over these sealed types is load-bearing for the
+    /// T22 replay-determinism guarantee, so a future edit that unseals one fails
+    /// the build mechanically.
+    /// </summary>
+    [Test]
+    public async Task TemporalTypes_AreSealed()
+    {
+        var names = new[]
+        {
+            // DR-16 T22: bitemporal event stream + projection.
+            "Strategos.Ontology.Temporal.AssociationTemporalEvent",
+            "Strategos.Ontology.Temporal.TemporalRow",
+            "Strategos.Ontology.Temporal.TemporalAssociationProjection",
+        };
+
+        var offenders = new List<string>();
+        foreach (var name in names)
+        {
+            var type = OntologyAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsInterface && !type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
+
     private static IEnumerable<Type> IdentityPublicTypes() =>
         OntologyAssembly.GetTypes()
             .Where(t => t.IsPublic && t.Namespace == "Strategos.Ontology.Identity");

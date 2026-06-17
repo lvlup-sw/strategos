@@ -85,6 +85,17 @@ stream — no new mutation surface (INV-7).
   live-DB-gated execution proof (`TemporalExcludeNpgsqlTests`,
   `[SkipIfNoPostgres]`) drives real INSERTs to confirm the constraint fires and
   that retraction releases it.
+- **T22 — soft-delete = close interval, replay-deterministic (INV-7).** A new
+  provider-agnostic core temporal model under `Strategos.Ontology.Temporal`: an
+  append-only `AssociationTemporalEvent` stream (`Assert` opens a system
+  interval, `Retract` CLOSES it) folded by `TemporalAssociationProjection.Replay`
+  into a deterministic, totally-ordered terminal state of sealed `TemporalRow`s.
+  A retraction NEVER physically deletes — it appends a close event that the
+  projection folds into a closed `system_to`. Transaction-time is read off the
+  stream (each event carries its own instant), never a fold-time wall clock, and
+  the output is sorted on a stable key — so two replays of the same log are
+  structurally identical (the INV-7 replay-determinism keystone). Sealed
+  `init`-only records, guarded by `InvariantGuardTests.TemporalTypes_AreSealed`.
 
 ## [2.8.0] - 2026-05-25
 
