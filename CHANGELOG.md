@@ -54,6 +54,22 @@ differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
 
+### Added
+
+- **Fork-path step configuration** (DR-17, #134) — `IForkPathBuilder<TState>`
+  gains the `Then<TStep>(Action<IStepConfiguration<TState>>)` overload, bringing
+  fork branches to parity with the top-level `IWorkflowBuilder<TState>` and
+  loop-body `ILoopBuilder<TState>` sequencing contexts. A configured fork-path
+  step carries its `StepConfigurationDefinition` (retry / timeout / compensation)
+  into the immutable workflow definition and the export-only wire contract via
+  `WorkflowDefinitionProjection`. `IForkPathBuilder` is not one of the 7 gated
+  cross-product builder interfaces, so no `PublicAPI.*.txt` re-baseline is
+  required. **Generator note:** the Wolverine+Marten saga lowering of per-step
+  `WithRetry`/`WithTimeout`/`Compensate` is *not* yet emitted for any step kind
+  (top-level, loop, or fork) — `SagaEmitter` lowers only validation guards and
+  RAG context today. Threading retry/timeout/compensation through the generated
+  saga is a separate generator concern (INV-1) tracked outside DR-17.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single
