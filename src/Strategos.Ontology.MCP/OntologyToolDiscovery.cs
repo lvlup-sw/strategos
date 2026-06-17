@@ -155,7 +155,7 @@ public sealed class OntologyToolDiscovery
         sb.Append("Explore the ontology schema. ");
         sb.Append($"Domains: {domainNames}. ");
         sb.Append($"{objectTypeCount} object type(s) available. ");
-        sb.Append("Scopes: domains, objectTypes, actions, links, interfaces, events, workflowChains, vectorProperties.");
+        sb.Append("Scopes: domains, objectTypes, actions, links, associations, interfaces, events, workflowChains, vectorProperties.");
         return sb.ToString();
     }
 

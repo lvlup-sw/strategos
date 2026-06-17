@@ -107,6 +107,61 @@ public static class TestOntologyGraphFactory
         builder.AddDomain<TestVectorDomainOntology>();
         return builder.Build();
     }
+
+    /// <summary>
+    /// A graph carrying a reified association (DR-4): two <see cref="TestParty"/>
+    /// entities linked by a <see cref="TestCounterparty"/> association with a
+    /// Buyer/Seller endpoint pair and a <c>Role</c> edge attribute. Used by the
+    /// DR-15 association/traversal MCP surface tests.
+    /// </summary>
+    public static OntologyGraph CreateAssociationGraph()
+    {
+        var builder = new OntologyGraphBuilder();
+        builder.AddDomain<TestAssociationDomainOntology>();
+        return builder.Build();
+    }
+}
+
+// Test types for the reified-association domain (DR-15).
+public class TestParty
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
+public class TestCounterparty
+{
+    public string Id { get; set; } = "";
+    public TestParty Buyer { get; set; } = new();
+    public TestParty Seller { get; set; } = new();
+    public string Role { get; set; } = "";
+}
+
+/// <summary>
+/// A domain with a plain entity (<see cref="TestParty"/>) and a reified
+/// association (<see cref="TestCounterparty"/>) so association objects can be
+/// exercised distinctly from plain objects.
+/// </summary>
+public class TestAssociationDomainOntology : DomainOntology
+{
+    public override string DomainName => "trading";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<TestParty>(obj =>
+        {
+            obj.Key(p => p.Id);
+            obj.Property(p => p.Name).Required();
+            obj.HasMany<TestParty>("counterparties");
+        });
+
+        builder.Association<TestCounterparty>("TestCounterparty", a =>
+        {
+            a.Key(c => c.Id);
+            a.Between(c => c.Buyer).And(c => c.Seller);
+            a.Property(c => c.Role).Required();
+        });
+    }
 }
 
 // Test types for vector domain
