@@ -44,6 +44,9 @@ public class EdgeProviderTypesSealedTests
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalHop",
             // AssociationRelatePlan (T11): resolved attributed-relate plan.
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+AssociationRelatePlan",
+            // OntologySchemaIdentifierException (DR-11/T1): typed collision error
+            // for the 63-byte identifier guard.
+            "Strategos.Ontology.Npgsql.Schema.OntologySchemaIdentifierException",
         };
 
         var offenders = new List<string>();
