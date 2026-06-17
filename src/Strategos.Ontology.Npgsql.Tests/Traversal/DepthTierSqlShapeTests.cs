@@ -77,6 +77,74 @@ public class DepthTierSqlShapeTests
         await Assert.That(sql).Contains("SELECT t2.id, t2.data");
         await Assert.That(sql).Contains("JOIN \"public\".\"l3\" t2 ON t2.id = j2.target_id");
     }
+
+    [Test]
+    public async Task Lower_FourHopOrVariableDepth_EmitsRecursiveCte()
+    {
+        // FOUR monomorphic hops (L0 -> L1 -> L2 -> L3 -> L4) is PAST the budget of
+        // 3 — a flat join would join 1 + 4×2 = 9 relations, over join_collapse_limit
+        // (8), so the planner would degrade. The lowering switches to a RECURSIVE
+        // CTE that walks the junction edges one depth level at a time.
+        var graph = TraversalChainGraphs.FiveLevelChain();
+        var expression = TraversalChainGraphs.ChainFrom(
+            "L0", "n0",
+            ("toL1", typeof(object)), ("toL2", typeof(object)),
+            ("toL3", typeof(object)), ("toL4", typeof(object)));
+
+        var sql = SqlGenerator.BuildDepthTieredTraversalSql(
+            "public", PgVectorObjectSetProvider.BuildTraversalPlan(graph, expression));
+
+        // Recursive CTE — NOT a flat join chain — past the budget.
+        await Assert.That(sql).Contains("WITH RECURSIVE traversal");
+
+        // Base case: the anchor's surrogate id, addressed by its business id at depth 0.
+        await Assert.That(sql).Contains("FROM \"public\".\"l0\" s WHERE s.data->>'Id' = @srcId");
+
+        // The recursion advances one depth level per chain step, following the
+        // step's own junction table (tr.depth = i) — the chain's link sequence,
+        // not any junction.
+        await Assert.That(sql).Contains("\"public\".\"l0_to_l1\"");
+        await Assert.That(sql).Contains("\"public\".\"l3_to_l4\"");
+        await Assert.That(sql).Contains("tr.depth = 0");
+        await Assert.That(sql).Contains("tr.depth = 3");
+
+        // Projects the FINAL-depth target rows (L4 at depth 4).
+        await Assert.That(sql).Contains("FROM \"public\".\"l4\" t ");
+        await Assert.That(sql).Contains("tr.depth = 4");
+
+        // No all-targets fallback: the projection joins through the recursion's
+        // reached node ids, never an unconditional target scan.
+        await Assert.That(sql).DoesNotContain("LEFT JOIN");
+    }
+
+    [Test]
+    public async Task Lower_TierBoundary_ThreeHopsJoinChain_FourHopsCte()
+    {
+        // The boundary is the join-collapse depth budget: 3 hops is the deepest
+        // flat join chain, 4 hops crosses into the recursive-CTE tier. Pinning the
+        // boundary keeps the budget honest if JoinChainDepthBudget is ever retuned.
+        await Assert.That(SqlGenerator.JoinChainDepthBudget).IsEqualTo(3);
+
+        var threeHop = SqlGenerator.BuildDepthTieredTraversalSql(
+            "public",
+            PgVectorObjectSetProvider.BuildTraversalPlan(
+                TraversalChainGraphs.FourLevelChain(),
+                TraversalChainGraphs.ChainFrom(
+                    "L0", "n0",
+                    ("toL1", typeof(object)), ("toL2", typeof(object)), ("toL3", typeof(object)))));
+
+        var fourHop = SqlGenerator.BuildDepthTieredTraversalSql(
+            "public",
+            PgVectorObjectSetProvider.BuildTraversalPlan(
+                TraversalChainGraphs.FiveLevelChain(),
+                TraversalChainGraphs.ChainFrom(
+                    "L0", "n0",
+                    ("toL1", typeof(object)), ("toL2", typeof(object)),
+                    ("toL3", typeof(object)), ("toL4", typeof(object)))));
+
+        await Assert.That(threeHop).DoesNotContain("WITH RECURSIVE");
+        await Assert.That(fourHop).Contains("WITH RECURSIVE");
+    }
 }
 
 /// <summary>

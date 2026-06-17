@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+**Npgsql instance-anchored link traversal, depth-tiered (DR-12, #131).**
+`PgVectorObjectSetProvider.ExecuteAsync<T>` / `StreamAsync<T>` now serve
+`.Where(s => s.Key == id).TraverseLink<TLinked>("link")` expressions, closing the
+DR-7..DR-11b gap where a `TraverseLinkExpression` threw `NotSupportedException`.
+The lowering is **depth-tiered**: a chain of ≤ 3 monomorphic hops lowers to a
+flat `vertex ⋈ junction ⋈ vertex ⋈ …` join chain (sized to the planner's
+`join_collapse_limit` of 8 — 1 anchor + 2 relations/hop = 7 at 3 hops), while a
+deeper chain — or any plan with a polymorphic hop (which counts as fan-out via a
+`UNION ALL` over the per-`(link, target-descriptor)` junction tables) — lowers to
+a `WITH RECURSIVE` walk. Hop targets resolve from the ontology graph (DR-10),
+never `typeof` (INV-8); every join is inner so a zero-relation source yields an
+empty result at any depth (#114 / DR-8 preserved). All new types
+(`TraversalPlan`, `TraversalStep`, `TraversalLowering`) are `internal` —
+`Strategos.Ontology.Npgsql` carries no PublicAPI baseline — so no `PublicAPI.*.txt`
+re-baseline is required. See the provider reference's *Link traversal
+(depth-tiered lowering)* section.
+
 ### Cross-product breaking changes
 
 This section is **present on every release that touches the builder public
