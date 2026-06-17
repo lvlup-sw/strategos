@@ -227,6 +227,28 @@ stream — no new mutation surface (INV-7).
   path. These hosting types are not part of the `src/Strategos` builder PublicAPI
   baseline, so no `PublicAPI.*.txt` re-baseline is required.
 
+### Added — Fork-path step configuration (DR-17, #134)
+
+- **Fork-path step configuration** (DR-17, #134) — `IForkPathBuilder<TState>`
+  gains the `Then<TStep>(Action<IStepConfiguration<TState>>)` overload, bringing
+  fork branches to parity with the top-level `IWorkflowBuilder<TState>` and
+  loop-body `ILoopBuilder<TState>` sequencing contexts. A configured fork-path
+  step carries its `StepConfigurationDefinition` into the immutable workflow
+  definition and the export-only wire contract via `WorkflowDefinitionProjection`.
+  `IForkPathBuilder` is not one of the 7 gated cross-product builder interfaces,
+  so no `PublicAPI.*.txt` re-baseline is required.
+  - **Enforced for fork-path steps:** `ValidateState(...)` now lowers into the
+    generated Wolverine saga as a Guard-Then-Dispatch validation guard, matching
+    top-level and loop steps. (Previously the fork-path extractor dropped it.)
+  - **Declared, not yet enforced** (for every step kind, fork or not): `WithRetry`
+    / `WithTimeout` / `Compensate` are captured in the definition and the
+    declarative export, but the source generator does not yet emit Wolverine
+    retry / scheduled-timeout / compensation — that lowering is unbuilt for all
+    step kinds and is tracked by **#135** (an INV-1 generator concern). `WithContext`
+    is also not lowered in the production generator pipeline today
+    (`ContextAssemblerEmitter` / `ContextModelExtractor` are exercised by unit
+    tests only, never wired into `WorkflowIncrementalGenerator`).
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single

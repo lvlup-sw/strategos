@@ -165,6 +165,51 @@ public class ProjectionTests
     }
 
     /// <summary>
+    /// DR-17 — a fork-path step configured via the new
+    /// <c>IForkPathBuilder.Then(configure)</c> overload carries its retry,
+    /// timeout, and compensation configuration through the export-only projection
+    /// to the wire contract (<c>ForkPoints[i].Paths[j].Steps[k].Configuration</c>).
+    /// This is the declarative lowering path for per-branch step config; the
+    /// saga (Wolverine+Marten) lowering is a separate generator concern.
+    /// </summary>
+    [Test]
+    public async Task ToContract_ConfiguredForkPathStep_CarriesRetryTimeoutCompensate()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("fork-config-workflow")
+            .StartWith<ValidateStep>()
+            .Fork(
+                path => path.Then<ProcessStep>(step => step
+                    .WithRetry(3, TimeSpan.FromSeconds(5))
+                    .WithTimeout(TimeSpan.FromMinutes(2))
+                    .Compensate<RefundStep>()),
+                path => path.Then<NotifyStep>())
+            .Join<CompleteStep>()
+            .Finally<NotifyAdminStep>();
+
+        var v1 = workflow.ToContract();
+
+        await Assert.That(v1.ForkPoints.Count).IsEqualTo(1);
+
+        // The first branch's configured step projects to a SkillStep carrying config.
+        var configuredStep = v1.ForkPoints[0].Paths[0].Steps.OfType<SkillStep>().First();
+        await Assert.That(configuredStep.Configuration).IsNotNull()
+            .Because("DR-17: fork-path step config must survive the export.");
+        await Assert.That(configuredStep.Configuration!.Retry).IsNotNull();
+        await Assert.That(configuredStep.Configuration!.Retry!.MaxAttempts).IsEqualTo(3);
+        await Assert.That(configuredStep.Configuration!.Timeout).IsNotNull()
+            .Because("DR-17: WithTimeout must project to the wire duration string.");
+        await Assert.That(configuredStep.Configuration!.Compensation).IsNotNull();
+        await Assert.That(configuredStep.Configuration!.Compensation!.CompensationStepType)
+            .IsEqualTo(typeof(RefundStep).Name);
+
+        // The unconfigured branch step carries no configuration.
+        var plainStep = v1.ForkPoints[0].Paths[1].Steps.OfType<SkillStep>().First();
+        await Assert.That(plainStep.Configuration).IsNull()
+            .Because("an unconfigured fork-path step must not synthesize config.");
+    }
+
+    /// <summary>
     /// T21 hygiene — the #50 swap correction: the builder IR in
     /// <c>src/Strategos/Definitions/</c> is the build/execution authority and is
     /// <b>retained</b>, never deleted in favour of the wire records. Asserts the
