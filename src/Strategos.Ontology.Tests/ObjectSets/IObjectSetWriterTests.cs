@@ -47,6 +47,10 @@ public class StubObjectSetWriter : IObjectSetWriter
     public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
         => Task.CompletedTask;
 
+    // Batch relate added for DR-13/R6; this stub only satisfies the interface.
+    public Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+        => Task.CompletedTask;
+
     // Attributed relate added for DR-4 (Ontology Edge Foundation). Real behavior
     // is exercised by InMemoryObjectSetProvider; this stub only satisfies the interface.
     public Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)

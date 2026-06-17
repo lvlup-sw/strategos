@@ -223,6 +223,31 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// DR-13/R6: the in-memory provider fulfils the batch reservation with a naive
+    /// per-request loop over the single-pair <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>,
+    /// so each request keeps the identical eager-validation, self-loop, and
+    /// idempotency contract. The set-based fast path is an Npgsql concern (#115);
+    /// in memory there is no round-trip to amortize.
+    /// </remarks>
+    public async Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+
+        foreach (var request in requests)
+        {
+            ct.ThrowIfCancellationRequested();
+            await RelateAsync(
+                request.SourceDescriptor,
+                request.SourceId,
+                request.LinkName,
+                request.TargetDescriptor,
+                request.TargetId,
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task RelateAsync<TRel>(
         string srcDescriptor,
         string srcId,

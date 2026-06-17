@@ -178,22 +178,75 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var whereClause = sourceTranslation.WhereClause;
         var filterParams = sourceTranslation.Parameters;
 
-        // 4. Build SQL with optional WHERE clause
-        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
-
-        // 5. Execute query
+        // 4. Execute. When iterative-scan knobs are configured (DR-13/R8) the search
+        //    is an ANN CTE run inside a transaction so the SET LOCAL knobs take
+        //    effect; otherwise the pre-DR-13 single-statement query is used.
         var items = new List<T>();
         var scores = new List<double>();
 
+        if (_options.IterativeScan is { } iterativeScan)
+        {
+            var composedSql = SqlGenerator.BuildIterativeScanSimilarityQuery(
+                _options.Schema, tableName, expression.Metric, iterativeScan, whereClause);
+
+            // SET LOCAL is transaction-scoped: the knobs apply only inside this
+            // transaction and never leak onto the pooled connection.
+            await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using var scopedCmd = new NpgsqlCommand(composedSql, connection, transaction);
+            BindSimilarityParameters(scopedCmd, queryVector, expression.TopK, filterParams);
+
+            await ReadSimilarityRowsAsync(scopedCmd, expression, items, scores, ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+        }
+
+        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
+
         await using var cmd = _dataSource.CreateCommand(sql);
+        BindSimilarityParameters(cmd, queryVector, expression.TopK, filterParams);
+
+        await ReadSimilarityRowsAsync(cmd, expression, items, scores, ct).ConfigureAwait(false);
+
+        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+    }
+
+    /// <summary>
+    /// Binds the shared similarity parameters (<c>@query</c>, <c>@topK</c>, and any
+    /// translated filter params) onto a command, so the plain and iterative-scan
+    /// (DR-13/R8) similarity paths bind identically.
+    /// </summary>
+    private static void BindSimilarityParameters(
+        NpgsqlCommand cmd,
+        float[] queryVector,
+        int topK,
+        IReadOnlyList<ExpressionTranslator.SqlParameter> filterParams)
+    {
         cmd.Parameters.AddWithValue("query", new Vector(queryVector));
-        cmd.Parameters.AddWithValue("topK", expression.TopK);
+        cmd.Parameters.AddWithValue("topK", topK);
 
         foreach (var p in filterParams)
         {
             cmd.Parameters.AddWithValue(p.Name.TrimStart('@'), p.Value);
         }
+    }
 
+    /// <summary>
+    /// Reads similarity rows from an executed command into <paramref name="items"/>
+    /// / <paramref name="scores"/>, converting pgvector distance to a similarity
+    /// score and dropping rows below <see cref="SimilarityExpression.MinRelevance"/>.
+    /// Shared by the plain and iterative-scan (DR-13/R8) similarity paths so both
+    /// read rows identically.
+    /// </summary>
+    private async Task ReadSimilarityRowsAsync<T>(
+        NpgsqlCommand cmd,
+        SimilarityExpression expression,
+        List<T> items,
+        List<double> scores,
+        CancellationToken ct)
+        where T : class
+    {
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -223,8 +276,6 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
-
-        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
     }
 
     /// <inheritdoc />
@@ -380,27 +431,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// into the T8 junction table. Endpoints are addressed by their projected
     /// BUSINESS id (the in-memory relate-store contract), so each endpoint's
     /// surrogate <c>id uuid</c> is resolved via a <c>data->>'key'</c> subquery
-    /// against its object table. Validation is EAGER: both endpoints are probed
-    /// via <c>SELECT EXISTS</c> BEFORE the insert, so a missing endpoint surfaces
-    /// a typed <see cref="RelationEndpointNotFoundException"/> and no junction row
-    /// is written (mirroring the in-memory provider / DR-8). Idempotency rides
-    /// the T8 <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// against its object table. Idempotency rides the T8
+    /// <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
     /// INV-2: raw Npgsql only.
     /// <para>
-    /// TOCTOU (review L): the two eager <c>SELECT EXISTS</c> probes and the
-    /// <c>INSERT … ON CONFLICT</c> are separate commands on no shared transaction,
-    /// so a concurrent delete of an endpoint between the probe and the insert opens
-    /// a check-to-use window. The typed
-    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/> guarantee is
-    /// therefore BEST-EFFORT under concurrency: a racing delete can turn an
-    /// expected typed error into the insert resolving zero endpoint rows (a silent
-    /// no-op) instead. It is never CORRUPTING — the insert's endpoint-resolving
-    /// subquery plus the junction's foreign keys reject any row whose endpoints no
-    /// longer exist, so a dangling junction row can never be written, and
-    /// <c>ON CONFLICT DO NOTHING</c> keeps re-relates idempotent. Wrapping the
-    /// probe + insert in one transaction (or folding the existence check into the
-    /// insert's <c>RETURNING</c>) would close the window; it is intentionally
-    /// deferred — not restructured here — to keep the change minimal.
+    /// DR-13/R4: validation is EAGER and ATOMIC. The endpoint resolution, the
+    /// idempotent insert (a data-modifying CTE, executed exactly once), and the
+    /// endpoint-existence flags are ONE self-validating statement
+    /// (<see cref="SqlGenerator.BuildValidatingRelateInsertSql"/>) issued as a
+    /// single <see cref="NpgsqlBatch"/>. Because Postgres runs all <c>WITH</c>
+    /// sub-statements under a SINGLE snapshot, there is no check-to-use gap: a
+    /// missing endpoint (including one deleted concurrently) surfaces the typed
+    /// <see cref="RelationEndpointNotFoundException"/> rather than a silent no-op,
+    /// and no junction row is written. This replaces the pre-DR-13 three-round-trip
+    /// (two <c>SELECT EXISTS</c> probes + insert) shape and its documented TOCTOU
+    /// caveat. The disallowed-self-loop case takes a probe-only path (no insert),
+    /// so its endpoint-first ordering is preserved without writing a row.
     /// </para>
     /// </remarks>
     public async Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
@@ -419,24 +465,25 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // "relation does not exist" instead of a typed error.
         RequireLinkDeclared(_graph, srcDescriptor, linkName);
 
-        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
-        // any row, so a failed relate never leaves a dangling junction row.
-        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
-        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
-
-        // SELF-LOOP policy (DR-8 parity, t14): relating an instance to itself along
-        // a link whose AllowsSelfLoop is false is REFUSED with the SAME typed error
-        // the in-memory provider raises — never silently written. Checked AFTER
-        // eager endpoint validation so the ordering matches the in-memory
-        // WriteRelationRow guard (a missing endpoint still surfaces first).
-        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
-
         // DR-11b: route to the per-(link, target-descriptor) junction table. A
         // polymorphic link writes account_holdings_stock / _bond; a monomorphic
         // link keeps account_written_by (DR-7..DR-10 lockstep).
         var junctionTableName = SqlGenerator.JunctionTableNameFor(
             ResolveRelateJunction(_graph!, srcDescriptor, linkName, tgtDescriptor));
-        var sql = SqlGenerator.BuildRelateInsertSql(
+
+        // SELF-LOOP policy (DR-8 parity, t14): a DISALLOWED self-loop must NOT write
+        // a row, so it cannot take the auto-inserting validating statement. Probe
+        // the single shared endpoint first (a missing endpoint still surfaces FIRST,
+        // matching the in-memory WriteRelationRow order), then refuse the self-loop.
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
+        {
+            await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
+
+        // DR-13/R4: ONE self-validating statement — resolve endpoints, insert in a
+        // data-modifying CTE, return existence flags — issued as a single batch.
+        var sql = SqlGenerator.BuildValidatingRelateInsertSql(
             _options.Schema,
             junctionTableName,
             source.TableName,
@@ -444,10 +491,92 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             target.TableName,
             target.KeyProperty);
 
-        await using var cmd = _dataSource.CreateCommand(sql);
-        cmd.Parameters.AddWithValue("srcId", srcId);
-        cmd.Parameters.AddWithValue("tgtId", tgtId);
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await ExecuteValidatingRelateAsync(
+            sql,
+            configureParameters: parameters =>
+            {
+                parameters.Add(new NpgsqlParameter("srcId", srcId));
+                parameters.Add(new NpgsqlParameter("tgtId", tgtId));
+            },
+            srcDescriptor,
+            srcId,
+            tgtDescriptor,
+            tgtId,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Executes a DR-13/R4 self-validating relate statement
+    /// (<see cref="SqlGenerator.BuildValidatingRelateInsertSql"/> /
+    /// <see cref="SqlGenerator.BuildValidatingAssociationRelateInsertSql"/>) as a
+    /// SINGLE <see cref="NpgsqlBatch"/>, reads the returned
+    /// <c>src_exists</c> / <c>tgt_exists</c> flags, and throws a typed
+    /// <see cref="RelationEndpointNotFoundException"/> for whichever endpoint is
+    /// absent. Because the insert and the existence probe share the statement's
+    /// single snapshot, a missing endpoint is detected atomically with the insert —
+    /// no row is written and the typed error is never lost to a TOCTOU race.
+    /// </summary>
+    private async Task ExecuteValidatingRelateAsync(
+        string sql,
+        Action<NpgsqlParameterCollection> configureParameters,
+        string srcDescriptor,
+        string srcId,
+        string tgtDescriptor,
+        string tgtId,
+        CancellationToken ct)
+    {
+        var batchCommand = new NpgsqlBatchCommand(sql);
+        configureParameters(batchCommand.Parameters);
+
+        await using var batch = _dataSource.CreateBatch();
+        batch.BatchCommands.Add(batchCommand);
+
+        bool srcExists;
+        bool tgtExists;
+        await using (var reader = await batch.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                // The statement always returns exactly one flags row; a missing row
+                // means the contract was violated rather than an endpoint absent.
+                throw new InvalidOperationException(
+                    "Self-validating relate statement returned no endpoint-existence row.");
+            }
+
+            srcExists = reader.GetBoolean(reader.GetOrdinal("src_exists"));
+            tgtExists = reader.GetBoolean(reader.GetOrdinal("tgt_exists"));
+        }
+
+        // Source-first ordering matches the in-memory WriteRelationRow guard
+        // (it validates the source endpoint before the target).
+        if (!srcExists)
+        {
+            throw new RelationEndpointNotFoundException(srcDescriptor, srcId);
+        }
+
+        if (!tgtExists)
+        {
+            throw new RelationEndpointNotFoundException(tgtDescriptor, tgtId);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// DR-13/R6: the Npgsql provider RESERVES the batch surface but DEFERS the
+    /// set-based DML to bulk edge ingestion (#115). Until then it throws
+    /// <see cref="NotSupportedException"/> rather than silently degrading to a
+    /// per-edge round-trip loop — which would mask the missing batched lowering and
+    /// give callers the round-trip cost the batch API exists to eliminate. The
+    /// throw is unconditional and opens no connection.
+    /// </remarks>
+    public Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+
+        throw new NotSupportedException(
+            "RelateBatchAsync is reserved on the Npgsql provider but its set-based DML is "
+            + "deferred to bulk edge ingestion (#115). Use the single-pair RelateAsync, or the "
+            + "in-memory provider, until #115 lands the batched lowering.");
     }
 
     /// <inheritdoc />
@@ -641,13 +770,25 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private void ThrowIfDisallowedSelfLoop(
         string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId)
     {
-        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
-            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
-            && !SelfLoopAllowed(srcDescriptor, linkName))
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
         {
             throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
         }
     }
+
+    /// <summary>
+    /// Whether a relate connects an instance to ITSELF — same (descriptor, id) on
+    /// both endpoints — along a link whose
+    /// <see cref="Descriptors.LinkDescriptor.AllowsSelfLoop"/> is <c>false</c>. The
+    /// boolean form of <see cref="ThrowIfDisallowedSelfLoop"/>, used by the DR-13/R4
+    /// plain relate to route a disallowed self-loop down the probe-only (no-insert)
+    /// path so it never writes a row before the policy is enforced.
+    /// </summary>
+    private bool IsDisallowedSelfLoop(
+        string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId) =>
+        string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+        && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+        && !SelfLoopAllowed(srcDescriptor, linkName);
 
     /// <summary>
     /// Resolves whether the named link on <paramref name="srcDescriptor"/> permits
@@ -737,22 +878,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var plan = ResolveAssociationRelate(_graph, associationDescriptor, srcDescriptor, tgtDescriptor);
 
         var source = new RelateEndpoint(plan.SourceTable, plan.SourceKeyProperty);
-        var target = new RelateEndpoint(plan.TargetTable, plan.TargetKeyProperty);
 
-        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
-        // the association row, so a failed attributed relate never leaves a
-        // dangling association (mirrors the plain relate posture / the in-memory
-        // provider).
-        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
-        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+        // SELF-LOOP policy (DR-8 parity, t14): a DISALLOWED self-loop must NOT write
+        // an association row, so — as with the plain path (DR-13/R4) — probe the
+        // single shared endpoint first (a missing endpoint surfaces FIRST), then
+        // refuse the self-loop, never the auto-inserting validating statement.
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
+        {
+            await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
 
-        // SELF-LOOP policy (DR-8 parity, t14): an attributed relate routes through
-        // the SAME self-loop guard as the plain path (the in-memory provider
-        // enforces both via WriteRelationRow), so a disallowed (x, link, x) is
-        // refused with the same typed error before any association row is written.
-        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
-
-        var sql = SqlGenerator.BuildAssociationRelateInsertSql(
+        // DR-13/R4: ONE self-validating statement — resolve endpoints, insert the
+        // association-object row in a data-modifying CTE, return existence flags —
+        // issued as a single batch, so a missing endpoint surfaces the typed error
+        // atomically with the insert and never leaves a dangling association.
+        var sql = SqlGenerator.BuildValidatingAssociationRelateInsertSql(
             _options.Schema,
             plan.AssociationTable,
             plan.SourceColumn,
@@ -762,12 +903,21 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             plan.TargetTable,
             plan.TargetKeyProperty);
 
-        await using var cmd = _dataSource.CreateCommand(sql);
-        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("data", JsonSerializer.Serialize(association));
-        cmd.Parameters.AddWithValue("srcId", srcId);
-        cmd.Parameters.AddWithValue("tgtId", tgtId);
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        var serializedAssociation = JsonSerializer.Serialize(association);
+        await ExecuteValidatingRelateAsync(
+            sql,
+            configureParameters: parameters =>
+            {
+                parameters.Add(new NpgsqlParameter("id", Guid.NewGuid()));
+                parameters.Add(new NpgsqlParameter("data", serializedAssociation));
+                parameters.Add(new NpgsqlParameter("srcId", srcId));
+                parameters.Add(new NpgsqlParameter("tgtId", tgtId));
+            },
+            srcDescriptor,
+            srcId,
+            tgtDescriptor,
+            tgtId,
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1034,14 +1184,65 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
     {
         var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
+        var keyPropertyName = ResolveEnsureSchemaKeyProperty<T>(descriptorName, _graph);
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,
             _embeddingProvider.Dimensions,
-            _options.IndexType);
+            _options.IndexType,
+            keyPropertyName: keyPropertyName);
 
         await using var cmd = _dataSource.CreateCommand(ddl);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the BUSINESS-id key property name (DR-13/R2) for an
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> call, so the
+    /// vertex DDL can emit a <c>UNIQUE ((data->>'key'))</c> expression index that
+    /// makes the relate/traversal endpoint-resolution subqueries deterministic.
+    /// Resolves the descriptor by name (explicit, else default-overload
+    /// resolution) and returns its <see cref="Descriptors.PropertyDescriptor.Name"/>;
+    /// returns <c>null</c> when no graph is in scope OR the resolved descriptor
+    /// declares no key — both leave the DDL key-index-free, byte-identical to the
+    /// pre-DR-13 pgvector-only lowering.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior without
+    /// a live <see cref="NpgsqlDataSource"/>, matching the seam used by
+    /// <see cref="ResolveEnsureSchemaTableName{T}(string?, OntologyGraph?)"/>. INV-8:
+    /// the key is read from the descriptor resolved by NAME, never <c>typeof</c>.
+    /// A descriptor that is registered but absent from the graph (or any resolution
+    /// failure) yields <c>null</c> rather than throwing — the unique index is a
+    /// hardening, never a gate on schema creation.
+    /// </remarks>
+    internal static string? ResolveEnsureSchemaKeyProperty<T>(string? descriptorName, OntologyGraph? graph)
+    {
+        if (graph is null)
+        {
+            return null;
+        }
+
+        // Resolve the descriptor NAME the same way the table name is resolved:
+        // an explicit name wins; otherwise the default-overload (single-
+        // registration) resolution. A multi-registered or unregistered type makes
+        // the default resolution throw — but EnsureSchemaAsync would already have
+        // thrown on the table-name resolution, so we mirror that by letting an
+        // explicit name pass straight through.
+        var resolvedName = descriptorName;
+        if (resolvedName is null)
+        {
+            if (!graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names) || names.Count != 1)
+            {
+                return null;
+            }
+
+            resolvedName = names[0];
+        }
+
+        var descriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, resolvedName, StringComparison.Ordinal));
+        return descriptor?.KeyProperty?.Name;
     }
 
     /// <summary>

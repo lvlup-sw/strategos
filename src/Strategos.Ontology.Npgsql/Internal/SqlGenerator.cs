@@ -75,6 +75,93 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// Builds a similarity query with pgvector ITERATIVE-SCAN knobs (DR-13/R8): the
+    /// supplied <see cref="IterativeScanOptions"/> are emitted as transaction-scoped
+    /// <c>SET LOCAL</c> statements, and the vector search is shaped as an
+    /// index-ordered top-K CTE (<c>WITH ann AS (...)</c>) the outer query then
+    /// projects from. A filter is applied in the OUTER query (post-CTE), so the CTE
+    /// stays a pure index scan and the iterative scan supplies enough candidate rows
+    /// for the outer filter to still satisfy <c>topK</c>.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="tableName">The vertex object table (snake_cased).</param>
+    /// <param name="metric">The pgvector distance metric.</param>
+    /// <param name="options">The iterative-scan knobs to apply via <c>SET LOCAL</c>.</param>
+    /// <param name="whereClause">
+    /// An OPTIONAL filter applied in the outer query (the same translated predicate
+    /// <see cref="BuildSimilarityQuery"/> takes), or <c>null</c> for none.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The knobs target the HNSW index
+    /// (<c>hnsw.*</c> GUCs). <c>SET LOCAL</c> is transaction-scoped, so the caller
+    /// MUST run this composed statement inside an explicit transaction for the knobs
+    /// to take effect and to guarantee they never leak onto a pooled connection. The
+    /// GUC VALUES here are provider-controlled enum/int literals (never caller text),
+    /// so they are safe to interpolate; the query vector and topK still bind via
+    /// <c>@query</c> / <c>@topK</c>.
+    /// </remarks>
+    internal static string BuildIterativeScanSimilarityQuery(
+        string schema,
+        string tableName,
+        DistanceMetric metric,
+        IterativeScanOptions options,
+        string? whereClause = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tableName);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var op = GetDistanceOperator(metric);
+        var qSchema = QuoteIdentifier(schema);
+        var qTable = QuoteIdentifier(tableName);
+
+        var sb = new StringBuilder();
+
+        // 1. Transaction-scoped GUCs. The mode is always emitted; the numeric knobs
+        //    only when supplied, so an unset knob leaves the session default.
+        sb.Append($"SET LOCAL hnsw.iterative_scan = '{ToGucLiteral(options.Mode)}'; ");
+        if (options.MaxScanTuples is { } maxScanTuples)
+        {
+            sb.Append($"SET LOCAL hnsw.max_scan_tuples = {maxScanTuples}; ");
+        }
+
+        if (options.EfSearch is { } efSearch)
+        {
+            sb.Append($"SET LOCAL hnsw.ef_search = {efSearch}; ");
+        }
+
+        // 2. The ANN CTE: an index-ordered top-K scan over the vector column. Kept a
+        //    pure scan (no filter) so the planner uses the HNSW index for the
+        //    ordered limit; the iterative scan over-fetches as needed.
+        sb.Append("WITH ann AS (");
+        sb.Append($"SELECT id, data, (embedding {op} @query) AS distance FROM {qSchema}.{qTable} ");
+        sb.Append("ORDER BY distance LIMIT @topK) ");
+
+        // 3. The outer query: project from the CTE, applying the filter post-scan.
+        sb.Append("SELECT id, data, distance FROM ann");
+        if (!string.IsNullOrEmpty(whereClause))
+        {
+            sb.Append($" WHERE {whereClause}");
+        }
+
+        sb.Append(" ORDER BY distance");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Maps an <see cref="IterativeScanMode"/> to its pgvector
+    /// <c>hnsw.iterative_scan</c> GUC literal.
+    /// </summary>
+    private static string ToGucLiteral(IterativeScanMode mode) => mode switch
+    {
+        IterativeScanMode.Off => "off",
+        IterativeScanMode.StrictOrder => "strict_order",
+        IterativeScanMode.RelaxedOrder => "relaxed_order",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported iterative-scan mode."),
+    };
+
+    /// <summary>
     /// Builds a SELECT query for filter/stream operations.
     /// </summary>
     internal static string BuildSelectQuery(
@@ -109,12 +196,28 @@ internal static class SqlGenerator
     /// <summary>
     /// Builds a DDL statement to create the pgvector extension, table, and index.
     /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="tableName">The vertex object table name (snake_cased).</param>
+    /// <param name="vectorDimensions">The embedding vector dimensionality.</param>
+    /// <param name="indexType">The pgvector index method.</param>
+    /// <param name="metric">The distance metric the vector index is built for.</param>
+    /// <param name="keyPropertyName">
+    /// The descriptor's key property name — the <c>data jsonb</c> field holding the
+    /// vertex's BUSINESS id (DR-13/R2). When supplied, a <c>CREATE UNIQUE INDEX
+    /// ... ((data->>'key'))</c> expression index is emitted so the relate/unrelate/
+    /// traversal endpoint-resolution subqueries (<c>data->>'key' = @id</c>) resolve
+    /// a SINGLE deterministic row per business id. When <c>null</c> (a
+    /// pgvector-only table with no declared key, e.g. direct instantiation without
+    /// a graph) no key index is emitted and the DDL is byte-identical to the
+    /// pre-DR-13 lowering.
+    /// </param>
     internal static string BuildSchemaCreationDdl(
         string schema,
         string tableName,
         int vectorDimensions,
         PgVectorIndexType indexType,
-        DistanceMetric metric = DistanceMetric.Cosine)
+        DistanceMetric metric = DistanceMetric.Cosine,
+        string? keyPropertyName = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(vectorDimensions, 1);
 
@@ -147,6 +250,24 @@ internal static class SqlGenerator
         }
 
         sb.Append(';');
+
+        // DR-13/R2: the business-id KEY-PROPERTY unique expression index. The
+        // relate/unrelate/traversal endpoint-resolution subqueries all key on
+        // data->>'key' = @id and assume that resolves a SINGLE row; this index
+        // makes that uniqueness a storage-layer guarantee. Omitted entirely for a
+        // keyless (pgvector-only) table so the back-compat DDL is unchanged.
+        if (!string.IsNullOrEmpty(keyPropertyName))
+        {
+            // The key name is interpolated into a single-quoted JSON-path literal
+            // (not parameter-bindable), so escape any embedded apostrophe — the
+            // same posture the relate SQL builders take (review M1).
+            var key = EscapeStringLiteral(keyPropertyName);
+            var keyIndexName = JunctionIdentifier.Derive($"ux_{tableName}_{TypeMapper.ToSnakeCase(keyPropertyName)}");
+            sb.AppendLine();
+            sb.Append(
+                $"CREATE UNIQUE INDEX IF NOT EXISTS {QuoteIdentifier(keyIndexName)} "
+                + $"ON {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} ((data->>'{key}'));");
+        }
 
         return sb.ToString();
     }
@@ -196,9 +317,35 @@ internal static class SqlGenerator
         sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
         sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
         sb.AppendLine("    UNIQUE (source_id, target_id)");
-        sb.Append(");");
+        sb.AppendLine(");");
+        AppendReverseJunctionIndex(sb, schema, junctionTableName);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Appends the REVERSE-traversal index DDL (DR-13/R1) for a junction table.
+    /// The <c>UNIQUE (source_id, target_id)</c> constraint already backs FORWARD
+    /// traversal (source → target), but a composite index is prefix-ordered, so it
+    /// does NOT serve a lookup keyed on <c>target_id</c> alone — reverse traversal
+    /// (target → source) and a target-endpoint FK-cascade probe would otherwise
+    /// fall back to a sequential scan. This emits an explicit
+    /// <c>(target_id, source_id)</c> index so both directions are index-backed.
+    /// </summary>
+    /// <remarks>
+    /// The index name is <c>ix_{junction}_target_source</c>, run through
+    /// <see cref="JunctionIdentifier.Derive(string)"/> so it can never exceed
+    /// PostgreSQL's silent 63-byte truncation limit (the junction name itself may
+    /// already be near the cap). <c>IF NOT EXISTS</c> keeps the DDL idempotent,
+    /// matching the <c>CREATE TABLE IF NOT EXISTS</c> posture. INV-2: raw DDL only.
+    /// </remarks>
+    private static void AppendReverseJunctionIndex(
+        StringBuilder sb, string schema, string junctionTableName)
+    {
+        var indexName = JunctionIdentifier.Derive($"ix_{junctionTableName}_target_source");
+        sb.Append(
+            $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(indexName)} "
+            + $"ON {QuoteIdentifier(schema)}.{QuoteIdentifier(junctionTableName)} (target_id, source_id);");
     }
 
     /// <summary>
@@ -329,14 +476,19 @@ internal static class SqlGenerator
         sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
         sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
         sb.AppendLine("    UNIQUE (source_id, target_id)");
-        sb.Append(");");
+        sb.AppendLine(");");
+        AppendReverseJunctionIndex(sb, schema, junctionTableName);
 
         return sb.ToString();
     }
 
     /// <summary>
     /// Builds the idempotent INSERT that materializes a pure-link relation
-    /// (DR-7) into the T8 junction table. The in-memory relate-store addresses
+    /// (DR-7) into the T8 junction table. SUPERSEDED in the live relate path by the
+    /// self-validating, single-snapshot
+    /// <see cref="BuildValidatingRelateInsertSql"/> (DR-13/R4); retained as the
+    /// minimal insert shape (the pre-R4 lowering) and pinned by the relate SQL-shape
+    /// tests. The in-memory relate-store addresses
     /// endpoints by their projected BUSINESS id (a string), so this resolves
     /// each endpoint row's surrogate <c>id uuid</c> via a subquery against the
     /// endpoint object table's <c>data jsonb</c> key field, then inserts the
@@ -390,6 +542,73 @@ internal static class SqlGenerator
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
             + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId "
             + "ON CONFLICT (source_id, target_id) DO NOTHING";
+    }
+
+    /// <summary>
+    /// Builds the SELF-VALIDATING pure-link relate statement (DR-13/R4): a SINGLE
+    /// statement that resolves both endpoints, performs the idempotent junction
+    /// insert in a data-modifying CTE, and RETURNS the two endpoint-existence flags.
+    /// This collapses the pre-DR-13 three commands (two eager <c>SELECT EXISTS</c>
+    /// probes + one <c>INSERT</c>, each a separate round-trip on no shared snapshot)
+    /// into one round-trip, and — because Postgres runs all <c>WITH</c>
+    /// sub-statements under a SINGLE snapshot — closes the probe→insert TOCTOU
+    /// window: a concurrent endpoint delete can no longer turn the expected typed
+    /// error into a silent no-op.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="junctionTableName">
+    /// The junction table name, as produced by
+    /// <see cref="JunctionTableNameFor(JunctionTableDescriptor)"/> /
+    /// <see cref="JunctionTableName(string, string)"/>.
+    /// </param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">The source descriptor's key property name.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The data-modifying <c>ins</c> CTE is
+    /// executed EXACTLY ONCE (a documented Postgres guarantee) even though the final
+    /// <c>SELECT</c> does not read its output, and its cross join over the resolved
+    /// endpoint CTEs writes ZERO rows when either endpoint is absent — so a missing
+    /// endpoint leaves no dangling row. The final <c>SELECT</c> returns
+    /// <c>src_exists</c> / <c>tgt_exists</c>; the provider reads them and raises the
+    /// typed <see cref="ObjectSets.RelationEndpointNotFoundException"/> for whichever
+    /// endpoint is missing. Idempotency still rides the junction
+    /// <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// Endpoint business ids bind via <c>@srcId</c> / <c>@tgtId</c>, never
+    /// interpolated.
+    /// </remarks>
+    internal static string BuildValidatingRelateInsertSql(
+        string schema,
+        string junctionTableName,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qJunction = QuoteIdentifier(junctionTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
+
+        return
+            $"WITH s AS (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{srcKey}' = @srcId), "
+            + $"t AS (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{tgtKey}' = @tgtId), "
+            + $"ins AS ("
+            + $"INSERT INTO {qSchema}.{qJunction} (source_id, target_id) "
+            + $"SELECT s.id, t.id FROM s, t "
+            + $"ON CONFLICT (source_id, target_id) DO NOTHING"
+            + $") "
+            + $"SELECT EXISTS(SELECT 1 FROM s) AS src_exists, EXISTS(SELECT 1 FROM t) AS tgt_exists";
     }
 
     /// <summary>
@@ -846,7 +1065,11 @@ internal static class SqlGenerator
 
     /// <summary>
     /// Builds the INSERT that materializes an ATTRIBUTED relation (DR-4/DR-8,
-    /// t11) into a T8 association-OBJECT table. Unlike the pure-link junction
+    /// t11) into a T8 association-OBJECT table. SUPERSEDED in the live attributed
+    /// relate path by the self-validating, single-snapshot
+    /// <see cref="BuildValidatingAssociationRelateInsertSql"/> (DR-13/R4); retained
+    /// as the minimal insert shape and pinned by the association SQL-shape tests.
+    /// Unlike the pure-link junction
     /// insert (<see cref="BuildRelateInsertSql"/>), an association row carries
     /// its OWN identity and edge attributes, so this writes a fresh
     /// <c>id uuid</c>, the serialized association payload as <c>data jsonb</c>,
@@ -921,6 +1144,73 @@ internal static class SqlGenerator
             + $"SELECT @id, @data::jsonb, s.id, t.id "
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
             + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId";
+    }
+
+    /// <summary>
+    /// Builds the SELF-VALIDATING ATTRIBUTED relate statement (DR-13/R4): the
+    /// attributed-relate counterpart to
+    /// <see cref="BuildValidatingRelateInsertSql"/>. A SINGLE statement resolves
+    /// both endpoints, inserts the association-object row (its own <c>@id</c> +
+    /// <c>@data</c> + the two role-named endpoint FK columns) in a data-modifying
+    /// CTE, and RETURNS the endpoint-existence flags. Collapses the three-round-trip
+    /// (two probes + insert) attributed relate into one and closes the same TOCTOU
+    /// window via the single-snapshot <c>WITH</c> semantics.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="associationTableName">The association-object table name.</param>
+    /// <param name="sourceColumn">The <c>{role}_id</c> FK column for the SOURCE endpoint.</param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">The source descriptor's key property name.</param>
+    /// <param name="targetColumn">The <c>{role}_id</c> FK column for the TARGET endpoint.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. As with the plain path, the data-modifying
+    /// <c>ins</c> CTE runs exactly once under the same snapshot as the existence
+    /// probe; its cross join writes ZERO rows when either endpoint is absent, so a
+    /// missing endpoint leaves no dangling association row and the returned
+    /// <c>src_exists</c> / <c>tgt_exists</c> flags drive the typed
+    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/>. The association id
+    /// and payload bind via <c>@id</c> / <c>@data</c>; endpoint ids via
+    /// <c>@srcId</c> / <c>@tgtId</c> — never interpolated. The role FK columns are
+    /// quoted to stay identifier-identical with the association-object DDL.
+    /// </remarks>
+    internal static string BuildValidatingAssociationRelateInsertSql(
+        string schema,
+        string associationTableName,
+        string sourceColumn,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetColumn,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
+        var qSourceColumn = QuoteIdentifier(sourceColumn);
+        var qTargetColumn = QuoteIdentifier(targetColumn);
+
+        return
+            $"WITH s AS (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{srcKey}' = @srcId), "
+            + $"t AS (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{tgtKey}' = @tgtId), "
+            + $"ins AS ("
+            + $"INSERT INTO {qSchema}.{qAssoc} (id, data, {qSourceColumn}, {qTargetColumn}) "
+            + $"SELECT @id, @data::jsonb, s.id, t.id FROM s, t"
+            + $") "
+            + $"SELECT EXISTS(SELECT 1 FROM s) AS src_exists, EXISTS(SELECT 1 FROM t) AS tgt_exists";
     }
 
     /// <summary>

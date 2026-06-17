@@ -73,6 +73,61 @@ differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
 
+### Added — Npgsql edge-layer hardening (DR-13, #130)
+
+- **R1 — reverse junction index.** Every per-`(link, target-descriptor)` junction
+  table now emits an explicit `CREATE INDEX ... (target_id, source_id)` alongside
+  the forward `UNIQUE (source_id, target_id)` constraint, so reverse traversal and
+  target-endpoint FK probes are index-backed instead of falling back to a
+  sequential scan.
+- **R2 — vertex key-property unique index.** `EnsureSchemaAsync` now emits a
+  `CREATE UNIQUE INDEX ... ((data->>'key'))` expression index on the descriptor's
+  business-id key property, making the relate/traversal endpoint-resolution
+  subqueries (`data->>'key' = @id`) resolve a single deterministic row. Keyless
+  (pgvector-only) tables keep their pre-DR-13 DDL byte-identical.
+- **R4 — atomic, single-statement relate (TOCTOU closed, 3→1 round-trips).** The
+  plain and attributed Npgsql relate is collapsed from three commands (two eager
+  `SELECT EXISTS` probes + one `INSERT`, each its own round-trip on no shared
+  snapshot) into ONE self-validating statement issued as a single `NpgsqlBatch`:
+  endpoint resolution + idempotent insert (a data-modifying CTE, run exactly once)
+  + the returned `src_exists`/`tgt_exists` flags, all under Postgres's single
+  `WITH` snapshot. A missing endpoint — including one deleted concurrently —
+  surfaces the typed `RelationEndpointNotFoundException` instead of a silent no-op,
+  and no dangling row is written. The pre-DR-13 TOCTOU caveat on `RelateAsync` is
+  removed. A disallowed self-loop takes a probe-only (no-insert) path so its
+  endpoint-first ordering is preserved.
+- **R5 — `NpgsqlDataSource` posture + auto-prepare.** The provider's only DB entry
+  point is the INJECTED `NpgsqlDataSource` (no internal connection-string
+  construction), pinned by a reflection test. The `UsePgVector` DI shorthand now
+  enables Npgsql `Max Auto Prepare` (default 25 when the caller's connection string
+  does not set one), so the small, fixed set of relate/unrelate/traversal statement
+  shapes are server-side-prepared transparently across pooled connections — the
+  "OR `Max Auto Prepare` documented" branch of the R5 contract. Auto-prepare is
+  parameter-name-agnostic, so the existing `@named` parameters are retained (the
+  established SQL-shape test suite asserts them); positional `$1` rewriting was
+  judged gratuitous churn for no behavioural gain under auto-prepare. The `Npgsql`
+  package is pinned `9.0.3` → `10.0.3`.
+- **R6 — `RelateBatchAsync` reserved on `IObjectSetWriter`.** New
+  `Task RelateBatchAsync(IReadOnlyList<RelateRequest>, CancellationToken)` member
+  plus a new sealed `RelateRequest` record reserve a set-based relate surface for
+  bulk edge ingestion (#115). The in-memory provider fulfils it with a per-request
+  loop carrying the same eager-validation/self-loop/idempotency contract; the
+  Npgsql provider throws `NotSupportedException` until #115 lands the batched DML.
+  These `Strategos.Ontology` types are not part of the `src/Strategos` builder
+  PublicAPI baseline (scoped to the 7 `Strategos.Builders` interfaces), so no
+  `PublicAPI.*.txt` re-baseline is required.
+- **R8 — pgvector iterative-scan knobs.** New `IterativeScanOptions` /
+  `IterativeScanMode` on `Strategos.Ontology.Npgsql`, wired into
+  `PgVectorOptions.IterativeScan`. When set, a similarity query is shaped as an
+  index-ordered ANN CTE and run inside a transaction with transaction-scoped
+  `SET LOCAL hnsw.iterative_scan` / `hnsw.max_scan_tuples` / `hnsw.ef_search`, so a
+  filtered search keeps scanning the HNSW index until it has enough post-filter
+  rows to satisfy `topK` (instead of post-filtering a fixed candidate set and
+  under-returning). **Runtime requirement:** the pgvector SERVER extension must be
+  `>= 0.8.0` (iterative scans are a 0.8.0 feature). The `Pgvector` .NET client pin
+  is bumped `0.3.0` → `0.3.2`; that client's version line is independent of — and
+  cannot express — the server-extension requirement.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single
