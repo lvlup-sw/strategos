@@ -85,4 +85,15 @@ internal static class OntologyDiagnosticIds
     // INV-2: analyzer-only (no runtime counterpart in this task). Ids are
     // monotonic and never reused (INV-5) — AONT209/AONT210 are untouched.
     public const string AmbiguousTraversalWithoutDescriptor = "AONT211";
+
+    // Polymorphic-target-no-junction-table guard (AONT212) — DR-11 (#128).
+    // Under the per-(link, target-descriptor) junction posture, a link to a
+    // registered interface fans out into one junction table per IMPLEMENTOR
+    // descriptor. AONT212 fires when the interface link target has ZERO
+    // implementor object descriptors in the compilation: the fan-out set is
+    // empty, so NO junction table can be provisioned and the link is dead.
+    // Distinct from AONT003 (concrete target not registered) and AONT030
+    // (interface declares ACTIONS but no implementors). INV-5: monotonic, next
+    // free past the AONT211 ceiling; AONT209/AONT210/AONT211 untouched.
+    public const string PolymorphicTargetNoJunctionTable = "AONT212";
 }

@@ -429,4 +429,25 @@ internal static class OntologyDiagnostics
         // Reported from a CompilationEndAction (the multi-registration set and the
         // traversal sites are only correlated once the whole compilation is walked).
         customTags: WellKnownDiagnosticTags.CompilationEnd);
+
+    // --- Polymorphic-target-no-junction-table guard (AONT212) — DR-11 (#128) ---
+
+    public static readonly DiagnosticDescriptor PolymorphicTargetNoJunctionTable = new(
+        OntologyDiagnosticIds.PolymorphicTargetNoJunctionTable,
+        "Link to a polymorphic target with no implementor has no junction table",
+        "Link '{0}' on '{1}' targets interface '{2}', which no object type implements; "
+            + "under the per-(link, target-descriptor) junction posture a polymorphic link "
+            + "lowers to one junction table per implementor descriptor, so with zero "
+            + "implementors no junction table can be provisioned and the link is dead. "
+            + "Register at least one object type that Implements<{2}>, or retarget the link.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "DR-11 (#128): the per-(link, target-descriptor) junction posture lowers a "
+            + "link to a registered interface into one junction table per IMPLEMENTOR object "
+            + "descriptor. An interface link target with no implementors fans out to the empty "
+            + "set — no junction table is provisionable and any relate/traverse along the link "
+            + "is dead. AONT212 is the compile-time guard (INV-5: earliest-tier). It is distinct "
+            + "from AONT003 (a CONCRETE target type that is not a registered object) and AONT030 "
+            + "(an interface that declares ACTIONS but has no implementors).");
 }

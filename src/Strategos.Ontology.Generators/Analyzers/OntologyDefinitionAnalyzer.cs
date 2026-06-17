@@ -55,7 +55,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.PolyglotInvariantViolated,
             OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
             OntologyDiagnostics.EdgePropertyAuthoringRemoved,
-            OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor);
+            OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor,
+            OntologyDiagnostics.PolymorphicTargetNoJunctionTable);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -1266,14 +1267,40 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
     private static void ReportLinkDiagnostics(
         SyntaxNodeAnalysisContext context, DomainAnalysisInfo info, ObjectTypeInfo ot)
     {
-        // AONT003: Link target not registered
         foreach (var (linkName, targetType, location) in ot.LinkTargets)
         {
-            if (!info.ObjectTypes.ContainsKey(targetType))
+            // A CONCRETE object target is the common case — registered, nothing to
+            // report.
+            if (info.ObjectTypes.ContainsKey(targetType))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    OntologyDiagnostics.LinkTargetNotRegistered, location, linkName, ot.Name, targetType));
+                continue;
             }
+
+            // DR-11 (#128): a link to a registered INTERFACE is a POLYMORPHIC
+            // target. Under the per-(link, target-descriptor) junction posture it
+            // fans out into one junction table per IMPLEMENTOR descriptor, so it is
+            // NOT an AONT003 "target not registered" case. Instead AONT212 guards
+            // the fan-out: with zero implementors, no junction table can be
+            // provisioned and the link is dead.
+            if (TryFindInterfaceByTypeName(info.Interfaces, targetType, out _))
+            {
+                var hasImplementor = info.ObjectTypes.Values.Any(
+                    impl => impl.ImplementedInterfaces.Contains(targetType));
+                if (!hasImplementor)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        OntologyDiagnostics.PolymorphicTargetNoJunctionTable,
+                        location, linkName, ot.Name, targetType));
+                }
+
+                continue;
+            }
+
+            // AONT003: a concrete target type that is neither a registered object
+            // nor a registered interface — no partition (and thus no junction
+            // table) exists for it at all.
+            context.ReportDiagnostic(Diagnostic.Create(
+                OntologyDiagnostics.LinkTargetNotRegistered, location, linkName, ot.Name, targetType));
         }
     }
 
