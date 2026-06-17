@@ -74,6 +74,51 @@ public sealed class StepExtractorResilienceTests
     }
 
     // =========================================================================
+    // Task 003 — Compensate<T> / RequireConfidence / OnLowConfidence
+    // =========================================================================
+
+    /// <summary>
+    /// Verifies that <c>.Compensate&lt;TCompensation&gt;()</c> carries the compensation
+    /// step's identity as its fully qualified type name (INV-8: a string descriptor,
+    /// never a CLR <see cref="System.Type"/>).
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_CompensateOfT_CarriesCompensationStepSymbolKey()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ResilienceCompensationConfidenceWorkflow);
+
+        // Act
+        var assessStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Assert
+        await Assert.That(assessStep.Compensation).IsNotNull();
+        await Assert.That(assessStep.Compensation!.CompensationStepTypeName)
+            .IsEqualTo("TestNamespace.RollbackAssessment");
+        await Assert.That(assessStep.Compensation!.RequiredOnFailure).IsTrue();
+    }
+
+    /// <summary>
+    /// Verifies that <c>.RequireConfidence(double)</c> + <c>.OnLowConfidence(alt =&gt; alt.Then&lt;T&gt;())</c>
+    /// populate the step's <see cref="ConfidenceModel"/> with the threshold and the
+    /// low-confidence handler's step identifier.
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_RequireConfidenceOnLowConfidence_PopulatesConfidenceModel()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ResilienceCompensationConfidenceWorkflow);
+
+        // Act
+        var assessStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Assert
+        await Assert.That(assessStep.Confidence).IsNotNull();
+        await Assert.That(assessStep.Confidence!.Threshold).IsEqualTo(0.85);
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerId).IsEqualTo("HumanReview");
+    }
+
+    // =========================================================================
     // Test source workflows
     // =========================================================================
 
@@ -134,6 +179,75 @@ public sealed class StepExtractorResilienceTests
                     .WithTimeout(TimeSpan.FromMinutes(2)))
                 .Then<AuditPayment>(step => step.WithRetry(2))
                 .Finally<SendReceipt>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose step declares compensation and confidence gating via the
+    /// configure lambda, exercising <c>Compensate&lt;T&gt;</c> (FQN), <c>RequireConfidence</c>,
+    /// and <c>OnLowConfidence</c>.
+    /// </summary>
+    private const string ResilienceCompensationConfidenceWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class RollbackAssessment : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("resilience-claim")]
+        public static partial class ResilienceClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("resilience-claim")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt.Then<HumanReview>())
+                    .Compensate<RollbackAssessment>())
+                .Finally<SettleClaim>();
         }
         """;
 }

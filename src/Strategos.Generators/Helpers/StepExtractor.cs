@@ -1123,7 +1123,7 @@ internal static class StepExtractor
         }
 
         var instanceName = ExtractInstanceName(invocation);
-        var (retry, timeout) = ExtractConfiguredResilience(invocation);
+        var resilience = ExtractConfiguredResilience(invocation, semanticModel);
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
@@ -1131,37 +1131,47 @@ internal static class StepExtractor
             loopName: loopName,
             validationPredicate: validationPredicate,
             validationErrorMessage: validationErrorMessage,
-            retry: retry,
-            timeout: timeout);
+            retry: resilience.Retry,
+            timeout: resilience.Timeout,
+            compensation: resilience.Compensation,
+            confidence: resilience.Confidence);
         return true;
     }
 
     /// <summary>
     /// Extracts per-step resilience configuration from a step's configure lambda, e.g.
-    /// <c>Then&lt;TStep&gt;(step =&gt; step.WithRetry(3, TimeSpan.FromSeconds(5)).WithTimeout(...))</c>.
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.WithRetry(3, TimeSpan.FromSeconds(5)).WithTimeout(...)
+    /// .Compensate&lt;TRollback&gt;().RequireConfidence(0.85).OnLowConfidence(alt =&gt; alt.Then&lt;THandler&gt;()))</c>.
     /// </summary>
     /// <param name="thenInvocation">The <c>Then</c>/<c>StartWith</c> invocation whose configure lambda is inspected.</param>
+    /// <param name="semanticModel">The semantic model, used to resolve the compensation step's fully qualified name.</param>
     /// <returns>
-    /// The retry/timeout models from the first matching call of each kind found inside the
-    /// configure lambda, or <c>(null, null)</c> if the step declares no resilience.
+    /// The retry/timeout/compensation/confidence models from the first matching call of each kind
+    /// found inside the configure lambda; any concern the step does not declare is left null.
     /// </returns>
     /// <remarks>
     /// Mirrors <see cref="ExtractConfiguredValidation"/>: the resilience calls live in this
     /// invocation's own <c>Action&lt;IStepConfiguration&lt;TState&gt;&gt;</c> configure lambda, so the
     /// lookup is scoped to its arguments. Routing through <see cref="TryGetStepModel"/> threads the
-    /// same extraction uniformly into top-level, loop, and fork-path steps.
+    /// same extraction uniformly into top-level, loop, and fork-path steps. Per INV-8 the
+    /// compensation step is carried as its fully qualified type name (a string descriptor), never a
+    /// CLR <see cref="System.Type"/>.
     /// </remarks>
-    private static (RetryModel? Retry, TimeoutModel? Timeout) ExtractConfiguredResilience(
-        InvocationExpressionSyntax thenInvocation)
+    private static (RetryModel? Retry, TimeoutModel? Timeout, CompensationModel? Compensation, ConfidenceModel? Confidence)
+        ExtractConfiguredResilience(
+            InvocationExpressionSyntax thenInvocation,
+            SemanticModel semanticModel)
     {
         var arguments = thenInvocation.ArgumentList?.Arguments;
         if (arguments is null)
         {
-            return (null, null);
+            return (null, null, null, null);
         }
 
         RetryModel? retry = null;
         TimeoutModel? timeout = null;
+        CompensationModel? compensation = null;
+        ConfidenceModel? confidence = null;
 
         foreach (var arg in arguments.Value)
         {
@@ -1185,10 +1195,123 @@ internal static class StepExtractor
                 {
                     timeout = ResilienceParser.ExtractTimeout(configCall);
                 }
+                else if (compensation is null && SyntaxHelper.IsMethodCall(configCall, "Compensate"))
+                {
+                    compensation = ExtractCompensation(configCall, semanticModel);
+                }
+                else if (SyntaxHelper.IsMethodCall(configCall, "RequireConfidence")
+                    || SyntaxHelper.IsMethodCall(configCall, "OnLowConfidence"))
+                {
+                    confidence = MergeConfidence(confidence, configCall);
+                }
             }
         }
 
-        return (retry, timeout);
+        return (retry, timeout, compensation, confidence);
+    }
+
+    /// <summary>
+    /// Resolves a <c>Compensate&lt;TCompensation&gt;()</c> call into a <see cref="CompensationModel"/>,
+    /// carrying the compensation step's fully qualified type name (INV-8: a string descriptor,
+    /// never a CLR <see cref="System.Type"/>). Mirrors the <c>Join&lt;T&gt;</c> symbol resolution.
+    /// </summary>
+    private static CompensationModel? ExtractCompensation(
+        InvocationExpressionSyntax compensateInvocation,
+        SemanticModel semanticModel)
+    {
+        if (!TryGetGenericTypeArgument(compensateInvocation, "Compensate", out var typeArgument))
+        {
+            return null;
+        }
+
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out _, out var compensationTypeName))
+        {
+            return null;
+        }
+
+        return new CompensationModel(compensationTypeName);
+    }
+
+    /// <summary>
+    /// Folds a <c>RequireConfidence(double)</c> or <c>OnLowConfidence(alt =&gt; alt.Then&lt;THandler&gt;())</c>
+    /// call into the accumulating <see cref="ConfidenceModel"/>.
+    /// </summary>
+    /// <remarks>
+    /// The two calls are independent fluent members on <see cref="Strategos.Builders.IStepConfiguration{TState}"/>,
+    /// so either may appear without the other; this merges whichever is seen into the same model.
+    /// The low-confidence handler is identified by the first <c>Then&lt;THandler&gt;()</c> step declared
+    /// inside the handler lambda — a string descriptor consistent with INV-8.
+    /// </remarks>
+    private static ConfidenceModel MergeConfidence(
+        ConfidenceModel? existing,
+        InvocationExpressionSyntax confidenceCall)
+    {
+        var threshold = existing?.Threshold ?? 0.0;
+        var handlerId = existing?.OnLowConfidenceHandlerId;
+
+        if (SyntaxHelper.IsMethodCall(confidenceCall, "RequireConfidence"))
+        {
+            var arguments = confidenceCall.ArgumentList.Arguments;
+            if (arguments.Count > 0 && TryGetDoubleLiteral(arguments[0].Expression, out var parsed))
+            {
+                threshold = parsed;
+            }
+        }
+        else if (SyntaxHelper.IsMethodCall(confidenceCall, "OnLowConfidence"))
+        {
+            handlerId = ExtractLowConfidenceHandlerId(confidenceCall) ?? handlerId;
+        }
+
+        return new ConfidenceModel(threshold, handlerId);
+    }
+
+    /// <summary>
+    /// Extracts the low-confidence handler identifier — the first <c>Then&lt;THandler&gt;()</c> step
+    /// type name declared inside an <c>OnLowConfidence(alt =&gt; ...)</c> handler lambda.
+    /// </summary>
+    private static string? ExtractLowConfidenceHandlerId(InvocationExpressionSyntax onLowConfidenceCall)
+    {
+        var arguments = onLowConfidenceCall.ArgumentList.Arguments;
+        if (arguments.Count == 0 || arguments[0].Expression is not LambdaExpressionSyntax handlerLambda)
+        {
+            return null;
+        }
+
+        var firstThen = handlerLambda
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(inv => SyntaxHelper.IsMethodCall(inv, "Then"));
+
+        if (firstThen is null || !TryGetGenericTypeArgument(firstThen, "Then", out var typeArgument))
+        {
+            return null;
+        }
+
+        return SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
+    }
+
+    private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)
+    {
+        value = 0;
+
+        if (expression is LiteralExpressionSyntax literal
+            && literal.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression))
+        {
+            switch (literal.Token.Value)
+            {
+                case double d:
+                    value = d;
+                    return true;
+                case int i:
+                    value = i;
+                    return true;
+                case float f:
+                    value = f;
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
