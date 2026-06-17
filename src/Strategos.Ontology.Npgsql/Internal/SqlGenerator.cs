@@ -196,9 +196,35 @@ internal static class SqlGenerator
         sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
         sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
         sb.AppendLine("    UNIQUE (source_id, target_id)");
-        sb.Append(");");
+        sb.AppendLine(");");
+        AppendReverseJunctionIndex(sb, schema, junctionTableName);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Appends the REVERSE-traversal index DDL (DR-13/R1) for a junction table.
+    /// The <c>UNIQUE (source_id, target_id)</c> constraint already backs FORWARD
+    /// traversal (source → target), but a composite index is prefix-ordered, so it
+    /// does NOT serve a lookup keyed on <c>target_id</c> alone — reverse traversal
+    /// (target → source) and a target-endpoint FK-cascade probe would otherwise
+    /// fall back to a sequential scan. This emits an explicit
+    /// <c>(target_id, source_id)</c> index so both directions are index-backed.
+    /// </summary>
+    /// <remarks>
+    /// The index name is <c>ix_{junction}_target_source</c>, run through
+    /// <see cref="JunctionIdentifier.Derive(string)"/> so it can never exceed
+    /// PostgreSQL's silent 63-byte truncation limit (the junction name itself may
+    /// already be near the cap). <c>IF NOT EXISTS</c> keeps the DDL idempotent,
+    /// matching the <c>CREATE TABLE IF NOT EXISTS</c> posture. INV-2: raw DDL only.
+    /// </remarks>
+    private static void AppendReverseJunctionIndex(
+        StringBuilder sb, string schema, string junctionTableName)
+    {
+        var indexName = JunctionIdentifier.Derive($"ix_{junctionTableName}_target_source");
+        sb.Append(
+            $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(indexName)} "
+            + $"ON {QuoteIdentifier(schema)}.{QuoteIdentifier(junctionTableName)} (target_id, source_id);");
     }
 
     /// <summary>
@@ -329,7 +355,8 @@ internal static class SqlGenerator
         sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
         sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
         sb.AppendLine("    UNIQUE (source_id, target_id)");
-        sb.Append(");");
+        sb.AppendLine(");");
+        AppendReverseJunctionIndex(sb, schema, junctionTableName);
 
         return sb.ToString();
     }
