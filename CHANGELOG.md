@@ -54,6 +54,28 @@ differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
 
+### Added — Npgsql edge-layer hardening (DR-13, #130)
+
+- **R1 — reverse junction index.** Every per-`(link, target-descriptor)` junction
+  table now emits an explicit `CREATE INDEX ... (target_id, source_id)` alongside
+  the forward `UNIQUE (source_id, target_id)` constraint, so reverse traversal and
+  target-endpoint FK probes are index-backed instead of falling back to a
+  sequential scan.
+- **R2 — vertex key-property unique index.** `EnsureSchemaAsync` now emits a
+  `CREATE UNIQUE INDEX ... ((data->>'key'))` expression index on the descriptor's
+  business-id key property, making the relate/traversal endpoint-resolution
+  subqueries (`data->>'key' = @id`) resolve a single deterministic row. Keyless
+  (pgvector-only) tables keep their pre-DR-13 DDL byte-identical.
+- **R6 — `RelateBatchAsync` reserved on `IObjectSetWriter`.** New
+  `Task RelateBatchAsync(IReadOnlyList<RelateRequest>, CancellationToken)` member
+  plus a new sealed `RelateRequest` record reserve a set-based relate surface for
+  bulk edge ingestion (#115). The in-memory provider fulfils it with a per-request
+  loop carrying the same eager-validation/self-loop/idempotency contract; the
+  Npgsql provider throws `NotSupportedException` until #115 lands the batched DML.
+  These `Strategos.Ontology` types are not part of the `src/Strategos` builder
+  PublicAPI baseline (scoped to the 7 `Strategos.Builders` interfaces), so no
+  `PublicAPI.*.txt` re-baseline is required.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single

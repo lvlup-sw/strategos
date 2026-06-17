@@ -423,6 +423,25 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     /// <inheritdoc />
     /// <remarks>
+    /// DR-13/R6: the Npgsql provider RESERVES the batch surface but DEFERS the
+    /// set-based DML to bulk edge ingestion (#115). Until then it throws
+    /// <see cref="NotSupportedException"/> rather than silently degrading to a
+    /// per-edge round-trip loop — which would mask the missing batched lowering and
+    /// give callers the round-trip cost the batch API exists to eliminate. The
+    /// throw is unconditional and opens no connection.
+    /// </remarks>
+    public Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+
+        throw new NotSupportedException(
+            "RelateBatchAsync is reserved on the Npgsql provider but its set-based DML is "
+            + "deferred to bulk edge ingestion (#115). Use the single-pair RelateAsync, or the "
+            + "in-memory provider, until #115 lands the batched lowering.");
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
     /// DR-7 (Ontology Edge Foundation): removes a pure-link relation from the T8
     /// junction table. Symmetric with the plain <see cref="RelateAsync"/> write
     /// key: deletes the single junction row for the endpoint pair resolved from
