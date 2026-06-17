@@ -551,6 +551,46 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// Builds the instance-anchored traversal SQL for a POLYMORPHIC link (DR-11b):
+    /// a <c>UNION ALL</c> over one <c>vertex ⋈ junction ⋈ vertex</c> join per
+    /// resolved target descriptor, so a single anchored traversal reads back the
+    /// related targets from EVERY per-(link, target-descriptor) junction table the
+    /// link fanned out into (Posture 2). Each leg is the SAME shape
+    /// <see cref="BuildInstanceAnchoredTraversalSql"/> emits and is anchored at the
+    /// shared source business id via the same <c>@srcId</c> parameter.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="hops">
+    /// The fanned-out hops, as produced by
+    /// <c>PgVectorObjectSetProvider.ResolveTraversalHops</c>. Each names its own
+    /// per-descriptor junction + target table; all share the source table and key.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. <c>UNION ALL</c> (not <c>UNION</c>) — the
+    /// per-descriptor target partitions are disjoint, so there are no cross-leg
+    /// duplicates to dedupe, and <c>ALL</c> avoids a needless sort. A single hop is
+    /// emitted as a plain join (no UNION), identical to
+    /// <see cref="BuildInstanceAnchoredTraversalSql"/>, so the monomorphic lowering
+    /// is unchanged. The source id binds via <c>@srcId</c>, never interpolated.
+    /// </remarks>
+    internal static string BuildPolymorphicTraversalSql(
+        string schema,
+        IReadOnlyList<PgVectorObjectSetProvider.TraversalHop> hops)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentNullException.ThrowIfNull(hops);
+        if (hops.Count == 0)
+        {
+            throw new ArgumentException("At least one traversal hop is required.", nameof(hops));
+        }
+
+        var legs = hops.Select(hop => BuildInstanceAnchoredTraversalSql(
+            schema, hop.SourceTable, hop.SourceKeyProperty, hop.JunctionTable, hop.TargetTable));
+
+        return string.Join(" UNION ALL ", legs);
+    }
+
+    /// <summary>
     /// Builds the DDL for a reified <b>association</b>
     /// (<see cref="ObjectKind.Association"/>) lowered to an <b>object table</b>
     /// (DR-7). An association is a standalone object that links two endpoints and

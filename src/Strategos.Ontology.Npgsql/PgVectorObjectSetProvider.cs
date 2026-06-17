@@ -7,6 +7,7 @@ using Npgsql;
 using Pgvector;
 using Strategos.Ontology.Embeddings;
 using Strategos.Ontology.Npgsql.Internal;
+using Strategos.Ontology.Npgsql.Schema;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Npgsql;
@@ -401,7 +402,11 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // WriteRelationRow guard (a missing endpoint still surfaces first).
         ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
 
-        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        // DR-11b: route to the per-(link, target-descriptor) junction table. A
+        // polymorphic link writes account_holdings_stock / _bond; a monomorphic
+        // link keeps account_written_by (DR-7..DR-10 lockstep).
+        var junctionTableName = SqlGenerator.JunctionTableNameFor(
+            ResolveRelateJunction(_graph!, srcDescriptor, linkName, tgtDescriptor));
         var sql = SqlGenerator.BuildRelateInsertSql(
             _options.Schema,
             junctionTableName,
@@ -439,7 +444,11 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // the junction target is derived from linkName below.
         RequireLinkDeclared(_graph, srcDescriptor, linkName);
 
-        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        // DR-11b: delete from the SAME per-(link, target-descriptor) junction table
+        // RelateAsync writes — symmetric routing so a polymorphic unrelate targets
+        // the resolved target's own table.
+        var junctionTableName = SqlGenerator.JunctionTableNameFor(
+            ResolveRelateJunction(_graph!, srcDescriptor, linkName, tgtDescriptor));
         var sql = SqlGenerator.BuildUnrelateDeleteSql(
             _options.Schema,
             junctionTableName,
@@ -1223,6 +1232,210 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             + $"(TargetTypeName '{link.TargetTypeName}', TargetSymbolKey '{link.TargetSymbolKey}'). "
             + $"Supply an explicit target descriptor name to disambiguate, or register the link's "
             + $"declared target. The hop target is NEVER inferred from the CLR type (INV-8).");
+    }
+
+    /// <summary>
+    /// Resolves the SET of concrete target descriptor names a link lowers to
+    /// (DR-11b, #128). A link whose declared <see cref="Descriptors.LinkDescriptor.TargetTypeName"/>
+    /// names a registered INTERFACE resolves POLYMORPHICALLY to that interface's
+    /// implementor descriptors (one per implementor); any other link resolves
+    /// MONOMORPHICALLY to the single descriptor named by
+    /// <see cref="ResolveHopTargetDescriptorName"/> (TargetTypeName →
+    /// TargetSymbolKey). The result drives both the relate write-routing and the
+    /// traversal read fan-out: a count &gt; 1 means the link is polymorphic and its
+    /// junction tables are disambiguated per target descriptor (Posture 2).
+    /// </summary>
+    /// <remarks>
+    /// INV-8: identity by descriptor NAME, never <c>typeof</c>. The interface
+    /// implementors come from <see cref="OntologyGraph.GetImplementors(string)"/>,
+    /// which is keyed by the interface descriptor name — the same name a link's
+    /// <c>TargetTypeName</c> carries when it targets an interface. Returned in a
+    /// deterministic (ordinal-by-name) order so the fan-out SQL is stable.
+    /// </remarks>
+    internal static IReadOnlyList<string> ResolveLinkTargetDescriptors(
+        OntologyGraph graph,
+        Descriptors.LinkDescriptor link)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(link);
+
+        // A link whose declared target names a registered interface fans out to
+        // the interface's implementor descriptors (polymorphic).
+        if (!string.IsNullOrEmpty(link.TargetTypeName)
+            && graph.Interfaces.Any(i => string.Equals(i.Name, link.TargetTypeName, StringComparison.Ordinal)))
+        {
+            var implementors = graph.GetImplementors(link.TargetTypeName)
+                .Select(o => o.Name)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToList();
+
+            // An interface with zero implementors has no provisionable junction
+            // table (mirrors the compile-time AONT212 guard). Refuse rather than
+            // emit a dead query.
+            if (implementors.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Link '{link.Name}' targets interface '{link.TargetTypeName}', which no object "
+                    + $"type implements; under the per-(link, target-descriptor) junction posture a "
+                    + $"polymorphic link has one junction table per implementor, so with zero "
+                    + $"implementors there is no junction table to relate/traverse (see AONT212).");
+            }
+
+            return implementors;
+        }
+
+        // Otherwise the link is monomorphic — the single graph-resolved descriptor
+        // (TargetTypeName → TargetSymbolKey), with no override.
+        return [ResolveHopTargetDescriptorName(graph, link, targetDescriptorOverride: null)];
+    }
+
+    /// <summary>
+    /// Resolves the live relate/unrelate write into a
+    /// <see cref="JunctionTableDescriptor"/> for <c>(src, link, tgt)</c> (DR-11b).
+    /// The caller's <paramref name="tgtDescriptor"/> is the row's resolved target
+    /// descriptor; the junction is POLYMORPHIC (and thus named
+    /// <c>{source}_{snake(link)}_{snake(target)}</c>) when the link resolves to
+    /// MORE THAN ONE descriptor, and MONOMORPHIC (named <c>{source}_{snake(link)}</c>,
+    /// unchanged from DR-7..DR-10) otherwise. Fed into
+    /// <see cref="SqlGenerator.JunctionTableNameFor"/> so the relate INSERT targets
+    /// the SAME physical table the T2 DDL creates.
+    /// </summary>
+    /// <remarks>
+    /// INV-8: the source table comes from the resolved source endpoint and the
+    /// target table from the resolved <paramref name="tgtDescriptor"/> endpoint —
+    /// both by descriptor name, never <c>typeof</c>. The link must be declared on
+    /// the source (caller already enforces this via <see cref="RequireLinkDeclared"/>);
+    /// here it is read to decide polymorphism.
+    /// </remarks>
+    internal static JunctionTableDescriptor ResolveRelateJunction(
+        OntologyGraph graph,
+        string srcDescriptor,
+        string linkName,
+        string tgtDescriptor)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+
+        var source = ResolveRelateEndpoint(graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(graph, tgtDescriptor);
+
+        var sourceDescriptor = RequireDescriptor(graph, srcDescriptor);
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+
+        return new JunctionTableDescriptor
+        {
+            SourceTable = source.TableName,
+            LinkName = linkName,
+            TargetDescriptorName = tgtDescriptor,
+            TargetTable = target.TableName,
+            IsPolymorphic = link is not null && IsPolymorphicLink(graph, link),
+        };
+    }
+
+    /// <summary>
+    /// Whether a link is POLYMORPHIC (DR-11b) — its declared target is a registered
+    /// INTERFACE, so it lowers to a junction table PER implementor descriptor and
+    /// each table is disambiguated by its target descriptor name (Posture 2). A
+    /// link to a CONCRETE object target (or a non-interface name) is monomorphic
+    /// and keeps the single <c>{source}_{snake(link)}</c> table. The predicate is
+    /// the interface-typed check itself — NOT the implementor count — so the
+    /// write-path routing and the read-path fan-out agree even for an interface
+    /// with a single implementor (both use the per-descriptor table). NEVER throws:
+    /// a relate to a link whose declared target is not graph-resolvable keeps its
+    /// pre-DR-11 single-table semantics (the caller's tgtDescriptor stays
+    /// authoritative for the row). INV-8: by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    private static bool IsPolymorphicLink(OntologyGraph graph, Descriptors.LinkDescriptor link) =>
+        !string.IsNullOrEmpty(link.TargetTypeName)
+        && graph.Interfaces.Any(i => string.Equals(i.Name, link.TargetTypeName, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Resolves an instance-anchored traversal hop into the SET of physical hops
+    /// it reads (DR-11b). A MONOMORPHIC link (or any hop carrying an explicit
+    /// <paramref name="targetDescriptorOverride"/>) yields a single hop, named
+    /// exactly as <see cref="ResolveTraversalHop"/> does; a POLYMORPHIC link with
+    /// NO override fans out into ONE hop per resolved target descriptor, each
+    /// anchored at its own per-(link, target) junction table and its target
+    /// descriptor's object table. The hops feed
+    /// <see cref="SqlGenerator.BuildPolymorphicTraversalSql"/> (UNION ALL) or, for
+    /// the single-hop case, <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/>.
+    /// </summary>
+    /// <remarks>
+    /// Graph-driven (INV-8): the fan-out descriptor set comes from
+    /// <see cref="ResolveLinkTargetDescriptors"/>, so no
+    /// <see cref="ObjectSets.TraverseLinkExpression"/> change is needed — the
+    /// expression's existing nullable <c>TargetDescriptorName</c> already
+    /// distinguishes the disambiguated-single hop (override supplied) from the
+    /// fan-out hop (override null). An explicit override always denotes a single
+    /// target partition, so it is never fanned out.
+    /// </remarks>
+    internal static IReadOnlyList<TraversalHop> ResolveTraversalHops(
+        OntologyGraph? graph,
+        string sourceDescriptorName,
+        string linkName,
+        string? targetDescriptorOverride)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDescriptorName);
+        ArgumentNullException.ThrowIfNull(linkName);
+
+        if (graph is null)
+        {
+            // Reuse the single-hop resolver's typed null-graph error.
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride)];
+        }
+
+        // An explicit override names a single partition — never a fan-out.
+        if (targetDescriptorOverride is not null)
+        {
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride)];
+        }
+
+        var sourceDescriptor = RequireDescriptor(graph, sourceDescriptorName);
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (link is null)
+        {
+            // Defer to the single-hop resolver for the canonical typed error.
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride: null)];
+        }
+
+        // Monomorphic — the single-hop lowering, unchanged from DR-7..DR-10. Uses
+        // the SAME interface-typed predicate as the relate write-path so the two
+        // never disagree on which links fan out.
+        if (!IsPolymorphicLink(graph, link))
+        {
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride: null)];
+        }
+
+        // Polymorphic — one hop per resolved target descriptor, each routed to its
+        // own per-(link, target) junction table and target object table.
+        var targets = ResolveLinkTargetDescriptors(graph, link);
+        var source = ResolveRelateEndpoint(graph, sourceDescriptorName);
+        var hops = new List<TraversalHop>(targets.Count);
+        foreach (var targetName in targets)
+        {
+            var target = ResolveRelateEndpoint(graph, targetName);
+            var junctionName = SqlGenerator.JunctionTableNameFor(new JunctionTableDescriptor
+            {
+                SourceTable = source.TableName,
+                LinkName = linkName,
+                TargetDescriptorName = targetName,
+                TargetTable = target.TableName,
+                IsPolymorphic = true,
+            });
+
+            hops.Add(new TraversalHop(
+                source.TableName,
+                source.KeyProperty,
+                junctionName,
+                target.TableName,
+                targetName));
+        }
+
+        return hops;
     }
 
     /// <summary>

@@ -144,6 +144,74 @@ public class JunctionDmlRoutingTests
         await Assert.That(hops[0].TargetTable).IsEqualTo("author");
     }
 
+    // -----------------------------------------------------------------------
+    // ResolveLinkTargetDescriptors — the shared graph-driven fan-out resolver.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ResolveLinkTargetDescriptors_InterfaceLink_ReturnsImplementorsOrdinal()
+    {
+        // The Holdings link targets ISecurity, implemented by Stock and Bond — the
+        // resolver returns both implementor descriptor names, ordinal-ordered for a
+        // stable fan-out.
+        var graph = BuildPolymorphicGraph();
+        var link = graph.ObjectTypes.Single(o => o.Name == Account).Links.Single(l => l.Name == PolyLink);
+
+        var targets = PgVectorObjectSetProvider.ResolveLinkTargetDescriptors(graph, link);
+
+        await Assert.That(targets).IsEquivalentTo(new[] { Bond, Stock });
+    }
+
+    [Test]
+    public async Task ResolveLinkTargetDescriptors_ConcreteLink_ReturnsSingleResolvedDescriptor()
+    {
+        // A monomorphic link (WrittenBy -> Author, a concrete object target)
+        // resolves to exactly its one graph-resolved target descriptor.
+        var graph = BuildPolymorphicGraph();
+        var link = graph.ObjectTypes.Single(o => o.Name == Account).Links.Single(l => l.Name == MonoLink);
+
+        var targets = PgVectorObjectSetProvider.ResolveLinkTargetDescriptors(graph, link);
+
+        await Assert.That(targets).IsEquivalentTo(new[] { Author });
+    }
+
+    [Test]
+    public async Task ResolveLinkTargetDescriptors_InterfaceWithNoImplementor_Throws()
+    {
+        // An interface link with zero implementors has no provisionable junction
+        // table — the resolver refuses (mirrors the compile-time AONT212 guard)
+        // rather than emitting a dead query.
+        var graph = BuildEmptyInterfaceGraph();
+        var link = graph.ObjectTypes.Single(o => o.Name == Account).Links.Single(l => l.Name == PolyLink);
+
+        await Assert.That(() => PgVectorObjectSetProvider.ResolveLinkTargetDescriptors(graph, link))
+            .Throws<InvalidOperationException>();
+    }
+
+    // A graph whose Account.Holdings link targets ISecurity, which NO object type
+    // implements — the polymorphic fan-out resolves to the empty set.
+    private static OntologyGraph BuildEmptyInterfaceGraph()
+    {
+        var iSecurity = new InterfaceDescriptor(SecurityInterface, typeof(object));
+
+        var account = new ObjectTypeDescriptor
+        {
+            Name = Account,
+            DomainName = "portfolio",
+            ClrType = typeof(object),
+            KeyProperty = new PropertyDescriptor("Id", typeof(string)),
+            Links = [new LinkDescriptor(PolyLink, SecurityInterface, LinkCardinality.OneToMany)],
+        };
+
+        var objectTypes = new[] { account };
+        return new OntologyGraph(
+            domains: [new DomainDescriptor("portfolio") { ObjectTypes = objectTypes }],
+            objectTypes: objectTypes,
+            interfaces: [iSecurity],
+            crossDomainLinks: [],
+            workflowChains: []);
+    }
+
     // A graph where Account has BOTH a monomorphic link (WrittenBy -> Author) and a
     // polymorphic link (Holdings -> ISecurity, implemented by Stock and Bond).
     private static OntologyGraph BuildPolymorphicGraph()
