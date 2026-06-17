@@ -1,5 +1,6 @@
 using System.Text;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Npgsql.Schema;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Npgsql.Internal;
@@ -215,6 +216,122 @@ internal static class SqlGenerator
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
         ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
         return $"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}";
+    }
+
+    /// <summary>
+    /// Resolves the snake_cased junction table name for a resolved per-<c>(link,
+    /// target-descriptor)</c> junction (DR-11, Posture 2). A MONOMORPHIC link
+    /// (<see cref="JunctionTableDescriptor.IsPolymorphic"/> == <c>false</c>) names
+    /// the table <c>{source}_{snake(link)}</c> — IDENTICAL to the pre-DR-11
+    /// <see cref="JunctionTableName(string, string)"/> lowering, so the
+    /// relate/traverse DML and the schema DDL stay in lockstep and the table count
+    /// is unchanged. A POLYMORPHIC link additionally disambiguates each fanned-out
+    /// table by its resolved target descriptor name
+    /// (<c>{source}_{snake(link)}_{snake(targetDescriptor)}</c>) so the
+    /// per-descriptor tables never collide. The result is passed through
+    /// <see cref="JunctionIdentifier.Derive(string)"/> so it can never exceed
+    /// PostgreSQL's silent 63-byte truncation limit.
+    /// </summary>
+    /// <param name="junction">The resolved per-(link, target-descriptor) identity.</param>
+    /// <remarks>
+    /// INV-8: identity is derived from the resolved descriptor NAME, never a CLR
+    /// type — so a <c>SymbolKey</c>-only descriptor resolves a junction name too.
+    /// </remarks>
+    internal static string JunctionTableNameFor(JunctionTableDescriptor junction)
+    {
+        ArgumentNullException.ThrowIfNull(junction);
+
+        var baseName = $"{junction.SourceTable}_{TypeMapper.ToSnakeCase(junction.LinkName)}";
+        if (junction.IsPolymorphic)
+        {
+            baseName = $"{baseName}_{TypeMapper.ToSnakeCase(junction.TargetDescriptorName)}";
+        }
+
+        return JunctionIdentifier.Derive(baseName);
+    }
+
+    /// <summary>
+    /// Builds the per-<c>(link, target-descriptor)</c> junction-table DDL (DR-11,
+    /// Posture 2) for EACH resolved target descriptor a link lowers to. A
+    /// monomorphic link yields a single-element list — ONE junction table, same
+    /// count as the pre-DR-11 lowering. A link resolving (interface narrow /
+    /// multi-registration) to several descriptors yields one table PER descriptor,
+    /// each with a single HONEST foreign key to that descriptor's own object table
+    /// (never a polymorphic/union endpoint).
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="resolvedTargets">
+    /// The DR-10 graph-resolved target descriptors for one link. Each names its
+    /// own source table, target table, and resolved target descriptor name.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector DDL only — no Marten/Wolverine. Each table's
+    /// <c>UNIQUE (source_id, target_id)</c> mirrors the in-memory relate-store's
+    /// idempotency on the <c>(src, link, tgt)</c> triple within that descriptor
+    /// partition. The derived junction names are checked PAIRWISE through
+    /// <see cref="JunctionIdentifier.Derive(string, string)"/>, so two distinct
+    /// resolved targets that would (after 63-byte truncation) collide onto one
+    /// physical table surface a typed
+    /// <see cref="OntologySchemaIdentifierException"/> rather than silently merging.
+    /// </remarks>
+    internal static IReadOnlyList<string> BuildJunctionTableDdlForResolvedTargets(
+        string schema,
+        IReadOnlyList<JunctionTableDescriptor> resolvedTargets)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentNullException.ThrowIfNull(resolvedTargets);
+
+        var ddls = new List<string>(resolvedTargets.Count);
+        var derivedNames = new List<string>(resolvedTargets.Count);
+
+        foreach (var target in resolvedTargets)
+        {
+            var junctionName = JunctionTableNameFor(target);
+
+            // Pairwise collision guard (DR-11/T1): a fan-out whose two resolved
+            // descriptors derive the SAME junction identifier (after the 63-byte
+            // truncation) would silently route both to one table. Surface it as a
+            // typed error instead.
+            foreach (var existing in derivedNames)
+            {
+                JunctionIdentifier.Derive(existing, junctionName);
+            }
+
+            derivedNames.Add(junctionName);
+            ddls.Add(BuildJunctionTableDdlByName(schema, junctionName, target.SourceTable, target.TargetTable));
+        }
+
+        return ddls;
+    }
+
+    /// <summary>
+    /// Builds one junction table's DDL from an already-derived junction name and
+    /// the source/target object table names. Shared by
+    /// <see cref="BuildJunctionTableDdlForResolvedTargets"/>; emits the same edge
+    /// shape as <see cref="BuildJunctionTableDdl"/> (edge identity + two endpoint
+    /// FKs + endpoint-pair uniqueness) but with the DR-11-resolved identifier.
+    /// </summary>
+    private static string BuildJunctionTableDdlByName(
+        string schema,
+        string junctionTableName,
+        string sourceTableName,
+        string targetTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+
+        var qSchema = QuoteIdentifier(schema);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(junctionTableName)} (");
+        sb.AppendLine("    edge_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
+        sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
+        sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
+        sb.AppendLine("    UNIQUE (source_id, target_id)");
+        sb.Append(");");
+
+        return sb.ToString();
     }
 
     /// <summary>

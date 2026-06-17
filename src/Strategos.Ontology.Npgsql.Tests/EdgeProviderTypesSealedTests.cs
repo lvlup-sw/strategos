@@ -47,6 +47,9 @@ public class EdgeProviderTypesSealedTests
             // OntologySchemaIdentifierException (DR-11/T1): typed collision error
             // for the 63-byte identifier guard.
             "Strategos.Ontology.Npgsql.Schema.OntologySchemaIdentifierException",
+            // JunctionTableDescriptor (DR-11/T2): resolved per-(link, target)
+            // junction-table identity fed into the resolved-targets DDL builder.
+            "Strategos.Ontology.Npgsql.Schema.JunctionTableDescriptor",
         };
 
         var offenders = new List<string>();
