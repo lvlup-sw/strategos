@@ -61,6 +61,32 @@ public interface IForkPathBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Adds a step to this fork path with configuration.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// Brings fork paths to parity with the top-level <see cref="IWorkflowBuilder{TState}"/>
+    /// and loop-body <see cref="ILoopBuilder{TState}"/> sequencing contexts, which already
+    /// expose this overload. Each branch configures its steps independently; the join waits
+    /// for every path to reach a terminal status:
+    /// <code>
+    /// .Fork(
+    ///     path => path.Then&lt;ProcessPayment&gt;(step => step
+    ///         .WithRetry(3, TimeSpan.FromSeconds(5))
+    ///         .WithTimeout(TimeSpan.FromMinutes(2))
+    ///         .Compensate&lt;RefundPayment&gt;()),
+    ///     path => path.Then&lt;ReserveInventory&gt;())
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IForkPathBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Defines a failure handler for this fork path.
     /// </summary>
     /// <param name="handler">Action to configure the failure handler steps.</param>
