@@ -69,16 +69,6 @@ public class RelateBatchTests
     }
 
     [Test]
-    public async Task RelateAsync_MissingEndpoint_StillRaisesTypedError()
-    {
-        // Even without concurrency, a statically-missing endpoint must surface the
-        // typed RelationEndpointNotFoundException (the existence flags drive it),
-        // never a silent no-op. DB-gated: exercised against the live provider in
-        // the provisioned lane.
-        await Assert.That(true).IsTrue();
-    }
-
-    [Test]
     [SkipIfNoPostgres]
     public async Task RelateAsync_ConcurrentEndpointDelete_RaisesTypedError_NotSilentNoOp()
     {

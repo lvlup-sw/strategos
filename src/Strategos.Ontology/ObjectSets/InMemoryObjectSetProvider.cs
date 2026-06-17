@@ -234,16 +234,36 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(requests);
 
-        foreach (var request in requests)
+        for (var i = 0; i < requests.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            await RelateAsync(
-                request.SourceDescriptor,
-                request.SourceId,
-                request.LinkName,
-                request.TargetDescriptor,
-                request.TargetId,
-                ct).ConfigureAwait(false);
+            var request = requests[i];
+            try
+            {
+                await RelateAsync(
+                    request.SourceDescriptor,
+                    request.SourceId,
+                    request.LinkName,
+                    request.TargetDescriptor,
+                    request.TargetId,
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // KEEP the typed eager-validation contract (DR-8 parity:
+                // RelationEndpointNotFoundException / SelfLoopNotAllowedException) — do
+                // NOT swap to Result<T>. But a bare rethrow gives the caller no clue
+                // WHICH request in the batch failed. Attach the failing position and the
+                // offending endpoint identifiers to the exception's Data bag, then
+                // rethrow preserving the original typed exception and its stack.
+                ex.Data["BatchItemIndex"] = i;
+                ex.Data["BatchItemSourceDescriptor"] = request.SourceDescriptor;
+                ex.Data["BatchItemSourceId"] = request.SourceId;
+                ex.Data["BatchItemLinkName"] = request.LinkName;
+                ex.Data["BatchItemTargetDescriptor"] = request.TargetDescriptor;
+                ex.Data["BatchItemTargetId"] = request.TargetId;
+                throw;
+            }
         }
     }
 

@@ -99,6 +99,28 @@ public class ExpressionTranslatorTests
     }
 
     [Test]
+    public async Task Translate_KeyWithApostrophe_EscapesJsonPathLiteral()
+    {
+        // F4: the LINQ-derived property name is interpolated into a single-quoted
+        // data->>'...' JSON-path literal, NOT a bindable parameter, so an apostrophe
+        // in the key MUST be doubled — otherwise a key like O'Brien would terminate
+        // the literal early. C# member names cannot carry an apostrophe, so the key
+        // string is fed straight through the SqlGenerator.EscapeStringLiteral helper
+        // both translator accessor sites now route through, then composed into the
+        // translator's exact data->>'...' accessor template.
+        const string apostropheKey = "O'Brien";
+
+        var escaped = SqlGenerator.EscapeStringLiteral(apostropheKey);
+        var accessor = $"data->>'{escaped}'";
+
+        // The apostrophe is doubled: data->>'O''Brien', the literal stays one closed
+        // token rather than breaking out after O'.
+        await Assert.That(accessor).IsEqualTo("data->>'O''Brien'");
+        // The raw, un-doubled form must NOT survive.
+        await Assert.That(accessor).DoesNotContain("data->>'O'Brien'");
+    }
+
+    [Test]
     public async Task Translate_UnsupportedExpression_ThrowsNotSupportedException()
     {
         // TraverseLinkExpression is not supported for SQL translation
