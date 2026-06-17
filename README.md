@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/LevelUp.Strategos.svg)](https://www.nuget.org/packages/LevelUp.Strategos)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/lvlup-sw/strategos/ci.yml?branch=main)](https://github.com/lvlup-sw/strategos/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 > Deterministic orchestration for AI-powered workflows
 
@@ -178,4 +178,4 @@ public class ProcessOrderWorkflow : IWorkflowDefinition<OrderState>
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Apache-2.0 — see [LICENSE](LICENSE) for details.
