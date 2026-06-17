@@ -1123,14 +1123,72 @@ internal static class StepExtractor
         }
 
         var instanceName = ExtractInstanceName(invocation);
+        var (retry, timeout) = ExtractConfiguredResilience(invocation);
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
             instanceName: instanceName,
             loopName: loopName,
             validationPredicate: validationPredicate,
-            validationErrorMessage: validationErrorMessage);
+            validationErrorMessage: validationErrorMessage,
+            retry: retry,
+            timeout: timeout);
         return true;
+    }
+
+    /// <summary>
+    /// Extracts per-step resilience configuration from a step's configure lambda, e.g.
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.WithRetry(3, TimeSpan.FromSeconds(5)).WithTimeout(...))</c>.
+    /// </summary>
+    /// <param name="thenInvocation">The <c>Then</c>/<c>StartWith</c> invocation whose configure lambda is inspected.</param>
+    /// <returns>
+    /// The retry/timeout models from the first matching call of each kind found inside the
+    /// configure lambda, or <c>(null, null)</c> if the step declares no resilience.
+    /// </returns>
+    /// <remarks>
+    /// Mirrors <see cref="ExtractConfiguredValidation"/>: the resilience calls live in this
+    /// invocation's own <c>Action&lt;IStepConfiguration&lt;TState&gt;&gt;</c> configure lambda, so the
+    /// lookup is scoped to its arguments. Routing through <see cref="TryGetStepModel"/> threads the
+    /// same extraction uniformly into top-level, loop, and fork-path steps.
+    /// </remarks>
+    private static (RetryModel? Retry, TimeoutModel? Timeout) ExtractConfiguredResilience(
+        InvocationExpressionSyntax thenInvocation)
+    {
+        var arguments = thenInvocation.ArgumentList?.Arguments;
+        if (arguments is null)
+        {
+            return (null, null);
+        }
+
+        RetryModel? retry = null;
+        TimeoutModel? timeout = null;
+
+        foreach (var arg in arguments.Value)
+        {
+            // The configure lambda is the Action<IStepConfiguration<TState>> argument.
+            if (arg.Expression is not LambdaExpressionSyntax)
+            {
+                continue;
+            }
+
+            var configInvocations = arg.Expression
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>();
+
+            foreach (var configCall in configInvocations)
+            {
+                if (retry is null && SyntaxHelper.IsMethodCall(configCall, "WithRetry"))
+                {
+                    retry = ResilienceParser.ExtractRetry(configCall);
+                }
+                else if (timeout is null && SyntaxHelper.IsMethodCall(configCall, "WithTimeout"))
+                {
+                    timeout = ResilienceParser.ExtractTimeout(configCall);
+                }
+            }
+        }
+
+        return (retry, timeout);
     }
 
     /// <summary>
