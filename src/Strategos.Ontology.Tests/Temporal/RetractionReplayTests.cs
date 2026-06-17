@@ -110,6 +110,28 @@ public class RetractionReplayTests
     }
 
     [Test]
+    public async Task Assert_DuplicateOnOpenRow_IsIdempotent_PreservesOriginalInterval()
+    {
+        // A second assert for an association that already has an OPEN row (no retract
+        // in between) is an idempotent NO-OP — it must NOT overwrite the original open
+        // row and erase its SystemFrom. Symmetric with the retract no-op and consistent
+        // with RelateAsync being idempotent on a duplicate (src, link, tgt).
+        IReadOnlyList<AssociationTemporalEvent> log =
+        [
+            AssociationTemporalEvent.Assert("emp-1", "p1", "c1", T0, null, T1, "agent-a"),
+            AssociationTemporalEvent.Assert("emp-1", "p1", "c1", T0, null, T2, "agent-a"),
+        ];
+
+        var rows = TemporalAssociationProjection.Replay(log).Rows;
+
+        // Exactly one row survives; the original open interval is preserved.
+        await Assert.That(rows.Count).IsEqualTo(1);
+        var row = rows.Single(r => r.AssociationId == "emp-1");
+        await Assert.That(row.SystemFrom).IsEqualTo(T1);
+        await Assert.That(row.SystemTo).IsNull();
+    }
+
+    [Test]
     public async Task Replay_OpenAssertion_HasNullSystemTo()
     {
         // An assertion with no matching retraction projects to an OPEN row — the

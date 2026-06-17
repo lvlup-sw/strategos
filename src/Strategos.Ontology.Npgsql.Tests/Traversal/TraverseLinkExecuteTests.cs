@@ -72,18 +72,18 @@ public class TraverseLinkExecuteTests
     }
 
     // -----------------------------------------------------------------------
-    // Live-DB execution-parity variant — SKIPS in the default lane (no Postgres),
-    // RUNS only when STRATEGOS_PG_TEST_CONN is provisioned (DR-9 gate).
+    // DB-gated lowering smoke — SKIPS in the default lane (no Postgres), RUNS only
+    // when STRATEGOS_PG_TEST_CONN is provisioned (DR-9 gate). This pins that the
+    // lowering the public path produces is non-empty and anchored; it does NOT
+    // drive ExecuteAsync<T> against a live datasource (no row-level execution
+    // parity is asserted here). End-to-end live execution parity is the cross-
+    // provider parity harness's job when a connection string is present.
     // -----------------------------------------------------------------------
 
     [Test]
     [Integration.SkipIfNoPostgres]
-    public async Task ExecuteAsync_TraverseLink_LiveExecution_ReturnsRelatedTargets()
+    public async Task ExecuteAsync_TraverseLink_LoweringIsNonEmptyAndAnchored()
     {
-        // Execution parity is asserted only in a provisioned DB lane. Here we pin
-        // that the lowering the public path produces is non-empty and anchored —
-        // the live datasource wiring is exercised by the cross-provider parity
-        // harness when a connection string is present.
         var graph = BuildGraph();
         var expression = TraverseFrom(Account, MonoLink, typeof(object), "acct-1");
 
@@ -133,5 +133,5 @@ public class TraverseLinkExecuteTests
             workflowChains: []);
     }
 
-    public sealed record SourceAnchor(string Id);
+    private sealed record SourceAnchor(string Id);
 }

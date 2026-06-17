@@ -45,6 +45,19 @@ public sealed record TemporalAssociationProjection
             switch (evt.Kind)
             {
                 case AssociationTemporalEventKind.Assert:
+                    // Idempotent on a duplicate assert: a re-assert while the row is
+                    // still OPEN (SystemTo is null) is a NO-OP that PRESERVES the
+                    // original open interval — symmetric with the retract no-op below
+                    // and consistent with RelateAsync being idempotent on a duplicate
+                    // (src, link, tgt). A re-assert AFTER the prior interval was closed
+                    // (SystemTo set) legitimately opens a fresh interval, so the guard
+                    // is specifically "exists AND still open".
+                    if (byAssociation.TryGetValue(evt.AssociationId, out var existing)
+                        && existing.SystemTo is null)
+                    {
+                        break;
+                    }
+
                     byAssociation[evt.AssociationId] = new TemporalRow
                     {
                         AssociationId = evt.AssociationId,
@@ -71,7 +84,7 @@ public sealed record TemporalAssociationProjection
 
                 default:
                     throw new ArgumentOutOfRangeException(
-                        nameof(events),
+                        $"{nameof(events)}.{nameof(AssociationTemporalEvent.Kind)}",
                         evt.Kind,
                         "Unsupported association temporal event kind.");
             }

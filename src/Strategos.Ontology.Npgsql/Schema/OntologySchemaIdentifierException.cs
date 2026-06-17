@@ -26,15 +26,23 @@ public sealed class OntologySchemaIdentifierException : Exception
     /// <param name="secondName">The second colliding input name.</param>
     /// <param name="derivedIdentifier">The identifier both inputs derive to.</param>
     public OntologySchemaIdentifierException(string firstName, string secondName, string derivedIdentifier)
-        : base(
-            $"Schema identifiers '{firstName}' and '{secondName}' both derive the PostgreSQL "
-            + $"identifier '{derivedIdentifier}'. PostgreSQL truncates identifiers at 63 bytes "
-            + $"silently, so these two distinct junction targets would collapse onto one physical "
-            + $"table. Rename one descriptor/link so their derived identifiers differ.")
+        : base(BuildMessage(firstName, secondName, derivedIdentifier))
     {
         FirstName = firstName;
         SecondName = secondName;
         DerivedIdentifier = derivedIdentifier;
+    }
+
+    private static string BuildMessage(string firstName, string secondName, string derivedIdentifier)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(firstName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(secondName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(derivedIdentifier);
+
+        return $"Schema identifiers '{firstName}' and '{secondName}' both derive the PostgreSQL "
+            + $"identifier '{derivedIdentifier}'. PostgreSQL truncates identifiers at 63 bytes "
+            + $"silently, so these two distinct junction targets would collapse onto one physical "
+            + $"table. Rename one descriptor/link so their derived identifiers differ.";
     }
 
     /// <summary>The first colliding input name.</summary>

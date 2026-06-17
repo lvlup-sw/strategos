@@ -58,10 +58,14 @@ public class TemporalExcludeNpgsqlTests
     {
         await using var harness = await TemporalExcludeHarness.CreateAsync(RequireConn());
 
-        // Assert, capture the as-of-now transaction instant, then retract.
+        // Assert, capture the as-of-now transaction instant, then retract. The anchor
+        // is read from the DATABASE clock (clock_timestamp()), not app-side UtcNow:
+        // the interval boundaries (system_from/system_to) are stamped by Postgres
+        // now(), so an app-side anchor could drift under clock skew and intermittently
+        // miss the just-inserted row.
         await harness.AssertEmploymentAsync(
             "p1", "c1", validFrom: "2026-01-01T00:00:00Z", validTo: null);
-        var afterAssert = DateTimeOffset.UtcNow;
+        var afterAssert = await harness.DatabaseNowAsync();
         await Task.Delay(10);
         await harness.RetractAllOpenAsync("p1", "c1");
 
@@ -69,7 +73,7 @@ public class TemporalExcludeNpgsqlTests
         // reconstruction (BuildAsOfTransactionTimeSql) returns it ...
         await Assert.That(await harness.AsOfTransactionCountAsync(afterAssert)).IsEqualTo(1L);
         // ... but as of NOW it has been retracted, so the as-of-now read omits it.
-        await Assert.That(await harness.AsOfTransactionCountAsync(DateTimeOffset.UtcNow)).IsEqualTo(0L);
+        await Assert.That(await harness.AsOfTransactionCountAsync(await harness.DatabaseNowAsync())).IsEqualTo(0L);
     }
 
     private static string RequireConn()
@@ -152,6 +156,28 @@ internal sealed class TemporalExcludeHarness : IAsyncDisposable
             + "AND a.system_to IS NULL;",
             ("personId", personId),
             ("companyId", companyId)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the current instant from the DATABASE clock so as-of anchors share the
+    /// same time source as the Postgres-stamped interval boundaries (system_from/to),
+    /// avoiding app-vs-db clock skew in the historical read.
+    /// </summary>
+    public async Task<DateTimeOffset> DatabaseNowAsync()
+    {
+        // Read clock_timestamp() AS a timestamptz cast to an offset-aware text and back
+        // so it materializes as a DateTimeOffset regardless of the default timestamptz
+        // CLR mapping (Npgsql maps bare timestamptz to a UTC DateTime).
+        await using var cmd = _dataSource.CreateCommand(
+            "SELECT clock_timestamp()::timestamptz;");
+        var scalar = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
+        return scalar switch
+        {
+            DateTimeOffset dto => dto,
+            DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException(
+                $"Unexpected clock_timestamp() CLR type: {scalar?.GetType().FullName ?? "null"}."),
+        };
     }
 
     public Task<long> RowCountAsync() =>

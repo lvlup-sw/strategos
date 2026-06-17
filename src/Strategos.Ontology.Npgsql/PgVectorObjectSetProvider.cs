@@ -1747,11 +1747,12 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         /// <summary>
         /// The anchor instance's business id, bound via <c>@srcId</c> (never
-        /// interpolated), or <c>null</c> when the source chain carries no
-        /// single-id anchoring filter (the lowering then anchors structurally
-        /// through the junction join only).
+        /// interpolated). Always present: the depth-tiered lowering requires a key
+        /// anchor (<c>WHERE s.data->>'key' = @srcId</c>), so <see cref="ResolveAnchor"/>
+        /// resolves it from the source chain's key-equality predicate and refuses a
+        /// source that does not bind one (no structural-only fallback exists).
         /// </summary>
-        public string? SourceId { get; init; }
+        public required string SourceId { get; init; }
 
         /// <summary>The ordered depth steps, anchor-outward.</summary>
         public required IReadOnlyList<TraversalStep> Steps { get; init; }
@@ -1816,11 +1817,14 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
 
         var plan = BuildTraversalPlan(graph, expression);
-        var parameters = new List<ExpressionTranslator.SqlParameter>();
-        if (plan.SourceId is { } srcId)
+
+        // The plan's key anchor is always present (ResolveAnchor refuses a source
+        // without one), and the lowered SQL unconditionally requires @srcId, so the
+        // anchor parameter is bound unconditionally — never an unbound @srcId.
+        var parameters = new List<ExpressionTranslator.SqlParameter>
         {
-            parameters.Add(new ExpressionTranslator.SqlParameter("@srcId", srcId));
-        }
+            new("@srcId", plan.SourceId),
+        };
 
         var sql = SqlGenerator.BuildDepthTieredTraversalSql(schema, plan);
         return new TraversalLowering(sql, parameters);
@@ -1930,27 +1934,53 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     /// <summary>
     /// Resolves the anchor source's physical table + key property and the anchor
-    /// instance's business id (DR-12). The id is extracted from the source chain's
-    /// single-parameter filter (a <c>Where(s =&gt; s.Key == value)</c> anchoring on
-    /// the business id); a source chain with no such filter yields a <c>null</c>
-    /// id and the lowering anchors structurally through the junction join only.
+    /// instance's business id (DR-12). The id is extracted ONLY from the source
+    /// chain's KEY-equality predicate (a <c>Where(s =&gt; s.Key == value)</c> on the
+    /// source descriptor's key property, with a string-valued right-hand side) —
+    /// the single identity predicate the lowered <c>@srcId</c> anchor is defined for.
     /// </summary>
+    /// <remarks>
+    /// The depth-tiered traversal SQL unconditionally requires <c>@srcId</c>
+    /// (<c>WHERE s.data->>'key' = @srcId</c> at the anchor vertex), so the anchor id
+    /// MUST resolve from the actual key predicate. A non-key filter (e.g.
+    /// <c>Where(s =&gt; s.Status == "active")</c>), a non-string key value, a
+    /// non-equality/compound predicate, or no filter at all does not yield a valid
+    /// anchor — binding <c>@srcId</c> from such a parameter would mis-anchor the
+    /// traversal (or leave <c>@srcId</c> unbound, an opaque Npgsql failure). Those
+    /// cases fail fast with a typed <see cref="InvalidOperationException"/>, matching
+    /// the graph-first "refuse, don't degrade" posture of the relate/hop resolvers.
+    /// </remarks>
     [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
-    private static (string SourceTable, string SourceKeyProperty, string? SourceId) ResolveAnchor(
+    private static (string SourceTable, string SourceKeyProperty, string SourceId) ResolveAnchor(
         OntologyGraph? graph,
         string anchorSourceDescriptor,
         ObjectSets.ObjectSetExpression anchorSource)
     {
         var endpoint = ResolveRelateEndpoint(graph, anchorSourceDescriptor);
 
-        // Translate the source chain's filter to recover the anchor business id.
-        // The anchored-traversal contract addresses the source by a single business
-        // id, so a single-parameter filter binds @srcId; anything else leaves the
-        // id null (structural anchoring only).
+        // Translate the source chain's filter and require it to be EXACTLY the
+        // source key-equality predicate. The anchored-traversal contract addresses
+        // the source by a single business id bound from its key property, so only a
+        // string-valued `data->>'key' = @p0` predicate is a valid anchor — anything
+        // else (a non-key filter, a non-string key, a non-equality/compound
+        // predicate, or no filter) is refused rather than mis-bound onto @srcId.
         var translation = ExpressionTranslator.Translate(anchorSource);
-        var sourceId = translation.Parameters.Count == 1
-            ? translation.Parameters[0].Value as string
-            : null;
+        var expectedKeyClause =
+            $"data->>'{SqlGenerator.EscapeStringLiteral(endpoint.KeyProperty)}' = @p0";
+
+        if (translation.Parameters.Count != 1
+            || !string.Equals(translation.WhereClause, expectedKeyClause, StringComparison.Ordinal)
+            || translation.Parameters[0].Value is not string sourceId
+            || sourceId.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Instance-anchored traversal from '{anchorSourceDescriptor}' requires a key "
+                + $"anchor — a single Where(s => s.{endpoint.KeyProperty} == \"<id>\") on the "
+                + $"descriptor's key property '{endpoint.KeyProperty}' with a string id. The "
+                + $"source chain does not bind exactly that predicate, so the @srcId anchor is "
+                + $"undefined; a non-key filter, a non-string key value, or a "
+                + $"non-equality/compound/absent filter cannot anchor the traversal.");
+        }
 
         return (endpoint.TableName, endpoint.KeyProperty, sourceId);
     }

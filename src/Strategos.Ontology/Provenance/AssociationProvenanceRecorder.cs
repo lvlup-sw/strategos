@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Strategos.Ontology.Provenance;
 
 /// <summary>
@@ -47,7 +49,7 @@ public sealed class AssociationProvenanceRecorder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(associationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(activityId);
-        ArgumentNullException.ThrowIfNull(reason);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         var entity = new ProvEntity(associationId);
         var activity = new ProvActivity(activityId);
@@ -74,7 +76,7 @@ public sealed class AssociationProvenanceRecorder
             Activity = activity,
             Agent = agent,
             Reason = reason,
-            Influences = influences,
+            Influences = influences.ToImmutableArray(),
         };
     }
 }

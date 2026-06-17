@@ -157,14 +157,7 @@ public sealed class OntologyExploreTool
             ["domain"] = t.DomainName,
             ["objectKind"] = t.Kind.ToString(),
             ["edgeAttributes"] = t.Properties.Select(p => p.Name).ToList(),
-            ["endpoints"] = t.AssociationEndpoints
-                .Select(e => new Dictionary<string, object?>
-                {
-                    ["role"] = e.Role,
-                    ["descriptorName"] = e.DescriptorName,
-                    ["cardinality"] = e.Cardinality.ToString(),
-                })
-                .ToList(),
+            ["endpoints"] = ProjectEndpoints(t),
         }).ToList();
 
         return new ExploreResult("associations", items, CurrentMeta());

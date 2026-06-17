@@ -3,6 +3,8 @@ using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Npgsql.Internal;
 using Strategos.Ontology.Npgsql.Schema;
 
+using TUnit.Assertions.Enums;
+
 namespace Strategos.Ontology.Npgsql.Tests.Schema;
 
 /// <summary>
@@ -159,7 +161,10 @@ public class JunctionDmlRoutingTests
 
         var targets = PgVectorObjectSetProvider.ResolveLinkTargetDescriptors(graph, link);
 
-        await Assert.That(targets).IsEquivalentTo(new[] { Bond, Stock });
+        // Order-SENSITIVE: the resolver contracts an ordinal-stable fan-out, so the
+        // sequence must be exactly [Bond, Stock]. IsEquivalentTo would permit a
+        // reordering regression to pass; assert the ordered sequence instead.
+        await Assert.That(targets).IsEquivalentTo(new[] { Bond, Stock }, CollectionOrdering.Matching);
     }
 
     [Test]

@@ -111,6 +111,23 @@ internal static class SqlGenerator
         ArgumentException.ThrowIfNullOrWhiteSpace(tableName);
         ArgumentNullException.ThrowIfNull(options);
 
+        // The numeric HNSW knobs are interpolated as int literals into SET LOCAL
+        // (they are provider-controlled, never bindable), so a non-positive value
+        // would otherwise fail only at execution time in Postgres ("... must be a
+        // positive integer"). Fail fast at generation time with the typed
+        // out-of-range error instead.
+        if (options.MaxScanTuples is { } maxScan && maxScan <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options), maxScan, "hnsw.max_scan_tuples must be positive.");
+        }
+
+        if (options.EfSearch is { } ef && ef <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options), ef, "hnsw.ef_search must be positive.");
+        }
+
         var op = GetDistanceOperator(metric);
         var qSchema = QuoteIdentifier(schema);
         var qTable = QuoteIdentifier(tableName);

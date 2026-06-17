@@ -145,11 +145,18 @@ public sealed class OntologyAssociationListingTests
         await Assert.That(allText).DoesNotContain(typeof(ListParty).FullName!);
     }
 
+    // Recurse across EVERY nested payload collection (dictionaries and arbitrary
+    // enumerables alike) so no nested value is stringified to a type name and
+    // silently bypasses the CLR-leak assertion. string is matched before the
+    // IEnumerable arm (a string IS an IEnumerable<char>).
     private static string Flatten(object? value) => value switch
     {
         null => "",
-        IReadOnlyList<Dictionary<string, object?>> rows =>
-            string.Join("\n", rows.SelectMany(r => r.Values).Select(Flatten)),
+        string s => s,
+        IReadOnlyDictionary<string, object?> map =>
+            string.Join("\n", map.Values.Select(Flatten)),
+        System.Collections.IEnumerable seq =>
+            string.Join("\n", seq.Cast<object?>().Select(Flatten)),
         _ => value.ToString() ?? "",
     };
 }

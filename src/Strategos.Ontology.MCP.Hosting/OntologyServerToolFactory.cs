@@ -285,6 +285,14 @@ public static class OntologyServerToolFactory
             string direction = "ToDestination",
             int depth = 1,
             string? domain = null,
+            // Optional edge-attribute equality filter applied to the association
+            // objects BEFORE the far hop, keyed by edge-attribute property name. The
+            // default keeps it optional in the input schema (DR-14: an unset optional
+            // param must carry a default or AIFunctionFactory marks it required), so
+            // existing callers that omit it are unaffected. Forwarded verbatim into
+            // TraversalRequest.EdgeFilter, whose keys the tool validates against the
+            // association's own edge attributes (closed vocabulary).
+            IReadOnlyDictionary<string, string>? edgeFilter = null,
             string? cursor = null,
             CancellationToken ct = default) =>
         {
@@ -305,6 +313,9 @@ public static class OntologyServerToolFactory
                 Direction: parsedDirection,
                 Depth: depth,
                 Domain: domain,
+                // Forward the edge-attribute filter so the new TraversalRequest.EdgeFilter
+                // contract is reachable from MCP callers (#4/#5, INV-3).
+                EdgeFilter: edgeFilter,
                 // F3: forward an incoming continuation cursor so a paged re-call
                 // advances past the prior page rather than restarting at offset 0.
                 Cursor: cursor);

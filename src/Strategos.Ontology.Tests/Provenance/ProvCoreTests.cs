@@ -75,6 +75,10 @@ public class ProvCoreTests
         await Assert.That(provenance.Agent).IsNull();
         await Assert.That(provenance.Influences.Select(i => i.Relation))
             .DoesNotContain(ProvRelation.WasAttributedTo);
+        // The OTHER agent-bearing relation (the activity's responsible agent) is also
+        // absent — no agent means neither agent-binding relation is fabricated.
+        await Assert.That(provenance.Influences.Select(i => i.Relation))
+            .DoesNotContain(ProvRelation.WasAssociatedWith);
         // The activity-generation relation still holds (no agent required for it).
         await Assert.That(provenance.Influences.Select(i => i.Relation))
             .Contains(ProvRelation.WasGeneratedBy);

@@ -14,13 +14,6 @@ namespace Strategos.Ontology.Tests.ObjectSets;
 // one partition. INV-8: routing is by the stored descriptor NAME, never typeof.
 // ---------------------------------------------------------------------------
 
-// Two concrete security shapes sharing the polymorphic Holdings link target.
-// Storing the partition name lets the test assert WHICH partition each row
-// resolved to, without the evaluator reflecting over the shape for identity.
-public sealed record Stock(string Id, string Partition);
-
-public sealed record Bond(string Id, string Partition);
-
 public class InMemoryPolymorphicRelationTests
 {
     private const string Account = "Account";
@@ -126,8 +119,15 @@ public class InMemoryPolymorphicRelationTests
             crossDomainLinks: [],
             workflowChains: []);
     }
-}
 
-// A distinct CLR type for the source so it never collides with Stock/Bond in
-// the type->descriptor reverse index.
-public sealed record AccountNode(string Key);
+    // Two concrete security shapes sharing the polymorphic Holdings link target.
+    // Storing the partition name lets the test assert WHICH partition each row
+    // resolved to, without the evaluator reflecting over the shape for identity.
+    private sealed record Stock(string Id, string Partition);
+
+    private sealed record Bond(string Id, string Partition);
+
+    // A distinct CLR type for the source so it never collides with Stock/Bond in
+    // the type->descriptor reverse index.
+    private sealed record AccountNode(string Key);
+}

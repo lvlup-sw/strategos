@@ -527,8 +527,12 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             if (methodName == "Interface" && calledMethod.TypeArguments.Length == 1 &&
                 IsOntologyBuilderType(receiverType))
             {
-                var interfaceName = ExtractStringArg(invocation, 0) ?? calledMethod.TypeArguments[0].Name;
-                var ifaceInfo = new InterfaceInfo(interfaceName, invocation.GetLocation());
+                // INV-8: capture the interface's CLR type name alongside the
+                // descriptor name. With a custom descriptor name the two diverge,
+                // and a link by CLR type would otherwise lose the registration.
+                var clrTypeName = calledMethod.TypeArguments[0].Name;
+                var interfaceName = ExtractStringArg(invocation, 0) ?? clrTypeName;
+                var ifaceInfo = new InterfaceInfo(interfaceName, invocation.GetLocation(), clrTypeName);
                 info.Interfaces[interfaceName] = ifaceInfo;
 
                 // Parse the configure lambda for interface actions
@@ -1816,11 +1820,13 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
     private static bool TryFindInterfaceByTypeName(
         Dictionary<string, InterfaceInfo> interfaces, string typeName, out InterfaceInfo result)
     {
-        // The interface might be registered with a user-given name but the object type
-        // uses typeof(T).Name. Try both lookups.
+        // INV-8 (polyglot identity): an interface is identifiable by EITHER its
+        // descriptor name (the dictionary key / Name) OR its CLR type name. A link
+        // or object type may reference it by typeof(T).Name even when the interface
+        // was registered with a custom descriptor name, so match on all three.
         foreach (var kvp in interfaces)
         {
-            if (kvp.Key == typeName || kvp.Value.Name == typeName)
+            if (kvp.Key == typeName || kvp.Value.Name == typeName || kvp.Value.ClrTypeName == typeName)
             {
                 result = kvp.Value;
                 return true;
@@ -2140,14 +2146,23 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
     private sealed class InterfaceInfo
     {
-        public InterfaceInfo(string name, Location location)
+        public InterfaceInfo(string name, Location location, string? clrTypeName = null)
         {
             Name = name;
             Location = location;
+            ClrTypeName = clrTypeName;
         }
 
         public string Name { get; }
         public Location Location { get; }
+
+        // INV-8 (polyglot identity): the descriptor SymbolKey (Name) and the CLR
+        // Type both identify an interface and must stay first-class. When the
+        // interface is registered with a CUSTOM descriptor name —
+        // Interface<ISecurity>("SecurityAsset") — Name is "SecurityAsset" and this
+        // retains the dropped CLR type name "ISecurity" so a link by CLR type
+        // (HasOne<ISecurity>(...)) still resolves to the registered interface.
+        public string? ClrTypeName { get; }
         public HashSet<string> DeclaredActions { get; } = new HashSet<string>();
         public Dictionary<string, string> ActionAcceptsTypes { get; } = new Dictionary<string, string>();
     }

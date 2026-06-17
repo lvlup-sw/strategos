@@ -114,12 +114,12 @@ public class VertexIndexTests
     }
 }
 
-public sealed class VertexKeyRow
+internal sealed class VertexKeyRow
 {
     public string Id { get; set; } = string.Empty;
 }
 
-public class VertexKeyOntology : DomainOntology
+internal sealed class VertexKeyOntology : DomainOntology
 {
     public override string DomainName => "vertex-key";
 

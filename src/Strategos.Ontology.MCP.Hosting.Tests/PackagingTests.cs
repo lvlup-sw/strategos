@@ -31,12 +31,28 @@ public sealed class PackagingTests
 
         // Two AddOntologyTools overloads ship: the explicit-graph form and the DI-resolved form
         // (DR-14). GetMethod(name) would throw AmbiguousMatchException across overloads, so assert
-        // by name over the method set.
+        // by name over the method set. Both expected parameter shapes MUST be present so that a
+        // regression dropping either overload is caught (the single-count guard passed even when
+        // one overload was missing).
         var addOntologyTools = extensions
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(m => m.Name == "AddOntologyTools")
             .ToList();
-        await Assert.That(addOntologyTools.Count).IsGreaterThanOrEqualTo(1);
+        await Assert.That(addOntologyTools.Count).IsEqualTo(2);
+
+        // Each overload's parameter types (first is the IMcpServerBuilder this-arg on both).
+        var signatures = addOntologyTools
+            .Select(m => m.GetParameters().Select(p => p.ParameterType.Name).ToArray())
+            .ToList();
+
+        // The explicit-graph form: (IMcpServerBuilder, OntologyGraph).
+        var hasExplicitGraphForm = signatures.Any(s =>
+            s is ["IMcpServerBuilder", "OntologyGraph"]);
+        await Assert.That(hasExplicitGraphForm).IsTrue();
+
+        // The DI-resolved form: (IMcpServerBuilder) only.
+        var hasDiResolvedForm = signatures.Any(s => s is ["IMcpServerBuilder"]);
+        await Assert.That(hasDiResolvedForm).IsTrue();
 
         // The bridge references both ends: the SDK and the core MCP package.
         var referencedNames = hostingAssembly.GetReferencedAssemblies()

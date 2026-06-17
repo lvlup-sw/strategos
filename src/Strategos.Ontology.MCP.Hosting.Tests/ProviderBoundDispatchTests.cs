@@ -73,7 +73,7 @@ public sealed class ProviderBoundDispatchTests
         services.AddSingleton<IObjectSetProvider>(objectSets);
         services.AddMcpServer().AddOntologyTools(graph);
 
-        var (client, disposables, _) = await ConnectAsync(services);
+        var (client, disposables, serverRun) = await ConnectAsync(services);
 
         try
         {
@@ -88,6 +88,10 @@ public sealed class ProviderBoundDispatchTests
             var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
             await Assert.That(text).DoesNotContain("\"tool\":\"ontology_query\"");
             await Assert.That(text).Contains("ACME");
+
+            // The server loop must not have faulted while serving the call — a faulted
+            // ServerRun would otherwise be silently discarded.
+            await Assert.That(serverRun.IsFaulted).IsFalse();
         }
         finally
         {
@@ -112,7 +116,7 @@ public sealed class ProviderBoundDispatchTests
         services.AddSingleton<IObjectSetProvider>(objectSets);
         services.AddMcpServer().AddOntologyTools(graph);
 
-        var (client, disposables, _) = await ConnectAsync(services);
+        var (client, disposables, serverRun) = await ConnectAsync(services);
 
         try
         {
@@ -137,6 +141,9 @@ public sealed class ProviderBoundDispatchTests
             var raw = structured.GetRawText();
             await Assert.That(raw).Contains("ACME");
             await Assert.That(raw).Contains("WIDGET");
+
+            // The server loop must not have faulted while serving the call.
+            await Assert.That(serverRun.IsFaulted).IsFalse();
         }
         finally
         {
@@ -161,7 +168,7 @@ public sealed class ProviderBoundDispatchTests
         services.AddSingleton<IObjectSetProvider>(objectSets);
         services.AddMcpServer().AddOntologyTools();
 
-        var (client, disposables, _) = await ConnectAsync(services);
+        var (client, disposables, serverRun) = await ConnectAsync(services);
 
         try
         {
@@ -172,6 +179,9 @@ public sealed class ProviderBoundDispatchTests
             await Assert.That(result.IsError ?? false).IsFalse();
             var raw = result.StructuredContent!.Value.GetRawText();
             await Assert.That(raw).Contains("ACME");
+
+            // The server loop must not have faulted while serving the call.
+            await Assert.That(serverRun.IsFaulted).IsFalse();
         }
         finally
         {

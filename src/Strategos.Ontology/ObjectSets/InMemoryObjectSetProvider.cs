@@ -238,6 +238,18 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         {
             ct.ThrowIfCancellationRequested();
             var request = requests[i];
+
+            // Guard a null batch item BEFORE the try: dereferencing request.* in the
+            // RelateAsync call would NRE, and the catch below also reads request.* for
+            // batch-context enrichment — a null here would re-throw inside the catch
+            // and mask the position. Fail eagerly with a clear, indexed argument error
+            // (matches the method's ArgumentNullException.ThrowIfNull validation style).
+            if (request is null)
+            {
+                throw new ArgumentException(
+                    $"Batch relate request at index {i} is null.", nameof(requests));
+            }
+
             try
             {
                 await RelateAsync(

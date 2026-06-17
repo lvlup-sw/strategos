@@ -92,7 +92,12 @@ public sealed class OntologyTraverseTool
             return Error(meta, $"link '{request.LinkName}' is not a valid link on '{request.ObjectType}'. Available links: [{available}].");
         }
 
-        var association = ResolveAssociationDescriptor(link);
+        var association = ResolveAssociationDescriptor(link, out var ambiguityError);
+        if (ambiguityError is not null)
+        {
+            return Error(meta, ambiguityError);
+        }
+
         if (association is null)
         {
             return Error(meta, $"link '{request.LinkName}' does not target a reified association; instance traversal requires an association link.");
@@ -157,16 +162,19 @@ public sealed class OntologyTraverseTool
 
         // Self-imposed row budget: page the endpoints from the decoded offset and,
         // when more remain, flag truncation so the host emits a resource_link + the
-        // opaque continuation cursor for the next page.
+        // opaque continuation cursor for the next page. The next-offset addition is
+        // done in `long` so a crafted near-int.MaxValue decoded offset cannot
+        // overflow `int` and corrupt the Truncated / NextCursor pagination state.
         var paged = endpoints.Skip(offset).Take(RowBudget).ToList();
-        var hasMore = endpoints.Count > offset + RowBudget;
+        var nextOffset = (long)offset + RowBudget;
+        var hasMore = endpoints.Count > nextOffset;
         if (hasMore)
         {
             return new TraversalResult(meta)
             {
                 Endpoints = paged,
                 Truncated = true,
-                NextCursor = EncodeCursor(request, offset + RowBudget),
+                NextCursor = EncodeCursor(request, nextOffset),
             };
         }
 
@@ -190,20 +198,60 @@ public sealed class OntologyTraverseTool
     // A link targets a reified association when its declared target descriptor is
     // itself an ObjectKind.Association. Resolved from the GRAPH by descriptor name
     // (never by CLR type), so a SymbolKey-only association is found identically.
-    private ObjectTypeDescriptor? ResolveAssociationDescriptor(LinkDescriptor link)
+    //
+    // INV-8 / #128: when the link points at a plain endpoint and MULTIPLE associations
+    // reify an endpoint with that target descriptor, "first match" can bind the WRONG
+    // edge type (and so apply the wrong edge-filter vocabulary). Disambiguate by the
+    // link NAME — the named role being traversed — preferring an association endpoint
+    // whose Role equals the link name; only when no endpoint role matches do we accept
+    // a descriptor-only match, and then ONLY if it is unique. A genuinely ambiguous
+    // link (same endpoint descriptor, no role disambiguator) fails fast via
+    // <paramref name="ambiguityError"/> rather than silently binding the first.
+    private ObjectTypeDescriptor? ResolveAssociationDescriptor(LinkDescriptor link, out string? ambiguityError)
     {
+        ambiguityError = null;
+
         var target = _graph.ObjectTypes.FirstOrDefault(t => t.Name == link.TargetTypeName);
         if (target is { Kind: ObjectKind.Association })
         {
             return target;
         }
 
-        // The link may point at a plain endpoint while an association reifies the
-        // same link name; find an association whose endpoints include the link's
-        // declared target as the destination role.
-        return _graph.ObjectTypes
+        // Candidate associations: those whose endpoints include the link's declared
+        // target descriptor as a role. (Descriptor-name match only — INV-8.)
+        var candidates = _graph.ObjectTypes
             .Where(t => t.Kind == ObjectKind.Association)
-            .FirstOrDefault(a => a.AssociationEndpoints.Any(e => e.DescriptorName == link.TargetTypeName));
+            .Where(a => a.AssociationEndpoints.Any(e => e.DescriptorName == link.TargetTypeName))
+            .ToList();
+
+        if (candidates.Count <= 1)
+        {
+            return candidates.FirstOrDefault();
+        }
+
+        // More than one association reifies this endpoint descriptor. First try to
+        // disambiguate by the link NAME matching an endpoint ROLE (the named role
+        // being traversed) on the target descriptor.
+        var byRole = candidates
+            .Where(a => a.AssociationEndpoints.Any(e =>
+                e.DescriptorName == link.TargetTypeName
+                && string.Equals(e.Role, link.Name, StringComparison.Ordinal)))
+            .ToList();
+
+        if (byRole.Count == 1)
+        {
+            return byRole[0];
+        }
+
+        // Still ambiguous (zero role matches, or several associations share the same
+        // link-name role on the same endpoint descriptor) — fail fast naming the
+        // ambiguity instead of binding the first candidate.
+        var names = string.Join(", ", (byRole.Count > 1 ? byRole : candidates).Select(a => a.Name));
+        ambiguityError =
+            $"link '{link.Name}' (target '{link.TargetTypeName}') is ambiguous: it matches multiple "
+            + $"reified associations [{names}] and cannot be disambiguated by link name. Traverse via a "
+            + "link whose name matches the intended association endpoint role.";
+        return null;
     }
 
     private static AssociationEndpoint? ResolveFarRole(ObjectTypeDescriptor association, TraversalDirection direction)
@@ -434,7 +482,7 @@ public sealed class OntologyTraverseTool
     // Opaque cursor: an offset into the far-endpoint set, encoded so the agent
     // treats it as a token rather than a row. The encoding is intentionally not a
     // public schema — only the tool decodes it.
-    private static string EncodeCursor(TraversalRequest request, int offset)
+    private static string EncodeCursor(TraversalRequest request, long offset)
     {
         var raw = $"{request.ObjectType}|{request.ObjectId}|{request.LinkName}|{(int)request.Direction}|{offset}";
         return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(raw));

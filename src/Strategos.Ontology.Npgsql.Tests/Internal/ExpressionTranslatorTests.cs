@@ -99,15 +99,17 @@ public class ExpressionTranslatorTests
     }
 
     [Test]
-    public async Task Translate_KeyWithApostrophe_EscapesJsonPathLiteral()
+    public async Task EscapeStringLiteral_KeyWithApostrophe_DoublesQuoteForJsonPathLiteral()
     {
         // F4: the LINQ-derived property name is interpolated into a single-quoted
         // data->>'...' JSON-path literal, NOT a bindable parameter, so an apostrophe
         // in the key MUST be doubled — otherwise a key like O'Brien would terminate
-        // the literal early. C# member names cannot carry an apostrophe, so the key
-        // string is fed straight through the SqlGenerator.EscapeStringLiteral helper
-        // both translator accessor sites now route through, then composed into the
-        // translator's exact data->>'...' accessor template.
+        // the literal early. This pins the SqlGenerator.EscapeStringLiteral helper that
+        // BOTH translator accessor sites (ExpressionTranslator's data->>'...' accessor
+        // template) route their key through. It cannot be driven through
+        // ExpressionTranslator.Translate directly: a C# member name cannot carry an
+        // apostrophe, so a LINQ-derived property name never contains one — the
+        // Translate path is exercised by the other tests in this class.
         const string apostropheKey = "O'Brien";
 
         var escaped = SqlGenerator.EscapeStringLiteral(apostropheKey);
