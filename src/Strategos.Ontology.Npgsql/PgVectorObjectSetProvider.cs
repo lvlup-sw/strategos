@@ -178,22 +178,75 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var whereClause = sourceTranslation.WhereClause;
         var filterParams = sourceTranslation.Parameters;
 
-        // 4. Build SQL with optional WHERE clause
-        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
-
-        // 5. Execute query
+        // 4. Execute. When iterative-scan knobs are configured (DR-13/R8) the search
+        //    is an ANN CTE run inside a transaction so the SET LOCAL knobs take
+        //    effect; otherwise the pre-DR-13 single-statement query is used.
         var items = new List<T>();
         var scores = new List<double>();
 
+        if (_options.IterativeScan is { } iterativeScan)
+        {
+            var composedSql = SqlGenerator.BuildIterativeScanSimilarityQuery(
+                _options.Schema, tableName, expression.Metric, iterativeScan, whereClause);
+
+            // SET LOCAL is transaction-scoped: the knobs apply only inside this
+            // transaction and never leak onto the pooled connection.
+            await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using var scopedCmd = new NpgsqlCommand(composedSql, connection, transaction);
+            BindSimilarityParameters(scopedCmd, queryVector, expression.TopK, filterParams);
+
+            await ReadSimilarityRowsAsync(scopedCmd, expression, items, scores, ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+        }
+
+        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
+
         await using var cmd = _dataSource.CreateCommand(sql);
+        BindSimilarityParameters(cmd, queryVector, expression.TopK, filterParams);
+
+        await ReadSimilarityRowsAsync(cmd, expression, items, scores, ct).ConfigureAwait(false);
+
+        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+    }
+
+    /// <summary>
+    /// Binds the shared similarity parameters (<c>@query</c>, <c>@topK</c>, and any
+    /// translated filter params) onto a command, so the plain and iterative-scan
+    /// (DR-13/R8) similarity paths bind identically.
+    /// </summary>
+    private static void BindSimilarityParameters(
+        NpgsqlCommand cmd,
+        float[] queryVector,
+        int topK,
+        IReadOnlyList<ExpressionTranslator.SqlParameter> filterParams)
+    {
         cmd.Parameters.AddWithValue("query", new Vector(queryVector));
-        cmd.Parameters.AddWithValue("topK", expression.TopK);
+        cmd.Parameters.AddWithValue("topK", topK);
 
         foreach (var p in filterParams)
         {
             cmd.Parameters.AddWithValue(p.Name.TrimStart('@'), p.Value);
         }
+    }
 
+    /// <summary>
+    /// Reads similarity rows from an executed command into <paramref name="items"/>
+    /// / <paramref name="scores"/>, converting pgvector distance to a similarity
+    /// score and dropping rows below <see cref="SimilarityExpression.MinRelevance"/>.
+    /// Shared by the plain and iterative-scan (DR-13/R8) similarity paths so both
+    /// read rows identically.
+    /// </summary>
+    private async Task ReadSimilarityRowsAsync<T>(
+        NpgsqlCommand cmd,
+        SimilarityExpression expression,
+        List<T> items,
+        List<double> scores,
+        CancellationToken ct)
+        where T : class
+    {
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -223,8 +276,6 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
-
-        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
     }
 
     /// <inheritdoc />

@@ -75,6 +75,17 @@ remain registered but dormant (INV-5: ids are never reused).
   These `Strategos.Ontology` types are not part of the `src/Strategos` builder
   PublicAPI baseline (scoped to the 7 `Strategos.Builders` interfaces), so no
   `PublicAPI.*.txt` re-baseline is required.
+- **R8 — pgvector iterative-scan knobs.** New `IterativeScanOptions` /
+  `IterativeScanMode` on `Strategos.Ontology.Npgsql`, wired into
+  `PgVectorOptions.IterativeScan`. When set, a similarity query is shaped as an
+  index-ordered ANN CTE and run inside a transaction with transaction-scoped
+  `SET LOCAL hnsw.iterative_scan` / `hnsw.max_scan_tuples` / `hnsw.ef_search`, so a
+  filtered search keeps scanning the HNSW index until it has enough post-filter
+  rows to satisfy `topK` (instead of post-filtering a fixed candidate set and
+  under-returning). **Runtime requirement:** the pgvector SERVER extension must be
+  `>= 0.8.0` (iterative scans are a 0.8.0 feature). The `Pgvector` .NET client pin
+  is bumped `0.3.0` → `0.3.2`; that client's version line is independent of — and
+  cannot express — the server-extension requirement.
 
 ## [2.8.0] - 2026-05-25
 

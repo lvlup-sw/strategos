@@ -75,6 +75,93 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// Builds a similarity query with pgvector ITERATIVE-SCAN knobs (DR-13/R8): the
+    /// supplied <see cref="IterativeScanOptions"/> are emitted as transaction-scoped
+    /// <c>SET LOCAL</c> statements, and the vector search is shaped as an
+    /// index-ordered top-K CTE (<c>WITH ann AS (...)</c>) the outer query then
+    /// projects from. A filter is applied in the OUTER query (post-CTE), so the CTE
+    /// stays a pure index scan and the iterative scan supplies enough candidate rows
+    /// for the outer filter to still satisfy <c>topK</c>.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="tableName">The vertex object table (snake_cased).</param>
+    /// <param name="metric">The pgvector distance metric.</param>
+    /// <param name="options">The iterative-scan knobs to apply via <c>SET LOCAL</c>.</param>
+    /// <param name="whereClause">
+    /// An OPTIONAL filter applied in the outer query (the same translated predicate
+    /// <see cref="BuildSimilarityQuery"/> takes), or <c>null</c> for none.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The knobs target the HNSW index
+    /// (<c>hnsw.*</c> GUCs). <c>SET LOCAL</c> is transaction-scoped, so the caller
+    /// MUST run this composed statement inside an explicit transaction for the knobs
+    /// to take effect and to guarantee they never leak onto a pooled connection. The
+    /// GUC VALUES here are provider-controlled enum/int literals (never caller text),
+    /// so they are safe to interpolate; the query vector and topK still bind via
+    /// <c>@query</c> / <c>@topK</c>.
+    /// </remarks>
+    internal static string BuildIterativeScanSimilarityQuery(
+        string schema,
+        string tableName,
+        DistanceMetric metric,
+        IterativeScanOptions options,
+        string? whereClause = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tableName);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var op = GetDistanceOperator(metric);
+        var qSchema = QuoteIdentifier(schema);
+        var qTable = QuoteIdentifier(tableName);
+
+        var sb = new StringBuilder();
+
+        // 1. Transaction-scoped GUCs. The mode is always emitted; the numeric knobs
+        //    only when supplied, so an unset knob leaves the session default.
+        sb.Append($"SET LOCAL hnsw.iterative_scan = '{ToGucLiteral(options.Mode)}'; ");
+        if (options.MaxScanTuples is { } maxScanTuples)
+        {
+            sb.Append($"SET LOCAL hnsw.max_scan_tuples = {maxScanTuples}; ");
+        }
+
+        if (options.EfSearch is { } efSearch)
+        {
+            sb.Append($"SET LOCAL hnsw.ef_search = {efSearch}; ");
+        }
+
+        // 2. The ANN CTE: an index-ordered top-K scan over the vector column. Kept a
+        //    pure scan (no filter) so the planner uses the HNSW index for the
+        //    ordered limit; the iterative scan over-fetches as needed.
+        sb.Append("WITH ann AS (");
+        sb.Append($"SELECT id, data, (embedding {op} @query) AS distance FROM {qSchema}.{qTable} ");
+        sb.Append("ORDER BY distance LIMIT @topK) ");
+
+        // 3. The outer query: project from the CTE, applying the filter post-scan.
+        sb.Append("SELECT id, data, distance FROM ann");
+        if (!string.IsNullOrEmpty(whereClause))
+        {
+            sb.Append($" WHERE {whereClause}");
+        }
+
+        sb.Append(" ORDER BY distance");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Maps an <see cref="IterativeScanMode"/> to its pgvector
+    /// <c>hnsw.iterative_scan</c> GUC literal.
+    /// </summary>
+    private static string ToGucLiteral(IterativeScanMode mode) => mode switch
+    {
+        IterativeScanMode.Off => "off",
+        IterativeScanMode.StrictOrder => "strict_order",
+        IterativeScanMode.RelaxedOrder => "relaxed_order",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported iterative-scan mode."),
+    };
+
+    /// <summary>
     /// Builds a SELECT query for filter/stream operations.
     /// </summary>
     internal static string BuildSelectQuery(

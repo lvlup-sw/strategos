@@ -32,9 +32,15 @@
     <PackageVersion Include="NJsonSchema" Version="11.6.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <!-- PostgreSQL / pgvector -->
+    <!-- PostgreSQL / pgvector.
+         The pgvector SERVER extension must be >= 0.8.0 at runtime: DR-13/R8's
+         iterative-scan knobs (hnsw.iterative_scan / max_scan_tuples / ef_search)
+         are a 0.8.0 feature. That is a server-side requirement the .NET client
+         package version cannot express — the `Pgvector` NuGet (the type-mapping
+         client) tops out at 0.3.x and is unrelated to the server extension's
+         version line. -->
     <PackageVersion Include="Npgsql" Version="9.0.3" />
-    <PackageVersion Include="Pgvector" Version="0.3.0" />
+    <PackageVersion Include="Pgvector" Version="0.3.2" />
     <!-- Benchmark packages -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8" />
