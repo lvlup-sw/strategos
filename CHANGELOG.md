@@ -54,6 +54,29 @@ differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
 
+### Added
+
+- **Provider-bound MCP dispatch (DR-14, #113).** A new
+  `IMcpServerBuilder.AddOntologyTools()` overload (in
+  `LevelUp.Strategos.Ontology.MCP.Hosting`) discovers the four ontology tools from
+  the `OntologyGraph` already registered in the host's service collection (e.g. via
+  `services.AddOntology(...)`) and registers them as MCP server tools. The existing
+  explicit-graph overload `AddOntologyTools(OntologyGraph)` is retained.
+
+### Changed
+
+- **Ontology MCP tools now dispatch against the DI-resolved provider (DR-14, #113).**
+  `OntologyServerToolFactory.CreateServerTools(OntologyGraph)` no longer emits the
+  echo stub handler. Each tool's handler resolves the backing
+  `IObjectSetProvider` — and, where applicable, `IActionDispatcher`,
+  `IEventStreamProvider`, `IOntologyQuery` — from the per-call request's
+  `IServiceProvider`, so an `ontology_query` (and the other tools) executes against
+  the configured provider and returns real rows. Every tool result still carries its
+  `_meta` envelope and `OutputSchema` (INV-3). Hosts that called the tools previously
+  saw only a stub echo; they must now register an `IObjectSetProvider` for the query
+  path. These hosting types are not part of the `src/Strategos` builder PublicAPI
+  baseline, so no `PublicAPI.*.txt` re-baseline is required.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single

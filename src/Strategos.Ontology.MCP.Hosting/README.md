@@ -21,11 +21,20 @@ using Microsoft.Extensions.DependencyInjection;
 using Strategos.Ontology.MCP.Hosting;
 
 builder.Services
+    .AddOntology(o => o.AddDomain<MyDomain>())   // registers OntologyGraph + IObjectSetProvider
+    .AddMcpServer()
+    .AddOntologyTools();                          // resolves the graph + providers from DI
+```
+
+`AddOntologyTools` discovers the four ontology tools (`ontology_explore`, `ontology_query`, `ontology_action`, `ontology_validate`) and registers them as **provider-bound** MCP server tools: each tool dispatches against the host's DI-resolved `IObjectSetProvider` (and, where applicable, `IActionDispatcher`, `IEventStreamProvider`, `IOntologyQuery`), resolved per call from the request's `IServiceProvider`. So `ontology_query` executes against the configured provider and returns real rows.
+
+The no-argument overload resolves the `OntologyGraph` from the service collection. Pass a graph explicitly when it is not registered there:
+
+```csharp
+builder.Services
     .AddMcpServer()
     .AddOntologyTools(ontologyGraph);
 ```
-
-`AddOntologyTools` discovers the four ontology tools (`ontology_explore`, `ontology_query`, `ontology_action`, `ontology_validate`) and registers them as callable MCP server tools.
 
 To obtain the adapted tools directly:
 
@@ -33,7 +42,7 @@ To obtain the adapted tools directly:
 IEnumerable<McpServerTool> tools = OntologyServerToolFactory.CreateServerTools(ontologyGraph);
 ```
 
-Each tool preserves the originating descriptor's `OutputSchema`, annotations, and action constraint summaries (carried in the tool's `_meta`).
+Each tool preserves the originating descriptor's `OutputSchema`, annotations, and action constraint summaries (carried in the tool's `_meta`). The query path requires an `IObjectSetProvider` in the host's service provider; register one (e.g. via `AddOntology`) before serving traffic.
 
 ## License
 

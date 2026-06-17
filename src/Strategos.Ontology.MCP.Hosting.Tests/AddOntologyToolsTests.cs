@@ -8,6 +8,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 using Strategos.Ontology.MCP.Hosting;
+using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.MCP.Hosting.Tests;
 
@@ -24,9 +25,15 @@ public sealed class AddOntologyToolsTests
     [Test]
     public async Task AddOntologyTools_RegistersFourCallableTools()
     {
-        // Arrange — register ontology tools on an MCP server builder.
+        // Arrange — register ontology tools on an MCP server builder. The tools are provider-bound
+        // (DR-14), so a backing IObjectSetProvider is registered for the query dispatch path.
         var graph = TestOntologyGraphFactory.CreateTradingGraph();
+        var objectSets = new InMemoryObjectSetProvider(graph);
+        objectSets.Seed(new TestPosition { Id = "P-1", Symbol = "ACME", Quantity = 10m }, "ACME position");
+
         var services = new ServiceCollection();
+        services.AddSingleton(graph);
+        services.AddSingleton<IObjectSetProvider>(objectSets);
         services.AddMcpServer().AddOntologyTools(graph);
         await using var provider = services.BuildServiceProvider();
         var serverOptions = provider.GetRequiredService<IOptions<McpServerOptions>>().Value;
@@ -66,10 +73,11 @@ public sealed class AddOntologyToolsTests
             await Assert.That(names).Contains(expected);
         }
 
-        // Act — tools/call on ontology_query routes to the registered tool.
+        // Act — tools/call on ontology_query routes to the registered tool and dispatches against
+        // the configured provider.
         var result = await client.CallToolAsync(
             "ontology_query",
-            new Dictionary<string, object?> { ["input"] = "{}" });
+            new Dictionary<string, object?> { ["objectType"] = "TestPosition" });
 
         // Assert — the call routed and returned content (no protocol error).
         await Assert.That(result).IsNotNull();
