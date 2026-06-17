@@ -28,7 +28,15 @@ public sealed class PackagingTests
             "Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions");
         await Assert.That(extensions).IsNotNull();
         await Assert.That(extensions!.IsPublic).IsTrue();
-        await Assert.That(extensions.GetMethod("AddOntologyTools", BindingFlags.Public | BindingFlags.Static)).IsNotNull();
+
+        // Two AddOntologyTools overloads ship: the explicit-graph form and the DI-resolved form
+        // (DR-14). GetMethod(name) would throw AmbiguousMatchException across overloads, so assert
+        // by name over the method set.
+        var addOntologyTools = extensions
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name == "AddOntologyTools")
+            .ToList();
+        await Assert.That(addOntologyTools.Count).IsGreaterThanOrEqualTo(1);
 
         // The bridge references both ends: the SDK and the core MCP package.
         var referencedNames = hostingAssembly.GetReferencedAssemblies()
