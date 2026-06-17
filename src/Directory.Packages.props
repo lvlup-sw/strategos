@@ -49,5 +49,20 @@
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
     <!-- Model Context Protocol -->
     <PackageVersion Include="ModelContextProtocol" Version="1.3.0" />
+    <!-- Behavioral-test harness (#135 DR-9): compile + RUN the generated
+         Wolverine+Marten saga against a real Postgres (Testcontainers).
+         WolverineFx 6.x is the current stable line with a native net10.0
+         target; it exposes CompensatingAction on the error-handling chain
+         and the TimeoutMessage saga base needed by later DR-9 tasks. The
+         design's "3.x" note predates the 6.x release; 6.12.0 supersedes it.
+         WolverineFx.Marten 6.12.0 depends on Marten 9.8.0 — pinned to 9.9.0
+         (>= 9.8.0). Npgsql 10.0.3 (above) satisfies Weasel.Postgresql's
+         Npgsql >= 9.0.4 floor. Wolverine/Marten are referenced now but only
+         *used* by a later host-wiring task; this task uses Npgsql +
+         Testcontainers for the fixture + smoke test only. -->
+    <PackageVersion Include="WolverineFx" Version="6.12.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.12.0" />
+    <PackageVersion Include="Marten" Version="9.9.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
   </ItemGroup>
 </Project>
