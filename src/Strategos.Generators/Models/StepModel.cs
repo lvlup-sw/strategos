@@ -19,6 +19,10 @@ namespace Strategos.Generators.Models;
 /// <param name="ValidationPredicate">The predicate expression text for state validation guard.</param>
 /// <param name="ValidationErrorMessage">The error message when validation fails.</param>
 /// <param name="Context">The optional context configuration for this step.</param>
+/// <param name="Retry">The optional retry policy for this step.</param>
+/// <param name="Timeout">The optional timeout policy for this step.</param>
+/// <param name="Compensation">The optional compensation (rollback) policy for this step.</param>
+/// <param name="Confidence">The optional confidence-gating policy for this step.</param>
 internal sealed record StepModel(
     string StepName,
     string StepTypeName,
@@ -28,6 +32,26 @@ internal sealed record StepModel(
     string? ValidationErrorMessage = null,
     ContextModel? Context = null)
 {
+    /// <summary>
+    /// Gets the optional retry policy for this step.
+    /// </summary>
+    public RetryModel? Retry { get; init; }
+
+    /// <summary>
+    /// Gets the optional timeout policy for this step.
+    /// </summary>
+    public TimeoutModel? Timeout { get; init; }
+
+    /// <summary>
+    /// Gets the optional compensation (rollback) policy for this step.
+    /// </summary>
+    public CompensationModel? Compensation { get; init; }
+
+    /// <summary>
+    /// Gets the optional confidence-gating policy for this step.
+    /// </summary>
+    public ConfidenceModel? Confidence { get; init; }
+
     /// <summary>
     /// Gets the effective name for this step, used for duplicate detection and phase naming.
     /// </summary>
@@ -71,6 +95,10 @@ internal sealed record StepModel(
     /// <param name="validationPredicate">The optional predicate expression text for state validation guard.</param>
     /// <param name="validationErrorMessage">The optional error message when validation fails.</param>
     /// <param name="context">The optional context configuration for this step.</param>
+    /// <param name="retry">The optional retry policy for this step.</param>
+    /// <param name="timeout">The optional timeout policy for this step.</param>
+    /// <param name="compensation">The optional compensation (rollback) policy for this step.</param>
+    /// <param name="confidence">The optional confidence-gating policy for this step.</param>
     /// <returns>A validated <see cref="StepModel"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stepName"/> or <paramref name="stepTypeName"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when validation fails or when predicate and message are mismatched.</exception>
@@ -85,7 +113,11 @@ internal sealed record StepModel(
         string? loopName = null,
         string? validationPredicate = null,
         string? validationErrorMessage = null,
-        ContextModel? context = null)
+        ContextModel? context = null,
+        RetryModel? retry = null,
+        TimeoutModel? timeout = null,
+        CompensationModel? compensation = null,
+        ConfidenceModel? confidence = null)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
@@ -125,6 +157,12 @@ internal sealed record StepModel(
             LoopName: loopName,
             ValidationPredicate: validationPredicate,
             ValidationErrorMessage: validationErrorMessage,
-            Context: context);
+            Context: context)
+        {
+            Retry = retry,
+            Timeout = timeout,
+            Compensation = compensation,
+            Confidence = confidence,
+        };
     }
 }
