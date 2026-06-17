@@ -200,6 +200,45 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Tries to build a configured <see cref="StepModel"/> for a fork-path <c>Then&lt;TStep&gt;()</c>
+    /// invocation, mirroring the top-level/loop emitters' step model.
+    /// </summary>
+    /// <param name="invocation">The <c>Then</c> invocation expression for the fork-path step.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="loopPrefix">The current loop prefix, if the fork is inside a loop.</param>
+    /// <param name="stepModel">The resulting configured step model, if successful.</param>
+    /// <returns>True if the step model was built; otherwise, false.</returns>
+    /// <remarks>
+    /// Threads any per-step <c>ValidateState</c> configuration declared via the
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.ValidateState(...))</c> configure-lambda overload into the
+    /// <see cref="StepModel"/>, scoped to this invocation's own arguments, reusing the same
+    /// resolution as <see cref="ParseForkPathStepModels"/>. The instance name is intentionally
+    /// dropped: fork-path phase/command/event names key off the step <b>type</b> name (this matches
+    /// the pre-existing fork extraction behaviour, so emitted output is unchanged), while the new
+    /// configured-step shape preserves per-step configuration such as <c>ValidateState</c>.
+    /// </remarks>
+    internal static bool TryBuildConfiguredForkPathStepModel(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        string? loopPrefix,
+        out StepModel stepModel)
+    {
+        var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
+        if (!TryGetStepModel(invocation, semanticModel, loopPrefix, validationPredicate, validationErrorMessage, out stepModel))
+        {
+            return false;
+        }
+
+        // Fork-path steps phase/command/event on their type name, never the instance name.
+        if (stepModel.InstanceName is not null)
+        {
+            stepModel = stepModel with { InstanceName = null };
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Tries to get the step name and optional instance name from an invocation expression.
     /// </summary>
     /// <param name="invocation">The invocation expression to check.</param>

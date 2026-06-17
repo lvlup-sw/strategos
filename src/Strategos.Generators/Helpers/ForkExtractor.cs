@@ -336,22 +336,24 @@ internal static class ForkExtractor
             return false;
         }
 
-        // Extract steps and failure handler from the path body
-        var stepNames = new List<string>();
+        // Extract steps and failure handler from the path body. Steps are carried as configured
+        // StepModel records (mirroring the top-level/loop emitters' step model) so per-step
+        // configuration such as ValidateState is preserved on the fork path, not just the names.
+        var steps = new List<StepModel>();
         var hasFailureHandler = false;
         var isTerminalOnFailure = false;
         var failureHandlerStepNames = new List<string>();
 
-        ParseForkPathBody(pathLambda, semanticModel, loopPrefix, stepNames, ref hasFailureHandler, ref isTerminalOnFailure, failureHandlerStepNames, cancellationToken);
+        ParseForkPathBody(pathLambda, semanticModel, loopPrefix, steps, ref hasFailureHandler, ref isTerminalOnFailure, failureHandlerStepNames, cancellationToken);
 
-        if (stepNames.Count == 0)
+        if (steps.Count == 0)
         {
             return false;
         }
 
         pathModel = new ForkPathModel(
             PathIndex: pathIndex,
-            StepNames: stepNames,
+            Steps: steps,
             HasFailureHandler: hasFailureHandler,
             IsTerminalOnFailure: isTerminalOnFailure,
             FailureHandlerStepNames: failureHandlerStepNames.Count > 0 ? failureHandlerStepNames : null);
@@ -363,7 +365,7 @@ internal static class ForkExtractor
         LambdaExpressionSyntax pathLambda,
         SemanticModel semanticModel,
         string? loopPrefix,
-        List<string> stepNames,
+        List<StepModel> steps,
         ref bool hasFailureHandler,
         ref bool isTerminalOnFailure,
         List<string> failureHandlerStepNames,
@@ -412,15 +414,16 @@ internal static class ForkExtractor
 
             if (SyntaxHelper.IsMethodCall(inv, "Then"))
             {
-                if (StepExtractor.TryGetStepName(inv, semanticModel, out var stepName))
+                // Build a configured StepModel for this fork-path step. The loop prefix is threaded
+                // into the StepModel as its LoopName, so StepModel.PhaseName yields the same prefixed
+                // phase name the emitters previously consumed, while per-step configuration
+                // (e.g. ValidateState) is preserved on the step rather than discarded.
+                if (StepExtractor.TryBuildConfiguredForkPathStepModel(inv, semanticModel, loopPrefix, out var stepModel))
                 {
-                    // Apply loop prefix to step name
-                    var prefixedStepName = ApplyPrefix(stepName, loopPrefix) ?? stepName;
-
-                    // Avoid duplicates (can happen with nested calls)
-                    if (!stepNames.Contains(prefixedStepName))
+                    // Avoid duplicates by phase name (can happen with nested calls)
+                    if (!steps.Any(s => string.Equals(s.PhaseName, stepModel.PhaseName, StringComparison.Ordinal)))
                     {
-                        stepNames.Add(prefixedStepName);
+                        steps.Add(stepModel);
                     }
                 }
             }
