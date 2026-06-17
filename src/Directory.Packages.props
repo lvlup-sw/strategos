@@ -9,6 +9,7 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
@@ -62,6 +63,11 @@
          Testcontainers for the fixture + smoke test only. -->
     <PackageVersion Include="WolverineFx" Version="6.12.0" />
     <PackageVersion Include="WolverineFx.Marten" Version="6.12.0" />
+    <!-- WolverineFx 6.x dropped the in-box runtime (Roslyn) compiler; the
+         generated saga/handler glue is compiled at runtime in the behavioral
+         host fixture. RuntimeCompilation auto-registers the IAssemblyGenerator
+         so the host can start in TypeLoadMode.Dynamic. -->
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.12.0" />
     <PackageVersion Include="Marten" Version="9.9.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
   </ItemGroup>
