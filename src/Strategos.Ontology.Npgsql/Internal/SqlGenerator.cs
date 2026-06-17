@@ -660,10 +660,22 @@ internal static class SqlGenerator
         var tableName = TypeMapper.ToSnakeCase(association.Name);
 
         var sb = new StringBuilder();
+
+        // DR-16 (T21, #126): btree_gist supplies the `=` operator class so the
+        // homogeneous uuid endpoint keys can participate in the temporal GiST
+        // EXCLUDE constraint alongside the tstzrange overlap operator (`&&`). Raw
+        // PostgreSQL extension only (INV-2).
+        sb.AppendLine("CREATE EXTENSION IF NOT EXISTS btree_gist;");
+        sb.AppendLine();
+
         sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(tableName)} (");
         sb.AppendLine("    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
         sb.AppendLine("    data jsonb NOT NULL,");
 
+        // Captured for the DR-16 temporal EXCLUDE: the role-disambiguated endpoint
+        // FK columns are the homogeneous, NOT NULL, FK-backed equality keys of the
+        // exclusion (DR-11 honesty — a real typed referent, not a discriminator).
+        var endpointKeyColumns = new List<string>(association.AssociationEndpoints.Count);
         foreach (var endpoint in association.AssociationEndpoints)
         {
             // QuoteIdentifier the {role}_id column so it stays identifier-identical
@@ -673,6 +685,7 @@ internal static class SqlGenerator
             // DDL column and the INSERT column the SAME physical identifier.
             var columnName = QuoteIdentifier($"{TypeMapper.ToSnakeCase(endpoint.Role)}_id");
             var endpointTable = TypeMapper.ToSnakeCase(endpoint.DescriptorName);
+            endpointKeyColumns.Add(columnName);
             sb.AppendLine(
                 $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
         }
@@ -696,8 +709,35 @@ internal static class SqlGenerator
         sb.AppendLine("    valid_from timestamptz NOT NULL DEFAULT now(),");
         sb.AppendLine("    valid_to timestamptz,");
         sb.AppendLine("    system_from timestamptz NOT NULL DEFAULT now(),");
-        sb.AppendLine("    system_to timestamptz");
-        sb.Append(");");
+        sb.AppendLine("    system_to timestamptz,");
+
+        // DR-16 (T21, #126): the temporal-integrity EXCLUDE constraint. Two
+        // CURRENTLY-asserted rows (system_to IS NULL) with the SAME endpoint pair
+        // (each key WITH =) and OVERLAPPING valid-time (tstzrange(valid_from,
+        // valid_to) WITH &&) are rejected. The exclusion is PARTIAL on
+        // `system_to IS NULL`: a retracted (system-closed) row never blocks a fresh
+        // assertion over the same valid-time, so transaction-time remains the
+        // soft-delete axis (INV-7). This is HONEST because the endpoint keys are
+        // homogeneous NOT NULL FK uuids (DR-11/DR-11b per-(link, target) tables) —
+        // the constraint equates the actual typed referent, never a
+        // (target_type, target_id) discriminator (the polymorphic-FK smell).
+        var exclusionKeys = string.Join(", ", endpointKeyColumns.Select(c => $"{c} WITH ="));
+        sb.AppendLine(
+            $"    EXCLUDE USING gist ({exclusionKeys}, tstzrange(valid_from, valid_to) WITH &&) "
+            + "WHERE (system_to IS NULL)");
+        sb.AppendLine(");");
+
+        // DR-16 (T21, #126): as-of-now is the dominant query class, so carry a
+        // PARTIAL index over the open (system_to IS NULL) rows, COVERING the
+        // valid-time endpoints (INCLUDE) so an as-of-now valid-time filter is an
+        // index-only scan. The sequenced (both-axes) class is deliberately NOT
+        // indexed (design §4.3).
+        var asOfNowIndex = QuoteIdentifier($"idx_{tableName}_as_of_now");
+        sb.Append(
+            $"CREATE INDEX IF NOT EXISTS {asOfNowIndex} "
+            + $"ON {qSchema}.{QuoteIdentifier(tableName)} (system_from) "
+            + "INCLUDE (valid_from, valid_to) "
+            + "WHERE system_to IS NULL;");
 
         return sb.ToString();
     }

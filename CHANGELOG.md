@@ -70,6 +70,21 @@ stream — no new mutation surface (INV-7).
   reconstructs the relationship set as known at a bound `@asOfTx`. New sealed
   `init`-only `Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow` record
   (INV-6/INV-7), guarded by `EdgeProviderTypesSealedTests`.
+- **T21 — temporal EXCLUDE constraint + as-of-now index.** The association DDL
+  emits `CREATE EXTENSION btree_gist` and a partial GiST exclusion
+  (`EXCLUDE USING gist (<role>_id WITH =, …, tstzrange(valid_from, valid_to)
+  WITH &&) WHERE (system_to IS NULL)`) that rejects two currently-asserted
+  assertions of the same endpoint pair with overlapping valid-time. The
+  exclusion is HONEST because DR-11/DR-11b made the endpoint columns homogeneous
+  `NOT NULL` FK `uuid`s (a typed referent, not a `(target_type, target_id)`
+  discriminator). It is PARTIAL on `system_to IS NULL`, so a retracted
+  (system-closed) row never blocks a fresh assertion — transaction-time stays
+  the soft-delete axis (INV-7). A covering partial index
+  (`INCLUDE (valid_from, valid_to) WHERE system_to IS NULL`) serves the dominant
+  as-of-now class; the sequenced (both-axes) class is deliberately un-indexed. A
+  live-DB-gated execution proof (`TemporalExcludeNpgsqlTests`,
+  `[SkipIfNoPostgres]`) drives real INSERTs to confirm the constraint fires and
+  that retraction releases it.
 
 ## [2.8.0] - 2026-05-25
 
