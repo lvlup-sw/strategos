@@ -66,6 +66,17 @@ remain registered but dormant (INV-5: ids are never reused).
   business-id key property, making the relate/traversal endpoint-resolution
   subqueries (`data->>'key' = @id`) resolve a single deterministic row. Keyless
   (pgvector-only) tables keep their pre-DR-13 DDL byte-identical.
+- **R4 — atomic, single-statement relate (TOCTOU closed, 3→1 round-trips).** The
+  plain and attributed Npgsql relate is collapsed from three commands (two eager
+  `SELECT EXISTS` probes + one `INSERT`, each its own round-trip on no shared
+  snapshot) into ONE self-validating statement issued as a single `NpgsqlBatch`:
+  endpoint resolution + idempotent insert (a data-modifying CTE, run exactly once)
+  + the returned `src_exists`/`tgt_exists` flags, all under Postgres's single
+  `WITH` snapshot. A missing endpoint — including one deleted concurrently —
+  surfaces the typed `RelationEndpointNotFoundException` instead of a silent no-op,
+  and no dangling row is written. The pre-DR-13 TOCTOU caveat on `RelateAsync` is
+  removed. A disallowed self-loop takes a probe-only (no-insert) path so its
+  endpoint-first ordering is preserved.
 - **R6 — `RelateBatchAsync` reserved on `IObjectSetWriter`.** New
   `Task RelateBatchAsync(IReadOnlyList<RelateRequest>, CancellationToken)` member
   plus a new sealed `RelateRequest` record reserve a set-based relate surface for

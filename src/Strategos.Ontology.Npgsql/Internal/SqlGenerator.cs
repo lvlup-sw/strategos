@@ -484,7 +484,11 @@ internal static class SqlGenerator
 
     /// <summary>
     /// Builds the idempotent INSERT that materializes a pure-link relation
-    /// (DR-7) into the T8 junction table. The in-memory relate-store addresses
+    /// (DR-7) into the T8 junction table. SUPERSEDED in the live relate path by the
+    /// self-validating, single-snapshot
+    /// <see cref="BuildValidatingRelateInsertSql"/> (DR-13/R4); retained as the
+    /// minimal insert shape (the pre-R4 lowering) and pinned by the relate SQL-shape
+    /// tests. The in-memory relate-store addresses
     /// endpoints by their projected BUSINESS id (a string), so this resolves
     /// each endpoint row's surrogate <c>id uuid</c> via a subquery against the
     /// endpoint object table's <c>data jsonb</c> key field, then inserts the
@@ -538,6 +542,73 @@ internal static class SqlGenerator
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
             + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId "
             + "ON CONFLICT (source_id, target_id) DO NOTHING";
+    }
+
+    /// <summary>
+    /// Builds the SELF-VALIDATING pure-link relate statement (DR-13/R4): a SINGLE
+    /// statement that resolves both endpoints, performs the idempotent junction
+    /// insert in a data-modifying CTE, and RETURNS the two endpoint-existence flags.
+    /// This collapses the pre-DR-13 three commands (two eager <c>SELECT EXISTS</c>
+    /// probes + one <c>INSERT</c>, each a separate round-trip on no shared snapshot)
+    /// into one round-trip, and — because Postgres runs all <c>WITH</c>
+    /// sub-statements under a SINGLE snapshot — closes the probe→insert TOCTOU
+    /// window: a concurrent endpoint delete can no longer turn the expected typed
+    /// error into a silent no-op.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="junctionTableName">
+    /// The junction table name, as produced by
+    /// <see cref="JunctionTableNameFor(JunctionTableDescriptor)"/> /
+    /// <see cref="JunctionTableName(string, string)"/>.
+    /// </param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">The source descriptor's key property name.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The data-modifying <c>ins</c> CTE is
+    /// executed EXACTLY ONCE (a documented Postgres guarantee) even though the final
+    /// <c>SELECT</c> does not read its output, and its cross join over the resolved
+    /// endpoint CTEs writes ZERO rows when either endpoint is absent — so a missing
+    /// endpoint leaves no dangling row. The final <c>SELECT</c> returns
+    /// <c>src_exists</c> / <c>tgt_exists</c>; the provider reads them and raises the
+    /// typed <see cref="ObjectSets.RelationEndpointNotFoundException"/> for whichever
+    /// endpoint is missing. Idempotency still rides the junction
+    /// <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// Endpoint business ids bind via <c>@srcId</c> / <c>@tgtId</c>, never
+    /// interpolated.
+    /// </remarks>
+    internal static string BuildValidatingRelateInsertSql(
+        string schema,
+        string junctionTableName,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(junctionTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qJunction = QuoteIdentifier(junctionTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
+
+        return
+            $"WITH s AS (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{srcKey}' = @srcId), "
+            + $"t AS (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{tgtKey}' = @tgtId), "
+            + $"ins AS ("
+            + $"INSERT INTO {qSchema}.{qJunction} (source_id, target_id) "
+            + $"SELECT s.id, t.id FROM s, t "
+            + $"ON CONFLICT (source_id, target_id) DO NOTHING"
+            + $") "
+            + $"SELECT EXISTS(SELECT 1 FROM s) AS src_exists, EXISTS(SELECT 1 FROM t) AS tgt_exists";
     }
 
     /// <summary>
@@ -833,7 +904,11 @@ internal static class SqlGenerator
 
     /// <summary>
     /// Builds the INSERT that materializes an ATTRIBUTED relation (DR-4/DR-8,
-    /// t11) into a T8 association-OBJECT table. Unlike the pure-link junction
+    /// t11) into a T8 association-OBJECT table. SUPERSEDED in the live attributed
+    /// relate path by the self-validating, single-snapshot
+    /// <see cref="BuildValidatingAssociationRelateInsertSql"/> (DR-13/R4); retained
+    /// as the minimal insert shape and pinned by the association SQL-shape tests.
+    /// Unlike the pure-link junction
     /// insert (<see cref="BuildRelateInsertSql"/>), an association row carries
     /// its OWN identity and edge attributes, so this writes a fresh
     /// <c>id uuid</c>, the serialized association payload as <c>data jsonb</c>,
@@ -908,6 +983,73 @@ internal static class SqlGenerator
             + $"SELECT @id, @data::jsonb, s.id, t.id "
             + $"FROM {qSchema}.{qSource} s, {qSchema}.{qTarget} t "
             + $"WHERE s.data->>'{srcKey}' = @srcId AND t.data->>'{tgtKey}' = @tgtId";
+    }
+
+    /// <summary>
+    /// Builds the SELF-VALIDATING ATTRIBUTED relate statement (DR-13/R4): the
+    /// attributed-relate counterpart to
+    /// <see cref="BuildValidatingRelateInsertSql"/>. A SINGLE statement resolves
+    /// both endpoints, inserts the association-object row (its own <c>@id</c> +
+    /// <c>@data</c> + the two role-named endpoint FK columns) in a data-modifying
+    /// CTE, and RETURNS the endpoint-existence flags. Collapses the three-round-trip
+    /// (two probes + insert) attributed relate into one and closes the same TOCTOU
+    /// window via the single-snapshot <c>WITH</c> semantics.
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="associationTableName">The association-object table name.</param>
+    /// <param name="sourceColumn">The <c>{role}_id</c> FK column for the SOURCE endpoint.</param>
+    /// <param name="sourceTableName">The source endpoint object table name.</param>
+    /// <param name="sourceKeyProperty">The source descriptor's key property name.</param>
+    /// <param name="targetColumn">The <c>{role}_id</c> FK column for the TARGET endpoint.</param>
+    /// <param name="targetTableName">The target endpoint object table name.</param>
+    /// <param name="targetKeyProperty">The target descriptor's key property name.</param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. As with the plain path, the data-modifying
+    /// <c>ins</c> CTE runs exactly once under the same snapshot as the existence
+    /// probe; its cross join writes ZERO rows when either endpoint is absent, so a
+    /// missing endpoint leaves no dangling association row and the returned
+    /// <c>src_exists</c> / <c>tgt_exists</c> flags drive the typed
+    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/>. The association id
+    /// and payload bind via <c>@id</c> / <c>@data</c>; endpoint ids via
+    /// <c>@srcId</c> / <c>@tgtId</c> — never interpolated. The role FK columns are
+    /// quoted to stay identifier-identical with the association-object DDL.
+    /// </remarks>
+    internal static string BuildValidatingAssociationRelateInsertSql(
+        string schema,
+        string associationTableName,
+        string sourceColumn,
+        string sourceTableName,
+        string sourceKeyProperty,
+        string targetColumn,
+        string targetTableName,
+        string targetKeyProperty)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceKeyProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetColumn);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetKeyProperty);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+        var qSource = QuoteIdentifier(sourceTableName);
+        var qTarget = QuoteIdentifier(targetTableName);
+        var srcKey = EscapeStringLiteral(sourceKeyProperty);
+        var tgtKey = EscapeStringLiteral(targetKeyProperty);
+        var qSourceColumn = QuoteIdentifier(sourceColumn);
+        var qTargetColumn = QuoteIdentifier(targetColumn);
+
+        return
+            $"WITH s AS (SELECT id FROM {qSchema}.{qSource} WHERE data->>'{srcKey}' = @srcId), "
+            + $"t AS (SELECT id FROM {qSchema}.{qTarget} WHERE data->>'{tgtKey}' = @tgtId), "
+            + $"ins AS ("
+            + $"INSERT INTO {qSchema}.{qAssoc} (id, data, {qSourceColumn}, {qTargetColumn}) "
+            + $"SELECT @id, @data::jsonb, s.id, t.id FROM s, t"
+            + $") "
+            + $"SELECT EXISTS(SELECT 1 FROM s) AS src_exists, EXISTS(SELECT 1 FROM t) AS tgt_exists";
     }
 
     /// <summary>
