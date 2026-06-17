@@ -77,6 +77,17 @@ remain registered but dormant (INV-5: ids are never reused).
   and no dangling row is written. The pre-DR-13 TOCTOU caveat on `RelateAsync` is
   removed. A disallowed self-loop takes a probe-only (no-insert) path so its
   endpoint-first ordering is preserved.
+- **R5 — `NpgsqlDataSource` posture + auto-prepare.** The provider's only DB entry
+  point is the INJECTED `NpgsqlDataSource` (no internal connection-string
+  construction), pinned by a reflection test. The `UsePgVector` DI shorthand now
+  enables Npgsql `Max Auto Prepare` (default 25 when the caller's connection string
+  does not set one), so the small, fixed set of relate/unrelate/traversal statement
+  shapes are server-side-prepared transparently across pooled connections — the
+  "OR `Max Auto Prepare` documented" branch of the R5 contract. Auto-prepare is
+  parameter-name-agnostic, so the existing `@named` parameters are retained (the
+  established SQL-shape test suite asserts them); positional `$1` rewriting was
+  judged gratuitous churn for no behavioural gain under auto-prepare. The `Npgsql`
+  package is pinned `9.0.3` → `10.0.3`.
 - **R6 — `RelateBatchAsync` reserved on `IObjectSetWriter`.** New
   `Task RelateBatchAsync(IReadOnlyList<RelateRequest>, CancellationToken)` member
   plus a new sealed `RelateRequest` record reserve a set-based relate surface for
