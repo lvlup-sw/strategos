@@ -258,6 +258,44 @@ public class InvariantGuardTests
         await Assert.That(offenders).IsEmpty();
     }
 
+    /// <summary>
+    /// INV-6 (sealed), DR-16 PROV-DM provenance surface: the PROV node/relation/
+    /// influence records, the provenance aggregate, and the recorder must be
+    /// sealed. The qualified-influence node and the recorder are the seam to
+    /// <c>CurrentAgentIdentity</c>; a future edit that unseals one fails the build.
+    /// </summary>
+    [Test]
+    public async Task ProvenanceTypes_AreSealed()
+    {
+        var names = new[]
+        {
+            "Strategos.Ontology.Provenance.ProvEntity",
+            "Strategos.Ontology.Provenance.ProvActivity",
+            "Strategos.Ontology.Provenance.ProvAgent",
+            "Strategos.Ontology.Provenance.ProvInfluence",
+            "Strategos.Ontology.Provenance.AssociationProvenance",
+            "Strategos.Ontology.Provenance.AssociationProvenanceRecorder",
+        };
+
+        var offenders = new List<string>();
+        foreach (var name in names)
+        {
+            var type = OntologyAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsInterface && !type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
+
     private static IEnumerable<Type> IdentityPublicTypes() =>
         OntologyAssembly.GetTypes()
             .Where(t => t.IsPublic && t.Namespace == "Strategos.Ontology.Identity");

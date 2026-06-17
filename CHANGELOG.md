@@ -96,6 +96,18 @@ stream — no new mutation surface (INV-7).
   the output is sorted on a stable key — so two replays of the same log are
   structurally identical (the INV-7 replay-determinism keystone). Sealed
   `init`-only records, guarded by `InvariantGuardTests.TemporalTypes_AreSealed`.
+- **T23 — PROV-DM core provenance.** A new `Strategos.Ontology.Provenance` model:
+  the three PROV-DM core types (`ProvEntity` / `ProvActivity` / `ProvAgent`), the
+  seven core relations (`ProvRelation`: `WasGeneratedBy`, `Used`,
+  `WasInformedBy`, `WasDerivedFrom`, `WasAttributedTo`, `WasAssociatedWith`,
+  `ActedOnBehalfOf` — Bundles/Collections excluded), the qualified-influence node
+  (`ProvInfluence`), and the `AssociationProvenance` aggregate where the reified
+  association ≅ the PROV Entity. `AssociationProvenanceRecorder.Attach` sources
+  the asserting agent from the G1 `CurrentAgentIdentity` seam, carried as an
+  opaque header-safe string `Func<string?>` so the core ontology keeps INV-2
+  self-containment (only the test references the identity package). No active
+  agent → attribution is OMITTED, never fabricated. Sealed records, guarded by
+  `InvariantGuardTests.ProvenanceTypes_AreSealed`.
 
 ## [2.8.0] - 2026-05-25
 
