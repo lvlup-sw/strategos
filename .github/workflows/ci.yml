@@ -16,6 +16,14 @@ jobs:
       skip-patterns: |
         *Benchmarks.Tests*
         *Contracts.Tests*
+      # Exclude test assemblies from the merged coverage report (ReportGenerator
+      # -assemblyfilters). Coverlet instruments a test project when it is a
+      # *dependency* of another test project (e.g. Strategos.Ontology.Npgsql.Tests
+      # references Strategos.Ontology.Tests for the shared rationale fixture), so
+      # its ~165k lines of test code otherwise land in the denominator and crater
+      # the aggregate to ~18%. Filtering test assemblies out reports true
+      # production coverage (~82%).
+      coverage-filters: '-*Tests'
       runner: 'blacksmith-4vcpu-ubuntu-2204'
       dotnet-version: '10.0.x'
       dotnet-quality: 'preview'
