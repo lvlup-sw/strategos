@@ -128,6 +128,61 @@ remain registered but dormant (INV-5: ids are never reused).
   is bumped `0.3.0` → `0.3.2`; that client's version line is independent of — and
   cannot express — the server-extension requirement.
 
+### Added — Ontology bitemporal validity + PROV provenance (DR-16, #126)
+
+Bitemporal validity and W3C PROV-DM provenance on reified associations, layered
+as an **additive projection** over the existing append-only association event
+stream — no new mutation surface (INV-7).
+
+- **T20 — XTDB bitemporal quartet.** The reified-association object table
+  (`SqlGenerator.BuildAssociationObjectTableDdl`) carries four temporal columns:
+  `valid_from`/`valid_to` (user-asserted valid-time `tstzrange` endpoints) and
+  `system_from`/`system_to` (infra-derived transaction-time). The `*_from`
+  columns are `NOT NULL DEFAULT now()` so the existing DR-4 attributed-relate
+  INSERT stays valid additively; `system_to IS NULL` is the open
+  (not-yet-retracted) row. A new `SqlGenerator.BuildAsOfTransactionTimeSql`
+  reconstructs the relationship set as known at a bound `@asOfTx`. New sealed
+  `init`-only `Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow` record
+  (INV-6/INV-7), guarded by `EdgeProviderTypesSealedTests`.
+- **T21 — temporal EXCLUDE constraint + as-of-now index.** The association DDL
+  emits `CREATE EXTENSION btree_gist` and a partial GiST exclusion
+  (`EXCLUDE USING gist (<role>_id WITH =, …, tstzrange(valid_from, valid_to)
+  WITH &&) WHERE (system_to IS NULL)`) that rejects two currently-asserted
+  assertions of the same endpoint pair with overlapping valid-time. The
+  exclusion is HONEST because DR-11/DR-11b made the endpoint columns homogeneous
+  `NOT NULL` FK `uuid`s (a typed referent, not a `(target_type, target_id)`
+  discriminator). It is PARTIAL on `system_to IS NULL`, so a retracted
+  (system-closed) row never blocks a fresh assertion — transaction-time stays
+  the soft-delete axis (INV-7). A covering partial index
+  (`INCLUDE (valid_from, valid_to) WHERE system_to IS NULL`) serves the dominant
+  as-of-now class; the sequenced (both-axes) class is deliberately un-indexed. A
+  live-DB-gated execution proof (`TemporalExcludeNpgsqlTests`,
+  `[SkipIfNoPostgres]`) drives real INSERTs to confirm the constraint fires and
+  that retraction releases it.
+- **T22 — soft-delete = close interval, replay-deterministic (INV-7).** A new
+  provider-agnostic core temporal model under `Strategos.Ontology.Temporal`: an
+  append-only `AssociationTemporalEvent` stream (`Assert` opens a system
+  interval, `Retract` CLOSES it) folded by `TemporalAssociationProjection.Replay`
+  into a deterministic, totally-ordered terminal state of sealed `TemporalRow`s.
+  A retraction NEVER physically deletes — it appends a close event that the
+  projection folds into a closed `system_to`. Transaction-time is read off the
+  stream (each event carries its own instant), never a fold-time wall clock, and
+  the output is sorted on a stable key — so two replays of the same log are
+  structurally identical (the INV-7 replay-determinism keystone). Sealed
+  `init`-only records, guarded by `InvariantGuardTests.TemporalTypes_AreSealed`.
+- **T23 — PROV-DM core provenance.** A new `Strategos.Ontology.Provenance` model:
+  the three PROV-DM core types (`ProvEntity` / `ProvActivity` / `ProvAgent`), the
+  seven core relations (`ProvRelation`: `WasGeneratedBy`, `Used`,
+  `WasInformedBy`, `WasDerivedFrom`, `WasAttributedTo`, `WasAssociatedWith`,
+  `ActedOnBehalfOf` — Bundles/Collections excluded), the qualified-influence node
+  (`ProvInfluence`), and the `AssociationProvenance` aggregate where the reified
+  association ≅ the PROV Entity. `AssociationProvenanceRecorder.Attach` sources
+  the asserting agent from the G1 `CurrentAgentIdentity` seam, carried as an
+  opaque header-safe string `Func<string?>` so the core ontology keeps INV-2
+  self-containment (only the test references the identity package). No active
+  agent → attribution is OMITTED, never fabricated. Sealed records, guarded by
+  `InvariantGuardTests.ProvenanceTypes_AreSealed`.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single

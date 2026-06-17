@@ -27,6 +27,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
+    <!-- DR-16 T23: exercises the CurrentAgentIdentity (G1) seam binding for
+         PROV-DM provenance. The core ontology stays self-contained (INV-2): only
+         the TEST references the identity package, to wire IAgentIdentityAccessor
+         into the core's string-valued agent seam. -->
+    <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

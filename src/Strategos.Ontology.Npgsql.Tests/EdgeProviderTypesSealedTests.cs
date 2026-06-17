@@ -56,6 +56,9 @@ public class EdgeProviderTypesSealedTests
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalPlan",
             // TraversalLowering (DR-12/T5): the lowered traversal SQL + parameters.
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalLowering",
+            // TemporalAssociationRow (DR-16/T20): the bitemporal-quartet projection
+            // of one reified-association assertion.
+            "Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow",
         };
 
         var offenders = new List<string>();

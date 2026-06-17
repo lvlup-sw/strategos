@@ -1040,10 +1040,22 @@ internal static class SqlGenerator
         var tableName = TypeMapper.ToSnakeCase(association.Name);
 
         var sb = new StringBuilder();
+
+        // DR-16 (T21, #126): btree_gist supplies the `=` operator class so the
+        // homogeneous uuid endpoint keys can participate in the temporal GiST
+        // EXCLUDE constraint alongside the tstzrange overlap operator (`&&`). Raw
+        // PostgreSQL extension only (INV-2).
+        sb.AppendLine("CREATE EXTENSION IF NOT EXISTS btree_gist;");
+        sb.AppendLine();
+
         sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(tableName)} (");
         sb.AppendLine("    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
         sb.AppendLine("    data jsonb NOT NULL,");
 
+        // Captured for the DR-16 temporal EXCLUDE: the role-disambiguated endpoint
+        // FK columns are the homogeneous, NOT NULL, FK-backed equality keys of the
+        // exclusion (DR-11 honesty — a real typed referent, not a discriminator).
+        var endpointKeyColumns = new List<string>(association.AssociationEndpoints.Count);
         foreach (var endpoint in association.AssociationEndpoints)
         {
             // QuoteIdentifier the {role}_id column so it stays identifier-identical
@@ -1053,14 +1065,99 @@ internal static class SqlGenerator
             // DDL column and the INSERT column the SAME physical identifier.
             var columnName = QuoteIdentifier($"{TypeMapper.ToSnakeCase(endpoint.Role)}_id");
             var endpointTable = TypeMapper.ToSnakeCase(endpoint.DescriptorName);
+            endpointKeyColumns.Add(columnName);
             sb.AppendLine(
                 $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
         }
 
-        sb.AppendLine("    created_at timestamptz DEFAULT now()");
-        sb.Append(");");
+        sb.AppendLine("    created_at timestamptz DEFAULT now(),");
+
+        // DR-16 (T20, #126): the XTDB bitemporal quartet, layered ADDITIVELY onto
+        // the reified-association object table. valid_* is the USER-asserted valid
+        // interval (when the relationship holds in the modeled world); system_* is
+        // the infra-DERIVED transaction interval (when the assertion was recorded).
+        // Both are half-open [from, to): the *_from columns are NOT NULL; the *_to
+        // columns are NULLABLE for an open interval (unbounded valid-time, or a
+        // currently-asserted / not-yet-retracted system-time). A retraction CLOSES
+        // system_to via an appended event — never a physical delete (INV-7).
+        // The *_from columns DEFAULT to now() so the existing (temporal-unaware)
+        // DR-4 attributed-relate INSERT (BuildAssociationRelateInsertSql) stays
+        // valid additively: a relate that does not assert a valid-time records the
+        // assertion moment as both valid_from and system_from. An explicit temporal
+        // insert overrides valid_from with the user-asserted instant. system_from
+        // is ALWAYS the infra-derived record moment.
+        sb.AppendLine("    valid_from timestamptz NOT NULL DEFAULT now(),");
+        sb.AppendLine("    valid_to timestamptz,");
+        sb.AppendLine("    system_from timestamptz NOT NULL DEFAULT now(),");
+        sb.AppendLine("    system_to timestamptz,");
+
+        // DR-16 (T21, #126): the temporal-integrity EXCLUDE constraint. Two
+        // CURRENTLY-asserted rows (system_to IS NULL) with the SAME endpoint pair
+        // (each key WITH =) and OVERLAPPING valid-time (tstzrange(valid_from,
+        // valid_to) WITH &&) are rejected. The exclusion is PARTIAL on
+        // `system_to IS NULL`: a retracted (system-closed) row never blocks a fresh
+        // assertion over the same valid-time, so transaction-time remains the
+        // soft-delete axis (INV-7). This is HONEST because the endpoint keys are
+        // homogeneous NOT NULL FK uuids (DR-11/DR-11b per-(link, target) tables) —
+        // the constraint equates the actual typed referent, never a
+        // (target_type, target_id) discriminator (the polymorphic-FK smell).
+        var exclusionKeys = string.Join(", ", endpointKeyColumns.Select(c => $"{c} WITH ="));
+        sb.AppendLine(
+            $"    EXCLUDE USING gist ({exclusionKeys}, tstzrange(valid_from, valid_to) WITH &&) "
+            + "WHERE (system_to IS NULL)");
+        sb.AppendLine(");");
+
+        // DR-16 (T21, #126): as-of-now is the dominant query class, so carry a
+        // PARTIAL index over the open (system_to IS NULL) rows, COVERING the
+        // valid-time endpoints (INCLUDE) so an as-of-now valid-time filter is an
+        // index-only scan. The sequenced (both-axes) class is deliberately NOT
+        // indexed (design §4.3).
+        var asOfNowIndex = QuoteIdentifier($"idx_{tableName}_as_of_now");
+        sb.Append(
+            $"CREATE INDEX IF NOT EXISTS {asOfNowIndex} "
+            + $"ON {qSchema}.{QuoteIdentifier(tableName)} (system_from) "
+            + "INCLUDE (valid_from, valid_to) "
+            + "WHERE system_to IS NULL;");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the as-of-transaction-time reconstruction query (DR-16, T20, #126):
+    /// reads back the relationship set as it was KNOWN at the bound transaction
+    /// instant <c>@asOfTx</c>. A row is visible iff its half-open system interval
+    /// <c>[system_from, system_to)</c> contains <c>@asOfTx</c> — asserted at or
+    /// before <c>@asOfTx</c> and not yet retracted as of <c>@asOfTx</c>
+    /// (<c>system_to IS NULL</c>, or closed strictly after). Transaction-time is
+    /// the infra-derived axis, so the historical view is a pure READ over the
+    /// projection — no mutation surface (INV-7).
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="associationTableName">
+    /// The reified-association object table name (snake_cased), the same table
+    /// <see cref="BuildAssociationObjectTableDdl"/> creates.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The transaction anchor binds via
+    /// <c>@asOfTx</c>, never interpolated and never <c>now()</c>, so the query is
+    /// a deterministic point-in-time read (passing the SAME <c>@asOfTx</c> always
+    /// reconstructs the SAME set).
+    /// </remarks>
+    internal static string BuildAsOfTransactionTimeSql(
+        string schema,
+        string associationTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+
+        return
+            $"SELECT id, data, valid_from, valid_to, system_from, system_to "
+            + $"FROM {qSchema}.{qAssoc} "
+            + "WHERE system_from <= @asOfTx "
+            + "AND (system_to IS NULL OR system_to > @asOfTx)";
     }
 
     /// <summary>
