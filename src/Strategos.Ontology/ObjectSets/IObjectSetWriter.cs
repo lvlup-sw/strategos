@@ -83,6 +83,26 @@ public interface IObjectSetWriter
     Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default);
 
     /// <summary>
+    /// Materializes a BATCH of pure-link relations (DR-13/R6) — the set-based
+    /// counterpart to the single-pair
+    /// <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>,
+    /// reserved for bulk edge ingestion (#115) so many relations can be submitted
+    /// in one call rather than a round-trip per edge.
+    /// </summary>
+    /// <remarks>
+    /// Each <see cref="RelateRequest"/> carries the SAME eager-validation and
+    /// self-loop contract as the single-pair overload. Providers are free to
+    /// fulfil this with a naive per-request loop (the in-memory provider does) or a
+    /// genuinely batched lowering; a provider that has not yet implemented a
+    /// set-based DML throws <see cref="NotSupportedException"/> rather than silently
+    /// degrading to a per-edge round-trip loop. An empty batch is a no-op.
+    /// </remarks>
+    /// <param name="requests">The relations to materialize.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when all relations have been written.</returns>
+    Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default);
+
+    /// <summary>
     /// Materializes an ATTRIBUTED relation (DR-4): a relation backed by a
     /// reified association object that carries its own key and edge attributes.
     /// Stores <paramref name="association"/> under

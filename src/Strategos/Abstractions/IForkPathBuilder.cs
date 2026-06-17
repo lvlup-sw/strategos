@@ -61,6 +61,45 @@ public interface IForkPathBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Adds a step to this fork path with configuration.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// Brings fork paths to parity with the top-level <see cref="IWorkflowBuilder{TState}"/>
+    /// and loop-body <see cref="ILoopBuilder{TState}"/> sequencing contexts, which already
+    /// expose this overload. Each branch configures its steps independently; the join waits
+    /// for every path to reach a terminal status:
+    /// <code>
+    /// .Fork(
+    ///     path => path.Then&lt;ProcessPayment&gt;(step => step
+    ///         .ValidateState(s => s.Amount > 0, "Amount must be positive")
+    ///         .WithRetry(3, TimeSpan.FromSeconds(5))
+    ///         .Compensate&lt;RefundPayment&gt;()),
+    ///     path => path.Then&lt;ReserveInventory&gt;())
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Enforcement parity is partial today. <see cref="IStepConfiguration{TState}.ValidateState"/>
+    /// is lowered into the generated saga as a Guard-Then-Dispatch guard for fork-path steps,
+    /// matching top-level and loop steps. <see cref="IStepConfiguration{TState}.WithRetry(int)"/>,
+    /// <see cref="IStepConfiguration{TState}.WithTimeout"/>, and
+    /// <see cref="IStepConfiguration{TState}.Compensate{TCompensation}"/> are <b>declared but
+    /// not yet enforced</b> — they are captured in the workflow definition and the declarative
+    /// export, but the source generator does not yet emit Wolverine retry/timeout/compensation
+    /// for any step kind (tracked by issue #135). <see cref="IStepConfiguration{TState}.WithContext"/>
+    /// and <see cref="IStepConfiguration{TState}.RequireConfidence"/> /
+    /// <see cref="IStepConfiguration{TState}.OnLowConfidence"/> are likewise not yet lowered for
+    /// fork-path steps.
+    /// </para>
+    /// </remarks>
+    IForkPathBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Defines a failure handler for this fork path.
     /// </summary>
     /// <param name="handler">Action to configure the failure handler steps.</param>

@@ -223,6 +223,63 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// DR-13/R6: the in-memory provider fulfils the batch reservation with a naive
+    /// per-request loop over the single-pair <see cref="RelateAsync(string, string, string, string, string, CancellationToken)"/>,
+    /// so each request keeps the identical eager-validation, self-loop, and
+    /// idempotency contract. The set-based fast path is an Npgsql concern (#115);
+    /// in memory there is no round-trip to amortize.
+    /// </remarks>
+    public async Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+
+        for (var i = 0; i < requests.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var request = requests[i];
+
+            // Guard a null batch item BEFORE the try: dereferencing request.* in the
+            // RelateAsync call would NRE, and the catch below also reads request.* for
+            // batch-context enrichment — a null here would re-throw inside the catch
+            // and mask the position. Fail eagerly with a clear, indexed argument error
+            // (matches the method's ArgumentNullException.ThrowIfNull validation style).
+            if (request is null)
+            {
+                throw new ArgumentException(
+                    $"Batch relate request at index {i} is null.", nameof(requests));
+            }
+
+            try
+            {
+                await RelateAsync(
+                    request.SourceDescriptor,
+                    request.SourceId,
+                    request.LinkName,
+                    request.TargetDescriptor,
+                    request.TargetId,
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // KEEP the typed eager-validation contract (DR-8 parity:
+                // RelationEndpointNotFoundException / SelfLoopNotAllowedException) — do
+                // NOT swap to Result<T>. But a bare rethrow gives the caller no clue
+                // WHICH request in the batch failed. Attach the failing position and the
+                // offending endpoint identifiers to the exception's Data bag, then
+                // rethrow preserving the original typed exception and its stack.
+                ex.Data["BatchItemIndex"] = i;
+                ex.Data["BatchItemSourceDescriptor"] = request.SourceDescriptor;
+                ex.Data["BatchItemSourceId"] = request.SourceId;
+                ex.Data["BatchItemLinkName"] = request.LinkName;
+                ex.Data["BatchItemTargetDescriptor"] = request.TargetDescriptor;
+                ex.Data["BatchItemTargetId"] = request.TargetId;
+                throw;
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public async Task RelateAsync<TRel>(
         string srcDescriptor,
         string srcId,

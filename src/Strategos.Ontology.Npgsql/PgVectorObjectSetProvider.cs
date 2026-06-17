@@ -7,6 +7,7 @@ using Npgsql;
 using Pgvector;
 using Strategos.Ontology.Embeddings;
 using Strategos.Ontology.Npgsql.Internal;
+using Strategos.Ontology.Npgsql.Schema;
 using Strategos.Ontology.ObjectSets;
 
 namespace Strategos.Ontology.Npgsql;
@@ -177,22 +178,75 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var whereClause = sourceTranslation.WhereClause;
         var filterParams = sourceTranslation.Parameters;
 
-        // 4. Build SQL with optional WHERE clause
-        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
-
-        // 5. Execute query
+        // 4. Execute. When iterative-scan knobs are configured (DR-13/R8) the search
+        //    is an ANN CTE run inside a transaction so the SET LOCAL knobs take
+        //    effect; otherwise the pre-DR-13 single-statement query is used.
         var items = new List<T>();
         var scores = new List<double>();
 
+        if (_options.IterativeScan is { } iterativeScan)
+        {
+            var composedSql = SqlGenerator.BuildIterativeScanSimilarityQuery(
+                _options.Schema, tableName, expression.Metric, iterativeScan, whereClause);
+
+            // SET LOCAL is transaction-scoped: the knobs apply only inside this
+            // transaction and never leak onto the pooled connection.
+            await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using var scopedCmd = new NpgsqlCommand(composedSql, connection, transaction);
+            BindSimilarityParameters(scopedCmd, queryVector, expression.TopK, filterParams);
+
+            await ReadSimilarityRowsAsync(scopedCmd, expression, items, scores, ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+        }
+
+        var sql = SqlGenerator.BuildSimilarityQuery(_options.Schema, tableName, expression.Metric, whereClause);
+
         await using var cmd = _dataSource.CreateCommand(sql);
+        BindSimilarityParameters(cmd, queryVector, expression.TopK, filterParams);
+
+        await ReadSimilarityRowsAsync(cmd, expression, items, scores, ct).ConfigureAwait(false);
+
+        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
+    }
+
+    /// <summary>
+    /// Binds the shared similarity parameters (<c>@query</c>, <c>@topK</c>, and any
+    /// translated filter params) onto a command, so the plain and iterative-scan
+    /// (DR-13/R8) similarity paths bind identically.
+    /// </summary>
+    private static void BindSimilarityParameters(
+        NpgsqlCommand cmd,
+        float[] queryVector,
+        int topK,
+        IReadOnlyList<ExpressionTranslator.SqlParameter> filterParams)
+    {
         cmd.Parameters.AddWithValue("query", new Vector(queryVector));
-        cmd.Parameters.AddWithValue("topK", expression.TopK);
+        cmd.Parameters.AddWithValue("topK", topK);
 
         foreach (var p in filterParams)
         {
             cmd.Parameters.AddWithValue(p.Name.TrimStart('@'), p.Value);
         }
+    }
 
+    /// <summary>
+    /// Reads similarity rows from an executed command into <paramref name="items"/>
+    /// / <paramref name="scores"/>, converting pgvector distance to a similarity
+    /// score and dropping rows below <see cref="SimilarityExpression.MinRelevance"/>.
+    /// Shared by the plain and iterative-scan (DR-13/R8) similarity paths so both
+    /// read rows identically.
+    /// </summary>
+    private async Task ReadSimilarityRowsAsync<T>(
+        NpgsqlCommand cmd,
+        SimilarityExpression expression,
+        List<T> items,
+        List<double> scores,
+        CancellationToken ct)
+        where T : class
+    {
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rowIndex = 0;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -222,8 +276,6 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 _logger.LogWarning("Failed to deserialize {TypeName} from JSON data at row {RowIndex}", typeof(T).Name, rowIndex);
             }
         }
-
-        return new ScoredObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties, scores);
     }
 
     /// <inheritdoc />
@@ -232,16 +284,17 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        // Resolve table name from the expression's declared descriptor name
-        // via the shared read-path dispatch helper (bug #31).
-        var tableName = ResolveTableName(expression);
-        var translation = ExpressionTranslator.Translate(expression);
-        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        // DR-12: a link traversal lowers to a junction-aware, depth-tiered
+        // vertex ⋈ junction ⋈ vertex statement (graph-driven), NOT a plain
+        // WHERE-over-one-table select — route it through the traversal seam.
+        var (sql, parameters) = ExpressionTranslator.IsTraversal(expression)
+            ? LowerTraversal(expression)
+            : LowerSelect(expression);
 
         var items = new List<T>();
 
         await using var cmd = _dataSource.CreateCommand(sql);
-        AddTranslatedParameters(cmd, translation.Parameters);
+        AddTranslatedParameters(cmd, parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rowIndex = 0;
@@ -263,20 +316,48 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return new ObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties);
     }
 
+    /// <summary>
+    /// Lowers a plain (non-traversal) read expression to a single-table SELECT and
+    /// its parameters (the pre-DR-12 path), resolving the table name from the
+    /// expression's declared descriptor name (bug #31).
+    /// </summary>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private (string Sql, IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters) LowerSelect(
+        ObjectSetExpression expression)
+    {
+        var tableName = ResolveTableName(expression);
+        var translation = ExpressionTranslator.Translate(expression);
+        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        return (sql, translation.Parameters);
+    }
+
+    /// <summary>
+    /// Lowers a link-traversal expression to depth-tiered traversal SQL + bound
+    /// parameters via <see cref="LowerTraversalExpression"/> (DR-12), using the
+    /// provider's <see cref="OntologyGraph"/> for graph-driven hop resolution.
+    /// </summary>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private (string Sql, IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters) LowerTraversal(
+        ObjectSetExpression expression)
+    {
+        var lowering = LowerTraversalExpression(_graph, expression, _options.Schema);
+        return (lowering.Sql, lowering.Parameters);
+    }
+
     /// <inheritdoc />
     public async IAsyncEnumerable<T> StreamAsync<T>(
         ObjectSetExpression expression, [EnumeratorCancellation] CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        // Resolve table name from the expression's declared descriptor name
-        // via the shared read-path dispatch helper (bug #31).
-        var tableName = ResolveTableName(expression);
-        var translation = ExpressionTranslator.Translate(expression);
-        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        // DR-12: route a link traversal through the depth-tiered traversal seam,
+        // a plain read through the single-table select — symmetric with ExecuteAsync.
+        var (sql, parameters) = ExpressionTranslator.IsTraversal(expression)
+            ? LowerTraversal(expression)
+            : LowerSelect(expression);
 
         await using var cmd = _dataSource.CreateCommand(sql);
-        AddTranslatedParameters(cmd, translation.Parameters);
+        AddTranslatedParameters(cmd, parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
         var rowIndex = 0;
@@ -350,27 +431,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// into the T8 junction table. Endpoints are addressed by their projected
     /// BUSINESS id (the in-memory relate-store contract), so each endpoint's
     /// surrogate <c>id uuid</c> is resolved via a <c>data->>'key'</c> subquery
-    /// against its object table. Validation is EAGER: both endpoints are probed
-    /// via <c>SELECT EXISTS</c> BEFORE the insert, so a missing endpoint surfaces
-    /// a typed <see cref="RelationEndpointNotFoundException"/> and no junction row
-    /// is written (mirroring the in-memory provider / DR-8). Idempotency rides
-    /// the T8 <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// against its object table. Idempotency rides the T8
+    /// <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
     /// INV-2: raw Npgsql only.
     /// <para>
-    /// TOCTOU (review L): the two eager <c>SELECT EXISTS</c> probes and the
-    /// <c>INSERT … ON CONFLICT</c> are separate commands on no shared transaction,
-    /// so a concurrent delete of an endpoint between the probe and the insert opens
-    /// a check-to-use window. The typed
-    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/> guarantee is
-    /// therefore BEST-EFFORT under concurrency: a racing delete can turn an
-    /// expected typed error into the insert resolving zero endpoint rows (a silent
-    /// no-op) instead. It is never CORRUPTING — the insert's endpoint-resolving
-    /// subquery plus the junction's foreign keys reject any row whose endpoints no
-    /// longer exist, so a dangling junction row can never be written, and
-    /// <c>ON CONFLICT DO NOTHING</c> keeps re-relates idempotent. Wrapping the
-    /// probe + insert in one transaction (or folding the existence check into the
-    /// insert's <c>RETURNING</c>) would close the window; it is intentionally
-    /// deferred — not restructured here — to keep the change minimal.
+    /// DR-13/R4: validation is EAGER and ATOMIC. The endpoint resolution, the
+    /// idempotent insert (a data-modifying CTE, executed exactly once), and the
+    /// endpoint-existence flags are ONE self-validating statement
+    /// (<see cref="SqlGenerator.BuildValidatingRelateInsertSql"/>) issued as a
+    /// single <see cref="NpgsqlBatch"/>. Because Postgres runs all <c>WITH</c>
+    /// sub-statements under a SINGLE snapshot, there is no check-to-use gap: a
+    /// missing endpoint (including one deleted concurrently) surfaces the typed
+    /// <see cref="RelationEndpointNotFoundException"/> rather than a silent no-op,
+    /// and no junction row is written. This replaces the pre-DR-13 three-round-trip
+    /// (two <c>SELECT EXISTS</c> probes + insert) shape and its documented TOCTOU
+    /// caveat. The disallowed-self-loop case takes a probe-only path (no insert),
+    /// so its endpoint-first ordering is preserved without writing a row.
     /// </para>
     /// </remarks>
     public async Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
@@ -389,20 +465,25 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // "relation does not exist" instead of a typed error.
         RequireLinkDeclared(_graph, srcDescriptor, linkName);
 
-        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
-        // any row, so a failed relate never leaves a dangling junction row.
-        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
-        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+        // DR-11b: route to the per-(link, target-descriptor) junction table. A
+        // polymorphic link writes account_holdings_stock / _bond; a monomorphic
+        // link keeps account_written_by (DR-7..DR-10 lockstep).
+        var junctionTableName = SqlGenerator.JunctionTableNameFor(
+            ResolveRelateJunction(_graph!, srcDescriptor, linkName, tgtDescriptor));
 
-        // SELF-LOOP policy (DR-8 parity, t14): relating an instance to itself along
-        // a link whose AllowsSelfLoop is false is REFUSED with the SAME typed error
-        // the in-memory provider raises — never silently written. Checked AFTER
-        // eager endpoint validation so the ordering matches the in-memory
-        // WriteRelationRow guard (a missing endpoint still surfaces first).
-        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
+        // SELF-LOOP policy (DR-8 parity, t14): a DISALLOWED self-loop must NOT write
+        // a row, so it cannot take the auto-inserting validating statement. Probe
+        // the single shared endpoint first (a missing endpoint still surfaces FIRST,
+        // matching the in-memory WriteRelationRow order), then refuse the self-loop.
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
+        {
+            await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
 
-        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
-        var sql = SqlGenerator.BuildRelateInsertSql(
+        // DR-13/R4: ONE self-validating statement — resolve endpoints, insert in a
+        // data-modifying CTE, return existence flags — issued as a single batch.
+        var sql = SqlGenerator.BuildValidatingRelateInsertSql(
             _options.Schema,
             junctionTableName,
             source.TableName,
@@ -410,10 +491,92 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             target.TableName,
             target.KeyProperty);
 
-        await using var cmd = _dataSource.CreateCommand(sql);
-        cmd.Parameters.AddWithValue("srcId", srcId);
-        cmd.Parameters.AddWithValue("tgtId", tgtId);
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await ExecuteValidatingRelateAsync(
+            sql,
+            configureParameters: parameters =>
+            {
+                parameters.Add(new NpgsqlParameter("srcId", srcId));
+                parameters.Add(new NpgsqlParameter("tgtId", tgtId));
+            },
+            srcDescriptor,
+            srcId,
+            tgtDescriptor,
+            tgtId,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Executes a DR-13/R4 self-validating relate statement
+    /// (<see cref="SqlGenerator.BuildValidatingRelateInsertSql"/> /
+    /// <see cref="SqlGenerator.BuildValidatingAssociationRelateInsertSql"/>) as a
+    /// SINGLE <see cref="NpgsqlBatch"/>, reads the returned
+    /// <c>src_exists</c> / <c>tgt_exists</c> flags, and throws a typed
+    /// <see cref="RelationEndpointNotFoundException"/> for whichever endpoint is
+    /// absent. Because the insert and the existence probe share the statement's
+    /// single snapshot, a missing endpoint is detected atomically with the insert —
+    /// no row is written and the typed error is never lost to a TOCTOU race.
+    /// </summary>
+    private async Task ExecuteValidatingRelateAsync(
+        string sql,
+        Action<NpgsqlParameterCollection> configureParameters,
+        string srcDescriptor,
+        string srcId,
+        string tgtDescriptor,
+        string tgtId,
+        CancellationToken ct)
+    {
+        var batchCommand = new NpgsqlBatchCommand(sql);
+        configureParameters(batchCommand.Parameters);
+
+        await using var batch = _dataSource.CreateBatch();
+        batch.BatchCommands.Add(batchCommand);
+
+        bool srcExists;
+        bool tgtExists;
+        await using (var reader = await batch.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                // The statement always returns exactly one flags row; a missing row
+                // means the contract was violated rather than an endpoint absent.
+                throw new InvalidOperationException(
+                    "Self-validating relate statement returned no endpoint-existence row.");
+            }
+
+            srcExists = reader.GetBoolean(reader.GetOrdinal("src_exists"));
+            tgtExists = reader.GetBoolean(reader.GetOrdinal("tgt_exists"));
+        }
+
+        // Source-first ordering matches the in-memory WriteRelationRow guard
+        // (it validates the source endpoint before the target).
+        if (!srcExists)
+        {
+            throw new RelationEndpointNotFoundException(srcDescriptor, srcId);
+        }
+
+        if (!tgtExists)
+        {
+            throw new RelationEndpointNotFoundException(tgtDescriptor, tgtId);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// DR-13/R6: the Npgsql provider RESERVES the batch surface but DEFERS the
+    /// set-based DML to bulk edge ingestion (#115). Until then it throws
+    /// <see cref="NotSupportedException"/> rather than silently degrading to a
+    /// per-edge round-trip loop — which would mask the missing batched lowering and
+    /// give callers the round-trip cost the batch API exists to eliminate. The
+    /// throw is unconditional and opens no connection.
+    /// </remarks>
+    public Task RelateBatchAsync(IReadOnlyList<RelateRequest> requests, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(requests);
+
+        throw new NotSupportedException(
+            "RelateBatchAsync is reserved on the Npgsql provider but its set-based DML is "
+            + "deferred to bulk edge ingestion (#115). Use the single-pair RelateAsync, or the "
+            + "in-memory provider, until #115 lands the batched lowering.");
     }
 
     /// <inheritdoc />
@@ -439,7 +602,11 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // the junction target is derived from linkName below.
         RequireLinkDeclared(_graph, srcDescriptor, linkName);
 
-        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        // DR-11b: delete from the SAME per-(link, target-descriptor) junction table
+        // RelateAsync writes — symmetric routing so a polymorphic unrelate targets
+        // the resolved target's own table.
+        var junctionTableName = SqlGenerator.JunctionTableNameFor(
+            ResolveRelateJunction(_graph!, srcDescriptor, linkName, tgtDescriptor));
         var sql = SqlGenerator.BuildUnrelateDeleteSql(
             _options.Schema,
             junctionTableName,
@@ -603,13 +770,25 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private void ThrowIfDisallowedSelfLoop(
         string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId)
     {
-        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
-            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
-            && !SelfLoopAllowed(srcDescriptor, linkName))
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
         {
             throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
         }
     }
+
+    /// <summary>
+    /// Whether a relate connects an instance to ITSELF — same (descriptor, id) on
+    /// both endpoints — along a link whose
+    /// <see cref="Descriptors.LinkDescriptor.AllowsSelfLoop"/> is <c>false</c>. The
+    /// boolean form of <see cref="ThrowIfDisallowedSelfLoop"/>, used by the DR-13/R4
+    /// plain relate to route a disallowed self-loop down the probe-only (no-insert)
+    /// path so it never writes a row before the policy is enforced.
+    /// </summary>
+    private bool IsDisallowedSelfLoop(
+        string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId) =>
+        string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+        && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+        && !SelfLoopAllowed(srcDescriptor, linkName);
 
     /// <summary>
     /// Resolves whether the named link on <paramref name="srcDescriptor"/> permits
@@ -699,22 +878,22 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var plan = ResolveAssociationRelate(_graph, associationDescriptor, srcDescriptor, tgtDescriptor);
 
         var source = new RelateEndpoint(plan.SourceTable, plan.SourceKeyProperty);
-        var target = new RelateEndpoint(plan.TargetTable, plan.TargetKeyProperty);
 
-        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
-        // the association row, so a failed attributed relate never leaves a
-        // dangling association (mirrors the plain relate posture / the in-memory
-        // provider).
-        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
-        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+        // SELF-LOOP policy (DR-8 parity, t14): a DISALLOWED self-loop must NOT write
+        // an association row, so — as with the plain path (DR-13/R4) — probe the
+        // single shared endpoint first (a missing endpoint surfaces FIRST), then
+        // refuse the self-loop, never the auto-inserting validating statement.
+        if (IsDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId))
+        {
+            await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
 
-        // SELF-LOOP policy (DR-8 parity, t14): an attributed relate routes through
-        // the SAME self-loop guard as the plain path (the in-memory provider
-        // enforces both via WriteRelationRow), so a disallowed (x, link, x) is
-        // refused with the same typed error before any association row is written.
-        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
-
-        var sql = SqlGenerator.BuildAssociationRelateInsertSql(
+        // DR-13/R4: ONE self-validating statement — resolve endpoints, insert the
+        // association-object row in a data-modifying CTE, return existence flags —
+        // issued as a single batch, so a missing endpoint surfaces the typed error
+        // atomically with the insert and never leaves a dangling association.
+        var sql = SqlGenerator.BuildValidatingAssociationRelateInsertSql(
             _options.Schema,
             plan.AssociationTable,
             plan.SourceColumn,
@@ -724,12 +903,21 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             plan.TargetTable,
             plan.TargetKeyProperty);
 
-        await using var cmd = _dataSource.CreateCommand(sql);
-        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("data", JsonSerializer.Serialize(association));
-        cmd.Parameters.AddWithValue("srcId", srcId);
-        cmd.Parameters.AddWithValue("tgtId", tgtId);
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        var serializedAssociation = JsonSerializer.Serialize(association);
+        await ExecuteValidatingRelateAsync(
+            sql,
+            configureParameters: parameters =>
+            {
+                parameters.Add(new NpgsqlParameter("id", Guid.NewGuid()));
+                parameters.Add(new NpgsqlParameter("data", serializedAssociation));
+                parameters.Add(new NpgsqlParameter("srcId", srcId));
+                parameters.Add(new NpgsqlParameter("tgtId", tgtId));
+            },
+            srcDescriptor,
+            srcId,
+            tgtDescriptor,
+            tgtId,
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -996,14 +1184,65 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
     {
         var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
+        var keyPropertyName = ResolveEnsureSchemaKeyProperty<T>(descriptorName, _graph);
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,
             _embeddingProvider.Dimensions,
-            _options.IndexType);
+            _options.IndexType,
+            keyPropertyName: keyPropertyName);
 
         await using var cmd = _dataSource.CreateCommand(ddl);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the BUSINESS-id key property name (DR-13/R2) for an
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> call, so the
+    /// vertex DDL can emit a <c>UNIQUE ((data->>'key'))</c> expression index that
+    /// makes the relate/traversal endpoint-resolution subqueries deterministic.
+    /// Resolves the descriptor by name (explicit, else default-overload
+    /// resolution) and returns its <see cref="Descriptors.PropertyDescriptor.Name"/>;
+    /// returns <c>null</c> when no graph is in scope OR the resolved descriptor
+    /// declares no key — both leave the DDL key-index-free, byte-identical to the
+    /// pre-DR-13 pgvector-only lowering.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior without
+    /// a live <see cref="NpgsqlDataSource"/>, matching the seam used by
+    /// <see cref="ResolveEnsureSchemaTableName{T}(string?, OntologyGraph?)"/>. INV-8:
+    /// the key is read from the descriptor resolved by NAME, never <c>typeof</c>.
+    /// A descriptor that is registered but absent from the graph (or any resolution
+    /// failure) yields <c>null</c> rather than throwing — the unique index is a
+    /// hardening, never a gate on schema creation.
+    /// </remarks>
+    internal static string? ResolveEnsureSchemaKeyProperty<T>(string? descriptorName, OntologyGraph? graph)
+    {
+        if (graph is null)
+        {
+            return null;
+        }
+
+        // Resolve the descriptor NAME the same way the table name is resolved:
+        // an explicit name wins; otherwise the default-overload (single-
+        // registration) resolution. A multi-registered or unregistered type makes
+        // the default resolution throw — but EnsureSchemaAsync would already have
+        // thrown on the table-name resolution, so we mirror that by letting an
+        // explicit name pass straight through.
+        var resolvedName = descriptorName;
+        if (resolvedName is null)
+        {
+            if (!graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names) || names.Count != 1)
+            {
+                return null;
+            }
+
+            resolvedName = names[0];
+        }
+
+        var descriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, resolvedName, StringComparison.Ordinal));
+        return descriptor?.KeyProperty?.Name;
     }
 
     /// <summary>
@@ -1226,6 +1465,212 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     }
 
     /// <summary>
+    /// Resolves the SET of concrete target descriptor names a link lowers to
+    /// (DR-11b, #128). A link whose declared <see cref="Descriptors.LinkDescriptor.TargetTypeName"/>
+    /// names a registered INTERFACE resolves to that interface's implementor
+    /// descriptors (one per implementor — the polymorphic fan-out); any other link
+    /// resolves to the single descriptor named by
+    /// <see cref="ResolveHopTargetDescriptorName"/> (TargetTypeName →
+    /// TargetSymbolKey). This drives the traversal read fan-out — one hop per
+    /// returned descriptor, each routed to its own per-(link, target) junction
+    /// table (Posture 2). Whether a link is polymorphic is decided up front by the
+    /// interface-typed <c>IsPolymorphicLink</c> predicate, so this resolver is
+    /// invoked only for links already known to fan out.
+    /// </summary>
+    /// <remarks>
+    /// INV-8: identity by descriptor NAME, never <c>typeof</c>. The interface
+    /// implementors come from <see cref="OntologyGraph.GetImplementors(string)"/>,
+    /// which is keyed by the interface descriptor name — the same name a link's
+    /// <c>TargetTypeName</c> carries when it targets an interface. Returned in a
+    /// deterministic (ordinal-by-name) order so the fan-out SQL is stable.
+    /// </remarks>
+    internal static IReadOnlyList<string> ResolveLinkTargetDescriptors(
+        OntologyGraph graph,
+        Descriptors.LinkDescriptor link)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(link);
+
+        // A link whose declared target names a registered interface fans out to
+        // the interface's implementor descriptors (polymorphic).
+        if (!string.IsNullOrEmpty(link.TargetTypeName)
+            && graph.Interfaces.Any(i => string.Equals(i.Name, link.TargetTypeName, StringComparison.Ordinal)))
+        {
+            var implementors = graph.GetImplementors(link.TargetTypeName)
+                .Select(o => o.Name)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToList();
+
+            // An interface with zero implementors has no provisionable junction
+            // table (mirrors the compile-time AONT212 guard). Refuse rather than
+            // emit a dead query.
+            if (implementors.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Link '{link.Name}' targets interface '{link.TargetTypeName}', which no object "
+                    + $"type implements; under the per-(link, target-descriptor) junction posture a "
+                    + $"polymorphic link has one junction table per implementor, so with zero "
+                    + $"implementors there is no junction table to relate/traverse (see AONT212).");
+            }
+
+            return implementors;
+        }
+
+        // Otherwise the link is monomorphic — the single graph-resolved descriptor
+        // (TargetTypeName → TargetSymbolKey), with no override.
+        return [ResolveHopTargetDescriptorName(graph, link, targetDescriptorOverride: null)];
+    }
+
+    /// <summary>
+    /// Resolves the live relate/unrelate write into a
+    /// <see cref="JunctionTableDescriptor"/> for <c>(src, link, tgt)</c> (DR-11b).
+    /// The caller's <paramref name="tgtDescriptor"/> is the row's resolved target
+    /// descriptor; the junction is POLYMORPHIC (and thus named
+    /// <c>{source}_{snake(link)}_{snake(target)}</c>) when the link resolves to
+    /// MORE THAN ONE descriptor, and MONOMORPHIC (named <c>{source}_{snake(link)}</c>,
+    /// unchanged from DR-7..DR-10) otherwise. Fed into
+    /// <see cref="SqlGenerator.JunctionTableNameFor"/> so the relate INSERT targets
+    /// the SAME physical table the T2 DDL creates.
+    /// </summary>
+    /// <remarks>
+    /// INV-8: the source table comes from the resolved source endpoint and the
+    /// target table from the resolved <paramref name="tgtDescriptor"/> endpoint —
+    /// both by descriptor name, never <c>typeof</c>. The link must be declared on
+    /// the source (caller already enforces this via <see cref="RequireLinkDeclared"/>);
+    /// here it is read to decide polymorphism.
+    /// </remarks>
+    internal static JunctionTableDescriptor ResolveRelateJunction(
+        OntologyGraph graph,
+        string srcDescriptor,
+        string linkName,
+        string tgtDescriptor)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+
+        var source = ResolveRelateEndpoint(graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(graph, tgtDescriptor);
+
+        var sourceDescriptor = RequireDescriptor(graph, srcDescriptor);
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+
+        return new JunctionTableDescriptor
+        {
+            SourceTable = source.TableName,
+            LinkName = linkName,
+            TargetDescriptorName = tgtDescriptor,
+            TargetTable = target.TableName,
+            IsPolymorphic = link is not null && IsPolymorphicLink(graph, link),
+        };
+    }
+
+    /// <summary>
+    /// Whether a link is POLYMORPHIC (DR-11b) — its declared target is a registered
+    /// INTERFACE, so it lowers to a junction table PER implementor descriptor and
+    /// each table is disambiguated by its target descriptor name (Posture 2). A
+    /// link to a CONCRETE object target (or a non-interface name) is monomorphic
+    /// and keeps the single <c>{source}_{snake(link)}</c> table. The predicate is
+    /// the interface-typed check itself — NOT the implementor count — so the
+    /// write-path routing and the read-path fan-out agree even for an interface
+    /// with a single implementor (both use the per-descriptor table). NEVER throws:
+    /// a relate to a link whose declared target is not graph-resolvable keeps its
+    /// pre-DR-11 single-table semantics (the caller's tgtDescriptor stays
+    /// authoritative for the row). INV-8: by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    private static bool IsPolymorphicLink(OntologyGraph graph, Descriptors.LinkDescriptor link) =>
+        !string.IsNullOrEmpty(link.TargetTypeName)
+        && graph.Interfaces.Any(i => string.Equals(i.Name, link.TargetTypeName, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Resolves an instance-anchored traversal hop into the SET of physical hops
+    /// it reads (DR-11b). A MONOMORPHIC link (or any hop carrying an explicit
+    /// <paramref name="targetDescriptorOverride"/>) yields a single hop, named
+    /// exactly as <see cref="ResolveTraversalHop"/> does; a POLYMORPHIC link with
+    /// NO override fans out into ONE hop per resolved target descriptor, each
+    /// anchored at its own per-(link, target) junction table and its target
+    /// descriptor's object table. The hops feed
+    /// <see cref="SqlGenerator.BuildPolymorphicTraversalSql"/> (UNION ALL) or, for
+    /// the single-hop case, <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/>.
+    /// </summary>
+    /// <remarks>
+    /// Graph-driven (INV-8): the fan-out descriptor set comes from
+    /// <see cref="ResolveLinkTargetDescriptors"/>, so no
+    /// <see cref="ObjectSets.TraverseLinkExpression"/> change is needed — the
+    /// expression's existing nullable <c>TargetDescriptorName</c> already
+    /// distinguishes the disambiguated-single hop (override supplied) from the
+    /// fan-out hop (override null). An explicit override always denotes a single
+    /// target partition, so it is never fanned out.
+    /// </remarks>
+    internal static IReadOnlyList<TraversalHop> ResolveTraversalHops(
+        OntologyGraph? graph,
+        string sourceDescriptorName,
+        string linkName,
+        string? targetDescriptorOverride)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDescriptorName);
+        ArgumentNullException.ThrowIfNull(linkName);
+
+        if (graph is null)
+        {
+            // Reuse the single-hop resolver's typed null-graph error.
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride)];
+        }
+
+        // An explicit override names a single partition — never a fan-out.
+        if (targetDescriptorOverride is not null)
+        {
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride)];
+        }
+
+        var sourceDescriptor = RequireDescriptor(graph, sourceDescriptorName);
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (link is null)
+        {
+            // Defer to the single-hop resolver for the canonical typed error.
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride: null)];
+        }
+
+        // Monomorphic — the single-hop lowering, unchanged from DR-7..DR-10. Uses
+        // the SAME interface-typed predicate as the relate write-path so the two
+        // never disagree on which links fan out.
+        if (!IsPolymorphicLink(graph, link))
+        {
+            return [ResolveTraversalHop(graph, sourceDescriptorName, linkName, targetDescriptorOverride: null)];
+        }
+
+        // Polymorphic — one hop per resolved target descriptor, each routed to its
+        // own per-(link, target) junction table and target object table.
+        var targets = ResolveLinkTargetDescriptors(graph, link);
+        var source = ResolveRelateEndpoint(graph, sourceDescriptorName);
+        var hops = new List<TraversalHop>(targets.Count);
+        foreach (var targetName in targets)
+        {
+            var target = ResolveRelateEndpoint(graph, targetName);
+            var junctionName = SqlGenerator.JunctionTableNameFor(new JunctionTableDescriptor
+            {
+                SourceTable = source.TableName,
+                LinkName = linkName,
+                TargetDescriptorName = targetName,
+                TargetTable = target.TableName,
+                IsPolymorphic = true,
+            });
+
+            hops.Add(new TraversalHop(
+                source.TableName,
+                source.KeyProperty,
+                junctionName,
+                target.TableName,
+                targetName));
+        }
+
+        return hops;
+    }
+
+    /// <summary>
     /// A resolved instance-anchored traversal hop (DR-7/DR-10): the physical join
     /// operands produced by
     /// <see cref="ResolveTraversalHop(OntologyGraph?, string, string, string?)"/>
@@ -1255,4 +1700,307 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         string JunctionTable,
         string TargetTable,
         string TargetDescriptorName);
+
+    /// <summary>
+    /// A single DEPTH STEP of a (possibly chained) instance-anchored traversal
+    /// (DR-12). One step lowers ONE link hop. A MONOMORPHIC step carries exactly
+    /// one <see cref="Hops"/> entry (the single resolved target); a POLYMORPHIC
+    /// step carries one entry PER resolved target descriptor — the DR-11b fan-out —
+    /// so it lowers to a UNION over its per-descriptor junction+vertex tables. A
+    /// polymorphic step counts as fan-out against the depth budget (DR-12 tiering).
+    /// New sealed, <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    /// <param name="LinkName">The link traversed at this depth step.</param>
+    /// <param name="Hops">
+    /// The resolved hops for this step: one (monomorphic) or several
+    /// (polymorphic fan-out), as produced by <see cref="ResolveTraversalHops"/>.
+    /// </param>
+    internal sealed record TraversalStep(string LinkName, IReadOnlyList<TraversalHop> Hops)
+    {
+        /// <summary>
+        /// Whether this step is a POLYMORPHIC fan-out — more than one resolved hop,
+        /// so it lowers to a UNION over per-descriptor tables (DR-11b) and counts as
+        /// fan-out against the DR-12 depth budget.
+        /// </summary>
+        public bool IsPolymorphic => Hops.Count > 1;
+    }
+
+    /// <summary>
+    /// A resolved instance-anchored traversal PLAN (DR-12): the ordered depth
+    /// <see cref="Steps"/> a (possibly chained) <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// lowers to, anchored at the source instance's business id
+    /// (<see cref="SourceId"/>) under the source table's
+    /// <see cref="SourceKeyProperty"/>. Fed into the depth-tiered SQL builders
+    /// (join-chain ≤ the budget, recursive CTE beyond it; a polymorphic step
+    /// fans out via UNION). New sealed, <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    internal sealed record TraversalPlan
+    {
+        /// <summary>The source endpoint object table (snake_cased), aliased the anchor vertex.</summary>
+        public required string SourceTable { get; init; }
+
+        /// <summary>
+        /// The source descriptor's key property — the <c>data jsonb</c> field
+        /// holding the anchor instance's business id (INV-8: identity by descriptor).
+        /// </summary>
+        public required string SourceKeyProperty { get; init; }
+
+        /// <summary>
+        /// The anchor instance's business id, bound via <c>@srcId</c> (never
+        /// interpolated). Always present: the depth-tiered lowering requires a key
+        /// anchor (<c>WHERE s.data->>'key' = @srcId</c>), so <see cref="ResolveAnchor"/>
+        /// resolves it from the source chain's key-equality predicate and refuses a
+        /// source that does not bind one (no structural-only fallback exists).
+        /// </summary>
+        public required string SourceId { get; init; }
+
+        /// <summary>The ordered depth steps, anchor-outward.</summary>
+        public required IReadOnlyList<TraversalStep> Steps { get; init; }
+
+        /// <summary>
+        /// The DR-12 depth-budget count: number of depth steps. Each step is one
+        /// link hop regardless of its fan-out width (a polymorphic step is a single
+        /// depth level that fans out via UNION).
+        /// </summary>
+        public int Depth => Steps.Count;
+
+        /// <summary>
+        /// Whether ANY depth step is a polymorphic fan-out (DR-11b). A polymorphic
+        /// step counts as fan-out against the depth budget, so a plan containing one
+        /// is lowered past the join-chain tier into the recursive-CTE tier even when
+        /// its <see cref="Depth"/> is within budget (DR-12).
+        /// </summary>
+        public bool HasPolymorphicStep => Steps.Any(s => s.IsPolymorphic);
+    }
+
+    /// <summary>
+    /// The lowered SQL for an instance-anchored traversal plan (DR-12): the
+    /// generated parameterized statement (<see cref="Sql"/>) and its bound
+    /// <see cref="Parameters"/>. Produced by
+    /// <see cref="LowerTraversalExpression"/> and consumed by
+    /// <see cref="ExecuteAsync{T}"/> / <see cref="StreamAsync{T}"/>. New sealed,
+    /// <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    internal sealed record TraversalLowering(
+        string Sql,
+        IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters);
+
+    /// <summary>
+    /// Lowers an instance-anchored <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// (possibly chained) into depth-tiered traversal SQL (DR-12). This is the seam
+    /// the public read path (<see cref="ExecuteAsync{T}"/> / <see cref="StreamAsync{T}"/>)
+    /// routes a traversal through, closing the DR-7..DR-11b gap where
+    /// <see cref="ExpressionTranslator.Translate"/> threw on a traversal node.
+    /// </summary>
+    /// <param name="graph">
+    /// The ontology graph. Traversal is graph-aware (link targets, key properties,
+    /// polymorphic fan-out), so a null graph throws via the hop resolver rather than
+    /// emitting wrong SQL.
+    /// </param>
+    /// <param name="expression">The traversal expression (outermost node a hop).</param>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <remarks>
+    /// DR-12 tiering: a plan within the join-collapse depth budget
+    /// (<see cref="SqlGenerator.JoinChainDepthBudget"/>) with no polymorphic step
+    /// lowers to a JOIN CHAIN; a deeper plan — or any plan whose step fans out
+    /// polymorphically (a polymorphic hop counts as fan-out against the budget) —
+    /// lowers to a RECURSIVE CTE. The hop targets are resolved from the GRAPH via
+    /// the DR-10 path (<see cref="ResolveTraversalHops"/>), never <c>typeof</c> (INV-8).
+    /// </remarks>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    internal static TraversalLowering LowerTraversalExpression(
+        OntologyGraph? graph,
+        ObjectSets.ObjectSetExpression expression,
+        string schema)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+
+        var plan = BuildTraversalPlan(graph, expression);
+
+        // The plan's key anchor is always present (ResolveAnchor refuses a source
+        // without one), and the lowered SQL unconditionally requires @srcId, so the
+        // anchor parameter is bound unconditionally — never an unbound @srcId.
+        var parameters = new List<ExpressionTranslator.SqlParameter>
+        {
+            new("@srcId", plan.SourceId),
+        };
+
+        var sql = SqlGenerator.BuildDepthTieredTraversalSql(schema, plan);
+        return new TraversalLowering(sql, parameters);
+    }
+
+    /// <summary>
+    /// Resolves a (possibly chained) <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// into an anchor-outward <see cref="TraversalPlan"/> (DR-12): one
+    /// <see cref="TraversalStep"/> per link hop, the source table + key property of
+    /// the anchor, and the anchor instance's business id when the source chain
+    /// carries a single-id filter.
+    /// </summary>
+    /// <remarks>
+    /// The chain is walked from the OUTERMOST hop back to the anchor: each hop's
+    /// SOURCE descriptor is the prior hop's resolved target (or the root for the
+    /// first hop). A polymorphic hop is resolved via <see cref="ResolveTraversalHops"/>
+    /// (one hop per implementor descriptor); a chained hop after a polymorphic step
+    /// would be ambiguous (which fanned-out descriptor is the source?), so a chained
+    /// step's source descriptor is taken from the prior step's SINGLE resolved hop —
+    /// a fan-out followed by a further hop is refused upstream by the resolver when
+    /// the prior step is polymorphic. INV-8: source/target by descriptor name.
+    /// </remarks>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    internal static TraversalPlan BuildTraversalPlan(
+        OntologyGraph? graph,
+        ObjectSets.ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // Collect the traversal nodes anchor-outward (the expression nests
+        // outermost-first, so reverse the walk).
+        var hopsOuterFirst = new List<ObjectSets.TraverseLinkExpression>();
+        var cursor = expression;
+        while (true)
+        {
+            switch (cursor)
+            {
+                case ObjectSets.TraverseLinkExpression traverse:
+                    hopsOuterFirst.Add(traverse);
+                    cursor = traverse.Source;
+                    continue;
+                case ObjectSets.FilterExpression filter:
+                    cursor = filter.Source;
+                    continue;
+                case ObjectSets.IncludeExpression include:
+                    cursor = include.Source;
+                    continue;
+                case ObjectSets.InterfaceNarrowExpression narrow:
+                    cursor = narrow.Source;
+                    continue;
+            }
+
+            break;
+        }
+
+        if (hopsOuterFirst.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "LowerTraversalExpression requires a TraverseLinkExpression in the chain; "
+                + "the supplied expression has no link hop to lower.");
+        }
+
+        hopsOuterFirst.Reverse();
+        var hopsAnchorFirst = hopsOuterFirst;
+
+        // The anchor's source descriptor name + its single-id filter come from the
+        // FIRST hop's own source chain (walk to the root, translating any filter).
+        var firstHop = hopsAnchorFirst[0];
+        var anchorSourceDescriptor = ResolveImmediateSourceDescriptorName(firstHop.Source);
+        var (sourceTable, sourceKeyProperty, sourceId) = ResolveAnchor(graph, anchorSourceDescriptor, firstHop.Source);
+
+        var steps = new List<TraversalStep>(hopsAnchorFirst.Count);
+        var currentSourceDescriptor = anchorSourceDescriptor;
+        for (var i = 0; i < hopsAnchorFirst.Count; i++)
+        {
+            var hop = hopsAnchorFirst[i];
+            var resolvedHops = ResolveTraversalHops(
+                graph, currentSourceDescriptor, hop.LinkName, hop.TargetDescriptorName);
+            steps.Add(new TraversalStep(hop.LinkName, resolvedHops));
+
+            // The next step's source is THIS step's resolved target. A polymorphic
+            // step has several targets, so a further chained hop is ambiguous —
+            // refuse it rather than silently picking one descriptor.
+            if (i + 1 < hopsAnchorFirst.Count)
+            {
+                if (resolvedHops.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Chained traversal after a POLYMORPHIC hop on link '{hop.LinkName}' "
+                        + $"(which fans out to {resolvedHops.Count} target descriptors) is ambiguous: "
+                        + $"the next hop's source descriptor is not uniquely defined. Disambiguate the "
+                        + $"polymorphic hop with an explicit target descriptor name before chaining.");
+                }
+
+                currentSourceDescriptor = resolvedHops[0].TargetDescriptorName;
+            }
+        }
+
+        return new TraversalPlan
+        {
+            SourceTable = sourceTable,
+            SourceKeyProperty = sourceKeyProperty,
+            SourceId = sourceId,
+            Steps = steps,
+        };
+    }
+
+    /// <summary>
+    /// Resolves the anchor source's physical table + key property and the anchor
+    /// instance's business id (DR-12). The id is extracted ONLY from the source
+    /// chain's KEY-equality predicate (a <c>Where(s =&gt; s.Key == value)</c> on the
+    /// source descriptor's key property, with a string-valued right-hand side) —
+    /// the single identity predicate the lowered <c>@srcId</c> anchor is defined for.
+    /// </summary>
+    /// <remarks>
+    /// The depth-tiered traversal SQL unconditionally requires <c>@srcId</c>
+    /// (<c>WHERE s.data->>'key' = @srcId</c> at the anchor vertex), so the anchor id
+    /// MUST resolve from the actual key predicate. A non-key filter (e.g.
+    /// <c>Where(s =&gt; s.Status == "active")</c>), a non-string key value, a
+    /// non-equality/compound predicate, or no filter at all does not yield a valid
+    /// anchor — binding <c>@srcId</c> from such a parameter would mis-anchor the
+    /// traversal (or leave <c>@srcId</c> unbound, an opaque Npgsql failure). Those
+    /// cases fail fast with a typed <see cref="InvalidOperationException"/>, matching
+    /// the graph-first "refuse, don't degrade" posture of the relate/hop resolvers.
+    /// </remarks>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private static (string SourceTable, string SourceKeyProperty, string SourceId) ResolveAnchor(
+        OntologyGraph? graph,
+        string anchorSourceDescriptor,
+        ObjectSets.ObjectSetExpression anchorSource)
+    {
+        var endpoint = ResolveRelateEndpoint(graph, anchorSourceDescriptor);
+
+        // Translate the source chain's filter and require it to be EXACTLY the
+        // source key-equality predicate. The anchored-traversal contract addresses
+        // the source by a single business id bound from its key property, so only a
+        // string-valued `data->>'key' = @p0` predicate is a valid anchor — anything
+        // else (a non-key filter, a non-string key, a non-equality/compound
+        // predicate, or no filter) is refused rather than mis-bound onto @srcId.
+        var translation = ExpressionTranslator.Translate(anchorSource);
+        var expectedKeyClause =
+            $"data->>'{SqlGenerator.EscapeStringLiteral(endpoint.KeyProperty)}' = @p0";
+
+        if (translation.Parameters.Count != 1
+            || !string.Equals(translation.WhereClause, expectedKeyClause, StringComparison.Ordinal)
+            || translation.Parameters[0].Value is not string sourceId
+            || sourceId.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Instance-anchored traversal from '{anchorSourceDescriptor}' requires a key "
+                + $"anchor — a single Where(s => s.{endpoint.KeyProperty} == \"<id>\") on the "
+                + $"descriptor's key property '{endpoint.KeyProperty}' with a string id. The "
+                + $"source chain does not bind exactly that predicate, so the @srcId anchor is "
+                + $"undefined; a non-key filter, a non-string key value, or a "
+                + $"non-equality/compound/absent filter cannot anchor the traversal.");
+        }
+
+        return (endpoint.TableName, endpoint.KeyProperty, sourceId);
+    }
+
+    /// <summary>
+    /// Resolves the descriptor name of the IMMEDIATE upstream element type of a
+    /// traversal source chain (DR-12), mirroring
+    /// <c>InMemoryExpressionEvaluator.ResolveImmediateSourceDescriptorName</c>: a
+    /// root produces its declared descriptor name; a prior traversal produces its
+    /// (graph-resolved) target descriptor; filters/includes/narrows are transparent.
+    /// </summary>
+    private static string ResolveImmediateSourceDescriptorName(ObjectSets.ObjectSetExpression expression) =>
+        expression switch
+        {
+            ObjectSets.RootExpression root => root.ObjectTypeName,
+            ObjectSets.TraverseLinkExpression traverse => traverse.RootObjectTypeName,
+            ObjectSets.FilterExpression filter => ResolveImmediateSourceDescriptorName(filter.Source),
+            ObjectSets.IncludeExpression include => ResolveImmediateSourceDescriptorName(include.Source),
+            ObjectSets.InterfaceNarrowExpression narrow => ResolveImmediateSourceDescriptorName(narrow.Source),
+            _ => throw new NotSupportedException(
+                $"Cannot resolve immediate source descriptor from {expression.GetType().Name}."),
+        };
 }

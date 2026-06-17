@@ -15,6 +15,16 @@ namespace Strategos.Ontology.Npgsql;
 public static class PgVectorServiceCollectionExtensions
 {
     /// <summary>
+    /// DR-13/R5: the default <c>Max Auto Prepare</c> applied by
+    /// <see cref="UsePgVector"/> when the caller's connection string does not set
+    /// one. Caps how many distinct auto-prepared statements Npgsql keeps per
+    /// connection; the provider issues a small, fixed set of relate/unrelate/
+    /// traversal statement shapes, so a modest cap covers them while bounding
+    /// server-side prepared-statement memory.
+    /// </summary>
+    private const int DefaultMaxAutoPrepare = 25;
+
+    /// <summary>
     /// Registers the pgvector-backed object set provider and writer in the service collection.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
@@ -56,6 +66,19 @@ public static class PgVectorServiceCollectionExtensions
 
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
             dataSourceBuilder.UseVector();
+
+            // DR-13/R5: enable Npgsql AUTO-PREPARE so the stable, repeated
+            // relate/unrelate/traversal statements are server-side-prepared
+            // transparently across the pooled connections (a per-connection plan
+            // cache) — without the provider holding a connection to call
+            // PrepareAsync explicitly, which a data-source-per-command provider
+            // cannot do. Only set when the caller's connection string did not
+            // already specify it, so an explicit choice is never overridden.
+            if (dataSourceBuilder.ConnectionStringBuilder.MaxAutoPrepare == 0)
+            {
+                dataSourceBuilder.ConnectionStringBuilder.MaxAutoPrepare = DefaultMaxAutoPrepare;
+            }
+
             services.AddSingleton(dataSourceBuilder.Build());
 
             services.AddSingleton<PgVectorObjectSetProvider>(sp => CreateProvider(sp));

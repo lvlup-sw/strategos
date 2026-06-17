@@ -210,7 +210,13 @@ public class IngestionPipelineIntegrationTests
 
         var inMemoryProvider = new InMemoryObjectSetProvider();
         var reportedPhases = new List<string>();
-        var progress = new Progress<IngestionProgress>(p => reportedPhases.Add(p.Phase));
+
+        // The pipeline calls IProgress.Report(...) inline for each phase during
+        // ExecuteAsync, so a SYNCHRONOUS recorder captures every phase deterministically.
+        // Progress<T> instead marshals callbacks to the thread pool; paired with a fixed
+        // post-run delay that raced under CI's saturated parallel load and intermittently
+        // observed zero phases.
+        var progress = new SynchronousProgress<IngestionProgress>(p => reportedPhases.Add(p.Phase));
 
         var pipeline = IngestionPipeline<DocumentChunk>.Create()
             .Chunk(new SentenceBoundaryChunker())
@@ -228,10 +234,19 @@ public class IngestionPipelineIntegrationTests
         // Act
         await pipeline.ExecuteAsync(new[] { "First sentence. Second sentence." });
 
-        // Allow progress callbacks to fire (they run on the thread pool via Progress<T>)
-        await Task.Delay(100);
-
-        // Assert -- should have reported chunking, embedding, and storing phases
+        // Assert -- chunking, embedding, and storing phases were reported (recorded
+        // synchronously, so no post-run delay is needed).
         await Assert.That(reportedPhases.Count).IsGreaterThanOrEqualTo(1);
+    }
+
+    // A synchronous IProgress<T>: invokes the handler inline on Report(...) rather than
+    // marshaling to the thread pool like Progress<T>, so phase recording is deterministic.
+    private sealed class SynchronousProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> handler;
+
+        public SynchronousProgress(Action<T> handler) => this.handler = handler;
+
+        public void Report(T value) => this.handler(value);
     }
 }

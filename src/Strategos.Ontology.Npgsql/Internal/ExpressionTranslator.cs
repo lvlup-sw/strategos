@@ -38,6 +38,30 @@ internal static class ExpressionTranslator
         };
     }
 
+    /// <summary>
+    /// Whether <paramref name="expression"/> is a link TRAVERSAL — i.e. its
+    /// outermost producing node (walking past <see cref="FilterExpression"/> /
+    /// <see cref="IncludeExpression"/>) is a <see cref="TraverseLinkExpression"/>
+    /// (DR-12). A traversal is NOT a plain WHERE-over-one-table query, so the
+    /// provider must route it through
+    /// <c>PgVectorObjectSetProvider.LowerTraversalExpression</c> rather than the
+    /// single-table <see cref="Translate(ObjectSetExpression)"/> path: <c>Translate</c>
+    /// throws <see cref="NotSupportedException"/> on a traversal because the
+    /// vertex ⋈ junction ⋈ vertex lowering is junction-aware and graph-driven.
+    /// </summary>
+    internal static bool IsTraversal(ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        return expression switch
+        {
+            TraverseLinkExpression => true,
+            FilterExpression filter => IsTraversal(filter.Source),
+            IncludeExpression include => IsTraversal(include.Source),
+            _ => false,
+        };
+    }
+
     [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
     private static TranslationResult TranslateFilter(FilterExpression filter)
     {
@@ -104,8 +128,12 @@ internal static class ExpressionTranslator
         parameters.Add(new SqlParameter(paramName, value));
 
         // Use JSONB accessor for property access: data->>'PropertyName'
-        // Cast to appropriate type for correct comparison semantics (e.g., numeric ordering)
-        var jsonbAccessor = $"data->>'{propertyName}'";
+        // Cast to appropriate type for correct comparison semantics (e.g., numeric ordering).
+        // The key is interpolated into a single-quoted JSON-path literal (NOT a bindable
+        // parameter), so it must be escaped the same way the rest of the generator routes
+        // descriptor-derived keys — single-quote doubling via SqlGenerator.EscapeStringLiteral
+        // (review F4). No-op for legal member names; keeps the SQL safe regardless of caller.
+        var jsonbAccessor = $"data->>'{SqlGenerator.EscapeStringLiteral(propertyName)}'";
         var cast = GetJsonbCast(value);
         var lhs = cast.Length > 0 ? $"({jsonbAccessor}){cast}" : jsonbAccessor;
         return $"{lhs} {sqlOp} {paramName}";
@@ -125,7 +153,11 @@ internal static class ExpressionTranslator
                 ? s.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_")
                 : value;
             parameters.Add(new SqlParameter(paramName, escapedValue));
-            return $"data->>'{propertyName}' LIKE '%' || {paramName} || '%' ESCAPE '\\'";
+
+            // The key is interpolated into a single-quoted JSON-path literal (NOT a bindable
+            // parameter), so escape it via SqlGenerator.EscapeStringLiteral exactly as the
+            // binary-comparison accessor does (review F4).
+            return $"data->>'{SqlGenerator.EscapeStringLiteral(propertyName)}' LIKE '%' || {paramName} || '%' ESCAPE '\\'";
         }
 
         throw new NotSupportedException($"Method {methodCall.Method.Name} is not supported for SQL translation.");

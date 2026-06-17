@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+**Npgsql instance-anchored link traversal, depth-tiered (DR-12, #131).**
+`PgVectorObjectSetProvider.ExecuteAsync<T>` / `StreamAsync<T>` now serve
+`.Where(s => s.Key == id).TraverseLink<TLinked>("link")` expressions, closing the
+DR-7..DR-11b gap where a `TraverseLinkExpression` threw `NotSupportedException`.
+The lowering is **depth-tiered**: a chain of ≤ 3 monomorphic hops lowers to a
+flat `vertex ⋈ junction ⋈ vertex ⋈ …` join chain (sized to the planner's
+`join_collapse_limit` of 8 — 1 anchor + 2 relations/hop = 7 at 3 hops), while a
+deeper chain — or any plan with a polymorphic hop (which counts as fan-out via a
+`UNION ALL` over the per-`(link, target-descriptor)` junction tables) — lowers to
+a `WITH RECURSIVE` walk. Hop targets resolve from the ontology graph (DR-10),
+never `typeof` (INV-8); every join is inner so a zero-relation source yields an
+empty result at any depth (#114 / DR-8 preserved). All new types
+(`TraversalPlan`, `TraversalStep`, `TraversalLowering`) are `internal` —
+`Strategos.Ontology.Npgsql` carries no PublicAPI baseline — so no `PublicAPI.*.txt`
+re-baseline is required. See the provider reference's *Link traversal
+(depth-tiered lowering)* section.
+
 ### Cross-product breaking changes
 
 This section is **present on every release that touches the builder public
@@ -53,6 +72,182 @@ framing was removed from `OntologyGraphHasher`, so cached graph versions will
 differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
+
+### Added — Npgsql edge-layer hardening (DR-13, #130)
+
+- **R1 — reverse junction index.** Every per-`(link, target-descriptor)` junction
+  table now emits an explicit `CREATE INDEX ... (target_id, source_id)` alongside
+  the forward `UNIQUE (source_id, target_id)` constraint, so reverse traversal and
+  target-endpoint FK probes are index-backed instead of falling back to a
+  sequential scan.
+- **R2 — vertex key-property unique index.** `EnsureSchemaAsync` now emits a
+  `CREATE UNIQUE INDEX ... ((data->>'key'))` expression index on the descriptor's
+  business-id key property, making the relate/traversal endpoint-resolution
+  subqueries (`data->>'key' = @id`) resolve a single deterministic row. Keyless
+  (pgvector-only) tables keep their pre-DR-13 DDL byte-identical.
+- **R4 — atomic, single-statement relate (TOCTOU closed, 3→1 round-trips).** The
+  plain and attributed Npgsql relate is collapsed from three commands (two eager
+  `SELECT EXISTS` probes + one `INSERT`, each its own round-trip on no shared
+  snapshot) into ONE self-validating statement issued as a single `NpgsqlBatch`:
+  endpoint resolution + idempotent insert (a data-modifying CTE, run exactly once)
+  + the returned `src_exists`/`tgt_exists` flags, all under Postgres's single
+  `WITH` snapshot. A missing endpoint — including one deleted concurrently —
+  surfaces the typed `RelationEndpointNotFoundException` instead of a silent no-op,
+  and no dangling row is written. The pre-DR-13 TOCTOU caveat on `RelateAsync` is
+  removed. A disallowed self-loop takes a probe-only (no-insert) path so its
+  endpoint-first ordering is preserved.
+- **R5 — `NpgsqlDataSource` posture + auto-prepare.** The provider's only DB entry
+  point is the INJECTED `NpgsqlDataSource` (no internal connection-string
+  construction), pinned by a reflection test. The `UsePgVector` DI shorthand now
+  enables Npgsql `Max Auto Prepare` (default 25 when the caller's connection string
+  does not set one), so the small, fixed set of relate/unrelate/traversal statement
+  shapes are server-side-prepared transparently across pooled connections — the
+  "OR `Max Auto Prepare` documented" branch of the R5 contract. Auto-prepare is
+  parameter-name-agnostic, so the existing `@named` parameters are retained (the
+  established SQL-shape test suite asserts them); positional `$1` rewriting was
+  judged gratuitous churn for no behavioural gain under auto-prepare. The `Npgsql`
+  package is pinned `9.0.3` → `10.0.3`.
+- **R6 — `RelateBatchAsync` reserved on `IObjectSetWriter`.** New
+  `Task RelateBatchAsync(IReadOnlyList<RelateRequest>, CancellationToken)` member
+  plus a new sealed `RelateRequest` record reserve a set-based relate surface for
+  bulk edge ingestion (#115). The in-memory provider fulfils it with a per-request
+  loop carrying the same eager-validation/self-loop/idempotency contract; the
+  Npgsql provider throws `NotSupportedException` until #115 lands the batched DML.
+  These `Strategos.Ontology` types are not part of the `src/Strategos` builder
+  PublicAPI baseline (scoped to the 7 `Strategos.Builders` interfaces), so no
+  `PublicAPI.*.txt` re-baseline is required.
+- **R8 — pgvector iterative-scan knobs.** New `IterativeScanOptions` /
+  `IterativeScanMode` on `Strategos.Ontology.Npgsql`, wired into
+  `PgVectorOptions.IterativeScan`. When set, a similarity query is shaped as an
+  index-ordered ANN CTE and run inside a transaction with transaction-scoped
+  `SET LOCAL hnsw.iterative_scan` / `hnsw.max_scan_tuples` / `hnsw.ef_search`, so a
+  filtered search keeps scanning the HNSW index until it has enough post-filter
+  rows to satisfy `topK` (instead of post-filtering a fixed candidate set and
+  under-returning). **Runtime requirement:** the pgvector SERVER extension must be
+  `>= 0.8.0` (iterative scans are a 0.8.0 feature). The `Pgvector` .NET client pin
+  is bumped `0.3.0` → `0.3.2`; that client's version line is independent of — and
+  cannot express — the server-extension requirement.
+
+### Added — Ontology bitemporal validity + PROV provenance (DR-16, #126)
+
+Bitemporal validity and W3C PROV-DM provenance on reified associations, layered
+as an **additive projection** over the existing append-only association event
+stream — no new mutation surface (INV-7).
+
+- **T20 — XTDB bitemporal quartet.** The reified-association object table
+  (`SqlGenerator.BuildAssociationObjectTableDdl`) carries four temporal columns:
+  `valid_from`/`valid_to` (user-asserted valid-time `tstzrange` endpoints) and
+  `system_from`/`system_to` (infra-derived transaction-time). The `*_from`
+  columns are `NOT NULL DEFAULT now()` so the existing DR-4 attributed-relate
+  INSERT stays valid additively; `system_to IS NULL` is the open
+  (not-yet-retracted) row. A new `SqlGenerator.BuildAsOfTransactionTimeSql`
+  reconstructs the relationship set as known at a bound `@asOfTx`. New sealed
+  `init`-only `Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow` record
+  (INV-6/INV-7), guarded by `EdgeProviderTypesSealedTests`.
+- **T21 — temporal EXCLUDE constraint + as-of-now index.** The association DDL
+  emits `CREATE EXTENSION btree_gist` and a partial GiST exclusion
+  (`EXCLUDE USING gist (<role>_id WITH =, …, tstzrange(valid_from, valid_to)
+  WITH &&) WHERE (system_to IS NULL)`) that rejects two currently-asserted
+  assertions of the same endpoint pair with overlapping valid-time. The
+  exclusion is HONEST because DR-11/DR-11b made the endpoint columns homogeneous
+  `NOT NULL` FK `uuid`s (a typed referent, not a `(target_type, target_id)`
+  discriminator). It is PARTIAL on `system_to IS NULL`, so a retracted
+  (system-closed) row never blocks a fresh assertion — transaction-time stays
+  the soft-delete axis (INV-7). A covering partial index
+  (`INCLUDE (valid_from, valid_to) WHERE system_to IS NULL`) serves the dominant
+  as-of-now class; the sequenced (both-axes) class is deliberately un-indexed. A
+  live-DB-gated execution proof (`TemporalExcludeNpgsqlTests`,
+  `[SkipIfNoPostgres]`) drives real INSERTs to confirm the constraint fires and
+  that retraction releases it.
+- **T22 — soft-delete = close interval, replay-deterministic (INV-7).** A new
+  provider-agnostic core temporal model under `Strategos.Ontology.Temporal`: an
+  append-only `AssociationTemporalEvent` stream (`Assert` opens a system
+  interval, `Retract` CLOSES it) folded by `TemporalAssociationProjection.Replay`
+  into a deterministic, totally-ordered terminal state of sealed `TemporalRow`s.
+  A retraction NEVER physically deletes — it appends a close event that the
+  projection folds into a closed `system_to`. Transaction-time is read off the
+  stream (each event carries its own instant), never a fold-time wall clock, and
+  the output is sorted on a stable key — so two replays of the same log are
+  structurally identical (the INV-7 replay-determinism keystone). Sealed
+  `init`-only records, guarded by `InvariantGuardTests.TemporalTypes_AreSealed`.
+- **T23 — PROV-DM core provenance.** A new `Strategos.Ontology.Provenance` model:
+  the three PROV-DM core types (`ProvEntity` / `ProvActivity` / `ProvAgent`), the
+  seven core relations (`ProvRelation`: `WasGeneratedBy`, `Used`,
+  `WasInformedBy`, `WasDerivedFrom`, `WasAttributedTo`, `WasAssociatedWith`,
+  `ActedOnBehalfOf` — Bundles/Collections excluded), the qualified-influence node
+  (`ProvInfluence`), and the `AssociationProvenance` aggregate where the reified
+  association ≅ the PROV Entity. `AssociationProvenanceRecorder.Attach` sources
+  the asserting agent from the G1 `CurrentAgentIdentity` seam, carried as an
+  opaque header-safe string `Func<string?>` so the core ontology keeps INV-2
+  self-containment (only the test references the identity package). No active
+  agent → attribution is OMITTED, never fabricated. Sealed records, guarded by
+  `InvariantGuardTests.ProvenanceTypes_AreSealed`.
+
+### Added — MCP provider-bound dispatch + association/traversal surface (DR-14/DR-15, #113/#125)
+
+- **Provider-bound MCP dispatch (DR-14, #113).** A new
+  `IMcpServerBuilder.AddOntologyTools()` overload (in
+  `LevelUp.Strategos.Ontology.MCP.Hosting`) discovers the four ontology tools from
+  the `OntologyGraph` already registered in the host's service collection (e.g. via
+  `services.AddOntology(...)`) and registers them as MCP server tools. The existing
+  explicit-graph overload `AddOntologyTools(OntologyGraph)` is retained.
+
+- **MCP association + instance-level traversal surface (DR-15, #125).** Exposes the
+  ontology edge layer (reified associations + instance-anchored traversal) through MCP:
+  - An `association` branch on the query result union (`AssociationQueryResult` +
+    `AssociationEdgeRow`) — an edge/endpoint result shape distinct from plain objects;
+    `ObjectKind` + endpoints on the explore `objectTypes` scope; a new `associations`
+    explore scope listing every reified association with its endpoints, plus
+    `targetSymbolKey` on the `links` scope. SymbolKey-only (ingested) targets are named
+    by descriptor / SymbolKey — no CLR type name leaks (INV-8).
+  - A new `ontology_traverse` MCP tool (`OntologyTraverseTool`): walks from a specific
+    instance across a reified association to a far endpoint with edge-attribute
+    filtering, dispatched through the public `IObjectSetProvider`. Closed-vocabulary
+    inputs (link from the graph, integer depth ≤ `OntologyTraversalLimits.MaxDepth` = 3,
+    a `TraversalDirection` enum). Malformed args → `isError: true` (SEP-1303, not a
+    thrown protocol error); a budget-truncated subgraph → a `resource_link` + opaque
+    cursor; provenance `_meta` under the `sw.lvlup.strategos/` vendor prefix. Every
+    result carries `_meta` + `OutputSchema` (INV-3).
+  - relate/unrelate stays gated through `OntologyActionTool` → `IActionDispatcher`; the
+    read/traverse tools take no `IObjectSetWriter`. These ontology-MCP types are not part
+    of the `src/Strategos` builder PublicAPI baseline, so no `PublicAPI.*.txt` re-baseline
+    is required.
+
+### Changed
+
+- **Ontology MCP tools now dispatch against the DI-resolved provider (DR-14, #113).**
+  `OntologyServerToolFactory.CreateServerTools(OntologyGraph)` no longer emits the
+  echo stub handler. Each tool's handler resolves the backing
+  `IObjectSetProvider` — and, where applicable, `IActionDispatcher`,
+  `IEventStreamProvider`, `IOntologyQuery` — from the per-call request's
+  `IServiceProvider`, so an `ontology_query` (and the other tools) executes against
+  the configured provider and returns real rows. Every tool result still carries its
+  `_meta` envelope and `OutputSchema` (INV-3). Hosts that called the tools previously
+  saw only a stub echo; they must now register an `IObjectSetProvider` for the query
+  path. These hosting types are not part of the `src/Strategos` builder PublicAPI
+  baseline, so no `PublicAPI.*.txt` re-baseline is required.
+
+### Added — Fork-path step configuration (DR-17, #134)
+
+- **Fork-path step configuration** (DR-17, #134) — `IForkPathBuilder<TState>`
+  gains the `Then<TStep>(Action<IStepConfiguration<TState>>)` overload, bringing
+  fork branches to parity with the top-level `IWorkflowBuilder<TState>` and
+  loop-body `ILoopBuilder<TState>` sequencing contexts. A configured fork-path
+  step carries its `StepConfigurationDefinition` into the immutable workflow
+  definition and the export-only wire contract via `WorkflowDefinitionProjection`.
+  `IForkPathBuilder` is not one of the 7 gated cross-product builder interfaces,
+  so no `PublicAPI.*.txt` re-baseline is required.
+  - **Enforced for fork-path steps:** `ValidateState(...)` now lowers into the
+    generated Wolverine saga as a Guard-Then-Dispatch validation guard, matching
+    top-level and loop steps. (Previously the fork-path extractor dropped it.)
+  - **Declared, not yet enforced** (for every step kind, fork or not): `WithRetry`
+    / `WithTimeout` / `Compensate` are captured in the definition and the
+    declarative export, but the source generator does not yet emit Wolverine
+    retry / scheduled-timeout / compensation — that lowering is unbuilt for all
+    step kinds and is tracked by **#135** (an INV-1 generator concern). `WithContext`
+    is also not lowered in the production generator pipeline today
+    (`ContextAssemblerEmitter` / `ContextModelExtractor` are exercised by unit
+    tests only, never wired into `WorkflowIncrementalGenerator`).
 
 ## [2.8.0] - 2026-05-25
 

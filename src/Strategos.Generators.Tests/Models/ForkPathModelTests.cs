@@ -14,6 +14,13 @@ namespace Strategos.Generators.Tests.Models;
 [Property("Category", "Unit")]
 public class ForkPathModelTests
 {
+    private static StepModel Step(string name, string? validationPredicate = null, string? validationErrorMessage = null)
+        => StepModel.Create(
+            name,
+            $"TestNamespace.{name}",
+            validationPredicate: validationPredicate,
+            validationErrorMessage: validationErrorMessage);
+
     // =============================================================================
     // A. Factory Method Tests
     // =============================================================================
@@ -25,24 +32,25 @@ public class ForkPathModelTests
     public async Task Create_WithValidParams_ReturnsModel()
     {
         // Arrange
-        var stepNames = new List<string> { "ProcessPayment", "ChargeCard" };
+        var steps = new List<StepModel> { Step("ProcessPayment"), Step("ChargeCard") };
 
         // Act
         var model = ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: stepNames,
+            steps: steps,
             hasFailureHandler: false,
             isTerminalOnFailure: false);
 
         // Assert
         await Assert.That(model.PathIndex).IsEqualTo(0);
+        await Assert.That(model.Steps.Count).IsEqualTo(2);
         await Assert.That(model.StepNames.Count).IsEqualTo(2);
         await Assert.That(model.HasFailureHandler).IsFalse();
         await Assert.That(model.IsTerminalOnFailure).IsFalse();
     }
 
     /// <summary>
-    /// Verifies that Create throws for null step names.
+    /// Verifies that Create throws for null steps.
     /// </summary>
     [Test]
     public async Task Create_WithNullStepNames_ThrowsArgumentNullException()
@@ -50,14 +58,14 @@ public class ForkPathModelTests
         // Act & Assert
         await Assert.That(() => ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: null!,
+            steps: null!,
             hasFailureHandler: false,
             isTerminalOnFailure: false))
             .Throws<ArgumentNullException>();
     }
 
     /// <summary>
-    /// Verifies that Create throws for empty step names.
+    /// Verifies that Create throws for empty steps.
     /// </summary>
     [Test]
     public async Task Create_WithEmptyStepNames_ThrowsArgumentException()
@@ -65,7 +73,7 @@ public class ForkPathModelTests
         // Act & Assert
         await Assert.That(() => ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: [],
+            steps: [],
             hasFailureHandler: false,
             isTerminalOnFailure: false))
             .Throws<ArgumentException>();
@@ -78,12 +86,12 @@ public class ForkPathModelTests
     public async Task Create_WithNegativePathIndex_ThrowsArgumentOutOfRangeException()
     {
         // Arrange
-        var stepNames = new List<string> { "Step1" };
+        var steps = new List<StepModel> { Step("Step1") };
 
         // Act & Assert
         await Assert.That(() => ForkPathModel.Create(
             pathIndex: -1,
-            stepNames: stepNames,
+            steps: steps,
             hasFailureHandler: false,
             isTerminalOnFailure: false))
             .Throws<ArgumentOutOfRangeException>();
@@ -100,8 +108,8 @@ public class ForkPathModelTests
     public async Task FirstStepName_ReturnsFirstStep()
     {
         // Arrange
-        var stepNames = new List<string> { "First", "Second", "Third" };
-        var model = ForkPathModel.Create(0, stepNames, false, false);
+        var steps = new List<StepModel> { Step("First"), Step("Second"), Step("Third") };
+        var model = ForkPathModel.Create(0, steps, false, false);
 
         // Assert
         await Assert.That(model.FirstStepName).IsEqualTo("First");
@@ -114,8 +122,8 @@ public class ForkPathModelTests
     public async Task LastStepName_ReturnsLastStep()
     {
         // Arrange
-        var stepNames = new List<string> { "First", "Second", "Third" };
-        var model = ForkPathModel.Create(0, stepNames, false, false);
+        var steps = new List<StepModel> { Step("First"), Step("Second"), Step("Third") };
+        var model = ForkPathModel.Create(0, steps, false, false);
 
         // Assert
         await Assert.That(model.LastStepName).IsEqualTo("Third");
@@ -130,7 +138,7 @@ public class ForkPathModelTests
         // Arrange
         var model = ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: new List<string> { "Step1" },
+            steps: new List<StepModel> { Step("Step1") },
             hasFailureHandler: true,
             isTerminalOnFailure: false);
 
@@ -145,7 +153,7 @@ public class ForkPathModelTests
     public async Task StatusPropertyName_ReturnsCorrectName()
     {
         // Arrange
-        var model = ForkPathModel.Create(0, new List<string> { "Step1" }, false, false);
+        var model = ForkPathModel.Create(0, new List<StepModel> { Step("Step1") }, false, false);
 
         // Assert
         await Assert.That(model.StatusPropertyName).IsEqualTo("Path0Status");
@@ -158,7 +166,7 @@ public class ForkPathModelTests
     public async Task StatePropertyName_ReturnsCorrectName()
     {
         // Arrange
-        var model = ForkPathModel.Create(1, new List<string> { "Step1" }, false, false);
+        var model = ForkPathModel.Create(1, new List<StepModel> { Step("Step1") }, false, false);
 
         // Assert
         await Assert.That(model.StatePropertyName).IsEqualTo("Path1State");
@@ -171,13 +179,13 @@ public class ForkPathModelTests
     public async Task Create_WithFailureHandlerSteps_IncludesSteps()
     {
         // Arrange
-        var stepNames = new List<string> { "Process" };
+        var steps = new List<StepModel> { Step("Process") };
         var failureSteps = new List<string> { "Recover", "Cleanup" };
 
         // Act
         var model = ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: stepNames,
+            steps: steps,
             hasFailureHandler: true,
             isTerminalOnFailure: false,
             failureHandlerStepNames: failureSteps);
@@ -185,5 +193,46 @@ public class ForkPathModelTests
         // Assert
         await Assert.That(model.FailureHandlerStepNames).IsNotNull();
         await Assert.That(model.FailureHandlerStepNames!.Count).IsEqualTo(2);
+    }
+
+    // =============================================================================
+    // C. Configured-Step Shape (DR-17 / Task 25, F5)
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that <see cref="ForkPathModel"/> carries per-step configuration as
+    /// <see cref="StepModel"/> records mirroring the top-level/loop emitters' step model,
+    /// rather than exposing only step names. The model must surface each step's configured
+    /// <c>ValidateState</c> guard (predicate + error message), not just its name.
+    /// </summary>
+    [Test]
+    public async Task ForkPathModel_CarriesConfiguredSteps_NotJustNames()
+    {
+        // Arrange - a fork-path step configured with a ValidateState guard
+        var validatedStep = Step(
+            "ProcessPayment",
+            validationPredicate: "state.ItemCount > 0",
+            validationErrorMessage: "Order must have items");
+        var plainStep = Step("ReserveInventory");
+
+        // Act
+        var model = ForkPathModel.Create(
+            pathIndex: 0,
+            steps: new List<StepModel> { validatedStep, plainStep },
+            hasFailureHandler: false,
+            isTerminalOnFailure: false);
+
+        // Assert - the path carries configured StepModel records, not just names
+        await Assert.That(model.Steps.Count).IsEqualTo(2);
+
+        var configured = model.Steps[0];
+        await Assert.That(configured.StepName).IsEqualTo("ProcessPayment");
+        await Assert.That(configured.HasValidation).IsTrue();
+        await Assert.That(configured.ValidationPredicate).IsEqualTo("state.ItemCount > 0");
+        await Assert.That(configured.ValidationErrorMessage).IsEqualTo("Order must have items");
+
+        // Assert - per-step config is preserved alongside (not collapsed into) the name projection
+        await Assert.That(model.StepNames[0]).IsEqualTo("ProcessPayment");
+        await Assert.That(model.Steps[1].HasValidation).IsFalse();
     }
 }

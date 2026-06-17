@@ -47,6 +47,24 @@ internal sealed class ForkPathBuilder<TState> : IForkPathBuilder<TState>
     }
 
     /// <inheritdoc/>
+    public IForkPathBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        // Build the step configuration
+        var configBuilder = new StepConfigurationBuilder<TState>();
+        configure(configBuilder);
+
+        // Create step with configuration
+        var step = StepDefinition.Create(typeof(TStep))
+            .WithConfiguration(configBuilder.Configuration);
+
+        _steps.Add(step);
+        return this;
+    }
+
+    /// <inheritdoc/>
     public IForkPathBuilder<TState> OnFailure(Action<IFailureBuilder<TState>> handler)
     {
         ArgumentNullException.ThrowIfNull(handler, nameof(handler));

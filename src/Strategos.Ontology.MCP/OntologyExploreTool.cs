@@ -36,6 +36,7 @@ public sealed class OntologyExploreTool
             "objectTypes" => ExploreObjectTypes(domain),
             "actions" => ExploreActions(domain, objectType),
             "links" => ExploreLinks(domain, objectType),
+            "associations" => ExploreAssociations(domain),
             "events" => ExploreEvents(domain, objectType),
             "interfaces" => ExploreInterfaces(),
             "workflowChains" => ExploreWorkflowChains(),
@@ -67,15 +68,34 @@ public sealed class OntologyExploreTool
         {
             ["name"] = t.Name,
             ["domain"] = t.DomainName,
+            // DR-15: surface ObjectKind so an association object is distinguishable
+            // from a plain entity IN THE RESULT SHAPE. An association additionally
+            // carries its endpoints (named by descriptor — INV-8); a plain entity
+            // carries an empty endpoint list.
+            ["objectKind"] = t.Kind.ToString(),
             ["propertyCount"] = t.Properties.Count,
             ["linkCount"] = t.Links.Count,
             ["actionCount"] = t.Actions.Count,
             ["eventCount"] = t.Events.Count,
             ["isSemanticSearchable"] = t.Properties.Any(p => p.Kind == PropertyKind.Vector),
+            ["endpoints"] = ProjectEndpoints(t),
         }).ToList();
 
         return new ExploreResult("objectTypes", items, CurrentMeta());
     }
+
+    // DR-15: project a reified association's endpoints, naming each endpoint's
+    // object type by descriptor name (INV-8 — never a CLR Type) plus its role and
+    // cardinality. Empty for non-association object types.
+    private static IReadOnlyList<Dictionary<string, object?>> ProjectEndpoints(ObjectTypeDescriptor type) =>
+        type.AssociationEndpoints
+            .Select(e => new Dictionary<string, object?>
+            {
+                ["role"] = e.Role,
+                ["descriptorName"] = e.DescriptorName,
+                ["cardinality"] = e.Cardinality.ToString(),
+            })
+            .ToList();
 
     private ExploreResult ExploreActions(string? domain, string? objectType)
     {
@@ -109,11 +129,38 @@ public sealed class OntologyExploreTool
         {
             ["name"] = l.Name,
             ["targetTypeName"] = l.TargetTypeName,
+            // DR-15 (INV-8): surface the polyglot SymbolKey of the target so a
+            // SymbolKey-only (ingested, ClrType == null) target is fully addressable
+            // without any CLR type name. Null for hand-authored CLR targets.
+            ["targetSymbolKey"] = l.TargetSymbolKey,
             ["cardinality"] = l.Cardinality.ToString(),
             ["description"] = l.Description,
         }).ToList();
 
         return new ExploreResult("links", items, CurrentMeta());
+    }
+
+    // DR-15 (T17): list every reified association (ObjectKind.Association) in the
+    // graph (optionally filtered by domain), each named by descriptor with its
+    // endpoints — the DR-10 metadata an agent reads before driving a traversal.
+    // Endpoints name their object type by descriptor name (INV-8); no CLR Type
+    // ever participates, so a SymbolKey-only endpoint is listed identically.
+    private ExploreResult ExploreAssociations(string? domain)
+    {
+        var associations = _graph.ObjectTypes
+            .Where(t => t.Kind == ObjectKind.Association)
+            .Where(t => domain is null || t.DomainName == domain);
+
+        var items = associations.Select(t => new Dictionary<string, object?>
+        {
+            ["name"] = t.Name,
+            ["domain"] = t.DomainName,
+            ["objectKind"] = t.Kind.ToString(),
+            ["edgeAttributes"] = t.Properties.Select(p => p.Name).ToList(),
+            ["endpoints"] = ProjectEndpoints(t),
+        }).ToList();
+
+        return new ExploreResult("associations", items, CurrentMeta());
     }
 
     private ExploreResult ExploreEvents(string? domain, string? objectType)

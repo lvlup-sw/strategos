@@ -44,6 +44,21 @@ public class EdgeProviderTypesSealedTests
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalHop",
             // AssociationRelatePlan (T11): resolved attributed-relate plan.
             "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+AssociationRelatePlan",
+            // OntologySchemaIdentifierException (DR-11/T1): typed collision error
+            // for the 63-byte identifier guard.
+            "Strategos.Ontology.Npgsql.Schema.OntologySchemaIdentifierException",
+            // JunctionTableDescriptor (DR-11/T2): resolved per-(link, target)
+            // junction-table identity fed into the resolved-targets DDL builder.
+            "Strategos.Ontology.Npgsql.Schema.JunctionTableDescriptor",
+            // TraversalStep (DR-12/T5): one depth step of a chained traversal.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalStep",
+            // TraversalPlan (DR-12/T5): the resolved depth-tiered traversal plan.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalPlan",
+            // TraversalLowering (DR-12/T5): the lowered traversal SQL + parameters.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalLowering",
+            // TemporalAssociationRow (DR-16/T20): the bitemporal-quartet projection
+            // of one reified-association assertion.
+            "Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow",
         };
 
         var offenders = new List<string>();
