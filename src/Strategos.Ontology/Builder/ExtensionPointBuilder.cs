@@ -7,7 +7,6 @@ internal sealed class ExtensionPointBuilder(string name) : IExtensionPointBuilde
     private string? _description;
     private string? _requiredSourceInterface;
     private string? _requiredSourceDomain;
-    private readonly List<RequiredEdgeProperty> _requiredEdgeProperties = [];
     private int? _maxLinks;
 
     public IExtensionPointBuilder FromInterface<T>()
@@ -28,16 +27,6 @@ internal sealed class ExtensionPointBuilder(string name) : IExtensionPointBuilde
         return this;
     }
 
-    public IExtensionPointBuilder RequiresEdgeProperty<T>(string propertyName)
-    {
-        _requiredEdgeProperties.Add(new RequiredEdgeProperty
-        {
-            Name = propertyName,
-            TypeName = typeof(T).Name,
-        });
-        return this;
-    }
-
     public IExtensionPointBuilder MaxLinks(int max)
     {
         _maxLinks = max;
@@ -51,7 +40,6 @@ internal sealed class ExtensionPointBuilder(string name) : IExtensionPointBuilde
             Description = _description,
             RequiredSourceInterface = _requiredSourceInterface,
             RequiredSourceDomain = _requiredSourceDomain,
-            RequiredEdgeProperties = _requiredEdgeProperties.AsReadOnly(),
             MaxLinks = _maxLinks,
         };
 }

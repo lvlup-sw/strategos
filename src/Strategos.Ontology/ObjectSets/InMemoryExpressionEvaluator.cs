@@ -42,6 +42,7 @@ internal delegate IReadOnlyList<RelationRow> RelationResolver(
 public sealed class InMemoryExpressionEvaluator
 {
     private readonly Dictionary<string, ObjectTypeDescriptor> _descriptorIndex;
+    private readonly Dictionary<string, string> _descriptorNameBySymbolKey;
     private readonly RelationResolver? _relationResolver;
     private readonly IObjectIdentityProjector _idProjector;
 
@@ -85,6 +86,10 @@ public sealed class InMemoryExpressionEvaluator
         ArgumentNullException.ThrowIfNull(graph);
 
         _descriptorIndex = new Dictionary<string, ObjectTypeDescriptor>();
+        // DR-10: reverse index from a descriptor's polyglot SymbolKey to its
+        // canonical name, used to resolve a link's TargetSymbolKey fallback to a
+        // partition name without any CLR Type participation (INV-8).
+        _descriptorNameBySymbolKey = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var ot in graph.ObjectTypes)
         {
             if (!_descriptorIndex.TryAdd(ot.Name, ot))
@@ -94,6 +99,24 @@ public sealed class InMemoryExpressionEvaluator
                     $"Descriptor name '{ot.Name}' is registered in both domain '{existing.DomainName}' " +
                     $"and domain '{ot.DomainName}'. InMemoryExpressionEvaluator requires globally unique " +
                     $"descriptor names. Rename one of the registrations to disambiguate.",
+                    nameof(graph));
+            }
+
+            if (ot.SymbolKey is not null
+                && !_descriptorNameBySymbolKey.TryAdd(ot.SymbolKey, ot.Name))
+            {
+                // A SymbolKey is a first-class polyglot identity (INV-8); a shared
+                // key across two descriptors is a graph-authoring error. Refuse it
+                // loudly — symmetric with the descriptor-name uniqueness check
+                // above — rather than letting "last writer wins" silently remap the
+                // key and misroute a TargetSymbolKey traversal to the wrong
+                // partition.
+                var existingName = _descriptorNameBySymbolKey[ot.SymbolKey];
+                throw new ArgumentException(
+                    $"SymbolKey '{ot.SymbolKey}' is registered for both descriptor '{existingName}' " +
+                    $"and descriptor '{ot.Name}'. InMemoryExpressionEvaluator requires globally unique " +
+                    $"polyglot SymbolKeys so a TargetSymbolKey traversal resolves to exactly one partition. " +
+                    $"Rename one of the registrations' SymbolKey to disambiguate.",
                     nameof(graph));
             }
         }
@@ -270,16 +293,140 @@ public sealed class InMemoryExpressionEvaluator
 
         var rows = GatherRows(sourceDescriptor, sourceDescriptorName, traverse.LinkName, sourceInstances);
 
-        // DR-4 association hop: when the requested type is the association
-        // descriptor's CLR type AND the rows carry an association object id, yield
-        // the association objects so edge attributes are filterable BEFORE the far
-        // hop. Otherwise yield the far-endpoint target instances.
-        if (TryResolveAssociationDescriptor(traverse.ObjectType, out var associationDescriptorName))
+        // DR-4 association hop: when the rows carry an association object id and
+        // the traversal targets an ASSOCIATION descriptor, yield the association
+        // objects so edge attributes are filterable BEFORE the far hop. Otherwise
+        // yield the far-endpoint target instances.
+        //
+        // DR-10 (#128): the association descriptor's PARTITION is resolved from
+        // the ONTOLOGY GRAPH, never re-derived from typeof(traverse.ObjectType).
+        if (TryResolveAssociationHopDescriptor(traverse, link, out var associationDescriptorName))
         {
             return ResolveAssociationObjects(rows, associationDescriptorName, itemResolver);
         }
 
         return ResolveTargetEndpoints(rows, itemResolver);
+    }
+
+    // DR-10 (#128) keystone: resolve a hop's TARGET descriptor name from the
+    // ontology GRAPH, never from typeof(traverse.ObjectType). Precedence:
+    //   1. an explicit TraverseLinkExpression.TargetDescriptorName (the caller's
+    //      .TraverseLink(link, descriptorName) selection — mirrors how a root
+    //      carries an explicit descriptor name);
+    //   2. otherwise the SOURCE descriptor's LinkDescriptor for this link:
+    //      its TargetTypeName (the canonical hand-authored target name), falling
+    //      back to the descriptor named by TargetSymbolKey (the polyglot,
+    //      SymbolKey-only target).
+    //
+    // This is the single seam multi-registration and SymbolKey-only targets must
+    // flow through: a CLR type backing two descriptors no longer routes to the
+    // first CLR match, and an ingested (ClrType == null) target is resolvable.
+    // No CLR Type participates in identity/partition resolution here (INV-8).
+    //
+    // Factored as a standalone helper so a later Npgsql traversal task can reuse
+    // the exact same graph-driven hop-target resolution.
+    private string ResolveHopTargetDescriptor(TraverseLinkExpression traverse, LinkDescriptor link)
+    {
+        if (traverse.TargetDescriptorName is { } explicitName)
+        {
+            return explicitName;
+        }
+
+        if (!string.IsNullOrEmpty(link.TargetTypeName))
+        {
+            return link.TargetTypeName;
+        }
+
+        if (link.TargetSymbolKey is { } symbolKey
+            && _descriptorNameBySymbolKey.TryGetValue(symbolKey, out var nameFromSymbol))
+        {
+            return nameFromSymbol;
+        }
+
+        // No graph-resolvable target. Surface the link's own polyglot key (or its
+        // empty TargetTypeName) so the downstream partition lookup misses
+        // deterministically rather than silently consulting typeof(TLinked).
+        return link.TargetSymbolKey ?? link.TargetTypeName;
+    }
+
+    // DR-10 (#128): decide whether this hop yields the DR-4 edge view (the
+    // association objects) and, if so, resolve the association descriptor's
+    // PARTITION from the ONTOLOGY GRAPH. A hop yields the edge view when its
+    // graph-resolved target descriptor is itself an ObjectKind.Association.
+    //
+    // Two graph-driven seams produce that descriptor name, in precedence order:
+    //   1. an explicit TraverseLinkExpression.TargetDescriptorName — the caller's
+    //      .TraverseLink(link, descriptorName) selection. This is the authoritative
+    //      MULTI-REGISTRATION disambiguator (#128): when one CLR type backs several
+    //      association descriptors, the override names the exact partition, so no
+    //      CLR Type participates in identity/partition resolution.
+    //   2. otherwise the link's declared target (ResolveHopTargetDescriptor) when
+    //      that target is itself an association — i.e. the link points straight at
+    //      the reified edge.
+    //
+    // LEGACY CLR-VIEW fallback: when NO override is supplied AND the link's
+    // declared target is a plain endpoint (a node), a caller can still request the
+    // edge view by passing the association's CLR type as TLinked. With a single
+    // registration this is unambiguous, so we resolve the lone association
+    // descriptor whose ClrType matches. This is the only place a CLR Type is
+    // consulted, and ONLY when the graph supplies no disambiguating descriptor
+    // name; under multi-registration the override (seam 1) is required and the
+    // CLR path is never reached. This preserves the DR-4 edge-view ergonomics
+    // (.TraverseLink&lt;TRel&gt;("link")) for the common single-registration case.
+    private bool TryResolveAssociationHopDescriptor(
+        TraverseLinkExpression traverse,
+        LinkDescriptor link,
+        out string associationDescriptorName)
+    {
+        // Seam 1 + 2: the graph-resolved hop target descriptor name. An explicit
+        // override wins; otherwise the link's declared target.
+        var hopTargetName = ResolveHopTargetDescriptor(traverse, link);
+        if (_descriptorIndex.TryGetValue(hopTargetName, out var hopTarget)
+            && hopTarget.Kind == ObjectKind.Association)
+        {
+            associationDescriptorName = hopTargetName;
+            return true;
+        }
+
+        // The graph-resolved target is a plain endpoint. Only when the caller gave
+        // NO descriptor override do we fall back to the legacy single-registration
+        // CLR-type edge-view match (see method remarks).
+        if (traverse.TargetDescriptorName is null)
+        {
+            return TryResolveSingleAssociationByClrType(traverse.ObjectType, out associationDescriptorName);
+        }
+
+        associationDescriptorName = string.Empty;
+        return false;
+    }
+
+    // Legacy single-registration edge-view resolution: the lone association
+    // descriptor whose ClrType is the requested type. Returns false when the type
+    // backs no association OR backs MORE THAN ONE (ambiguous — the caller must
+    // disambiguate with an explicit descriptor name, see #128). Never consulted
+    // when an explicit TargetDescriptorName is supplied.
+    private bool TryResolveSingleAssociationByClrType(Type requestedType, out string associationDescriptorName)
+    {
+        associationDescriptorName = string.Empty;
+        var matches = 0;
+        foreach (var descriptor in _descriptorIndex.Values)
+        {
+            if (descriptor.Kind == ObjectKind.Association && descriptor.ClrType == requestedType)
+            {
+                associationDescriptorName = descriptor.Name;
+                matches++;
+            }
+        }
+
+        // Ambiguous (multi-registration) — refuse to guess a partition from the
+        // CLR type. The caller must pass an explicit descriptor name (#128).
+        if (matches != 1)
+        {
+            associationDescriptorName = string.Empty;
+            return false;
+        }
+
+        return true;
     }
 
     // Gathers the materialized relation rows for every selected source instance,
@@ -442,12 +589,14 @@ public sealed class InMemoryExpressionEvaluator
     }
 
     // Walks a traversal source chain to the nearest TraverseLinkExpression that
-    // produced association objects (its ObjectType is a registered association
-    // descriptor's CLR type). Returns null when none is present.
+    // produced association objects. DR-10 (#128): "produced an association" is
+    // decided from the GRAPH — the hop's graph-resolved target descriptor is an
+    // ObjectKind.Association — never from typeof(traverse.ObjectType). Returns
+    // null when none is present.
     private TraverseLinkExpression? FindAssociationTraversal(ObjectSetExpression expression) =>
         expression switch
         {
-            TraverseLinkExpression traverse when IsAssociationType(traverse.ObjectType) => traverse,
+            TraverseLinkExpression traverse when IsAssociationProducingHop(traverse) => traverse,
             TraverseLinkExpression traverse => FindAssociationTraversal(traverse.Source),
             FilterExpression filter => FindAssociationTraversal(filter.Source),
             IncludeExpression include => FindAssociationTraversal(include.Source),
@@ -455,24 +604,31 @@ public sealed class InMemoryExpressionEvaluator
             _ => null,
         };
 
-    // CLR-ONLY limitation (DR-9, deferred): association detection compares the
-    // requested CLR Type against each descriptor's ClrType. A SymbolKey-only
-    // (ingested, ClrType == null) association can therefore never match, so a
-    // TraverseLink<TRel> over it degrades to plain target-endpoint traversal
-    // rather than surfacing the filterable edge object. Polyglot association
-    // traversal (matching by SymbolKey instead of CLR Type) is tracked under
-    // DR-9 and intentionally NOT implemented here.
-    //
-    // MULTI-REGISTRATION limitation (strategos #128, deferred): this only
-    // answers "is SOME association backed by this CLR type?" — it does not
-    // identify WHICH descriptor. When one CLR type backs multiple association
-    // descriptors (descriptor-identity-through-the-chain), the boolean is
-    // ambiguous and the downstream partition resolution
-    // (TryResolveAssociationDescriptor) may pick the wrong partition. Carrying
-    // descriptor identity (rather than CLR Type) through the traversal chain is
-    // tracked under strategos #128 and intentionally NOT fixed here.
-    private bool IsAssociationType(Type type) =>
-        _descriptorIndex.Values.Any(d => d.Kind == ObjectKind.Association && d.ClrType == type);
+    // DR-10 (#128): a hop "produces association objects" when it resolves to the
+    // DR-4 edge view via TryResolveAssociationHopDescriptor — the SAME graph-first
+    // decision the live hop makes (explicit override → link-declared association →
+    // legacy single-registration CLR match). Routing this detection through the
+    // shared helper keeps the chained far-endpoint hop and the live hop in lock-
+    // step, so neither re-derives a partition from typeof(TLinked) for identity.
+    // A hop whose immediate source is not a known non-association descriptor with
+    // the named link is not association-producing.
+    private bool IsAssociationProducingHop(TraverseLinkExpression traverse)
+    {
+        var sourceDescriptorName = ResolveImmediateSourceDescriptorName(traverse.Source);
+        if (!_descriptorIndex.TryGetValue(sourceDescriptorName, out var sourceDescriptor)
+            || sourceDescriptor.Kind == ObjectKind.Association)
+        {
+            return false;
+        }
+
+        var link = sourceDescriptor.Links.FirstOrDefault(l => l.Name == traverse.LinkName);
+        if (link is null)
+        {
+            return false;
+        }
+
+        return TryResolveAssociationHopDescriptor(traverse, link, out _);
+    }
 
     // Resolves the far-endpoint target instances referenced by the rows. Each row
     // names a (TargetDescriptor, TargetId); the instance is the one in that
@@ -542,40 +698,6 @@ public sealed class InMemoryExpressionEvaluator
         }
 
         return null;
-    }
-
-    // True when the requested CLR type is the type of a registered association
-    // descriptor (ObjectKind.Association). Drives the DR-4 association hop so a
-    // TraverseLink&lt;TRel&gt; surfaces the filterable edge object, while a
-    // TraverseLink&lt;FarEndpoint&gt; surfaces the far node.
-    //
-    // CLR-ONLY limitation (DR-9, deferred): resolution matches on ClrType, so a
-    // SymbolKey-only (ingested, ClrType == null) association descriptor never
-    // resolves here and its TraverseLink degrades to plain target-endpoint
-    // traversal. Polyglot association traversal (matching by SymbolKey rather
-    // than CLR Type) is tracked under DR-9 and intentionally NOT implemented.
-    //
-    // MULTI-REGISTRATION limitation (strategos #128, deferred): when one CLR
-    // type backs MULTIPLE association descriptors, this returns the FIRST
-    // matching descriptor in _descriptorIndex enumeration order — which may be
-    // the wrong partition for the traversal in flight, surfacing edge objects
-    // from a sibling association. Resolving the correct partition requires
-    // carrying descriptor identity (not CLR Type) through the traversal chain;
-    // that is tracked under strategos #128 (descriptor-identity-through-the-chain)
-    // and intentionally NOT fixed here.
-    private bool TryResolveAssociationDescriptor(Type requestedType, out string associationDescriptorName)
-    {
-        foreach (var descriptor in _descriptorIndex.Values)
-        {
-            if (descriptor.Kind == ObjectKind.Association && descriptor.ClrType == requestedType)
-            {
-                associationDescriptorName = descriptor.Name;
-                return true;
-            }
-        }
-
-        associationDescriptorName = string.Empty;
-        return false;
     }
 
     private List<T> EvaluateInterfaceNarrow<T>(

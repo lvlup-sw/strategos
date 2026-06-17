@@ -62,11 +62,39 @@ public sealed class ObjectSet<T> where T : class
     }
 
     /// <summary>
-    /// Traverses a named link to produce an ObjectSet of the linked type.
+    /// Traverses a named link to produce an ObjectSet of the linked type. No
+    /// explicit target descriptor name is supplied, so
+    /// <see cref="TraverseLinkExpression.TargetDescriptorName"/> is left <c>null</c>
+    /// and the evaluators resolve the hop target from the SOURCE link's declared
+    /// target (DR-10) — never from <c>typeof(TLinked)</c>. Use the
+    /// <see cref="TraverseLink{TLinked}(string, string)"/> overload to name a
+    /// specific registration when the link target is multi-registered (#128).
     /// </summary>
     public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName) where TLinked : class
     {
-        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked));
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
+        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), targetDescriptorName: null);
+        return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
+    }
+
+    /// <summary>
+    /// DR-10: traverses a named link to produce an ObjectSet of the linked type,
+    /// carrying an EXPLICIT ontology descriptor name for the traversal target. This
+    /// mirrors the <see cref="RootExpression"/>(<c>Type objectType, string objectTypeName</c>)
+    /// precedent — where the root carries an explicit descriptor name alongside the
+    /// CLR type — so an instance-anchored traversal dispatches against a specific
+    /// registration. The name is set on
+    /// <see cref="TraverseLinkExpression.TargetDescriptorName"/>, which the
+    /// evaluators CONSUME as the highest-precedence hop-target seam: it names the
+    /// exact target partition authoritatively, so a CLR type backing several
+    /// descriptors routes to the named registration rather than a CLR-first match
+    /// (the #128 keystone). This is the disambiguator for multi-registered targets.
+    /// </summary>
+    public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName, string descriptorName) where TLinked : class
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptorName);
+        var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), descriptorName);
         return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
     }
 

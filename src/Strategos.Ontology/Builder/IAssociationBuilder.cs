@@ -45,24 +45,54 @@ public interface IAssociationBuilder<TRel>
 
     /// <summary>
     /// Declares an edge-attribute property on the association by name and
-    /// CLR type, for callers that prefer the by-name form
-    /// (parity with <see cref="IEdgeBuilder.Property{TProp}"/>).
+    /// CLR type, for callers that prefer the by-name form. This reified
+    /// <c>Association&lt;T&gt;</c> surface (DR-4/DR-5) is the supported home
+    /// for edge attributes — the schema-only edge-property surface was
+    /// removed in DR-5 (#120, closes #114).
     /// </summary>
     IAssociationBuilder<TRel> Property<TProp>(string name);
 }
 
 /// <summary>
 /// The second step of the <see cref="IAssociationBuilder{TRel}.Between{TLeft}"/>
-/// fluent chain: declares the RIGHT endpoint.
+/// fluent chain: declares the RIGHT endpoint, and optionally the LEFT
+/// endpoint's cardinality before doing so.
 /// </summary>
 /// <typeparam name="TRel">The CLR type backing the association object.</typeparam>
 public interface IAssociationEndpointBuilder<TRel>
     where TRel : class
 {
     /// <summary>
+    /// Declares the cardinality of the LEFT endpoint relative to the
+    /// association object (DR-6). Omitting this defaults to
+    /// <see cref="EndpointCardinality.ManyToOne"/>, the only shape that forms
+    /// a valid reified relation; any other value is flagged by <c>AONT210</c>.
+    /// </summary>
+    IAssociationEndpointBuilder<TRel> WithCardinality(EndpointCardinality cardinality);
+
+    /// <summary>
     /// Declares the RIGHT endpoint of the association via a selector onto the
     /// property carrying it.
     /// </summary>
     /// <typeparam name="TRight">The right endpoint's object type (authoring sugar).</typeparam>
-    void And<TRight>(Expression<Func<TRel, TRight>> endpoint);
+    IAssociationRightEndpointBuilder<TRel> And<TRight>(Expression<Func<TRel, TRight>> endpoint);
+}
+
+/// <summary>
+/// The terminal step of the
+/// <see cref="IAssociationBuilder{TRel}.Between{TLeft}"/> chain reached after
+/// the RIGHT endpoint is declared: optionally declares the RIGHT endpoint's
+/// cardinality (DR-6).
+/// </summary>
+/// <typeparam name="TRel">The CLR type backing the association object.</typeparam>
+public interface IAssociationRightEndpointBuilder<TRel>
+    where TRel : class
+{
+    /// <summary>
+    /// Declares the cardinality of the RIGHT endpoint relative to the
+    /// association object (DR-6). Omitting this defaults to
+    /// <see cref="EndpointCardinality.ManyToOne"/>; any other value is flagged
+    /// by <c>AONT210</c>.
+    /// </summary>
+    IAssociationRightEndpointBuilder<TRel> WithCardinality(EndpointCardinality cardinality);
 }

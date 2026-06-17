@@ -460,8 +460,7 @@ public class OntologyGraphVersionTests
             src,
             "b",
             tgt,
-            LinkCardinality.OneToMany,
-            []);
+            LinkCardinality.OneToMany);
         var graphB = Graph(
             domains: [Domain("a", src), Domain("b", tgt)],
             objectTypes: [src, tgt],
@@ -584,12 +583,17 @@ public class OntologyGraphVersionTests
     // OntologyGraphHasher serialization shape has drifted — review the diff
     // before updating.
     //
-    // Regeneration: when intentionally adding a field to the hash, run this test
-    // once with the old constant, capture the new hash from the assertion failure
-    // message, and replace the constant. Confirm the diff matches the intended
-    // hasher change before committing.
+    // Regeneration: when intentionally adding or removing a field from the hash,
+    // run this test once with the old constant, capture the new hash from the
+    // assertion failure message, and replace the constant. Confirm the diff
+    // matches the intended hasher change before committing.
+    //
+    // Last regenerated for DR-5 (#120, closes #114): the |EDGE| framing and the
+    // per-edge-property bytes were removed from WriteLink and the cross-domain
+    // link serialization when the schema-only edge-properties surface was
+    // deleted, so every graph's version hash shifted by design.
     private const string ReferenceFixtureVersion =
-        "2095a57833d35ce0ee1dba1def232c79ab4b960631f2508955936c2b485e26d6";
+        "fbabcc0c9c364db86fa9240005cd6bdee2f90ed50017c703cc904fed1c3b18f8";
 
     [Test]
     public async Task Version_ReferenceFixture_MatchesPinnedConstant()
@@ -647,9 +651,9 @@ public class OntologyGraphVersionTests
         // so the tie-breaker chain is the only thing that fully orders them
         // when consumers register the same logical link with permutations.
         var xdl1 = new ResolvedCrossDomainLink(
-            "linkOne", "domA", alphaA, "domB", gammaB, LinkCardinality.OneToOne, []);
+            "linkOne", "domA", alphaA, "domB", gammaB, LinkCardinality.OneToOne);
         var xdl2 = new ResolvedCrossDomainLink(
-            "linkTwo", "domA", alphaA, "domB", deltaB, LinkCardinality.OneToMany, []);
+            "linkTwo", "domA", alphaA, "domB", deltaB, LinkCardinality.OneToMany);
 
         // Two workflow chains sharing WorkflowName = "Pipeline". Without the
         // tie-breaker on ConsumedType / ProducedType, swapping their order
@@ -719,8 +723,7 @@ public class OntologyGraphVersionTests
             orderType,
             "market-data",
             instrumentType,
-            LinkCardinality.OneToOne,
-            []);
+            LinkCardinality.OneToOne);
 
         var chain = new WorkflowChain("OrderFlow", orderType, instrumentType);
 

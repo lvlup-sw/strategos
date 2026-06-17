@@ -346,58 +346,571 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-2 (Ontology Edge Foundation) implements the relate-store only for the
-    /// in-memory provider. The Npgsql relation-table materialization (with the
-    /// foreign-key constraints that mirror the in-memory provider's eager
-    /// endpoint validation) is a later increment; until then this surface
-    /// throws rather than silently dropping a write.
+    /// DR-7/DR-8 (Ontology Edge Foundation): materializes a pure-link relation
+    /// into the T8 junction table. Endpoints are addressed by their projected
+    /// BUSINESS id (the in-memory relate-store contract), so each endpoint's
+    /// surrogate <c>id uuid</c> is resolved via a <c>data->>'key'</c> subquery
+    /// against its object table. Validation is EAGER: both endpoints are probed
+    /// via <c>SELECT EXISTS</c> BEFORE the insert, so a missing endpoint surfaces
+    /// a typed <see cref="RelationEndpointNotFoundException"/> and no junction row
+    /// is written (mirroring the in-memory provider / DR-8). Idempotency rides
+    /// the T8 <c>UNIQUE(source_id, target_id)</c> via <c>ON CONFLICT DO NOTHING</c>.
+    /// INV-2: raw Npgsql only.
+    /// <para>
+    /// TOCTOU (review L): the two eager <c>SELECT EXISTS</c> probes and the
+    /// <c>INSERT … ON CONFLICT</c> are separate commands on no shared transaction,
+    /// so a concurrent delete of an endpoint between the probe and the insert opens
+    /// a check-to-use window. The typed
+    /// <see cref="ObjectSets.RelationEndpointNotFoundException"/> guarantee is
+    /// therefore BEST-EFFORT under concurrency: a racing delete can turn an
+    /// expected typed error into the insert resolving zero endpoint rows (a silent
+    /// no-op) instead. It is never CORRUPTING — the insert's endpoint-resolving
+    /// subquery plus the junction's foreign keys reject any row whose endpoints no
+    /// longer exist, so a dangling junction row can never be written, and
+    /// <c>ON CONFLICT DO NOTHING</c> keeps re-relates idempotent. Wrapping the
+    /// probe + insert in one transaction (or folding the existence check into the
+    /// insert's <c>RETURNING</c>) would close the window; it is intentionally
+    /// deferred — not restructured here — to keep the change minimal.
+    /// </para>
     /// </remarks>
-    public Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "RelateAsync is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
-            + "materialization is a later increment.");
+    public async Task RelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        var source = ResolveRelateEndpoint(_graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
+
+        // Refuse an undeclared link up front (DR-7): the junction target is derived
+        // from linkName below, so a typo would otherwise fail late with an opaque
+        // "relation does not exist" instead of a typed error.
+        RequireLinkDeclared(_graph, srcDescriptor, linkName);
+
+        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
+        // any row, so a failed relate never leaves a dangling junction row.
+        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+
+        // SELF-LOOP policy (DR-8 parity, t14): relating an instance to itself along
+        // a link whose AllowsSelfLoop is false is REFUSED with the SAME typed error
+        // the in-memory provider raises — never silently written. Checked AFTER
+        // eager endpoint validation so the ordering matches the in-memory
+        // WriteRelationRow guard (a missing endpoint still surfaces first).
+        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
+
+        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        var sql = SqlGenerator.BuildRelateInsertSql(
+            _options.Schema,
+            junctionTableName,
+            source.TableName,
+            source.KeyProperty,
+            target.TableName,
+            target.KeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("srcId", srcId);
+        cmd.Parameters.AddWithValue("tgtId", tgtId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-2 (Ontology Edge Foundation): see <see cref="RelateAsync"/>. Not yet
-    /// implemented by the Npgsql provider.
+    /// DR-7 (Ontology Edge Foundation): removes a pure-link relation from the T8
+    /// junction table. Symmetric with the plain <see cref="RelateAsync"/> write
+    /// key: deletes the single junction row for the endpoint pair resolved from
+    /// business ids. Removing a relation that does not exist deletes zero rows —
+    /// a no-op (no throw). INV-2: raw Npgsql only.
     /// </remarks>
-    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "UnrelateAsync is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-2 relate-store ships on InMemoryObjectSetProvider; the Npgsql relation-table "
-            + "materialization is a later increment.");
+    public async Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+
+        var source = ResolveRelateEndpoint(_graph, srcDescriptor);
+        var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
+
+        // Refuse an undeclared link up front (DR-7), symmetric with RelateAsync:
+        // the junction target is derived from linkName below.
+        RequireLinkDeclared(_graph, srcDescriptor, linkName);
+
+        var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
+        var sql = SqlGenerator.BuildUnrelateDeleteSql(
+            _options.Schema,
+            junctionTableName,
+            source.TableName,
+            source.KeyProperty,
+            target.TableName,
+            target.KeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("srcId", srcId);
+        cmd.Parameters.AddWithValue("tgtId", tgtId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves a descriptor by NAME from the ontology graph (INV-8: identity by
+    /// descriptor name, never <c>typeof</c>), throwing a typed
+    /// <see cref="InvalidOperationException"/> when it is not registered. Shared
+    /// by the relate-endpoint and traversal-hop resolvers so a descriptor name
+    /// denotes the same descriptor in both, with a single lookup and message.
+    /// </summary>
+    private static Descriptors.ObjectTypeDescriptor RequireDescriptor(OntologyGraph graph, string descriptorName)
+    {
+        var descriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, descriptorName, StringComparison.Ordinal));
+        if (descriptor is null)
+        {
+            throw new InvalidOperationException(
+                $"Descriptor '{descriptorName}' is not registered in the ontology graph. "
+                + $"Register it via Object<T>(...) in a DomainOntology.");
+        }
+
+        return descriptor;
+    }
+
+    /// <summary>
+    /// Validates that <paramref name="linkName"/> is a link DECLARED on the source
+    /// descriptor BEFORE the plain relate/unrelate path derives a physical junction
+    /// target from it (DR-7). An undeclared link otherwise fails LATE — the
+    /// junction name <see cref="SqlGenerator.JunctionTableName"/> derives was never
+    /// provisioned, so Postgres raises an opaque "relation does not exist". Refusing
+    /// here turns that into a deterministic typed <see cref="InvalidOperationException"/>,
+    /// matching the graph-first "refuse, don't degrade" posture the traversal hop
+    /// resolver already takes. INV-8: resolved by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    /// <remarks>
+    /// A null graph or an unknown source descriptor is left to
+    /// <see cref="ResolveRelateEndpoint"/>, which raises the canonical typed errors
+    /// for those cases (it runs first on every relate/unrelate); this guard only adds
+    /// the "descriptor exists but the link is not declared on it" check. The
+    /// attributed (association-object) overloads route through
+    /// <see cref="ResolveAssociationRelate"/> instead — which validates the src/tgt
+    /// pairing against the association's declared endpoints — so the link name there
+    /// is not a physical-routing input and is not re-validated here.
+    /// </remarks>
+    internal static void RequireLinkDeclared(OntologyGraph? graph, string srcDescriptor, string linkName)
+    {
+        var descriptor = graph?.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, srcDescriptor, StringComparison.Ordinal));
+        if (descriptor is null)
+        {
+            return;
+        }
+
+        var declared = descriptor.Links.Any(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (declared)
+        {
+            return;
+        }
+
+        var available = descriptor.Links.Count > 0
+            ? string.Join(", ", descriptor.Links.Select(l => l.Name))
+            : "(none)";
+        throw new InvalidOperationException(
+            $"Link '{linkName}' is not declared on source descriptor '{srcDescriptor}'. "
+            + $"Relate/unrelate derives the physical junction target from the link name, so an "
+            + $"undeclared link fails late at SQL time. Available links: {available}. "
+            + $"Declare it via HasMany/HasOne/ManyToMany in the DomainOntology.");
+    }
+
+    /// <summary>
+    /// Resolves a relate endpoint descriptor name to the physical
+    /// <see cref="RelateEndpoint.TableName"/> (snake_cased) and the
+    /// <see cref="RelateEndpoint.KeyProperty"/> name (the <c>data jsonb</c> field
+    /// holding the endpoint's business id) from the ontology graph. Relate is a
+    /// graph-aware operation — it needs the key property names to build the
+    /// <c>data->>'key'</c> subqueries — so a null graph or an unknown/keyless
+    /// descriptor throws <see cref="InvalidOperationException"/> rather than
+    /// emitting wrong SQL. INV-8: identity by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior and
+    /// the resulting SQL without a live <see cref="NpgsqlDataSource"/>, matching
+    /// the seam used by the read/write table-name resolvers.
+    /// </remarks>
+    internal static RelateEndpoint ResolveRelateEndpoint(OntologyGraph? graph, string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+
+        if (graph is null)
+        {
+            throw new InvalidOperationException(
+                $"RelateAsync/UnrelateAsync require an ontology graph to resolve endpoint "
+                + $"descriptor '{descriptorName}' (table name and key property). Construct "
+                + $"PgVectorObjectSetProvider with the registered OntologyGraph.");
+        }
+
+        var descriptor = RequireDescriptor(graph, descriptorName);
+
+        if (descriptor.KeyProperty is null)
+        {
+            throw new InvalidOperationException(
+                $"Relate endpoint descriptor '{descriptorName}' declares no key property; "
+                + $"a key is required to resolve the endpoint's stored row by business id. "
+                + $"Declare one via obj.Key(...) in the DomainOntology.");
+        }
+
+        return new RelateEndpoint(
+            TypeMapper.ToSnakeCase(descriptorName),
+            descriptor.KeyProperty.Name);
+    }
+
+    /// <summary>
+    /// Eager endpoint-existence probe (DR-8). Runs the
+    /// <see cref="SqlGenerator.BuildEndpointExistsSql"/> <c>SELECT EXISTS</c> and
+    /// throws <see cref="RelationEndpointNotFoundException"/> when no stored row
+    /// under <paramref name="descriptorName"/> carries the business id
+    /// <paramref name="id"/>. Surfaces the SAME typed error the in-memory
+    /// provider raises, so the caller error is identical across backends.
+    /// </summary>
+    private async Task ValidateEndpointExistsAsync(
+        string descriptorName,
+        RelateEndpoint endpoint,
+        string id,
+        string parameterName,
+        CancellationToken ct)
+    {
+        var sql = SqlGenerator.BuildEndpointExistsSql(
+            _options.Schema, endpoint.TableName, endpoint.KeyProperty, parameterName);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(parameterName.TrimStart('@'), id);
+        var exists = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as bool?;
+
+        if (exists != true)
+        {
+            throw new RelationEndpointNotFoundException(descriptorName, id);
+        }
+    }
+
+    /// <summary>
+    /// Self-loop policy (DR-8 parity, t14): throws
+    /// <see cref="SelfLoopNotAllowedException"/> when the relate connects an
+    /// instance to ITSELF — same (descriptor, id) on both endpoints — along a link
+    /// whose <see cref="Descriptors.LinkDescriptor.AllowsSelfLoop"/> is
+    /// <c>false</c>. Mirrors the in-memory provider's
+    /// <c>WriteRelationRow</c> self-loop guard so a disallowed self-loop surfaces
+    /// the SAME typed error across backends rather than a silent junction row.
+    /// </summary>
+    private void ThrowIfDisallowedSelfLoop(
+        string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId)
+    {
+        if (string.Equals(srcDescriptor, tgtDescriptor, StringComparison.Ordinal)
+            && string.Equals(srcId, tgtId, StringComparison.Ordinal)
+            && !SelfLoopAllowed(srcDescriptor, linkName))
+        {
+            throw new SelfLoopNotAllowedException(srcDescriptor, srcId, linkName);
+        }
+    }
+
+    /// <summary>
+    /// Resolves whether the named link on <paramref name="srcDescriptor"/> permits
+    /// self-loops (DR-8). Defaults to <c>false</c> — the safe posture — when no
+    /// graph is present, the source descriptor is unknown, or the link is not
+    /// declared on it. Mirrors the in-memory provider's <c>SelfLoopAllowed</c>.
+    /// </summary>
+    private bool SelfLoopAllowed(string srcDescriptor, string linkName)
+    {
+        if (_graph is null)
+        {
+            return false;
+        }
+
+        var descriptor = _graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, srcDescriptor, StringComparison.Ordinal));
+        var link = descriptor?.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        return link?.AllowsSelfLoop ?? false;
+    }
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-4 (Ontology Edge Foundation): attributed unrelate (removing the
-    /// relation row and its orphaned association object) ships on
-    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization is the same
-    /// later increment as <see cref="RelateAsync"/>; until then this surface
-    /// throws rather than silently dropping a write.
+    /// DR-4/DR-8 (Ontology Edge Foundation, t11): removes an ATTRIBUTED relation
+    /// from its T8 association-OBJECT table. Symmetric with the attributed
+    /// <see cref="RelateAsync{TRel}(string, string, string, string, string, string, TRel, CancellationToken)"/>:
+    /// deletes the single association row keyed on the association's BUSINESS id
+    /// (its <c>data->>'key'</c> field). Removing an association that does not
+    /// exist deletes zero rows — a no-op (no throw), mirroring the in-memory
+    /// store's attributed-unrelate posture. INV-2: raw Npgsql only.
     /// </remarks>
-    public Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "Attributed UnrelateAsync is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-4 association relate-store ships on InMemoryObjectSetProvider; the Npgsql "
-            + "association-table materialization is a later increment.");
+    public async Task UnrelateAsync(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, string associationId, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(associationId);
+
+        // The association is resolved by NAME (INV-8) to its table + key
+        // property; the endpoint descriptors are resolved as well so a wrong
+        // (src, tgt) pairing is refused symmetrically with the relate path.
+        var plan = ResolveAssociationRelate(_graph, associationDescriptor, srcDescriptor, tgtDescriptor);
+
+        var sql = SqlGenerator.BuildAssociationUnrelateDeleteSql(
+            _options.Schema,
+            plan.AssociationTable,
+            plan.AssociationKeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("associationId", associationId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     /// <remarks>
-    /// DR-4 (Ontology Edge Foundation): attributed relate (storing a reified
-    /// association object alongside the relation row) ships on
-    /// <c>InMemoryObjectSetProvider</c>. The Npgsql materialization — an
-    /// association object table whose endpoint columns are foreign keys —
-    /// is the same later increment as <see cref="RelateAsync"/>; until then this
-    /// surface throws rather than silently dropping a write.
+    /// DR-4/DR-8 (Ontology Edge Foundation, t11): materializes an ATTRIBUTED
+    /// relation into its T8 association-OBJECT table. The association is a reified
+    /// object — it gets its own <c>id uuid</c>, its serialized attributes as
+    /// <c>data jsonb</c>, and one <c>{role}_id</c> endpoint FK per endpoint
+    /// resolved from each endpoint's BUSINESS id via a <c>data->>'key'</c>
+    /// subquery against its object table (mirroring the pure-link junction relate
+    /// / DR-7). Validation is EAGER (DR-8): both endpoints are probed via
+    /// <c>SELECT EXISTS</c> BEFORE the insert, so a missing endpoint surfaces a
+    /// typed <see cref="RelationEndpointNotFoundException"/> and no association
+    /// row is written. The endpoint→role-column mapping comes from the
+    /// association descriptor's endpoints (INV-8: identity by descriptor name,
+    /// never <c>typeof</c>). INV-2: raw Npgsql only.
     /// </remarks>
-    public Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)
-        where TRel : class =>
-        throw new NotSupportedException(
-            "Attributed RelateAsync<TRel> is not yet implemented by PgVectorObjectSetProvider. "
-            + "The DR-4 association relate-store ships on InMemoryObjectSetProvider; the Npgsql "
-            + "association-table materialization is a later increment.");
+    public async Task RelateAsync<TRel>(string srcDescriptor, string srcId, string linkName, string tgtDescriptor, string tgtId, string associationDescriptor, TRel association, CancellationToken ct = default)
+        where TRel : class
+    {
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(srcId);
+        ArgumentNullException.ThrowIfNull(linkName);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtId);
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(association);
+
+        // Resolve the association's endpoints to their role-named FK columns +
+        // physical tables + key properties (INV-8: by descriptor name). A
+        // graph-less provider, an unknown association, or a src/tgt pairing that
+        // does not match the association's declared endpoints is refused here.
+        var plan = ResolveAssociationRelate(_graph, associationDescriptor, srcDescriptor, tgtDescriptor);
+
+        var source = new RelateEndpoint(plan.SourceTable, plan.SourceKeyProperty);
+        var target = new RelateEndpoint(plan.TargetTable, plan.TargetKeyProperty);
+
+        // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
+        // the association row, so a failed attributed relate never leaves a
+        // dangling association (mirrors the plain relate posture / the in-memory
+        // provider).
+        await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
+        await ValidateEndpointExistsAsync(tgtDescriptor, target, tgtId, "@tgtId", ct).ConfigureAwait(false);
+
+        // SELF-LOOP policy (DR-8 parity, t14): an attributed relate routes through
+        // the SAME self-loop guard as the plain path (the in-memory provider
+        // enforces both via WriteRelationRow), so a disallowed (x, link, x) is
+        // refused with the same typed error before any association row is written.
+        ThrowIfDisallowedSelfLoop(srcDescriptor, srcId, linkName, tgtDescriptor, tgtId);
+
+        var sql = SqlGenerator.BuildAssociationRelateInsertSql(
+            _options.Schema,
+            plan.AssociationTable,
+            plan.SourceColumn,
+            plan.SourceTable,
+            plan.SourceKeyProperty,
+            plan.TargetColumn,
+            plan.TargetTable,
+            plan.TargetKeyProperty);
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
+        cmd.Parameters.AddWithValue("data", JsonSerializer.Serialize(association));
+        cmd.Parameters.AddWithValue("srcId", srcId);
+        cmd.Parameters.AddWithValue("tgtId", tgtId);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves an ATTRIBUTED relate (DR-4, t11) from the ontology graph into
+    /// the physical operands for the association-object INSERT/DELETE: the
+    /// association table + key property, and — for each of the caller's
+    /// <paramref name="srcDescriptor"/> / <paramref name="tgtDescriptor"/>
+    /// endpoints — the role-named <c>{role}_id</c> FK column, the endpoint object
+    /// table, and the endpoint key property. The output feeds
+    /// <see cref="SqlGenerator.BuildAssociationRelateInsertSql"/> /
+    /// <see cref="SqlGenerator.BuildAssociationUnrelateDeleteSql"/> unchanged.
+    /// </summary>
+    /// <param name="graph">
+    /// The ontology graph. Attributed relate is a graph-aware operation — it
+    /// needs the association's declared endpoints (role → descriptor) and the
+    /// endpoints' key properties — so a null graph throws
+    /// <see cref="InvalidOperationException"/> rather than emitting wrong SQL.
+    /// </param>
+    /// <param name="associationDescriptor">The reified association descriptor name.</param>
+    /// <param name="srcDescriptor">The SOURCE endpoint descriptor name.</param>
+    /// <param name="tgtDescriptor">The TARGET endpoint descriptor name.</param>
+    /// <remarks>
+    /// INV-8: the association and both endpoints are resolved by descriptor NAME,
+    /// never <c>typeof</c>. The caller's <paramref name="srcDescriptor"/> /
+    /// <paramref name="tgtDescriptor"/> are matched to the association's two
+    /// declared endpoints by their <see cref="Descriptors.AssociationEndpoint.DescriptorName"/>,
+    /// so the source surrogate id lands in the source endpoint's
+    /// <c>{role}_id</c> column and likewise for the target. A src/tgt pairing
+    /// that does not map onto the association's two DISTINCT endpoints — an
+    /// unknown endpoint, or both binding to the same endpoint — is refused with a
+    /// typed <see cref="InvalidOperationException"/> rather than mis-routed.
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior and
+    /// the resulting SQL without a live <see cref="NpgsqlDataSource"/>, matching
+    /// the seam used by the relate/traversal resolvers.
+    /// </remarks>
+    internal static AssociationRelatePlan ResolveAssociationRelate(
+        OntologyGraph? graph,
+        string associationDescriptor,
+        string srcDescriptor,
+        string tgtDescriptor)
+    {
+        ArgumentNullException.ThrowIfNull(associationDescriptor);
+        ArgumentNullException.ThrowIfNull(srcDescriptor);
+        ArgumentNullException.ThrowIfNull(tgtDescriptor);
+
+        if (graph is null)
+        {
+            throw new InvalidOperationException(
+                $"Attributed RelateAsync/UnrelateAsync require an ontology graph to resolve "
+                + $"association '{associationDescriptor}' (table, key property, and endpoint "
+                + $"role columns). Construct PgVectorObjectSetProvider with the registered "
+                + $"OntologyGraph.");
+        }
+
+        var association = RequireDescriptor(graph, associationDescriptor);
+
+        if (association.Kind != Descriptors.ObjectKind.Association)
+        {
+            throw new InvalidOperationException(
+                $"Descriptor '{associationDescriptor}' has Kind '{association.Kind}', not "
+                + $"'{Descriptors.ObjectKind.Association}'; attributed relate requires a reified "
+                + $"association descriptor (declare it via Association<T>(...) in a DomainOntology).");
+        }
+
+        if (association.KeyProperty is null)
+        {
+            throw new InvalidOperationException(
+                $"Association descriptor '{associationDescriptor}' declares no key property; a key "
+                + $"is required to resolve the association's stored row by business id on unrelate. "
+                + $"Declare one via assoc.Key(...) in the DomainOntology.");
+        }
+
+        if (association.AssociationEndpoints.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Association '{associationDescriptor}' declares {association.AssociationEndpoints.Count} "
+                + $"endpoint(s); attributed relate requires exactly two (DR-4).");
+        }
+
+        // Map the caller's src/tgt descriptor names onto the association's two
+        // DECLARED endpoints by descriptor name (INV-8). They must bind to the
+        // two DISTINCT endpoints — so the source surrogate id lands in the
+        // source's {role}_id column and the target's in the other.
+        var (sourceEndpoint, targetEndpoint) = MatchEndpointsToDescriptors(
+            associationDescriptor, association.AssociationEndpoints, srcDescriptor, tgtDescriptor);
+
+        var source = ResolveRelateEndpoint(graph, sourceEndpoint.DescriptorName);
+        var target = ResolveRelateEndpoint(graph, targetEndpoint.DescriptorName);
+
+        return new AssociationRelatePlan
+        {
+            AssociationTable = TypeMapper.ToSnakeCase(associationDescriptor),
+            AssociationKeyProperty = association.KeyProperty.Name,
+            SourceColumn = $"{TypeMapper.ToSnakeCase(sourceEndpoint.Role)}_id",
+            SourceTable = source.TableName,
+            SourceKeyProperty = source.KeyProperty,
+            TargetColumn = $"{TypeMapper.ToSnakeCase(targetEndpoint.Role)}_id",
+            TargetTable = target.TableName,
+            TargetKeyProperty = target.KeyProperty,
+        };
+    }
+
+    /// <summary>
+    /// Pairs the caller's <paramref name="srcDescriptor"/> /
+    /// <paramref name="tgtDescriptor"/> with the association's two declared
+    /// endpoints by <see cref="Descriptors.AssociationEndpoint.DescriptorName"/>,
+    /// requiring them to bind to the two DISTINCT endpoints. Refuses with a typed
+    /// <see cref="InvalidOperationException"/> when a descriptor names no endpoint
+    /// or when both descriptors bind to the same one — the role-column routing is
+    /// only well-defined when source and target each occupy a distinct endpoint.
+    /// </summary>
+    private static (Descriptors.AssociationEndpoint Source, Descriptors.AssociationEndpoint Target)
+        MatchEndpointsToDescriptors(
+            string associationDescriptor,
+            IReadOnlyList<Descriptors.AssociationEndpoint> endpoints,
+            string srcDescriptor,
+            string tgtDescriptor)
+    {
+        var first = endpoints[0];
+        var second = endpoints[1];
+
+        // Source binds to the endpoint whose descriptor matches srcDescriptor;
+        // target binds to the OTHER endpoint, which must match tgtDescriptor.
+        if (string.Equals(first.DescriptorName, srcDescriptor, StringComparison.Ordinal)
+            && string.Equals(second.DescriptorName, tgtDescriptor, StringComparison.Ordinal))
+        {
+            return (first, second);
+        }
+
+        if (string.Equals(second.DescriptorName, srcDescriptor, StringComparison.Ordinal)
+            && string.Equals(first.DescriptorName, tgtDescriptor, StringComparison.Ordinal))
+        {
+            return (second, first);
+        }
+
+        throw new InvalidOperationException(
+            $"Attributed relate endpoints (source '{srcDescriptor}', target '{tgtDescriptor}') do not "
+            + $"map onto the two distinct declared endpoints of association '{associationDescriptor}' "
+            + $"('{first.DescriptorName}' as role '{first.Role}', '{second.DescriptorName}' as role "
+            + $"'{second.Role}'). Source and target must each occupy a distinct endpoint so each "
+            + $"surrogate id routes to its own role column (INV-8: identity by descriptor name).");
+    }
+
+    /// <summary>
+    /// A resolved attributed-relate plan (DR-4, t11): the physical operands for
+    /// the association-object INSERT/DELETE produced by
+    /// <see cref="ResolveAssociationRelate(OntologyGraph?, string, string, string)"/>
+    /// and fed unchanged into
+    /// <see cref="SqlGenerator.BuildAssociationRelateInsertSql"/> /
+    /// <see cref="SqlGenerator.BuildAssociationUnrelateDeleteSql"/>. New sealed,
+    /// <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    internal sealed record AssociationRelatePlan
+    {
+        /// <summary>The association-object table (snake_cased).</summary>
+        public required string AssociationTable { get; init; }
+
+        /// <summary>
+        /// The association descriptor's key property — the <c>data jsonb</c>
+        /// field holding the association's business id (used by unrelate).
+        /// </summary>
+        public required string AssociationKeyProperty { get; init; }
+
+        /// <summary>The SOURCE endpoint's role-named <c>{role}_id</c> FK column.</summary>
+        public required string SourceColumn { get; init; }
+
+        /// <summary>The SOURCE endpoint object table (snake_cased).</summary>
+        public required string SourceTable { get; init; }
+
+        /// <summary>The SOURCE endpoint descriptor's key property.</summary>
+        public required string SourceKeyProperty { get; init; }
+
+        /// <summary>The TARGET endpoint's role-named <c>{role}_id</c> FK column.</summary>
+        public required string TargetColumn { get; init; }
+
+        /// <summary>The TARGET endpoint object table (snake_cased).</summary>
+        public required string TargetTable { get; init; }
+
+        /// <summary>The TARGET endpoint descriptor's key property.</summary>
+        public required string TargetKeyProperty { get; init; }
+    }
 
     /// <summary>
     /// Core single-item write helper. Takes a pre-resolved <paramref name="tableName"/>
@@ -552,4 +1065,194 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
             cmd.Parameters.AddWithValue(p.Name.TrimStart('@'), p.Value);
         }
     }
+
+    /// <summary>
+    /// A resolved relate endpoint: the physical snake_cased
+    /// <see cref="TableName"/> of the endpoint's object table and the
+    /// <see cref="KeyProperty"/> name (the <c>data jsonb</c> field holding the
+    /// endpoint's business id), produced by
+    /// <see cref="ResolveRelateEndpoint(OntologyGraph?, string)"/> and fed
+    /// unchanged into the relate/unrelate SQL builders.
+    /// </summary>
+    /// <param name="TableName">The endpoint object table name (snake_cased).</param>
+    /// <param name="KeyProperty">The descriptor's key property name.</param>
+    internal sealed record RelateEndpoint(string TableName, string KeyProperty);
+
+    /// <summary>
+    /// Resolves an instance-anchored <c>TraverseLink</c> hop (DR-7/DR-10) from
+    /// the ontology graph into the physical join operands: the SOURCE endpoint
+    /// table + its key property, the T8 JUNCTION table for <c>(source, link)</c>,
+    /// and the TARGET endpoint table + its resolved descriptor name. The output
+    /// feeds <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/> unchanged.
+    /// </summary>
+    /// <param name="graph">
+    /// The ontology graph. Traversal is a graph-aware operation — it needs the
+    /// link's declared target and the descriptors' key properties — so a null
+    /// graph throws <see cref="InvalidOperationException"/> rather than emitting
+    /// wrong SQL.
+    /// </param>
+    /// <param name="sourceDescriptorName">
+    /// The IMMEDIATE source descriptor name the traversal is anchored at.
+    /// </param>
+    /// <param name="linkName">The traversed link's descriptor name.</param>
+    /// <param name="targetDescriptorOverride">
+    /// An OPTIONAL explicit target descriptor name (the caller's
+    /// <c>.TraverseLink(link, descriptorName)</c> selection). When supplied it is
+    /// AUTHORITATIVE — it names the exact target partition, so no CLR Type
+    /// participates in resolution. Mirrors
+    /// <see cref="ObjectSets.TraverseLinkExpression.TargetDescriptorName"/>.
+    /// </param>
+    /// <remarks>
+    /// DR-10 keystone (INV-8): the hop's TARGET descriptor is resolved from the
+    /// GRAPH via the source link, NEVER from <c>typeof(TLinked)</c>. Precedence
+    /// mirrors T2's
+    /// <c>InMemoryExpressionEvaluator.ResolveHopTargetDescriptor</c>:
+    /// <list type="number">
+    /// <item>an explicit <paramref name="targetDescriptorOverride"/>;</item>
+    /// <item>otherwise the source link's <c>TargetTypeName</c> (the canonical
+    /// hand-authored target name);</item>
+    /// <item>falling back to the descriptor named by the link's
+    /// <c>TargetSymbolKey</c> (the polyglot, SymbolKey-only target).</item>
+    /// </list>
+    /// Adopting T2's posture, an UNRESOLVED target — no override, no
+    /// graph-resolvable link target — is REFUSED with a typed
+    /// <see cref="InvalidOperationException"/> rather than mis-routed to a
+    /// first-CLR-match partition. INV-8: identity by descriptor name, never
+    /// <c>typeof</c>.
+    /// </remarks>
+    internal static TraversalHop ResolveTraversalHop(
+        OntologyGraph? graph,
+        string sourceDescriptorName,
+        string linkName,
+        string? targetDescriptorOverride)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDescriptorName);
+        ArgumentNullException.ThrowIfNull(linkName);
+
+        if (graph is null)
+        {
+            throw new InvalidOperationException(
+                $"Instance-anchored TraverseLink requires an ontology graph to resolve the "
+                + $"hop from source '{sourceDescriptorName}' along link '{linkName}' (source/target "
+                + $"tables and key properties). Construct PgVectorObjectSetProvider with the "
+                + $"registered OntologyGraph.");
+        }
+
+        // Reuse the relate-path endpoint resolution for the SOURCE (table + key
+        // property), then resolve the source descriptor once more to read its
+        // links. Both share the same graph-by-name lookup, so they agree on which
+        // descriptor a name denotes (INV-8).
+        var source = ResolveRelateEndpoint(graph, sourceDescriptorName);
+        var sourceDescriptor = RequireDescriptor(graph, sourceDescriptorName);
+
+        var link = sourceDescriptor.Links.FirstOrDefault(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (link is null)
+        {
+            var available = string.Join(", ", sourceDescriptor.Links.Select(l => l.Name));
+            throw new InvalidOperationException(
+                $"Link '{linkName}' is not declared on source descriptor '{sourceDescriptorName}'. "
+                + $"Available links: {available}. Declare it via HasOne/HasMany/ManyToMany in the "
+                + $"DomainOntology.");
+        }
+
+        var targetDescriptorName = ResolveHopTargetDescriptorName(
+            graph, link, targetDescriptorOverride);
+        var target = ResolveRelateEndpoint(graph, targetDescriptorName);
+
+        var junction = SqlGenerator.JunctionTableName(source.TableName, linkName);
+
+        return new TraversalHop(
+            source.TableName,
+            source.KeyProperty,
+            junction,
+            target.TableName,
+            targetDescriptorName);
+    }
+
+    /// <summary>
+    /// Resolves the hop's TARGET descriptor NAME from the ontology graph (DR-10),
+    /// mirroring T2's
+    /// <c>InMemoryExpressionEvaluator.ResolveHopTargetDescriptor</c> precedence:
+    /// explicit override → link <c>TargetTypeName</c> → link
+    /// <c>TargetSymbolKey</c> reverse index. Never consults
+    /// <c>typeof(TLinked)</c> (INV-8). Refuses with a typed error when no
+    /// graph-registered descriptor backs the resolved name — adopting T2's
+    /// posture of failing rather than mis-routing under ambiguity.
+    /// </summary>
+    private static string ResolveHopTargetDescriptorName(
+        OntologyGraph graph,
+        Descriptors.LinkDescriptor link,
+        string? targetDescriptorOverride)
+    {
+        // Seam 1: an explicit override is authoritative.
+        if (targetDescriptorOverride is { } explicitName)
+        {
+            if (!graph.ObjectTypes.Any(o => string.Equals(o.Name, explicitName, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(
+                    $"Explicit traversal target descriptor '{explicitName}' is not registered in "
+                    + $"the ontology graph. Register it via Object<T>(...) in a DomainOntology.");
+            }
+
+            return explicitName;
+        }
+
+        // Seam 2: the link's canonical hand-authored target name.
+        if (!string.IsNullOrEmpty(link.TargetTypeName)
+            && graph.ObjectTypes.Any(o => string.Equals(o.Name, link.TargetTypeName, StringComparison.Ordinal)))
+        {
+            return link.TargetTypeName;
+        }
+
+        // Seam 3: the polyglot SymbolKey-only target, resolved via the graph's
+        // SymbolKey -> descriptor-name reverse mapping (no CLR Type, INV-8).
+        if (link.TargetSymbolKey is { } symbolKey)
+        {
+            var bySymbol = graph.ObjectTypes.FirstOrDefault(
+                o => string.Equals(o.SymbolKey, symbolKey, StringComparison.Ordinal));
+            if (bySymbol is not null)
+            {
+                return bySymbol.Name;
+            }
+        }
+
+        // T2 posture: refuse rather than mis-route to a first-CLR-match partition.
+        throw new InvalidOperationException(
+            $"Traversal link '{link.Name}' has no graph-resolvable target descriptor "
+            + $"(TargetTypeName '{link.TargetTypeName}', TargetSymbolKey '{link.TargetSymbolKey}'). "
+            + $"Supply an explicit target descriptor name to disambiguate, or register the link's "
+            + $"declared target. The hop target is NEVER inferred from the CLR type (INV-8).");
+    }
+
+    /// <summary>
+    /// A resolved instance-anchored traversal hop (DR-7/DR-10): the physical join
+    /// operands produced by
+    /// <see cref="ResolveTraversalHop(OntologyGraph?, string, string, string?)"/>
+    /// and fed unchanged into
+    /// <see cref="SqlGenerator.BuildInstanceAnchoredTraversalSql"/>. New sealed,
+    /// <c>init</c>-only positional record (INV-6/INV-7).
+    /// </summary>
+    /// <param name="SourceTable">The source endpoint object table (snake_cased).</param>
+    /// <param name="SourceKeyProperty">
+    /// The source descriptor's key property — the <c>data jsonb</c> field holding
+    /// the anchor instance's business id.
+    /// </param>
+    /// <param name="JunctionTable">
+    /// The T8 junction table for <c>(source, link)</c>.
+    /// </param>
+    /// <param name="TargetTable">
+    /// The TARGET endpoint object table (snake_cased) — derived from the
+    /// GRAPH-resolved <see cref="TargetDescriptorName"/>, never
+    /// <c>typeof(TLinked)</c> (INV-8).
+    /// </param>
+    /// <param name="TargetDescriptorName">
+    /// The graph-resolved hop-target descriptor name (DR-10).
+    /// </param>
+    internal sealed record TraversalHop(
+        string SourceTable,
+        string SourceKeyProperty,
+        string JunctionTable,
+        string TargetTable,
+        string TargetDescriptorName);
 }

@@ -383,4 +383,50 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    // --- Reified-association endpoint cardinality (AONT210) — DR-6 (#121) ---
+
+    public static readonly DiagnosticDescriptor AssociationEndpointCardinalityInvalid = new(
+        OntologyDiagnosticIds.AssociationEndpointCardinalityInvalid,
+        "Association endpoint cardinality cannot form a valid reified relation",
+        "Association '{0}' declares endpoint '{1}' with cardinality '{2}'; a reified relation requires both endpoints to be ManyToOne (many association rows folding into one endpoint object)",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+    // --- Edge-property removal migration (AONT209) — DR-5 (#120, closes #114) ---
+
+    public static readonly DiagnosticDescriptor EdgePropertyAuthoringRemoved = new(
+        OntologyDiagnosticIds.EdgePropertyAuthoringRemoved,
+        "Schema-only edge-property authoring has been removed (DR-5)",
+        "Edge-property authoring via '{0}' was removed (DR-5, design 2026-06-03-ontology-edge-foundation). "
+            + "Edge attributes now live on a reified Association<T> declared with builder.Association<T>(...); "
+            + "model the relationship as an Association<T> object instead of attaching properties to a link.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The schema-only edge-properties surface (IEdgeBuilder, the "
+            + "ManyToMany<T>(name, edgeConfig) overload, ICrossDomainLinkBuilder.WithEdge, and "
+            + "IExtensionPointBuilder.RequiresEdgeProperty) was removed in DR-5 (#120, closes #114). "
+            + "Use the reified Association<T> authoring surface (builder.Association<T>) to carry edge attributes.");
+
+    // --- Ambiguous-traversal-without-override guard (AONT211) — DR-10/DR-6 (#128, #121) ---
+
+    public static readonly DiagnosticDescriptor AmbiguousTraversalWithoutDescriptor = new(
+        OntologyDiagnosticIds.AmbiguousTraversalWithoutDescriptor,
+        "Ambiguous link traversal to a multi-registered target without a descriptor override",
+        "TraverseLink<{0}>(\"{1}\") targets type '{0}' which is registered under multiple descriptor "
+            + "names; the traversal is ambiguous. Supply the descriptorName override "
+            + "(TraverseLink<{0}>(\"{1}\", \"<descriptor>\")) to disambiguate which registration the hop resolves.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A CLR type registered under two or more descriptor names (multi-registration, "
+            + "mirroring AONT041) cannot be the unambiguous target of a one-arg "
+            + "TraverseLink<TLinked>(\"role\") hop. DR-10 (#128) adds the two-arg "
+            + "TraverseLink<TLinked>(\"role\", \"descriptor\") override to carry an explicit target "
+            + "descriptor name; AONT211 is the compile-time guard (INV-5: earliest-tier) that requires "
+            + "it whenever the target is multi-registered.",
+        // Reported from a CompilationEndAction (the multi-registration set and the
+        // traversal sites are only correlated once the whole compilation is walked).
+        customTags: WellKnownDiagnosticTags.CompilationEnd);
 }

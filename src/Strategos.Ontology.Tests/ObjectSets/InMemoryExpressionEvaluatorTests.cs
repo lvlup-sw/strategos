@@ -83,6 +83,48 @@ public class InMemoryExpressionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
+    // DR-10 / #128 — polyglot SymbolKey identity (INV-8)
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task Constructor_DuplicateSymbolKeyAcrossDescriptors_Throws()
+    {
+        // INV-8: a SymbolKey is a first-class polyglot identity. Two descriptors
+        // sharing one SymbolKey would make the TargetSymbolKey reverse index
+        // ambiguous and misroute a SymbolKey-only traversal to whichever
+        // descriptor was processed last. The evaluator must refuse the graph
+        // loudly — symmetric with the globally-unique descriptor-name check —
+        // rather than silently last-writer-win.
+        const string sharedSymbolKey = "scip-typescript ./mod#User";
+
+        var userDescriptor = new ObjectTypeDescriptor
+        {
+            Name = "User",
+            DomainName = "polyglot",
+            ClrType = null,
+            SymbolKey = sharedSymbolKey,
+        };
+
+        var accountDescriptor = new ObjectTypeDescriptor
+        {
+            Name = "Account",
+            DomainName = "polyglot",
+            ClrType = null,
+            SymbolKey = sharedSymbolKey,
+        };
+
+        var graph = new OntologyGraph(
+            domains: Array.Empty<DomainDescriptor>(),
+            objectTypes: new[] { userDescriptor, accountDescriptor },
+            interfaces: Array.Empty<InterfaceDescriptor>(),
+            crossDomainLinks: Array.Empty<ResolvedCrossDomainLink>(),
+            workflowChains: Array.Empty<WorkflowChain>());
+
+        await Assert.That(() => new InMemoryExpressionEvaluator(graph))
+            .Throws<ArgumentException>();
+    }
+
+    // -----------------------------------------------------------------------
     // Task 7 tests
     // -----------------------------------------------------------------------
 

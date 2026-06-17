@@ -8,7 +8,6 @@ internal sealed class CrossDomainLinkBuilder(string name) : ICrossDomainLinkBuil
     private string _targetDomain = string.Empty;
     private string _targetTypeName = string.Empty;
     private LinkCardinality _cardinality = LinkCardinality.OneToOne;
-    private IReadOnlyList<PropertyDescriptor> _edgeProperties = [];
     private string? _description;
 
     public ICrossDomainLinkBuilder From<T>()
@@ -30,14 +29,6 @@ internal sealed class CrossDomainLinkBuilder(string name) : ICrossDomainLinkBuil
         return this;
     }
 
-    public ICrossDomainLinkBuilder WithEdge(Action<IEdgeBuilder> configure)
-    {
-        var edgeBuilder = new EdgeBuilder();
-        configure(edgeBuilder);
-        _edgeProperties = edgeBuilder.Build();
-        return this;
-    }
-
     public ICrossDomainLinkBuilder Description(string description)
     {
         _description = description;
@@ -47,7 +38,6 @@ internal sealed class CrossDomainLinkBuilder(string name) : ICrossDomainLinkBuil
     public CrossDomainLinkDescriptor Build() =>
         new(name, _sourceType, _targetDomain, _targetTypeName, _cardinality)
         {
-            EdgeProperties = _edgeProperties,
             Description = _description,
         };
 }

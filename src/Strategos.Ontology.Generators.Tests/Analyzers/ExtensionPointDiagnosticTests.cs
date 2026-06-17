@@ -127,72 +127,10 @@ public class TestDomain : DomainOntology
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
-    [Test]
-    public async Task AONT033_ExtensionPointEdgeMissing_ReportsError()
-    {
-        var source = @"
-using Strategos.Ontology;
-using Strategos.Ontology.Builder;
-
-public class TestModel { public System.Guid Id { get; set; } }
-
-public class TestDomain : DomainOntology
-{
-    public override string DomainName => ""test"";
-    protected override void Define(IOntologyBuilder builder)
-    {
-        builder.Object<TestModel>(obj =>
-        {
-            obj.Key(p => p.Id);
-            obj.AcceptsExternalLinks(""inbound"", ep =>
-            {
-                ep.RequiresEdgeProperty<decimal>(""Weight"");
-            });
-        });
-        builder.CrossDomainLink(""InboundLink"")
-            .From<TestModel>()
-            .ToExternal(""other"", ""OtherType"");
-    }
-}";
-
-        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.ExtensionPointEdgeMissing);
-
-        await Assert.That(diagnostics.Length).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task AONT033_EdgePropertyPresent_NoDiagnostic()
-    {
-        var source = @"
-using Strategos.Ontology;
-using Strategos.Ontology.Builder;
-
-public class TestModel { public System.Guid Id { get; set; } }
-
-public class TestDomain : DomainOntology
-{
-    public override string DomainName => ""test"";
-    protected override void Define(IOntologyBuilder builder)
-    {
-        builder.Object<TestModel>(obj =>
-        {
-            obj.Key(p => p.Id);
-            obj.AcceptsExternalLinks(""inbound"", ep =>
-            {
-                ep.RequiresEdgeProperty<decimal>(""Weight"");
-            });
-        });
-        builder.CrossDomainLink(""InboundLink"")
-            .From<TestModel>()
-            .ToExternal(""other"", ""OtherType"")
-            .WithEdge(edge => { edge.Property<decimal>(""Weight""); });
-    }
-}";
-
-        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(source, OntologyDiagnosticIds.ExtensionPointEdgeMissing);
-
-        await Assert.That(diagnostics.Length).IsEqualTo(0);
-    }
+    // AONT033 (ExtensionPointEdgeMissing) trigger tests were removed in DR-5
+    // (#120, closes #114): they authored the now-deleted RequiresEdgeProperty
+    // and WithEdge edge-property surface, which AONT209 now flags. The AONT033
+    // descriptor/id remain registered (INV-5) but dormant.
 
     [Test]
     public async Task AONT034_ExtensionPointNoLinksMatch_ReportsInfo()

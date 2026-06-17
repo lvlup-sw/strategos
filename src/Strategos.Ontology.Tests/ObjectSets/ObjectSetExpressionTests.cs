@@ -239,6 +239,20 @@ public class ObjectSetExpressionTests
         await Assert.That(traverse.RootObjectTypeName).IsEqualTo(nameof(TradeOrder));
     }
 
+    [Test]
+    public async Task TraverseLinkExpression_RootObjectTypeName_WithOverride_ReturnsDescriptorName()
+    {
+        // DR-10 / #128: when the traversal carries an EXPLICIT target descriptor
+        // name (the multi-registration disambiguator), RootObjectTypeName must
+        // surface THAT name — not the CLR-simple name — so the action/event/table
+        // routing seams (ApplyAsync / EventsAsync / ResolveTableName) dispatch
+        // against the caller-selected registration rather than typeof(TLinked).Name.
+        var root = new RootExpression(typeof(Position), "positions");
+        var traverse = new TraverseLinkExpression(root, "Orders", typeof(TradeOrder), "trading_orders");
+
+        await Assert.That(traverse.RootObjectTypeName).IsEqualTo("trading_orders");
+    }
+
     // Helper types for A2/A3 tests
     private sealed class Foo
     {

@@ -41,25 +41,10 @@ public class CrossDomainLinkBuilderTests
         await Assert.That(descriptor.Cardinality).IsEqualTo(LinkCardinality.ManyToMany);
     }
 
-    [Test]
-    public async Task CrossDomainLinkBuilder_WithEdge_RecordsEdgeProperties()
-    {
-        var builder = new CrossDomainLinkBuilder("KnowledgeInformsStrategy");
-
-        builder.From<TestAtomicNote>()
-            .ToExternal("trading", "Strategy")
-            .ManyToMany()
-            .WithEdge(edge =>
-            {
-                edge.Property<double>("Relevance");
-                edge.Property<string>("Rationale");
-            });
-        var descriptor = builder.Build();
-
-        await Assert.That(descriptor.EdgeProperties.Count).IsEqualTo(2);
-        await Assert.That(descriptor.EdgeProperties[0].Name).IsEqualTo("Relevance");
-        await Assert.That(descriptor.EdgeProperties[1].Name).IsEqualTo("Rationale");
-    }
+    // CrossDomainLinkBuilder_WithEdge_RecordsEdgeProperties was removed in DR-5
+    // (#120, closes #114): ICrossDomainLinkBuilder.WithEdge and
+    // CrossDomainLinkDescriptor.EdgeProperties it exercised no longer exist.
+    // Edge attributes now live on a reified Association<T>.
 
     [Test]
     public async Task CrossDomainLinkBuilder_WithDescription_SetsDescription()
