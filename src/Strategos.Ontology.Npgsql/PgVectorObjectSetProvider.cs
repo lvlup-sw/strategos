@@ -233,16 +233,17 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        // Resolve table name from the expression's declared descriptor name
-        // via the shared read-path dispatch helper (bug #31).
-        var tableName = ResolveTableName(expression);
-        var translation = ExpressionTranslator.Translate(expression);
-        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        // DR-12: a link traversal lowers to a junction-aware, depth-tiered
+        // vertex ⋈ junction ⋈ vertex statement (graph-driven), NOT a plain
+        // WHERE-over-one-table select — route it through the traversal seam.
+        var (sql, parameters) = ExpressionTranslator.IsTraversal(expression)
+            ? LowerTraversal(expression)
+            : LowerSelect(expression);
 
         var items = new List<T>();
 
         await using var cmd = _dataSource.CreateCommand(sql);
-        AddTranslatedParameters(cmd, translation.Parameters);
+        AddTranslatedParameters(cmd, parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         var rowIndex = 0;
@@ -264,20 +265,48 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return new ObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties);
     }
 
+    /// <summary>
+    /// Lowers a plain (non-traversal) read expression to a single-table SELECT and
+    /// its parameters (the pre-DR-12 path), resolving the table name from the
+    /// expression's declared descriptor name (bug #31).
+    /// </summary>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private (string Sql, IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters) LowerSelect(
+        ObjectSetExpression expression)
+    {
+        var tableName = ResolveTableName(expression);
+        var translation = ExpressionTranslator.Translate(expression);
+        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        return (sql, translation.Parameters);
+    }
+
+    /// <summary>
+    /// Lowers a link-traversal expression to depth-tiered traversal SQL + bound
+    /// parameters via <see cref="LowerTraversalExpression"/> (DR-12), using the
+    /// provider's <see cref="OntologyGraph"/> for graph-driven hop resolution.
+    /// </summary>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private (string Sql, IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters) LowerTraversal(
+        ObjectSetExpression expression)
+    {
+        var lowering = LowerTraversalExpression(_graph, expression, _options.Schema);
+        return (lowering.Sql, lowering.Parameters);
+    }
+
     /// <inheritdoc />
     public async IAsyncEnumerable<T> StreamAsync<T>(
         ObjectSetExpression expression, [EnumeratorCancellation] CancellationToken ct = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        // Resolve table name from the expression's declared descriptor name
-        // via the shared read-path dispatch helper (bug #31).
-        var tableName = ResolveTableName(expression);
-        var translation = ExpressionTranslator.Translate(expression);
-        var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
+        // DR-12: route a link traversal through the depth-tiered traversal seam,
+        // a plain read through the single-table select — symmetric with ExecuteAsync.
+        var (sql, parameters) = ExpressionTranslator.IsTraversal(expression)
+            ? LowerTraversal(expression)
+            : LowerSelect(expression);
 
         await using var cmd = _dataSource.CreateCommand(sql);
-        AddTranslatedParameters(cmd, translation.Parameters);
+        AddTranslatedParameters(cmd, parameters);
 
         await using var reader = await cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
         var rowIndex = 0;
@@ -1470,4 +1499,277 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         string JunctionTable,
         string TargetTable,
         string TargetDescriptorName);
+
+    /// <summary>
+    /// A single DEPTH STEP of a (possibly chained) instance-anchored traversal
+    /// (DR-12). One step lowers ONE link hop. A MONOMORPHIC step carries exactly
+    /// one <see cref="Hops"/> entry (the single resolved target); a POLYMORPHIC
+    /// step carries one entry PER resolved target descriptor — the DR-11b fan-out —
+    /// so it lowers to a UNION over its per-descriptor junction+vertex tables. A
+    /// polymorphic step counts as fan-out against the depth budget (DR-12 tiering).
+    /// New sealed, <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    /// <param name="LinkName">The link traversed at this depth step.</param>
+    /// <param name="Hops">
+    /// The resolved hops for this step: one (monomorphic) or several
+    /// (polymorphic fan-out), as produced by <see cref="ResolveTraversalHops"/>.
+    /// </param>
+    internal sealed record TraversalStep(string LinkName, IReadOnlyList<TraversalHop> Hops)
+    {
+        /// <summary>
+        /// Whether this step is a POLYMORPHIC fan-out — more than one resolved hop,
+        /// so it lowers to a UNION over per-descriptor tables (DR-11b) and counts as
+        /// fan-out against the DR-12 depth budget.
+        /// </summary>
+        public bool IsPolymorphic => Hops.Count > 1;
+    }
+
+    /// <summary>
+    /// A resolved instance-anchored traversal PLAN (DR-12): the ordered depth
+    /// <see cref="Steps"/> a (possibly chained) <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// lowers to, anchored at the source instance's business id
+    /// (<see cref="SourceId"/>) under the source table's
+    /// <see cref="SourceKeyProperty"/>. Fed into the depth-tiered SQL builders
+    /// (join-chain ≤ the budget, recursive CTE beyond it; a polymorphic step
+    /// fans out via UNION). New sealed, <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    internal sealed record TraversalPlan
+    {
+        /// <summary>The source endpoint object table (snake_cased), aliased the anchor vertex.</summary>
+        public required string SourceTable { get; init; }
+
+        /// <summary>
+        /// The source descriptor's key property — the <c>data jsonb</c> field
+        /// holding the anchor instance's business id (INV-8: identity by descriptor).
+        /// </summary>
+        public required string SourceKeyProperty { get; init; }
+
+        /// <summary>
+        /// The anchor instance's business id, bound via <c>@srcId</c> (never
+        /// interpolated), or <c>null</c> when the source chain carries no
+        /// single-id anchoring filter (the lowering then anchors structurally
+        /// through the junction join only).
+        /// </summary>
+        public string? SourceId { get; init; }
+
+        /// <summary>The ordered depth steps, anchor-outward.</summary>
+        public required IReadOnlyList<TraversalStep> Steps { get; init; }
+
+        /// <summary>
+        /// The DR-12 depth-budget count: number of depth steps. Each step is one
+        /// link hop regardless of its fan-out width (a polymorphic step is a single
+        /// depth level that fans out via UNION).
+        /// </summary>
+        public int Depth => Steps.Count;
+
+        /// <summary>
+        /// Whether ANY depth step is a polymorphic fan-out (DR-11b). A polymorphic
+        /// step counts as fan-out against the depth budget, so a plan containing one
+        /// is lowered past the join-chain tier into the recursive-CTE tier even when
+        /// its <see cref="Depth"/> is within budget (DR-12).
+        /// </summary>
+        public bool HasPolymorphicStep => Steps.Any(s => s.IsPolymorphic);
+    }
+
+    /// <summary>
+    /// The lowered SQL for an instance-anchored traversal plan (DR-12): the
+    /// generated parameterized statement (<see cref="Sql"/>) and its bound
+    /// <see cref="Parameters"/>. Produced by
+    /// <see cref="LowerTraversalExpression"/> and consumed by
+    /// <see cref="ExecuteAsync{T}"/> / <see cref="StreamAsync{T}"/>. New sealed,
+    /// <c>init</c>-only record (INV-6/INV-7).
+    /// </summary>
+    internal sealed record TraversalLowering(
+        string Sql,
+        IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters);
+
+    /// <summary>
+    /// Lowers an instance-anchored <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// (possibly chained) into depth-tiered traversal SQL (DR-12). This is the seam
+    /// the public read path (<see cref="ExecuteAsync{T}"/> / <see cref="StreamAsync{T}"/>)
+    /// routes a traversal through, closing the DR-7..DR-11b gap where
+    /// <see cref="ExpressionTranslator.Translate"/> threw on a traversal node.
+    /// </summary>
+    /// <param name="graph">
+    /// The ontology graph. Traversal is graph-aware (link targets, key properties,
+    /// polymorphic fan-out), so a null graph throws via the hop resolver rather than
+    /// emitting wrong SQL.
+    /// </param>
+    /// <param name="expression">The traversal expression (outermost node a hop).</param>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <remarks>
+    /// DR-12 tiering: a plan within the join-collapse depth budget
+    /// (<see cref="SqlGenerator.JoinChainDepthBudget"/>) with no polymorphic step
+    /// lowers to a JOIN CHAIN; a deeper plan — or any plan whose step fans out
+    /// polymorphically (a polymorphic hop counts as fan-out against the budget) —
+    /// lowers to a RECURSIVE CTE. The hop targets are resolved from the GRAPH via
+    /// the DR-10 path (<see cref="ResolveTraversalHops"/>), never <c>typeof</c> (INV-8).
+    /// </remarks>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    internal static TraversalLowering LowerTraversalExpression(
+        OntologyGraph? graph,
+        ObjectSets.ObjectSetExpression expression,
+        string schema)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+
+        var plan = BuildTraversalPlan(graph, expression);
+        var parameters = new List<ExpressionTranslator.SqlParameter>();
+        if (plan.SourceId is { } srcId)
+        {
+            parameters.Add(new ExpressionTranslator.SqlParameter("@srcId", srcId));
+        }
+
+        var sql = SqlGenerator.BuildDepthTieredTraversalSql(schema, plan);
+        return new TraversalLowering(sql, parameters);
+    }
+
+    /// <summary>
+    /// Resolves a (possibly chained) <see cref="ObjectSets.TraverseLinkExpression"/>
+    /// into an anchor-outward <see cref="TraversalPlan"/> (DR-12): one
+    /// <see cref="TraversalStep"/> per link hop, the source table + key property of
+    /// the anchor, and the anchor instance's business id when the source chain
+    /// carries a single-id filter.
+    /// </summary>
+    /// <remarks>
+    /// The chain is walked from the OUTERMOST hop back to the anchor: each hop's
+    /// SOURCE descriptor is the prior hop's resolved target (or the root for the
+    /// first hop). A polymorphic hop is resolved via <see cref="ResolveTraversalHops"/>
+    /// (one hop per implementor descriptor); a chained hop after a polymorphic step
+    /// would be ambiguous (which fanned-out descriptor is the source?), so a chained
+    /// step's source descriptor is taken from the prior step's SINGLE resolved hop —
+    /// a fan-out followed by a further hop is refused upstream by the resolver when
+    /// the prior step is polymorphic. INV-8: source/target by descriptor name.
+    /// </remarks>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    internal static TraversalPlan BuildTraversalPlan(
+        OntologyGraph? graph,
+        ObjectSets.ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // Collect the traversal nodes anchor-outward (the expression nests
+        // outermost-first, so reverse the walk).
+        var hopsOuterFirst = new List<ObjectSets.TraverseLinkExpression>();
+        var cursor = expression;
+        while (true)
+        {
+            switch (cursor)
+            {
+                case ObjectSets.TraverseLinkExpression traverse:
+                    hopsOuterFirst.Add(traverse);
+                    cursor = traverse.Source;
+                    continue;
+                case ObjectSets.FilterExpression filter:
+                    cursor = filter.Source;
+                    continue;
+                case ObjectSets.IncludeExpression include:
+                    cursor = include.Source;
+                    continue;
+                case ObjectSets.InterfaceNarrowExpression narrow:
+                    cursor = narrow.Source;
+                    continue;
+            }
+
+            break;
+        }
+
+        if (hopsOuterFirst.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "LowerTraversalExpression requires a TraverseLinkExpression in the chain; "
+                + "the supplied expression has no link hop to lower.");
+        }
+
+        hopsOuterFirst.Reverse();
+        var hopsAnchorFirst = hopsOuterFirst;
+
+        // The anchor's source descriptor name + its single-id filter come from the
+        // FIRST hop's own source chain (walk to the root, translating any filter).
+        var firstHop = hopsAnchorFirst[0];
+        var anchorSourceDescriptor = ResolveImmediateSourceDescriptorName(firstHop.Source);
+        var (sourceTable, sourceKeyProperty, sourceId) = ResolveAnchor(graph, anchorSourceDescriptor, firstHop.Source);
+
+        var steps = new List<TraversalStep>(hopsAnchorFirst.Count);
+        var currentSourceDescriptor = anchorSourceDescriptor;
+        for (var i = 0; i < hopsAnchorFirst.Count; i++)
+        {
+            var hop = hopsAnchorFirst[i];
+            var resolvedHops = ResolveTraversalHops(
+                graph, currentSourceDescriptor, hop.LinkName, hop.TargetDescriptorName);
+            steps.Add(new TraversalStep(hop.LinkName, resolvedHops));
+
+            // The next step's source is THIS step's resolved target. A polymorphic
+            // step has several targets, so a further chained hop is ambiguous —
+            // refuse it rather than silently picking one descriptor.
+            if (i + 1 < hopsAnchorFirst.Count)
+            {
+                if (resolvedHops.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Chained traversal after a POLYMORPHIC hop on link '{hop.LinkName}' "
+                        + $"(which fans out to {resolvedHops.Count} target descriptors) is ambiguous: "
+                        + $"the next hop's source descriptor is not uniquely defined. Disambiguate the "
+                        + $"polymorphic hop with an explicit target descriptor name before chaining.");
+                }
+
+                currentSourceDescriptor = resolvedHops[0].TargetDescriptorName;
+            }
+        }
+
+        return new TraversalPlan
+        {
+            SourceTable = sourceTable,
+            SourceKeyProperty = sourceKeyProperty,
+            SourceId = sourceId,
+            Steps = steps,
+        };
+    }
+
+    /// <summary>
+    /// Resolves the anchor source's physical table + key property and the anchor
+    /// instance's business id (DR-12). The id is extracted from the source chain's
+    /// single-parameter filter (a <c>Where(s =&gt; s.Key == value)</c> anchoring on
+    /// the business id); a source chain with no such filter yields a <c>null</c>
+    /// id and the lowering anchors structurally through the junction join only.
+    /// </summary>
+    [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
+    private static (string SourceTable, string SourceKeyProperty, string? SourceId) ResolveAnchor(
+        OntologyGraph? graph,
+        string anchorSourceDescriptor,
+        ObjectSets.ObjectSetExpression anchorSource)
+    {
+        var endpoint = ResolveRelateEndpoint(graph, anchorSourceDescriptor);
+
+        // Translate the source chain's filter to recover the anchor business id.
+        // The anchored-traversal contract addresses the source by a single business
+        // id, so a single-parameter filter binds @srcId; anything else leaves the
+        // id null (structural anchoring only).
+        var translation = ExpressionTranslator.Translate(anchorSource);
+        var sourceId = translation.Parameters.Count == 1
+            ? translation.Parameters[0].Value as string
+            : null;
+
+        return (endpoint.TableName, endpoint.KeyProperty, sourceId);
+    }
+
+    /// <summary>
+    /// Resolves the descriptor name of the IMMEDIATE upstream element type of a
+    /// traversal source chain (DR-12), mirroring
+    /// <c>InMemoryExpressionEvaluator.ResolveImmediateSourceDescriptorName</c>: a
+    /// root produces its declared descriptor name; a prior traversal produces its
+    /// (graph-resolved) target descriptor; filters/includes/narrows are transparent.
+    /// </summary>
+    private static string ResolveImmediateSourceDescriptorName(ObjectSets.ObjectSetExpression expression) =>
+        expression switch
+        {
+            ObjectSets.RootExpression root => root.ObjectTypeName,
+            ObjectSets.TraverseLinkExpression traverse => traverse.RootObjectTypeName,
+            ObjectSets.FilterExpression filter => ResolveImmediateSourceDescriptorName(filter.Source),
+            ObjectSets.IncludeExpression include => ResolveImmediateSourceDescriptorName(include.Source),
+            ObjectSets.InterfaceNarrowExpression narrow => ResolveImmediateSourceDescriptorName(narrow.Source),
+            _ => throw new NotSupportedException(
+                $"Cannot resolve immediate source descriptor from {expression.GetType().Name}."),
+        };
 }

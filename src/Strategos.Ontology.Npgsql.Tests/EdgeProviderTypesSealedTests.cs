@@ -50,6 +50,12 @@ public class EdgeProviderTypesSealedTests
             // JunctionTableDescriptor (DR-11/T2): resolved per-(link, target)
             // junction-table identity fed into the resolved-targets DDL builder.
             "Strategos.Ontology.Npgsql.Schema.JunctionTableDescriptor",
+            // TraversalStep (DR-12/T5): one depth step of a chained traversal.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalStep",
+            // TraversalPlan (DR-12/T5): the resolved depth-tiered traversal plan.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalPlan",
+            // TraversalLowering (DR-12/T5): the lowered traversal SQL + parameters.
+            "Strategos.Ontology.Npgsql.PgVectorObjectSetProvider+TraversalLowering",
         };
 
         var offenders = new List<string>();

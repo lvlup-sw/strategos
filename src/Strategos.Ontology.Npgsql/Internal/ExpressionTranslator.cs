@@ -38,6 +38,30 @@ internal static class ExpressionTranslator
         };
     }
 
+    /// <summary>
+    /// Whether <paramref name="expression"/> is a link TRAVERSAL — i.e. its
+    /// outermost producing node (walking past <see cref="FilterExpression"/> /
+    /// <see cref="IncludeExpression"/>) is a <see cref="TraverseLinkExpression"/>
+    /// (DR-12). A traversal is NOT a plain WHERE-over-one-table query, so the
+    /// provider must route it through
+    /// <c>PgVectorObjectSetProvider.LowerTraversalExpression</c> rather than the
+    /// single-table <see cref="Translate(ObjectSetExpression)"/> path: <c>Translate</c>
+    /// throws <see cref="NotSupportedException"/> on a traversal because the
+    /// vertex ⋈ junction ⋈ vertex lowering is junction-aware and graph-driven.
+    /// </summary>
+    internal static bool IsTraversal(ObjectSetExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        return expression switch
+        {
+            TraverseLinkExpression => true,
+            FilterExpression filter => IsTraversal(filter.Source),
+            IncludeExpression include => IsTraversal(include.Source),
+            _ => false,
+        };
+    }
+
     [RequiresDynamicCode("Expression translation may compile expressions dynamically.")]
     private static TranslationResult TranslateFilter(FilterExpression filter)
     {

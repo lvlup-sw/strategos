@@ -591,6 +591,167 @@ internal static class SqlGenerator
     }
 
     /// <summary>
+    /// The DR-12 JOIN-CHAIN depth budget: a traversal of this many or fewer
+    /// monomorphic hops lowers to a single flat <c>vertex ⋈ junction ⋈ vertex ⋈ …</c>
+    /// join chain, which the Postgres planner can reorder freely. Past the budget,
+    /// the lowering switches to a recursive CTE.
+    /// </summary>
+    /// <remarks>
+    /// Sized to the planner's join-reordering window. PostgreSQL exhaustively
+    /// reorders a join tree only while the number of joined relations stays under
+    /// <c>join_collapse_limit</c> (default 8) and below <c>geqo_threshold</c>
+    /// (default 12); past that the genetic query optimizer takes over and plans
+    /// degrade. Each traversal hop contributes a junction relation AND a vertex
+    /// relation (two relations per hop), plus the anchor vertex, so a 3-hop chain
+    /// joins 1 + 3×2 = 7 relations — the last depth that stays safely inside the
+    /// default <c>join_collapse_limit</c> of 8. A POLYMORPHIC hop is NOT counted
+    /// here: it is fan-out (a UNION over per-descriptor legs), so any plan with a
+    /// polymorphic step is lowered via the CTE tier regardless of depth (see
+    /// <see cref="BuildDepthTieredTraversalSql"/>).
+    /// </remarks>
+    internal const int JoinChainDepthBudget = 3;
+
+    /// <summary>
+    /// Lowers a resolved instance-anchored <see cref="PgVectorObjectSetProvider.TraversalPlan"/>
+    /// into depth-tiered traversal SQL (DR-12). A plan within
+    /// <see cref="JoinChainDepthBudget"/> hops with NO polymorphic step lowers to a
+    /// flat JOIN CHAIN; a deeper plan — or any plan whose step fans out
+    /// polymorphically (a polymorphic hop counts as fan-out against the budget) —
+    /// lowers to a RECURSIVE CTE.
+    /// </summary>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The anchor business id binds via
+    /// <c>@srcId</c>, never interpolated. Each per-descriptor leg of a polymorphic
+    /// hop reuses the SAME <c>vertex ⋈ junction ⋈ vertex</c> shape
+    /// <see cref="BuildInstanceAnchoredTraversalSql"/> emits (DR-11b seam).
+    /// </remarks>
+    internal static string BuildDepthTieredTraversalSql(
+        string schema,
+        PgVectorObjectSetProvider.TraversalPlan plan)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentNullException.ThrowIfNull(plan);
+        if (plan.Steps.Count == 0)
+        {
+            throw new ArgumentException("A traversal plan requires at least one depth step.", nameof(plan));
+        }
+
+        // Tier selection: a polymorphic step is fan-out, so it pushes past the
+        // join-chain budget into the recursive-CTE tier even when depth is within
+        // budget; likewise a chain deeper than the budget.
+        var useRecursiveCte = plan.HasPolymorphicStep || plan.Depth > JoinChainDepthBudget;
+        return useRecursiveCte
+            ? BuildRecursiveCteTraversalSql(schema, plan)
+            : BuildJoinChainTraversalSql(schema, plan);
+    }
+
+    /// <summary>
+    /// Lowers a within-budget, all-monomorphic plan to a flat join chain (DR-12,
+    /// T6): <c>vertex_s ⋈ junction_1 ⋈ vertex_1 ⋈ junction_2 ⋈ vertex_2 ⋈ …</c>,
+    /// anchored at the source's business id and projecting the FINAL hop's target
+    /// rows. The Postgres planner reorders this freely within
+    /// <see cref="JoinChainDepthBudget"/>.
+    /// </summary>
+    private static string BuildJoinChainTraversalSql(
+        string schema,
+        PgVectorObjectSetProvider.TraversalPlan plan)
+    {
+        var qSchema = QuoteIdentifier(schema);
+        var qSource = QuoteIdentifier(plan.SourceTable);
+        var srcKey = EscapeStringLiteral(plan.SourceKeyProperty);
+
+        var sb = new StringBuilder();
+
+        // The FINAL step's target vertex is projected; alias each step's junction
+        // and target vertex so a multi-hop chain stays unambiguous.
+        var lastStepIndex = plan.Steps.Count - 1;
+        var targetAlias = $"t{lastStepIndex}";
+
+        sb.Append($"SELECT {targetAlias}.id, {targetAlias}.data ");
+        sb.Append($"FROM {qSchema}.{qSource} s");
+
+        var previousVertexAlias = "s";
+        for (var i = 0; i < plan.Steps.Count; i++)
+        {
+            // A join-chain step is monomorphic (the tier selector routed any
+            // polymorphic step to the CTE tier), so it has exactly one hop.
+            var hop = plan.Steps[i].Hops[0];
+            var junctionAlias = $"j{i}";
+            var vertexAlias = $"t{i}";
+            var qJunction = QuoteIdentifier(hop.JunctionTable);
+            var qTarget = QuoteIdentifier(hop.TargetTable);
+
+            sb.Append($" JOIN {qSchema}.{qJunction} {junctionAlias} ON {junctionAlias}.source_id = {previousVertexAlias}.id");
+            sb.Append($" JOIN {qSchema}.{qTarget} {vertexAlias} ON {vertexAlias}.id = {junctionAlias}.target_id");
+            previousVertexAlias = vertexAlias;
+        }
+
+        sb.Append($" WHERE s.data->>'{srcKey}' = @srcId");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Lowers a beyond-budget OR polymorphic plan to a RECURSIVE CTE (DR-12, T7).
+    /// The CTE walks the junction edges level by level from the anchor, so a deep
+    /// or variable-depth chain — and a polymorphic step's UNION fan-out — is
+    /// expressed without an unbounded flat join the planner would mishandle past
+    /// <see cref="JoinChainDepthBudget"/>.
+    /// </summary>
+    private static string BuildRecursiveCteTraversalSql(
+        string schema,
+        PgVectorObjectSetProvider.TraversalPlan plan)
+    {
+        var qSchema = QuoteIdentifier(schema);
+        var qSource = QuoteIdentifier(plan.SourceTable);
+        var srcKey = EscapeStringLiteral(plan.SourceKeyProperty);
+
+        // Base case: the anchor's surrogate id, addressed by its business id.
+        // Recursive case: for each frontier id, the next step's target ids reached
+        // through that step's junction table(s). A polymorphic step contributes one
+        // UNION ALL leg per per-descriptor junction table (DR-11b fan-out); the
+        // recursion advances by one depth level per step.
+        var sb = new StringBuilder();
+        sb.Append("WITH RECURSIVE traversal(node_id, depth) AS (");
+        sb.Append($"SELECT s.id, 0 FROM {qSchema}.{qSource} s WHERE s.data->>'{srcKey}' = @srcId");
+        sb.Append(" UNION ALL ");
+
+        // Each step's edges, selected by the recursion's current depth so the walk
+        // follows the chain's link sequence rather than any junction.
+        var stepLegs = new List<string>();
+        for (var i = 0; i < plan.Steps.Count; i++)
+        {
+            var step = plan.Steps[i];
+            foreach (var hop in step.Hops)
+            {
+                var qJunction = QuoteIdentifier(hop.JunctionTable);
+                stepLegs.Add(
+                    $"SELECT {qJunction}.target_id, tr.depth + 1 "
+                    + $"FROM traversal tr JOIN {qSchema}.{qJunction} {qJunction} "
+                    + $"ON {qJunction}.source_id = tr.node_id AND tr.depth = {i}");
+            }
+        }
+
+        sb.Append(string.Join(" UNION ALL ", stepLegs));
+        sb.Append(") ");
+
+        // Project the FINAL-depth target rows from each terminal step's target
+        // table(s). The terminal step is the last; its hops' target tables hold the
+        // far endpoints reached at the maximum depth.
+        var terminalStep = plan.Steps[^1];
+        var projections = new List<string>();
+        foreach (var hop in terminalStep.Hops)
+        {
+            var qTarget = QuoteIdentifier(hop.TargetTable);
+            projections.Add(
+                $"SELECT t.id, t.data FROM {qSchema}.{qTarget} t "
+                + $"JOIN traversal tr ON tr.node_id = t.id AND tr.depth = {plan.Steps.Count}");
+        }
+
+        sb.Append(string.Join(" UNION ALL ", projections));
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Builds the DDL for a reified <b>association</b>
     /// (<see cref="ObjectKind.Association"/>) lowered to an <b>object table</b>
     /// (DR-7). An association is a standalone object that links two endpoints and
