@@ -63,6 +63,27 @@ remain registered but dormant (INV-5: ids are never reused).
   `services.AddOntology(...)`) and registers them as MCP server tools. The existing
   explicit-graph overload `AddOntologyTools(OntologyGraph)` is retained.
 
+- **MCP association + instance-level traversal surface (DR-15, #125).** Exposes the
+  ontology edge layer (reified associations + instance-anchored traversal) through MCP:
+  - An `association` branch on the query result union (`AssociationQueryResult` +
+    `AssociationEdgeRow`) — an edge/endpoint result shape distinct from plain objects;
+    `ObjectKind` + endpoints on the explore `objectTypes` scope; a new `associations`
+    explore scope listing every reified association with its endpoints, plus
+    `targetSymbolKey` on the `links` scope. SymbolKey-only (ingested) targets are named
+    by descriptor / SymbolKey — no CLR type name leaks (INV-8).
+  - A new `ontology_traverse` MCP tool (`OntologyTraverseTool`): walks from a specific
+    instance across a reified association to a far endpoint with edge-attribute
+    filtering, dispatched through the public `IObjectSetProvider`. Closed-vocabulary
+    inputs (link from the graph, integer depth ≤ `OntologyTraversalLimits.MaxDepth` = 3,
+    a `TraversalDirection` enum). Malformed args → `isError: true` (SEP-1303, not a
+    thrown protocol error); a budget-truncated subgraph → a `resource_link` + opaque
+    cursor; provenance `_meta` under the `sw.lvlup.strategos/` vendor prefix. Every
+    result carries `_meta` + `OutputSchema` (INV-3).
+  - relate/unrelate stays gated through `OntologyActionTool` → `IActionDispatcher`; the
+    read/traverse tools take no `IObjectSetWriter`. These ontology-MCP types are not part
+    of the `src/Strategos` builder PublicAPI baseline, so no `PublicAPI.*.txt` re-baseline
+    is required.
+
 ### Changed
 
 - **Ontology MCP tools now dispatch against the DI-resolved provider (DR-14, #113).**

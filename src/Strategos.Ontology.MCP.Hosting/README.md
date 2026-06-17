@@ -28,6 +28,8 @@ builder.Services
 
 `AddOntologyTools` discovers the four ontology tools (`ontology_explore`, `ontology_query`, `ontology_action`, `ontology_validate`) and registers them as **provider-bound** MCP server tools: each tool dispatches against the host's DI-resolved `IObjectSetProvider` (and, where applicable, `IActionDispatcher`, `IEventStreamProvider`, `IOntologyQuery`), resolved per call from the request's `IServiceProvider`. So `ontology_query` executes against the configured provider and returns real rows.
 
+It also registers `ontology_traverse` — an instance-anchored traversal tool that walks from a specific object instance across a reified association to a far endpoint, with edge-attribute filtering. Its inputs are closed-vocabulary (a `linkName` from the graph, an integer `depth` ≤ 3, a `direction` of `ToDestination`/`ToSource`); malformed arguments return `isError: true` (never a thrown protocol error), and a large subgraph returns a `resource_link` plus an opaque cursor. Use the `ontology_explore` `associations` scope to discover the reified associations and endpoints to traverse.
+
 The no-argument overload resolves the `OntologyGraph` from the service collection. Pass a graph explicitly when it is not registered there:
 
 ```csharp
