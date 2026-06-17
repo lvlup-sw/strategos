@@ -70,11 +70,16 @@ public static class OntologyServerToolFactory
             .Discover()
             .ToDictionary(d => d.Name);
 
-        var tools = new List<McpServerTool>(descriptors.Count);
+        var tools = new List<McpServerTool>(descriptors.Count + 1);
         foreach (var descriptor in descriptors.Values)
         {
             tools.Add(CreateServerTool(graph, descriptor));
         }
+
+        // DR-15: the instance-anchored traversal tool is a distinct capability layered
+        // on top of the four discovered tools. It is registered here (not via
+        // OntologyToolDiscovery) so the core four-tool descriptor contract is unchanged.
+        tools.Add(CreateTraverseTool(graph));
 
         return tools;
     }
@@ -226,6 +231,133 @@ public static class OntologyServerToolFactory
             [ConstraintSummariesMetaKey] = summariesJson,
         };
     }
+
+    /// <summary>
+    /// <c>_meta</c> provenance key prefix for the DR-15 traversal tool. MUST live under
+    /// the vendor namespace <c>sw.lvlup.strategos/</c> — never <c>mcp/</c> or any
+    /// modelcontextprotocol-reserved key (DR-15).
+    /// </summary>
+    internal const string TraversalProvenanceMetaKey = "sw.lvlup.strategos/traversal";
+
+    // DR-15 (T18): the instance-anchored traversal tool. Its handler returns a
+    // CallToolResult directly so the host can express the MCP-spec behaviors the core
+    // tool signals structurally: a validation failure -> isError:true (SEP-1303, NOT a
+    // thrown protocol error); a budget-truncated subgraph -> a resource_link block +
+    // opaque cursor. Provenance rides in _meta under sw.lvlup.strategos/.
+    [RequiresUnreferencedCode("Traversal OutputSchema + edge-attribute filtering reflect over result/association types.")]
+    [RequiresDynamicCode("Traversal schema generation may require runtime code generation.")]
+    private static McpServerTool CreateTraverseTool(OntologyGraph graph)
+    {
+        var options = new McpServerToolCreateOptions
+        {
+            Name = "ontology_traverse",
+            Title = "Traverse Ontology Associations",
+            Description =
+                "Traverse from a specific object instance across a reified association to a far "
+                + "endpoint. Closed-vocabulary inputs: objectType + objectId, a linkName from the "
+                + "graph, a direction (ToDestination|ToSource), an integer depth (1.."
+                + OntologyTraversalLimits.MaxDepth + "), and an optional edgeFilter on the "
+                + "association's edge attributes.",
+            OutputSchema = TraversalOutputSchema(),
+            UseStructuredContent = true,
+            ReadOnly = true,
+            Idempotent = true,
+        };
+
+        return McpServerTool.Create(TraverseHandler(graph), options);
+    }
+
+    private static JsonElement TraversalOutputSchema()
+    {
+        var node = System.Text.Json.Schema.JsonSchemaExporter.GetJsonSchemaAsNode(
+            JsonSerializerOptions.Default,
+            typeof(TraversalResult));
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    [RequiresUnreferencedCode("Edge-attribute filtering reflects over the association CLR type.")]
+    private static Delegate TraverseHandler(OntologyGraph graph) =>
+        async (
+            RequestContext<CallToolRequestParams> context,
+            string objectType,
+            string objectId,
+            string linkName,
+            string direction = "ToDestination",
+            int depth = 1,
+            string? domain = null,
+            CancellationToken ct = default) =>
+        {
+            // A malformed direction is a closed-vocabulary violation -> isError (NOT a
+            // thrown protocol error), consistent with the other validation failures.
+            if (!Enum.TryParse<TraversalDirection>(direction, ignoreCase: true, out var parsedDirection))
+            {
+                return ErrorResult(
+                    ResponseMeta.ForGraph(graph),
+                    $"direction '{direction}' is invalid; must be one of: ToDestination, ToSource.");
+            }
+
+            var tool = new OntologyTraverseTool(graph, ResolveObjectSetProvider(context));
+            var request = new TraversalRequest(
+                ObjectType: objectType,
+                ObjectId: objectId,
+                LinkName: linkName,
+                Direction: parsedDirection,
+                Depth: depth,
+                Domain: domain);
+
+            var result = await tool.TraverseAsync(request, ct).ConfigureAwait(false);
+            return MapTraversalResult(result);
+        };
+
+    private static CallToolResult MapTraversalResult(TraversalResult result)
+    {
+        if (result.IsError)
+        {
+            return ErrorResult(result.Meta, result.Error ?? "traversal failed validation.");
+        }
+
+        var structured = JsonSerializer.SerializeToElement(result);
+        var callResult = new CallToolResult
+        {
+            StructuredContent = structured,
+            Meta = TraversalProvenanceMeta(result),
+        };
+
+        // Budget-truncated subgraph: surface a resource_link to the full subgraph plus
+        // the opaque continuation cursor (already carried in the structured content).
+        if (result.Truncated)
+        {
+            callResult.Content.Add(new ResourceLinkBlock
+            {
+                Uri = "strategos:ontology/traversal/" + (result.NextCursor ?? string.Empty),
+                Name = "ontology-traversal-subgraph",
+                Title = "Full traversal subgraph",
+                Description =
+                    "The traversal exceeded the inline row budget; follow this resource link "
+                    + "(or re-call with the nextCursor) for the remaining far endpoints.",
+                MimeType = "application/json",
+            });
+        }
+
+        return callResult;
+    }
+
+    private static CallToolResult ErrorResult(ResponseMeta meta, string message) => new()
+    {
+        IsError = true,
+        Content = { new TextContentBlock { Text = message } },
+        Meta = new JsonObject { [TraversalProvenanceMetaKey] = new JsonObject { ["ontologyVersion"] = meta.OntologyVersion } },
+    };
+
+    private static JsonObject TraversalProvenanceMeta(TraversalResult result) => new()
+    {
+        [TraversalProvenanceMetaKey] = new JsonObject
+        {
+            ["ontologyVersion"] = result.Meta.OntologyVersion,
+            ["truncated"] = result.Truncated,
+            ["endpointCount"] = result.Endpoints.Count,
+        },
+    };
 
     /// <summary>
     /// No-op <see cref="IEventStreamProvider"/> used as the fallback for read-only structural

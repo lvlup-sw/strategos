@@ -18,10 +18,17 @@ public sealed class OntologyServerToolFactoryTests
         // Act
         var serverTools = OntologyServerToolFactory.CreateServerTools(graph).ToList();
 
-        // Assert — one tool per descriptor.
-        await Assert.That(serverTools).HasCount().EqualTo(descriptors.Count);
+        // The factory also registers the DR-15 ontology_traverse tool (a distinct
+        // capability not derived from OntologyToolDiscovery); this assertion covers the
+        // four discovery-derived tools, so scope to those by name.
+        var discoveryTools = serverTools
+            .Where(t => descriptors.ContainsKey(t.ProtocolTool.Name))
+            .ToList();
 
-        foreach (var tool in serverTools)
+        // Assert — one discovery-derived tool per descriptor.
+        await Assert.That(discoveryTools).HasCount().EqualTo(descriptors.Count);
+
+        foreach (var tool in discoveryTools)
         {
             var protocolTool = tool.ProtocolTool;
             await Assert.That(descriptors.ContainsKey(protocolTool.Name)).IsTrue();
