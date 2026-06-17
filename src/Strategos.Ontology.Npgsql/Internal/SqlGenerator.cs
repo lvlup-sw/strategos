@@ -677,10 +677,67 @@ internal static class SqlGenerator
                 $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
         }
 
-        sb.AppendLine("    created_at timestamptz DEFAULT now()");
+        sb.AppendLine("    created_at timestamptz DEFAULT now(),");
+
+        // DR-16 (T20, #126): the XTDB bitemporal quartet, layered ADDITIVELY onto
+        // the reified-association object table. valid_* is the USER-asserted valid
+        // interval (when the relationship holds in the modeled world); system_* is
+        // the infra-DERIVED transaction interval (when the assertion was recorded).
+        // Both are half-open [from, to): the *_from columns are NOT NULL; the *_to
+        // columns are NULLABLE for an open interval (unbounded valid-time, or a
+        // currently-asserted / not-yet-retracted system-time). A retraction CLOSES
+        // system_to via an appended event — never a physical delete (INV-7).
+        // The *_from columns DEFAULT to now() so the existing (temporal-unaware)
+        // DR-4 attributed-relate INSERT (BuildAssociationRelateInsertSql) stays
+        // valid additively: a relate that does not assert a valid-time records the
+        // assertion moment as both valid_from and system_from. An explicit temporal
+        // insert overrides valid_from with the user-asserted instant. system_from
+        // is ALWAYS the infra-derived record moment.
+        sb.AppendLine("    valid_from timestamptz NOT NULL DEFAULT now(),");
+        sb.AppendLine("    valid_to timestamptz,");
+        sb.AppendLine("    system_from timestamptz NOT NULL DEFAULT now(),");
+        sb.AppendLine("    system_to timestamptz");
         sb.Append(");");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the as-of-transaction-time reconstruction query (DR-16, T20, #126):
+    /// reads back the relationship set as it was KNOWN at the bound transaction
+    /// instant <c>@asOfTx</c>. A row is visible iff its half-open system interval
+    /// <c>[system_from, system_to)</c> contains <c>@asOfTx</c> — asserted at or
+    /// before <c>@asOfTx</c> and not yet retracted as of <c>@asOfTx</c>
+    /// (<c>system_to IS NULL</c>, or closed strictly after). Transaction-time is
+    /// the infra-derived axis, so the historical view is a pure READ over the
+    /// projection — no mutation surface (INV-7).
+    /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="associationTableName">
+    /// The reified-association object table name (snake_cased), the same table
+    /// <see cref="BuildAssociationObjectTableDdl"/> creates.
+    /// </param>
+    /// <remarks>
+    /// INV-2: raw Npgsql/pgvector only. The transaction anchor binds via
+    /// <c>@asOfTx</c>, never interpolated and never <c>now()</c>, so the query is
+    /// a deterministic point-in-time read (passing the SAME <c>@asOfTx</c> always
+    /// reconstructs the SAME set).
+    /// </remarks>
+    internal static string BuildAsOfTransactionTimeSql(
+        string schema,
+        string associationTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(associationTableName);
+
+        var qSchema = QuoteIdentifier(schema);
+        var qAssoc = QuoteIdentifier(associationTableName);
+
+        return
+            $"SELECT id, data, valid_from, valid_to, system_from, system_to "
+            + $"FROM {qSchema}.{qAssoc} "
+            + "WHERE system_from <= @asOfTx "
+            + "AND (system_to IS NULL OR system_to > @asOfTx)";
     }
 
     /// <summary>

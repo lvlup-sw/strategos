@@ -54,6 +54,23 @@ differ. The two now-unreachable diagnostics that validated the deleted surface,
 `AONT008` (EdgeTypeMissingProperty) and `AONT033` (ExtensionPointEdgeMissing),
 remain registered but dormant (INV-5: ids are never reused).
 
+### Added — Ontology bitemporal validity + PROV provenance (DR-16, #126)
+
+Bitemporal validity and W3C PROV-DM provenance on reified associations, layered
+as an **additive projection** over the existing append-only association event
+stream — no new mutation surface (INV-7).
+
+- **T20 — XTDB bitemporal quartet.** The reified-association object table
+  (`SqlGenerator.BuildAssociationObjectTableDdl`) carries four temporal columns:
+  `valid_from`/`valid_to` (user-asserted valid-time `tstzrange` endpoints) and
+  `system_from`/`system_to` (infra-derived transaction-time). The `*_from`
+  columns are `NOT NULL DEFAULT now()` so the existing DR-4 attributed-relate
+  INSERT stays valid additively; `system_to IS NULL` is the open
+  (not-yet-retracted) row. A new `SqlGenerator.BuildAsOfTransactionTimeSql`
+  reconstructs the relationship set as known at a bound `@asOfTx`. New sealed
+  `init`-only `Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow` record
+  (INV-6/INV-7), guarded by `EdgeProviderTypesSealedTests`.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single

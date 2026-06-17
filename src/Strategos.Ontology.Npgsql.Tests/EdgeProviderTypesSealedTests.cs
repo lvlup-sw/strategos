@@ -50,6 +50,9 @@ public class EdgeProviderTypesSealedTests
             // JunctionTableDescriptor (DR-11/T2): resolved per-(link, target)
             // junction-table identity fed into the resolved-targets DDL builder.
             "Strategos.Ontology.Npgsql.Schema.JunctionTableDescriptor",
+            // TemporalAssociationRow (DR-16/T20): the bitemporal-quartet projection
+            // of one reified-association assertion.
+            "Strategos.Ontology.Npgsql.Temporal.TemporalAssociationRow",
         };
 
         var offenders = new List<string>();
