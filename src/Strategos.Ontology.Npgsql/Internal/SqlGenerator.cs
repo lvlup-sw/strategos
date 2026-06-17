@@ -109,12 +109,28 @@ internal static class SqlGenerator
     /// <summary>
     /// Builds a DDL statement to create the pgvector extension, table, and index.
     /// </summary>
+    /// <param name="schema">The Postgres schema (e.g. <c>"public"</c>).</param>
+    /// <param name="tableName">The vertex object table name (snake_cased).</param>
+    /// <param name="vectorDimensions">The embedding vector dimensionality.</param>
+    /// <param name="indexType">The pgvector index method.</param>
+    /// <param name="metric">The distance metric the vector index is built for.</param>
+    /// <param name="keyPropertyName">
+    /// The descriptor's key property name — the <c>data jsonb</c> field holding the
+    /// vertex's BUSINESS id (DR-13/R2). When supplied, a <c>CREATE UNIQUE INDEX
+    /// ... ((data->>'key'))</c> expression index is emitted so the relate/unrelate/
+    /// traversal endpoint-resolution subqueries (<c>data->>'key' = @id</c>) resolve
+    /// a SINGLE deterministic row per business id. When <c>null</c> (a
+    /// pgvector-only table with no declared key, e.g. direct instantiation without
+    /// a graph) no key index is emitted and the DDL is byte-identical to the
+    /// pre-DR-13 lowering.
+    /// </param>
     internal static string BuildSchemaCreationDdl(
         string schema,
         string tableName,
         int vectorDimensions,
         PgVectorIndexType indexType,
-        DistanceMetric metric = DistanceMetric.Cosine)
+        DistanceMetric metric = DistanceMetric.Cosine,
+        string? keyPropertyName = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(vectorDimensions, 1);
 
@@ -147,6 +163,24 @@ internal static class SqlGenerator
         }
 
         sb.Append(';');
+
+        // DR-13/R2: the business-id KEY-PROPERTY unique expression index. The
+        // relate/unrelate/traversal endpoint-resolution subqueries all key on
+        // data->>'key' = @id and assume that resolves a SINGLE row; this index
+        // makes that uniqueness a storage-layer guarantee. Omitted entirely for a
+        // keyless (pgvector-only) table so the back-compat DDL is unchanged.
+        if (!string.IsNullOrEmpty(keyPropertyName))
+        {
+            // The key name is interpolated into a single-quoted JSON-path literal
+            // (not parameter-bindable), so escape any embedded apostrophe — the
+            // same posture the relate SQL builders take (review M1).
+            var key = EscapeStringLiteral(keyPropertyName);
+            var keyIndexName = JunctionIdentifier.Derive($"ux_{tableName}_{TypeMapper.ToSnakeCase(keyPropertyName)}");
+            sb.AppendLine();
+            sb.Append(
+                $"CREATE UNIQUE INDEX IF NOT EXISTS {QuoteIdentifier(keyIndexName)} "
+                + $"ON {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} ((data->>'{key}'));");
+        }
 
         return sb.ToString();
     }

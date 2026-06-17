@@ -1005,14 +1005,65 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
     {
         var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
+        var keyPropertyName = ResolveEnsureSchemaKeyProperty<T>(descriptorName, _graph);
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,
             _embeddingProvider.Dimensions,
-            _options.IndexType);
+            _options.IndexType,
+            keyPropertyName: keyPropertyName);
 
         await using var cmd = _dataSource.CreateCommand(ddl);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the BUSINESS-id key property name (DR-13/R2) for an
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> call, so the
+    /// vertex DDL can emit a <c>UNIQUE ((data->>'key'))</c> expression index that
+    /// makes the relate/traversal endpoint-resolution subqueries deterministic.
+    /// Resolves the descriptor by name (explicit, else default-overload
+    /// resolution) and returns its <see cref="Descriptors.PropertyDescriptor.Name"/>;
+    /// returns <c>null</c> when no graph is in scope OR the resolved descriptor
+    /// declares no key — both leave the DDL key-index-free, byte-identical to the
+    /// pre-DR-13 pgvector-only lowering.
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so unit tests can pin its behavior without
+    /// a live <see cref="NpgsqlDataSource"/>, matching the seam used by
+    /// <see cref="ResolveEnsureSchemaTableName{T}(string?, OntologyGraph?)"/>. INV-8:
+    /// the key is read from the descriptor resolved by NAME, never <c>typeof</c>.
+    /// A descriptor that is registered but absent from the graph (or any resolution
+    /// failure) yields <c>null</c> rather than throwing — the unique index is a
+    /// hardening, never a gate on schema creation.
+    /// </remarks>
+    internal static string? ResolveEnsureSchemaKeyProperty<T>(string? descriptorName, OntologyGraph? graph)
+    {
+        if (graph is null)
+        {
+            return null;
+        }
+
+        // Resolve the descriptor NAME the same way the table name is resolved:
+        // an explicit name wins; otherwise the default-overload (single-
+        // registration) resolution. A multi-registered or unregistered type makes
+        // the default resolution throw — but EnsureSchemaAsync would already have
+        // thrown on the table-name resolution, so we mirror that by letting an
+        // explicit name pass straight through.
+        var resolvedName = descriptorName;
+        if (resolvedName is null)
+        {
+            if (!graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var names) || names.Count != 1)
+            {
+                return null;
+            }
+
+            resolvedName = names[0];
+        }
+
+        var descriptor = graph.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, resolvedName, StringComparison.Ordinal));
+        return descriptor?.KeyProperty?.Name;
     }
 
     /// <summary>
