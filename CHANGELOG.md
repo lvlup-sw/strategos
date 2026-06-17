@@ -60,15 +60,21 @@ remain registered but dormant (INV-5: ids are never reused).
   gains the `Then<TStep>(Action<IStepConfiguration<TState>>)` overload, bringing
   fork branches to parity with the top-level `IWorkflowBuilder<TState>` and
   loop-body `ILoopBuilder<TState>` sequencing contexts. A configured fork-path
-  step carries its `StepConfigurationDefinition` (retry / timeout / compensation)
-  into the immutable workflow definition and the export-only wire contract via
-  `WorkflowDefinitionProjection`. `IForkPathBuilder` is not one of the 7 gated
-  cross-product builder interfaces, so no `PublicAPI.*.txt` re-baseline is
-  required. **Generator note:** the Wolverine+Marten saga lowering of per-step
-  `WithRetry`/`WithTimeout`/`Compensate` is *not* yet emitted for any step kind
-  (top-level, loop, or fork) — `SagaEmitter` lowers only validation guards and
-  RAG context today. Threading retry/timeout/compensation through the generated
-  saga is a separate generator concern (INV-1) tracked outside DR-17.
+  step carries its `StepConfigurationDefinition` into the immutable workflow
+  definition and the export-only wire contract via `WorkflowDefinitionProjection`.
+  `IForkPathBuilder` is not one of the 7 gated cross-product builder interfaces,
+  so no `PublicAPI.*.txt` re-baseline is required.
+  - **Enforced for fork-path steps:** `ValidateState(...)` now lowers into the
+    generated Wolverine saga as a Guard-Then-Dispatch validation guard, matching
+    top-level and loop steps. (Previously the fork-path extractor dropped it.)
+  - **Declared, not yet enforced** (for every step kind, fork or not): `WithRetry`
+    / `WithTimeout` / `Compensate` are captured in the definition and the
+    declarative export, but the source generator does not yet emit Wolverine
+    retry / scheduled-timeout / compensation — that lowering is unbuilt for all
+    step kinds and is tracked by **#135** (an INV-1 generator concern). `WithContext`
+    is also not lowered in the production generator pipeline today
+    (`ContextAssemblerEmitter` / `ContextModelExtractor` are exercised by unit
+    tests only, never wired into `WorkflowIncrementalGenerator`).
 
 ## [2.8.0] - 2026-05-25
 

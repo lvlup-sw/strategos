@@ -76,11 +76,24 @@ public interface IForkPathBuilder<TState>
     /// <code>
     /// .Fork(
     ///     path => path.Then&lt;ProcessPayment&gt;(step => step
+    ///         .ValidateState(s => s.Amount > 0, "Amount must be positive")
     ///         .WithRetry(3, TimeSpan.FromSeconds(5))
-    ///         .WithTimeout(TimeSpan.FromMinutes(2))
     ///         .Compensate&lt;RefundPayment&gt;()),
     ///     path => path.Then&lt;ReserveInventory&gt;())
     /// </code>
+    /// </para>
+    /// <para>
+    /// Enforcement parity is partial today. <see cref="IStepConfiguration{TState}.ValidateState"/>
+    /// is lowered into the generated saga as a Guard-Then-Dispatch guard for fork-path steps,
+    /// matching top-level and loop steps. <see cref="IStepConfiguration{TState}.WithRetry(int)"/>,
+    /// <see cref="IStepConfiguration{TState}.WithTimeout"/>, and
+    /// <see cref="IStepConfiguration{TState}.Compensate{TCompensation}"/> are <b>declared but
+    /// not yet enforced</b> — they are captured in the workflow definition and the declarative
+    /// export, but the source generator does not yet emit Wolverine retry/timeout/compensation
+    /// for any step kind (tracked by issue #135). <see cref="IStepConfiguration{TState}.WithContext"/>
+    /// and <see cref="IStepConfiguration{TState}.RequireConfidence"/> /
+    /// <see cref="IStepConfiguration{TState}.OnLowConfidence"/> are likewise not yet lowered for
+    /// fork-path steps.
     /// </para>
     /// </remarks>
     IForkPathBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
