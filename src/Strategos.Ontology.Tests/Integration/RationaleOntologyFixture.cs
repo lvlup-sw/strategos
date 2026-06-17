@@ -19,6 +19,13 @@ public sealed class RationaleNode
 {
     private readonly IReadOnlyDictionary<string, string> _properties;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RationaleNode"/> class.
+    /// </summary>
+    /// <param name="id">The stable id this instance is keyed by.</param>
+    /// <param name="properties">
+    /// Optional node/edge attribute bag; an empty ordinal-keyed map is used when null.
+    /// </param>
     public RationaleNode(string id, IReadOnlyDictionary<string, string>? properties = null)
     {
         Id = id;

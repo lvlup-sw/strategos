@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using global::Npgsql;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,8 +21,9 @@ namespace Strategos.Ontology.Npgsql.Tests.Integration;
 // Strategos.Ontology.Tests/Integration/EdgeFailureModeMatrixTests. This file
 // asserts the same four modes against the PRODUCTION PgVectorObjectSetProvider.
 // Modes 1-3 fail IDENTICALLY across backends (same typed errors, same empty-set
-// posture, no silent drops). Mode 4 is SAFE on both backends but DIVERGES on HOW
-// (review M2, see the Mode-4 remarks) — this file no longer claims parity for it.
+// posture, no silent drops). Modes 4 and 5 are SAFE on both backends but DIVERGE
+// on HOW (review M2 / undeclared-link hardening) — this file does not claim parity
+// for them.
 // Every mode here is DB-GATED via [SkipIfNoPostgres]: there is no local Postgres
 // in the default lane, so these SKIP unless STRATEGOS_PG_TEST_CONN names a
 // reachable database (they run + assert in a provisioned DB lane / Docker).
@@ -45,6 +47,11 @@ namespace Strategos.Ontology.Npgsql.Tests.Integration;
 //      refuses instead. Both are SAFE (neither mis-routes); they are NOT
 //      identical. KNOWN divergence, tracked for the #128 follow-up. (Compile-time
 //      half: AONT211 / T5.)
+//   5. Relate_UndeclaredLink_ThrowsTypedError_NeverLateSqlFailure — the plain
+//      relate path derives the junction table from the link name, so the provider
+//      REFUSES an undeclared link with a typed InvalidOperationException before any
+//      SQL. DIVERGES from the in-memory provider, which stores a harmless dead row
+//      keyed by the raw link name (no throw). Both SAFE; non-corrupting divergence.
 //
 // INV-2: raw Npgsql throughout — no Marten/Wolverine. INV-8: identity by
 // descriptor name, never typeof.
@@ -183,6 +190,40 @@ public class EdgeFailureModeMatrixNpgsqlTests
     }
 
     // -----------------------------------------------------------------------
+    // Mode 5 — relate under an UNDECLARED link (DB-GATED).
+    //
+    // The plain relate/unrelate path derives the physical junction table from the
+    // link name, so a typo'd/undeclared link would otherwise fail LATE with an
+    // opaque Postgres "relation does not exist". The provider now REFUSES up front
+    // with a typed InvalidOperationException (graph-first, before any SQL) and
+    // writes NO row. This is an Npgsql-side hardening: it DIVERGES from the
+    // in-memory provider, which keys its relate-store by the raw link name and
+    // stores a harmless never-traversed dead row (no throw). Both are SAFE (neither
+    // corrupts); the divergence mirrors Mode 4 and is the accepted posture for a
+    // non-corrupting backend difference.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    [SkipIfNoPostgres]
+    public async Task Relate_UndeclaredLink_ThrowsTypedError_NeverLateSqlFailure()
+    {
+        var conn = RequireConn();
+        var graph = BuildGraph(allowsSelfLoop: false);
+        await using var harness = await EdgeFailureModeNpgsqlHarness.CreateAsync(conn, graph);
+        await harness.SeedNodeAsync("a");
+        await harness.SeedNodeAsync("b");
+
+        IObjectSetWriter writer = harness.Provider;
+
+        // The link is not declared on the source descriptor — refuse before SQL.
+        await Assert.That(async () =>
+                await writer.RelateAsync(NodeDescriptor, "a", "not_a_declared_link", NodeDescriptor, "b"))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(await harness.JunctionRowCountAsync()).IsEqualTo(0);
+    }
+
+    // -----------------------------------------------------------------------
     // Graph builders — CLR-free (SymbolKey-only) so the hop/endpoint resolution
     // can only go through the graph (INV-8), mirroring the rationale corpus.
     // -----------------------------------------------------------------------
@@ -317,14 +358,28 @@ internal sealed class EdgeFailureModeNpgsqlHarness : IAsyncDisposable
     {
         var dataSource = NpgsqlDataSource.Create(connectionString);
         var harness = new EdgeFailureModeNpgsqlHarness(dataSource, graph);
-        await harness.CreateSchemaAsync().ConfigureAwait(false);
+        try
+        {
+            await harness.CreateSchemaAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // CreateSchemaAsync failed before the harness was handed to the caller,
+            // so its DisposeAsync will never run — dispose the data source here so
+            // the connection pool is not leaked.
+            await dataSource.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
         return harness;
     }
 
     public async Task SeedNodeAsync(string id)
     {
         var table = TableName();
-        var json = $"{{\"Id\":\"{id}\"}}";
+        // Serialize rather than interpolate so an id carrying quotes or backslashes
+        // still produces valid JSON.
+        var json = JsonSerializer.Serialize(new { Id = id });
         await ExecuteAsync(
             $"INSERT INTO \"{_schema}\".\"{table}\" (data) VALUES (@data::jsonb);",
             ("data", json)).ConfigureAwait(false);

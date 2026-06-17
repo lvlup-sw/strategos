@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Tests.Integration;
@@ -18,6 +19,7 @@ internal sealed class InMemoryRationaleEvaluator : IRationaleEvaluator
 
     public InMemoryRationaleEvaluator(RationaleOntologyFixture fixture)
     {
+        ArgumentNullException.ThrowIfNull(fixture);
         _fixture = fixture;
         _evaluator = new InMemoryExpressionEvaluator(
             fixture.Graph,

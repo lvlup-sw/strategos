@@ -5,7 +5,7 @@
 
 ## Problem Statement
 
-#127 shipped the in-memory edge foundation — object identity, the `RelateAsync` relate-store with instance-anchored traversal, and `Association<T>` authoring (epic #116's first four requirements, merged). The v2.9.0 milestone still needs the remaining five requirements — and review of #127 surfaced #128, a latent identity bug that turns out to be the structural keystone for the rest.
+Issue #127 shipped the in-memory edge foundation — object identity, the `RelateAsync` relate-store with instance-anchored traversal, and `Association<T>` authoring (epic #116's first four requirements, merged). The v2.9.0 milestone still needs the remaining five requirements — and review of #127 surfaced #128, a latent identity bug that turns out to be the structural keystone for the rest.
 
 This bundle completes the milestone in one delegation: remove the schema-only edge surface (DR-5), enforce association cardinality (DR-6), back the model in Postgres (DR-7/8), validate the CLR-free path (DR-9), and fix the traversal-identity defect that DR-7/8 and DR-9 both depend on (DR-10 / #128).
 
@@ -13,7 +13,7 @@ This bundle completes the milestone in one delegation: remove the schema-only ed
 
 Today traversal re-derives the target descriptor from the CLR type at each hop: `ObjectSet.TraverseLink` (`ObjectSet.cs:69`) captures only `typeof(TLinked)`, and the Postgres provider resolves identity via `ObjectTypeNamesByType[typeof(T)]`, **throwing on multi-registration** (`PgVectorObjectSetProvider.cs:131,145`). A `SymbolKey`-only descriptor has no CLR type to look up at all. So DR-7/8's join lowering cannot be INV-8-correct, and DR-9's polyglot corpus is exactly what exposes the break. Fix identity-flow first; everything else builds on it.
 
-```
+```text
 DR-10 (#128) identity flows from the graph ─┬─► DR-7/8 Npgsql join lowering (#122) ─► DR-9 polyglot validation, both providers (#123)
                                             └─► in-memory traversal corrected
 DR-5 footgun removal + diagnostic (#120) ──┐

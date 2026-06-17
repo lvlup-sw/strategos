@@ -28,7 +28,7 @@ The tickets cite `AONT037`/`AONT041` — **stale**. Live ceiling is **AONT208**.
 
 ## Parallelization
 
-```
+```text
 Group 1 (start immediately, parallel):
   ├─ Track A: T1 → T2 → T3        (DR-10 keystone — blocks Tracks D, E, and T5)
   └─ Track C: T6 → T7            (DR-5 removal — independent; widest blast radius)

@@ -384,6 +384,11 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var source = ResolveRelateEndpoint(_graph, srcDescriptor);
         var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
 
+        // Refuse an undeclared link up front (DR-7): the junction target is derived
+        // from linkName below, so a typo would otherwise fail late with an opaque
+        // "relation does not exist" instead of a typed error.
+        RequireLinkDeclared(_graph, srcDescriptor, linkName);
+
         // EAGER endpoint validation (DR-8): probe BOTH endpoints before writing
         // any row, so a failed relate never leaves a dangling junction row.
         await ValidateEndpointExistsAsync(srcDescriptor, source, srcId, "@srcId", ct).ConfigureAwait(false);
@@ -430,6 +435,10 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         var source = ResolveRelateEndpoint(_graph, srcDescriptor);
         var target = ResolveRelateEndpoint(_graph, tgtDescriptor);
 
+        // Refuse an undeclared link up front (DR-7), symmetric with RelateAsync:
+        // the junction target is derived from linkName below.
+        RequireLinkDeclared(_graph, srcDescriptor, linkName);
+
         var junctionTableName = SqlGenerator.JunctionTableName(source.TableName, linkName);
         var sql = SqlGenerator.BuildUnrelateDeleteSql(
             _options.Schema,
@@ -464,6 +473,52 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         return descriptor;
+    }
+
+    /// <summary>
+    /// Validates that <paramref name="linkName"/> is a link DECLARED on the source
+    /// descriptor BEFORE the plain relate/unrelate path derives a physical junction
+    /// target from it (DR-7). An undeclared link otherwise fails LATE — the
+    /// junction name <see cref="SqlGenerator.JunctionTableName"/> derives was never
+    /// provisioned, so Postgres raises an opaque "relation does not exist". Refusing
+    /// here turns that into a deterministic typed <see cref="InvalidOperationException"/>,
+    /// matching the graph-first "refuse, don't degrade" posture the traversal hop
+    /// resolver already takes. INV-8: resolved by descriptor name, never <c>typeof</c>.
+    /// </summary>
+    /// <remarks>
+    /// A null graph or an unknown source descriptor is left to
+    /// <see cref="ResolveRelateEndpoint"/>, which raises the canonical typed errors
+    /// for those cases (it runs first on every relate/unrelate); this guard only adds
+    /// the "descriptor exists but the link is not declared on it" check. The
+    /// attributed (association-object) overloads route through
+    /// <see cref="ResolveAssociationRelate"/> instead — which validates the src/tgt
+    /// pairing against the association's declared endpoints — so the link name there
+    /// is not a physical-routing input and is not re-validated here.
+    /// </remarks>
+    internal static void RequireLinkDeclared(OntologyGraph? graph, string srcDescriptor, string linkName)
+    {
+        var descriptor = graph?.ObjectTypes.FirstOrDefault(
+            o => string.Equals(o.Name, srcDescriptor, StringComparison.Ordinal));
+        if (descriptor is null)
+        {
+            return;
+        }
+
+        var declared = descriptor.Links.Any(
+            l => string.Equals(l.Name, linkName, StringComparison.Ordinal));
+        if (declared)
+        {
+            return;
+        }
+
+        var available = descriptor.Links.Count > 0
+            ? string.Join(", ", descriptor.Links.Select(l => l.Name))
+            : "(none)";
+        throw new InvalidOperationException(
+            $"Link '{linkName}' is not declared on source descriptor '{srcDescriptor}'. "
+            + $"Relate/unrelate derives the physical junction target from the link name, so an "
+            + $"undeclared link fails late at SQL time. Available links: {available}. "
+            + $"Declare it via HasMany/HasOne/ManyToMany in the DomainOntology.");
     }
 
     /// <summary>

@@ -260,7 +260,9 @@ internal sealed class NpgsqlRationaleHarness : IAsyncDisposable
         string sourceId, AssociationEndpoint sourceEndpoint, AssociationEndpoint targetEndpoint)
     {
         var farTable = TypeMapper.ToSnakeCase(targetEndpoint.DescriptorName);
-        var farKey = ResolveKey(targetEndpoint.DescriptorName);
+        // Escape single quotes so a key carrying an apostrophe cannot break (or
+        // inject into) the JSON-path string literals embedded in the SQL below.
+        var farKey = ResolveKey(targetEndpoint.DescriptorName).Replace("'", "''");
         var selfAssociation = sourceEndpoint.DescriptorName == targetEndpoint.DescriptorName;
 
         // For a self-association pick a far row distinct from the source; otherwise

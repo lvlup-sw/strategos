@@ -158,4 +158,49 @@ public class Query
 
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task Analyze_SameShortNameInDifferentNamespaces_DoesNotFireAONT211()
+    {
+        // INV-8 / #128 regression: two DIFFERENT CLR types share the SIMPLE name
+        // "Linked" across namespaces Ns1 and Ns2. Each is registered EXACTLY ONCE
+        // (Ns1.Linked → "orders_a", Ns2.Linked → "orders_b"), so neither is
+        // multi-registered. A short-name key would merge them into one
+        // ambiguously-multi-registered bucket and FALSELY fire AONT211 on
+        // TraverseLink<Ns1.Linked>("Orders"); keying by the fully-qualified type
+        // keeps them distinct, so the diagnostic must stay silent.
+        var source = @"
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+using Strategos.Ontology.ObjectSets;
+
+namespace Ns1 { public sealed record Linked(string Id); }
+namespace Ns2 { public sealed record Linked(string Id); }
+
+public sealed record Source(string Id);
+
+public class TestDomain : DomainOntology
+{
+    public override string DomainName => ""trading"";
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<Source>(obj => obj.Key(s => s.Id));
+        builder.Object<Ns1.Linked>(""orders_a"", obj => obj.Key(l => l.Id));
+        builder.Object<Ns2.Linked>(""orders_b"", obj => obj.Key(l => l.Id));
+    }
+}
+
+public class Query
+{
+    public void Run(ObjectSet<Source> set)
+    {
+        var hop = set.TraverseLink<Ns1.Linked>(""Orders"");
+    }
+}";
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(
+            source, OntologyDiagnosticIds.AmbiguousTraversalWithoutDescriptor);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
 }

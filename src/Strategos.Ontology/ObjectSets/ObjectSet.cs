@@ -72,6 +72,7 @@ public sealed class ObjectSet<T> where T : class
     /// </summary>
     public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName) where TLinked : class
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
         var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), targetDescriptorName: null);
         return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
     }
@@ -91,6 +92,8 @@ public sealed class ObjectSet<T> where T : class
     /// </summary>
     public ObjectSet<TLinked> TraverseLink<TLinked>(string linkName, string descriptorName) where TLinked : class
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(descriptorName);
         var traverseExpr = new TraverseLinkExpression(Expression, linkName, typeof(TLinked), descriptorName);
         return new ObjectSet<TLinked>(traverseExpr, _provider, _actionDispatcher, _eventStreamProvider);
     }

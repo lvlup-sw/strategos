@@ -81,13 +81,17 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
     // analyzer-only — there is no runtime counterpart in this task.
     private static void RegisterAmbiguousTraversalGuard(CompilationStartAnalysisContext startContext)
     {
-        // CLR type name -> distinct descriptor names registered for it. A type
-        // with two or more distinct names is "ambiguously multi-registered".
+        // FULLY-QUALIFIED CLR type -> distinct descriptor names registered for it.
+        // A type with two or more distinct names is "ambiguously multi-registered".
+        // INV-8 / #128: keying by the fully-qualified type (not the simple name)
+        // keeps two same-named types in different namespaces from being conflated,
+        // which would otherwise produce false AONT211 hits (or mask real ones).
         var registrationNamesByType = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
 
-        // Candidate one-arg TraverseLink sites: (target CLR type name, link name,
-        // location). The override (two-arg) form is filtered out at collection time.
-        var candidateTraversals = new ConcurrentBag<(string TargetType, string LinkName, Location Location)>();
+        // Candidate one-arg TraverseLink sites: (fully-qualified target type, its
+        // simple display name for the diagnostic message, link name, location). The
+        // override (two-arg) form is filtered out at collection time.
+        var candidateTraversals = new ConcurrentBag<(string TargetTypeKey, string TargetTypeDisplay, string LinkName, Location Location)>();
 
         startContext.RegisterSyntaxNodeAction(
             ctx => CollectRegistrationsAndTraversals(ctx, registrationNamesByType, candidateTraversals),
@@ -95,14 +99,14 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
         startContext.RegisterCompilationEndAction(endContext =>
         {
-            foreach (var (targetType, linkName, location) in candidateTraversals)
+            foreach (var (targetTypeKey, targetTypeDisplay, linkName, location) in candidateTraversals)
             {
-                if (registrationNamesByType.TryGetValue(targetType, out var names) && names.Count >= 2)
+                if (registrationNamesByType.TryGetValue(targetTypeKey, out var names) && names.Count >= 2)
                 {
                     endContext.ReportDiagnostic(Diagnostic.Create(
                         OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor,
                         location,
-                        targetType,
+                        targetTypeDisplay,
                         linkName));
                 }
             }
@@ -119,7 +123,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
     private static void CollectRegistrationsAndTraversals(
         SyntaxNodeAnalysisContext context,
         ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> registrationNamesByType,
-        ConcurrentBag<(string TargetType, string LinkName, Location Location)> candidateTraversals)
+        ConcurrentBag<(string TargetTypeKey, string TargetTypeDisplay, string LinkName, Location Location)> candidateTraversals)
     {
         if (context.Node is not InvocationExpressionSyntax invocation ||
             invocation.Expression is not MemberAccessExpressionSyntax memberAccess ||
@@ -136,7 +140,13 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var typeArgName = symbol.TypeArguments[0].Name;
+        var typeArg = symbol.TypeArguments[0];
+        // INV-8 / #128: key the multi-registration set by the FULLY-QUALIFIED type
+        // so two same-named types in different namespaces are never conflated. The
+        // simple name is retained only for the default-descriptor-name fallback
+        // (mirroring the runtime typeof(T).Name default) and the diagnostic message.
+        var typeArgKey = typeArg.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var typeArgName = typeArg.Name;
         var args = invocation.ArgumentList.Arguments;
 
         switch (genericName.Identifier.Text)
@@ -154,7 +164,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     (args.Count > 0 ? ExtractStringArg(invocation, 0) : null) ?? typeArgName;
 
                 var names = registrationNamesByType.GetOrAdd(
-                    typeArgName, _ => new ConcurrentDictionary<string, byte>());
+                    typeArgKey, _ => new ConcurrentDictionary<string, byte>());
                 names.TryAdd(descriptorName, 0);
                 break;
             }
@@ -165,7 +175,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 when symbol.Name == "TraverseLink" && args.Count == 1:
             {
                 var linkName = ExtractStringArg(invocation, 0) ?? "<link>";
-                candidateTraversals.Add((typeArgName, linkName, invocation.GetLocation()));
+                candidateTraversals.Add((typeArgKey, typeArgName, linkName, invocation.GetLocation()));
                 break;
             }
         }

@@ -125,25 +125,31 @@ public sealed class TraverseLinkExpression : ObjectSetExpression
     public string? TargetDescriptorName { get; }
 
     /// <summary>
-    /// Traversal breaks the walk-to-root chain: once we've traversed a link,
-    /// the query targets the linked type's descriptor, not the source root's, so
-    /// this reports the post-hop element's CLR-simple name.
+    /// Traversal breaks the walk-to-root chain: once we've traversed a link, the
+    /// query targets the linked type's descriptor, not the source root's. When the
+    /// caller supplied an explicit <see cref="TargetDescriptorName"/> this returns
+    /// it (so the downstream routing seams — <c>ObjectSet.ApplyAsync</c>,
+    /// <c>ObjectSet.EventsAsync</c>, and the Npgsql <c>ResolveTableName</c> — honor
+    /// the selected registration), mirroring how <see cref="RootExpression.ObjectTypeName"/>
+    /// reports the root's explicit descriptor name. With no override it falls back
+    /// to the post-hop element's CLR-simple name.
     /// <para>
-    /// DR-10 / #128 note: do NOT read this as the resolved HOP TARGET. The earlier
-    /// assumption — that "multi-registered types cannot be link targets" makes
-    /// <c>ObjectType.Name</c> unambiguous here — was FALSE and is precisely the
-    /// #128 defect: a CLR type backing several descriptors does NOT have a unique
-    /// name, and <c>OntologyCompositionException</c>'s graph-build guard "AONT041"
-    /// (a composition-exception message prefix, NOT a registered Roslyn analyzer
-    /// id) only rejects a NARROW case — a link target registered under a
-    /// non-default name — not multi-registration generally. The authoritative
-    /// hop-target resolution lives in the evaluators, which consume
-    /// <see cref="TargetDescriptorName"/> (the explicit override) and otherwise
-    /// the source link's declared target — never <c>typeof(TLinked)</c> /
-    /// <c>ObjectType.Name</c>.
+    /// DR-10 / #128 note: the <c>TargetDescriptorName ?? ObjectType.Name</c> shape
+    /// is exactly what keeps a multi-registered target from misrouting on the
+    /// action/event/table path. The earlier assumption — that "multi-registered
+    /// types cannot be link targets" makes <c>ObjectType.Name</c> unambiguous here
+    /// — was FALSE and is precisely the #128 defect: a CLR type backing several
+    /// descriptors does NOT have a unique name, and
+    /// <c>OntologyCompositionException</c>'s graph-build guard "AONT041" (a
+    /// composition-exception message prefix, NOT a registered Roslyn analyzer id)
+    /// only rejects a NARROW case — a link target registered under a non-default
+    /// name — not multi-registration generally. The HOP-target resolution proper
+    /// still lives in the evaluators, which consume <see cref="TargetDescriptorName"/>
+    /// (the explicit override) and otherwise the source link's declared target —
+    /// never <c>typeof(TLinked)</c> / <c>ObjectType.Name</c>.
     /// </para>
     /// </summary>
-    public override string RootObjectTypeName => ObjectType.Name;
+    public override string RootObjectTypeName => TargetDescriptorName ?? ObjectType.Name;
 }
 
 /// <summary>

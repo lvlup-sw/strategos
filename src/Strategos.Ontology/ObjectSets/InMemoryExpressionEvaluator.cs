@@ -102,12 +102,22 @@ public sealed class InMemoryExpressionEvaluator
                     nameof(graph));
             }
 
-            if (ot.SymbolKey is not null)
+            if (ot.SymbolKey is not null
+                && !_descriptorNameBySymbolKey.TryAdd(ot.SymbolKey, ot.Name))
             {
-                // Last writer wins on a shared SymbolKey; descriptor names are
-                // already globally unique so this only collides under a genuine
-                // SymbolKey duplication, which is a graph-authoring error.
-                _descriptorNameBySymbolKey[ot.SymbolKey] = ot.Name;
+                // A SymbolKey is a first-class polyglot identity (INV-8); a shared
+                // key across two descriptors is a graph-authoring error. Refuse it
+                // loudly — symmetric with the descriptor-name uniqueness check
+                // above — rather than letting "last writer wins" silently remap the
+                // key and misroute a TargetSymbolKey traversal to the wrong
+                // partition.
+                var existingName = _descriptorNameBySymbolKey[ot.SymbolKey];
+                throw new ArgumentException(
+                    $"SymbolKey '{ot.SymbolKey}' is registered for both descriptor '{existingName}' " +
+                    $"and descriptor '{ot.Name}'. InMemoryExpressionEvaluator requires globally unique " +
+                    $"polyglot SymbolKeys so a TargetSymbolKey traversal resolves to exactly one partition. " +
+                    $"Rename one of the registrations' SymbolKey to disambiguate.",
+                    nameof(graph));
             }
         }
 

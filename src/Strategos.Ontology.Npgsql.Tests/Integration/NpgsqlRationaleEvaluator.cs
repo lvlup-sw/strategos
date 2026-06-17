@@ -69,7 +69,9 @@ internal sealed class NpgsqlRationaleEvaluator : IRationaleEvaluator
 
         var assocTable = TypeMapper.ToSnakeCase(association.Name);
         var sourceTable = TypeMapper.ToSnakeCase(sourceDescriptor);
-        var sourceKey = ResolveKey(sourceDescriptor);
+        // Escape single quotes so a key carrying an apostrophe cannot break (or
+        // inject into) the JSON-path string literal embedded in the SQL below.
+        var sourceKey = ResolveKey(sourceDescriptor).Replace("'", "''");
 
         var sql =
             $"SELECT a.id, a.data FROM \"{_schema}\".\"{assocTable}\" a "

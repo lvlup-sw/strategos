@@ -480,6 +480,25 @@ internal static class SqlGenerator
                 nameof(association));
         }
 
+        // Two endpoint roles that normalize to the SAME {role}_id column would emit
+        // a duplicate column and fail at runtime with an opaque Postgres "column
+        // specified more than once". ToSnakeCase only lowercases/underscores, so
+        // roles that differ only by case or separators (e.g. "Owner" / "owner")
+        // collide after normalization. Surface a typed, actionable error here.
+        var roleColumns = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var endpoint in association.AssociationEndpoints)
+        {
+            var roleColumn = $"{TypeMapper.ToSnakeCase(endpoint.Role)}_id";
+            if (!roleColumns.Add(roleColumn))
+            {
+                throw new ArgumentException(
+                    $"Association '{association.Name}' has endpoint roles that normalize to the same "
+                    + $"FK column '{roleColumn}'. Endpoint roles must be distinct after snake_case "
+                    + "normalization so each endpoint maps to its own column; rename one of the roles.",
+                    nameof(association));
+            }
+        }
+
         var qSchema = QuoteIdentifier(schema);
         var tableName = TypeMapper.ToSnakeCase(association.Name);
 
