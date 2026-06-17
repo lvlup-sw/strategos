@@ -584,13 +584,21 @@ public class PhaseEnumEmitterUnitTests
     {
         var path0 = ForkPathModel.Create(
             pathIndex: 0,
-            stepNames: ["ProcessPayment", "ChargeCard"],
+            steps:
+            [
+                StepModel.Create("ProcessPayment", "TestNamespace.ProcessPayment"),
+                StepModel.Create("ChargeCard", "TestNamespace.ChargeCard"),
+            ],
             hasFailureHandler: false,
             isTerminalOnFailure: false);
 
         var path1 = ForkPathModel.Create(
             pathIndex: 1,
-            stepNames: ["ReserveInventory", "PickItems"],
+            steps:
+            [
+                StepModel.Create("ReserveInventory", "TestNamespace.ReserveInventory"),
+                StepModel.Create("PickItems", "TestNamespace.PickItems"),
+            ],
             hasFailureHandler: false,
             isTerminalOnFailure: false);
 

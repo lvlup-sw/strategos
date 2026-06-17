@@ -14,6 +14,9 @@ namespace Strategos.Generators.Tests.Models;
 [Property("Category", "Unit")]
 public class ForkModelTests
 {
+    private static List<StepModel> Steps(params string[] names)
+        => [.. names.Select(n => StepModel.Create(n, $"TestNamespace.{n}"))];
+
     // =============================================================================
     // A. Factory Method Tests
     // =============================================================================
@@ -25,8 +28,8 @@ public class ForkModelTests
     public async Task Create_WithValidParams_ReturnsModel()
     {
         // Arrange
-        var path1 = ForkPathModel.Create(0, new List<string> { "Step1" }, false, false);
-        var path2 = ForkPathModel.Create(1, new List<string> { "Step2" }, false, false);
+        var path1 = ForkPathModel.Create(0, Steps("Step1"), false, false);
+        var path2 = ForkPathModel.Create(1, Steps("Step2"), false, false);
 
         // Act
         var model = ForkModel.Create(
@@ -49,7 +52,7 @@ public class ForkModelTests
     public async Task Create_WithLessThanTwoPaths_ThrowsArgumentException()
     {
         // Arrange
-        var path1 = ForkPathModel.Create(0, new List<string> { "Step1" }, false, false);
+        var path1 = ForkPathModel.Create(0, Steps("Step1"), false, false);
 
         // Act & Assert
         await Assert.That(() => ForkModel.Create(
@@ -104,8 +107,8 @@ public class ForkModelTests
     public async Task HasAnyFailureHandler_WithHandler_ReturnsTrue()
     {
         // Arrange
-        var path1 = ForkPathModel.Create(0, new List<string> { "Step1" }, hasFailureHandler: true, isTerminalOnFailure: false);
-        var path2 = ForkPathModel.Create(1, new List<string> { "Step2" }, hasFailureHandler: false, isTerminalOnFailure: false);
+        var path1 = ForkPathModel.Create(0, Steps("Step1"), hasFailureHandler: true, isTerminalOnFailure: false);
+        var path2 = ForkPathModel.Create(1, Steps("Step2"), hasFailureHandler: false, isTerminalOnFailure: false);
 
         var model = ForkModel.Create("fork1", "StartStep", new List<ForkPathModel> { path1, path2 }, "JoinStep");
 
@@ -149,8 +152,8 @@ public class ForkModelTests
     {
         return new List<ForkPathModel>
         {
-            ForkPathModel.Create(0, new List<string> { "Step1" }, false, false),
-            ForkPathModel.Create(1, new List<string> { "Step2" }, false, false),
+            ForkPathModel.Create(0, Steps("Step1"), false, false),
+            ForkPathModel.Create(1, Steps("Step2"), false, false),
         };
     }
 }
