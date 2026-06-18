@@ -143,6 +143,7 @@ internal sealed record WorkflowModel(
             return result;
         }
     }
+
     /// <summary>
     /// Gets a value indicating whether this workflow contains any approval checkpoints.
     /// </summary>
