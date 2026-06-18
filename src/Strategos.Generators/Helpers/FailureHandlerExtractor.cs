@@ -126,12 +126,11 @@ internal static class FailureHandlerExtractor
         ref bool isTerminal,
         CancellationToken cancellationToken)
     {
-        // Find all invocations in the handler body, reversed for correct order
-        var allInvocations = handlerLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Reverse()
-            .ToList();
+        // F1: walk only the handler lambda's OWN invocations, in source order. A raw
+        // DescendantNodes() walk captures Then<>/Complete calls from NESTED lambdas — e.g. a
+        // handler step's OnLowConfidence(alt => alt.Then<Recovery>()) configure lambda — which
+        // would surface as phantom/misordered failure-handler steps.
+        var allInvocations = InvocationChainWalker.CollectInvocationsInLambda(handlerLambda);
 
         foreach (var inv in allInvocations)
         {

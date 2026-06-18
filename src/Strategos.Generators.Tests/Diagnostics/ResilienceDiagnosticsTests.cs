@@ -184,6 +184,26 @@ public sealed class ResilienceDiagnosticsTests
     }
 
     /// <summary>
+    /// CodeRabbit F2 (PR #137): a unary-minus retry literal (<c>WithRetry(-1)</c>) must reach
+    /// the IR so AGWF020 fires. The retry parser previously accepted only a direct numeric
+    /// literal, so a negative literal never parsed and the diagnostic silently vanished —
+    /// violating INV-5 (invalid config must surface, not disappear).
+    /// </summary>
+    [Test]
+    public async Task Analyze_RetryMaxAttemptsNegativeLiteral_Fires()
+    {
+        var source = WorkflowWithStepConfig(
+            stepConfig: "step => step.WithRetry(-1)",
+            extraTypes: string.Empty);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == RetryBelowOneId);
+        await Assert.That(diagnostic).IsNotNull();
+        await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+    }
+
+    /// <summary>
     /// Verifies that a valid retry count does NOT fire AGWF020 (conformant-negative).
     /// </summary>
     [Test]

@@ -105,6 +105,18 @@ internal static class ResilienceParser
     {
         value = 0;
 
+        // Unary minus over a numeric literal (e.g. WithRetry(-1)) — recognized so a negative
+        // (below-one) maxAttempts reaches the IR and trips the RetryMaxAttemptsBelowOne
+        // diagnostic (INV-5). Mirrors the unary-minus handling in TryGetDoubleLiteral. Without
+        // this, the negative literal never parsed and the whole RetryModel silently vanished.
+        if (expression is PrefixUnaryExpressionSyntax unary
+            && unary.IsKind(SyntaxKind.UnaryMinusExpression)
+            && TryGetIntLiteral(unary.Operand, out var operand))
+        {
+            value = -operand;
+            return true;
+        }
+
         if (expression is LiteralExpressionSyntax literal
             && literal.IsKind(SyntaxKind.NumericLiteralExpression)
             && literal.Token.Value is int intValue)
@@ -163,25 +175,37 @@ internal static class ResilienceParser
             return false;
         }
 
-        switch (factory)
+        // F3: TimeSpan.From* throws OverflowException on an out-of-range argument (e.g.
+        // FromDays(1e18)) and ArgumentException on NaN. Constructing it directly let that escape
+        // and abort generation. Wrap the construction so an unparseable/out-of-range literal yields
+        // false — the caller then skips the value (no timeout) rather than crashing the generator.
+        try
         {
-            case "FromMilliseconds":
-                value = TimeSpan.FromMilliseconds(amount);
-                return true;
-            case "FromSeconds":
-                value = TimeSpan.FromSeconds(amount);
-                return true;
-            case "FromMinutes":
-                value = TimeSpan.FromMinutes(amount);
-                return true;
-            case "FromHours":
-                value = TimeSpan.FromHours(amount);
-                return true;
-            case "FromDays":
-                value = TimeSpan.FromDays(amount);
-                return true;
-            default:
-                return false;
+            switch (factory)
+            {
+                case "FromMilliseconds":
+                    value = TimeSpan.FromMilliseconds(amount);
+                    return true;
+                case "FromSeconds":
+                    value = TimeSpan.FromSeconds(amount);
+                    return true;
+                case "FromMinutes":
+                    value = TimeSpan.FromMinutes(amount);
+                    return true;
+                case "FromHours":
+                    value = TimeSpan.FromHours(amount);
+                    return true;
+                case "FromDays":
+                    value = TimeSpan.FromDays(amount);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        catch (Exception ex) when (ex is OverflowException or ArgumentException)
+        {
+            value = default;
+            return false;
         }
     }
 
