@@ -118,11 +118,13 @@ internal static class ContextModelExtractor
     {
         var sources = new List<ContextSourceModel>();
 
-        // Find all method invocations within the lambda
-        var allInvocations = configLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .ToList();
+        // Collect the top-level FromState/FromRetrieval/FromLiteral invocations in
+        // SOURCE (declaration) order. CollectInvocationsInLambda excludes calls
+        // nested inside lambdas — so a FromRetrieval's inner Query/TopK/... do not
+        // leak in — and reverses the outer-to-inner DescendantNodes order back to
+        // left-to-right, preserving the order the author declared sources in
+        // (assembled segments are order-sensitive for prompt construction).
+        var allInvocations = InvocationChainWalker.CollectInvocationsInLambda(configLambda);
 
         foreach (var inv in allInvocations)
         {
@@ -215,8 +217,11 @@ internal static class ContextModelExtractor
         var typeInfo = semanticModel.GetTypeInfo(body);
         var propertyType = typeInfo.Type?.ToDisplayString() ?? "object";
 
-        // Build the access expression (e.g., "state.CustomerName")
-        var accessExpression = BuildAccessExpression(selectorLambda, body);
+        // Build the access expression against the assembler's "state" parameter
+        // (e.g., "state.CustomerName"). The lambda parameter name (s/x/...) is
+        // discarded so the emitted expression always binds to the generated
+        // AssembleAsync(TState state, ...) parameter, not the author's lambda var.
+        var accessExpression = $"state.{propertyPath}";
 
         stateSource = new StateContextSourceModel(propertyPath, propertyType, accessExpression);
         return true;
@@ -602,19 +607,5 @@ internal static class ContextModelExtractor
         }
 
         return string.Empty;
-    }
-
-    private static string BuildAccessExpression(LambdaExpressionSyntax lambda, SyntaxNode body)
-    {
-        // Get the parameter name from the lambda
-        var parameterName = lambda switch
-        {
-            SimpleLambdaExpressionSyntax simple => simple.Parameter.Identifier.Text,
-            ParenthesizedLambdaExpressionSyntax parens => parens.ParameterList.Parameters.FirstOrDefault()?.Identifier.Text ?? "state",
-            _ => "state"
-        };
-
-        // Build the full expression
-        return body.ToString();
     }
 }

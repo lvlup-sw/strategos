@@ -44,6 +44,13 @@
          (WorkflowTelemetry) for OpenTelemetry step spans, so the generated
          saga only compiles with Strategos.Agents on the reference graph. -->
     <ProjectReference Include="..\Strategos.Agents\Strategos.Agents.csproj" />
+    <!-- DR-6 context wire-in (T016): a step's .WithContext(...) lowers a
+         {Step}ContextAssembler whose retrieval source depends on
+         IObjectSetProvider (Strategos.Ontology.ObjectSets), so the generated
+         saga only compiles — and the ContextWorkflow fixture's stub provider
+         can be registered — with Strategos.Ontology on the reference graph.
+         Ontology-wired, not RAG (INV-2): no Strategos.Rag reference. -->
+    <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
     <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
   </ItemGroup>
 

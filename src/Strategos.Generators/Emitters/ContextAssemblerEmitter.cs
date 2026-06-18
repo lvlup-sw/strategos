@@ -54,6 +54,7 @@ internal static class ContextAssemblerEmitter
             "System.Linq",
             "System.Threading",
             "System.Threading.Tasks",
+            "Strategos.Agents.Abstractions",
             "Strategos.Agents.Models",
             "Strategos.Ontology.ObjectSets",
             "Strategos.Steps");
@@ -258,12 +259,13 @@ internal static class ContextAssemblerEmitter
 
         sb.AppendLine($"        var {resultsVarName} = await _objectSetProvider.ExecuteSimilarityAsync<{retrieval.CollectionTypeName}>({resultsVarName}Expression, cancellationToken);");
 
-        // Map to RetrievalResult list
-        sb.AppendLine($"        var {resultsVarName}List = {resultsVarName}.Items.Select((item, i) => new RetrievalResult");
-        sb.AppendLine("        {");
-        sb.AppendLine("            Content = item.ToString(),");
-        sb.AppendLine($"            Score = {resultsVarName}.Scores[i],");
-        sb.AppendLine("        }).ToList();");
+        // Map to RetrievalResult list. RetrievalResult is a POSITIONAL record
+        // (Content, Score, ...): construct it positionally, not with an object
+        // initializer (Content is a required ctor parameter). item.ToString() is
+        // string? so coalesce to keep the non-nullable Content satisfied.
+        sb.AppendLine($"        var {resultsVarName}List = {resultsVarName}.Items.Select((item, i) => new RetrievalResult(");
+        sb.AppendLine("            item.ToString() ?? string.Empty,");
+        sb.AppendLine($"            {resultsVarName}.Scores[i])).ToList();");
         sb.AppendLine($"        contextBuilder.AddRetrievalContext(\"{retrieval.CollectionTypeName}\", {resultsVarName}List);");
     }
 
