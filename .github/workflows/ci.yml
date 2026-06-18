@@ -23,7 +23,14 @@ jobs:
       # its ~165k lines of test code otherwise land in the denominator and crater
       # the aggregate to ~18%. Filtering test assemblies out reports true
       # production coverage (~82%).
-      coverage-filters: '-*Tests'
+      #
+      # Also exclude the third-party Wolverine/Marten runtime assemblies (JasperFx
+      # and friends). The behavioral-test project (#135) references WolverineFx +
+      # Marten, whose runtime-codegen core (JasperFx — ~48k instrumented lines @
+      # ~29%) coverlet now instruments and counts as "production", dragging the
+      # weighted aggregate from ~82% to ~55%. These are external dependencies, not
+      # Strategos production code, so they do not belong in the coverage gate.
+      coverage-filters: '-*Tests;-JasperFx*;-Wolverine*;-Marten*;-Weasel*;-Npgsql*'
       runner: 'blacksmith-4vcpu-ubuntu-2204'
       dotnet-version: '10.0.x'
       dotnet-quality: 'preview'
