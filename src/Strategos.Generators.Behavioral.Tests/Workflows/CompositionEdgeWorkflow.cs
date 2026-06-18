@@ -179,6 +179,7 @@ public static partial class CompositionRaceWorkflowDefinition
 public sealed class CompositionImmutableProbe
 {
     private readonly ConcurrentQueue<CompositionState> seenInputs = new();
+    private readonly ConcurrentDictionary<Guid, int> attemptsByRun = new();
 
     /// <summary>
     /// Gets the ordered sequence of input state instances seen across attempts.
@@ -196,9 +197,30 @@ public sealed class CompositionImmutableProbe
     }
 
     /// <summary>
+    /// Atomically increments and returns the per-run attempt number for the given
+    /// workflow run, keyed by <paramref name="workflowId"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is the per-run replacement for deriving the attempt count from the
+    /// session-shared <see cref="WorkflowInvocationLog"/>: keying by the run's
+    /// fresh <see cref="CompositionState.WorkflowId"/> (reset to zero each test via
+    /// <see cref="Reset"/>) makes the count start from one for every run, so the
+    /// retried step's success threshold is order-independent and unaffected by any
+    /// prior run/test that recorded the same step name.
+    /// </remarks>
+    /// <param name="workflowId">The run identity to count attempts for.</param>
+    /// <returns>The 1-based attempt number for this run after incrementing.</returns>
+    public int NextAttempt(Guid workflowId) =>
+        this.attemptsByRun.AddOrUpdate(workflowId, 1, (_, current) => current + 1);
+
+    /// <summary>
     /// Clears the probe at the start of each test to isolate it from prior runs.
     /// </summary>
-    public void Reset() => this.seenInputs.Clear();
+    public void Reset()
+    {
+        this.seenInputs.Clear();
+        this.attemptsByRun.Clear();
+    }
 }
 
 /// <summary>Leading kickoff step for the immutable-input scenario. Seeds the
@@ -249,7 +271,14 @@ public sealed class ImmutableRetriedStep(WorkflowInvocationLog log, CompositionI
         // probe captures the input on every attempt (including the failing ones).
         this.probe.RecordInput(state);
 
-        var attempt = this.log.CountFor(nameof(ImmutableRetriedStep));
+        // Derive the attempt number from the PER-RUN probe keyed by this run's
+        // WorkflowId, NOT the session-shared invocation log. The log persists
+        // across runs/tests on the session-scoped host, so a prior run that
+        // recorded this step name would start `attempt` at 3+ here — the step
+        // would then succeed immediately and stop proving retry/INV-7. Keying by
+        // WorkflowId (the probe is Reset() each test) starts every run at 1, so
+        // the threshold is order-independent.
+        var attempt = this.probe.NextAttempt(state.WorkflowId);
         if (attempt < 3)
         {
             throw new CompositionTransientException(
