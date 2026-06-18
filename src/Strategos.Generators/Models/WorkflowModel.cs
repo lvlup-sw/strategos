@@ -54,6 +54,21 @@ internal sealed record WorkflowModel(
     IReadOnlyList<string>? ConfidenceHandlerStepNames = null)
 {
     /// <summary>
+    /// Gets a value indicating whether the workflow's state type exposes a public
+    /// instance <c>Phase</c> property.
+    /// </summary>
+    /// <remarks>
+    /// The failure-handler routing lowering syncs the saga's <c>Phase</c> from the
+    /// reduced state (<c>Phase = State.Phase</c>) only when this is
+    /// <see langword="true"/>. A realistic state type that tracks its phase at the
+    /// saga level only (no <c>Phase</c> member) must NOT emit that sync, otherwise
+    /// the generated saga references a property the state does not have and fails to
+    /// compile. Defaults to <see langword="false"/> so the safe (no-sync) shape is
+    /// the default for the many positional/factory model constructions in tests.
+    /// </remarks>
+    public bool StateHasPhaseProperty { get; init; }
+
+    /// <summary>
     /// Gets the derived phase enum name.
     /// </summary>
     public string PhaseEnumName => $"{PascalName}Phase";

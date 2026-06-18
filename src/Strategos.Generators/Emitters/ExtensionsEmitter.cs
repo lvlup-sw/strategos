@@ -186,6 +186,22 @@ internal static class ExtensionsEmitter
             }
         }
 
+        // Register workflow-level OnFailure handler step worker handlers (#140 Task
+        // 3.1). These are DISTINCT FailureHandler_{id}_{step}Handler classes (not the
+        // folded main-flow {step}Handler), one per OnFailure step, so the saga's
+        // ExecuteFailureHandler_{id}_{step}WorkerCommand has a resolvable receiver.
+        if (model.FailureHandlers is not null)
+        {
+            foreach (var failureHandler in model.FailureHandlers)
+            {
+                var sanitizedId = failureHandler.HandlerId.Replace("-", "_");
+                foreach (var stepName in failureHandler.StepNames)
+                {
+                    sb.AppendLine($"        services.AddTransient<FailureHandler_{sanitizedId}_{stepName}Handler>();");
+                }
+            }
+        }
+
         // Register context assemblers (DR-6). One per step that declared
         // .WithContext(...); the step's worker handler takes it as a constructor
         // dependency. A retrieval-bearing assembler additionally depends on

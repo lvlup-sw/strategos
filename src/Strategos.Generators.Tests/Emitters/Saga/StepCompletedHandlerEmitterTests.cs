@@ -763,7 +763,13 @@ public class StepCompletedHandlerEmitterTests
             StepNames: ["ValidateStep", "ProcessStep", "CompleteStep", "FailedStep"],
             StateTypeName: "TestState",
             Loops: null,
-            FailureHandlers: [failureHandler]);
+            FailureHandlers: [failureHandler])
+        {
+            // This model represents a state type that carries a Phase property, so
+            // the saga syncs Phase = State.Phase (the route-1 OnFailure path). The
+            // emitter only emits that sync when StateHasPhaseProperty is true (#140).
+            StateHasPhaseProperty = true,
+        };
     }
 
     private static WorkflowModel CreateModelWithFailureHandlersAndWorkflowState()

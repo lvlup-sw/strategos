@@ -147,6 +147,7 @@ internal sealed class StepCompletedHandlerEmitter
         // "WorkflowState" track phase at the saga level only, so they are excluded
         // from the sync, exactly as EmitPhaseAwareNonFinalStepHandler does.
         if (model.HasFailureHandlers
+            && model.StateHasPhaseProperty
             && !string.IsNullOrEmpty(model.StateTypeName)
             && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
         {
@@ -336,10 +337,14 @@ internal sealed class StepCompletedHandlerEmitter
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
 
-            // Sync saga Phase from state for state types that have Phase property
-            // State types ending in "WorkflowState" typically don't have Phase property
-            // (e.g., OrchestratorWorkflowState uses saga-level phase tracking only)
-            if (!model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
+            // Sync saga Phase from state ONLY for state types that actually expose a
+            // Phase property (mechanically detected via StateHasPhaseProperty). State
+            // types tracking phase at the saga level only (e.g. OrchestratorWorkflowState,
+            // or any realistic exception-triggered OnFailure state) have no Phase member,
+            // so emitting State.Phase would not compile. The "WorkflowState" suffix check
+            // is retained as a defensive secondary guard.
+            if (model.StateHasPhaseProperty
+                && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
             {
                 sb.AppendLine($"        Phase = State.Phase;");
             }

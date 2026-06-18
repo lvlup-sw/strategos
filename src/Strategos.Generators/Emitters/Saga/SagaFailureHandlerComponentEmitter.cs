@@ -45,9 +45,18 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         var firstHandler = model.FailureHandlers!.First();
         var firstStepName = firstHandler.FirstStepName;
 
-        // Emit the trigger handler
-        sb.AppendLine();
-        EmitTriggerHandler(sb, model, firstHandler);
+        // Emit the trigger handler — UNLESS the workflow also declares compensation
+        // (#140 Task 3.2). When both are present, a single merged Handle(Trigger…)
+        // lives in SagaCompensationComponentEmitter (it dispatches the rollback
+        // FIRST, then chains into this OnFailure chain). Emitting our own trigger
+        // handler too would be a duplicate-method (CS0111) collision — exactly the
+        // collision the old mutual-exclusion no-op avoided, now resolved by a single
+        // ordered trigger site instead of skipping compensation.
+        if (!model.HasCompensation)
+        {
+            sb.AppendLine();
+            EmitTriggerHandler(sb, model, firstHandler);
+        }
 
         // Emit handlers for each failure handler step
         foreach (var handler in model.FailureHandlers!)
