@@ -198,6 +198,11 @@ internal sealed record WorkflowModel(
     /// <param name="failureHandlers">The optional failure handler constructs in this workflow.</param>
     /// <param name="approvalPoints">The optional approval checkpoints in this workflow.</param>
     /// <param name="forks">The optional fork constructs in this workflow.</param>
+    /// <param name="confidenceHandlerStepNames">
+    /// The optional step names lowered from <c>OnLowConfidence</c> handler branches (DR-5).
+    /// Threaded through so <see cref="HasConfidenceHandlers"/> / <see cref="IsConfidenceHandlerStep"/>
+    /// are correct for factory-built models (consistent with the primary constructor).
+    /// </param>
     /// <returns>A validated <see cref="WorkflowModel"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="pascalName"/>, <paramref name="namespace"/>, or <paramref name="stepNames"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when any validation fails.</exception>
@@ -215,7 +220,8 @@ internal sealed record WorkflowModel(
         IReadOnlyList<BranchModel>? branches = null,
         IReadOnlyList<FailureHandlerModel>? failureHandlers = null,
         IReadOnlyList<ApprovalModel>? approvalPoints = null,
-        IReadOnlyList<ForkModel>? forks = null)
+        IReadOnlyList<ForkModel>? forks = null,
+        IReadOnlyList<string>? confidenceHandlerStepNames = null)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNullOrWhiteSpace(workflowName, nameof(workflowName));
@@ -269,6 +275,7 @@ internal sealed record WorkflowModel(
             Branches: branches,
             FailureHandlers: failureHandlers,
             ApprovalPoints: approvalPoints,
-            Forks: forks);
+            Forks: forks,
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
     }
 }
