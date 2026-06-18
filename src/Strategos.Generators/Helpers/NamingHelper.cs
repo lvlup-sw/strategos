@@ -97,4 +97,26 @@ internal static class NamingHelper
         ThrowHelper.ThrowIfNull(stateTypeName, nameof(stateTypeName));
         return $"{stateTypeName}Reducer";
     }
+
+    /// <summary>
+    /// Gets the simple (unqualified) type name from a possibly fully qualified
+    /// type name.
+    /// </summary>
+    /// <param name="typeName">The type name (e.g., "MyApp.Steps.RollbackStep").</param>
+    /// <returns>The simple type name (e.g., "RollbackStep").</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="typeName"/> is null.</exception>
+    /// <remarks>
+    /// Used by the compensation lowering path to derive worker-handler, command,
+    /// and event names from a <c>CompensationModel</c>'s fully qualified
+    /// compensation step type name (which is carried as a descriptor string per
+    /// INV-8, never a CLR <see cref="System.Type"/>).
+    /// </remarks>
+    public static string GetSimpleTypeName(string typeName)
+    {
+        ThrowHelper.ThrowIfNull(typeName, nameof(typeName));
+        var lastDot = typeName.LastIndexOf('.');
+        return lastDot >= 0 && lastDot < typeName.Length - 1
+            ? typeName.Substring(lastDot + 1)
+            : typeName;
+    }
 }

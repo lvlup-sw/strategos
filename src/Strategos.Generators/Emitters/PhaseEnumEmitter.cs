@@ -86,6 +86,15 @@ internal static class PhaseEnumEmitter
             EmitFailureHandlerPhases(sb, model.FailureHandlers!);
         }
 
+        // Compensation phase (DR-3): the in-flight phase while a step's rollback
+        // (.Compensate<T>()) runs, before the saga settles into terminal Failed.
+        if (model.HasCompensation)
+        {
+            sb.AppendLine("    /// <summary>Running a step's compensation (rollback) handler.</summary>");
+            sb.AppendLine("    Compensating,");
+            sb.AppendLine();
+        }
+
         // Standard terminal phases
         sb.AppendLine("    /// <summary>Workflow completed successfully.</summary>");
         sb.AppendLine("    Completed,");
