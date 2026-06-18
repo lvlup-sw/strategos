@@ -440,6 +440,12 @@ public record ConversationalState
 
 ### F6: Step-Scoped Failure Handlers
 
+> **Foundation shipped (#135, 2026-06-18):** step-level `WithRetry` / `WithTimeout` /
+> `Compensate<T>` / `RequireConfidence` now lower into the generated Wolverine+Marten saga
+> (proven on a real host). The items below build on that foundation; still pending are
+> per-step exception-type routing, automatic reverse-order compensation, and the
+> workflow-level `OnFailure` handler chain. See `docs/designs/2026-06-17-step-resilience-lowering.md`.
+
 **Consumer Benefit:**
 > *"Each step can have its own error handling. Payment failures trigger refunds; other failures just log."*
 

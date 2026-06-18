@@ -10,6 +10,27 @@
 
 This document catalogs all features from the Strategos design specification that were intentionally deferred from the initial implementation. Each deferral is analyzed for its rationale, impact, and recommended path forward.
 
+> **Status update — 2026-06-18 (epic #135, _step resilience lowering_).** Step-level
+> resilience is **now lowered into the emitted Wolverine + Marten saga and proven on a
+> real host** — superseding the parts of this analysis that described it as deferred or
+> only "declared." What now lowers end-to-end (each with a behavioral test that runs a
+> generated saga against a real Postgres):
+> - **`WithRetry`** → a per-handler Wolverine error policy (`Configure(HandlerChain)` → `OnAnyException().RetryTimes`/`RetryWithCooldown`).
+> - **`WithTimeout`** → a saga `TimeoutMessage` deadline race (idempotent guard). *Durable cross-restart delivery requires the Marten transactional outbox — `AddMarten(…).IntegrateWithWolverine()` — otherwise scheduled/timeout delivery is in-memory only.*
+> - **`Compensate<T>`** → the worker's `Configure` chain publishes the (previously orphaned) `Trigger…FailureHandlerCommand` after retries exhaust, and a dedicated saga compensation chain runs the rollback step → terminal `Failed`.
+> - **`RequireConfidence` / `OnLowConfidence`** → saga routing on the runtime confidence score.
+> - **`WithContext`** → the (previously dead) `ContextAssemblerEmitter` is wired in; a `.WithContext` step assembles **ontology-backed** context (`IObjectSetProvider.ExecuteSimilarityAsync`, no `Strategos.Rag`).
+> - **Expressibility:** `Then<TStep>(configure)` now also exists on the **branch** and **failure-handler** builders (fork landed earlier via #134).
+> - **Diagnostics:** invalid resilience config now reports `AGWF017`–`AGWF021`.
+>
+> **Known boundaries (carried as follow-ons, not regressions):** only a **single-step,
+> terminating** `OnLowConfidence` handler is lowered (multi-step chains + rejoin-to-main
+> are not yet); **workflow-level `OnFailure` handler-chain interop with `Compensate<T>` is
+> deferred** (see §2.1 — the workflow-level failure-handler chain is independently
+> non-functional); resilience config is attachable only via `.Then<TStep>(s => …)` (not
+> `StartWith`/`Finally`); and a `[Workflow("name")]` name must PascalCase to its
+> partial-class name. See `docs/designs/2026-06-17-step-resilience-lowering.md`.
+
 **Total Deferred Features:** 8
 **Deferral Categories:**
 - Agent-Specific Patterns (4 features)
@@ -273,11 +294,12 @@ These features relate to source generator capabilities.
 
 **Design Spec Reference:** Error Handling and Compensation
 
-**Current State:**
+**Current State (updated #135):**
 - Runtime DSL: `OnFailure(flow => flow.Then<NotifyFailure>())` works
-- Generator: Does not emit saga handlers for workflow-level OnFailure
+- **Step-level `Compensate<T>()` now lowers and RUNS** (#135): retries exhaust → the worker's `Configure` chain publishes `Trigger…FailureHandlerCommand` → a dedicated saga compensation chain runs the rollback step → terminal `Failed`. Proven on a real host.
+- **Still deferred:** the *workflow-level* `OnFailure` handler **chain** — #135 found it independently non-functional (its generated `ExecuteFailureHandler…WorkerCommand` has no worker handler). `Compensate<T>` deliberately routes through a separate, working compensation chain; the dedicated emitter no-ops when a workflow-level failure handler is present (to avoid a duplicate `Handle(Trigger…)` overload). Wiring the workflow-level chain + its interop with `Compensate<T>` is the remaining work here.
 
-**Deferral Rationale:**
+**Deferral Rationale (workflow-level OnFailure chain):**
 - **Infrastructure Complexity:** Failure handlers require exception capture, context preservation, and saga state coordination
 - **Partial Implementation Risk:** Incomplete failure handling is worse than no handling
 - **Priority:** Fork/Join and Approval patterns prioritized for MVP
@@ -285,8 +307,8 @@ These features relate to source generator capabilities.
 **Impact:**
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
-| Error Recovery | Medium | Workflow-level failures route to `Failed` phase without custom handling |
-| Compensation | Low | Step-level `Compensate<T>()` works; only workflow-level affected |
+| Error Recovery | Medium | Workflow-level `OnFailure` *handler chain* still routes to `Failed` without running its handler steps |
+| Compensation | **Resolved** (#135) | Step-level `Compensate<T>()` now lowers + runs the rollback on a real saga |
 
 **Workaround:**
 ```csharp
@@ -513,11 +535,15 @@ All deferred features have documented workarounds using standard library pattern
 - Compensation handlers
 - Infrastructure implementations
 
+### Resolved by #135 (step resilience lowering)
+- Step `WithRetry` / `WithTimeout` / `Compensate<T>` / `RequireConfidence` + `OnLowConfidence` — now lower into the saga and run on a real host
+- `WithContext` — ontology-backed context assembly now lowers (Context Assembly below is resolved for the lowered path; manual assembly no longer required)
+
 ### What's Deferred (with Workarounds)
 - AgentStep base class -> Implement `IWorkflowStep<T>` with custom LLM integration
-- Context Assembly -> Manual assembly in step implementations
 - RAG Integration -> Standard DI with retrieval services
 - Conversation History -> `[Append]` attribute + manual summarization
-- OnFailure Emitters -> Partial class extension
+- Workflow-level OnFailure handler chain -> Partial class extension (step-level `Compensate<T>()` resolved by #135; see §2.1)
+- Multi-step / rejoining `OnLowConfidence` handlers -> single-step terminating handler lowered by #135; chains/rejoin pending
 - Projections -> Manual Marten projections
 - Agent Versioning -> Custom events in step implementations
