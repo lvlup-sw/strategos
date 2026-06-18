@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 
 namespace Strategos.Generators.Models;
 
@@ -62,6 +63,37 @@ internal sealed record CompensationModel(
     bool IsRegisteredStep = true);
 
 /// <summary>
+/// Generator IR for an ordered chain of <c>OnLowConfidence</c> handler steps and
+/// the chain's exit semantics (G-4 / #139).
+/// </summary>
+/// <param name="Steps">
+/// The ordered handler steps lowered from every <c>Then&lt;THandler&gt;()</c> call
+/// inside an <c>OnLowConfidence(alt =&gt; ...)</c> lambda. The confidence gate routes
+/// to the first step; each non-last step chains to the next; the last step's exit
+/// is governed by <paramref name="RejoinsMainFlow"/>. Carries each step's fully
+/// qualified type name (needed for DI / worker-handler lowering) in addition to its
+/// simple name. Per INV-8 every step's identity is a descriptor string, never a CLR
+/// <see cref="System.Type"/>.
+/// </param>
+/// <param name="RejoinsMainFlow">
+/// A value indicating whether the chain REJOINS the main flow at the step after the
+/// gated step once its last step completes (<see langword="true"/>), or TERMINATES
+/// the workflow via <c>MarkCompleted()</c> (<see langword="false"/>). Defaults to
+/// <see langword="false"/> — terminating is the back-compat default (DR-5's
+/// single-step handler terminated). Inferred from the handler lambda shape: a
+/// <c>.RejoinMainFlow()</c> call opts into rejoining; its absence terminates.
+/// </param>
+/// <remarks>
+/// Sealed, init-only IR (INV-6): positional-record params lower to init-only setters,
+/// so a downstream pipeline stage cannot rewrite the chain after parse. The record's
+/// structural equality is value-based on its members, which the incremental generator
+/// pipeline relies on for cache-keying.
+/// </remarks>
+internal sealed record LowConfidenceHandlerChainModel(
+    IReadOnlyList<StepModel> Steps,
+    bool RejoinsMainFlow = false);
+
+/// <summary>
 /// Generator IR for a step's confidence-gating policy.
 /// </summary>
 /// <param name="Threshold">
@@ -74,14 +106,23 @@ internal sealed record CompensationModel(
 /// the <c>OnLowConfidence(alt =&gt; ...)</c> lambda.
 /// </param>
 /// <param name="OnLowConfidenceHandlerStep">
-/// The fully-resolved <see cref="StepModel"/> for the low-confidence handler step,
-/// or null if no handler is configured. Carries the handler step's fully qualified
-/// type name (needed for DI / worker-handler lowering) in addition to its simple
-/// name. The handler step is lowered into the saga (its own phase, worker handler,
-/// start/completed commands and events) so DR-5 can route to it via a Wolverine
-/// cascade (INV-1).
+/// The fully-resolved <see cref="StepModel"/> for the FIRST low-confidence handler
+/// step, or null if no handler is configured. Carries the handler step's fully
+/// qualified type name (needed for DI / worker-handler lowering) in addition to its
+/// simple name. The confidence-gated completed handler routes to this step via a
+/// Wolverine cascade (INV-1) when confidence is below the threshold. Retained
+/// alongside <paramref name="OnLowConfidenceHandlerChain"/> for back-compat — it is
+/// the chain's first step.
+/// </param>
+/// <param name="OnLowConfidenceHandlerChain">
+/// The ordered handler chain (G-4 / #139), or null if no handler is configured. When
+/// present, every step in <see cref="LowConfidenceHandlerChainModel.Steps"/> is
+/// lowered into the saga (its own phase, worker handler, start/completed commands and
+/// events); non-last steps chain to the next, and the last step either rejoins the
+/// main flow or terminates per <see cref="LowConfidenceHandlerChainModel.RejoinsMainFlow"/>.
 /// </param>
 internal sealed record ConfidenceModel(
     double Threshold,
     string? OnLowConfidenceHandlerId = null,
-    StepModel? OnLowConfidenceHandlerStep = null);
+    StepModel? OnLowConfidenceHandlerStep = null,
+    LowConfidenceHandlerChainModel? OnLowConfidenceHandlerChain = null);

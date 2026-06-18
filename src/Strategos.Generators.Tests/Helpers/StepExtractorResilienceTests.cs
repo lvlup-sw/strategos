@@ -153,6 +153,64 @@ public sealed class StepExtractorResilienceTests
         await Assert.That(assessStep.Confidence).IsNotNull();
         await Assert.That(assessStep.Confidence!.Threshold).IsEqualTo(0.85);
         await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerId).IsEqualTo("HumanReview");
+
+        // The single-step handler chain carries exactly that step and terminates
+        // (no rejoin marker) by default (G-4 / #139).
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain).IsNotNull();
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.Steps.Count).IsEqualTo(1);
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.Steps[0].StepName).IsEqualTo("HumanReview");
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.RejoinsMainFlow).IsFalse();
+    }
+
+    /// <summary>
+    /// G-4 / #139: a TWO-step <c>OnLowConfidence</c> chain
+    /// (<c>OnLowConfidence(alt =&gt; alt.Then&lt;A&gt;().Then&lt;B&gt;())</c>) extracts BOTH handler
+    /// steps as an ORDERED chain (A before B), with the first step retained as the
+    /// confidence gate's routing target. Before #139 only one step was captured.
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_TwoStepOnLowConfidenceChain_ExtractsOrderedSteps()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ConfidenceChainWorkflow);
+
+        // Act
+        var assessStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Assert — the ordered handler chain carries both steps in declaration order.
+        await Assert.That(assessStep.Confidence).IsNotNull();
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain).IsNotNull();
+        var chain = assessStep.Confidence!.OnLowConfidenceHandlerChain!;
+        await Assert.That(chain.Steps.Count).IsEqualTo(2);
+        await Assert.That(chain.Steps[0].StepName).IsEqualTo("HumanReview");
+        await Assert.That(chain.Steps[1].StepName).IsEqualTo("EscalateReview");
+
+        // The gate's routing target (first handler) is retained for back-compat.
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerId).IsEqualTo("HumanReview");
+
+        // No rejoin marker → terminating (the back-compat default).
+        await Assert.That(chain.RejoinsMainFlow).IsFalse();
+    }
+
+    /// <summary>
+    /// G-4 / #139: a <c>.RejoinMainFlow()</c> call inside the <c>OnLowConfidence</c>
+    /// lambda is inferred as the chain's REJOIN marker
+    /// (<c>RejoinsMainFlow == true</c>); its absence terminates (asserted above).
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_RejoinMainFlowMarker_SetsRejoinsMainFlow()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(ConfidenceRejoinWorkflow);
+
+        // Act
+        var assessStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Assert
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain).IsNotNull();
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.RejoinsMainFlow).IsTrue();
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.Steps.Count).IsEqualTo(1);
+        await Assert.That(assessStep.Confidence!.OnLowConfidenceHandlerChain!.Steps[0].StepName).IsEqualTo("HumanReview");
     }
 
     // =========================================================================
@@ -434,6 +492,139 @@ public sealed class StepExtractorResilienceTests
                     .RequireConfidence(0.85)
                     .OnLowConfidence(alt => alt.Then<HumanReview>())
                     .Compensate<RollbackAssessment>())
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose gated step declares a TWO-step <c>OnLowConfidence</c> chain
+    /// (<c>alt.Then&lt;HumanReview&gt;().Then&lt;EscalateReview&gt;()</c>) with no rejoin
+    /// marker (G-4 / #139).
+    /// </summary>
+    private const string ConfidenceChainWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class EscalateReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("confidence-chain")]
+        public static partial class ConfidenceChainWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("confidence-chain")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt
+                        .Then<HumanReview>()
+                        .Then<EscalateReview>()))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose gated step declares a single-step REJOINING
+    /// <c>OnLowConfidence</c> handler
+    /// (<c>alt.Then&lt;HumanReview&gt;().RejoinMainFlow()</c>) (G-4 / #139).
+    /// </summary>
+    private const string ConfidenceRejoinWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("confidence-rejoin")]
+        public static partial class ConfidenceRejoinWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("confidence-rejoin")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt
+                        .Then<HumanReview>()
+                        .RejoinMainFlow()))
                 .Finally<SettleClaim>();
         }
         """;
