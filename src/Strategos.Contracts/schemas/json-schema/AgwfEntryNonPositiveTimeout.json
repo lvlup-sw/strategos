@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryNonPositiveTimeout.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF021"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Non-positive timeout"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF021 — Non-positive timeout."
+}

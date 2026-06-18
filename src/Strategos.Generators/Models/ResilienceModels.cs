@@ -44,14 +44,22 @@ internal sealed record TimeoutModel(TimeSpan Timeout);
 /// <param name="RequiredOnFailure">
 /// A value indicating whether compensation is required when the step fails.
 /// </param>
+/// <param name="IsRegisteredStep">
+/// A value indicating whether the compensation type resolves to a type implementing
+/// <c>IWorkflowStep&lt;TState&gt;</c>. <see langword="false"/> when the type could not be
+/// resolved as a workflow step (drives the compensate-not-a-step diagnostic; DR-8 / INV-5). Defaults to
+/// <see langword="true"/> so models created without a semantic-model check (e.g. tests, the
+/// compensation step-type fold) are not flagged.
+/// </param>
 /// <remarks>
 /// Per INV-8, the compensation step's identity is carried as a descriptor string
 /// (its fully qualified type name), never as a CLR <see cref="System.Type"/>. Symbol
-/// resolution of this name happens in the later parse task, not here.
+/// resolution of this name happens at parse time; only the boolean verdict is retained.
 /// </remarks>
 internal sealed record CompensationModel(
     string CompensationStepTypeName,
-    bool RequiredOnFailure = true);
+    bool RequiredOnFailure = true,
+    bool IsRegisteredStep = true);
 
 /// <summary>
 /// Generator IR for a step's confidence-gating policy.

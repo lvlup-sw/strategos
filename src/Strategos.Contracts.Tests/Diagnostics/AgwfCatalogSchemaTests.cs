@@ -12,26 +12,27 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// T2 — the AGWF catalog TypeSpec source emits, after <c>tsp compile</c>, one
 /// JSON Schema per ground-truth diagnostic code carrying machine-readable
 /// <c>const</c> metadata (R-lit representation; DR-1). Asserts the catalog
-/// enumerates exactly the 10 defined codes — <c>AGWF001, 002, 003, 004, 009,
-/// 010, 012, 014, 015, 016</c> — with gaps preserved as gaps (INV-5: no
-/// renumber), each carrying <c>id</c>/<c>severity</c>/<c>summary</c>/
+/// enumerates exactly the 15 defined codes — <c>AGWF001, 002, 003, 004, 009,
+/// 010, 012, 014, 015, 016, 017, 018, 019, 020, 021</c> — with gaps preserved as
+/// gaps (INV-5: no renumber), each carrying <c>id</c>/<c>severity</c>/<c>summary</c>/
 /// <c>remediation</c>/<c>since</c>.
 /// </summary>
 [Property("Category", "Diagnostics")]
 [NotInParallel("tsp-compile")]
 public sealed class AgwfCatalogSchemaTests
 {
-    /// <summary>The 10 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
+    /// <summary>The 15 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
     private static readonly string[] GroundTruthCodes =
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
+        "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
     ];
 
     /// <summary>
     /// Compiles the TypeSpec sources, then asserts each AGWF entry schema carries
     /// the five metadata fields as <c>const</c> literals and the union of their
-    /// <c>id</c> consts equals exactly the 10 ground-truth codes.
+    /// <c>id</c> consts equals exactly the 15 ground-truth codes.
     /// </summary>
     [Test]
     public async Task AgwfCatalogSchema_TenCodes_EmittedWithMetadata()
@@ -64,6 +65,6 @@ public sealed class AgwfCatalogSchemaTests
 
         await Assert.That(ids.OrderBy(x => x, StringComparer.Ordinal).ToArray())
             .IsEquivalentTo(GroundTruthCodes.OrderBy(x => x, StringComparer.Ordinal).ToArray())
-            .Because("the catalog must enumerate exactly the 10 ground-truth codes (INV-5: gaps stay gaps).");
+            .Because("the catalog must enumerate exactly the 15 ground-truth codes (INV-5: gaps stay gaps).");
     }
 }

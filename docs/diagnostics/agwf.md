@@ -22,3 +22,8 @@ from the generated `AgwfCode` enum; this table is generated from the same source
 | AGWF014 | error | Loop without body | Loop '{0}' in workflow '{1}' has no steps in its body. A loop must contain at least one step. | 0.2.0 |
 | AGWF015 | error | Invalid persistence mode | Workflow '{0}' specifies an unrecognized Persistence value ({1}). Valid values are SagaDocument (0) and EventSourced (1). | 0.2.0 |
 | AGWF016 | error | Event-sourced workflow requires state type | Workflow '{0}' uses PersistenceMode.EventSourced but no state type was found. Event-sourced workflows require a state type that implements IEventSourcedState<TState> with an ApplyEvent method. | 0.2.0 |
+| AGWF017 | error | Compensation step is not a workflow step | Step '{0}' in workflow '{1}' compensates with '{2}', which does not implement IWorkflowStep<TState>. Compensation types must be a registered workflow step. | 2.10.0 |
+| AGWF018 | error | Confidence threshold out of range | Step '{0}' in workflow '{1}' calls RequireConfidence({2}). The threshold must be between 0.0 and 1.0 inclusive. | 2.10.0 |
+| AGWF019 | warning | RequireConfidence without OnLowConfidence handler | Step '{0}' in workflow '{1}' calls RequireConfidence but declares no OnLowConfidence handler. Add OnLowConfidence(alt => ...) so low-confidence results have a routing path. | 2.10.0 |
+| AGWF020 | error | Retry maxAttempts below one | Step '{0}' in workflow '{1}' configures WithRetry({2}). The maxAttempts value must be at least 1. | 2.10.0 |
+| AGWF021 | error | Non-positive timeout | Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero. | 2.10.0 |

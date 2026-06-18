@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
-/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 10
+/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 15
 /// members carrying <em>symbolic</em> names (the contract Exarchos round-trips
 /// against by name; INV-5), each serializing to its <c>AGWF0xx</c> wire string
 /// via the <c>[JsonStringEnumMemberName]</c> path.
@@ -31,6 +31,11 @@ public sealed class AgwfCodeEnumTests
         ("LoopWithoutBody", "AGWF014"),
         ("InvalidPersistenceMode", "AGWF015"),
         ("EventSourcedRequiresState", "AGWF016"),
+        ("CompensateNotAStep", "AGWF017"),
+        ("ConfidenceThresholdOutOfRange", "AGWF018"),
+        ("RequireConfidenceWithoutHandler", "AGWF019"),
+        ("RetryMaxAttemptsBelowOne", "AGWF020"),
+        ("NonPositiveTimeout", "AGWF021"),
     ];
 
     /// <summary>
@@ -38,7 +43,7 @@ public sealed class AgwfCodeEnumTests
     /// member set and the wire round-trip (serialize → <c>AGWF0xx</c>, back).
     /// </summary>
     [Test]
-    public async Task AgwfCodeEnum_TenMembers_RoundTripsWireValues()
+    public async Task AgwfCodeEnum_FifteenMembers_RoundTripsWireValues()
     {
         var enumType = typeof(ContractsMarker).Assembly
             .GetTypes()
@@ -51,7 +56,7 @@ public sealed class AgwfCodeEnumTests
 
         var members = Enum.GetNames(enumType!);
         await Assert.That(members.Length).IsEqualTo(Expected.Length)
-            .Because("AgwfCode must have exactly 10 members.");
+            .Because("AgwfCode must have exactly 15 members.");
 
         var options = Strategos.Contracts.ContractsJson.Options;
         foreach (var (name, wire) in Expected)

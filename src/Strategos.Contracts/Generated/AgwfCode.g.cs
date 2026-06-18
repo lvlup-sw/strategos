@@ -58,4 +58,24 @@ public enum AgwfCode
     /// <summary>AGWF016 — Event-sourced workflow requires state type.</summary>
     [JsonStringEnumMemberName("AGWF016")]
     EventSourcedRequiresState,
+
+    /// <summary>AGWF017 — Compensation step is not a workflow step.</summary>
+    [JsonStringEnumMemberName("AGWF017")]
+    CompensateNotAStep,
+
+    /// <summary>AGWF018 — Confidence threshold out of range.</summary>
+    [JsonStringEnumMemberName("AGWF018")]
+    ConfidenceThresholdOutOfRange,
+
+    /// <summary>AGWF019 — RequireConfidence without OnLowConfidence handler.</summary>
+    [JsonStringEnumMemberName("AGWF019")]
+    RequireConfidenceWithoutHandler,
+
+    /// <summary>AGWF020 — Retry maxAttempts below one.</summary>
+    [JsonStringEnumMemberName("AGWF020")]
+    RetryMaxAttemptsBelowOne,
+
+    /// <summary>AGWF021 — Non-positive timeout.</summary>
+    [JsonStringEnumMemberName("AGWF021")]
+    NonPositiveTimeout,
 }

@@ -590,6 +590,15 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 validName));
         }
 
+        // Validate per-step resilience configuration (DR-8 / INV-5; the resilience AGWF
+        // diagnostics). These are advisory signals over the parsed IR (StepModel.Retry/
+        // Timeout/Compensation/Confidence): some mirror builder-runtime throws (retry < 1,
+        // confidence ∉ [0,1]) so consumers get the same signal at compile time and can
+        // suppress it by id; others (non-positive timeout, RequireConfidence without
+        // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
+        // generation — the builder runtime / C# generic constraint already enforce them.
+        ReportResilienceDiagnostics(stepModels, validName, GetAttributeLocation(context), diagnostics);
+
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
             || (!hasStartWith && firstMethodName is not null)
@@ -654,6 +663,80 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             ConfidenceHandlerStepNames: confidenceHandlerStepNames);
 
         return new WorkflowGeneratorResult(model, diagnostics);
+    }
+
+    /// <summary>
+    /// Reports the per-step resilience diagnostics (DR-8 / INV-5) over the parsed step
+    /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
+    /// </summary>
+    /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
+    /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
+    /// <param name="location">The diagnostic location (the workflow attribute).</param>
+    /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
+    private static void ReportResilienceDiagnostics(
+        IReadOnlyList<StepModel> stepModels,
+        string workflowName,
+        Location location,
+        List<Diagnostic> diagnostics)
+    {
+        foreach (var step in stepModels)
+        {
+            // CompensateNotAStep — Compensate<T> where T is not a registered IWorkflowStep<TState>.
+            if (step.Compensation is { IsRegisteredStep: false } compensation)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.CompensateNotAStep,
+                    location,
+                    step.EffectiveName,
+                    workflowName,
+                    compensation.CompensationStepTypeName));
+            }
+
+            if (step.Confidence is { } confidence)
+            {
+                // ConfidenceThresholdOutOfRange — RequireConfidence(x) with x outside [0.0, 1.0].
+                if (confidence.Threshold < 0.0 || confidence.Threshold > 1.0)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.ConfidenceThresholdOutOfRange,
+                        location,
+                        step.EffectiveName,
+                        workflowName,
+                        confidence.Threshold));
+                }
+
+                // RequireConfidenceWithoutHandler — RequireConfidence with no OnLowConfidence handler.
+                if (confidence.OnLowConfidenceHandlerStep is null)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.RequireConfidenceWithoutHandler,
+                        location,
+                        step.EffectiveName,
+                        workflowName));
+                }
+            }
+
+            // RetryMaxAttemptsBelowOne — retry maxAttempts < 1.
+            if (step.Retry is { } retry && retry.MaxAttempts < 1)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.RetryMaxAttemptsBelowOne,
+                    location,
+                    step.EffectiveName,
+                    workflowName,
+                    retry.MaxAttempts));
+            }
+
+            // NonPositiveTimeout — non-positive WithTimeout.
+            if (step.Timeout is { } timeout && timeout.Timeout <= TimeSpan.Zero)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.NonPositiveTimeout,
+                    location,
+                    step.EffectiveName,
+                    workflowName));
+            }
+        }
     }
 
     private static Location GetAttributeLocation(GeneratorAttributeSyntaxContext context)

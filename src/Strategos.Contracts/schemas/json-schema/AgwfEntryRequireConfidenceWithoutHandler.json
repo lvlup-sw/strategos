@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryRequireConfidenceWithoutHandler.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF019"
+        },
+        "severity": {
+            "type": "string",
+            "const": "warning"
+        },
+        "summary": {
+            "type": "string",
+            "const": "RequireConfidence without OnLowConfidence handler"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Step '{0}' in workflow '{1}' calls RequireConfidence but declares no OnLowConfidence handler. Add OnLowConfidence(alt => ...) so low-confidence results have a routing path."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF019 — RequireConfidence without OnLowConfidence handler."
+}

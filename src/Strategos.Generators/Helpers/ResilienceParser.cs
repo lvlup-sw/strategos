@@ -131,6 +131,17 @@ internal static class ResilienceParser
     {
         value = default;
 
+        // TimeSpan.Zero — a non-invocation member access. Recognized so an explicitly
+        // zero (non-positive) timeout reaches the IR and trips the non-positive-timeout diagnostic.
+        if (expression is MemberAccessExpressionSyntax zeroAccess
+            && zeroAccess.Expression is IdentifierNameSyntax zeroReceiver
+            && zeroReceiver.Identifier.ValueText.Equals("TimeSpan", StringComparison.Ordinal)
+            && zeroAccess.Name.Identifier.ValueText.Equals("Zero", StringComparison.Ordinal))
+        {
+            value = TimeSpan.Zero;
+            return true;
+        }
+
         if (expression is not InvocationExpressionSyntax invocation
             || invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
         {
@@ -177,6 +188,16 @@ internal static class ResilienceParser
     private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)
     {
         value = 0;
+
+        // Unary minus over a numeric literal (e.g. TimeSpan.FromSeconds(-5)) — recognized so
+        // a negative (non-positive) duration reaches the IR and trips the non-positive-timeout diagnostic.
+        if (expression is PrefixUnaryExpressionSyntax unary
+            && unary.IsKind(SyntaxKind.UnaryMinusExpression)
+            && TryGetDoubleLiteral(unary.Operand, out var operand))
+        {
+            value = -operand;
+            return true;
+        }
 
         if (expression is LiteralExpressionSyntax literal
             && literal.IsKind(SyntaxKind.NumericLiteralExpression))
