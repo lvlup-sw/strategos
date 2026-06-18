@@ -123,6 +123,14 @@ internal sealed class StepCompletedHandlerEmitter
         var thresholdLiteral = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         var proceedsToCompletion = context.IsTerminalStep || context.IsLastStep;
 
+        // #138 G-5: the gated step's own name (the step whose low-confidence result
+        // drove the route) for the LowConfidenceRouted audit event. Derive it from
+        // the completed event name (strip the trailing "Completed") so it is robust
+        // even when StepModel is unavailable.
+        var gatedStepName = eventName.EndsWith("Completed", System.StringComparison.Ordinal)
+            ? eventName.Substring(0, eventName.Length - "Completed".Length)
+            : eventName;
+
         sb.AppendLine($"    /// <returns>The low-confidence handler start command when below the");
         sb.AppendLine($"    /// confidence threshold; otherwise the normal next-step command.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
@@ -186,6 +194,24 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"                {thresholdLiteral},");
         sb.AppendLine("                WorkflowId,");
         sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+
+        // #138 G-5: append the LowConfidenceRouted audit STREAM event when
+        // event-sourced. This is the single site where a confidence-gated step
+        // actually routes below-threshold, so it is where the named event belongs.
+        // The handler already receives IDocumentSession session in EventSourced mode.
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"            session.Events.Append(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine("                    WorkflowId,");
+            sb.AppendLine($"                    \"{gatedStepName}\",");
+            sb.AppendLine("                    confidenceScore,");
+            sb.AppendLine($"                    {thresholdLiteral},");
+            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
         sb.AppendLine("            yield break;");

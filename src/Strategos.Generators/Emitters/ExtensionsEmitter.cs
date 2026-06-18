@@ -42,12 +42,17 @@ internal static class ExtensionsEmitter
             "Microsoft.Extensions.DependencyInjection",
         };
 
-        // Event-sourced mode needs Marten for SnapshottedAggregation configuration
+        // Event-sourced mode needs Marten for SnapshottedAggregation configuration.
+        // Marten 9.x relocated SnapshotLifecycle into JasperFx.Events.Projections
+        // (the shared JasperFx.Events event-store core), so that namespace is
+        // required for the generated opts.Projections.Snapshot<T>(SnapshotLifecycle.Inline)
+        // to resolve when the extensions are compiled against a real Marten reference.
         if (model.IsEventSourced)
         {
             usings.Add("Marten");
             usings.Add("Marten.Events.Aggregation");
             usings.Add("Marten.Events.Projections");
+            usings.Add("JasperFx.Events.Projections");
         }
 
         // Add step type namespaces from the model

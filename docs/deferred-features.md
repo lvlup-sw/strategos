@@ -27,12 +27,23 @@ This document catalogs all features from the Strategos design specification that
 > terminating** `OnLowConfidence` handler is lowered (multi-step chains + rejoin-to-main
 > are not yet); **workflow-level `OnFailure` handler-chain interop with `Compensate<T>` is
 > deferred** (see §2.1 — the workflow-level failure-handler chain is independently
-> non-functional); **terminal-failure / low-confidence audit is captured as queryable saga
-> document properties + structured logs, not yet as named `StepFailed` / `LowConfidenceRouted`
-> Marten *stream* events** (stream events apply only in EventSourced mode — a tracked
-> follow-on); resilience config is attachable only via `.Then<TStep>(s => …)` (not
+> non-functional); resilience config is attachable only via `.Then<TStep>(s => …)` (not
 > `StartWith`/`Finally`); and a `[Workflow("name")]` name must PascalCase to its
 > partial-class name. See `docs/designs/2026-06-17-step-resilience-lowering.md`.
+
+> **Status update — 2026-06-17 (#138, _audit-event taxonomy / Open Question #1_).** The
+> terminal-failure / low-confidence audit is now ALSO emitted as **named Marten *stream*
+> events** in EventSourced mode (it was previously captured only as queryable saga
+> document properties + structured logs — the document-mode behavior is unchanged). This
+> resolves the step-resilience design's **Open Question #1 (audit-event taxonomy)**:
+> - **`StepFailed`** `(WorkflowId, FailedStepName, ExceptionType?, ExceptionMessage?, Timestamp)` — appended at the single ordered terminal-failure trigger site (the OnFailure trigger handler, and the merged Compensate↔OnFailure trigger) when `Persistence = PersistenceMode.EventSourced`.
+> - **`LowConfidenceRouted`** `(WorkflowId, StepName, Confidence, Threshold, Timestamp)` — appended at the confidence gate when a step's result confidence routes below the configured threshold, in EventSourced mode.
+>
+> Both are `sealed`, init-only records implementing the workflow's `I{Pascal}Event` marker,
+> appended through the saga's existing `IDocumentSession` (INV-1, no parallel runtime).
+> They are emitted **only** in EventSourced mode (stream events apply only there), so
+> SagaDocument-mode output is byte-unchanged. Proven end-to-end on a real
+> Postgres-backed Marten host (`EventSourcedHostFixture` + `EventSourcedAuditEventTests`).
 
 **Total Deferred Features:** 8
 **Deferral Categories:**

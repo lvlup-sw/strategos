@@ -149,13 +149,21 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("    /// compensation step actually runs.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    /// <param name=\"cmd\">The trigger command carrying the failure context.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
         sb.AppendLine("    /// <returns>The compensation worker command(s) to dispatch.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {triggerCommandName} cmd,");
+
+        // #138 G-5: append the StepFailed audit STREAM event when event-sourced. The
+        // compensation trigger is the single ordered terminal-failure site for the
+        // Compensate path (and the merged Compensate↔OnFailure path), so it is where
+        // the named StepFailed event belongs. It needs an IDocumentSession to append.
+        StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
         sb.AppendLine("        FailedStepName = cmd.FailedStepName;");
@@ -164,6 +172,20 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("        FailureStackTrace = cmd.StackTrace;");
         sb.AppendLine("        FailureTimestamp = DateTimeOffset.UtcNow;");
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Compensating;");
+
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"        session.Events.Append(");
+            sb.AppendLine("            WorkflowId,");
+            sb.AppendLine($"            new {model.PascalName}StepFailed(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine("                cmd.FailedStepName,");
+            sb.AppendLine("                cmd.ExceptionType,");
+            sb.AppendLine("                cmd.ExceptionMessage,");
+            sb.AppendLine("                FailureTimestamp.Value));");
+        }
+
         sb.AppendLine();
         sb.AppendLine("        logger.LogWarning(");
         sb.AppendLine("            \"Step {FailedStepName} failed for workflow {WorkflowId}; running compensation\",");
