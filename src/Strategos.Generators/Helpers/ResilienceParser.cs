@@ -105,6 +105,18 @@ internal static class ResilienceParser
     {
         value = 0;
 
+        // Unary minus over a numeric literal (e.g. WithRetry(-1)) — recognized so a negative
+        // (below-one) maxAttempts reaches the IR and trips the AGWF020 RetryMaxAttemptsBelowOne
+        // diagnostic (INV-5). Mirrors the unary-minus handling in TryGetDoubleLiteral. Without
+        // this, the negative literal never parsed and the whole RetryModel silently vanished.
+        if (expression is PrefixUnaryExpressionSyntax unary
+            && unary.IsKind(SyntaxKind.UnaryMinusExpression)
+            && TryGetIntLiteral(unary.Operand, out var operand))
+        {
+            value = -operand;
+            return true;
+        }
+
         if (expression is LiteralExpressionSyntax literal
             && literal.IsKind(SyntaxKind.NumericLiteralExpression)
             && literal.Token.Value is int intValue)

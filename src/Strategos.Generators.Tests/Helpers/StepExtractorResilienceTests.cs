@@ -73,6 +73,26 @@ public sealed class StepExtractorResilienceTests
         await Assert.That(auditStep.Timeout).IsNull();
     }
 
+    /// <summary>
+    /// CodeRabbit F2 (PR #137): a unary-minus retry literal (<c>WithRetry(-1)</c>) must reach the
+    /// IR as a negative <see cref="RetryModel.MaxAttempts"/>, so the downstream AGWF020 diagnostic
+    /// can fire (INV-5). The retry parser previously accepted only a direct numeric literal, so the
+    /// negative literal silently dropped — the whole <see cref="RetryModel"/> vanished.
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_StepWithNegativeRetryLiteral_CarriesNegativeMaxAttempts()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(NegativeRetryWorkflow);
+
+        // Act
+        var step = stepModels.Single(s => s.StepName == "ProcessPayment");
+
+        // Assert - the negative retry reaches the IR (not dropped)
+        await Assert.That(step.Retry).IsNotNull();
+        await Assert.That(step.Retry!.MaxAttempts).IsEqualTo(-1);
+    }
+
     // =========================================================================
     // Task 003 — Compensate<T> / RequireConfidence / OnLowConfidence
     // =========================================================================
@@ -225,6 +245,57 @@ public sealed class StepExtractorResilienceTests
                     .WithRetry(3, TimeSpan.FromSeconds(5))
                     .WithTimeout(TimeSpan.FromMinutes(2)))
                 .Then<AuditPayment>(step => step.WithRetry(2))
+                .Finally<SendReceipt>();
+        }
+        """;
+
+    /// <summary>
+    /// A linear workflow whose <c>ProcessPayment</c> step declares a unary-minus retry literal
+    /// (<c>WithRetry(-1)</c>), probing F2 (negative retry literal must reach the IR).
+    /// </summary>
+    private const string NegativeRetryWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PaymentState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidatePayment : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        public class ProcessPayment : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        public class SendReceipt : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        [Workflow("negative-retry")]
+        public static partial class NegativeRetryWorkflow
+        {
+            public static WorkflowDefinition<PaymentState> Definition => Workflow<PaymentState>
+                .Create("negative-retry")
+                .StartWith<ValidatePayment>()
+                .Then<ProcessPayment>(step => step.WithRetry(-1))
                 .Finally<SendReceipt>();
         }
         """;
