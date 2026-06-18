@@ -52,6 +52,24 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
     }
 
     /// <inheritdoc/>
+    public IBranchBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        // Build the step configuration
+        var configBuilder = new StepConfigurationBuilder<TState>();
+        configure(configBuilder);
+
+        // Create step with configuration
+        var step = StepDefinition.Create(typeof(TStep))
+            .WithConfiguration(configBuilder.Configuration);
+
+        _steps.Add(step);
+        return this;
+    }
+
+    /// <inheritdoc/>
     public void Complete()
     {
         IsTerminal = true;

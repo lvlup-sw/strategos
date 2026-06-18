@@ -182,6 +182,17 @@ internal static class FailureHandlerExtractor
             return false;
         }
 
+        // Prefer the shared configured-step builder so any per-step resilience
+        // (WithRetry/WithTimeout/Compensate/confidence) and ValidateState guard declared via the
+        // Then<TStep>(step => step...) configure-lambda overload (DR-7) threads into the StepModel,
+        // bringing failure-handler steps to parity with the top-level/loop/fork parse paths.
+        if (StepExtractor.TryBuildConfiguredStepModel(invocation, semanticModel, out var configuredStepModel))
+        {
+            stepName = configuredStepModel.StepName;
+            stepModel = configuredStepModel;
+            return true;
+        }
+
         // Try to get the symbol for better naming and full type information
         var symbolInfo = semanticModel.GetSymbolInfo(typeArgument);
         if (symbolInfo.Symbol is INamedTypeSymbol namedType)

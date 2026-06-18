@@ -61,6 +61,39 @@ public interface IBranchBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Adds a step to this branch path with configuration.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// Brings branch paths to parity with the top-level <see cref="IWorkflowBuilder{TState}"/>,
+    /// loop-body <see cref="ILoopBuilder{TState}"/>, and fork-path <see cref="IForkPathBuilder{TState}"/>
+    /// sequencing contexts, which already expose this overload. The configure lambda carries the
+    /// full <see cref="IStepConfiguration{TState}"/> surface — <c>.WithRetry</c>, <c>.WithTimeout</c>,
+    /// <c>.Compensate</c>, <c>.RequireConfidence</c>, <c>.OnLowConfidence</c>, <c>.ValidateState</c>,
+    /// and <c>.WithContext</c>:
+    /// <code>
+    /// .Branch(state => state.Outcome,
+    ///     BranchCase.When(Outcome.Escalate, path => path
+    ///         .Then&lt;EscalateClaim&gt;(step => step
+    ///             .WithRetry(2, TimeSpan.FromSeconds(5))
+    ///             .WithTimeout(TimeSpan.FromMinutes(1)))),
+    ///     BranchCase.Otherwise(path => path.Then&lt;AutoApprove&gt;()))
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Enforcement parity is partial today: the configuration is captured in the workflow definition
+    /// and threaded into the generator's step IR, but the source generator does not yet emit Wolverine
+    /// retry/timeout/compensation for branch-path steps (tracked by issue #135).
+    /// </para>
+    /// </remarks>
+    IBranchBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Marks this branch as terminal (does not rejoin the main flow).
     /// </summary>
     /// <remarks>
