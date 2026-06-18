@@ -39,7 +39,7 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
     public IWorkflowBuilder<TState> StartWith<TStep>()
         where TStep : class, IWorkflowStep<TState>
     {
-        return StartWithInternal<TStep>(instanceName: null);
+        return StartWithInternal<TStep>(instanceName: null, configure: null);
     }
 
     /// <inheritdoc/>
@@ -48,10 +48,31 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
     {
         ArgumentNullException.ThrowIfNull(instanceName, nameof(instanceName));
 
-        return StartWithInternal<TStep>(instanceName);
+        return StartWithInternal<TStep>(instanceName, configure: null);
     }
 
-    private IWorkflowBuilder<TState> StartWithInternal<TStep>(string? instanceName)
+    /// <inheritdoc/>
+    public IWorkflowBuilder<TState> StartWith<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        return StartWithInternal<TStep>(instanceName: null, configure);
+    }
+
+    /// <inheritdoc/>
+    public IWorkflowBuilder<TState> StartWith<TStep>(string instanceName, Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(instanceName, nameof(instanceName));
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        return StartWithInternal<TStep>(instanceName, configure);
+    }
+
+    private IWorkflowBuilder<TState> StartWithInternal<TStep>(
+        string? instanceName,
+        Action<IStepConfiguration<TState>>? configure)
         where TStep : class, IWorkflowStep<TState>
     {
         if (_entryStep is not null)
@@ -60,6 +81,16 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
         }
 
         var step = StepDefinition.Create(typeof(TStep), customName: null, instanceName: instanceName);
+
+        // Route any configure lambda through the SAME WithConfiguration path Then(configure)
+        // uses, so the entry step carries its per-step resilience into the IR.
+        if (configure is not null)
+        {
+            var configBuilder = new StepConfigurationBuilder<TState>();
+            configure(configBuilder);
+            step = step.WithConfiguration(configBuilder.Configuration);
+        }
+
         _entryStep = step;
         _lastStep = step;
         _steps.Add(step);
@@ -240,6 +271,21 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
     public WorkflowDefinition<TState> Finally<TStep>()
         where TStep : class, IWorkflowStep<TState>
     {
+        return FinallyInternal<TStep>(configure: null);
+    }
+
+    /// <inheritdoc/>
+    public WorkflowDefinition<TState> Finally<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        return FinallyInternal<TStep>(configure);
+    }
+
+    private WorkflowDefinition<TState> FinallyInternal<TStep>(Action<IStepConfiguration<TState>>? configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
         if (_entryStep is null)
         {
             throw new InvalidOperationException("StartWith must be called before Finally.");
@@ -247,6 +293,16 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
 
         // Create and add terminal step
         var terminalStep = StepDefinition.Create(typeof(TStep)).AsTerminal();
+
+        // Route any configure lambda through the SAME WithConfiguration path Then(configure)
+        // uses, so the terminal step carries its per-step resilience into the IR.
+        if (configure is not null)
+        {
+            var configBuilder = new StepConfigurationBuilder<TState>();
+            configure(configBuilder);
+            terminalStep = terminalStep.WithConfiguration(configBuilder.Configuration);
+        }
+
         _steps.Add(terminalStep);
 
         // Handle pending branch rejoins

@@ -282,6 +282,7 @@ internal sealed record WorkflowModel(
 
         return null;
     }
+
     /// <summary>
     /// Gets a value indicating whether any step in this workflow has validation guards.
     /// </summary>
