@@ -63,6 +63,17 @@ internal static class WorkerHandlerEmitter
             usings.Add("Wolverine.Runtime.Handlers");
         }
 
+        // Context assembler wiring (DR-6): only pulled in when at least one step
+        // declared .WithContext(...). IContextAwareStep is the opt-in delivery
+        // contract a step implements to receive AssembledContext; both live in
+        // Strategos.Agents. Guarded so a context-free workflow keeps its prior
+        // handler file unchanged.
+        if (model.Steps is not null && model.Steps.Any(s => s.Context is not null && s.Context.Sources.Count > 0))
+        {
+            usings.Add("Strategos.Agents.Abstractions");
+            usings.Add("Strategos.Agents.Models");
+        }
+
         // Add step type namespaces from the model
         if (model.Steps is not null)
         {
@@ -158,6 +169,13 @@ internal static class WorkerHandlerEmitter
         var handlerClassName = $"{stepName}Handler";
         var stateType = model.StateTypeName ?? "object";
 
+        // A step that declared .WithContext(...) gets its generated
+        // {Step}ContextAssembler injected and invoked before execution (DR-6).
+        var hasContext = step is not null
+            && step.Context is not null
+            && step.Context.Sources.Count > 0;
+        var assemblerTypeName = $"{stepName}ContextAssembler";
+
         // XML documentation
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Worker handler for the {stepName} step.");
@@ -177,16 +195,28 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial class {handlerClassName}(");
         sb.AppendLine($"    {stepName} step,");
+        if (hasContext)
+        {
+            // The assembler is registered in DI (see ExtensionsEmitter) so
+            // Wolverine can resolve it for this handler's primary constructor.
+            sb.AppendLine($"    {assemblerTypeName} contextAssembler,");
+        }
+
         sb.AppendLine($"    ILogger<{handlerClassName}> logger)");
         sb.AppendLine("{");
 
         // Private fields from primary constructor
         sb.AppendLine($"    private readonly {stepName} _step = step;");
+        if (hasContext)
+        {
+            sb.AppendLine($"    private readonly {assemblerTypeName} _contextAssembler = contextAssembler;");
+        }
+
         sb.AppendLine($"    private readonly ILogger<{handlerClassName}> _logger = logger;");
         sb.AppendLine();
 
         // Handle method
-        EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType);
+        EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
 
         // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation).
         // Emitted ONLY when the step declared resilience that lowers onto the
@@ -359,7 +389,8 @@ internal static class WorkerHandlerEmitter
         string stepName,
         string workerCommandName,
         string completedEventName,
-        string stateType)
+        string stateType,
+        bool hasContext)
     {
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Handles the {workerCommandName} by executing the step.");
@@ -385,6 +416,22 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("        try");
         sb.AppendLine("        {");
         sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+
+        if (hasContext)
+        {
+            // DR-6 wire-in: assemble the step's declared context (state values,
+            // ontology retrieval via IObjectSetProvider, literals) BEFORE the
+            // step runs, then deliver it to the step if it opted into the
+            // IContextAwareStep side channel. The AssembleAsync call is what
+            // actually executes the lowered SimilarityExpression at runtime.
+            sb.AppendLine("            var assembledContext = await _contextAssembler.AssembleAsync(command.State, stepContext, ct);");
+            sb.AppendLine("            if (_step is IContextAwareStep contextAwareStep)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                contextAwareStep.ReceiveContext(assembledContext);");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("            var result = await _step.ExecuteAsync(command.State, stepContext, ct);");
         sb.AppendLine();
         sb.AppendLine("            sw.Stop();");

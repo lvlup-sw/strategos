@@ -141,6 +141,30 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Extracts per-step context models from the workflow DSL so the
+    /// <c>.WithContext(...)</c> declaration can be lowered into a generated
+    /// <c>{Step}ContextAssembler</c> (DR-6).
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The (step name, context model) pairs for every step that declared
+    /// <c>.WithContext(...)</c>. Steps without context are omitted.
+    /// </returns>
+    public static IReadOnlyList<(string StepName, ContextModel Context)> ExtractContextModels(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return ContextModelExtractor.Extract(context);
+    }
+
+    /// <summary>
     /// Extracts branch models from the workflow DSL for saga handler generation.
     /// </summary>
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>

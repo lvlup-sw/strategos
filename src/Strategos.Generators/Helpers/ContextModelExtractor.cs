@@ -468,36 +468,73 @@ internal static class ContextModelExtractor
     {
         stepName = string.Empty;
 
-        // WithContext is called on the result of a previous method (StartWith, Then, etc.)
-        if (withContextInvocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        // Form 1 — chained on the workflow builder:
+        //   .StartWith<Step>().WithContext(c => ...)
+        // WithContext is invoked on the RESULT of the preceding StartWith/Then,
+        // so we walk back through the member-access chain to find it.
+        if (withContextInvocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            return false;
+            var previousExpression = memberAccess.Expression;
+
+            while (previousExpression is InvocationExpressionSyntax previousInvocation)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (SyntaxHelper.IsMethodCall(previousInvocation, "StartWith") ||
+                    SyntaxHelper.IsMethodCall(previousInvocation, "Then"))
+                {
+                    if (TryGetStepTypeName(previousInvocation, semanticModel, out stepName))
+                    {
+                        return true;
+                    }
+                }
+
+                // Continue walking back
+                if (previousInvocation.Expression is MemberAccessExpressionSyntax prevMemberAccess)
+                {
+                    previousExpression = prevMemberAccess.Expression;
+                }
+                else
+                {
+                    break;
+                }
+            }
         }
 
-        var previousExpression = memberAccess.Expression;
+        // Form 2 — inside a step-configuration lambda:
+        //   .StartWith<Step>(step => step.WithContext(ctx => ...))
+        // Here WithContext is invoked on the lambda parameter, not on a chain,
+        // so the backward walk above finds nothing. Instead walk UP the syntax
+        // ancestors to the nearest enclosing StartWith/Then invocation whose
+        // generic type argument names the configured step.
+        return TryFindEnclosingStepName(withContextInvocation, semanticModel, out stepName, cancellationToken);
+    }
 
-        // Walk back until we find a StartWith or Then call
-        while (previousExpression is InvocationExpressionSyntax previousInvocation)
+    /// <summary>
+    /// Resolves the step name for a <c>WithContext</c> call written inside a
+    /// step-configuration lambda (<c>StartWith&lt;Step&gt;(s =&gt; s.WithContext(...))</c>)
+    /// by walking up to the enclosing <c>StartWith</c>/<c>Then</c> invocation and
+    /// reading its generic type argument.
+    /// </summary>
+    private static bool TryFindEnclosingStepName(
+        InvocationExpressionSyntax withContextInvocation,
+        SemanticModel semanticModel,
+        out string stepName,
+        CancellationToken cancellationToken)
+    {
+        stepName = string.Empty;
+
+        foreach (var ancestor in withContextInvocation.Ancestors().OfType<InvocationExpressionSyntax>())
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (SyntaxHelper.IsMethodCall(previousInvocation, "StartWith") ||
-                SyntaxHelper.IsMethodCall(previousInvocation, "Then"))
+            if (SyntaxHelper.IsMethodCall(ancestor, "StartWith") ||
+                SyntaxHelper.IsMethodCall(ancestor, "Then"))
             {
-                if (TryGetStepTypeName(previousInvocation, semanticModel, out stepName))
+                if (TryGetStepTypeName(ancestor, semanticModel, out stepName))
                 {
                     return true;
                 }
-            }
-
-            // Continue walking back
-            if (previousInvocation.Expression is MemberAccessExpressionSyntax prevMemberAccess)
-            {
-                previousExpression = prevMemberAccess.Expression;
-            }
-            else
-            {
-                break;
             }
         }
 
