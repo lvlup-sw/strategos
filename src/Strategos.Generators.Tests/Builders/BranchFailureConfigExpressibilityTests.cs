@@ -4,8 +4,11 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Tests.Fixtures;
+
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Strategos.Generators.Tests.Builders;
 
@@ -57,22 +60,65 @@ public sealed class BranchFailureConfigExpressibilityTests
     }
 
     /// <summary>
-    /// Verifies that <c>.WithRetry(2)</c> declared via the new failure-handler-builder configure
+    /// Verifies that <c>.WithRetry(2)</c> declared via the failure-handler-builder configure
     /// overload (<c>OnFailure(f =&gt; f.Then&lt;TStep&gt;(step =&gt; step.WithRetry(2)))</c>) populates
     /// the failure-handler step's <see cref="StepModel.Retry"/>.
     /// </summary>
+    /// <remarks>
+    /// The recovery step lives inside the <c>OnFailure(...)</c> handler lambda, so it is owned by
+    /// <see cref="FailureHandlerExtractor"/> — NOT by the main-chain <c>ExtractStepModels</c> walk.
+    /// (Before the F1 nested-lambda-boundary fix, the fork-path walk leaked the handler-nested
+    /// <c>Then&lt;RefundPayment&gt;</c> into the fork-path step models, which is the very bug F1
+    /// closes; the correct assertion is against the failure-handler model.)
+    /// </remarks>
     [Test]
     public async Task FailureHandlerBuilder_ThenWithConfig_StepModelCarriesRetry()
     {
         // Arrange
-        var stepModels = ParserTestHelper.ExtractStepModels(FailureHandlerConfigWorkflow);
+        var context = CreateWorkflowParseContext(FailureHandlerConfigWorkflow, "failure-config");
 
         // Act
-        var recoveryStep = stepModels.Single(s => s.StepName == "RefundPayment");
+        var handlers = FailureHandlerExtractor.Extract(context);
+        var recoveryStep = handlers
+            .SelectMany(h => h.Steps ?? [])
+            .Single(s => s.StepName == "RefundPayment");
 
         // Assert
         await Assert.That(recoveryStep.Retry).IsNotNull();
         await Assert.That(recoveryStep.Retry!.MaxAttempts).IsEqualTo(2);
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="source"/> and builds a <see cref="FluentDslParseContext"/>
+    /// anchored on the <c>[Workflow]</c>-attributed class so chain invocations such as
+    /// <c>OnFailure</c> are in scope (the first type declaration is a record state).
+    /// </summary>
+    private static FluentDslParseContext CreateWorkflowParseContext(string source, string workflowName)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+            .Select(a => (MetadataReference)MetadataReference.CreateFromFile(a.Location))
+            .Append(MetadataReference.CreateFromFile(
+                typeof(Strategos.Abstractions.IWorkflowState).Assembly.Location))
+            .ToList();
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees: [syntaxTree],
+            references: references,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+
+        var workflowClass = syntaxTree.GetRoot()
+            .DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .First(t => t.AttributeLists
+                .SelectMany(al => al.Attributes)
+                .Any(a => a.Name.ToString().Contains("Workflow", StringComparison.Ordinal)));
+
+        return FluentDslParseContext.Create(workflowClass, semanticModel, workflowName, CancellationToken.None);
     }
 
     // =========================================================================

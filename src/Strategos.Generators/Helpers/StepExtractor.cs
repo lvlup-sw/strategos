@@ -584,12 +584,9 @@ internal static class StepExtractor
             }
 
             // Find Then<T>() calls in the path lambda
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -631,12 +628,9 @@ internal static class StepExtractor
             }
 
             // Find Then<T>() calls in the path lambda
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -725,6 +719,25 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Collects the <c>Then&lt;T&gt;</c> step invocations declared DIRECTLY in a fork/branch path
+    /// lambda body, in source order — excluding <c>Then</c> calls nested inside an inner lambda
+    /// (e.g. a step's <c>OnLowConfidence(alt =&gt; alt.Then&lt;Inner&gt;())</c> or configure lambda).
+    /// </summary>
+    /// <remarks>
+    /// F1: a raw <c>pathLambda.DescendantNodes()</c> walk captures <c>Then</c> invocations from
+    /// nested lambdas, producing phantom/misordered path steps. Delegating to
+    /// <see cref="InvocationChainWalker.CollectInvocationsInLambda"/> (which stops at nested-lambda
+    /// boundaries and returns source order) keeps each path's step discovery to its own steps.
+    /// </remarks>
+    private static IReadOnlyList<InvocationExpressionSyntax> CollectDirectThenInvocations(
+        LambdaExpressionSyntax pathLambda)
+    {
+        return InvocationChainWalker.CollectInvocationsInLambda(pathLambda)
+            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
+            .ToList();
+    }
+
+    /// <summary>
     /// Collects Then steps from a path lambda and adds them to the steps list.
     /// </summary>
     private static void CollectStepsFromPathLambda(
@@ -734,12 +747,9 @@ internal static class StepExtractor
         StepContext context,
         List<StepInfo> steps)
     {
-        var pathInvocations = pathLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-            .Reverse()
-            .ToList();
+        // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+        // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+        var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
         foreach (var inv in pathInvocations)
         {
@@ -1039,12 +1049,9 @@ internal static class StepExtractor
                 continue;
             }
 
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -1100,12 +1107,9 @@ internal static class StepExtractor
                 continue;
             }
 
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -1279,14 +1283,16 @@ internal static class StepExtractor
         foreach (var arg in arguments.Value)
         {
             // The configure lambda is the Action<IStepConfiguration<TState>> argument.
-            if (arg.Expression is not LambdaExpressionSyntax)
+            if (arg.Expression is not LambdaExpressionSyntax configureLambda)
             {
                 continue;
             }
 
-            var configInvocations = arg.Expression
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>();
+            // F1: scope the resilience walk to THIS configure lambda's own body. Walking
+            // raw DescendantNodes() would capture WithRetry/WithTimeout/Compensate calls from
+            // a NESTED lambda — e.g. OnLowConfidence(alt => alt.Then<Y>(c => c.WithTimeout(t)))
+            // — and wrongly attach Y's resilience to the parent step.
+            var configInvocations = InvocationChainWalker.CollectInvocationsInLambda(configureLambda);
 
             foreach (var configCall in configInvocations)
             {
