@@ -147,7 +147,9 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
                 $"({string.Join(", ", names.Select(n => $"'{n}'"))}). " +
                 $"Use StoreAsync<T>(string descriptorName, T item, ct) or " +
                 $"StoreBatchAsync<T>(string descriptorName, IReadOnlyList<T> items, ct) " +
-                $"to specify the target descriptor.");
+                $"to specify the target descriptor. To create the schema for every " +
+                $"registered descriptor at once, use the safe EnsureSchemaAsync<T>(ct) " +
+                $"overload (or EnsureAllSchemasAsync(ct) for the whole graph) — #132.");
         }
 
         // Graph absent — fall back to typeof(T).Name → snake_case for
@@ -1185,6 +1187,83 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
         var keyPropertyName = ResolveEnsureSchemaKeyProperty<T>(descriptorName, _graph);
+        await EnsureSchemaForTableAsync(tableName, keyPropertyName, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// G-7 / CL-7 (#132): the SAFE per-type bootstrap. The single-descriptor
+    /// <see cref="EnsureSchemaAsync{T}(string?, CancellationToken)"/> with a null
+    /// name THROWS for a multi-registered type (it cannot pick one partition); this
+    /// overload instead resolves the FULL registration set from the ontology graph's
+    /// reverse index (<see cref="OntologyGraph.ObjectTypeNamesByType"/>) and ensures
+    /// EACH descriptor's schema, removing the consumer-side
+    /// <c>foreach (GetObjectTypeNames&lt;T&gt;()) EnsureSchema(name)</c> loop the
+    /// footgun forced. Each per-descriptor ensure resolves its table and key property
+    /// by descriptor NAME (INV-8), reusing the same single-descriptor lowering. When
+    /// no graph is in scope (direct/test instantiation) the registration set is
+    /// unavailable, so it falls back to the single default-overload ensure
+    /// (<c>typeof(T).Name</c> → snake_case), byte-identical to the pre-#132 behavior.
+    /// INV-2: raw Npgsql DDL only.
+    /// </remarks>
+    public async Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class
+    {
+        if (_graph is null
+            || !_graph.ObjectTypeNamesByType.TryGetValue(typeof(T), out var descriptorNames)
+            || descriptorNames.Count == 0)
+        {
+            // No graph (or unregistered): defer to the single-descriptor default
+            // resolution, which falls back to typeof(T).Name when the graph is absent
+            // and throws the canonical typed error when the graph is present but the
+            // type is unregistered (symmetric with the write path).
+            await EnsureSchemaAsync<T>(descriptorName: null, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // Multi- (or single-) registered: ensure EVERY descriptor partition. Keyed on
+        // the resolved descriptor name (INV-8), never typeof.
+        foreach (var descriptorName in descriptorNames)
+        {
+            await EnsureSchemaAsync<T>(descriptorName, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// G-7 / CL-7 (#132): the GRAPH-WIDE bootstrap. Iterates
+    /// <see cref="OntologyGraph.ObjectTypes"/> and ensures a vertex table for EVERY
+    /// registered object descriptor in one call, so a host can stand up the entire
+    /// physical layout at startup without hand-rolling a per-type registration walk.
+    /// Each descriptor's table name and unique-index key property are read straight
+    /// from the descriptor (by NAME, INV-8), so a multi-registered carrier's distinct
+    /// partitions each get their own table. A graph-less provider has nothing to
+    /// enumerate, so this is a no-op. INV-2: raw Npgsql DDL only.
+    /// </remarks>
+    public async Task EnsureAllSchemasAsync(CancellationToken ct = default)
+    {
+        if (_graph is null)
+        {
+            return;
+        }
+
+        foreach (var descriptor in _graph.ObjectTypes)
+        {
+            ct.ThrowIfCancellationRequested();
+            var tableName = TypeMapper.ToSnakeCase(descriptor.Name);
+            await EnsureSchemaForTableAsync(tableName, descriptor.KeyProperty?.Name, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Non-generic schema-creation core shared by every <c>EnsureSchema</c> entry
+    /// point: builds and executes the vertex DDL for a single resolved
+    /// <paramref name="tableName"/>, emitting the DR-13/R2 key-property unique index
+    /// when <paramref name="keyPropertyName"/> is supplied. Keeps the per-descriptor
+    /// DDL shape in lockstep across the single-descriptor, per-type (all-descriptor),
+    /// and graph-wide bootstrap paths. INV-2: raw Npgsql DDL only.
+    /// </summary>
+    private async Task EnsureSchemaForTableAsync(string tableName, string? keyPropertyName, CancellationToken ct)
+    {
         var ddl = SqlGenerator.BuildSchemaCreationDdl(
             _options.Schema,
             tableName,

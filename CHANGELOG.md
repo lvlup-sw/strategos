@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Batch/safe schema-bootstrap API — removes the multi-registration startup
+footgun (#132).** `IObjectSetProvider` gains two new entry points so a host can
+stand up its physical layout at startup without hand-rolling a loop over
+`IOntologyQuery.GetObjectTypeNames<T>()`:
+
+- `Task EnsureSchemaAsync<T>(CancellationToken ct = default)` — the SAFE per-type
+  bootstrap. The existing single-descriptor
+  `PgVectorObjectSetProvider.EnsureSchemaAsync<T>(string? descriptorName = null, ct)`
+  **throws** `InvalidOperationException("… has multiple registrations …")` when a
+  CLR type is registered under more than one descriptor and no name is supplied.
+  The new no-name overload instead resolves the **full** registration set from the
+  ontology graph's reverse index (`OntologyGraph.ObjectTypeNamesByType`) and ensures
+  **every** descriptor's schema, keyed on the resolved descriptor name (INV-8). When
+  no graph is in scope it falls back to the single default-overload ensure, so the
+  pre-#132 behavior is byte-identical for the single-registration case.
+- `Task EnsureAllSchemasAsync(CancellationToken ct = default)` — the GRAPH-WIDE
+  bootstrap. Iterates `OntologyGraph.ObjectTypes` and ensures a vertex table (and
+  the DR-13/R2 key-property unique index) for **every** registered object descriptor
+  in one call.
+
+Implemented in `PgVectorObjectSetProvider` (raw Npgsql/pgvector DDL; INV-2) and, for
+cross-provider parity, in `InMemoryObjectSetProvider` (a no-op — partitions are
+materialized lazily, so there is no physical schema to provision). The
+multi-registration `InvalidOperationException` thrown by the write/default path now
+points callers at the new safe bootstrap API. The new members are **interface**
+additions; `Strategos.Ontology` / `Strategos.Ontology.Npgsql` carry **no** PublicAPI
+baseline (no `Microsoft.CodeAnalysis.PublicApiAnalyzers` reference, no
+`PublicAPI.*.txt`), so no re-baseline is required. The DB-gated parity tests
+(`EnsureSchemaBootstrapTests`) skip without `STRATEGOS_PG_TEST_CONN` and assert clean
+bootstrap of a multi-registered carrier under both entry points when a Postgres lane
+is provisioned.
+
 **Npgsql instance-anchored link traversal, depth-tiered (DR-12, #131).**
 `PgVectorObjectSetProvider.ExecuteAsync<T>` / `StreamAsync<T>` now serve
 `.Where(s => s.Key == id).TraverseLink<TLinked>("link")` expressions, closing the

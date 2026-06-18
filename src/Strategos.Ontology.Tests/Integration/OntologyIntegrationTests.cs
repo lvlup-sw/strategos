@@ -144,6 +144,10 @@ public class IntegrationStubObjectSetProvider : IObjectSetProvider
     public Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(
         SimilarityExpression expression, CancellationToken ct = default) where T : class =>
         Task.FromResult(new ScoredObjectSetResult<T>([], 0, ObjectSetInclusion.Properties, []));
+
+    public Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class => Task.CompletedTask;
+
+    public Task EnsureAllSchemasAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
 
 public class IntegrationStubEventStreamProvider : IEventStreamProvider

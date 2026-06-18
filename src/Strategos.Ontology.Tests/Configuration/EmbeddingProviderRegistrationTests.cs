@@ -67,6 +67,11 @@ public class DualProvider : IObjectSetProvider, IObjectSetWriter
         SimilarityExpression expression, CancellationToken ct = default) where T : class =>
         Task.FromResult(new ScoredObjectSetResult<T>([], 0, ObjectSetInclusion.Properties, []));
 
+    // Schema-bootstrap methods added for #132; this DI test double does not need schema behavior.
+    public Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class => Task.CompletedTask;
+
+    public Task EnsureAllSchemasAsync(CancellationToken ct = default) => Task.CompletedTask;
+
     public Task StoreAsync<T>(T item, CancellationToken ct = default) where T : class =>
         Task.CompletedTask;
 
