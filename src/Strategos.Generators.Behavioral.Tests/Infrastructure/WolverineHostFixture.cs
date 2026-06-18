@@ -94,6 +94,13 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
 
                 opts.Services.AddHappyPathWorkflow();
 
+                // The retry-proof workflow (DR-2 T011): its generated
+                // RetryFlakyStepHandler carries the static Configure(HandlerChain)
+                // retry policy lowered from .WithRetry(2). Registered alongside the
+                // happy-path workflow on the same host; both share the singleton
+                // invocation log below.
+                opts.Services.AddRetryProofWorkflow();
+
                 // The shared invocation log injected into instrumented steps.
                 opts.Services.AddSingleton(this.Invocations);
 

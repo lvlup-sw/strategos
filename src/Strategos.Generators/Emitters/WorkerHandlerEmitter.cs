@@ -50,6 +50,18 @@ internal static class WorkerHandlerEmitter
             "Microsoft.Extensions.Logging",
         };
 
+        // Wolverine per-handler error policy (DR-2): only pulled in when at least
+        // one step lowers a retry onto its handler chain, so a workflow with no
+        // resilience keeps its handler file byte-identical to the prior baseline.
+        // HandlerChain lives in Wolverine.Runtime.Handlers; the fluent
+        // OnAnyException()/RetryTimes()/RetryWithCooldown()/WithExponentialJitter()
+        // extensions live in Wolverine.ErrorHandling.
+        if (model.Steps is not null && model.Steps.Any(s => s.Retry is not null))
+        {
+            usings.Add("Wolverine.ErrorHandling");
+            usings.Add("Wolverine.Runtime.Handlers");
+        }
+
         // Add step type namespaces from the model
         if (model.Steps is not null)
         {
@@ -130,15 +142,15 @@ internal static class WorkerHandlerEmitter
 
     private static void EmitHandlerClass(StringBuilder sb, WorkflowModel model, StepModel step)
     {
-        EmitHandlerClassCore(sb, model, step.StepName);
+        EmitHandlerClassCore(sb, model, step.StepName, step);
     }
 
     private static void EmitHandlerClassFromName(StringBuilder sb, WorkflowModel model, string stepName)
     {
-        EmitHandlerClassCore(sb, model, stepName);
+        EmitHandlerClassCore(sb, model, stepName, step: null);
     }
 
-    private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName)
+    private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName, StepModel? step)
     {
         var workerCommandName = $"Execute{stepName}WorkerCommand";
         var completedEventName = $"{stepName}Completed";
@@ -175,7 +187,104 @@ internal static class WorkerHandlerEmitter
         // Handle method
         EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType);
 
+        // Per-handler Wolverine error policy (DR-2). Emitted ONLY when the step
+        // declared resilience that lowers onto the handler's chain (retry). The
+        // re-throw in the Handle catch block is what feeds this policy. Guarded so
+        // a step with no resilience keeps the no-policy baseline handler shape.
+        if (step?.Retry is not null)
+        {
+            sb.AppendLine();
+            EmitConfigureMethod(sb, step.Retry);
+        }
+
         sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// Emits a static <c>Configure(HandlerChain)</c> method that lowers the
+    /// step's <see cref="RetryModel"/> onto the handler's Wolverine chain as an
+    /// <c>OnAnyException</c> retry policy. Wolverine discovers this method by
+    /// convention at codegen time and scopes the policy to this one handler.
+    /// </summary>
+    private static void EmitConfigureMethod(StringBuilder sb, RetryModel retry)
+    {
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Configures this handler's Wolverine error policy. Lowered from the");
+        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> declaration; Wolverine discovers this");
+        sb.AppendLine("    /// static method by convention and scopes the retry to this handler.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <param name=\"chain\">The handler chain to apply the retry policy to.</param>");
+        sb.AppendLine("    public static void Configure(HandlerChain chain)");
+        sb.AppendLine("    {");
+
+        if (retry.InitialDelay is { } initialDelay)
+        {
+            // A configured delay lowers to a per-attempt cooldown schedule.
+            var cooldowns = BuildCooldownSchedule(retry, initialDelay);
+            sb.Append("        chain.OnAnyException()");
+            sb.AppendLine();
+            sb.Append($"            .RetryWithCooldown({cooldowns})");
+
+            if (retry.UseJitter)
+            {
+                sb.AppendLine();
+                sb.Append("            .WithExponentialJitter()");
+            }
+
+            sb.AppendLine(";");
+        }
+        else
+        {
+            // No delay configured: a simple fixed retry count.
+            sb.AppendLine("        chain.OnAnyException()");
+            sb.AppendLine($"            .RetryTimes({retry.MaxAttempts});");
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Builds the comma-separated <see cref="System.TimeSpan"/> argument list for
+    /// <c>RetryWithCooldown</c>, one cooldown per retry attempt. The schedule
+    /// starts at <paramref name="initialDelay"/> and, when a backoff multiplier
+    /// is configured, grows geometrically, capped by <c>MaxDelay</c> if present.
+    /// </summary>
+    private static string BuildCooldownSchedule(RetryModel retry, System.TimeSpan initialDelay)
+    {
+        var attempts = retry.MaxAttempts < 1 ? 1 : retry.MaxAttempts;
+        var multiplier = retry.BackoffMultiplier ?? 1.0;
+        var maxDelay = retry.MaxDelay;
+
+        var parts = new List<string>(attempts);
+        var current = initialDelay;
+        for (var i = 0; i < attempts; i++)
+        {
+            var effective = current;
+            if (maxDelay is { } cap && effective > cap)
+            {
+                effective = cap;
+            }
+
+            parts.Add(FormatTimeSpan(effective));
+
+            if (multiplier != 1.0)
+            {
+                current = System.TimeSpan.FromMilliseconds(current.TotalMilliseconds * multiplier);
+            }
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// Renders a <see cref="System.TimeSpan"/> as a
+    /// <c>TimeSpan.FromMilliseconds(...)</c> factory call for the generated
+    /// source, preserving sub-second precision used by short retry cooldowns.
+    /// </summary>
+    private static string FormatTimeSpan(System.TimeSpan value)
+    {
+        var ms = value.TotalMilliseconds;
+        return $"System.TimeSpan.FromMilliseconds({ms.ToString("R", System.Globalization.CultureInfo.InvariantCulture)})";
     }
 
     private static void EmitHandleMethod(
