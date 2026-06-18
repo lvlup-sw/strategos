@@ -149,8 +149,10 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             }
         }
 
-        // Failure tracking properties (if failure handlers are defined)
-        if (model.HasFailureHandlers)
+        // Failure tracking properties (if failure handlers OR compensation are
+        // defined). Compensation (DR-3) reuses the same failure-context fields,
+        // populated by the saga's Trigger{Pascal}FailureHandlerCommand handler.
+        if (model.HasFailureHandlers || model.HasCompensation)
         {
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// Gets or sets the name of the step that failed, triggering the failure handler.");

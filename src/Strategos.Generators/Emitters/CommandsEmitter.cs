@@ -216,6 +216,17 @@ internal static class CommandsEmitter
         {
             EmitFailureHandlerCommands(sb, model, model.FailureHandlers!);
         }
+        else if (model.HasCompensation)
+        {
+            // Compensation (DR-3) reuses the same Trigger{Pascal}FailureHandlerCommand
+            // as the saga entry point but, unlike OnFailure, emits NO per-handler step
+            // commands here — the compensation step's worker command is produced via
+            // model.Steps (it is folded into the step types). Guarded with 'else' so a
+            // workflow that has BOTH OnFailure and compensation emits the trigger
+            // command exactly once.
+            sb.AppendLine();
+            EmitTriggerFailureHandlerCommand(sb, model);
+        }
 
         return sb.ToString();
     }

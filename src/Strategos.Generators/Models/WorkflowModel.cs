@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Polyfills;
 using Strategos.Generators.Utilities;
 
@@ -97,6 +98,51 @@ internal sealed record WorkflowModel(
     /// </summary>
     public bool HasFailureHandlers => FailureHandlers is not null && FailureHandlers.Count > 0;
 
+    /// <summary>
+    /// Gets a value indicating whether any step in this workflow declares a
+    /// <c>.Compensate&lt;T&gt;()</c> rollback policy (DR-3).
+    /// </summary>
+    public bool HasCompensation => Steps?.Any(s => s.Compensation is not null) ?? false;
+
+    /// <summary>
+    /// Gets the distinct set of steps that declare a compensation policy, in
+    /// first-seen order (DR-3). Deduplicated by the compensation step's simple
+    /// type name so two steps rolling back to the same compensation type lower a
+    /// single compensation handler chain.
+    /// </summary>
+    /// <remarks>
+    /// Empty when no step declares compensation. Used by the compensation
+    /// lowering path to drive worker-handler, command, event, and saga-handler
+    /// emission for each rollback step.
+    /// </remarks>
+    public IReadOnlyList<StepModel> CompensationSteps
+    {
+        get
+        {
+            if (Steps is null)
+            {
+                return [];
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<StepModel>();
+            foreach (var step in Steps)
+            {
+                if (step.Compensation is null)
+                {
+                    continue;
+                }
+
+                var compName = NamingHelper.GetSimpleTypeName(step.Compensation.CompensationStepTypeName);
+                if (seen.Add(compName))
+                {
+                    result.Add(step);
+                }
+            }
+
+            return result;
+        }
+    }
     /// <summary>
     /// Gets a value indicating whether this workflow contains any approval checkpoints.
     /// </summary>

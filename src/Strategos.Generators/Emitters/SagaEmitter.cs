@@ -49,6 +49,7 @@ internal static class SagaEmitter
         new SagaTimeoutComponentEmitter(),
         new SagaApprovalComponentEmitter(),
         new SagaFailureHandlerComponentEmitter(),
+        new SagaCompensationComponentEmitter(),
         new SagaNotFoundHandlersEmitter(),
     ];
 

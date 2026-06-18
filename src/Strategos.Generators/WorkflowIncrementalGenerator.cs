@@ -6,6 +6,7 @@
 
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Emitters;
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 
 namespace Strategos.Generators;
@@ -597,6 +598,43 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         if (hasErrors)
         {
             return new WorkflowGeneratorResult(null, diagnostics);
+        }
+
+        // Fold compensation (rollback) step TYPES into the step-model list so the
+        // emitters that key off model.Steps (worker handler, worker command,
+        // completed event, DI registration) produce the artifacts that let the
+        // rollback step RUN via the proven main-flow worker dispatch (DR-3 T008).
+        //
+        // Crucially the compensation step is folded into the step MODELS only, NOT
+        // into stepNames: stepNames is the saga's linear chain, so adding it there
+        // would run the rollback on the happy path. The compensation step is reached
+        // exclusively via the saga compensation handler chain
+        // (SagaCompensationComponentEmitter), which dispatches its worker command
+        // only when the trigger failure-handler command arrives.
+        if (stepModels.Any(s => s.Compensation is not null))
+        {
+            var allStepModels = new List<StepModel>(stepModels);
+            var existingModelNames = new HashSet<string>(
+                stepModels.Select(s => s.StepName),
+                StringComparer.Ordinal);
+
+            foreach (var step in stepModels)
+            {
+                if (step.Compensation is null)
+                {
+                    continue;
+                }
+
+                var compTypeName = step.Compensation.CompensationStepTypeName;
+                var compStepName = NamingHelper.GetSimpleTypeName(compTypeName);
+
+                if (existingModelNames.Add(compStepName))
+                {
+                    allStepModels.Add(StepModel.Create(compStepName, compTypeName));
+                }
+            }
+
+            stepModels = allStepModels;
         }
 
         var model = new WorkflowModel(

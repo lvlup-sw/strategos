@@ -50,13 +50,14 @@ internal static class WorkerHandlerEmitter
             "Microsoft.Extensions.Logging",
         };
 
-        // Wolverine per-handler error policy (DR-2): only pulled in when at least
-        // one step lowers a retry onto its handler chain, so a workflow with no
-        // resilience keeps its handler file byte-identical to the prior baseline.
-        // HandlerChain lives in Wolverine.Runtime.Handlers; the fluent
-        // OnAnyException()/RetryTimes()/RetryWithCooldown()/WithExponentialJitter()
-        // extensions live in Wolverine.ErrorHandling.
-        if (model.Steps is not null && model.Steps.Any(s => s.Retry is not null))
+        // Wolverine per-handler error policy (DR-2 retry, DR-3 compensation): only
+        // pulled in when at least one step lowers a retry OR a compensation onto its
+        // handler chain, so a workflow with no resilience keeps its handler file
+        // byte-identical to the prior baseline. HandlerChain and InvokeResult live in
+        // Wolverine.Runtime.Handlers; the fluent OnAnyException()/RetryTimes()/
+        // RetryWithCooldown()/WithExponentialJitter()/CompensatingAction() extensions
+        // live in Wolverine.ErrorHandling.
+        if (model.Steps is not null && model.Steps.Any(s => s.Retry is not null || s.Compensation is not null))
         {
             usings.Add("Wolverine.ErrorHandling");
             usings.Add("Wolverine.Runtime.Handlers");
@@ -187,14 +188,15 @@ internal static class WorkerHandlerEmitter
         // Handle method
         EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType);
 
-        // Per-handler Wolverine error policy (DR-2). Emitted ONLY when the step
-        // declared resilience that lowers onto the handler's chain (retry). The
-        // re-throw in the Handle catch block is what feeds this policy. Guarded so
-        // a step with no resilience keeps the no-policy baseline handler shape.
-        if (step?.Retry is not null)
+        // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation).
+        // Emitted ONLY when the step declared resilience that lowers onto the
+        // handler's chain (retry and/or compensation). The re-throw in the Handle
+        // catch block is what feeds this policy. Guarded so a step with no
+        // resilience keeps the no-policy baseline handler shape.
+        if (step is not null && (step.Retry is not null || step.Compensation is not null))
         {
             sb.AppendLine();
-            EmitConfigureMethod(sb, step.Retry);
+            EmitConfigureMethod(sb, model, step, workerCommandName);
         }
 
         sb.AppendLine("}");
@@ -202,42 +204,106 @@ internal static class WorkerHandlerEmitter
 
     /// <summary>
     /// Emits a static <c>Configure(HandlerChain)</c> method that lowers the
-    /// step's <see cref="RetryModel"/> onto the handler's Wolverine chain as an
-    /// <c>OnAnyException</c> retry policy. Wolverine discovers this method by
-    /// convention at codegen time and scopes the policy to this one handler.
+    /// step's <see cref="RetryModel"/> and/or <see cref="CompensationModel"/> onto
+    /// the handler's Wolverine chain as an <c>OnAnyException</c> error policy.
+    /// Wolverine discovers this method by convention at codegen time and scopes the
+    /// policy to this one handler.
     /// </summary>
-    private static void EmitConfigureMethod(StringBuilder sb, RetryModel retry)
+    /// <remarks>
+    /// <para>
+    /// The chain composes additively: a retry prefix
+    /// (<c>RetryTimes</c>/<c>RetryWithCooldown</c>) is followed, when the step also
+    /// declares <c>.Compensate&lt;T&gt;()</c>, by
+    /// <c>.Then.CompensatingAction&lt;{WorkerCommand}&gt;(...)</c> that PUBLISHES the
+    /// trigger failure-handler command on terminal failure (after retries are
+    /// exhausted), with <c>InvokeResult.Stop</c> so the message is not retried again.
+    /// This is what makes the previously-never-published trigger command reach the
+    /// saga at runtime (DR-3), so the compensation step actually runs.
+    /// </para>
+    /// <para>
+    /// When only compensation is declared (no retry), the compensating action
+    /// applies directly to <c>chain.OnAnyException()</c> with no retry prefix.
+    /// </para>
+    /// </remarks>
+    private static void EmitConfigureMethod(
+        StringBuilder sb,
+        WorkflowModel model,
+        StepModel step,
+        string workerCommandName)
     {
+        var retry = step.Retry;
+        var compensation = step.Compensation;
+
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Configures this handler's Wolverine error policy. Lowered from the");
-        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> declaration; Wolverine discovers this");
-        sb.AppendLine("    /// static method by convention and scopes the retry to this handler.");
+        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> and/or <c>.Compensate&lt;T&gt;()</c>");
+        sb.AppendLine("    /// declaration; Wolverine discovers this static method by convention and");
+        sb.AppendLine("    /// scopes the policy to this handler.");
         sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    /// <param name=\"chain\">The handler chain to apply the retry policy to.</param>");
+        sb.AppendLine("    /// <param name=\"chain\">The handler chain to apply the error policy to.</param>");
         sb.AppendLine("    public static void Configure(HandlerChain chain)");
         sb.AppendLine("    {");
 
-        if (retry.InitialDelay is { } initialDelay)
-        {
-            // A configured delay lowers to a per-attempt cooldown schedule.
-            var cooldowns = BuildCooldownSchedule(retry, initialDelay);
-            sb.Append("        chain.OnAnyException()");
-            sb.AppendLine();
-            sb.Append($"            .RetryWithCooldown({cooldowns})");
+        // Open the error chain. The retry prefix (if any) is emitted WITHOUT a
+        // terminating ';' so a compensating action can be chained after it.
+        sb.Append("        chain.OnAnyException()");
 
-            if (retry.UseJitter)
+        if (retry is not null)
+        {
+            if (retry.InitialDelay is { } initialDelay)
+            {
+                // A configured delay lowers to a per-attempt cooldown schedule.
+                var cooldowns = BuildCooldownSchedule(retry, initialDelay);
+                sb.AppendLine();
+                sb.Append($"            .RetryWithCooldown({cooldowns})");
+
+                if (retry.UseJitter)
+                {
+                    sb.AppendLine();
+                    sb.Append("            .WithExponentialJitter()");
+                }
+            }
+            else
+            {
+                // No delay configured: a simple fixed retry count.
+                sb.AppendLine();
+                sb.Append($"            .RetryTimes({retry.MaxAttempts})");
+            }
+        }
+
+        if (compensation is not null)
+        {
+            // On terminal failure (after any retries), publish the trigger
+            // failure-handler command so the saga runs the compensation step.
+            // ".Then" is only needed to bridge from a retry continuation back to a
+            // failure-action surface; with no retry, OnAnyException() already is one.
+            if (retry is not null)
             {
                 sb.AppendLine();
-                sb.Append("            .WithExponentialJitter()");
+                sb.Append("            .Then");
             }
 
-            sb.AppendLine(";");
+            var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
+            var compStepName = NamingHelper.GetSimpleTypeName(compensation.CompensationStepTypeName);
+
+            sb.AppendLine();
+            sb.AppendLine($"            .CompensatingAction<{workerCommandName}>(");
+            sb.AppendLine($"                (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
+            sb.AppendLine("                    cmd.WorkflowId,");
+            sb.AppendLine($"                    \"{step.StepName}\",");
+            sb.AppendLine("                    ex.Message,");
+            sb.AppendLine("                    ex.GetType().Name,");
+            sb.AppendLine("                    ex.StackTrace)),");
+            sb.Append("                InvokeResult.Stop)");
+
+            // Reference the compensation step name in a comment so the lowering is
+            // traceable in the generated source.
+            sb.AppendLine($"; // runs {compStepName}");
         }
         else
         {
-            // No delay configured: a simple fixed retry count.
-            sb.AppendLine("        chain.OnAnyException()");
-            sb.AppendLine($"            .RetryTimes({retry.MaxAttempts});");
+            // Retry-only chain: terminate the statement.
+            sb.AppendLine(";");
         }
 
         sb.AppendLine("    }");
