@@ -121,16 +121,20 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        {");
         sb.AppendLine($"            Phase = {model.PhaseEnumName}.ValidationFailed;");
         sb.AppendLine();
+        // The validation error message is user-supplied text (raw Token.ValueText), so it may
+        // contain double-quotes or backslashes. Emit it via SymbolDisplay.FormatLiteral, which
+        // returns the fully escaped, quote-wrapped literal, so the generated source compiles.
+        var validationMessageLiteral = SymbolDisplay.FormatLiteral(stepModel.ValidationErrorMessage!, quote: true);
         sb.AppendLine($"            logger.LogWarning(");
         sb.AppendLine($"                \"Validation failed for step {{StepName}} in workflow {{WorkflowId}}: {{ValidationMessage}}\",");
         sb.AppendLine($"                \"{stepName}\",");
         sb.AppendLine("                WorkflowId,");
-        sb.AppendLine($"                \"{stepModel.ValidationErrorMessage}\");");
+        sb.AppendLine($"                {validationMessageLiteral});");
         sb.AppendLine();
         sb.AppendLine($"            yield return new {model.PascalName}ValidationFailed(");
         sb.AppendLine("                WorkflowId,");
         sb.AppendLine($"                \"{stepName}\",");
-        sb.AppendLine($"                \"{stepModel.ValidationErrorMessage}\",");
+        sb.AppendLine($"                {validationMessageLiteral},");
         sb.AppendLine("                DateTimeOffset.UtcNow);");
         sb.AppendLine("            yield break;");
         sb.AppendLine("        }");
