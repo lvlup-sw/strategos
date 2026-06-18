@@ -28,20 +28,48 @@ namespace Strategos.Generators.Behavioral.Tests.Infrastructure;
 /// active rootless podman socket and disables Ryuk (the resource-reaper
 /// sidecar Ryuk is unreliable under rootless podman). These are set as
 /// process environment variables before the container is built so the harness
-/// is self-configuring regardless of how the test host is launched. Both are
-/// only applied when not already supplied by the surrounding environment, so a
-/// CI runner with real Docker (or an explicit override) is respected.
+/// is self-configuring regardless of how the test host is launched.
+/// </para>
+/// <para>
+/// The podman redirect is applied only when ALL of the following hold, so a
+/// Docker-only host using Testcontainers' default discovery is never broken:
+/// <list type="number">
+///   <item><description>
+///     <c>DOCKER_HOST</c> is not already set — an explicit override or a CI
+///     runner's Docker config always wins.
+///   </description></item>
+///   <item><description>
+///     The rootless podman socket actually exists on disk — otherwise the
+///     redirect would point Testcontainers at a non-existent socket and break
+///     a Docker-only runner.
+///   </description></item>
+///   <item><description>
+///     The host is Linux — the rootless <c>/run/user/&lt;uid&gt;/podman</c>
+///     socket layout is Linux-specific.
+///   </description></item>
+/// </list>
+/// When the redirect is skipped, Testcontainers' own provider discovery
+/// (default Docker socket / <c>DOCKER_HOST</c>) is left untouched.
 /// </para>
 /// </remarks>
 public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
 {
     /// <summary>
-    /// Default rootless podman API socket path. Derived from the current user
-    /// id so it resolves to <c>/run/user/&lt;uid&gt;/podman/podman.sock</c>,
-    /// matching <c>podman info --format '{{.Host.RemoteSocket.Path}}'</c>.
+    /// Default rootless podman API socket path on disk. Derived from the current
+    /// user id so it resolves to <c>/run/user/&lt;uid&gt;/podman/podman.sock</c>,
+    /// matching <c>podman info --format '{{.Host.RemoteSocket.Path}}'</c>. Used
+    /// both to probe for the socket's existence and to build the
+    /// <c>DOCKER_HOST</c> URI.
     /// </summary>
-    private static readonly string DefaultPodmanSocket =
-        $"unix:///run/user/{GetCurrentUserId()}/podman/podman.sock";
+    private static readonly string DefaultPodmanSocketPath =
+        $"/run/user/{GetCurrentUserId()}/podman/podman.sock";
+
+    /// <summary>
+    /// The <c>unix://</c> <c>DOCKER_HOST</c> URI for the rootless podman socket
+    /// at <see cref="DefaultPodmanSocketPath"/>.
+    /// </summary>
+    private static readonly string DefaultPodmanSocketUri =
+        $"unix://{DefaultPodmanSocketPath}";
 
     private readonly PostgreSqlContainer container;
 
@@ -85,17 +113,35 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     public ValueTask DisposeAsync() => this.container.DisposeAsync();
 
     /// <summary>
-    /// Points Testcontainers at the rootless podman socket and disables Ryuk,
-    /// unless the environment already provides these settings.
+    /// Points Testcontainers at the rootless podman socket and disables Ryuk —
+    /// but only on a host that actually has a rootless podman socket and no
+    /// pre-existing <c>DOCKER_HOST</c>. A Docker-only host (or an explicit
+    /// override) is left entirely to Testcontainers' default discovery so the
+    /// redirect cannot point it at a non-existent socket.
     /// </summary>
     private static void ConfigurePodmanProvider()
     {
-        SetIfAbsent("DOCKER_HOST", DefaultPodmanSocket);
+        // Guard (a): an explicit override or a CI runner's Docker config wins.
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOCKER_HOST")))
+        {
+            return;
+        }
+
+        // Guard (c): the rootless /run/user/<uid>/podman socket layout is
+        // Linux-specific. (b): only redirect if that socket actually exists, so
+        // a Docker-only Linux runner using default discovery is untouched.
+        if (!OperatingSystem.IsLinux() || !File.Exists(DefaultPodmanSocketPath))
+        {
+            return;
+        }
+
+        Environment.SetEnvironmentVariable("DOCKER_HOST", DefaultPodmanSocketUri);
 
         // Ryuk (the Testcontainers resource reaper) commonly fails to start
-        // under rootless podman; disable it so the run is not blocked. The
-        // container's own WithCleanUp(true) still removes the container on
-        // dispose.
+        // under rootless podman; disable it so the run is not blocked. Only
+        // applied alongside the podman redirect (and only when not already set),
+        // so a Docker host keeps its default Ryuk behavior. The container's own
+        // WithCleanUp(true) still removes the container on dispose.
         SetIfAbsent("TESTCONTAINERS_RYUK_DISABLED", "true");
     }
 
