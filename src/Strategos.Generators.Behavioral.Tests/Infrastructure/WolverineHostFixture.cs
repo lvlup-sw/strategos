@@ -110,6 +110,14 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddLowConfidenceWorkflow();
                 opts.Services.AddHighConfidenceWorkflow();
 
+                // The multi-step / rejoining OnLowConfidence workflows (G-4 / #139):
+                // a two-step handler chain, a single-step REJOINING handler that
+                // resumes the main flow, and a single-step TERMINATING handler
+                // (back-compat default). All share the singleton invocation log.
+                opts.Services.AddLowConfidenceChainWorkflow();
+                opts.Services.AddLowConfidenceRejoinWorkflow();
+                opts.Services.AddLowConfidenceTerminatingWorkflow();
+
                 // The shared invocation log injected into instrumented steps.
                 opts.Services.AddSingleton(this.Invocations);
 

@@ -103,6 +103,35 @@ public interface IBranchBuilder<TState>
     void Complete();
 
     /// <summary>
+    /// Marks this path as rejoining the main flow rather than terminating.
+    /// </summary>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Intended for an <c>OnLowConfidence(alt =&gt; ...)</c> handler (G-4 / #139): by
+    /// default a low-confidence handler chain TERMINATES the workflow once its last
+    /// step completes (back-compat with the single-step terminating handler shipped
+    /// in DR-5). Calling <see cref="RejoinMainFlow"/> opts the handler into resuming
+    /// the MAIN flow at the step immediately after the confidence-gated step instead
+    /// of marking the workflow completed:
+    /// <code>
+    /// .Then&lt;Classify&gt;(step => step
+    ///     .RequireConfidence(0.85)
+    ///     .OnLowConfidence(alt => alt
+    ///         .Then&lt;HumanReview&gt;()
+    ///         .RejoinMainFlow()))
+    /// .Finally&lt;Finish&gt;()   // a rejoining handler resumes here
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Terminating remains the default; <see cref="Complete"/> is the explicit
+    /// terminal marker. <see cref="RejoinMainFlow"/> and <see cref="Complete"/> are
+    /// mutually exclusive declarations of the handler's exit semantics.
+    /// </para>
+    /// </remarks>
+    IBranchBuilder<TState> RejoinMainFlow();
+
+    /// <summary>
     /// Adds an approval gate to this branch path.
     /// </summary>
     /// <typeparam name="TApprover">The approver type (marker class for routing).</typeparam>

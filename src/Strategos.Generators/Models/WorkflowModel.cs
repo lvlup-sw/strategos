@@ -175,6 +175,100 @@ internal sealed record WorkflowModel(
         && ConfidenceHandlerStepNames.Contains(stepName);
 
     /// <summary>
+    /// Resolves the routing of a lowered <c>OnLowConfidence</c> handler step within its chain
+    /// (G-4 / #139): the next handler step to chain to, whether it is the chain's terminal step,
+    /// and (for a rejoining chain) the main-flow step to resume at.
+    /// </summary>
+    /// <param name="stepName">The handler step phase name to resolve.</param>
+    /// <returns>
+    /// A tuple describing the step's chain position: <c>NextHandlerStepName</c> is the next handler
+    /// step in the chain (null when this is the chain's last step), <c>IsLastInChain</c> is true when
+    /// no later handler step exists, and <c>RejoinStepName</c> is the main-flow step the chain resumes
+    /// at when it rejoins (null when the chain terminates or this is not the last step). Returns all
+    /// nulls / false when the step is not a confidence handler step or its chain cannot be resolved.
+    /// </returns>
+    public (string? NextHandlerStepName, bool IsLastInChain, string? RejoinStepName) GetConfidenceHandlerChainRouting(string stepName)
+    {
+        if (Steps is null || !IsConfidenceHandlerStep(stepName))
+        {
+            return (null, false, null);
+        }
+
+        // Find the gated step whose OnLowConfidence chain contains this handler step.
+        for (var gatedIndex = 0; gatedIndex < Steps.Count; gatedIndex++)
+        {
+            var chain = Steps[gatedIndex].Confidence?.OnLowConfidenceHandlerChain;
+            if (chain is null)
+            {
+                continue;
+            }
+
+            var position = -1;
+            for (var i = 0; i < chain.Steps.Count; i++)
+            {
+                if (string.Equals(chain.Steps[i].StepName, stepName, StringComparison.Ordinal))
+                {
+                    position = i;
+                    break;
+                }
+            }
+
+            if (position < 0)
+            {
+                continue;
+            }
+
+            var isLastInChain = position == chain.Steps.Count - 1;
+            var nextHandlerStepName = isLastInChain ? null : chain.Steps[position + 1].StepName;
+
+            string? rejoinStepName = null;
+            if (isLastInChain && chain.RejoinsMainFlow)
+            {
+                rejoinStepName = NextMainFlowStepName(Steps[gatedIndex].PhaseName);
+            }
+
+            return (nextHandlerStepName, isLastInChain, rejoinStepName);
+        }
+
+        return (null, false, null);
+    }
+
+    /// <summary>
+    /// Gets the next MAIN-flow step phase name after the given step phase name, skipping over any
+    /// lowered <c>OnLowConfidence</c> handler steps (which are appended to <see cref="StepNames"/>
+    /// but are not part of the linear flow). Returns null when no later main-flow step exists.
+    /// </summary>
+    /// <param name="phaseName">The phase name to search after.</param>
+    /// <returns>The next main-flow step phase name, or null if the given step is last in the main flow.</returns>
+    private string? NextMainFlowStepName(string phaseName)
+    {
+        var index = -1;
+        for (var i = 0; i < StepNames.Count; i++)
+        {
+            if (string.Equals(StepNames[i], phaseName, StringComparison.Ordinal))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return null;
+        }
+
+        for (var j = index + 1; j < StepNames.Count; j++)
+        {
+            if (!IsConfidenceHandlerStep(StepNames[j]))
+            {
+                return StepNames[j];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Gets a value indicating whether any step in this workflow has validation guards.
     /// </summary>
     /// <remarks>

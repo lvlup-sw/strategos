@@ -47,6 +47,9 @@ public class InvariantGuardTests
             "Strategos.Generators.Models.CompensationModel",
             "Strategos.Generators.Models.ConfidenceModel",
 
+            // Multi-step / rejoining OnLowConfidence handler chain IR (G-4 / #139) — sealed record.
+            "Strategos.Generators.Models.LowConfidenceHandlerChainModel",
+
             // New saga resilience-component emitters — sealed classes.
             "Strategos.Generators.Emitters.Saga.SagaTimeoutComponentEmitter",
             "Strategos.Generators.Emitters.Saga.SagaCompensationComponentEmitter",
@@ -93,6 +96,7 @@ public class InvariantGuardTests
             "Strategos.Generators.Models.TimeoutModel",
             "Strategos.Generators.Models.CompensationModel",
             "Strategos.Generators.Models.ConfidenceModel",
+            "Strategos.Generators.Models.LowConfidenceHandlerChainModel",
         };
 
         var offenders = new List<string>();

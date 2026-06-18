@@ -27,6 +27,12 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
     internal bool IsTerminal { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether this path rejoins the main flow rather than
+    /// terminating (G-4 / #139). Set by <see cref="RejoinMainFlow"/>.
+    /// </summary>
+    internal bool RejoinsMainFlow { get; private set; }
+
+    /// <summary>
     /// Gets the approval definition for this branch path, if any.
     /// </summary>
     internal ApprovalDefinition? Approval => _approval;
@@ -73,6 +79,13 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
     public void Complete()
     {
         IsTerminal = true;
+    }
+
+    /// <inheritdoc/>
+    public IBranchBuilder<TState> RejoinMainFlow()
+    {
+        RejoinsMainFlow = true;
+        return this;
     }
 
     /// <inheritdoc/>

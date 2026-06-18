@@ -166,10 +166,9 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         int index)
     {
         // Confidence handler steps (DR-5) are appended to StepNames for full lowering but are NOT
-        // part of the main linear flow. They must not be a "next step" for the main flow, and they
-        // themselves terminate the workflow. Compute main-flow adjacency by skipping over them so the
-        // preceding main-flow step (e.g. a Finally) keeps its terminal status instead of wrongly
-        // chaining into a handler step.
+        // part of the main linear flow. They must not be a "next step" for the main flow. Compute
+        // main-flow adjacency by skipping over them so the preceding main-flow step (e.g. a Finally)
+        // keeps its terminal status instead of wrongly chaining into a handler step.
         var model = ctx.Model;
         var isConfidenceHandlerStep = model.IsConfidenceHandlerStep(stepName);
 
@@ -186,9 +185,39 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             }
         }
 
-        // The step is "last in the main flow" when no later main-flow step exists. A confidence
-        // handler step is always treated as terminal (single-step handler ends the workflow).
+        // The step is "last in the main flow" when no later main-flow step exists.
         var isLastStep = isConfidenceHandlerStep || nextStepName is null;
+
+        // Confidence handler CHAIN routing (G-4 / #139). A handler step is NOT unconditionally
+        // terminal: it chains to the next step in its OnLowConfidence chain when one exists, and the
+        // chain's LAST step either rejoins the main flow (.RejoinMainFlow()) at the step after the
+        // gated step, or terminates the workflow (back-compat default). Only the terminating last
+        // step is treated as "last" so the completed-handler emitter marks the saga completed; a
+        // chaining or rejoining step gets a concrete next-step command.
+        if (isConfidenceHandlerStep)
+        {
+            var (nextHandlerStepName, isLastInChain, rejoinStepName) =
+                model.GetConfidenceHandlerChainRouting(stepName);
+
+            if (!isLastInChain)
+            {
+                // Mid-chain: chain to the next handler step.
+                nextStepName = nextHandlerStepName;
+                isLastStep = false;
+            }
+            else if (rejoinStepName is not null)
+            {
+                // Terminal step of a REJOINING chain: resume the main flow.
+                nextStepName = rejoinStepName;
+                isLastStep = false;
+            }
+            else
+            {
+                // Terminal step of a TERMINATING chain (default): end the workflow.
+                nextStepName = null;
+                isLastStep = true;
+            }
+        }
 
         ctx.LoopsByLastStep.TryGetValue(stepName, out var loopsAtStep);
         ctx.BranchesByPreviousStep.TryGetValue(stepName, out var branchAtStep);

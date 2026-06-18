@@ -482,9 +482,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // handler, start/completed commands and events, and a terminal saga completed handler.
         // The saga's confidence-gated completed handler then routes to Start{H}Command via a
         // Wolverine cascade when the result confidence is below the threshold (INV-1).
+        // Lower EVERY step in each OnLowConfidence handler chain (G-4 / #139), in order. Before
+        // #139 only the first Then<T> was lowered; a multi-step chain now contributes all of its
+        // steps so the chain runs end to end. The chain's ordered Steps are the source of truth;
+        // OnLowConfidenceHandlerStep (the first step) is retained only for the saga routing surface.
         var confidenceHandlerSteps = stepModels
-            .Where(s => s.Confidence?.OnLowConfidenceHandlerStep is not null)
-            .Select(s => s.Confidence!.OnLowConfidenceHandlerStep!)
+            .Where(s => s.Confidence?.OnLowConfidenceHandlerChain is not null)
+            .SelectMany(s => s.Confidence!.OnLowConfidenceHandlerChain!.Steps)
             .ToList();
 
         // Track the lowered handler step names so the saga emitter can keep them off the
