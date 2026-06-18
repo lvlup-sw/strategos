@@ -186,6 +186,14 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.SemanticModel,
             ct);
 
+        // Whether the state type exposes a public Phase property. Gates the
+        // failure-handler Phase = State.Phase sync so a realistic state type
+        // (no Phase member) never produces an uncompilable State.Phase reference.
+        var stateHasPhaseProperty = FluentDslParser.StateTypeHasPhaseProperty(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
         // Validate event-sourced mode requires a state type
         if (persistenceMode == Models.PersistenceMode.EventSourced
             && string.IsNullOrEmpty(stateTypeName))
@@ -723,7 +731,10 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
             ApprovalPoints: approvalModels,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames)
+        {
+            StateHasPhaseProperty = stateHasPhaseProperty,
+        };
 
         return new WorkflowGeneratorResult(model, diagnostics);
     }

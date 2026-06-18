@@ -60,4 +60,65 @@ internal static class StateTypeExtractor
 
         return null;
     }
+
+    /// <summary>
+    /// Determines whether the workflow's state type exposes a public instance
+    /// <c>Phase</c> property. Used by the failure-handler routing lowering: the
+    /// saga only syncs <c>Phase = State.Phase</c> when the state type actually
+    /// carries a phase, so a realistic state type (one that tracks its phase at
+    /// the saga level only) never produces an uncompilable <c>State.Phase</c>
+    /// reference.
+    /// </summary>
+    /// <param name="context">The parse context containing pre-computed lookups.</param>
+    /// <returns>
+    /// <see langword="true"/> when the resolved state type symbol declares (or
+    /// inherits) a public, non-static <c>Phase</c> property; otherwise
+    /// <see langword="false"/> (including when the symbol cannot be resolved).
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="context"/> is null.</exception>
+    public static bool StateHasPhaseProperty(FluentDslParseContext context)
+    {
+        ThrowHelper.ThrowIfNull(context, nameof(context));
+
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        var createInvocation = context.AllInvocations
+            .FirstOrDefault(inv => SyntaxHelper.IsMethodCall(inv, "Create"));
+
+        if (createInvocation?.Expression is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return false;
+        }
+
+        if (memberAccess.Expression is not GenericNameSyntax genericName)
+        {
+            return false;
+        }
+
+        var typeArgument = genericName.TypeArgumentList.Arguments.FirstOrDefault();
+        if (typeArgument is null)
+        {
+            return false;
+        }
+
+        var symbolInfo = context.SemanticModel.GetSymbolInfo(typeArgument);
+        if (symbolInfo.Symbol is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        // Walk the type and its base types for a public, non-static Phase property.
+        for (var current = namedType; current is not null; current = current.BaseType)
+        {
+            foreach (var member in current.GetMembers("Phase"))
+            {
+                if (member is IPropertySymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public })
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
