@@ -239,6 +239,31 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Tries to build a fully configured <see cref="StepModel"/> for a <c>Then&lt;TStep&gt;()</c>
+    /// invocation, routing through the shared <c>TryGetStepModel</c> path so the step carries any
+    /// per-step resilience (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence) and
+    /// <c>ValidateState</c> guard declared via the configure-lambda overload.
+    /// </summary>
+    /// <param name="invocation">The <c>Then</c> invocation expression for the step.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="stepModel">The resulting configured step model, if successful.</param>
+    /// <returns>True if the step model was built; otherwise, false.</returns>
+    /// <remarks>
+    /// Unlike <see cref="TryBuildConfiguredForkPathStepModel"/>, the instance name is preserved.
+    /// Used by <see cref="FailureHandlerExtractor"/> so failure-handler steps thread their
+    /// configure-lambda resilience into the <see cref="StepModel"/> IR (DR-7), bringing the
+    /// failure-handler parse path to parity with the top-level/loop/fork parse paths.
+    /// </remarks>
+    internal static bool TryBuildConfiguredStepModel(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        out StepModel stepModel)
+    {
+        var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
+        return TryGetStepModel(invocation, semanticModel, loopName: null, validationPredicate, validationErrorMessage, out stepModel);
+    }
+
+    /// <summary>
     /// Tries to get the step name and optional instance name from an invocation expression.
     /// </summary>
     /// <param name="invocation">The invocation expression to check.</param>
@@ -831,6 +856,25 @@ internal static class StepExtractor
                 }
             }
         }
+        else if (SyntaxHelper.IsMethodCall(invocation, "Branch"))
+        {
+            // Extract step models from branch case path lambdas. Branch case steps are
+            // routed through the shared TryGetStepModel path so any per-step resilience
+            // declared via the Then<TStep>(step => step.WithRetry(...)) configure-lambda
+            // overload (DR-7) is captured into the StepModel IR, exactly as fork-path steps
+            // are. Branch handler EMISSION is still owned by BranchExtractor/the dedicated
+            // branch loop in SagaStepHandlersEmitter (keyed by step name), so surfacing the
+            // configured StepModel here only enriches the deduplicated step IR; it does not
+            // change which steps are emitted.
+            var branchPathStepModels = new List<StepModel>();
+            ParseBranchPathStepModels(invocation, semanticModel, currentLoopPrefix, branchPathStepModels, cancellationToken);
+
+            // Insert branch path steps at the beginning (deduplication happens in caller)
+            for (var i = branchPathStepModels.Count - 1; i >= 0; i--)
+            {
+                steps.Insert(0, branchPathStepModels[i]);
+            }
+        }
         else if (SyntaxHelper.IsMethodCall(invocation, "ValidateState"))
         {
             // Extract validation info - it will be applied to the next step
@@ -1009,6 +1053,65 @@ internal static class StepExtractor
                 // into the StepModel, so the fork-path step's validation guard lowers into
                 // the saga exactly as a top-level/loop step's does. The validation lives in
                 // this Then call's own configure lambda, so scope the lookup to its arguments.
+                var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(inv);
+
+                if (TryGetStepModel(inv, semanticModel, currentPrefix, validationPredicate, validationErrorMessage, out var stepModel))
+                {
+                    stepModels.Add(stepModel);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parses branch case path step models from a <c>Branch</c> invocation.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Mirrors <see cref="ParseForkPathStepModels"/> for branch cases: it descends into each
+    /// <c>When</c>/<c>Otherwise</c> case's path lambda and routes every <c>Then</c> through the
+    /// shared <see cref="TryGetStepModel"/> path, which threads per-step resilience
+    /// (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence) declared via the
+    /// <c>Then&lt;TStep&gt;(step =&gt; step...)</c> configure-lambda overload (DR-7) into the
+    /// <see cref="StepModel"/> IR, plus any <c>ValidateState</c> guard.
+    /// </para>
+    /// <para>
+    /// This enriches only the deduplicated step IR consumed for worker-handler/command generation.
+    /// Branch routing/handler EMISSION is owned by <c>BranchExtractor</c> and the dedicated branch
+    /// loop in the saga emitter (keyed by step name), which are intentionally left unchanged.
+    /// </para>
+    /// </remarks>
+    private static void ParseBranchPathStepModels(
+        InvocationExpressionSyntax branchInvocation,
+        SemanticModel semanticModel,
+        string? currentPrefix,
+        List<StepModel> stepModels,
+        CancellationToken cancellationToken)
+    {
+        var arguments = branchInvocation.ArgumentList.Arguments;
+
+        // Skip first argument (discriminator); remaining are BranchCase.When()/Otherwise().
+        for (var i = 1; i < arguments.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!TryExtractBranchCasePathLambda(arguments[i], out var pathLambda))
+            {
+                continue;
+            }
+
+            var pathInvocations = pathLambda
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
+                .Reverse()
+                .ToList();
+
+            foreach (var inv in pathInvocations)
+            {
+                // Scope the per-step validation lookup to this Then call's own configure lambda,
+                // identically to the fork-path parse, so branch-path steps lower their validation
+                // and resilience config the same way.
                 var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(inv);
 
                 if (TryGetStepModel(inv, semanticModel, currentPrefix, validationPredicate, validationErrorMessage, out var stepModel))
