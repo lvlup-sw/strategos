@@ -25,25 +25,70 @@ public sealed class ContextProbe
 {
     private readonly object gate = new();
 
+    private SimilarityExpression? lastSimilarity;
+    private int similarityCallCount;
+    private AssembledContext? lastAssembledContext;
+
     /// <summary>
     /// Gets the similarity expression captured from the stub provider's most
     /// recent <c>ExecuteSimilarityAsync</c> call, or <see langword="null"/> if it
     /// has not been invoked since the last <see cref="Reset"/>.
     /// </summary>
-    public SimilarityExpression? LastSimilarity { get; private set; }
+    /// <remarks>
+    /// The getter acquires the same <c>gate</c> lock the writers hold, so a test
+    /// assertion (reader) never observes torn/stale state written by the stub
+    /// provider (writer) on another thread — this is a DI singleton shared across
+    /// both roles.
+    /// </remarks>
+    public SimilarityExpression? LastSimilarity
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.lastSimilarity;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the number of times the stub provider's <c>ExecuteSimilarityAsync</c>
     /// was invoked since the last <see cref="Reset"/>.
     /// </summary>
-    public int SimilarityCallCount { get; private set; }
+    /// <remarks>
+    /// Read under the same <c>gate</c> lock the writers hold so the count is
+    /// synchronized with the write that incremented it.
+    /// </remarks>
+    public int SimilarityCallCount
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.similarityCallCount;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the assembled context the generated worker handler delivered to the
     /// context-aware step, or <see langword="null"/> if the step has not received
     /// context since the last <see cref="Reset"/>.
     /// </summary>
-    public AssembledContext? LastAssembledContext { get; private set; }
+    /// <remarks>
+    /// Read under the same <c>gate</c> lock the writers hold so the reader never
+    /// observes a half-published reference.
+    /// </remarks>
+    public AssembledContext? LastAssembledContext
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.lastAssembledContext;
+            }
+        }
+    }
 
     /// <summary>
     /// Records the similarity expression the stub provider was asked to execute.
@@ -55,8 +100,8 @@ public sealed class ContextProbe
 
         lock (this.gate)
         {
-            this.LastSimilarity = expression;
-            this.SimilarityCallCount++;
+            this.lastSimilarity = expression;
+            this.similarityCallCount++;
         }
     }
 
@@ -70,7 +115,7 @@ public sealed class ContextProbe
 
         lock (this.gate)
         {
-            this.LastAssembledContext = context;
+            this.lastAssembledContext = context;
         }
     }
 
@@ -81,9 +126,9 @@ public sealed class ContextProbe
     {
         lock (this.gate)
         {
-            this.LastSimilarity = null;
-            this.SimilarityCallCount = 0;
-            this.LastAssembledContext = null;
+            this.lastSimilarity = null;
+            this.similarityCallCount = 0;
+            this.lastAssembledContext = null;
         }
     }
 }
