@@ -4,6 +4,22 @@
 **Workflow:** `step-resilience-lowering` · **Invariant catalog:** `/strategos-design-invariants` (INV-1…INV-8) · **Research:** [`../research/2026-06-16-dsl-step-resilience-lowering-gap.md`](../research/2026-06-16-dsl-step-resilience-lowering-gap.md)
 **Wolverine/Marten claims are grounded in primary docs — every emit mechanism is cited inline (see [Sources](#sources)).**
 
+> **Post-implementation reconciliation (2026-06-18, after review).** Two design statements
+> diverged from what shipped; recorded here so the doc matches the code:
+> 1. **Audit events (DR-3 AC#3, DR-5, and the "Audit bridge" bullet) — partially descoped.**
+>    Terminal-failure / low-confidence audit data **is captured** — as queryable saga *document
+>    properties* (`FailedStepName`, `FailureExceptionType`/`Message`/`StackTrace`, …) plus
+>    structured logs — but **not** yet as named `StepFailed` / `RetryExhausted` /
+>    `LowConfidenceRouted` events appended to the Marten *event stream*. Stream-event emission
+>    is meaningful only in `EventSourced` mode and is tracked as a **follow-on** (resolves the
+>    design's Open Question #1 audit-event taxonomy). The audit-trail *goal* (queryable terminal
+>    history) is met via properties; the specific stream-event deliverable is deferred.
+> 2. **INV-8 wording — "SymbolKey" was imprecise.** `Compensate<T>` resolves the type *symbol*
+>    at parse time into a **fully-qualified type-name string descriptor** (`CompensationModel.CompensationStepTypeName`),
+>    never a CLR `System.Type`. This is the INV-8-conformant, binding-correct behavior and is
+>    consistent with every other step-type reference in the IR (`StepModel.StepTypeName` is also
+>    an FQN string). Read "SymbolKey" below as "symbol-resolved FQN descriptor string."
+
 ## Problem Statement
 
 The workflow DSL exposes and documents step resilience — `WithRetry`, `WithTimeout`, `Compensate<T>`, `RequireConfidence`, `OnLowConfidence` — but **none of it lowers into the emitted Wolverine+Marten saga, for any step kind.** The builder captures the config and the projection serialises it into the declarative export wire contract (`WorkflowDefinitionProjection.cs:266-307` maps `ConfidenceThreshold`/`OnLowConfidence`/`Compensation`/`Retry`/`Timeout`), but it is **dropped before code generation**: `StepModel` (`Generators/Models/StepModel.cs:22-29`) carries only validation + context fields, and `StepExtractor.WalkInvocationChainForStepModelsInternal` never parses the resilience calls. So `.WithRetry(2)` compiles, validates, exports, is documented as functional — and the running saga has no retry. The worker handler catches and re-throws "to let Wolverine handle retry/dead-letter" (`WorkerHandlerEmitter.cs:249-250`) against a policy that **does not exist** anywhere in `src/`; the compensation `Trigger{Name}FailureHandlerCommand` is generated (`SagaFailureHandlerComponentEmitter.cs:80`) but **never published**; confidence is a span tag (`WorkerHandlerEmitter.cs:218`), never a gate. Every existing test is shape-only (asserts generated *source text*), so a `.WithRetry(2)` that never retries passes the suite.
@@ -122,7 +138,7 @@ When `Compensation` is present, append `.Then.CompensatingAction<{WorkerCommand}
 **Acceptance criteria:**
 - Given a step with `.WithRetry(2).Compensate<Rollback>()` and a step that always throws, When the saga runs (DR-9), Then after 2 attempts the `Trigger…FailureHandlerCommand` is published, `Rollback.ExecuteAsync` runs exactly once, and the saga transitions to `Failed`.
 - Given `.Compensate<Rollback>()` **without** `.WithRetry`, Then compensation triggers on the first failure (retry-count defaults to 1 attempt).
-- A `StepFailed` event is appended to the Marten event stream recording the failed step name + exception type.
+- A `StepFailed` event is appended to the Marten event stream recording the failed step name + exception type. *(Shipped as queryable saga document properties + structured logs; the named stream event is a tracked follow-on — see the post-implementation reconciliation note at the top.)*
 
 ### DR-4: Timeout lowering (saga TimeoutMessage deadline race)
 

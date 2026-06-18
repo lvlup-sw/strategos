@@ -27,7 +27,10 @@ This document catalogs all features from the Strategos design specification that
 > terminating** `OnLowConfidence` handler is lowered (multi-step chains + rejoin-to-main
 > are not yet); **workflow-level `OnFailure` handler-chain interop with `Compensate<T>` is
 > deferred** (see §2.1 — the workflow-level failure-handler chain is independently
-> non-functional); resilience config is attachable only via `.Then<TStep>(s => …)` (not
+> non-functional); **terminal-failure / low-confidence audit is captured as queryable saga
+> document properties + structured logs, not yet as named `StepFailed` / `LowConfidenceRouted`
+> Marten *stream* events** (stream events apply only in EventSourced mode — a tracked
+> follow-on); resilience config is attachable only via `.Then<TStep>(s => …)` (not
 > `StartWith`/`Finally`); and a `[Workflow("name")]` name must PascalCase to its
 > partial-class name. See `docs/designs/2026-06-17-step-resilience-lowering.md`.
 
