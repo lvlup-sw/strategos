@@ -190,20 +190,42 @@ internal static class ExtensionsEmitter
         // .WithContext(...); the step's worker handler takes it as a constructor
         // dependency. A retrieval-bearing assembler additionally depends on
         // IObjectSetProvider, which the ontology host registers separately.
+        //
+        // F3: the step-type + worker-handler registration above explicitly
+        // enumerates branch (model.Branches) steps as a separate source, so the
+        // assembler registration mirrors that source coverage to keep parity and
+        // stay robust if a branch/failure-handler step ever lives ONLY in those
+        // collections. The context flag lives on the StepModel (model.Steps), so we
+        // first build a name -> has-context lookup, then register the assembler for
+        // every context-bearing step reached through ANY source. The shared
+        // registeredAssemblers set guarantees each assembler is registered exactly
+        // once (no duplicate AddTransient), so this is idempotent: a step already
+        // covered by the model.Steps pass is never re-registered from the branch /
+        // failure-handler pass.
         if (model.Steps is not null)
         {
-            var registeredAssemblers = new HashSet<string>(StringComparer.Ordinal);
-            var emittedHeader = false;
+            var stepsWithContext = new HashSet<string>(StringComparer.Ordinal);
             foreach (var step in model.Steps)
             {
-                if (step.Context is null || step.Context.Sources.Count == 0)
+                if (step.Context is not null && step.Context.Sources.Count > 0)
                 {
-                    continue;
+                    stepsWithContext.Add(step.StepName);
+                }
+            }
+
+            var registeredAssemblers = new HashSet<string>(StringComparer.Ordinal);
+            var emittedHeader = false;
+
+            void RegisterAssembler(string stepName)
+            {
+                if (!stepsWithContext.Contains(stepName))
+                {
+                    return;
                 }
 
-                if (!registeredAssemblers.Add(step.StepName))
+                if (!registeredAssemblers.Add(stepName))
                 {
-                    continue;
+                    return;
                 }
 
                 if (!emittedHeader)
@@ -213,7 +235,42 @@ internal static class ExtensionsEmitter
                     emittedHeader = true;
                 }
 
-                sb.AppendLine($"        services.AddTransient<{step.StepName}ContextAssembler>();");
+                sb.AppendLine($"        services.AddTransient<{stepName}ContextAssembler>();");
+            }
+
+            // Primary source: every lowered step model (main flow, branch,
+            // failure-handler, low-confidence, compensation steps are all folded in).
+            foreach (var step in model.Steps)
+            {
+                RegisterAssembler(step.StepName);
+            }
+
+            // Mirror the step-type/worker registration sources so the assembler
+            // registration can never silently drop a context-bearing branch or
+            // failure-handler step (idempotent via registeredAssemblers).
+            if (model.Branches is not null)
+            {
+                foreach (var branch in model.Branches)
+                {
+                    foreach (var branchCase in branch.Cases)
+                    {
+                        foreach (var stepName in branchCase.StepNames)
+                        {
+                            RegisterAssembler(stepName);
+                        }
+                    }
+                }
+            }
+
+            if (model.FailureHandlers is not null)
+            {
+                foreach (var handler in model.FailureHandlers)
+                {
+                    foreach (var stepName in handler.StepNames)
+                    {
+                        RegisterAssembler(stepName);
+                    }
+                }
             }
         }
 

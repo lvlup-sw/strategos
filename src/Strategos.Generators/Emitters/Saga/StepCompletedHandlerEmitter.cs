@@ -137,8 +137,39 @@ internal sealed class StepCompletedHandlerEmitter
 
         StateApplicationHelper.EmitStateApplication(sb, model);
 
+        // Failure-phase sync + route (F1): a confidence-gated step can ALSO drive
+        // the saga into the Failed phase via its reducer/state application. The
+        // confidence comparison must not bypass failure-handler dispatch, so when
+        // the workflow declares failure handlers we mirror the phase-aware non-final
+        // handler: sync Phase from the reduced state and emit the same Phase == Failed
+        // guard — BEFORE the confidence comparison — routing to the failure handler's
+        // start command (INV-1: a Wolverine cascade). State types ending in
+        // "WorkflowState" track phase at the saga level only, so they are excluded
+        // from the sync, exactly as EmitPhaseAwareNonFinalStepHandler does.
+        if (model.HasFailureHandlers
+            && !string.IsNullOrEmpty(model.StateTypeName)
+            && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
+        {
+            sb.AppendLine($"        Phase = State.Phase;");
+        }
+
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
+            sb.AppendLine();
+        }
+
+        if (model.HasFailureHandlers)
+        {
+            var failedStepCommand = GetFailedStepCommandName(model);
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            logger.LogWarning(");
+            sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
+            sb.AppendLine("                WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
             sb.AppendLine();
         }
 

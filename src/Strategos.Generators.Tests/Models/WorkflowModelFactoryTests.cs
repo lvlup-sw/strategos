@@ -236,4 +236,58 @@ public sealed class WorkflowModelFactoryTests
         // Assert
         await Assert.That(exception).IsNotNull();
     }
+
+    /// <summary>
+    /// F4 (CodeRabbit / epic #135): the <see cref="WorkflowModel.Create"/> factory
+    /// must thread <c>confidenceHandlerStepNames</c> (DR-5) so a model built through
+    /// the factory carries the same handler identity as one built via the primary
+    /// constructor. Before the fix the parameter was silently dropped, leaving
+    /// <see cref="WorkflowModel.HasConfidenceHandlers"/> false and
+    /// <see cref="WorkflowModel.IsConfidenceHandlerStep"/> wrong for every
+    /// <c>Create</c>-built model.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Create_WithConfidenceHandlerStepNames_PreservesHandlerMetadata()
+    {
+        // Arrange
+        var stepNames = new[] { "ValidateOrder", "ClassifyIntent", "HumanReview", "SendConfirmation" };
+        var confidenceHandlerStepNames = new[] { "HumanReview" };
+
+        // Act
+        var model = WorkflowModel.Create(
+            workflowName: "process-order",
+            pascalName: "ProcessOrder",
+            @namespace: "MyCompany.Workflows",
+            stepNames: stepNames,
+            confidenceHandlerStepNames: confidenceHandlerStepNames);
+
+        // Assert — the DR-5 handler identity survives the factory.
+        await Assert.That(model.ConfidenceHandlerStepNames).IsNotNull();
+        await Assert.That(model.HasConfidenceHandlers).IsTrue();
+        await Assert.That(model.IsConfidenceHandlerStep("HumanReview")).IsTrue();
+        await Assert.That(model.IsConfidenceHandlerStep("ClassifyIntent")).IsFalse();
+    }
+
+    /// <summary>
+    /// F4 regression guard: with no confidence handler step names supplied a
+    /// <c>Create</c>-built model reports no confidence handlers (the optional
+    /// parameter defaults to null, matching the constructor default).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Create_WithoutConfidenceHandlerStepNames_ReportsNoConfidenceHandlers()
+    {
+        // Arrange & Act
+        var model = WorkflowModel.Create(
+            workflowName: "process-order",
+            pascalName: "ProcessOrder",
+            @namespace: "MyCompany.Workflows",
+            stepNames: new[] { "ValidateOrder", "SendConfirmation" });
+
+        // Assert
+        await Assert.That(model.ConfidenceHandlerStepNames).IsNull();
+        await Assert.That(model.HasConfidenceHandlers).IsFalse();
+        await Assert.That(model.IsConfidenceHandlerStep("ValidateOrder")).IsFalse();
+    }
 }
