@@ -160,6 +160,85 @@ public class NamingHelperTests
     }
 
     // =============================================================================
+    // G2. GetSimpleTypeName Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that GetSimpleTypeName strips the namespace from a fully qualified
+    /// (non-generic) type name.
+    /// </summary>
+    [Test]
+    public async Task GetSimpleTypeName_FullyQualified_ReturnsSimpleName()
+    {
+        // Act
+        var result = NamingHelper.GetSimpleTypeName("MyApp.Steps.RollbackStep");
+
+        // Assert
+        await Assert.That(result).IsEqualTo("RollbackStep");
+    }
+
+    /// <summary>
+    /// Verifies that GetSimpleTypeName returns an unqualified name unchanged.
+    /// </summary>
+    [Test]
+    public async Task GetSimpleTypeName_Unqualified_ReturnsInput()
+    {
+        // Act
+        var result = NamingHelper.GetSimpleTypeName("RollbackStep");
+
+        // Assert
+        await Assert.That(result).IsEqualTo("RollbackStep");
+    }
+
+    /// <summary>
+    /// Verifies that GetSimpleTypeName returns a VALID identifier for a fully
+    /// qualified GENERIC type whose type argument is itself qualified. The old
+    /// implementation split on the LAST '.', which fell inside the type argument
+    /// (<c>Ns.Foo&lt;Ns.Bar&gt;</c>) and yielded <c>Bar&gt;</c> — an invalid
+    /// identifier with a trailing '&gt;'.
+    /// </summary>
+    [Test]
+    public async Task GetSimpleTypeName_QualifiedGenericWithQualifiedArg_ReturnsValidOuterName()
+    {
+        // Act
+        var result = NamingHelper.GetSimpleTypeName("Ns.Foo<Ns.Bar>");
+
+        // Assert
+        await Assert.That(result).IsEqualTo("Foo");
+        await Assert.That(result).DoesNotContain(">");
+        await Assert.That(result).DoesNotContain("<");
+        await Assert.That(result).DoesNotContain(".");
+    }
+
+    /// <summary>
+    /// Verifies that GetSimpleTypeName strips the generic-argument suffix from a
+    /// fully qualified generic with an unqualified type argument.
+    /// </summary>
+    [Test]
+    public async Task GetSimpleTypeName_QualifiedGenericWithSimpleArg_ReturnsOuterName()
+    {
+        // Act
+        var result = NamingHelper.GetSimpleTypeName("MyApp.Steps.Wrapper<Payload>");
+
+        // Assert
+        await Assert.That(result).IsEqualTo("Wrapper");
+    }
+
+    /// <summary>
+    /// Verifies that GetSimpleTypeName strips the generic-argument suffix from an
+    /// unqualified generic type name.
+    /// </summary>
+    [Test]
+    public async Task GetSimpleTypeName_UnqualifiedGeneric_ReturnsOuterName()
+    {
+        // Act
+        var result = NamingHelper.GetSimpleTypeName("Wrapper<Payload>");
+
+        // Assert
+        await Assert.That(result).IsEqualTo("Wrapper");
+    }
+
+    // =============================================================================
     // H. Guard Clause Tests
     // =============================================================================
 
