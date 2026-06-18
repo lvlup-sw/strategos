@@ -174,6 +174,82 @@ public static partial class ClassifyFlowWorkflow
 ";
 
     /// <summary>
+    /// A workflow whose <c>Branch</c> case step (<c>HandleSuccess</c>) declares
+    /// <c>.WithContext(...)</c>. The branch case step lives off the main linear
+    /// flow (its execution context is <c>BranchPath</c>), so it exercises the F3
+    /// concern: a context-bearing branch step must still get its assembler emitted
+    /// AND DI-registered.
+    /// </summary>
+    private const string BranchCaseContextSource = @"
+using Strategos.Abstractions;
+using Strategos.Attributes;
+using Strategos.Builders;
+using Strategos.Definitions;
+using Strategos.Steps;
+
+namespace TestApp;
+
+public enum Outcome { Success, Fail }
+
+[WorkflowState]
+public sealed record OrderState : IWorkflowState
+{
+    public global::System.Guid WorkflowId { get; init; }
+    public string CustomerName { get; init; } = string.Empty;
+    public Outcome Result { get; init; }
+}
+
+public sealed class ValidateOrder : IWorkflowStep<OrderState>
+{
+    public global::System.Threading.Tasks.Task<StepResult<OrderState>> ExecuteAsync(
+        OrderState state, StepContext context, global::System.Threading.CancellationToken cancellationToken)
+        => global::System.Threading.Tasks.Task.FromResult(StepResult<OrderState>.FromState(state));
+}
+
+public sealed class HandleSuccess : IWorkflowStep<OrderState>
+{
+    public global::System.Threading.Tasks.Task<StepResult<OrderState>> ExecuteAsync(
+        OrderState state, StepContext context, global::System.Threading.CancellationToken cancellationToken)
+        => global::System.Threading.Tasks.Task.FromResult(StepResult<OrderState>.FromState(state));
+}
+
+public sealed class HandleFail : IWorkflowStep<OrderState>
+{
+    public global::System.Threading.Tasks.Task<StepResult<OrderState>> ExecuteAsync(
+        OrderState state, StepContext context, global::System.Threading.CancellationToken cancellationToken)
+        => global::System.Threading.Tasks.Task.FromResult(StepResult<OrderState>.FromState(state));
+}
+
+public sealed class FinishStep : IWorkflowStep<OrderState>
+{
+    public global::System.Threading.Tasks.Task<StepResult<OrderState>> ExecuteAsync(
+        OrderState state, StepContext context, global::System.Threading.CancellationToken cancellationToken)
+        => global::System.Threading.Tasks.Task.FromResult(StepResult<OrderState>.FromState(state));
+}
+
+[Workflow(""branch-flow"")]
+public static partial class BranchFlowWorkflow
+{
+    private static Outcome Pick(OrderState s) => s.Result;
+
+    public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+        .Create(""branch-flow"")
+        .StartWith<ValidateOrder>()
+        .Branch(
+            Pick,
+            BranchCase<OrderState, Outcome>.When(
+                Outcome.Success,
+                path => path.Then<HandleSuccess>(s => s
+                    .WithContext(ctx => ctx
+                        .FromState(st => st.CustomerName)
+                        .FromLiteral(""branch escalation context.""))).Complete()),
+            BranchCase<OrderState, Outcome>.Otherwise(
+                path => path.Then<HandleFail>().Complete()))
+        .Finally<FinishStep>();
+}
+";
+
+    /// <summary>
     /// F5: <c>.WithContext(...)</c> on an <c>OnFailure</c> handler step must
     /// attach to that handler step model (because the merge now runs after the
     /// failure-handler step models are appended), so the
@@ -252,5 +328,67 @@ public static partial class ClassifyFlowWorkflow
 
         await Assert.That(extensionsSource).Contains(
             "services.AddTransient<HumanReviewContextAssembler>();");
+    }
+
+    /// <summary>
+    /// F3 (branch case): <c>.WithContext(...)</c> on a <c>Branch</c> case step must
+    /// emit its assembler and wire it into the worker handler. Branch case steps
+    /// are lowered into <c>model.Steps</c> with a <c>BranchPath</c> context, so the
+    /// existing <c>ContextAssemblerEmitter</c> covers them once F5 attaches context.
+    /// This test pins that contract.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generate_BranchCaseStepWithContext_EmitsAssemblerAndWiresWorker()
+    {
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(BranchCaseContextSource);
+        var assemblerSource = GeneratorTestHelper.GetGeneratedSource(result, "BranchFlowAssemblers.g.cs");
+        var handlersSource = GeneratorTestHelper.GetGeneratedSource(result, "BranchFlowHandlers.g.cs");
+
+        await Assert.That(assemblerSource).IsNotNull().And.IsNotEmpty();
+        await Assert.That(assemblerSource).Contains("HandleSuccessContextAssembler");
+        await Assert.That(handlersSource).Contains("HandleSuccessContextAssembler");
+        await Assert.That(handlersSource).Contains("AssembleAsync");
+    }
+
+    /// <summary>
+    /// F3 (branch case): the <c>Branch</c> case step's <c>{Step}ContextAssembler</c>
+    /// must be DI-registered. The branch step gets its TYPE and worker handler
+    /// registered (the existing 3-source registration covers branch steps), so the
+    /// assembler registration must keep parity — a context-bearing branch step
+    /// whose assembler is unregistered is a runtime missing-dependency.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generate_BranchCaseStepWithContext_RegistersAssemblerInDi()
+    {
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(BranchCaseContextSource);
+        var extensionsSource = GeneratorTestHelper.GetGeneratedSource(result, "BranchFlowExtensions.g.cs");
+
+        // The branch step type and worker handler are registered...
+        await Assert.That(extensionsSource).Contains("services.AddTransient<HandleSuccess>();");
+        await Assert.That(extensionsSource).Contains("services.AddTransient<HandleSuccessHandler>();");
+
+        // ...so the assembler must be registered too (parity), exactly once.
+        await Assert.That(extensionsSource).Contains(
+            "services.AddTransient<HandleSuccessContextAssembler>();");
+        await Assert.That(CountOccurrences(
+            extensionsSource,
+            "services.AddTransient<HandleSuccessContextAssembler>();")).IsEqualTo(1);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 }
