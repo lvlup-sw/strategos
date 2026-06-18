@@ -101,6 +101,15 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 // invocation log below.
                 opts.Services.AddRetryProofWorkflow();
 
+                // The confidence-gate workflows (DR-5 T014). Each generated saga
+                // carries the confidence-gated completed handler that compares the
+                // step result confidence to the 0.85 threshold and either routes to
+                // the lowered OnLowConfidence handler step (low-confidence case) or
+                // proceeds on the primary path (high-confidence case). Both share the
+                // singleton invocation log below.
+                opts.Services.AddLowConfidenceWorkflow();
+                opts.Services.AddHighConfidenceWorkflow();
+
                 // The shared invocation log injected into instrumented steps.
                 opts.Services.AddSingleton(this.Invocations);
 
