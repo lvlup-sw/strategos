@@ -1,1 +1,4 @@
 #nullable enable
+Strategos.Builders.IWorkflowBuilder<TState>.Finally<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Definitions.WorkflowDefinition<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>(string! instanceName, System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**`StartWith`/`Finally` accept a step-config overload (#141).**
+`IWorkflowBuilder<TState>` now exposes `StartWith<TStep>(Action<IStepConfiguration<TState>> configure)`,
+`StartWith<TStep>(string instanceName, Action<IStepConfiguration<TState>> configure)`,
+and `Finally<TStep>(Action<IStepConfiguration<TState>> configure)`, mirroring the
+existing `Then<TStep>(configure)` overload. This closes the expressibility gap where
+the entry (`StartWith`) and terminal (`Finally`) steps could not declare per-step
+resilience (`WithRetry`/`WithTimeout`/`Compensate`/`RequireConfidence`) inline and
+had to be wrapped by an extra non-configured `Then`. The captured config is routed
+through the same `WithConfiguration` path `Then(configure)` uses, so the generator's
+existing per-step IR threading (`StepExtractor.ExtractConfiguredResilience`) populates
+the first/terminal `StepModel` with no new lowering required.
+
 **Npgsql instance-anchored link traversal, depth-tiered (DR-12, #131).**
 `PgVectorObjectSetProvider.ExecuteAsync<T>` / `StreamAsync<T>` now serve
 `.Where(s => s.Key == id).TraverseLink<TLinked>("link")` expressions, closing the
@@ -43,6 +55,18 @@ signature changes, the CI gate fails closed with the message:
 
 Follow it: move the new/changed lines into `PublicAPI.Unshipped.txt` and record
 the change here so the downstream exarchos mirror can re-baseline deliberately.
+
+**`IWorkflowBuilder<TState>` step-config overloads added (#141).** Three new public
+members were added to the `IWorkflowBuilder<TState>` cross-product interface
+(non-breaking — pure additions):
+
+- `StartWith<TStep>(System.Action<IStepConfiguration<TState>> configure)`
+- `StartWith<TStep>(string instanceName, System.Action<IStepConfiguration<TState>> configure)`
+- `Finally<TStep>(System.Action<IStepConfiguration<TState>> configure)`
+
+The matching lines are staged in `PublicAPI.Unshipped.txt`. The exarchos
+`strategos-api-mirror.test.ts` mirror should re-baseline to pick up the new
+entry/terminal step-config overloads.
 
 **Ontology edge-properties surface removed (DR-5, #120, closes #114).** The
 schema-only edge-properties footgun — attaching ad-hoc properties to a *link*
