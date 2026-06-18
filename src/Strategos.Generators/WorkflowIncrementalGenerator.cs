@@ -204,40 +204,24 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.SemanticModel,
             ct);
 
-        // Extract per-step context models (.WithContext(...)) and fold them onto
-        // the matching step models (DR-6 T015). The parse already builds a
-        // ContextModel per WithContext call; merging it here is what makes the
+        // Extract per-step context models (.WithContext(...)) so they can be folded
+        // onto the matching step models (DR-6 T015). The parse already builds a
+        // ContextModel per WithContext call; the merge (below) is what makes the
         // ContextAssemblerEmitter (previously dead) emit a {Step}ContextAssembler
         // and lets the worker handler assemble ontology-backed context before the
-        // step runs. Keyed by step name so a context binds to its declaring step.
+        // step runs.
+        //
+        // F5: the extraction stays here, but the MERGE is deferred to after ALL
+        // step-model lowering completes (failure-handler steps, low-confidence
+        // handler steps, compensation steps are appended to stepModels later). If
+        // we merged now, .WithContext(...) declared on one of those off-main-flow
+        // handler steps would never attach, because the handler step model is not
+        // in stepModels yet. See the deferred merge just before the WorkflowModel
+        // construction.
         var contextModels = FluentDslParser.ExtractContextModels(
             context.TargetNode,
             context.SemanticModel,
             ct);
-
-        if (contextModels.Count > 0)
-        {
-            var contextByStep = new Dictionary<string, ContextModel>(StringComparer.Ordinal);
-            foreach (var (stepName, contextModel) in contextModels)
-            {
-                contextByStep[stepName] = contextModel;
-            }
-
-            var mergedStepModels = new List<StepModel>(stepModels.Count);
-            foreach (var step in stepModels)
-            {
-                if (step.Context is null && contextByStep.TryGetValue(step.StepName, out var ctxModel))
-                {
-                    mergedStepModels.Add(step with { Context = ctxModel });
-                }
-                else
-                {
-                    mergedStepModels.Add(step);
-                }
-            }
-
-            stepModels = mergedStepModels;
-        }
 
         // Extract loop models for loop handler generation
         // Use original validName (not pascalName) to match runtime condition ID format
@@ -691,6 +675,38 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             }
 
             stepModels = allStepModels;
+        }
+
+        // Deferred context merge (F5): fold each .WithContext(...) ContextModel onto
+        // its declaring step model AFTER all step-model lowering has completed —
+        // failure-handler steps, low-confidence handler steps, and compensation
+        // steps are all in stepModels by now. Merging earlier left context declared
+        // on those off-main-flow handler steps unattached, so the assembler was
+        // never emitted (F5) and never registered (F3, ExtensionsEmitter). The
+        // ContextModel is keyed by the declaring step's name, so it binds to the
+        // matching step regardless of where in the flow the step lives.
+        if (contextModels.Count > 0)
+        {
+            var contextByStep = new Dictionary<string, ContextModel>(StringComparer.Ordinal);
+            foreach (var (stepName, contextModel) in contextModels)
+            {
+                contextByStep[stepName] = contextModel;
+            }
+
+            var mergedStepModels = new List<StepModel>(stepModels.Count);
+            foreach (var step in stepModels)
+            {
+                if (step.Context is null && contextByStep.TryGetValue(step.StepName, out var ctxModel))
+                {
+                    mergedStepModels.Add(step with { Context = ctxModel });
+                }
+                else
+                {
+                    mergedStepModels.Add(step);
+                }
+            }
+
+            stepModels = mergedStepModels;
         }
 
         var model = new WorkflowModel(
