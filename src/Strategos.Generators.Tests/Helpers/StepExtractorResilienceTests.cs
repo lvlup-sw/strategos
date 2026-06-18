@@ -74,6 +74,23 @@ public sealed class StepExtractorResilienceTests
     }
 
     /// <summary>
+    /// CodeRabbit F3 (PR #137): an extreme timeout literal (<c>WithTimeout(TimeSpan.FromDays(1e18))</c>)
+    /// must NOT crash the parser. <c>TimeSpan.From*</c> throws <c>OverflowException</c> on an
+    /// out-of-range argument; the parser must catch that and return "not parsed" (no timeout) instead
+    /// of letting the exception escape and abort generation.
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_ExtremeTimeoutLiteral_DoesNotThrowAndDropsTimeout()
+    {
+        // Act — must not throw (the parser swallows the TimeSpan.From* overflow).
+        var stepModels = ParserTestHelper.ExtractStepModels(ExtremeTimeoutWorkflow);
+
+        // Assert — the step is still parsed; the out-of-range timeout is simply not carried.
+        var step = stepModels.Single(s => s.StepName == "ProcessPayment");
+        await Assert.That(step.Timeout).IsNull();
+    }
+
+    /// <summary>
     /// CodeRabbit F2 (PR #137): a unary-minus retry literal (<c>WithRetry(-1)</c>) must reach the
     /// IR as a negative <see cref="RetryModel.MaxAttempts"/>, so the downstream AGWF020 diagnostic
     /// can fire (INV-5). The retry parser previously accepted only a direct numeric literal, so the
@@ -245,6 +262,58 @@ public sealed class StepExtractorResilienceTests
                     .WithRetry(3, TimeSpan.FromSeconds(5))
                     .WithTimeout(TimeSpan.FromMinutes(2)))
                 .Then<AuditPayment>(step => step.WithRetry(2))
+                .Finally<SendReceipt>();
+        }
+        """;
+
+    /// <summary>
+    /// A linear workflow whose <c>ProcessPayment</c> step declares an out-of-range timeout literal
+    /// (<c>WithTimeout(TimeSpan.FromDays(1e18))</c>), probing F3 (TimeSpan.From* overflow must not
+    /// crash the parser).
+    /// </summary>
+    private const string ExtremeTimeoutWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PaymentState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidatePayment : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        public class ProcessPayment : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        public class SendReceipt : IWorkflowStep<PaymentState>
+        {
+            public Task<StepResult<PaymentState>> ExecuteAsync(
+                PaymentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PaymentState>.FromState(state));
+        }
+
+        [Workflow("extreme-timeout")]
+        public static partial class ExtremeTimeoutWorkflow
+        {
+            public static WorkflowDefinition<PaymentState> Definition => Workflow<PaymentState>
+                .Create("extreme-timeout")
+                .StartWith<ValidatePayment>()
+                .Then<ProcessPayment>(step => step.WithTimeout(TimeSpan.FromDays(1e18)))
                 .Finally<SendReceipt>();
         }
         """;
