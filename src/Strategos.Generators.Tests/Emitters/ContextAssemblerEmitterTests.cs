@@ -393,9 +393,11 @@ public class ContextAssemblerEmitterTests
         // Act
         var source = ContextAssemblerEmitter.Emit(model);
 
-        // Assert
-        await Assert.That(source).Contains("new RetrievalResult");
-        await Assert.That(source).Contains("Content = item.ToString()");
+        // Assert — RetrievalResult is a positional record, so the mapping
+        // constructs it positionally (Content, Score) rather than with an object
+        // initializer (which fails: Content is a required ctor parameter).
+        await Assert.That(source).Contains("new RetrievalResult(");
+        await Assert.That(source).Contains("item.ToString() ?? string.Empty");
         await Assert.That(source).Contains(".Scores[i]");
     }
 

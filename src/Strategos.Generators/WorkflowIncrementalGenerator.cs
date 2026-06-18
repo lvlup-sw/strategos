@@ -6,6 +6,7 @@
 
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Emitters;
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 
 namespace Strategos.Generators;
@@ -61,6 +62,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 var sagaClassName = SagaEmitter.GetSagaClassName(result.Model);
                 var sagaSource = SagaEmitter.Emit(result.Model);
                 spc.AddSource($"{sagaClassName}.g.cs", SourceText.From(sagaSource, Encoding.UTF8));
+
+                // Emit Context Assemblers (DR-6). Only steps that declared
+                // .WithContext(...) produce a {Step}ContextAssembler; when no step
+                // has context the emitter returns empty and no file is added, so a
+                // context-free workflow keeps its prior generated-file set
+                // byte-identical. The worker handler below wires each assembler into
+                // its step's execution path.
+                var assemblersSource = ContextAssemblerEmitter.Emit(result.Model);
+                if (!string.IsNullOrWhiteSpace(assemblersSource))
+                {
+                    spc.AddSource($"{result.Model.PascalName}Assemblers.g.cs", SourceText.From(assemblersSource, Encoding.UTF8));
+                }
 
                 // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
                 var handlersSource = WorkerHandlerEmitter.Emit(result.Model);
@@ -187,6 +200,25 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
         // Extract step models with type information
         var stepModels = FluentDslParser.ExtractStepModels(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
+        // Extract per-step context models (.WithContext(...)) so they can be folded
+        // onto the matching step models (DR-6 T015). The parse already builds a
+        // ContextModel per WithContext call; the merge (below) is what makes the
+        // ContextAssemblerEmitter (previously dead) emit a {Step}ContextAssembler
+        // and lets the worker handler assemble ontology-backed context before the
+        // step runs.
+        //
+        // F5: the extraction stays here, but the MERGE is deferred to after ALL
+        // step-model lowering completes (failure-handler steps, low-confidence
+        // handler steps, compensation steps are appended to stepModels later). If
+        // we merged now, .WithContext(...) declared on one of those off-main-flow
+        // handler steps would never attach, because the handler step model is not
+        // in stepModels yet. See the deferred merge just before the WorkflowModel
+        // construction.
+        var contextModels = FluentDslParser.ExtractContextModels(
             context.TargetNode,
             context.SemanticModel,
             ct);
@@ -443,6 +475,55 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             stepModels = allStepModels;
         }
 
+        // Include low-confidence handler step names and step models in the overall
+        // lists (DR-5). A step's .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>())
+        // captures the handler step H only as a ConfidenceModel descriptor; lowering it here
+        // (mirroring failure-handler / approval step lowering) gives H its own phase, worker
+        // handler, start/completed commands and events, and a terminal saga completed handler.
+        // The saga's confidence-gated completed handler then routes to Start{H}Command via a
+        // Wolverine cascade when the result confidence is below the threshold (INV-1).
+        var confidenceHandlerSteps = stepModels
+            .Where(s => s.Confidence?.OnLowConfidenceHandlerStep is not null)
+            .Select(s => s.Confidence!.OnLowConfidenceHandlerStep!)
+            .ToList();
+
+        // Track the lowered handler step names so the saga emitter can keep them off the
+        // main linear flow (they must not displace the workflow's terminal step nor be
+        // chained to as a normal "next" step).
+        List<string>? confidenceHandlerStepNames = null;
+
+        if (confidenceHandlerSteps.Count > 0)
+        {
+            confidenceHandlerStepNames = new List<string>(confidenceHandlerSteps.Count);
+            var allStepNames = new List<string>(stepNames.Count + confidenceHandlerSteps.Count);
+            allStepNames.AddRange(stepNames);
+            var allStepModels = new List<StepModel>(stepModels.Count + confidenceHandlerSteps.Count);
+            allStepModels.AddRange(stepModels);
+
+            var existingStepNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
+            var existingStepModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+
+            foreach (var handlerStep in confidenceHandlerSteps)
+            {
+                confidenceHandlerStepNames.Add(handlerStep.StepName);
+
+                if (!existingStepNames.Contains(handlerStep.StepName))
+                {
+                    allStepNames.Add(handlerStep.StepName);
+                    existingStepNames.Add(handlerStep.StepName);
+                }
+
+                if (!existingStepModelNames.Contains(handlerStep.StepName))
+                {
+                    allStepModels.Add(handlerStep);
+                    existingStepModelNames.Add(handlerStep.StepName);
+                }
+            }
+
+            stepNames = allStepNames;
+            stepModels = allStepModels;
+        }
+
         // Check for missing steps
         if (stepNames.Count == 0)
         {
@@ -540,6 +621,15 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 validName));
         }
 
+        // Validate per-step resilience configuration (DR-8 / INV-5; the resilience AGWF
+        // diagnostics). These are advisory signals over the parsed IR (StepModel.Retry/
+        // Timeout/Compensation/Confidence): some mirror builder-runtime throws (retry < 1,
+        // confidence ∉ [0,1]) so consumers get the same signal at compile time and can
+        // suppress it by id; others (non-positive timeout, RequireConfidence without
+        // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
+        // generation — the builder runtime / C# generic constraint already enforce them.
+        ReportResilienceDiagnostics(stepModels, validName, GetAttributeLocation(context), diagnostics);
+
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
             || (!hasStartWith && firstMethodName is not null)
@@ -548,6 +638,75 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         if (hasErrors)
         {
             return new WorkflowGeneratorResult(null, diagnostics);
+        }
+
+        // Fold compensation (rollback) step TYPES into the step-model list so the
+        // emitters that key off model.Steps (worker handler, worker command,
+        // completed event, DI registration) produce the artifacts that let the
+        // rollback step RUN via the proven main-flow worker dispatch (DR-3 T008).
+        //
+        // Crucially the compensation step is folded into the step MODELS only, NOT
+        // into stepNames: stepNames is the saga's linear chain, so adding it there
+        // would run the rollback on the happy path. The compensation step is reached
+        // exclusively via the saga compensation handler chain
+        // (SagaCompensationComponentEmitter), which dispatches its worker command
+        // only when the trigger failure-handler command arrives.
+        if (stepModels.Any(s => s.Compensation is not null))
+        {
+            var allStepModels = new List<StepModel>(stepModels);
+            var existingModelNames = new HashSet<string>(
+                stepModels.Select(s => s.StepName),
+                StringComparer.Ordinal);
+
+            foreach (var step in stepModels)
+            {
+                if (step.Compensation is null)
+                {
+                    continue;
+                }
+
+                var compTypeName = step.Compensation.CompensationStepTypeName;
+                var compStepName = NamingHelper.GetSimpleTypeName(compTypeName);
+
+                if (existingModelNames.Add(compStepName))
+                {
+                    allStepModels.Add(StepModel.Create(compStepName, compTypeName));
+                }
+            }
+
+            stepModels = allStepModels;
+        }
+
+        // Deferred context merge (F5): fold each .WithContext(...) ContextModel onto
+        // its declaring step model AFTER all step-model lowering has completed —
+        // failure-handler steps, low-confidence handler steps, and compensation
+        // steps are all in stepModels by now. Merging earlier left context declared
+        // on those off-main-flow handler steps unattached, so the assembler was
+        // never emitted (F5) and never registered (F3, ExtensionsEmitter). The
+        // ContextModel is keyed by the declaring step's name, so it binds to the
+        // matching step regardless of where in the flow the step lives.
+        if (contextModels.Count > 0)
+        {
+            var contextByStep = new Dictionary<string, ContextModel>(StringComparer.Ordinal);
+            foreach (var (stepName, contextModel) in contextModels)
+            {
+                contextByStep[stepName] = contextModel;
+            }
+
+            var mergedStepModels = new List<StepModel>(stepModels.Count);
+            foreach (var step in stepModels)
+            {
+                if (step.Context is null && contextByStep.TryGetValue(step.StepName, out var ctxModel))
+                {
+                    mergedStepModels.Add(step with { Context = ctxModel });
+                }
+                else
+                {
+                    mergedStepModels.Add(step);
+                }
+            }
+
+            stepModels = mergedStepModels;
         }
 
         var model = new WorkflowModel(
@@ -563,9 +722,84 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             Branches: branchModels,
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
-            ApprovalPoints: approvalModels);
+            ApprovalPoints: approvalModels,
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
 
         return new WorkflowGeneratorResult(model, diagnostics);
+    }
+
+    /// <summary>
+    /// Reports the per-step resilience diagnostics (DR-8 / INV-5) over the parsed step
+    /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
+    /// </summary>
+    /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
+    /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
+    /// <param name="location">The diagnostic location (the workflow attribute).</param>
+    /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
+    private static void ReportResilienceDiagnostics(
+        IReadOnlyList<StepModel> stepModels,
+        string workflowName,
+        Location location,
+        List<Diagnostic> diagnostics)
+    {
+        foreach (var step in stepModels)
+        {
+            // CompensateNotAStep — Compensate<T> where T is not a registered IWorkflowStep<TState>.
+            if (step.Compensation is { IsRegisteredStep: false } compensation)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.CompensateNotAStep,
+                    location,
+                    step.EffectiveName,
+                    workflowName,
+                    compensation.CompensationStepTypeName));
+            }
+
+            if (step.Confidence is { } confidence)
+            {
+                // ConfidenceThresholdOutOfRange — RequireConfidence(x) with x outside [0.0, 1.0].
+                if (confidence.Threshold < 0.0 || confidence.Threshold > 1.0)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.ConfidenceThresholdOutOfRange,
+                        location,
+                        step.EffectiveName,
+                        workflowName,
+                        confidence.Threshold));
+                }
+
+                // RequireConfidenceWithoutHandler — RequireConfidence with no OnLowConfidence handler.
+                if (confidence.OnLowConfidenceHandlerStep is null)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.RequireConfidenceWithoutHandler,
+                        location,
+                        step.EffectiveName,
+                        workflowName));
+                }
+            }
+
+            // RetryMaxAttemptsBelowOne — retry maxAttempts < 1.
+            if (step.Retry is { } retry && retry.MaxAttempts < 1)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.RetryMaxAttemptsBelowOne,
+                    location,
+                    step.EffectiveName,
+                    workflowName,
+                    retry.MaxAttempts));
+            }
+
+            // NonPositiveTimeout — non-positive WithTimeout.
+            if (step.Timeout is { } timeout && timeout.Timeout <= TimeSpan.Zero)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.NonPositiveTimeout,
+                    location,
+                    step.EffectiveName,
+                    workflowName));
+            }
+        }
     }
 
     private static Location GetAttributeLocation(GeneratorAttributeSyntaxContext context)

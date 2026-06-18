@@ -72,12 +72,24 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
 
-        // Priority: Approval → Terminal/Final → Non-Final
+        // Priority: Approval → Confidence gate → Terminal/Final → Non-Final
         // Terminal steps (CompleteStep, FailedStep, TerminateStep, AutoFailStep) should always
         // call MarkCompleted() regardless of their position in the workflow.
+        //
+        // The confidence gate (DR-5) takes precedence over the terminal/non-final split because
+        // it must compare the completed event's confidence to the threshold before deciding the
+        // route — either to the low-confidence handler step (a Wolverine cascade, INV-1) or down
+        // the normal path. It only applies when the step declared
+        // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()), where H was lowered into its
+        // own start command by the generator.
+        var confidence = context.StepModel?.Confidence;
         if (context.ApprovalAtStep is not null)
         {
             EmitApprovalWaitingHandler(sb, model, eventName, context.ApprovalAtStep);
+        }
+        else if (confidence?.OnLowConfidenceHandlerStep is not null)
+        {
+            EmitConfidenceGatedHandler(sb, model, eventName, confidence, context);
         }
         else if (context.IsTerminalStep || context.IsLastStep)
         {
@@ -87,6 +99,121 @@ internal sealed class StepCompletedHandlerEmitter
         {
             EmitNonFinalStepHandler(sb, model, eventName, context.NextStepName!);
         }
+    }
+
+    /// <summary>
+    /// Emits a confidence-gated completed handler (DR-5). After applying the
+    /// reducer, it compares the completed event's <c>Confidence</c> to the
+    /// configured threshold: when below, it cascades the low-confidence handler
+    /// step's start command (routing the saga to the OnLowConfidence branch);
+    /// when at or above (or when the result carried no confidence), it proceeds
+    /// down the normal path — to the next step, or to completion if this step is
+    /// terminal/last.
+    /// </summary>
+    private static void EmitConfidenceGatedHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string eventName,
+        ConfidenceModel confidence,
+        HandlerContext context)
+    {
+        var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var handlerStepName = confidence.OnLowConfidenceHandlerStep!.StepName;
+        var lowConfidenceCommand = $"Start{handlerStepName}Command";
+        var thresholdLiteral = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        var proceedsToCompletion = context.IsTerminalStep || context.IsLastStep;
+
+        sb.AppendLine($"    /// <returns>The low-confidence handler start command when below the");
+        sb.AppendLine($"    /// confidence threshold; otherwise the normal next-step command.</returns>");
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+
+        StateApplicationHelper.EmitStateApplication(sb, model);
+
+        // Failure-phase sync + route (F1): a confidence-gated step can ALSO drive
+        // the saga into the Failed phase via its reducer/state application. The
+        // confidence comparison must not bypass failure-handler dispatch, so when
+        // the workflow declares failure handlers we mirror the phase-aware non-final
+        // handler: sync Phase from the reduced state and emit the same Phase == Failed
+        // guard — BEFORE the confidence comparison — routing to the failure handler's
+        // start command (INV-1: a Wolverine cascade). State types ending in
+        // "WorkflowState" track phase at the saga level only, so they are excluded
+        // from the sync, exactly as EmitPhaseAwareNonFinalStepHandler does.
+        if (model.HasFailureHandlers
+            && !string.IsNullOrEmpty(model.StateTypeName)
+            && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
+        {
+            sb.AppendLine($"        Phase = State.Phase;");
+        }
+
+        if (!string.IsNullOrEmpty(model.StateTypeName))
+        {
+            sb.AppendLine();
+        }
+
+        if (model.HasFailureHandlers)
+        {
+            var failedStepCommand = GetFailedStepCommandName(model);
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            logger.LogWarning(");
+            sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
+            sb.AppendLine("                WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
+        // Confidence gate: route to the low-confidence handler when the step's
+        // result confidence is present and below the configured threshold.
+        sb.AppendLine($"        if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.{handlerStepName};");
+        sb.AppendLine();
+        sb.AppendLine("            logger.LogWarning(");
+        sb.AppendLine("                \"Step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
+        sb.AppendLine("                confidenceScore,");
+        sb.AppendLine($"                {thresholdLiteral},");
+        sb.AppendLine("                WorkflowId,");
+        sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+        sb.AppendLine();
+        sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+
+        if (proceedsToCompletion)
+        {
+            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
+            sb.AppendLine();
+            sb.AppendLine("        logger.LogInformation(");
+            sb.AppendLine("            \"Workflow {WorkflowId} completed\",");
+            sb.AppendLine("            WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine("        MarkCompleted();");
+            sb.AppendLine("        yield break;");
+        }
+        else
+        {
+            var nextStartCommand = $"Start{context.NextStepName}Command";
+            sb.AppendLine("        logger.LogDebug(");
+            sb.AppendLine("            \"Step confidence acceptable, chaining to {NextStep} for workflow {WorkflowId}\",");
+            sb.AppendLine($"            nameof({nextStartCommand}),");
+            sb.AppendLine("            WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"        yield return new {nextStartCommand}(WorkflowId);");
+        }
+
+        sb.AppendLine("    }");
     }
 
     private static void EmitFinalStepHandler(

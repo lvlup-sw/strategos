@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Persist the generated Wolverine+Marten saga/handlers to disk so the
+         generated start command + saga shape can be inspected (DR-9 T006). -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Used now: the Postgres Testcontainers fixture + smoke test. -->
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DR-9 host-wiring (T006): the generated Wolverine+Marten saga is built
+         in THIS project (the generator runs as an Analyzer below) and RUN on a
+         real host backed by Marten/Postgres. UseWolverine() lives on
+         IHostBuilder from Microsoft.Extensions.Hosting (flows transitively from
+         WolverineFx, referenced explicitly here for Host.CreateDefaultBuilder). -->
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <!-- Compiles the generated saga/handler glue at runtime (WolverineFx 6.x
+         no longer ships the in-box compiler). Auto-registers when referenced. -->
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Strategos.Generators\Strategos.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\Strategos\Strategos.csproj" />
+    <!-- The generated worker handlers reference Strategos.Agents.Telemetry
+         (WorkflowTelemetry) for OpenTelemetry step spans, so the generated
+         saga only compiles with Strategos.Agents on the reference graph. -->
+    <ProjectReference Include="..\Strategos.Agents\Strategos.Agents.csproj" />
+    <!-- DR-6 context wire-in (T016): a step's .WithContext(...) lowers a
+         {Step}ContextAssembler whose retrieval source depends on
+         IObjectSetProvider (Strategos.Ontology.ObjectSets), so the generated
+         saga only compiles — and the ContextWorkflow fixture's stub provider
+         can be registered — with Strategos.Ontology on the reference graph.
+         Ontology-wired, not RAG (INV-2): no Strategos.Rag reference. -->
+    <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
+    <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

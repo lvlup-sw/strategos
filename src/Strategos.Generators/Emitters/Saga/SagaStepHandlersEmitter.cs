@@ -165,8 +165,30 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         string stepName,
         int index)
     {
-        var isLastStep = index == ctx.Model.StepNames.Count - 1;
-        var nextStepName = isLastStep ? null : ctx.Model.StepNames[index + 1];
+        // Confidence handler steps (DR-5) are appended to StepNames for full lowering but are NOT
+        // part of the main linear flow. They must not be a "next step" for the main flow, and they
+        // themselves terminate the workflow. Compute main-flow adjacency by skipping over them so the
+        // preceding main-flow step (e.g. a Finally) keeps its terminal status instead of wrongly
+        // chaining into a handler step.
+        var model = ctx.Model;
+        var isConfidenceHandlerStep = model.IsConfidenceHandlerStep(stepName);
+
+        string? nextStepName = null;
+        if (!isConfidenceHandlerStep)
+        {
+            for (var j = index + 1; j < model.StepNames.Count; j++)
+            {
+                if (!model.IsConfidenceHandlerStep(model.StepNames[j]))
+                {
+                    nextStepName = model.StepNames[j];
+                    break;
+                }
+            }
+        }
+
+        // The step is "last in the main flow" when no later main-flow step exists. A confidence
+        // handler step is always treated as terminal (single-step handler ends the workflow).
+        var isLastStep = isConfidenceHandlerStep || nextStepName is null;
 
         ctx.LoopsByLastStep.TryGetValue(stepName, out var loopsAtStep);
         ctx.BranchesByPreviousStep.TryGetValue(stepName, out var branchAtStep);

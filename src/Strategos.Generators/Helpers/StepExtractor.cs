@@ -239,6 +239,31 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Tries to build a fully configured <see cref="StepModel"/> for a <c>Then&lt;TStep&gt;()</c>
+    /// invocation, routing through the shared <c>TryGetStepModel</c> path so the step carries any
+    /// per-step resilience (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence) and
+    /// <c>ValidateState</c> guard declared via the configure-lambda overload.
+    /// </summary>
+    /// <param name="invocation">The <c>Then</c> invocation expression for the step.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="stepModel">The resulting configured step model, if successful.</param>
+    /// <returns>True if the step model was built; otherwise, false.</returns>
+    /// <remarks>
+    /// Unlike <see cref="TryBuildConfiguredForkPathStepModel"/>, the instance name is preserved.
+    /// Used by <see cref="FailureHandlerExtractor"/> so failure-handler steps thread their
+    /// configure-lambda resilience into the <see cref="StepModel"/> IR (DR-7), bringing the
+    /// failure-handler parse path to parity with the top-level/loop/fork parse paths.
+    /// </remarks>
+    internal static bool TryBuildConfiguredStepModel(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        out StepModel stepModel)
+    {
+        var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
+        return TryGetStepModel(invocation, semanticModel, loopName: null, validationPredicate, validationErrorMessage, out stepModel);
+    }
+
+    /// <summary>
     /// Tries to get the step name and optional instance name from an invocation expression.
     /// </summary>
     /// <param name="invocation">The invocation expression to check.</param>
@@ -559,12 +584,9 @@ internal static class StepExtractor
             }
 
             // Find Then<T>() calls in the path lambda
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -606,12 +628,9 @@ internal static class StepExtractor
             }
 
             // Find Then<T>() calls in the path lambda
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -700,6 +719,25 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Collects the <c>Then&lt;T&gt;</c> step invocations declared DIRECTLY in a fork/branch path
+    /// lambda body, in source order — excluding <c>Then</c> calls nested inside an inner lambda
+    /// (e.g. a step's <c>OnLowConfidence(alt =&gt; alt.Then&lt;Inner&gt;())</c> or configure lambda).
+    /// </summary>
+    /// <remarks>
+    /// F1: a raw <c>pathLambda.DescendantNodes()</c> walk captures <c>Then</c> invocations from
+    /// nested lambdas, producing phantom/misordered path steps. Delegating to
+    /// <see cref="InvocationChainWalker.CollectInvocationsInLambda"/> (which stops at nested-lambda
+    /// boundaries and returns source order) keeps each path's step discovery to its own steps.
+    /// </remarks>
+    private static IReadOnlyList<InvocationExpressionSyntax> CollectDirectThenInvocations(
+        LambdaExpressionSyntax pathLambda)
+    {
+        return InvocationChainWalker.CollectInvocationsInLambda(pathLambda)
+            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
+            .ToList();
+    }
+
+    /// <summary>
     /// Collects Then steps from a path lambda and adds them to the steps list.
     /// </summary>
     private static void CollectStepsFromPathLambda(
@@ -709,12 +747,9 @@ internal static class StepExtractor
         StepContext context,
         List<StepInfo> steps)
     {
-        var pathInvocations = pathLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-            .Reverse()
-            .ToList();
+        // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+        // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+        var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
         foreach (var inv in pathInvocations)
         {
@@ -829,6 +864,25 @@ internal static class StepExtractor
                 {
                     steps.Insert(0, forkPathStepModels[i]);
                 }
+            }
+        }
+        else if (SyntaxHelper.IsMethodCall(invocation, "Branch"))
+        {
+            // Extract step models from branch case path lambdas. Branch case steps are
+            // routed through the shared TryGetStepModel path so any per-step resilience
+            // declared via the Then<TStep>(step => step.WithRetry(...)) configure-lambda
+            // overload (DR-7) is captured into the StepModel IR, exactly as fork-path steps
+            // are. Branch handler EMISSION is still owned by BranchExtractor/the dedicated
+            // branch loop in SagaStepHandlersEmitter (keyed by step name), so surfacing the
+            // configured StepModel here only enriches the deduplicated step IR; it does not
+            // change which steps are emitted.
+            var branchPathStepModels = new List<StepModel>();
+            ParseBranchPathStepModels(invocation, semanticModel, currentLoopPrefix, branchPathStepModels, cancellationToken);
+
+            // Insert branch path steps at the beginning (deduplication happens in caller)
+            for (var i = branchPathStepModels.Count - 1; i >= 0; i--)
+            {
+                steps.Insert(0, branchPathStepModels[i]);
             }
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "ValidateState"))
@@ -995,12 +1049,9 @@ internal static class StepExtractor
                 continue;
             }
 
-            var pathInvocations = pathLambda
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
-                .Reverse()
-                .ToList();
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
 
             foreach (var inv in pathInvocations)
             {
@@ -1009,6 +1060,62 @@ internal static class StepExtractor
                 // into the StepModel, so the fork-path step's validation guard lowers into
                 // the saga exactly as a top-level/loop step's does. The validation lives in
                 // this Then call's own configure lambda, so scope the lookup to its arguments.
+                var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(inv);
+
+                if (TryGetStepModel(inv, semanticModel, currentPrefix, validationPredicate, validationErrorMessage, out var stepModel))
+                {
+                    stepModels.Add(stepModel);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parses branch case path step models from a <c>Branch</c> invocation.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Mirrors <see cref="ParseForkPathStepModels"/> for branch cases: it descends into each
+    /// <c>When</c>/<c>Otherwise</c> case's path lambda and routes every <c>Then</c> through the
+    /// shared <see cref="TryGetStepModel"/> path, which threads per-step resilience
+    /// (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence) declared via the
+    /// <c>Then&lt;TStep&gt;(step =&gt; step...)</c> configure-lambda overload (DR-7) into the
+    /// <see cref="StepModel"/> IR, plus any <c>ValidateState</c> guard.
+    /// </para>
+    /// <para>
+    /// This enriches only the deduplicated step IR consumed for worker-handler/command generation.
+    /// Branch routing/handler EMISSION is owned by <c>BranchExtractor</c> and the dedicated branch
+    /// loop in the saga emitter (keyed by step name), which are intentionally left unchanged.
+    /// </para>
+    /// </remarks>
+    private static void ParseBranchPathStepModels(
+        InvocationExpressionSyntax branchInvocation,
+        SemanticModel semanticModel,
+        string? currentPrefix,
+        List<StepModel> stepModels,
+        CancellationToken cancellationToken)
+    {
+        var arguments = branchInvocation.ArgumentList.Arguments;
+
+        // Skip first argument (discriminator); remaining are BranchCase.When()/Otherwise().
+        for (var i = 1; i < arguments.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!TryExtractBranchCasePathLambda(arguments[i], out var pathLambda))
+            {
+                continue;
+            }
+
+            // F1: only this path's OWN Then<> steps — never Then<> calls nested inside a step's
+            // configure/OnLowConfidence lambda (which would surface as phantom path steps).
+            var pathInvocations = CollectDirectThenInvocations(pathLambda);
+
+            foreach (var inv in pathInvocations)
+            {
+                // Scope the per-step validation lookup to this Then call's own configure lambda,
+                // identically to the fork-path parse, so branch-path steps lower their validation
+                // and resilience config the same way.
                 var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(inv);
 
                 if (TryGetStepModel(inv, semanticModel, currentPrefix, validationPredicate, validationErrorMessage, out var stepModel))
@@ -1123,14 +1230,262 @@ internal static class StepExtractor
         }
 
         var instanceName = ExtractInstanceName(invocation);
+        var resilience = ExtractConfiguredResilience(invocation, semanticModel);
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
             instanceName: instanceName,
             loopName: loopName,
             validationPredicate: validationPredicate,
-            validationErrorMessage: validationErrorMessage);
+            validationErrorMessage: validationErrorMessage,
+            retry: resilience.Retry,
+            timeout: resilience.Timeout,
+            compensation: resilience.Compensation,
+            confidence: resilience.Confidence);
         return true;
+    }
+
+    /// <summary>
+    /// Extracts per-step resilience configuration from a step's configure lambda, e.g.
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.WithRetry(3, TimeSpan.FromSeconds(5)).WithTimeout(...)
+    /// .Compensate&lt;TRollback&gt;().RequireConfidence(0.85).OnLowConfidence(alt =&gt; alt.Then&lt;THandler&gt;()))</c>.
+    /// </summary>
+    /// <param name="thenInvocation">The <c>Then</c>/<c>StartWith</c> invocation whose configure lambda is inspected.</param>
+    /// <param name="semanticModel">The semantic model, used to resolve the compensation step's fully qualified name.</param>
+    /// <returns>
+    /// The retry/timeout/compensation/confidence models from the first matching call of each kind
+    /// found inside the configure lambda; any concern the step does not declare is left null.
+    /// </returns>
+    /// <remarks>
+    /// Mirrors <see cref="ExtractConfiguredValidation"/>: the resilience calls live in this
+    /// invocation's own <c>Action&lt;IStepConfiguration&lt;TState&gt;&gt;</c> configure lambda, so the
+    /// lookup is scoped to its arguments. Routing through <see cref="TryGetStepModel"/> threads the
+    /// same extraction uniformly into top-level, loop, and fork-path steps. Per INV-8 the
+    /// compensation step is carried as its fully qualified type name (a string descriptor), never a
+    /// CLR <see cref="System.Type"/>.
+    /// </remarks>
+    private static (RetryModel? Retry, TimeoutModel? Timeout, CompensationModel? Compensation, ConfidenceModel? Confidence)
+        ExtractConfiguredResilience(
+            InvocationExpressionSyntax thenInvocation,
+            SemanticModel semanticModel)
+    {
+        var arguments = thenInvocation.ArgumentList?.Arguments;
+        if (arguments is null)
+        {
+            return (null, null, null, null);
+        }
+
+        RetryModel? retry = null;
+        TimeoutModel? timeout = null;
+        CompensationModel? compensation = null;
+        ConfidenceModel? confidence = null;
+
+        foreach (var arg in arguments.Value)
+        {
+            // The configure lambda is the Action<IStepConfiguration<TState>> argument.
+            if (arg.Expression is not LambdaExpressionSyntax configureLambda)
+            {
+                continue;
+            }
+
+            // F1: scope the resilience walk to THIS configure lambda's own body. Walking
+            // raw DescendantNodes() would capture WithRetry/WithTimeout/Compensate calls from
+            // a NESTED lambda — e.g. OnLowConfidence(alt => alt.Then<Y>(c => c.WithTimeout(t)))
+            // — and wrongly attach Y's resilience to the parent step.
+            var configInvocations = InvocationChainWalker.CollectInvocationsInLambda(configureLambda);
+
+            foreach (var configCall in configInvocations)
+            {
+                if (retry is null && SyntaxHelper.IsMethodCall(configCall, "WithRetry"))
+                {
+                    retry = ResilienceParser.ExtractRetry(configCall);
+                }
+                else if (timeout is null && SyntaxHelper.IsMethodCall(configCall, "WithTimeout"))
+                {
+                    timeout = ResilienceParser.ExtractTimeout(configCall);
+                }
+                else if (compensation is null && SyntaxHelper.IsMethodCall(configCall, "Compensate"))
+                {
+                    compensation = ExtractCompensation(configCall, semanticModel);
+                }
+                else if (SyntaxHelper.IsMethodCall(configCall, "RequireConfidence")
+                    || SyntaxHelper.IsMethodCall(configCall, "OnLowConfidence"))
+                {
+                    confidence = MergeConfidence(confidence, configCall, semanticModel);
+                }
+            }
+        }
+
+        return (retry, timeout, compensation, confidence);
+    }
+
+    /// <summary>
+    /// Resolves a <c>Compensate&lt;TCompensation&gt;()</c> call into a <see cref="CompensationModel"/>,
+    /// carrying the compensation step's fully qualified type name (INV-8: a string descriptor,
+    /// never a CLR <see cref="System.Type"/>). Mirrors the <c>Join&lt;T&gt;</c> symbol resolution.
+    /// </summary>
+    private static CompensationModel? ExtractCompensation(
+        InvocationExpressionSyntax compensateInvocation,
+        SemanticModel semanticModel)
+    {
+        if (!TryGetGenericTypeArgument(compensateInvocation, "Compensate", out var typeArgument))
+        {
+            return null;
+        }
+
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out _, out var compensationTypeName))
+        {
+            return null;
+        }
+
+        // DR-8 / INV-5 (CompensateNotAStep): record whether the compensation type resolves to a
+        // type implementing IWorkflowStep<TState>. The DSL's generic constraint also
+        // rejects non-steps at the C# call site, but capturing the verdict lets the
+        // generator surface a clearer, suppressible diagnostic. Unresolved symbols are
+        // treated as valid (true) so the analyzer does not double-report on a type that
+        // simply could not be bound (the C# compiler reports that independently).
+        var symbol = semanticModel.GetSymbolInfo(typeArgument).Symbol as INamedTypeSymbol;
+        var isRegisteredStep = symbol is null || ImplementsWorkflowStep(symbol);
+
+        return new CompensationModel(compensationTypeName, IsRegisteredStep: isRegisteredStep);
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="type"/> implements
+    /// <c>Strategos.Abstractions.IWorkflowStep&lt;TState&gt;</c> (any state type argument).
+    /// </summary>
+    private static bool ImplementsWorkflowStep(INamedTypeSymbol type) =>
+        type.AllInterfaces.Any(IsWorkflowStepInterface);
+
+    /// <summary>
+    /// Determines whether <paramref name="iface"/> is the generic
+    /// <c>Strategos.Abstractions.IWorkflowStep&lt;&gt;</c> interface (matched on its open
+    /// definition's metadata name + containing namespace, robust to display formatting).
+    /// </summary>
+    private static bool IsWorkflowStepInterface(INamedTypeSymbol iface)
+    {
+        if (!iface.IsGenericType)
+        {
+            return false;
+        }
+
+        var original = iface.OriginalDefinition;
+        return string.Equals(original.MetadataName, "IWorkflowStep`1", StringComparison.Ordinal)
+            && string.Equals(
+                original.ContainingNamespace?.ToDisplayString(),
+                "Strategos.Abstractions",
+                StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Folds a <c>RequireConfidence(double)</c> or <c>OnLowConfidence(alt =&gt; alt.Then&lt;THandler&gt;())</c>
+    /// call into the accumulating <see cref="ConfidenceModel"/>.
+    /// </summary>
+    /// <remarks>
+    /// The two calls are independent fluent members on <see cref="Strategos.Builders.IStepConfiguration{TState}"/>,
+    /// so either may appear without the other; this merges whichever is seen into the same model.
+    /// The low-confidence handler is identified by the first <c>Then&lt;THandler&gt;()</c> step declared
+    /// inside the handler lambda — captured both as a simple name descriptor (consistent with INV-8) and
+    /// as a fully-resolved <see cref="StepModel"/> so DR-5 can lower the handler step into the saga and
+    /// route to it via a Wolverine cascade.
+    /// </remarks>
+    private static ConfidenceModel MergeConfidence(
+        ConfidenceModel? existing,
+        InvocationExpressionSyntax confidenceCall,
+        SemanticModel semanticModel)
+    {
+        var threshold = existing?.Threshold ?? 0.0;
+        var handlerId = existing?.OnLowConfidenceHandlerId;
+        var handlerStep = existing?.OnLowConfidenceHandlerStep;
+
+        if (SyntaxHelper.IsMethodCall(confidenceCall, "RequireConfidence"))
+        {
+            var arguments = confidenceCall.ArgumentList.Arguments;
+            if (arguments.Count > 0 && TryGetDoubleLiteral(arguments[0].Expression, out var parsed))
+            {
+                threshold = parsed;
+            }
+        }
+        else if (SyntaxHelper.IsMethodCall(confidenceCall, "OnLowConfidence"))
+        {
+            var extracted = ExtractLowConfidenceHandlerStep(confidenceCall, semanticModel);
+            if (extracted is not null)
+            {
+                handlerStep = extracted;
+                handlerId = extracted.StepName;
+            }
+        }
+
+        return new ConfidenceModel(threshold, handlerId, handlerStep);
+    }
+
+    /// <summary>
+    /// Extracts the low-confidence handler step — the first <c>Then&lt;THandler&gt;()</c> step
+    /// declared inside an <c>OnLowConfidence(alt =&gt; ...)</c> handler lambda — as a fully-resolved
+    /// <see cref="StepModel"/> carrying both its simple name and fully qualified type name. The fully
+    /// qualified name is required so the handler step lowers into a worker handler with correct DI
+    /// usings (DR-5).
+    /// </summary>
+    private static StepModel? ExtractLowConfidenceHandlerStep(
+        InvocationExpressionSyntax onLowConfidenceCall,
+        SemanticModel semanticModel)
+    {
+        var arguments = onLowConfidenceCall.ArgumentList.Arguments;
+        if (arguments.Count == 0 || arguments[0].Expression is not LambdaExpressionSyntax handlerLambda)
+        {
+            return null;
+        }
+
+        var firstThen = handlerLambda
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(inv => SyntaxHelper.IsMethodCall(inv, "Then"));
+
+        if (firstThen is null || !TryGetGenericTypeArgument(firstThen, "Then", out var typeArgument))
+        {
+            return null;
+        }
+
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
+        {
+            return null;
+        }
+
+        return StepModel.Create(stepName, stepTypeName);
+    }
+
+    private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)
+    {
+        value = 0;
+
+        // Unary minus over a numeric literal (e.g. RequireConfidence(-0.1)) — recognized so a
+        // negative (out-of-range) threshold reaches the IR and trips the out-of-range diagnostic.
+        if (expression is PrefixUnaryExpressionSyntax unary
+            && unary.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.UnaryMinusExpression)
+            && TryGetDoubleLiteral(unary.Operand, out var operand))
+        {
+            value = -operand;
+            return true;
+        }
+
+        if (expression is LiteralExpressionSyntax literal
+            && literal.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression))
+        {
+            switch (literal.Token.Value)
+            {
+                case double d:
+                    value = d;
+                    return true;
+                case int i:
+                    value = i;
+                    return true;
+                case float f:
+                    value = f;
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

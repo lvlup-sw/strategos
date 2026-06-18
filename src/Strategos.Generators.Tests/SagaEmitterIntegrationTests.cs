@@ -75,7 +75,11 @@ public class SagaEmitterIntegrationTests
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
         // Assert
-        await Assert.That(sagaSource).Contains("[Identity]");
+        // Fully qualified [JasperFx.Identity] (the Marten document-identity
+        // attribute) to avoid CS0616: the short [Identity] form collides with
+        // the Strategos.Identity namespace in consumers that reference
+        // Strategos.Identity.Abstractions.
+        await Assert.That(sagaSource).Contains("[JasperFx.Identity]");
     }
 
     /// <summary>

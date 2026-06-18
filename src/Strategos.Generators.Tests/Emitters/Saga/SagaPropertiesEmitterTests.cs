@@ -109,7 +109,10 @@ public class SagaPropertiesEmitterTests
         var result = sb.ToString();
 
         // Assert
-        await Assert.That(result).Contains("[Identity]");
+        // Fully qualified [JasperFx.Identity] (the Marten document-identity
+        // attribute) to avoid a CS0616 collision with the Strategos.Identity
+        // namespace in consumers that reference Strategos.Identity.Abstractions.
+        await Assert.That(result).Contains("[JasperFx.Identity]");
     }
 
     // =============================================================================
@@ -132,7 +135,9 @@ public class SagaPropertiesEmitterTests
         var result = sb.ToString();
 
         // Assert
-        await Assert.That(result).Contains("public new int Version { get; set; }");
+        // long (not int): Marten 9 widened numeric document revisions to long
+        // and rejects an int [Version] property at document-mapping time.
+        await Assert.That(result).Contains("public new long Version { get; set; }");
     }
 
     /// <summary>

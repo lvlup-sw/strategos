@@ -50,6 +50,30 @@ internal static class WorkerHandlerEmitter
             "Microsoft.Extensions.Logging",
         };
 
+        // Wolverine per-handler error policy (DR-2 retry, DR-3 compensation): only
+        // pulled in when at least one step lowers a retry OR a compensation onto its
+        // handler chain, so a workflow with no resilience keeps its handler file
+        // byte-identical to the prior baseline. HandlerChain and InvokeResult live in
+        // Wolverine.Runtime.Handlers; the fluent OnAnyException()/RetryTimes()/
+        // RetryWithCooldown()/WithExponentialJitter()/CompensatingAction() extensions
+        // live in Wolverine.ErrorHandling.
+        if (model.Steps is not null && model.Steps.Any(s => s.Retry is not null || s.Compensation is not null))
+        {
+            usings.Add("Wolverine.ErrorHandling");
+            usings.Add("Wolverine.Runtime.Handlers");
+        }
+
+        // Context assembler wiring (DR-6): only pulled in when at least one step
+        // declared .WithContext(...). IContextAwareStep is the opt-in delivery
+        // contract a step implements to receive AssembledContext; both live in
+        // Strategos.Agents. Guarded so a context-free workflow keeps its prior
+        // handler file unchanged.
+        if (model.Steps is not null && model.Steps.Any(s => s.Context is not null && s.Context.Sources.Count > 0))
+        {
+            usings.Add("Strategos.Agents.Abstractions");
+            usings.Add("Strategos.Agents.Models");
+        }
+
         // Add step type namespaces from the model
         if (model.Steps is not null)
         {
@@ -130,20 +154,27 @@ internal static class WorkerHandlerEmitter
 
     private static void EmitHandlerClass(StringBuilder sb, WorkflowModel model, StepModel step)
     {
-        EmitHandlerClassCore(sb, model, step.StepName);
+        EmitHandlerClassCore(sb, model, step.StepName, step);
     }
 
     private static void EmitHandlerClassFromName(StringBuilder sb, WorkflowModel model, string stepName)
     {
-        EmitHandlerClassCore(sb, model, stepName);
+        EmitHandlerClassCore(sb, model, stepName, step: null);
     }
 
-    private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName)
+    private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName, StepModel? step)
     {
         var workerCommandName = $"Execute{stepName}WorkerCommand";
         var completedEventName = $"{stepName}Completed";
         var handlerClassName = $"{stepName}Handler";
         var stateType = model.StateTypeName ?? "object";
+
+        // A step that declared .WithContext(...) gets its generated
+        // {Step}ContextAssembler injected and invoked before execution (DR-6).
+        var hasContext = step is not null
+            && step.Context is not null
+            && step.Context.Sources.Count > 0;
+        var assemblerTypeName = $"{stepName}ContextAssembler";
 
         // XML documentation
         sb.AppendLine("/// <summary>");
@@ -164,18 +195,192 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial class {handlerClassName}(");
         sb.AppendLine($"    {stepName} step,");
+        if (hasContext)
+        {
+            // The assembler is registered in DI (see ExtensionsEmitter) so
+            // Wolverine can resolve it for this handler's primary constructor.
+            sb.AppendLine($"    {assemblerTypeName} contextAssembler,");
+        }
+
         sb.AppendLine($"    ILogger<{handlerClassName}> logger)");
         sb.AppendLine("{");
 
         // Private fields from primary constructor
         sb.AppendLine($"    private readonly {stepName} _step = step;");
+        if (hasContext)
+        {
+            sb.AppendLine($"    private readonly {assemblerTypeName} _contextAssembler = contextAssembler;");
+        }
+
         sb.AppendLine($"    private readonly ILogger<{handlerClassName}> _logger = logger;");
         sb.AppendLine();
 
         // Handle method
-        EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType);
+        EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
+
+        // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation).
+        // Emitted ONLY when the step declared resilience that lowers onto the
+        // handler's chain (retry and/or compensation). The re-throw in the Handle
+        // catch block is what feeds this policy. Guarded so a step with no
+        // resilience keeps the no-policy baseline handler shape.
+        if (step is not null && (step.Retry is not null || step.Compensation is not null))
+        {
+            sb.AppendLine();
+            EmitConfigureMethod(sb, model, step, workerCommandName);
+        }
 
         sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// Emits a static <c>Configure(HandlerChain)</c> method that lowers the
+    /// step's <see cref="RetryModel"/> and/or <see cref="CompensationModel"/> onto
+    /// the handler's Wolverine chain as an <c>OnAnyException</c> error policy.
+    /// Wolverine discovers this method by convention at codegen time and scopes the
+    /// policy to this one handler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The chain composes additively: a retry prefix
+    /// (<c>RetryTimes</c>/<c>RetryWithCooldown</c>) is followed, when the step also
+    /// declares <c>.Compensate&lt;T&gt;()</c>, by
+    /// <c>.Then.CompensatingAction&lt;{WorkerCommand}&gt;(...)</c> that PUBLISHES the
+    /// trigger failure-handler command on terminal failure (after retries are
+    /// exhausted), with <c>InvokeResult.Stop</c> so the message is not retried again.
+    /// This is what makes the previously-never-published trigger command reach the
+    /// saga at runtime (DR-3), so the compensation step actually runs.
+    /// </para>
+    /// <para>
+    /// When only compensation is declared (no retry), the compensating action
+    /// applies directly to <c>chain.OnAnyException()</c> with no retry prefix.
+    /// </para>
+    /// </remarks>
+    private static void EmitConfigureMethod(
+        StringBuilder sb,
+        WorkflowModel model,
+        StepModel step,
+        string workerCommandName)
+    {
+        var retry = step.Retry;
+        var compensation = step.Compensation;
+
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Configures this handler's Wolverine error policy. Lowered from the");
+        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> and/or <c>.Compensate&lt;T&gt;()</c>");
+        sb.AppendLine("    /// declaration; Wolverine discovers this static method by convention and");
+        sb.AppendLine("    /// scopes the policy to this handler.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <param name=\"chain\">The handler chain to apply the error policy to.</param>");
+        sb.AppendLine("    public static void Configure(HandlerChain chain)");
+        sb.AppendLine("    {");
+
+        // Open the error chain. The retry prefix (if any) is emitted WITHOUT a
+        // terminating ';' so a compensating action can be chained after it.
+        sb.Append("        chain.OnAnyException()");
+
+        if (retry is not null)
+        {
+            if (retry.InitialDelay is { } initialDelay)
+            {
+                // A configured delay lowers to a per-attempt cooldown schedule.
+                var cooldowns = BuildCooldownSchedule(retry, initialDelay);
+                sb.AppendLine();
+                sb.Append($"            .RetryWithCooldown({cooldowns})");
+
+                if (retry.UseJitter)
+                {
+                    sb.AppendLine();
+                    sb.Append("            .WithExponentialJitter()");
+                }
+            }
+            else
+            {
+                // No delay configured: a simple fixed retry count.
+                sb.AppendLine();
+                sb.Append($"            .RetryTimes({retry.MaxAttempts})");
+            }
+        }
+
+        if (compensation is not null)
+        {
+            // On terminal failure (after any retries), publish the trigger
+            // failure-handler command so the saga runs the compensation step.
+            // ".Then" is only needed to bridge from a retry continuation back to a
+            // failure-action surface; with no retry, OnAnyException() already is one.
+            if (retry is not null)
+            {
+                sb.AppendLine();
+                sb.Append("            .Then");
+            }
+
+            var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
+            var compStepName = NamingHelper.GetSimpleTypeName(compensation.CompensationStepTypeName);
+
+            sb.AppendLine();
+            sb.AppendLine($"            .CompensatingAction<{workerCommandName}>(");
+            sb.AppendLine($"                (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
+            sb.AppendLine("                    cmd.WorkflowId,");
+            sb.AppendLine($"                    \"{step.StepName}\",");
+            sb.AppendLine("                    ex.Message,");
+            sb.AppendLine("                    ex.GetType().Name,");
+            sb.AppendLine("                    ex.StackTrace)),");
+            sb.Append("                InvokeResult.Stop)");
+
+            // Reference the compensation step name in a comment so the lowering is
+            // traceable in the generated source.
+            sb.AppendLine($"; // runs {compStepName}");
+        }
+        else
+        {
+            // Retry-only chain: terminate the statement.
+            sb.AppendLine(";");
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Builds the comma-separated <see cref="System.TimeSpan"/> argument list for
+    /// <c>RetryWithCooldown</c>, one cooldown per retry attempt. The schedule
+    /// starts at <paramref name="initialDelay"/> and, when a backoff multiplier
+    /// is configured, grows geometrically, capped by <c>MaxDelay</c> if present.
+    /// </summary>
+    private static string BuildCooldownSchedule(RetryModel retry, System.TimeSpan initialDelay)
+    {
+        var attempts = retry.MaxAttempts < 1 ? 1 : retry.MaxAttempts;
+        var multiplier = retry.BackoffMultiplier ?? 1.0;
+        var maxDelay = retry.MaxDelay;
+
+        var parts = new List<string>(attempts);
+        var current = initialDelay;
+        for (var i = 0; i < attempts; i++)
+        {
+            var effective = current;
+            if (maxDelay is { } cap && effective > cap)
+            {
+                effective = cap;
+            }
+
+            parts.Add(FormatTimeSpan(effective));
+
+            if (multiplier != 1.0)
+            {
+                current = System.TimeSpan.FromMilliseconds(current.TotalMilliseconds * multiplier);
+            }
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// Renders a <see cref="System.TimeSpan"/> as a
+    /// <c>TimeSpan.FromMilliseconds(...)</c> factory call for the generated
+    /// source, preserving sub-second precision used by short retry cooldowns.
+    /// </summary>
+    private static string FormatTimeSpan(System.TimeSpan value)
+    {
+        var ms = value.TotalMilliseconds;
+        return $"System.TimeSpan.FromMilliseconds({ms.ToString("R", System.Globalization.CultureInfo.InvariantCulture)})";
     }
 
     private static void EmitHandleMethod(
@@ -184,7 +389,8 @@ internal static class WorkerHandlerEmitter
         string stepName,
         string workerCommandName,
         string completedEventName,
-        string stateType)
+        string stateType,
+        bool hasContext)
     {
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Handles the {workerCommandName} by executing the step.");
@@ -210,6 +416,22 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("        try");
         sb.AppendLine("        {");
         sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+
+        if (hasContext)
+        {
+            // DR-6 wire-in: assemble the step's declared context (state values,
+            // ontology retrieval via IObjectSetProvider, literals) BEFORE the
+            // step runs, then deliver it to the step if it opted into the
+            // IContextAwareStep side channel. The AssembleAsync call is what
+            // actually executes the lowered SimilarityExpression at runtime.
+            sb.AppendLine("            var assembledContext = await _contextAssembler.AssembleAsync(command.State, stepContext, ct);");
+            sb.AppendLine("            if (_step is IContextAwareStep contextAwareStep)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                contextAwareStep.ReceiveContext(assembledContext);");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("            var result = await _step.ExecuteAsync(command.State, stepContext, ct);");
         sb.AppendLine();
         sb.AppendLine("            sw.Stop();");

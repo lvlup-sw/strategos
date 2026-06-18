@@ -94,6 +94,21 @@ public interface IStepConfiguration<TState>
     /// </summary>
     /// <param name="timeout">The maximum execution time.</param>
     /// <returns>The builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Lowered into the generated saga as a Wolverine <c>TimeoutMessage</c> deadline
+    /// <em>race</em>: the timeout is scheduled when the step starts, and the saga routes to
+    /// its failure path only if the step has not already completed (the completion event
+    /// won the race). This is a saga-level deadline, not hard cancellation of an in-flight
+    /// step — the step's <see cref="System.Threading.CancellationToken"/> is provided for
+    /// cooperative cancellation.
+    /// </para>
+    /// <para>
+    /// <b>Durability:</b> cross-restart timeout delivery requires the Marten transactional
+    /// outbox (<c>AddMarten(…).IntegrateWithWolverine()</c>); without it, scheduled timeout
+    /// delivery is in-memory only.
+    /// </para>
+    /// </remarks>
     IStepConfiguration<TState> WithTimeout(TimeSpan timeout);
 
     /// <summary>

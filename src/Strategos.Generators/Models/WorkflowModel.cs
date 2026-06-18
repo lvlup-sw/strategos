@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Polyfills;
 using Strategos.Generators.Utilities;
 
@@ -29,6 +30,13 @@ namespace Strategos.Generators.Models;
 /// <param name="FailureHandlers">The failure handler constructs in this workflow (OnFailure).</param>
 /// <param name="ApprovalPoints">The approval checkpoints in this workflow (AwaitApproval).</param>
 /// <param name="Forks">The fork constructs in this workflow (Fork/Join).</param>
+/// <param name="ConfidenceHandlerStepNames">
+/// The step names lowered from <c>OnLowConfidence</c> handler branches (DR-5). These steps are
+/// appended to <paramref name="StepNames"/> so they get full lowering (phase, worker handler,
+/// commands, events), but they are NOT part of the main linear flow: they must not displace the
+/// main flow's terminal step nor be chained to as a normal "next" step. Their own completed handler
+/// is terminal (a single-step handler ends the workflow via <c>MarkCompleted()</c>).
+/// </param>
 internal sealed record WorkflowModel(
     string WorkflowName,
     string PascalName,
@@ -42,7 +50,8 @@ internal sealed record WorkflowModel(
     IReadOnlyList<BranchModel>? Branches = null,
     IReadOnlyList<FailureHandlerModel>? FailureHandlers = null,
     IReadOnlyList<ApprovalModel>? ApprovalPoints = null,
-    IReadOnlyList<ForkModel>? Forks = null)
+    IReadOnlyList<ForkModel>? Forks = null,
+    IReadOnlyList<string>? ConfidenceHandlerStepNames = null)
 {
     /// <summary>
     /// Gets the derived phase enum name.
@@ -90,6 +99,52 @@ internal sealed record WorkflowModel(
     public bool HasFailureHandlers => FailureHandlers is not null && FailureHandlers.Count > 0;
 
     /// <summary>
+    /// Gets a value indicating whether any step in this workflow declares a
+    /// <c>.Compensate&lt;T&gt;()</c> rollback policy (DR-3).
+    /// </summary>
+    public bool HasCompensation => Steps?.Any(s => s.Compensation is not null) ?? false;
+
+    /// <summary>
+    /// Gets the distinct set of steps that declare a compensation policy, in
+    /// first-seen order (DR-3). Deduplicated by the compensation step's simple
+    /// type name so two steps rolling back to the same compensation type lower a
+    /// single compensation handler chain.
+    /// </summary>
+    /// <remarks>
+    /// Empty when no step declares compensation. Used by the compensation
+    /// lowering path to drive worker-handler, command, event, and saga-handler
+    /// emission for each rollback step.
+    /// </remarks>
+    public IReadOnlyList<StepModel> CompensationSteps
+    {
+        get
+        {
+            if (Steps is null)
+            {
+                return [];
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<StepModel>();
+            foreach (var step in Steps)
+            {
+                if (step.Compensation is null)
+                {
+                    continue;
+                }
+
+                var compName = NamingHelper.GetSimpleTypeName(step.Compensation.CompensationStepTypeName);
+                if (seen.Add(compName))
+                {
+                    result.Add(step);
+                }
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
     /// Gets a value indicating whether this workflow contains any approval checkpoints.
     /// </summary>
     public bool HasApprovalPoints => ApprovalPoints is not null && ApprovalPoints.Count > 0;
@@ -98,6 +153,26 @@ internal sealed record WorkflowModel(
     /// Gets a value indicating whether this workflow contains any fork constructs.
     /// </summary>
     public bool HasForks => Forks is not null && Forks.Count > 0;
+
+    /// <summary>
+    /// Gets a value indicating whether this workflow lowers any <c>OnLowConfidence</c>
+    /// handler branch (DR-5).
+    /// </summary>
+    public bool HasConfidenceHandlers =>
+        ConfidenceHandlerStepNames is not null && ConfidenceHandlerStepNames.Count > 0;
+
+    /// <summary>
+    /// Determines whether the named step is a lowered <c>OnLowConfidence</c> handler step
+    /// (DR-5) and therefore off the main linear flow.
+    /// </summary>
+    /// <param name="stepName">The step name to test.</param>
+    /// <returns>
+    /// <see langword="true"/> when the step was lowered from an <c>OnLowConfidence</c> branch;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    public bool IsConfidenceHandlerStep(string stepName) =>
+        ConfidenceHandlerStepNames is not null
+        && ConfidenceHandlerStepNames.Contains(stepName);
 
     /// <summary>
     /// Gets a value indicating whether any step in this workflow has validation guards.
@@ -123,6 +198,11 @@ internal sealed record WorkflowModel(
     /// <param name="failureHandlers">The optional failure handler constructs in this workflow.</param>
     /// <param name="approvalPoints">The optional approval checkpoints in this workflow.</param>
     /// <param name="forks">The optional fork constructs in this workflow.</param>
+    /// <param name="confidenceHandlerStepNames">
+    /// The optional step names lowered from <c>OnLowConfidence</c> handler branches (DR-5).
+    /// Threaded through so <see cref="HasConfidenceHandlers"/> / <see cref="IsConfidenceHandlerStep"/>
+    /// are correct for factory-built models (consistent with the primary constructor).
+    /// </param>
     /// <returns>A validated <see cref="WorkflowModel"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="pascalName"/>, <paramref name="namespace"/>, or <paramref name="stepNames"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when any validation fails.</exception>
@@ -140,7 +220,8 @@ internal sealed record WorkflowModel(
         IReadOnlyList<BranchModel>? branches = null,
         IReadOnlyList<FailureHandlerModel>? failureHandlers = null,
         IReadOnlyList<ApprovalModel>? approvalPoints = null,
-        IReadOnlyList<ForkModel>? forks = null)
+        IReadOnlyList<ForkModel>? forks = null,
+        IReadOnlyList<string>? confidenceHandlerStepNames = null)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNullOrWhiteSpace(workflowName, nameof(workflowName));
@@ -194,6 +275,7 @@ internal sealed record WorkflowModel(
             Branches: branches,
             FailureHandlers: failureHandlers,
             ApprovalPoints: approvalPoints,
-            Forks: forks);
+            Forks: forks,
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
     }
 }

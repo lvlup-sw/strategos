@@ -75,13 +75,19 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"command\">The start {stepName} command.</param>");
 
+        // When the step declares a timeout, the start handler also cascades a
+        // {Phase}Timeout (a Wolverine TimeoutMessage) alongside the worker command,
+        // so the deadline race begins when the step begins. The timeout type is
+        // named per PHASE so reused step types in distinct phases don't collide.
+        var hasTimeout = stepModel?.Timeout is not null;
+
         if (stepModel?.HasValidation == true)
         {
-            EmitValidationHandler(sb, model, stepName, stepModel, commandName, workerCommandName);
+            EmitValidationHandler(sb, model, stepName, stepModel, commandName, workerCommandName, hasTimeout);
         }
         else
         {
-            EmitStandardHandler(sb, model, stepName, commandName, workerCommandName);
+            EmitStandardHandler(sb, model, stepName, commandName, workerCommandName, hasTimeout);
         }
     }
 
@@ -91,7 +97,8 @@ internal sealed class StepStartHandlerEmitter
         string stepName,
         StepModel stepModel,
         string commandName,
-        string workerCommandName)
+        string workerCommandName,
+        bool hasTimeout)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -138,6 +145,16 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
         sb.AppendLine($"        yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+
+        if (hasTimeout)
+        {
+            // Cascade the timeout message: Wolverine auto-schedules its delayed
+            // delivery from the TimeoutMessage base and re-enters the saga later.
+            sb.AppendLine();
+            sb.AppendLine("        // Start the timeout deadline race for this step.");
+            sb.AppendLine($"        yield return new {stepName}Timeout(WorkflowId);");
+        }
+
         sb.AppendLine("    }");
     }
 
@@ -146,9 +163,16 @@ internal sealed class StepStartHandlerEmitter
         WorkflowModel model,
         string stepName,
         string commandName,
-        string workerCommandName)
+        string workerCommandName,
+        bool hasTimeout)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+
+        if (hasTimeout)
+        {
+            EmitTimeoutCascadingStandardHandler(sb, model, stepName, commandName, workerCommandName, sagaClassName);
+            return;
+        }
 
         // Return the worker command directly - this is the standard saga cascading pattern
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
@@ -168,6 +192,40 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
         sb.AppendLine($"        return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitTimeoutCascadingStandardHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        string commandName,
+        string workerCommandName,
+        string sagaClassName)
+    {
+        // Yield-based handler so the start handler can cascade BOTH the worker
+        // command and the {Phase}Timeout (Wolverine TimeoutMessage) that begins the
+        // deadline race. Uses method injection for ILogger to work with Wolverine's
+        // saga rehydration pattern.
+        sb.AppendLine($"    /// <returns>The worker command and the timeout deadline message.</returns>");
+        sb.AppendLine($"    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {commandName} command,");
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+        sb.AppendLine($"        Phase = {model.PhaseEnumName}.{stepName};");
+        sb.AppendLine();
+        sb.AppendLine($"        logger.LogDebug(");
+        sb.AppendLine($"            \"Dispatching {{CommandType}} for workflow {{WorkflowId}}\",");
+        sb.AppendLine($"            nameof({workerCommandName}),");
+        sb.AppendLine("            WorkflowId);");
+        sb.AppendLine();
+        sb.AppendLine($"        yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+        sb.AppendLine();
+        sb.AppendLine("        // Start the timeout deadline race for this step.");
+        sb.AppendLine($"        yield return new {stepName}Timeout(WorkflowId);");
         sb.AppendLine("    }");
     }
 

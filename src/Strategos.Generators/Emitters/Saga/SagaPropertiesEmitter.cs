@@ -40,21 +40,30 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
 
         var phaseEnumName = model.PhaseEnumName;
 
-        // WorkflowId with both attributes
+        // WorkflowId with both attributes.
+        // The Marten document-identity attribute is JasperFx.IdentityAttribute,
+        // surfaced via `using Marten.Schema;`. It is written fully qualified as
+        // [JasperFx.Identity]: consumers that also reference
+        // Strategos.Identity.Abstractions bring the Strategos.Identity namespace
+        // into scope, and an unqualified [Identity] would bind to that namespace
+        // instead of the attribute (CS0616).
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Gets or sets the workflow identifier.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    [SagaIdentity]");
-        sb.AppendLine("    [Identity]");
+        sb.AppendLine("    [JasperFx.Identity]");
         sb.AppendLine("    public Guid WorkflowId { get; set; }");
         sb.AppendLine();
 
-        // Version for optimistic concurrency
+        // Version for optimistic concurrency.
+        // Typed as long: Marten 9 widened numeric document revisions from int to
+        // long and rejects an int [Version] property at mapping time. This
+        // shadows the Wolverine Saga.Version (int) base property with `new`.
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Gets or sets the version for optimistic concurrency control.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    [Version]");
-        sb.AppendLine("    public new int Version { get; set; }");
+        sb.AppendLine("    public new long Version { get; set; }");
         sb.AppendLine();
 
         // Phase property
@@ -140,8 +149,10 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             }
         }
 
-        // Failure tracking properties (if failure handlers are defined)
-        if (model.HasFailureHandlers)
+        // Failure tracking properties (if failure handlers OR compensation are
+        // defined). Compensation (DR-3) reuses the same failure-context fields,
+        // populated by the saga's Trigger{Pascal}FailureHandlerCommand handler.
+        if (model.HasFailureHandlers || model.HasCompensation)
         {
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// Gets or sets the name of the step that failed, triggering the failure handler.");

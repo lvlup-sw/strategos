@@ -14,10 +14,12 @@ Strategos.Builders.IBranchBuilder<TState>.AwaitApproval<TApprover>(System.Action
 Strategos.Builders.IBranchBuilder<TState>.Complete() -> void
 Strategos.Builders.IBranchBuilder<TState>.Then<TStep>() -> Strategos.Builders.IBranchBuilder<TState!>!
 Strategos.Builders.IBranchBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IBranchBuilder<TState!>!
+Strategos.Builders.IBranchBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IBranchBuilder<TState!>!
 Strategos.Builders.IFailureBuilder<TState>
 Strategos.Builders.IFailureBuilder<TState>.Complete() -> void
 Strategos.Builders.IFailureBuilder<TState>.Then<TStep>() -> Strategos.Builders.IFailureBuilder<TState!>!
 Strategos.Builders.IFailureBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IFailureBuilder<TState!>!
+Strategos.Builders.IFailureBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IFailureBuilder<TState!>!
 Strategos.Builders.IForkJoinBuilder<TState>
 Strategos.Builders.IForkJoinBuilder<TState>.Join<TJoinStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.ILoopBuilder<TState>

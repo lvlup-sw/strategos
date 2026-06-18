@@ -97,4 +97,45 @@ internal static class NamingHelper
         ThrowHelper.ThrowIfNull(stateTypeName, nameof(stateTypeName));
         return $"{stateTypeName}Reducer";
     }
+
+    /// <summary>
+    /// Gets the simple (unqualified) type name from a possibly fully qualified
+    /// type name.
+    /// </summary>
+    /// <param name="typeName">The type name (e.g., "MyApp.Steps.RollbackStep").</param>
+    /// <returns>The simple type name (e.g., "RollbackStep").</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="typeName"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// Used by the compensation lowering path to derive worker-handler, command,
+    /// and event names from a <c>CompensationModel</c>'s fully qualified
+    /// compensation step type name (which is carried as a descriptor string per
+    /// INV-8, never a CLR <see cref="System.Type"/>).
+    /// </para>
+    /// <para>
+    /// Any generic-arity suffix is stripped FIRST (everything from the first
+    /// <c>&lt;</c>), so a fully qualified generic such as <c>Ns.Foo&lt;Ns.Bar&gt;</c>
+    /// returns the valid identifier <c>Foo</c> rather than <c>Bar&gt;</c> — without
+    /// the truncation the trailing <c>&gt;</c> (and, for a qualified type argument,
+    /// the WRONG inner name) would leak into the derived command/event identifiers.
+    /// </para>
+    /// </remarks>
+    public static string GetSimpleTypeName(string typeName)
+    {
+        ThrowHelper.ThrowIfNull(typeName, nameof(typeName));
+
+        // Strip any generic-arity suffix first so the last-dot split operates only
+        // on the outer type's namespace-qualified name, never on a (possibly
+        // qualified) type argument inside the angle brackets.
+        var angle = typeName.IndexOf('<');
+        if (angle >= 0)
+        {
+            typeName = typeName.Substring(0, angle);
+        }
+
+        var lastDot = typeName.LastIndexOf('.');
+        return lastDot >= 0 && lastDot < typeName.Length - 1
+            ? typeName.Substring(lastDot + 1)
+            : typeName;
+    }
 }

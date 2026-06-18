@@ -126,12 +126,11 @@ internal static class FailureHandlerExtractor
         ref bool isTerminal,
         CancellationToken cancellationToken)
     {
-        // Find all invocations in the handler body, reversed for correct order
-        var allInvocations = handlerLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Reverse()
-            .ToList();
+        // F1: walk only the handler lambda's OWN invocations, in source order. A raw
+        // DescendantNodes() walk captures Then<>/Complete calls from NESTED lambdas — e.g. a
+        // handler step's OnLowConfidence(alt => alt.Then<Recovery>()) configure lambda — which
+        // would surface as phantom/misordered failure-handler steps.
+        var allInvocations = InvocationChainWalker.CollectInvocationsInLambda(handlerLambda);
 
         foreach (var inv in allInvocations)
         {
@@ -180,6 +179,17 @@ internal static class FailureHandlerExtractor
         if (typeArgument is null)
         {
             return false;
+        }
+
+        // Prefer the shared configured-step builder so any per-step resilience
+        // (WithRetry/WithTimeout/Compensate/confidence) and ValidateState guard declared via the
+        // Then<TStep>(step => step...) configure-lambda overload (DR-7) threads into the StepModel,
+        // bringing failure-handler steps to parity with the top-level/loop/fork parse paths.
+        if (StepExtractor.TryBuildConfiguredStepModel(invocation, semanticModel, out var configuredStepModel))
+        {
+            stepName = configuredStepModel.StepName;
+            stepModel = configuredStepModel;
+            return true;
         }
 
         // Try to get the symbol for better naming and full type information

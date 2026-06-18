@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 10,
+  "count": 15,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -81,6 +81,46 @@
       "summary": "Event-sourced workflow requires state type",
       "remediation": "Workflow '{0}' uses PersistenceMode.EventSourced but no state type was found. Event-sourced workflows require a state type that implements IEventSourcedState<TState> with an ApplyEvent method.",
       "since": "0.2.0"
+    },
+    {
+      "name": "CompensateNotAStep",
+      "id": "AGWF017",
+      "severity": "error",
+      "summary": "Compensation step is not a workflow step",
+      "remediation": "Step '{0}' in workflow '{1}' compensates with '{2}', which does not implement IWorkflowStep<TState>. Compensation types must be a registered workflow step.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ConfidenceThresholdOutOfRange",
+      "id": "AGWF018",
+      "severity": "error",
+      "summary": "Confidence threshold out of range",
+      "remediation": "Step '{0}' in workflow '{1}' calls RequireConfidence({2}). The threshold must be between 0.0 and 1.0 inclusive.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "RequireConfidenceWithoutHandler",
+      "id": "AGWF019",
+      "severity": "warning",
+      "summary": "RequireConfidence without OnLowConfidence handler",
+      "remediation": "Step '{0}' in workflow '{1}' calls RequireConfidence but declares no OnLowConfidence handler. Add OnLowConfidence(alt => ...) so low-confidence results have a routing path.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "RetryMaxAttemptsBelowOne",
+      "id": "AGWF020",
+      "severity": "error",
+      "summary": "Retry maxAttempts below one",
+      "remediation": "Step '{0}' in workflow '{1}' configures WithRetry({2}). The maxAttempts value must be at least 1.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "NonPositiveTimeout",
+      "id": "AGWF021",
+      "severity": "error",
+      "summary": "Non-positive timeout",
+      "remediation": "Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero.",
+      "since": "2.10.0"
     }
   ]
 }
