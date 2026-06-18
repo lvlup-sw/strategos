@@ -29,6 +29,13 @@ namespace Strategos.Generators.Models;
 /// <param name="FailureHandlers">The failure handler constructs in this workflow (OnFailure).</param>
 /// <param name="ApprovalPoints">The approval checkpoints in this workflow (AwaitApproval).</param>
 /// <param name="Forks">The fork constructs in this workflow (Fork/Join).</param>
+/// <param name="ConfidenceHandlerStepNames">
+/// The step names lowered from <c>OnLowConfidence</c> handler branches (DR-5). These steps are
+/// appended to <paramref name="StepNames"/> so they get full lowering (phase, worker handler,
+/// commands, events), but they are NOT part of the main linear flow: they must not displace the
+/// main flow's terminal step nor be chained to as a normal "next" step. Their own completed handler
+/// is terminal (a single-step handler ends the workflow via <c>MarkCompleted()</c>).
+/// </param>
 internal sealed record WorkflowModel(
     string WorkflowName,
     string PascalName,
@@ -42,7 +49,8 @@ internal sealed record WorkflowModel(
     IReadOnlyList<BranchModel>? Branches = null,
     IReadOnlyList<FailureHandlerModel>? FailureHandlers = null,
     IReadOnlyList<ApprovalModel>? ApprovalPoints = null,
-    IReadOnlyList<ForkModel>? Forks = null)
+    IReadOnlyList<ForkModel>? Forks = null,
+    IReadOnlyList<string>? ConfidenceHandlerStepNames = null)
 {
     /// <summary>
     /// Gets the derived phase enum name.
@@ -98,6 +106,26 @@ internal sealed record WorkflowModel(
     /// Gets a value indicating whether this workflow contains any fork constructs.
     /// </summary>
     public bool HasForks => Forks is not null && Forks.Count > 0;
+
+    /// <summary>
+    /// Gets a value indicating whether this workflow lowers any <c>OnLowConfidence</c>
+    /// handler branch (DR-5).
+    /// </summary>
+    public bool HasConfidenceHandlers =>
+        ConfidenceHandlerStepNames is not null && ConfidenceHandlerStepNames.Count > 0;
+
+    /// <summary>
+    /// Determines whether the named step is a lowered <c>OnLowConfidence</c> handler step
+    /// (DR-5) and therefore off the main linear flow.
+    /// </summary>
+    /// <param name="stepName">The step name to test.</param>
+    /// <returns>
+    /// <see langword="true"/> when the step was lowered from an <c>OnLowConfidence</c> branch;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    public bool IsConfidenceHandlerStep(string stepName) =>
+        ConfidenceHandlerStepNames is not null
+        && ConfidenceHandlerStepNames.Contains(stepName);
 
     /// <summary>
     /// Gets a value indicating whether any step in this workflow has validation guards.

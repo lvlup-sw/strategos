@@ -443,6 +443,55 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             stepModels = allStepModels;
         }
 
+        // Include low-confidence handler step names and step models in the overall
+        // lists (DR-5). A step's .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>())
+        // captures the handler step H only as a ConfidenceModel descriptor; lowering it here
+        // (mirroring failure-handler / approval step lowering) gives H its own phase, worker
+        // handler, start/completed commands and events, and a terminal saga completed handler.
+        // The saga's confidence-gated completed handler then routes to Start{H}Command via a
+        // Wolverine cascade when the result confidence is below the threshold (INV-1).
+        var confidenceHandlerSteps = stepModels
+            .Where(s => s.Confidence?.OnLowConfidenceHandlerStep is not null)
+            .Select(s => s.Confidence!.OnLowConfidenceHandlerStep!)
+            .ToList();
+
+        // Track the lowered handler step names so the saga emitter can keep them off the
+        // main linear flow (they must not displace the workflow's terminal step nor be
+        // chained to as a normal "next" step).
+        List<string>? confidenceHandlerStepNames = null;
+
+        if (confidenceHandlerSteps.Count > 0)
+        {
+            confidenceHandlerStepNames = new List<string>(confidenceHandlerSteps.Count);
+            var allStepNames = new List<string>(stepNames.Count + confidenceHandlerSteps.Count);
+            allStepNames.AddRange(stepNames);
+            var allStepModels = new List<StepModel>(stepModels.Count + confidenceHandlerSteps.Count);
+            allStepModels.AddRange(stepModels);
+
+            var existingStepNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
+            var existingStepModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+
+            foreach (var handlerStep in confidenceHandlerSteps)
+            {
+                confidenceHandlerStepNames.Add(handlerStep.StepName);
+
+                if (!existingStepNames.Contains(handlerStep.StepName))
+                {
+                    allStepNames.Add(handlerStep.StepName);
+                    existingStepNames.Add(handlerStep.StepName);
+                }
+
+                if (!existingStepModelNames.Contains(handlerStep.StepName))
+                {
+                    allStepModels.Add(handlerStep);
+                    existingStepModelNames.Add(handlerStep.StepName);
+                }
+            }
+
+            stepNames = allStepNames;
+            stepModels = allStepModels;
+        }
+
         // Check for missing steps
         if (stepNames.Count == 0)
         {
@@ -563,7 +612,8 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             Branches: branchModels,
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
-            ApprovalPoints: approvalModels);
+            ApprovalPoints: approvalModels,
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
 
         return new WorkflowGeneratorResult(model, diagnostics);
     }

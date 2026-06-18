@@ -1202,7 +1202,7 @@ internal static class StepExtractor
                 else if (SyntaxHelper.IsMethodCall(configCall, "RequireConfidence")
                     || SyntaxHelper.IsMethodCall(configCall, "OnLowConfidence"))
                 {
-                    confidence = MergeConfidence(confidence, configCall);
+                    confidence = MergeConfidence(confidence, configCall, semanticModel);
                 }
             }
         }
@@ -1240,14 +1240,18 @@ internal static class StepExtractor
     /// The two calls are independent fluent members on <see cref="Strategos.Builders.IStepConfiguration{TState}"/>,
     /// so either may appear without the other; this merges whichever is seen into the same model.
     /// The low-confidence handler is identified by the first <c>Then&lt;THandler&gt;()</c> step declared
-    /// inside the handler lambda — a string descriptor consistent with INV-8.
+    /// inside the handler lambda — captured both as a simple name descriptor (consistent with INV-8) and
+    /// as a fully-resolved <see cref="StepModel"/> so DR-5 can lower the handler step into the saga and
+    /// route to it via a Wolverine cascade.
     /// </remarks>
     private static ConfidenceModel MergeConfidence(
         ConfidenceModel? existing,
-        InvocationExpressionSyntax confidenceCall)
+        InvocationExpressionSyntax confidenceCall,
+        SemanticModel semanticModel)
     {
         var threshold = existing?.Threshold ?? 0.0;
         var handlerId = existing?.OnLowConfidenceHandlerId;
+        var handlerStep = existing?.OnLowConfidenceHandlerStep;
 
         if (SyntaxHelper.IsMethodCall(confidenceCall, "RequireConfidence"))
         {
@@ -1259,17 +1263,27 @@ internal static class StepExtractor
         }
         else if (SyntaxHelper.IsMethodCall(confidenceCall, "OnLowConfidence"))
         {
-            handlerId = ExtractLowConfidenceHandlerId(confidenceCall) ?? handlerId;
+            var extracted = ExtractLowConfidenceHandlerStep(confidenceCall, semanticModel);
+            if (extracted is not null)
+            {
+                handlerStep = extracted;
+                handlerId = extracted.StepName;
+            }
         }
 
-        return new ConfidenceModel(threshold, handlerId);
+        return new ConfidenceModel(threshold, handlerId, handlerStep);
     }
 
     /// <summary>
-    /// Extracts the low-confidence handler identifier — the first <c>Then&lt;THandler&gt;()</c> step
-    /// type name declared inside an <c>OnLowConfidence(alt =&gt; ...)</c> handler lambda.
+    /// Extracts the low-confidence handler step — the first <c>Then&lt;THandler&gt;()</c> step
+    /// declared inside an <c>OnLowConfidence(alt =&gt; ...)</c> handler lambda — as a fully-resolved
+    /// <see cref="StepModel"/> carrying both its simple name and fully qualified type name. The fully
+    /// qualified name is required so the handler step lowers into a worker handler with correct DI
+    /// usings (DR-5).
     /// </summary>
-    private static string? ExtractLowConfidenceHandlerId(InvocationExpressionSyntax onLowConfidenceCall)
+    private static StepModel? ExtractLowConfidenceHandlerStep(
+        InvocationExpressionSyntax onLowConfidenceCall,
+        SemanticModel semanticModel)
     {
         var arguments = onLowConfidenceCall.ArgumentList.Arguments;
         if (arguments.Count == 0 || arguments[0].Expression is not LambdaExpressionSyntax handlerLambda)
@@ -1287,7 +1301,12 @@ internal static class StepExtractor
             return null;
         }
 
-        return SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
+        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
+        {
+            return null;
+        }
+
+        return StepModel.Create(stepName, stepTypeName);
     }
 
     private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)
