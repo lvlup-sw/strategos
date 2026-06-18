@@ -9,7 +9,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// <summary>
 /// T5 — the generated <c>docs/diagnostics/agwf.md</c> reference page. After
 /// codegen, the page carries a Markdown table with the columns
-/// id/severity/summary/remediation/since and exactly 10 data rows, one per
+/// id/severity/summary/remediation/since and exactly 15 data rows, one per
 /// ground-truth code, sorted by ID.
 /// </summary>
 [Property("Category", "Diagnostics")]
@@ -19,6 +19,7 @@ public sealed class AgwfMarkdownTests
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
+        "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
     ];
 
     /// <summary>
@@ -55,7 +56,7 @@ public sealed class AgwfMarkdownTests
             .ToList();
 
         await Assert.That(dataRows.Count).IsEqualTo(GroundTruthCodes.Length)
-            .Because("the table must have exactly 10 data rows, one per code.");
+            .Because("the table must have exactly 15 data rows, one per code.");
 
         var rowIds = dataRows
             .Select(r => GroundTruthCodes.First(c => r.Contains(c, StringComparison.Ordinal)))

@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **10 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **15 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -31,6 +31,11 @@ enum AgwfCode {
   LoopWithoutBody: "AGWF014",
   InvalidPersistenceMode: "AGWF015",
   EventSourcedRequiresState: "AGWF016",
+  CompensateNotAStep: "AGWF017",
+  ConfidenceThresholdOutOfRange: "AGWF018",
+  RequireConfidenceWithoutHandler: "AGWF019",
+  RetryMaxAttemptsBelowOne: "AGWF020",
+  NonPositiveTimeout: "AGWF021",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -131,4 +136,54 @@ model AgwfEntryEventSourcedRequiresState {
   summary: "Event-sourced workflow requires state type";
   remediation: "Workflow '{0}' uses PersistenceMode.EventSourced but no state type was found. Event-sourced workflows require a state type that implements IEventSourcedState<TState> with an ApplyEvent method.";
   since: "0.2.0";
+}
+
+/** AGWF017 — Compensation step is not a workflow step. */
+@jsonSchema
+model AgwfEntryCompensateNotAStep {
+  id: "AGWF017";
+  severity: "error";
+  summary: "Compensation step is not a workflow step";
+  remediation: "Step '{0}' in workflow '{1}' compensates with '{2}', which does not implement IWorkflowStep<TState>. Compensation types must be a registered workflow step.";
+  since: "2.10.0";
+}
+
+/** AGWF018 — Confidence threshold out of range. */
+@jsonSchema
+model AgwfEntryConfidenceThresholdOutOfRange {
+  id: "AGWF018";
+  severity: "error";
+  summary: "Confidence threshold out of range";
+  remediation: "Step '{0}' in workflow '{1}' calls RequireConfidence({2}). The threshold must be between 0.0 and 1.0 inclusive.";
+  since: "2.10.0";
+}
+
+/** AGWF019 — RequireConfidence without OnLowConfidence handler. */
+@jsonSchema
+model AgwfEntryRequireConfidenceWithoutHandler {
+  id: "AGWF019";
+  severity: "warning";
+  summary: "RequireConfidence without OnLowConfidence handler";
+  remediation: "Step '{0}' in workflow '{1}' calls RequireConfidence but declares no OnLowConfidence handler. Add OnLowConfidence(alt => ...) so low-confidence results have a routing path.";
+  since: "2.10.0";
+}
+
+/** AGWF020 — Retry maxAttempts below one. */
+@jsonSchema
+model AgwfEntryRetryMaxAttemptsBelowOne {
+  id: "AGWF020";
+  severity: "error";
+  summary: "Retry maxAttempts below one";
+  remediation: "Step '{0}' in workflow '{1}' configures WithRetry({2}). The maxAttempts value must be at least 1.";
+  since: "2.10.0";
+}
+
+/** AGWF021 — Non-positive timeout. */
+@jsonSchema
+model AgwfEntryNonPositiveTimeout {
+  id: "AGWF021";
+  severity: "error";
+  summary: "Non-positive timeout";
+  remediation: "Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero.";
+  since: "2.10.0";
 }

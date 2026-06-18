@@ -1332,7 +1332,43 @@ internal static class StepExtractor
             return null;
         }
 
-        return new CompensationModel(compensationTypeName);
+        // DR-8 / INV-5 (CompensateNotAStep): record whether the compensation type resolves to a
+        // type implementing IWorkflowStep<TState>. The DSL's generic constraint also
+        // rejects non-steps at the C# call site, but capturing the verdict lets the
+        // generator surface a clearer, suppressible diagnostic. Unresolved symbols are
+        // treated as valid (true) so the analyzer does not double-report on a type that
+        // simply could not be bound (the C# compiler reports that independently).
+        var symbol = semanticModel.GetSymbolInfo(typeArgument).Symbol as INamedTypeSymbol;
+        var isRegisteredStep = symbol is null || ImplementsWorkflowStep(symbol);
+
+        return new CompensationModel(compensationTypeName, IsRegisteredStep: isRegisteredStep);
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="type"/> implements
+    /// <c>Strategos.Abstractions.IWorkflowStep&lt;TState&gt;</c> (any state type argument).
+    /// </summary>
+    private static bool ImplementsWorkflowStep(INamedTypeSymbol type) =>
+        type.AllInterfaces.Any(IsWorkflowStepInterface);
+
+    /// <summary>
+    /// Determines whether <paramref name="iface"/> is the generic
+    /// <c>Strategos.Abstractions.IWorkflowStep&lt;&gt;</c> interface (matched on its open
+    /// definition's metadata name + containing namespace, robust to display formatting).
+    /// </summary>
+    private static bool IsWorkflowStepInterface(INamedTypeSymbol iface)
+    {
+        if (!iface.IsGenericType)
+        {
+            return false;
+        }
+
+        var original = iface.OriginalDefinition;
+        return string.Equals(original.MetadataName, "IWorkflowStep`1", StringComparison.Ordinal)
+            && string.Equals(
+                original.ContainingNamespace?.ToDisplayString(),
+                "Strategos.Abstractions",
+                StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1415,6 +1451,16 @@ internal static class StepExtractor
     private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)
     {
         value = 0;
+
+        // Unary minus over a numeric literal (e.g. RequireConfidence(-0.1)) — recognized so a
+        // negative (out-of-range) threshold reaches the IR and trips the out-of-range diagnostic.
+        if (expression is PrefixUnaryExpressionSyntax unary
+            && unary.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.UnaryMinusExpression)
+            && TryGetDoubleLiteral(unary.Operand, out var operand))
+        {
+            value = -operand;
+            return true;
+        }
 
         if (expression is LiteralExpressionSyntax literal
             && literal.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression))

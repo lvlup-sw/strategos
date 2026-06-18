@@ -44,5 +44,20 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF016 — Event-sourced workflow requires state type.</summary>
         public const string EventSourcedRequiresState = "AGWF016";
+
+        /// <summary>AGWF017 — Compensation step is not a workflow step.</summary>
+        public const string CompensateNotAStep = "AGWF017";
+
+        /// <summary>AGWF018 — Confidence threshold out of range.</summary>
+        public const string ConfidenceThresholdOutOfRange = "AGWF018";
+
+        /// <summary>AGWF019 — RequireConfidence without OnLowConfidence handler.</summary>
+        public const string RequireConfidenceWithoutHandler = "AGWF019";
+
+        /// <summary>AGWF020 — Retry maxAttempts below one.</summary>
+        public const string RetryMaxAttemptsBelowOne = "AGWF020";
+
+        /// <summary>AGWF021 — Non-positive timeout.</summary>
+        public const string NonPositiveTimeout = "AGWF021";
     }
 }

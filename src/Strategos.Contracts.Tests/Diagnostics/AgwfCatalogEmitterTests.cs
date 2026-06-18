@@ -11,7 +11,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// <summary>
 /// T3 — the canonical <c>agwf-catalog.json</c> data artifact. After the full
 /// codegen pipeline runs, the catalog file exists under the contracts project,
-/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 10
+/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 15
 /// ground-truth entries ordered by ID, each with full metadata
 /// (<c>name</c>/<c>id</c>/<c>severity</c>/<c>summary</c>/<c>remediation</c>/
 /// <c>since</c>).
@@ -24,11 +24,12 @@ public sealed class AgwfCatalogEmitterTests
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
+        "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
     ];
 
     /// <summary>
     /// Regenerates from committed schemas and asserts the emitted catalog JSON
-    /// has a <c>catalog_version</c> manifest field and exactly 10 entries ordered
+    /// has a <c>catalog_version</c> manifest field and exactly 15 entries ordered
     /// by ID, each carrying the full metadata set.
     /// </summary>
     [Test]
@@ -48,7 +49,7 @@ public sealed class AgwfCatalogEmitterTests
 
         var entries = root.GetProperty("entries");
         await Assert.That(entries.GetArrayLength()).IsEqualTo(GroundTruthCodes.Length)
-            .Because("the catalog must enumerate exactly the 10 ground-truth entries.");
+            .Because("the catalog must enumerate exactly the 15 ground-truth entries.");
 
         var ids = new List<string>();
         foreach (var entry in entries.EnumerateArray())
