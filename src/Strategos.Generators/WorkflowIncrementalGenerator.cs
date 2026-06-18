@@ -63,6 +63,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 var sagaSource = SagaEmitter.Emit(result.Model);
                 spc.AddSource($"{sagaClassName}.g.cs", SourceText.From(sagaSource, Encoding.UTF8));
 
+                // Emit Context Assemblers (DR-6). Only steps that declared
+                // .WithContext(...) produce a {Step}ContextAssembler; when no step
+                // has context the emitter returns empty and no file is added, so a
+                // context-free workflow keeps its prior generated-file set
+                // byte-identical. The worker handler below wires each assembler into
+                // its step's execution path.
+                var assemblersSource = ContextAssemblerEmitter.Emit(result.Model);
+                if (!string.IsNullOrWhiteSpace(assemblersSource))
+                {
+                    spc.AddSource($"{result.Model.PascalName}Assemblers.g.cs", SourceText.From(assemblersSource, Encoding.UTF8));
+                }
+
                 // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
                 var handlersSource = WorkerHandlerEmitter.Emit(result.Model);
                 spc.AddSource($"{result.Model.PascalName}Handlers.g.cs", SourceText.From(handlersSource, Encoding.UTF8));
@@ -191,6 +203,41 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.TargetNode,
             context.SemanticModel,
             ct);
+
+        // Extract per-step context models (.WithContext(...)) and fold them onto
+        // the matching step models (DR-6 T015). The parse already builds a
+        // ContextModel per WithContext call; merging it here is what makes the
+        // ContextAssemblerEmitter (previously dead) emit a {Step}ContextAssembler
+        // and lets the worker handler assemble ontology-backed context before the
+        // step runs. Keyed by step name so a context binds to its declaring step.
+        var contextModels = FluentDslParser.ExtractContextModels(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
+        if (contextModels.Count > 0)
+        {
+            var contextByStep = new Dictionary<string, ContextModel>(StringComparer.Ordinal);
+            foreach (var (stepName, contextModel) in contextModels)
+            {
+                contextByStep[stepName] = contextModel;
+            }
+
+            var mergedStepModels = new List<StepModel>(stepModels.Count);
+            foreach (var step in stepModels)
+            {
+                if (step.Context is null && contextByStep.TryGetValue(step.StepName, out var ctxModel))
+                {
+                    mergedStepModels.Add(step with { Context = ctxModel });
+                }
+                else
+                {
+                    mergedStepModels.Add(step);
+                }
+            }
+
+            stepModels = mergedStepModels;
+        }
 
         // Extract loop models for loop handler generation
         // Use original validName (not pascalName) to match runtime condition ID format

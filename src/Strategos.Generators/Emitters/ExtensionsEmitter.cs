@@ -186,6 +186,37 @@ internal static class ExtensionsEmitter
             }
         }
 
+        // Register context assemblers (DR-6). One per step that declared
+        // .WithContext(...); the step's worker handler takes it as a constructor
+        // dependency. A retrieval-bearing assembler additionally depends on
+        // IObjectSetProvider, which the ontology host registers separately.
+        if (model.Steps is not null)
+        {
+            var registeredAssemblers = new HashSet<string>(StringComparer.Ordinal);
+            var emittedHeader = false;
+            foreach (var step in model.Steps)
+            {
+                if (step.Context is null || step.Context.Sources.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!registeredAssemblers.Add(step.StepName))
+                {
+                    continue;
+                }
+
+                if (!emittedHeader)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("        // Register context assemblers");
+                    emittedHeader = true;
+                }
+
+                sb.AppendLine($"        services.AddTransient<{step.StepName}ContextAssembler>();");
+            }
+        }
+
         sb.AppendLine();
 
         // Force evaluation of workflow definition to register loop conditions
