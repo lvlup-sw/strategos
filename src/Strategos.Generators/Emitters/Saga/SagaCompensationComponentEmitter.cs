@@ -56,6 +56,15 @@ namespace Strategos.Generators.Emitters.Saga;
 /// types are declared, the trigger handler routes to the correct rollback worker on
 /// the <c>FailedStepName</c> carried by the trigger command.
 /// </para>
+/// <para>
+/// <b>Reuse of a main-flow step as a compensation target:</b> a compensation step
+/// TYPE may also appear as a normal main-flow step (rolling back to a step the happy
+/// path also runs). The main-flow completed handler (<see cref="SagaStepHandlersEmitter"/>)
+/// already declares that step's <c>Handle({Comp}Completed)</c> overload, so this
+/// emitter SKIPS the duplicate to avoid a CS0111 collision; the trigger/dispatch
+/// path is unaffected because the rollback's worker command is the same one the
+/// folded main-flow step model already produced.
+/// </para>
 /// </remarks>
 internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
 {
@@ -85,12 +94,29 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine();
         EmitTriggerHandler(sb, model, compensatedSteps);
 
+        // A compensation step TYPE may also be a normal main-flow step (it is valid
+        // to roll back to a step the happy path already runs). In that case the
+        // main-flow completed handler (SagaStepHandlersEmitter) already declares the
+        // Handle({Comp}Completed) overload; emitting ours too would collide (CS0111).
+        // Mirror the HasFailureHandlers no-op above: skip the duplicate handler and
+        // let the existing main-flow one cover it. The trigger/dispatch path needs no
+        // change — it dispatches the rollback's worker command, which the folded
+        // step model already produced (no duplicate member there).
+        var mainFlowStepNames = new HashSet<string>(model.StepNames, StringComparer.Ordinal);
+
         // Deduplicate by compensation step type: two steps rolling back to the same
         // compensation type share a single {Comp}Completed handler.
         var emittedCompletedHandlers = new HashSet<string>(StringComparer.Ordinal);
         foreach (var step in compensatedSteps)
         {
             var compStepName = NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName);
+
+            // Skip if the main flow already declares this step's completed handler.
+            if (mainFlowStepNames.Contains(compStepName))
+            {
+                continue;
+            }
+
             if (emittedCompletedHandlers.Add(compStepName))
             {
                 sb.AppendLine();

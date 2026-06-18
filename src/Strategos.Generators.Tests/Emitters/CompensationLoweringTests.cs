@@ -105,6 +105,71 @@ public class CompensationLoweringTests
         """;
 
     /// <summary>
+    /// A linear workflow whose compensation target step type (<c>RollbackStep</c>) is
+    /// ALSO used as a normal main-flow step. The main flow runs
+    /// <c>ValidateOrder → RollbackStep → ProcessPayment → SendConfirmation</c>, and
+    /// <c>ProcessPayment</c> declares <c>.Compensate&lt;RollbackStep&gt;()</c>. Because the
+    /// rollback type is already a main-flow step it must NOT get a second, duplicate
+    /// <c>Handle(RollbackStepCompleted)</c> from the compensation emitter (CS0111).
+    /// </summary>
+    private const string WorkflowWithCompensationStepAlsoInMainFlow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record OrderState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateOrder : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class RollbackStep : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ProcessPayment : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class SendConfirmation : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        [Workflow("process-order")]
+        public static partial class ProcessOrderWorkflow
+        {
+            public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+                .Create("process-order")
+                .StartWith<ValidateOrder>()
+                .Then<RollbackStep>()
+                .Then<ProcessPayment>(step => step
+                    .WithRetry(2)
+                    .Compensate<RollbackStep>())
+                .Finally<SendConfirmation>();
+        }
+        """;
+
+    /// <summary>
     /// A linear workflow with NO compensation configured on any step.
     /// </summary>
     private const string WorkflowWithoutCompensation = """
@@ -225,5 +290,67 @@ public class CompensationLoweringTests
         // Assert — no CompensatingAction publish, no trigger command, no rollback worker.
         await Assert.That(handlersSource).DoesNotContain("CompensatingAction");
         await Assert.That(sagaSource).DoesNotContain("FailureHandlerCommand");
+    }
+
+    /// <summary>
+    /// When a step TYPE is used both as a normal main-flow step AND as another
+    /// step's <c>.Compensate&lt;T&gt;()</c> target, the saga must declare exactly
+    /// ONE <c>Handle({Comp}Completed)</c> overload. The main-flow completed handler
+    /// (emitted from <c>SagaStepHandlersEmitter</c>) already covers it; the
+    /// compensation emitter must NOT emit a second, duplicate overload (CS0111).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_CompensationStepAlsoInMainFlow_EmitsSingleCompletedHandler()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithCompensationStepAlsoInMainFlow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // Assert — exactly one `Handle(RollbackStepCompleted evt, ...)` overload.
+        // Both the main-flow completed handler and the (now-suppressed) compensation
+        // completed handler emit a `Handle(` overload taking `RollbackStepCompleted`;
+        // counting that multiline parameter pattern is the duplicate proxy. (The
+        // separate `NotFound(RollbackStepCompleted evt, ...)` method is a different
+        // method name and is excluded by anchoring on `Handle(`.)
+        var occurrences = CountOccurrences(sagaSource, "Handle(\n        RollbackStepCompleted evt,");
+        await Assert.That(occurrences).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// The generated saga for a workflow that reuses a step type as a compensation
+    /// target must COMPILE without a CS0111 duplicate-method error (the concrete
+    /// failure mode of the duplicate <c>Handle({Comp}Completed)</c> overload).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_CompensationStepAlsoInMainFlow_GeneratedSagaHasNoCs0111()
+    {
+        // Arrange & Act — compile the source PLUS the generator output together.
+        var diagnostics = GeneratorTestHelper.GetCompilationDiagnostics(
+            WorkflowWithCompensationStepAlsoInMainFlow);
+
+        // Assert — no CS0111 (duplicate member) anywhere in the generated saga.
+        // Other diagnostics (missing Wolverine/Marten runtime types) are expected
+        // in the bare test compilation and are not asserted on.
+        var cs0111 = diagnostics
+            .Where(d => string.Equals(d.Id, "CS0111", StringComparison.Ordinal))
+            .Select(d => d.GetMessage())
+            .ToList();
+
+        await Assert.That(cs0111).IsEmpty();
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 }
