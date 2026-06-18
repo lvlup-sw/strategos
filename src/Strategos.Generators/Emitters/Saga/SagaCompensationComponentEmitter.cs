@@ -189,6 +189,24 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
             }
         }
 
+        // Terminal fallback (F2): in multi-compensation routing an unmatched
+        // FailedStepName would fall through every branch yielding NO command,
+        // stranding the saga in the Compensating phase forever (no further event
+        // ever arrives). Transition to the terminal Failed phase and MarkCompleted()
+        // so an unexpected failed-step name cannot deadlock the saga. The single
+        // case always yields a worker command above, so it needs no fallback.
+        if (!single)
+        {
+            sb.AppendLine("        logger.LogError(");
+            sb.AppendLine("            \"No compensation registered for failed step {FailedStepName} in workflow {WorkflowId}; failing terminally\",");
+            sb.AppendLine("            cmd.FailedStepName,");
+            sb.AppendLine("            WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
+            sb.AppendLine("        MarkCompleted();");
+            sb.AppendLine("        yield break;");
+        }
+
         sb.AppendLine("    }");
     }
 

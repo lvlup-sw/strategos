@@ -170,6 +170,83 @@ public class CompensationLoweringTests
         """;
 
     /// <summary>
+    /// A linear workflow with TWO distinct compensation step types, so the saga
+    /// trigger handler lowers MULTI-compensation routing (a <c>FailedStepName</c>
+    /// branch per compensated step). Used to prove the routing has a terminal
+    /// fallback for an unmatched <c>FailedStepName</c> (F2).
+    /// </summary>
+    private const string WorkflowWithTwoCompensations = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record OrderState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateOrder : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ReserveInventory : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ReleaseInventory : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ProcessPayment : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class RollbackPayment : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class SendConfirmation : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        [Workflow("process-order")]
+        public static partial class ProcessOrderWorkflow
+        {
+            public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+                .Create("process-order")
+                .StartWith<ValidateOrder>()
+                .Then<ReserveInventory>(step => step
+                    .Compensate<ReleaseInventory>())
+                .Then<ProcessPayment>(step => step
+                    .Compensate<RollbackPayment>())
+                .Finally<SendConfirmation>();
+        }
+        """;
+
+    /// <summary>
     /// A linear workflow with NO compensation configured on any step.
     /// </summary>
     private const string WorkflowWithoutCompensation = """
@@ -275,6 +352,47 @@ public class CompensationLoweringTests
     }
 
     /// <summary>
+    /// F2 (CodeRabbit / epic #135): in multi-compensation routing the saga trigger
+    /// handler emits one <c>if (cmd.FailedStepName == "X") { ... yield break; }</c>
+    /// branch per compensated step, after setting <c>Phase = Compensating</c>. If
+    /// NONE of the branches match an unexpected <c>FailedStepName</c>, the handler
+    /// previously fell off the end yielding no command, stranding the saga in the
+    /// <c>Compensating</c> phase forever. The routing must have a terminal fallback
+    /// (route to <c>Failed</c> + <c>MarkCompleted()</c>) so an unmatched
+    /// <c>FailedStepName</c> cannot deadlock the saga.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_MultiCompensationRouting_HasTerminalFallbackForUnmatchedFailedStep()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithTwoCompensations);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // Isolate the trigger handler region so the fallback assertion is scoped to
+        // this method and not satisfied by an unrelated completed handler.
+        var triggerHandler = ExtractTriggerHandlerRegion(sagaSource);
+
+        // Sanity: this is genuinely the multi-compensation routing form (a branch
+        // per compensated step routing on FailedStepName).
+        await Assert.That(triggerHandler).Contains("cmd.FailedStepName ==");
+        await Assert.That(triggerHandler).Contains("ExecuteReleaseInventoryWorkerCommand");
+        await Assert.That(triggerHandler).Contains("ExecuteRollbackPaymentWorkerCommand");
+
+        // The terminal fallback: when no FailedStepName branch matches, the handler
+        // must transition to Failed and mark the saga completed (no infinite wait).
+        await Assert.That(triggerHandler).Contains("Phase = ProcessOrderPhase.Failed");
+        await Assert.That(triggerHandler).Contains("MarkCompleted()");
+
+        // The fallback must come AFTER the routing branches (it is the else/last
+        // resort), not before them.
+        var lastRouteIndex = triggerHandler.LastIndexOf("cmd.FailedStepName ==", StringComparison.Ordinal);
+        var markCompletedIndex = triggerHandler.IndexOf("MarkCompleted()", StringComparison.Ordinal);
+        await Assert.That(lastRouteIndex).IsGreaterThanOrEqualTo(0);
+        await Assert.That(markCompletedIndex).IsGreaterThan(lastRouteIndex);
+    }
+
+    /// <summary>
     /// A workflow with no compensation on any step lowers no compensation
     /// artifacts whatsoever: no <c>CompensatingAction</c>, and no rollback worker.
     /// </summary>
@@ -339,6 +457,23 @@ public class CompensationLoweringTests
             .ToList();
 
         await Assert.That(cs0111).IsEmpty();
+    }
+
+    /// <summary>
+    /// Slices out the compensation trigger handler body from the generated saga,
+    /// from its <c>Trigger...FailureHandlerCommand cmd,</c> parameter up to the
+    /// next member's XML doc comment, so a test asserts on this handler alone.
+    /// </summary>
+    private static string ExtractTriggerHandlerRegion(string sagaSource)
+    {
+        var start = sagaSource.IndexOf("FailureHandlerCommand cmd,", StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        var next = sagaSource.IndexOf("/// <summary>", start, StringComparison.Ordinal);
+        return next < 0 ? sagaSource.Substring(start) : sagaSource.Substring(start, next - start);
     }
 
     private static int CountOccurrences(string haystack, string needle)
