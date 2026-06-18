@@ -82,13 +82,16 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
             return;
         }
 
-        // The OnFailure path (SagaFailureHandlerComponentEmitter) owns the trigger
-        // handler when present; emitting ours too would collide (CS0111).
-        if (model.HasFailureHandlers)
-        {
-            return;
-        }
-
+        // #140 Task 3.2 — Compensate↔OnFailure interop. Previously this emitter was a
+        // NO-OP whenever the workflow ALSO declared OnFailure (to avoid a duplicate
+        // Handle(Trigger…) CS0111 collision), making step compensation and a
+        // workflow-level OnFailure mutually exclusive. They now COMPOSE in a fixed
+        // order from a SINGLE merged trigger site: this emitter owns the one
+        // Handle(Trigger…), dispatches the compensation rollback FIRST, and its
+        // compensation-completed handler chains into the OnFailure chain (instead of
+        // marking the saga Failed). The OnFailure emitter suppresses its own trigger
+        // handler when HasCompensation is true, so there is exactly one
+        // Handle(Trigger…).
         var compensatedSteps = model.CompensationSteps;
 
         sb.AppendLine();
@@ -212,8 +215,10 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
 
     /// <summary>
     /// Emits the saga handler for a compensation step's completed event: folds the
-    /// rollback's returned state, transitions to the terminal <c>Failed</c> phase,
-    /// and marks the saga completed.
+    /// rollback's returned state and then EITHER transitions the saga to its terminal
+    /// <c>Failed</c> phase (compensation-only) OR — when the workflow also declares an
+    /// <c>OnFailure</c> chain (#140 Task 3.2) — chains into that chain's first step,
+    /// enforcing the fixed compensation-then-OnFailure ordering.
     /// </summary>
     private static void EmitCompensationCompletedHandler(
         StringBuilder sb,
@@ -222,6 +227,15 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
     {
         var completedEventName = NamingHelper.GetCompletedEventName(compStepName);
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+
+        // When the workflow ALSO declares OnFailure, the rollback's completion chains
+        // into the OnFailure chain rather than ending the saga (fixed ordering:
+        // compensation FIRST, then OnFailure). Otherwise it is the terminal handler.
+        if (model.HasFailureHandlers)
+        {
+            EmitCompensationThenOnFailureCompletedHandler(sb, model, compStepName, completedEventName, sagaClassName);
+            return;
+        }
 
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Handles the {completedEventName} event (DR-3) - folds the rollback's");
@@ -251,6 +265,57 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
         sb.AppendLine("        MarkCompleted();");
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits the compensation-completed handler for the Compensate↔OnFailure interop
+    /// case (#140 Task 3.2): folds the rollback's returned state, then chains into the
+    /// workflow's OnFailure chain by returning its first step's start command. The
+    /// OnFailure chain's own (terminal) completed handler later marks the saga Failed,
+    /// so this handler must NOT mark completed.
+    /// </summary>
+    private static void EmitCompensationThenOnFailureCompletedHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string compStepName,
+        string completedEventName,
+        string sagaClassName)
+    {
+        var firstHandler = model.FailureHandlers!.First();
+        var sanitizedId = firstHandler.HandlerId.Replace("-", "_");
+        var firstStepName = firstHandler.FirstStepName;
+        var startCommandName = $"StartFailureHandler_{sanitizedId}_{firstStepName}Command";
+
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Handles the {completedEventName} event (#140 Task 3.2) - folds the");
+        sb.AppendLine("    /// rollback's returned state, then chains into the workflow OnFailure chain");
+        sb.AppendLine("    /// (compensation runs FIRST, then OnFailure). Does NOT mark completed: the");
+        sb.AppendLine("    /// terminal OnFailure completed handler ends the saga in the Failed phase.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine($"    /// <param name=\"evt\">The {compStepName} compensation completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
+        sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
+        sb.AppendLine("    /// <returns>The command to start the first OnFailure handler step.</returns>");
+        sb.AppendLine($"    public {startCommandName} Handle(");
+        sb.AppendLine($"        {completedEventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+
+        // INV-7: the compensation step returns NEW state; the saga only folds it.
+        StateApplicationHelper.EmitStateApplication(sb, model);
+
+        sb.AppendLine();
+        sb.AppendLine("        logger.LogInformation(");
+        sb.AppendLine("            \"Compensation completed for workflow {WorkflowId}; running OnFailure chain\",");
+        sb.AppendLine("            WorkflowId);");
+        sb.AppendLine();
+        sb.AppendLine($"        return new {startCommandName}(WorkflowId);");
         sb.AppendLine("    }");
     }
 }
