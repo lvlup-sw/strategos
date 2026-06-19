@@ -108,20 +108,43 @@ public class ValidationParserTests
     }
 
     /// <summary>
-    /// Verifies that Extract extracts complex predicate expression.
+    /// Verifies that Extract extracts a complex predicate expression and normalizes the
+    /// lambda parameter to the canonical name <c>state</c> so the downstream emitter's
+    /// <c>state.</c> -&gt; <c>State.</c> rewrite applies regardless of the author's chosen
+    /// parameter name. The non-receiver tokens (member names, literals, operators) are
+    /// preserved.
     /// </summary>
     [Test]
-    public async Task Extract_ComplexPredicate_ExtractsFullExpression()
+    public async Task Extract_ComplexPredicate_ExtractsFullExpressionAndNormalizesParameter()
     {
-        // Arrange
+        // Arrange — author used parameter name "s".
         var invocation = ParseInvocation("builder.ValidateState(s => s.Amount > 0 && s.Status == \"Active\", \"Must have positive amount and active status\")");
 
         // Act
         var (predicate, errorMessage) = ValidationParser.Extract(invocation);
 
-        // Assert
-        await Assert.That(predicate).IsEqualTo("s.Amount > 0 && s.Status == \"Active\"");
+        // Assert — "s" receivers normalized to "state"; everything else preserved.
+        await Assert.That(predicate).IsEqualTo("state.Amount > 0 && state.Status == \"Active\"");
         await Assert.That(errorMessage).IsEqualTo("Must have positive amount and active status");
+    }
+
+    /// <summary>
+    /// Verifies that Extract normalizes ANY single-parameter lambda name (here a
+    /// parenthesized lambda with parameter <c>ctx</c>) to the canonical <c>state</c>, and
+    /// that a member named the same as the parameter is NOT rewritten (only the receiver
+    /// identifier is).
+    /// </summary>
+    [Test]
+    public async Task Extract_NonStateParameterName_NormalizesReceiverOnly()
+    {
+        // Arrange — parenthesized lambda, parameter "ctx", with a member also named "ctx".
+        var invocation = ParseInvocation("builder.ValidateState((ctx) => ctx.ctx == true, \"msg\")");
+
+        // Act
+        var (predicate, _) = ValidationParser.Extract(invocation);
+
+        // Assert — only the receiver "ctx" became "state"; the member ".ctx" is untouched.
+        await Assert.That(predicate).IsEqualTo("state.ctx == true");
     }
 
     // =============================================================================

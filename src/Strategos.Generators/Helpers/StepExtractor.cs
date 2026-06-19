@@ -1231,6 +1231,20 @@ internal static class StepExtractor
 
         var instanceName = ExtractInstanceName(invocation);
         var resilience = ExtractConfiguredResilience(invocation, semanticModel);
+
+        // Thread validation declared via the configure-lambda overload
+        // (Then<TStep>(step => step.ValidateState(...))) uniformly, exactly as
+        // ExtractConfiguredResilience already threads WithRetry/WithTimeout/Compensate/
+        // confidence from the same lambda. A pending predicate supplied by the caller
+        // (the legacy separately-chained .ValidateState(...) form, or a fork/branch
+        // pre-extraction) takes precedence; otherwise fall back to this step's own
+        // configure lambda so top-level/loop steps lower their guard like fork-path and
+        // branch-path steps do.
+        if (validationPredicate is null)
+        {
+            (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
+        }
+
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
