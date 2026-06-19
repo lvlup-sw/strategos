@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [2.9.0] - 2026-06-19
 
 ### Added
 
@@ -356,6 +356,40 @@ stream — no new mutation surface (INV-7).
   `SymbolDisplay.FormatLiteral(quote: true)` at both literal sites (the `LogWarning`
   argument and the `ValidationFailed` event), so the literal is fully escaped and
   compilable.
+
+### Added — EventSourced step audit events (#138)
+
+- **`StepFailed` / `LowConfidenceRouted` Marten stream events (EventSourced mode).**
+  In `PersistenceMode.EventSourced`, the generated saga now appends named, queryable
+  Marten stream events alongside the existing saga-document properties and structured
+  logs: `StepFailed(WorkflowId, FailedStepName, ExceptionType?, ExceptionMessage?,
+  Timestamp)` at the single ordered terminal-failure trigger site (the `OnFailure`
+  trigger and the merged `Compensate`↔`OnFailure` trigger), and
+  `LowConfidenceRouted(WorkflowId, StepName, Confidence, Threshold, Timestamp)` at the
+  confidence gate when a step routes below its threshold. Both records are `sealed`,
+  init-only, implement `I{Pascal}Event`, and append through the saga's existing
+  `IDocumentSession` (INV-1). They are emitted **only** in EventSourced mode — the
+  `SagaDocument`-mode output is byte-for-byte unchanged. Proven end-to-end on a real
+  Wolverine+Marten+Postgres host (`EventSourcedAuditEventTests`).
+
+### Added — Declared↔lowered step-config parity guard + AGWF022 diagnostic (#143)
+
+- **`AGWF022` (`DeclaredButInert`) diagnostic.** A warning reported when a step
+  declares a configuration concern the generator does **not** lower for that step's
+  kind, so the configuration would silently have no effect. The first guarded case is
+  confidence gating (`RequireConfidence` / `OnLowConfidence`) on a **`Fork` path** —
+  the config reaches the IR (so an out-of-range threshold still surfaces its range
+  diagnostic) but fork-path confidence routing is not yet lowered (deferred to
+  v2.10.0 / DR-17, #145). Added to the single-sourced TypeSpec catalog
+  (`AgwfCatalog.tsp`), the generated JSON schema, and `WorkflowDiagnostics` (INV-5).
+- **Declared↔lowered parity guard (`StepConfigParityTests`).** A forcing function that
+  reflects the `IStepConfiguration<TState>` surface and asserts every member is
+  classified as **Lowered** (each pointing at a behavioral compile-run-saga proof) or
+  **Deferred** (each carrying a tracking issue) — structurally preventing the
+  "declared but never lowered" bug class. Surfacing the required `ValidateState`
+  behavioral backfill also fixed two real top-level lowering gaps (configure-lambda
+  validation was dropped for top-level/loop steps; the predicate parameter had to be
+  named literally `state` to compile).
 
 ## [2.8.0] - 2026-05-25
 
@@ -708,6 +742,8 @@ First stable release of the Strategos library for building production-grade agen
 - Transactional outbox pattern
 - Time-travel debugging via event replay
 
+[2.9.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.9.0
+[2.8.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.8.0
 [2.7.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0
 [2.7.0-preview.1]: https://github.com/lvlup-sw/strategos/releases/tag/v2.7.0-preview.1
 [2.6.0]: https://github.com/lvlup-sw/strategos/releases/tag/v2.6.0
