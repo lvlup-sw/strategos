@@ -305,6 +305,58 @@ stream — no new mutation surface (INV-7).
     (`ContextAssemblerEmitter` / `ContextModelExtractor` are exercised by unit
     tests only, never wired into `WorkflowIncrementalGenerator`).
 
+### Added — Multi-step, rejoining `OnLowConfidence` handler chain (#139)
+
+- **`OnLowConfidence` handler lowering generalized from a single terminal
+  `Then<T>` into an ordered, multi-step chain with explicit exit semantics (#139).**
+  The extractor's `ExtractLowConfidenceHandlerChain` returns an ordered
+  `IReadOnlyList<StepModel>` (ordered by `Span.End` so a fluent
+  `alt.Then<A>().Then<B>()` yields `A` before `B`) plus a `RejoinsMainFlow` flag
+  inferred from a `.RejoinMainFlow()` call. A new sealed init-only IR
+  `LowConfidenceHandlerChainModel(Steps, RejoinsMainFlow)` is threaded onto
+  `ConfidenceModel.OnLowConfidenceHandlerChain` (the first step is still retained
+  as `OnLowConfidenceHandlerStep` for the saga routing surface). The generator
+  lowers **every** chain step: non-last steps chain to the next, and the last step
+  either rejoins the main flow at the step after the gated step
+  (`.RejoinMainFlow()`) or terminates via `MarkCompleted()` (the back-compat
+  default). The DSL adds `IBranchBuilder<TState>.RejoinMainFlow()` as an opt-in
+  marker (PublicAPI shipped baseline updated); terminating remains the default.
+  Proven end-to-end on a real Wolverine+Marten+Postgres host
+  (`LowConfidenceChainTests`: two-step chain runs in order, rejoin resumes the main
+  flow, terminating completes).
+
+### Fixed — Generator step-resilience close-out (#140, #142)
+
+- **`OnFailure` worker-handler chain now executes (previously dead) + `Compensate`↔`OnFailure`
+  interop (#140).** The workflow-level `OnFailure` chain was doubly dead: nothing
+  published the `Trigger{Pascal}FailureHandlerCommand` for a non-compensated failing
+  step, and the saga-dispatched failure-handler worker command had no worker `Handle`,
+  so the handler step never ran. `WorkerHandlerEmitter` now emits a dedicated
+  `FailureHandler_{id}_{step}Handler` per `OnFailure` step (returning the
+  `…Completed` event the saga folds and routes on), every main-flow step in an
+  `OnFailure` workflow lowers a trigger-publishing `Configure(HandlerChain)`
+  (failure-handler steps excluded — they are the recovery path), and the handlers are
+  registered in DI. A step-level `.Compensate<T>()` and a workflow-level `OnFailure`
+  were previously mutually exclusive (the compensation emitter no-op'd whenever
+  `OnFailure` was also declared, to avoid a duplicate `Handle(Trigger…)` CS0111);
+  they now **compose in a fixed order from a single merged trigger site** —
+  compensation rollback runs **first** (Compensating phase), then chains into the
+  `OnFailure` chain, which ends the saga in the Failed phase. The saga
+  `Phase = State.Phase` sync is gated on a mechanically-detected
+  `WorkflowModel.StateHasPhaseProperty` (via `StateTypeExtractor`) so a state type
+  with no `Phase` member no longer emits an uncompilable reference. Proven end-to-end
+  on a real Wolverine+Marten+Postgres host (`CompensateOnFailureInteropTests`:
+  rollback runs once, then `OnFailure` runs once, in order, saga terminal;
+  `FailureHandlerChainTests`), plus golden tests pinning exactly one
+  `Handle(Trigger…)` site (no CS0111).
+- **Escape the validation-error-message literal in the generated start handler (#142).**
+  A `ValidateState` error message containing a double-quote or backslash was
+  interpolated raw (`Token.ValueText`) into the generated start-handler string literal,
+  breaking the emitted source so it failed to compile. The message is now emitted via
+  `SymbolDisplay.FormatLiteral(quote: true)` at both literal sites (the `LogWarning`
+  argument and the `ValidationFailed` event), so the literal is fully escaped and
+  compilable.
+
 ## [2.8.0] - 2026-05-25
 
 The **cross-product schema substrate** release. TypeSpec remains the single
