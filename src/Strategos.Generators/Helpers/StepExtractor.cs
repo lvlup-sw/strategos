@@ -1147,14 +1147,19 @@ internal static class StepExtractor
         foreach (var arg in arguments.Value)
         {
             // The configure lambda is the Action<IStepConfiguration<TState>> argument.
-            if (arg.Expression is not LambdaExpressionSyntax)
+            if (arg.Expression is not LambdaExpressionSyntax configureLambda)
             {
                 continue;
             }
 
-            var validateCall = arg.Expression
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
+            // F1 (G-6 review, #143): scope the validation walk to THIS configure lambda's own
+            // body, mirroring ExtractConfiguredResilience. A raw DescendantNodes() walk would
+            // capture a ValidateState call from a NESTED lambda — e.g.
+            // OnLowConfidence(alt => alt.Then<Y>(c => c.ValidateState(...))) — and wrongly attach
+            // Y's guard to the parent step. CollectInvocationsInLambda filters out invocations
+            // nested inside inner lambdas.
+            var validateCall = InvocationChainWalker
+                .CollectInvocationsInLambda(configureLambda)
                 .FirstOrDefault(call => SyntaxHelper.IsMethodCall(call, "ValidateState"));
 
             if (validateCall is not null)
