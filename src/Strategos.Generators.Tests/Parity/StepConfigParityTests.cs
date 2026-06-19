@@ -110,15 +110,28 @@ public sealed class StepConfigParityTests
     private static readonly IReadOnlyDictionary<string, DeferredEntry> Deferred =
         new Dictionary<string, DeferredEntry>(StringComparer.Ordinal)
         {
+            // Fork-path confidence config IS threaded into the IR (so AGWF018 still fires on a
+            // bad threshold) but is not lowered into saga routing — it is structurally
+            // diagnosable and is guarded by AGWF022 (DeclaredButInert / DeclaredButInertTests).
             ["RequireConfidence(fork-path)"] = new(
                 134,
-                "Confidence gating on a fork path is deferred to v2.10.0 / DR-17."),
+                "Confidence gating on a fork path is deferred to v2.10.0 / DR-17; the config "
+                + "reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it is "
+                + "structurally diagnosable."),
             ["OnLowConfidence(fork-path)"] = new(
                 134,
-                "OnLowConfidence routing on a fork path is deferred to v2.10.0 / DR-17."),
+                "OnLowConfidence routing on a fork path is deferred to v2.10.0 / DR-17; the "
+                + "config reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it "
+                + "is structurally diagnosable."),
+            // Distinct from the fork-path case above: loop-body / nested-RepeatUntil confidence
+            // config is DROPPED from the IR entirely by step extraction, so an IR-based
+            // diagnostic structurally CANNOT see it — it is NOT AGWF022-guarded. Silently inert,
+            // tracked under #134 for v2.10.0.
             ["OnLowConfidence(nested-RepeatUntil)"] = new(
                 134,
-                "OnLowConfidence inside a nested RepeatUntil loop is deferred to v2.10.0 / DR-17."),
+                "OnLowConfidence inside a nested RepeatUntil loop is dropped from the IR by step "
+                + "extraction (structurally undiagnosable — no AGWF022), deferred to "
+                + "v2.10.0 / DR-17."),
         };
 
     /// <summary>
@@ -148,7 +161,12 @@ public sealed class StepConfigParityTests
                 "a member must be in EXACTLY one set; double-classified: " +
                 string.Join(", ", doubleClassified));
 
-        // Every Lowered entry must name a behavioral proof (not a shape/golden test).
+        // Every Lowered entry must name a behavioral proof (not a shape/golden test) that
+        // actually EXISTS: the referenced file must be on disk AND the named test method must
+        // appear in it. A non-empty string alone is not a forcing function — a stale/typo'd
+        // reference would silently pass. (Grep-level check; we deliberately do NOT add a
+        // project reference to the behavioral suite, which would pull Testcontainers/Marten.)
+        var solutionRoot = FindSolutionRoot();
         foreach (var (member, proof) in Lowered)
         {
             await Assert.That(proof.BehavioralTest)
@@ -157,6 +175,18 @@ public sealed class StepConfigParityTests
             await Assert.That(proof.BehavioralTestFile)
                 .Contains("Behavioral.Tests")
                 .Because($"Lowered member '{member}' proof must live in the behavioral suite, not a shape test");
+
+            var proofPath = Path.Combine(solutionRoot, proof.BehavioralTestFile);
+            await Assert.That(File.Exists(proofPath))
+                .IsTrue()
+                .Because($"Lowered member '{member}' references behavioral proof file '{proof.BehavioralTestFile}', which must exist on disk at '{proofPath}'");
+
+            // The reference is "ClassName.MethodName"; the method name is the last segment.
+            var methodName = proof.BehavioralTest.Split('.').Last();
+            var fileText = File.ReadAllText(proofPath);
+            await Assert.That(fileText.Contains(methodName, StringComparison.Ordinal))
+                .IsTrue()
+                .Because($"Lowered member '{member}' references behavioral test method '{methodName}', which must appear in '{proof.BehavioralTestFile}'");
         }
 
         // Every Deferred entry must carry a tracking issue.
@@ -247,6 +277,32 @@ public sealed class StepConfigParityTests
         }
 
         return (unclassified, doubleClassified);
+    }
+
+    /// <summary>
+    /// Walks up from the running test assembly's directory to the solution root — the directory
+    /// containing <c>strategos.sln</c> (the <c>src</c> dir) — so the relative
+    /// <see cref="LoweredProof.BehavioralTestFile"/> paths can be resolved at test runtime
+    /// regardless of the build output layout.
+    /// </summary>
+    /// <returns>The absolute path to the solution root directory.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no ancestor contains <c>strategos.sln</c>.</exception>
+    private static string FindSolutionRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "strategos.sln")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate the solution root (no ancestor of "
+            + $"'{AppContext.BaseDirectory}' contains strategos.sln).");
     }
 
     /// <summary>

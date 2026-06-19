@@ -56,14 +56,23 @@ This document catalogs all features from the Strategos design specification that
 >   new config member forces the author to point it at a behavioral proof or file a deferral.
 > - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
 >   concern the generator does **not** lower for that step's kind, so it silently has no
->   effect. The first guarded case is **confidence gating (`RequireConfidence`/
->   `OnLowConfidence`) on a `Fork` path** — the fork-path parse threads the configure lambda
->   into the IR (so an out-of-range threshold still surfaces the threshold-range code), but the
->   saga emitter does not lower fork-path confidence routing. That variant is **deferred to
->   v2.10.0 / DR-17 (#134)**; until then the diagnostic prevents the inert configuration from
->   masquerading as working. (Surfacing 6.1's backfill also fixed two real top-level
->   `ValidateState` lowering gaps — configure-lambda validation was dropped for top-level/loop
->   steps, and the predicate parameter had to be named literally `state` to compile.)
+>   effect. The guarded case is **confidence gating (`RequireConfidence`/`OnLowConfidence`)
+>   on a `Fork` path** — the fork-path parse threads the configure lambda into the IR (so an
+>   out-of-range threshold still surfaces the threshold-range code), but the saga emitter does
+>   not lower fork-path confidence routing. That variant is **deferred to v2.10.0 / DR-17
+>   (#134)**; until then the diagnostic prevents the inert configuration from masquerading as
+>   working. (Surfacing 6.1's backfill also fixed two real top-level `ValidateState` lowering
+>   gaps — configure-lambda validation was dropped for top-level/loop steps, and the predicate
+>   parameter had to be named literally `state` to compile.)
+>
+>   **Scope boundary — loop-body / nested-`RepeatUntil` confidence config is _not_ AGWF022-guarded.**
+>   Confidence configuration declared on a step inside a `RepeatUntil` loop body is **dropped
+>   from the IR entirely** by step extraction, so an IR-based diagnostic structurally **cannot**
+>   see it — there is nothing in the IR for AGWF022 to inspect. It is therefore **silently inert**
+>   (no compile-time warning), distinct from the fork-path case above which *is* threaded into the
+>   IR and *is* diagnosed. Loop-body confidence routing is likewise **deferred to v2.10.0 / DR-17
+>   (#134)**; emitting a diagnostic for it requires the lowering work that brings loop-body config
+>   into the IR in the first place.
 
 **Total Deferred Features:** 8
 **Deferral Categories:**

@@ -267,11 +267,20 @@ internal static class WorkflowDiagnostics
     /// </summary>
     /// <remarks>
     /// Reported when a step declares a configuration concern that the generator does not
-    /// lower for that step's kind, so the configuration silently has no effect. The first
-    /// guarded case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>)
-    /// on a loop-body step — that variant is deferred (v2.10.0 / DR-17, #134), so the
-    /// configuration reaches the IR but no confidence-gated routing is emitted. A warning
-    /// (not an error) so an author can suppress it by id while the deferral stands.
+    /// lower for that step's kind, so the configuration silently has no effect. The guarded
+    /// case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on a
+    /// <b>fork-path</b> step: the fork-path parse threads the configure lambda into the
+    /// StepModel IR (so an out-of-range threshold still surfaces
+    /// <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter does not lower
+    /// confidence-gated routing for fork-path steps — that lowering is deferred
+    /// (v2.10.0 / DR-17, #134), so the gate is inert. A warning (not an error) so an author
+    /// can suppress it by id while the deferral stands.
+    /// <para>
+    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence configuration is a distinct
+    /// case that this diagnostic does NOT cover — it is dropped from the IR entirely by step
+    /// extraction, so an IR-based diagnostic structurally cannot see it (also tracked under
+    /// #134 for v2.10.0).
+    /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor DeclaredButInert = new(
         id: AgwfCodes.DeclaredButInert,
