@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **15 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **16 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -36,6 +36,7 @@ enum AgwfCode {
   RequireConfidenceWithoutHandler: "AGWF019",
   RetryMaxAttemptsBelowOne: "AGWF020",
   NonPositiveTimeout: "AGWF021",
+  DeclaredButInert: "AGWF022",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -186,4 +187,14 @@ model AgwfEntryNonPositiveTimeout {
   summary: "Non-positive timeout";
   remediation: "Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero.";
   since: "2.10.0";
+}
+
+/** AGWF022 — Declared-but-inert step configuration. */
+@jsonSchema
+model AgwfEntryDeclaredButInert {
+  id: "AGWF022";
+  severity: "warning";
+  summary: "Declared-but-inert step configuration";
+  remediation: "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.";
+  since: "2.9.0";
 }

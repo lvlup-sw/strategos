@@ -183,6 +183,30 @@ internal static class EventsEmitter
             EmitWorkflowFailedEvent(sb, model);
         }
 
+        // StepFailed audit STREAM event (#138 G-5 / OQ#1). Named, queryable Marten
+        // stream event for terminal step failure — distinct from the saga document
+        // properties + structured logs that already capture the same audit data.
+        // Emitted ONLY in EventSourced mode (stream events apply only there) and
+        // only when the workflow declares a failure/compensation path that can
+        // produce a terminal failure; in SagaDocument mode this record is not
+        // emitted, keeping document-mode output byte-unchanged.
+        if (model.IsEventSourced && (model.HasFailureHandlers || model.HasCompensation))
+        {
+            sb.AppendLine();
+            EmitStepFailedEvent(sb, model);
+        }
+
+        // LowConfidenceRouted audit STREAM event (#138 G-5 / OQ#1). Named, queryable
+        // Marten stream event appended when a confidence-gated step routes to its
+        // OnLowConfidence handler. Emitted ONLY in EventSourced mode and only when the
+        // workflow lowers an OnLowConfidence handler (the gate that can route); in
+        // SagaDocument mode this record is not emitted (document-mode byte-unchanged).
+        if (model.IsEventSourced && model.HasConfidenceHandlers)
+        {
+            sb.AppendLine();
+            EmitLowConfidenceRoutedEvent(sb, model);
+        }
+
         return sb.ToString();
     }
 
@@ -264,6 +288,41 @@ internal static class EventsEmitter
         sb.AppendLine("    string? ExceptionType,");
         sb.AppendLine("    string? ExceptionMessage,");
         sb.AppendLine("    string? StackTrace,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
+    private static void EmitStepFailedEvent(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Audit stream event appended when a step of the {model.WorkflowName} workflow");
+        sb.AppendLine("/// fails terminally (#138 OQ#1). Captures the failed step name and the exception");
+        sb.AppendLine("/// type/message so the failure is queryable from the Marten event stream, not only");
+        sb.AppendLine("/// from the saga document properties + structured logs.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
+        sb.AppendLine($"public sealed partial record {model.PascalName}StepFailed(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    string FailedStepName,");
+        sb.AppendLine("    string? ExceptionType,");
+        sb.AppendLine("    string? ExceptionMessage,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
+    private static void EmitLowConfidenceRoutedEvent(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Audit stream event appended when a confidence-gated step of the {model.WorkflowName}");
+        sb.AppendLine("/// workflow routes to its OnLowConfidence handler because the step's result confidence");
+        sb.AppendLine("/// was below the configured threshold (#138 OQ#1). Captures the gated step name, the");
+        sb.AppendLine("/// observed confidence score, and the threshold so the routing decision is queryable");
+        sb.AppendLine("/// from the Marten event stream, not only from the structured logs.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
+        sb.AppendLine($"public sealed partial record {model.PascalName}LowConfidenceRouted(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    string StepName,");
+        sb.AppendLine("    double Confidence,");
+        sb.AppendLine("    double Threshold,");
         sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
     }
 

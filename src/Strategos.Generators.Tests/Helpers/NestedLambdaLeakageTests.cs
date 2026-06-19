@@ -14,12 +14,13 @@ namespace Strategos.Generators.Tests.Helpers;
 
 /// <summary>
 /// CodeRabbit F1 (PR #137, epic #135) — regression tests for nested-lambda leakage
-/// across the three step-resilience / step-discovery extraction sites that walk a
+/// across the step-resilience / step-discovery / step-validation extraction sites that walk a
 /// configure/handler lambda with <c>DescendantNodes()</c>:
 /// <list type="bullet">
 ///   <item>parent-step resilience (<c>StepExtractor.ExtractConfiguredResilience</c>),</item>
 ///   <item>branch-path step discovery (<c>StepExtractor.ParseBranchPathStepModels</c>),</item>
-///   <item>failure-handler step discovery (<c>FailureHandlerExtractor.ParseFailureHandlerBody</c>).</item>
+///   <item>failure-handler step discovery (<c>FailureHandlerExtractor.ParseFailureHandlerBody</c>),</item>
+///   <item>parent-step validation (<c>StepExtractor.ExtractConfiguredValidation</c>) — G-6 review (#143).</item>
 /// </list>
 /// Each site must consider ONLY invocations in its own lambda body, never those captured
 /// from a nested lambda (e.g. an inner <c>OnLowConfidence(alt =&gt; alt.Then&lt;Y&gt;(c =&gt; c.WithTimeout(t)))</c>).
@@ -133,6 +134,60 @@ public sealed class NestedLambdaLeakageTests
 
         // Assert - the nested Then<NestedRecovery> is NOT a failure-handler step
         await Assert.That(stepNames.Contains("NestedRecovery")).IsFalse();
+    }
+
+    // =========================================================================
+    // F1d — parent-step validation must NOT absorb a nested lambda's ValidateState.
+    // (G-6 review, #143) The top-level fallback added in TryGetStepModel made the
+    // latent unscoped DescendantNodes() walk in ExtractConfiguredValidation reachable:
+    // a top-level step with NO direct ValidateState but a nested
+    // OnLowConfidence(alt => alt.Then<HumanReview>(c => c.ValidateState(...))) would
+    // wrongly absorb the inner handler's guard.
+    // =========================================================================
+
+    /// <summary>
+    /// The top-level <c>AssessClaim</c> step declares NO direct <c>ValidateState</c>, only an
+    /// <c>OnLowConfidence</c> whose handler step declares <c>ValidateState</c> via its own configure
+    /// lambda. The top-level step must NOT carry the inner handler's validation guard.
+    /// </summary>
+    [Test]
+    public async Task ExtractValidation_NestedOnLowConfidenceValidateState_DoesNotLeakToOuterStep()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(NestedConfidenceValidationWorkflow);
+
+        // Act
+        var outerStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Assert - the inner handler's ValidateState must NOT leak onto the outer step
+        await Assert.That(outerStep.HasValidation).IsFalse();
+        await Assert.That(outerStep.ValidationPredicate).IsNull();
+    }
+
+    /// <summary>
+    /// The legitimately-nested <c>OnLowConfidence(alt =&gt; alt.Then&lt;HumanReview&gt;(...))</c>
+    /// handler step must still be identified on the outer step's confidence model — the
+    /// nested-lambda boundary fix must not drop config that belongs to the inner handler.
+    /// (The handler step's own validation extraction is a separate concern — DR-5 lowers the
+    /// handler by name/type, mirroring the F1a resilience assertion.)
+    /// </summary>
+    [Test]
+    public async Task ExtractValidation_NestedOnLowConfidenceValidateState_HandlerStepStillIdentified()
+    {
+        // Arrange
+        var stepModels = ParserTestHelper.ExtractStepModels(NestedConfidenceValidationWorkflow);
+        var outerStep = stepModels.Single(s => s.StepName == "AssessClaim");
+
+        // Act
+        var confidence = outerStep.Confidence;
+        var handlerStep = confidence?.OnLowConfidenceHandlerStep;
+
+        // Assert - the threshold and low-confidence handler survive the boundary fix
+        await Assert.That(confidence).IsNotNull();
+        await Assert.That(confidence!.Threshold).IsEqualTo(0.85);
+        await Assert.That(confidence.OnLowConfidenceHandlerId).IsEqualTo("HumanReview");
+        await Assert.That(handlerStep).IsNotNull();
+        await Assert.That(handlerStep!.StepName).IsEqualTo("HumanReview");
     }
 
     // =========================================================================
@@ -368,6 +423,60 @@ public sealed class NestedLambdaLeakageTests
                     .RequireConfidence(0.6)
                     .OnLowConfidence(alt => alt.Then<NestedRecovery>())).Complete())
                 .Finally<CompleteOrder>();
+        }
+        """;
+
+    /// <summary>
+    /// A top-level <c>StartWith&lt;AssessClaim&gt;</c> step carrying NO direct <c>ValidateState</c>,
+    /// only an <c>OnLowConfidence</c> whose handler step (<c>HumanReview</c>) declares its own
+    /// <c>ValidateState</c> via a nested configure lambda. Probes parent-step validation leakage (F1d).
+    /// </summary>
+    private const string NestedConfidenceValidationWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public bool Ok { get; init; }
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class Finish : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("nested-confidence-validation")]
+        public static partial class NestedConfidenceValidationWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("nested-confidence-validation")
+                .StartWith<AssessClaim>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt.Then<HumanReview>(c => c.ValidateState(s => s.Ok, "inner-only"))))
+                .Finally<Finish>();
         }
         """;
 }

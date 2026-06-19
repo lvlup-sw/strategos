@@ -337,4 +337,56 @@ public class BranchBuilderTests
         var branchPath = workflow.BranchPoints[0].Paths[0];
         await Assert.That(branchPath.ConditionDescription).IsEqualTo("Otherwise");
     }
+
+    // =============================================================================
+    // F. Complete / RejoinMainFlow exclusivity (mechanically enforced contract)
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that calling <c>RejoinMainFlow()</c> after <c>Complete()</c> on the
+    /// same path throws: the IBranchBuilder remarks declare the two exit semantics
+    /// mutually exclusive, and the builder enforces that contract at build time.
+    /// </summary>
+    [Test]
+    public async Task RejoinMainFlow_AfterComplete_ThrowsInvalidOperationException()
+    {
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("test-workflow")
+                .StartWith<ValidateStep>()
+                .Branch(
+                    state => state.ProcessingMode,
+                    BranchCase<TestWorkflowState, ProcessingMode>.When(
+                        ProcessingMode.Auto,
+                        path =>
+                        {
+                            path.Then<AutoProcessStep>();
+                            path.Complete();
+                            path.RejoinMainFlow();
+                        })))
+            .Throws<InvalidOperationException>();
+    }
+
+    /// <summary>
+    /// Verifies that calling <c>Complete()</c> after <c>RejoinMainFlow()</c> on the
+    /// same path throws, enforcing the same mutual-exclusivity contract from the
+    /// opposite ordering.
+    /// </summary>
+    [Test]
+    public async Task Complete_AfterRejoinMainFlow_ThrowsInvalidOperationException()
+    {
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("test-workflow")
+                .StartWith<ValidateStep>()
+                .Branch(
+                    state => state.ProcessingMode,
+                    BranchCase<TestWorkflowState, ProcessingMode>.When(
+                        ProcessingMode.Auto,
+                        path =>
+                        {
+                            path.Then<AutoProcessStep>();
+                            path.RejoinMainFlow();
+                            path.Complete();
+                        })))
+            .Throws<InvalidOperationException>();
+    }
 }

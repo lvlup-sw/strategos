@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 15,
+  "count": 16,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -121,6 +121,14 @@
       "summary": "Non-positive timeout",
       "remediation": "Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero.",
       "since": "2.10.0"
+    },
+    {
+      "name": "DeclaredButInert",
+      "id": "AGWF022",
+      "severity": "warning",
+      "summary": "Declared-but-inert step configuration",
+      "remediation": "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.",
+      "since": "2.9.0"
     }
   ]
 }

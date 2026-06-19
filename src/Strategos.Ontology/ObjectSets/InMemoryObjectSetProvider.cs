@@ -869,6 +869,35 @@ public sealed class InMemoryObjectSetProvider : IObjectSetProvider, IObjectSetWr
         return (double)matchCount / queryTerms.Length;
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// G-7 / CL-7 (#132): the in-memory provider carries NO physical schema —
+    /// partitions are materialized lazily on first <see cref="Seed{T}"/> / store, by
+    /// descriptor name — so there is nothing to create ahead of time and the safe
+    /// per-type bootstrap is a no-op. Implemented for cross-provider PARITY so a host
+    /// can call the SAME entry point against either backend at startup. INV-8: had
+    /// there been a schema to create, descriptors would be keyed by resolved name,
+    /// never <c>typeof</c>.
+    /// </remarks>
+    public Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// G-7 / CL-7 (#132): no physical schema to provision (see
+    /// <see cref="EnsureSchemaAsync{T}(CancellationToken)"/>), so the graph-wide
+    /// bootstrap is a no-op here. Present for parity with the Npgsql provider so the
+    /// SAME startup call works against either backend.
+    /// </remarks>
+    public Task EnsureAllSchemasAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
     private static double CosineSimilarity(float[] a, float[] b)
     {
         if (a.Length == 0 || b.Length == 0 || a.Length != b.Length)

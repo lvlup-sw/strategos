@@ -57,6 +57,31 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Determines whether the workflow's state type exposes a public instance
+    /// <c>Phase</c> property, used to gate the failure-handler <c>Phase = State.Phase</c>
+    /// sync so a realistic state type never produces an uncompilable reference.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the state type carries a public, non-static
+    /// <c>Phase</c> property; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is null.</exception>
+    public static bool StateTypeHasPhaseProperty(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return StateTypeExtractor.StateHasPhaseProperty(context);
+    }
+
+    /// <summary>
     /// Extracts step information including loop context from the workflow DSL.
     /// </summary>
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>

@@ -42,12 +42,17 @@ internal static class ExtensionsEmitter
             "Microsoft.Extensions.DependencyInjection",
         };
 
-        // Event-sourced mode needs Marten for SnapshottedAggregation configuration
+        // Event-sourced mode needs Marten for SnapshottedAggregation configuration.
+        // Marten 9.x relocated SnapshotLifecycle into JasperFx.Events.Projections
+        // (the shared JasperFx.Events event-store core), so that namespace is
+        // required for the generated opts.Projections.Snapshot<T>(SnapshotLifecycle.Inline)
+        // to resolve when the extensions are compiled against a real Marten reference.
         if (model.IsEventSourced)
         {
             usings.Add("Marten");
             usings.Add("Marten.Events.Aggregation");
             usings.Add("Marten.Events.Projections");
+            usings.Add("JasperFx.Events.Projections");
         }
 
         // Add step type namespaces from the model
@@ -182,6 +187,22 @@ internal static class ExtensionsEmitter
                             sb.AppendLine($"        services.AddTransient<{stepName}Handler>();");
                         }
                     }
+                }
+            }
+        }
+
+        // Register workflow-level OnFailure handler step worker handlers (#140 Task
+        // 3.1). These are DISTINCT FailureHandler_{id}_{step}Handler classes (not the
+        // folded main-flow {step}Handler), one per OnFailure step, so the saga's
+        // ExecuteFailureHandler_{id}_{step}WorkerCommand has a resolvable receiver.
+        if (model.FailureHandlers is not null)
+        {
+            foreach (var failureHandler in model.FailureHandlers)
+            {
+                var sanitizedId = failureHandler.HandlerId.Replace("-", "_");
+                foreach (var stepName in failureHandler.StepNames)
+                {
+                    sb.AppendLine($"        services.AddTransient<FailureHandler_{sanitizedId}_{stepName}Handler>();");
                 }
             }
         }

@@ -27,6 +27,12 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
     internal bool IsTerminal { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether this path rejoins the main flow rather than
+    /// terminating (G-4 / #139). Set by <see cref="RejoinMainFlow"/>.
+    /// </summary>
+    internal bool RejoinsMainFlow { get; private set; }
+
+    /// <summary>
     /// Gets the approval definition for this branch path, if any.
     /// </summary>
     internal ApprovalDefinition? Approval => _approval;
@@ -72,7 +78,33 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
     /// <inheritdoc/>
     public void Complete()
     {
+        // Complete() and RejoinMainFlow() are mutually exclusive exit semantics
+        // (see IBranchBuilder remarks): a path either terminates or rejoins, never
+        // both. Enforce the documented contract mechanically so a conflicting
+        // declaration fails fast at build time rather than producing ambiguous
+        // lowering/runtime behavior.
+        if (RejoinsMainFlow)
+        {
+            throw new InvalidOperationException(
+                "Complete() cannot be called on a path that already declared RejoinMainFlow(); "
+                + "a branch path either terminates or rejoins the main flow, not both.");
+        }
+
         IsTerminal = true;
+    }
+
+    /// <inheritdoc/>
+    public IBranchBuilder<TState> RejoinMainFlow()
+    {
+        if (IsTerminal)
+        {
+            throw new InvalidOperationException(
+                "RejoinMainFlow() cannot be called on a path that already declared Complete(); "
+                + "a branch path either terminates or rejoins the main flow, not both.");
+        }
+
+        RejoinsMainFlow = true;
+        return this;
     }
 
     /// <inheritdoc/>

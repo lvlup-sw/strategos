@@ -61,4 +61,12 @@ public sealed class StubObjectSetProvider(ContextProbe probe) : IObjectSetProvid
     public IAsyncEnumerable<T> StreamAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
         where T : class =>
         throw new NotSupportedException("The context-assembly path does not call StreamAsync.");
+
+    /// <inheritdoc />
+    public Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class =>
+        throw new NotSupportedException("The context-assembly path does not call EnsureSchemaAsync.");
+
+    /// <inheritdoc />
+    public Task EnsureAllSchemasAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("The context-assembly path does not call EnsureAllSchemasAsync.");
 }

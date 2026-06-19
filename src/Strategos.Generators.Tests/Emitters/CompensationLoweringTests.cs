@@ -297,6 +297,76 @@ public class CompensationLoweringTests
         """;
 
     /// <summary>
+    /// A workflow declaring BOTH a step-level <c>.Compensate&lt;RollbackPayment&gt;()</c>
+    /// AND a workflow-level <c>OnFailure</c> chain (#140 Task 3.2). Previously these
+    /// were mutually exclusive (the compensation emitter no-op'd when OnFailure was
+    /// present); they now compose via a SINGLE merged <c>Handle(Trigger…)</c> site:
+    /// compensation runs FIRST, then the OnFailure chain.
+    /// </summary>
+    private const string WorkflowWithCompensateAndOnFailure = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record OrderState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateOrder : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ProcessPayment : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class RollbackPayment : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class NotifyFailure : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class SendConfirmation : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        [Workflow("process-order")]
+        public static partial class ProcessOrderWorkflow
+        {
+            public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+                .Create("process-order")
+                .StartWith<ValidateOrder>()
+                .Then<ProcessPayment>(step => step
+                    .Compensate<RollbackPayment>())
+                .OnFailure(flow => flow.Then<NotifyFailure>().Complete())
+                .Finally<SendConfirmation>();
+        }
+        """;
+
+    /// <summary>
     /// A step with <c>.Compensate&lt;T&gt;()</c> lowers, onto the compensated
     /// step's worker <c>Configure(HandlerChain)</c>, an error chain that PUBLISHES
     /// the trigger failure-handler command via
@@ -451,6 +521,85 @@ public class CompensationLoweringTests
         // Assert — no CS0111 (duplicate member) anywhere in the generated saga.
         // Other diagnostics (missing Wolverine/Marten runtime types) are expected
         // in the bare test compilation and are not asserted on.
+        var cs0111 = diagnostics
+            .Where(d => string.Equals(d.Id, "CS0111", StringComparison.Ordinal))
+            .Select(d => d.GetMessage())
+            .ToList();
+
+        await Assert.That(cs0111).IsEmpty();
+    }
+
+    /// <summary>
+    /// #140 Task 3.2 — when a workflow declares BOTH a step-level
+    /// <c>.Compensate&lt;T&gt;()</c> AND a workflow-level <c>OnFailure</c> chain, the
+    /// generated saga has EXACTLY ONE <c>Handle(Trigger…FailureHandlerCommand)</c>
+    /// site (the merged compensation+OnFailure trigger), not two — pinning the
+    /// resolution of the duplicate-method (CS0111) collision the old mutual-exclusion
+    /// no-op avoided by skipping compensation entirely.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_CompensateAndOnFailure_HasExactlyOneTriggerHandleSite()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithCompensateAndOnFailure);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // Assert — exactly one Handle(Trigger…) site (its command parameter line).
+        var triggerHandleSites = CountOccurrences(
+            sagaSource,
+            "TriggerProcessOrderFailureHandlerCommand cmd,");
+        await Assert.That(triggerHandleSites).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// #140 Task 3.2 — the merged single trigger handler dispatches the compensation
+    /// rollback FIRST (sets <c>Compensating</c>, yields the rollback worker), and the
+    /// rollback's completed handler chains into the OnFailure chain (returns the
+    /// OnFailure first-step start command) rather than marking the saga Failed — the
+    /// fixed compensation-then-OnFailure ordering.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_CompensateAndOnFailure_CompensationRunsFirstThenChainsToOnFailure()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithCompensateAndOnFailure);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // The single trigger handler dispatches the compensation rollback first.
+        var triggerHandler = ExtractTriggerHandlerRegion(sagaSource);
+        await Assert.That(triggerHandler).Contains("Phase = ProcessOrderPhase.Compensating");
+        await Assert.That(triggerHandler).Contains("new ExecuteRollbackPaymentWorkerCommand(WorkflowId");
+
+        // The rollback's completed handler chains into the OnFailure chain (returns
+        // its first step's start command) instead of MarkCompleted().
+        await Assert.That(sagaSource).Contains("RollbackPaymentCompleted evt");
+        await Assert.That(sagaSource)
+            .Contains("return new StartFailureHandler_ProcessOrder_FailureHandler0_NotifyFailureCommand(WorkflowId)");
+
+        // The terminal OnFailure completed handler — not the compensation one — ends
+        // the saga in the Failed phase.
+        await Assert.That(sagaSource).Contains("FailureHandler_ProcessOrder_FailureHandler0_NotifyFailureCompleted");
+        await Assert.That(sagaSource).Contains("Phase = ProcessOrderPhase.Failed");
+    }
+
+    /// <summary>
+    /// #140 Task 3.2 — the compile fixture (source PLUS generator output) has NO
+    /// CS0111 duplicate-method error when a workflow declares BOTH compensation and
+    /// OnFailure. This is the concrete failure mode the old mutual-exclusion no-op
+    /// avoided; the merged single trigger site resolves it without skipping
+    /// compensation.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_CompensateAndOnFailure_GeneratedSagaHasNoCs0111()
+    {
+        // Arrange & Act
+        var diagnostics = GeneratorTestHelper.GetCompilationDiagnostics(
+            WorkflowWithCompensateAndOnFailure);
+
+        // Assert — no CS0111 (duplicate member) anywhere in the generated output.
         var cs0111 = diagnostics
             .Where(d => string.Equals(d.Id, "CS0111", StringComparison.Ordinal))
             .Select(d => d.GetMessage())

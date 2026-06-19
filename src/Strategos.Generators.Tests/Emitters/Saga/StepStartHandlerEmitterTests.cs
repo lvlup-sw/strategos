@@ -332,6 +332,47 @@ public class StepStartHandlerEmitterTests
     }
 
     // =============================================================================
+    // E.0 Validation Error Message Literal Escaping Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a validation error message containing a double-quote and a
+    /// backslash is emitted as a properly escaped C# string literal, so the
+    /// generated start-handler source compiles instead of producing a broken
+    /// literal. Regression for CL-1 (#142): the raw <c>Token.ValueText</c> was
+    /// interpolated directly into the literal, so a <c>"</c> or <c>\</c> in the
+    /// message terminated/corrupted the emitted string.
+    /// </summary>
+    [Test]
+    public async Task StepStartHandlerEmitter_ValidationMessageWithQuoteAndBackslash_EmitsCompilableLiteral()
+    {
+        // Arrange
+        const string message = "He said \"go\" \\ stop";
+        var emitter = new StepStartHandlerEmitter();
+        var sb = new StringBuilder();
+        var model = CreateMinimalModel();
+        var stepModel = StepModel.Create(
+            stepName: "ValidateStep",
+            stepTypeName: "Test.ValidateStep",
+            validationPredicate: "state.IsValid",
+            validationErrorMessage: message);
+        var context = CreateContext(stepIndex: 0, stepModel: stepModel);
+
+        // Act
+        emitter.EmitHandler(sb, model, "ValidateStep", context);
+        var result = sb.ToString();
+
+        // Assert - the message must appear as a fully escaped, quote-wrapped literal.
+        // SymbolDisplay.FormatLiteral(message, quote: true) is the canonical, compilable form.
+        var expectedLiteral = SymbolDisplay.FormatLiteral(message, quote: true);
+        await Assert.That(result).Contains(expectedLiteral);
+
+        // And the broken raw form (verbatim message wrapped in plain quotes) must NOT appear -
+        // that is the unescaped interpolation that fails to compile.
+        await Assert.That(result).DoesNotContain("\"" + message + "\"");
+    }
+
+    // =============================================================================
     // E. State Parameter Replacement Tests
     // =============================================================================
 

@@ -21,21 +21,22 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 [NotInParallel("tsp-compile")]
 public sealed class AgwfCatalogSchemaTests
 {
-    /// <summary>The 15 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
+    /// <summary>The 16 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
     private static readonly string[] GroundTruthCodes =
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
         "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
+        "AGWF022",
     ];
 
     /// <summary>
     /// Compiles the TypeSpec sources, then asserts each AGWF entry schema carries
     /// the five metadata fields as <c>const</c> literals and the union of their
-    /// <c>id</c> consts equals exactly the 15 ground-truth codes.
+    /// <c>id</c> consts equals exactly the ground-truth codes.
     /// </summary>
     [Test]
-    public async Task AgwfCatalogSchema_TenCodes_EmittedWithMetadata()
+    public async Task AgwfCatalogSchema_AllCodes_EmittedWithMetadata()
     {
         var compile = await TspToolchain.CompileAsync();
         await Assert.That(compile.ExitCode).IsEqualTo(0).Because(compile.Output);
@@ -65,6 +66,6 @@ public sealed class AgwfCatalogSchemaTests
 
         await Assert.That(ids.OrderBy(x => x, StringComparer.Ordinal).ToArray())
             .IsEquivalentTo(GroundTruthCodes.OrderBy(x => x, StringComparer.Ordinal).ToArray())
-            .Because("the catalog must enumerate exactly the 15 ground-truth codes (INV-5: gaps stay gaps).");
+            .Because($"the catalog must enumerate exactly the {GroundTruthCodes.Length} ground-truth codes (INV-5: gaps stay gaps).");
     }
 }

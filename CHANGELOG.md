@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Batch/safe schema-bootstrap API — removes the multi-registration startup
+footgun (#132).** `IObjectSetProvider` gains two new entry points so a host can
+stand up its physical layout at startup without hand-rolling a loop over
+`IOntologyQuery.GetObjectTypeNames<T>()`:
+
+- `Task EnsureSchemaAsync<T>(CancellationToken ct = default)` — the SAFE per-type
+  bootstrap. The existing single-descriptor
+  `PgVectorObjectSetProvider.EnsureSchemaAsync<T>(string? descriptorName = null, ct)`
+  **throws** `InvalidOperationException("… has multiple registrations …")` when a
+  CLR type is registered under more than one descriptor and no name is supplied.
+  The new no-name overload instead resolves the **full** registration set from the
+  ontology graph's reverse index (`OntologyGraph.ObjectTypeNamesByType`) and ensures
+  **every** descriptor's schema, keyed on the resolved descriptor name (INV-8). When
+  no graph is in scope it falls back to the single default-overload ensure, so the
+  pre-#132 behavior is byte-identical for the single-registration case.
+- `Task EnsureAllSchemasAsync(CancellationToken ct = default)` — the GRAPH-WIDE
+  bootstrap. Iterates `OntologyGraph.ObjectTypes` and ensures a vertex table (and
+  the DR-13/R2 key-property unique index) for **every** registered object descriptor
+  in one call.
+
+Implemented in `PgVectorObjectSetProvider` (raw Npgsql/pgvector DDL; INV-2) and, for
+cross-provider parity, in `InMemoryObjectSetProvider` (a no-op — partitions are
+materialized lazily, so there is no physical schema to provision). The
+multi-registration `InvalidOperationException` thrown by the write/default path now
+points callers at the new safe bootstrap API. The new members are **interface**
+additions; `Strategos.Ontology` / `Strategos.Ontology.Npgsql` carry **no** PublicAPI
+baseline (no `Microsoft.CodeAnalysis.PublicApiAnalyzers` reference, no
+`PublicAPI.*.txt`), so no re-baseline is required. The DB-gated parity tests
+(`EnsureSchemaBootstrapTests`) skip without `STRATEGOS_PG_TEST_CONN` and assert clean
+bootstrap of a multi-registered carrier under both entry points when a Postgres lane
+is provisioned.
+
+**`StartWith`/`Finally` accept a step-config overload (#141).**
+`IWorkflowBuilder<TState>` now exposes `StartWith<TStep>(Action<IStepConfiguration<TState>> configure)`,
+`StartWith<TStep>(string instanceName, Action<IStepConfiguration<TState>> configure)`,
+and `Finally<TStep>(Action<IStepConfiguration<TState>> configure)`, mirroring the
+existing `Then<TStep>(configure)` overload. This closes the expressibility gap where
+the entry (`StartWith`) and terminal (`Finally`) steps could not declare per-step
+resilience (`WithRetry`/`WithTimeout`/`Compensate`/`RequireConfidence`) inline and
+had to be wrapped by an extra non-configured `Then`. The captured config is routed
+through the same `WithConfiguration` path `Then(configure)` uses, so the generator's
+existing per-step IR threading (`StepExtractor.ExtractConfiguredResilience`) populates
+the first/terminal `StepModel` with no new lowering required.
+
 **Npgsql instance-anchored link traversal, depth-tiered (DR-12, #131).**
 `PgVectorObjectSetProvider.ExecuteAsync<T>` / `StreamAsync<T>` now serve
 `.Where(s => s.Key == id).TraverseLink<TLinked>("link")` expressions, closing the
@@ -43,6 +87,18 @@ signature changes, the CI gate fails closed with the message:
 
 Follow it: move the new/changed lines into `PublicAPI.Unshipped.txt` and record
 the change here so the downstream exarchos mirror can re-baseline deliberately.
+
+**`IWorkflowBuilder<TState>` step-config overloads added (#141).** Three new public
+members were added to the `IWorkflowBuilder<TState>` cross-product interface
+(non-breaking — pure additions):
+
+- `StartWith<TStep>(System.Action<IStepConfiguration<TState>> configure)`
+- `StartWith<TStep>(string instanceName, System.Action<IStepConfiguration<TState>> configure)`
+- `Finally<TStep>(System.Action<IStepConfiguration<TState>> configure)`
+
+The matching lines are staged in `PublicAPI.Unshipped.txt`. The exarchos
+`strategos-api-mirror.test.ts` mirror should re-baseline to pick up the new
+entry/terminal step-config overloads.
 
 **Ontology edge-properties surface removed (DR-5, #120, closes #114).** The
 schema-only edge-properties footgun — attaching ad-hoc properties to a *link*
@@ -248,6 +304,58 @@ stream — no new mutation surface (INV-7).
     is also not lowered in the production generator pipeline today
     (`ContextAssemblerEmitter` / `ContextModelExtractor` are exercised by unit
     tests only, never wired into `WorkflowIncrementalGenerator`).
+
+### Added — Multi-step, rejoining `OnLowConfidence` handler chain (#139)
+
+- **`OnLowConfidence` handler lowering generalized from a single terminal
+  `Then<T>` into an ordered, multi-step chain with explicit exit semantics (#139).**
+  The extractor's `ExtractLowConfidenceHandlerChain` returns an ordered
+  `IReadOnlyList<StepModel>` (ordered by `Span.End` so a fluent
+  `alt.Then<A>().Then<B>()` yields `A` before `B`) plus a `RejoinsMainFlow` flag
+  inferred from a `.RejoinMainFlow()` call. A new sealed init-only IR
+  `LowConfidenceHandlerChainModel(Steps, RejoinsMainFlow)` is threaded onto
+  `ConfidenceModel.OnLowConfidenceHandlerChain` (the first step is still retained
+  as `OnLowConfidenceHandlerStep` for the saga routing surface). The generator
+  lowers **every** chain step: non-last steps chain to the next, and the last step
+  either rejoins the main flow at the step after the gated step
+  (`.RejoinMainFlow()`) or terminates via `MarkCompleted()` (the back-compat
+  default). The DSL adds `IBranchBuilder<TState>.RejoinMainFlow()` as an opt-in
+  marker (PublicAPI shipped baseline updated); terminating remains the default.
+  Proven end-to-end on a real Wolverine+Marten+Postgres host
+  (`LowConfidenceChainTests`: two-step chain runs in order, rejoin resumes the main
+  flow, terminating completes).
+
+### Fixed — Generator step-resilience close-out (#140, #142)
+
+- **`OnFailure` worker-handler chain now executes (previously dead) + `Compensate`↔`OnFailure`
+  interop (#140).** The workflow-level `OnFailure` chain was doubly dead: nothing
+  published the `Trigger{Pascal}FailureHandlerCommand` for a non-compensated failing
+  step, and the saga-dispatched failure-handler worker command had no worker `Handle`,
+  so the handler step never ran. `WorkerHandlerEmitter` now emits a dedicated
+  `FailureHandler_{id}_{step}Handler` per `OnFailure` step (returning the
+  `…Completed` event the saga folds and routes on), every main-flow step in an
+  `OnFailure` workflow lowers a trigger-publishing `Configure(HandlerChain)`
+  (failure-handler steps excluded — they are the recovery path), and the handlers are
+  registered in DI. A step-level `.Compensate<T>()` and a workflow-level `OnFailure`
+  were previously mutually exclusive (the compensation emitter no-op'd whenever
+  `OnFailure` was also declared, to avoid a duplicate `Handle(Trigger…)` CS0111);
+  they now **compose in a fixed order from a single merged trigger site** —
+  compensation rollback runs **first** (Compensating phase), then chains into the
+  `OnFailure` chain, which ends the saga in the Failed phase. The saga
+  `Phase = State.Phase` sync is gated on a mechanically-detected
+  `WorkflowModel.StateHasPhaseProperty` (via `StateTypeExtractor`) so a state type
+  with no `Phase` member no longer emits an uncompilable reference. Proven end-to-end
+  on a real Wolverine+Marten+Postgres host (`CompensateOnFailureInteropTests`:
+  rollback runs once, then `OnFailure` runs once, in order, saga terminal;
+  `FailureHandlerChainTests`), plus golden tests pinning exactly one
+  `Handle(Trigger…)` site (no CS0111).
+- **Escape the validation-error-message literal in the generated start handler (#142).**
+  A `ValidateState` error message containing a double-quote or backslash was
+  interpolated raw (`Token.ValueText`) into the generated start-handler string literal,
+  breaking the emitted source so it failed to compile. The message is now emitted via
+  `SymbolDisplay.FormatLiteral(quote: true)` at both literal sites (the `LogWarning`
+  argument and the `ValidationFailed` event), so the literal is fully escaped and
+  compilable.
 
 ## [2.8.0] - 2026-05-25
 

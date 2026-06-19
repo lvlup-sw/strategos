@@ -347,4 +347,214 @@ public class ConfidenceLoweringTests
         await Assert.That(sagaSource).DoesNotContain("evt.Confidence <");
         await Assert.That(sagaSource).DoesNotContain("StartHumanReviewCommand");
     }
+
+    /// <summary>
+    /// A linear workflow whose middle step declares a TWO-step OnLowConfidence
+    /// chain (<c>OnLowConfidence(alt =&gt; alt.Then&lt;HumanReview&gt;().Then&lt;EscalateReview&gt;())</c>),
+    /// with no rejoin marker (so the chain terminates). Drives the multi-step
+    /// chain lowering (G-4 / #139).
+    /// </summary>
+    private const string WorkflowWithTwoStepChain = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record OrderState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateOrder : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ClassifyIntent : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class EscalateReview : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class SendConfirmation : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        [Workflow("process-order")]
+        public static partial class ProcessOrderWorkflow
+        {
+            public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+                .Create("process-order")
+                .StartWith<ValidateOrder>()
+                .Then<ClassifyIntent>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt
+                        .Then<HumanReview>()
+                        .Then<EscalateReview>()))
+                .Finally<SendConfirmation>();
+        }
+        """;
+
+    /// <summary>
+    /// A linear workflow whose middle step declares a single-step REJOINING
+    /// OnLowConfidence handler
+    /// (<c>OnLowConfidence(alt =&gt; alt.Then&lt;HumanReview&gt;().RejoinMainFlow())</c>).
+    /// Drives the rejoin lowering (G-4 / #139): the handler resumes the main flow
+    /// at the step after the gated step (SendConfirmation).
+    /// </summary>
+    private const string WorkflowWithRejoiningHandler = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record OrderState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class ValidateOrder : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class ClassifyIntent : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        public class SendConfirmation : IWorkflowStep<OrderState>
+        {
+            public Task<StepResult<OrderState>> ExecuteAsync(
+                OrderState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<OrderState>.FromState(state));
+        }
+
+        [Workflow("process-order")]
+        public static partial class ProcessOrderWorkflow
+        {
+            public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
+                .Create("process-order")
+                .StartWith<ValidateOrder>()
+                .Then<ClassifyIntent>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt
+                        .Then<HumanReview>()
+                        .RejoinMainFlow()))
+                .Finally<SendConfirmation>();
+        }
+        """;
+
+    /// <summary>
+    /// Task 4.1 golden shape: a TWO-step OnLowConfidence chain lowers BOTH handler
+    /// steps, with the confidence gate routing to the FIRST (HumanReview), the
+    /// first handler chaining to the SECOND (EscalateReview), and the second
+    /// (terminating, no rejoin marker) marking the saga completed. Before #139
+    /// only one handler step was lowered.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_TwoStepChain_LowersBothHandlerStepsInOrder()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithTwoStepChain);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+        var commandsSource = GeneratorTestHelper.GetGeneratedSource(result, "Commands.g.cs");
+
+        // The confidence gate routes to the FIRST handler step.
+        await Assert.That(sagaSource).Contains("StartHumanReviewCommand");
+
+        // BOTH handler steps are fully lowered (each has its own start command).
+        await Assert.That(commandsSource).Contains("StartHumanReviewCommand");
+        await Assert.That(commandsSource).Contains("StartEscalateReviewCommand");
+
+        // The first handler step (HumanReview) chains to the second (EscalateReview)
+        // rather than terminating: its completed handler returns the second's start
+        // command.
+        var firstHandler = ExtractConfidenceHandlerRegion(sagaSource, "HumanReviewCompleted evt,");
+        await Assert.That(firstHandler).Contains("StartEscalateReviewCommand");
+
+        // The second (last) handler step terminates the (default terminating) chain.
+        var secondHandler = ExtractConfidenceHandlerRegion(sagaSource, "EscalateReviewCompleted evt,");
+        await Assert.That(secondHandler).Contains("MarkCompleted()");
+    }
+
+    /// <summary>
+    /// Task 4.2 golden shape (terminating, back-compat default): a single-step
+    /// OnLowConfidence handler with no rejoin marker marks the saga completed —
+    /// it does NOT chain back to the main flow's next step (SendConfirmation).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_TerminatingHandler_MarksSagaCompleted()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithStepConfidence);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // The handler step's own completed handler marks the saga completed and does
+        // NOT route back to the main-flow step after the gate (SendConfirmation).
+        var handler = ExtractConfidenceHandlerRegion(sagaSource, "HumanReviewCompleted evt,");
+        await Assert.That(handler).Contains("MarkCompleted()");
+        await Assert.That(handler).DoesNotContain("StartSendConfirmationCommand");
+    }
+
+    /// <summary>
+    /// Task 4.2 golden shape (rejoining): a single-step OnLowConfidence handler
+    /// declared <c>.RejoinMainFlow()</c> resumes the MAIN flow at the step after the
+    /// gated step (SendConfirmation) instead of marking the saga completed.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_RejoiningHandler_ResumesMainFlowAfterGatedStep()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(WorkflowWithRejoiningHandler);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
+
+        // The handler step's own completed handler routes to the main-flow step
+        // after the gate (SendConfirmation) and does NOT mark the saga completed.
+        var handler = ExtractConfidenceHandlerRegion(sagaSource, "HumanReviewCompleted evt,");
+        await Assert.That(handler).Contains("StartSendConfirmationCommand");
+        await Assert.That(handler).DoesNotContain("MarkCompleted()");
+    }
 }

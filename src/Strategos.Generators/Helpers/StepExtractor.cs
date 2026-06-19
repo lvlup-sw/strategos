@@ -1147,14 +1147,19 @@ internal static class StepExtractor
         foreach (var arg in arguments.Value)
         {
             // The configure lambda is the Action<IStepConfiguration<TState>> argument.
-            if (arg.Expression is not LambdaExpressionSyntax)
+            if (arg.Expression is not LambdaExpressionSyntax configureLambda)
             {
                 continue;
             }
 
-            var validateCall = arg.Expression
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
+            // F1 (G-6 review, #143): scope the validation walk to THIS configure lambda's own
+            // body, mirroring ExtractConfiguredResilience. A raw DescendantNodes() walk would
+            // capture a ValidateState call from a NESTED lambda — e.g.
+            // OnLowConfidence(alt => alt.Then<Y>(c => c.ValidateState(...))) — and wrongly attach
+            // Y's guard to the parent step. CollectInvocationsInLambda filters out invocations
+            // nested inside inner lambdas.
+            var validateCall = InvocationChainWalker
+                .CollectInvocationsInLambda(configureLambda)
                 .FirstOrDefault(call => SyntaxHelper.IsMethodCall(call, "ValidateState"));
 
             if (validateCall is not null)
@@ -1231,6 +1236,20 @@ internal static class StepExtractor
 
         var instanceName = ExtractInstanceName(invocation);
         var resilience = ExtractConfiguredResilience(invocation, semanticModel);
+
+        // Thread validation declared via the configure-lambda overload
+        // (Then<TStep>(step => step.ValidateState(...))) uniformly, exactly as
+        // ExtractConfiguredResilience already threads WithRetry/WithTimeout/Compensate/
+        // confidence from the same lambda. A pending predicate supplied by the caller
+        // (the legacy separately-chained .ValidateState(...) form, or a fork/branch
+        // pre-extraction) takes precedence; otherwise fall back to this step's own
+        // configure lambda so top-level/loop steps lower their guard like fork-path and
+        // branch-path steps do.
+        if (validationPredicate is null)
+        {
+            (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
+        }
+
         stepModel = StepModel.Create(
             stepName,
             stepTypeName,
@@ -1397,6 +1416,7 @@ internal static class StepExtractor
         var threshold = existing?.Threshold ?? 0.0;
         var handlerId = existing?.OnLowConfidenceHandlerId;
         var handlerStep = existing?.OnLowConfidenceHandlerStep;
+        var handlerChain = existing?.OnLowConfidenceHandlerChain;
 
         if (SyntaxHelper.IsMethodCall(confidenceCall, "RequireConfidence"))
         {
@@ -1408,25 +1428,32 @@ internal static class StepExtractor
         }
         else if (SyntaxHelper.IsMethodCall(confidenceCall, "OnLowConfidence"))
         {
-            var extracted = ExtractLowConfidenceHandlerStep(confidenceCall, semanticModel);
+            var extracted = ExtractLowConfidenceHandlerChain(confidenceCall, semanticModel);
             if (extracted is not null)
             {
-                handlerStep = extracted;
-                handlerId = extracted.StepName;
+                handlerChain = extracted;
+
+                // The confidence gate routes to the FIRST handler step; retain it (and its simple
+                // name) for back-compat with the saga routing surface.
+                handlerStep = extracted.Steps[0];
+                handlerId = extracted.Steps[0].StepName;
             }
         }
 
-        return new ConfidenceModel(threshold, handlerId, handlerStep);
+        return new ConfidenceModel(threshold, handlerId, handlerStep, handlerChain);
     }
 
     /// <summary>
-    /// Extracts the low-confidence handler step — the first <c>Then&lt;THandler&gt;()</c> step
-    /// declared inside an <c>OnLowConfidence(alt =&gt; ...)</c> handler lambda — as a fully-resolved
-    /// <see cref="StepModel"/> carrying both its simple name and fully qualified type name. The fully
-    /// qualified name is required so the handler step lowers into a worker handler with correct DI
-    /// usings (DR-5).
+    /// Extracts the ordered <c>OnLowConfidence</c> handler chain (G-4 / #139) — every
+    /// <c>Then&lt;THandler&gt;()</c> step declared inside an <c>OnLowConfidence(alt =&gt; ...)</c>
+    /// handler lambda, in source order — as a <see cref="LowConfidenceHandlerChainModel"/> of
+    /// fully-resolved <see cref="StepModel"/>s. Each step carries both its simple name and fully
+    /// qualified type name (the latter is required so the handler step lowers into a worker handler
+    /// with correct DI usings, DR-5). The chain's exit semantics are inferred from the lambda shape:
+    /// a <c>.RejoinMainFlow()</c> call marks the chain rejoining; its absence terminates (the
+    /// back-compat default).
     /// </summary>
-    private static StepModel? ExtractLowConfidenceHandlerStep(
+    private static LowConfidenceHandlerChainModel? ExtractLowConfidenceHandlerChain(
         InvocationExpressionSyntax onLowConfidenceCall,
         SemanticModel semanticModel)
     {
@@ -1436,22 +1463,51 @@ internal static class StepExtractor
             return null;
         }
 
-        var firstThen = handlerLambda
+        // Collect every Then<THandler>() call inside the handler lambda, in source order. A
+        // fluent chain "alt.Then<A>().Then<B>()" nests A's invocation INSIDE B's (B is the outer
+        // invocation whose receiver is the A invocation), and BOTH spans START at the leftmost
+        // token ("alt"), so ordering by SpanStart is ambiguous. The inner (earlier-declared)
+        // invocation has the smaller Span.End, so ordering by Span.End yields declaration order
+        // (A before B). Nested configure/OnLowConfidence lambdas on a handler step would surface
+        // phantom Then calls, but the confidence handler DSL does not nest those today; we still
+        // scope to the lambda body only.
+        var thenCalls = handlerLambda
             .DescendantNodes()
             .OfType<InvocationExpressionSyntax>()
-            .FirstOrDefault(inv => SyntaxHelper.IsMethodCall(inv, "Then"));
+            .Where(inv => SyntaxHelper.IsMethodCall(inv, "Then"))
+            .OrderBy(inv => inv.Span.End)
+            .ToList();
 
-        if (firstThen is null || !TryGetGenericTypeArgument(firstThen, "Then", out var typeArgument))
+        var steps = new List<StepModel>(thenCalls.Count);
+        foreach (var thenCall in thenCalls)
+        {
+            if (!TryGetGenericTypeArgument(thenCall, "Then", out var typeArgument))
+            {
+                continue;
+            }
+
+            if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
+            {
+                continue;
+            }
+
+            steps.Add(StepModel.Create(stepName, stepTypeName));
+        }
+
+        if (steps.Count == 0)
         {
             return null;
         }
 
-        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
-        {
-            return null;
-        }
+        // Exit semantics (Task 4.2): the handler REJOINS the main flow only when it explicitly
+        // declares .RejoinMainFlow(); otherwise it TERMINATES (back-compat default, preserving the
+        // single-step terminating handler shipped in DR-5).
+        var rejoinsMainFlow = handlerLambda
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Any(inv => SyntaxHelper.IsMethodCall(inv, "RejoinMainFlow"));
 
-        return StepModel.Create(stepName, stepTypeName);
+        return new LowConfidenceHandlerChainModel(steps, rejoinsMainFlow);
     }
 
     private static bool TryGetDoubleLiteral(ExpressionSyntax expression, out double value)

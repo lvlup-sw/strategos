@@ -45,9 +45,18 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         var firstHandler = model.FailureHandlers!.First();
         var firstStepName = firstHandler.FirstStepName;
 
-        // Emit the trigger handler
-        sb.AppendLine();
-        EmitTriggerHandler(sb, model, firstHandler);
+        // Emit the trigger handler — UNLESS the workflow also declares compensation
+        // (#140 Task 3.2). When both are present, a single merged Handle(Trigger…)
+        // lives in SagaCompensationComponentEmitter (it dispatches the rollback
+        // FIRST, then chains into this OnFailure chain). Emitting our own trigger
+        // handler too would be a duplicate-method (CS0111) collision — exactly the
+        // collision the old mutual-exclusion no-op avoided, now resolved by a single
+        // ordered trigger site instead of skipping compensation.
+        if (!model.HasCompensation)
+        {
+            sb.AppendLine();
+            EmitTriggerHandler(sb, model, firstHandler);
+        }
 
         // Emit handlers for each failure handler step
         foreach (var handler in model.FailureHandlers!)
@@ -86,16 +95,48 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         sb.AppendLine($"    /// Handles the failure handler trigger command - stores exception context and starts first step.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"cmd\">The trigger command containing failure information.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine($"    /// <returns>The command to start the first failure handler step.</returns>");
-        sb.AppendLine($"    public {startCommandName} Handle({triggerCommandName} cmd)");
+
+        // #138 G-5: append the StepFailed audit STREAM event when event-sourced.
+        // The trigger handler is the single ordered site where terminal failure is
+        // recorded for the OnFailure (no-compensation) path, so it is where the
+        // named StepFailed event belongs. It needs an IDocumentSession to append,
+        // mirroring the completed handlers' EventSourced session parameter.
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine($"    public {startCommandName} Handle(");
+            sb.AppendLine($"        {triggerCommandName} cmd,");
+            sb.AppendLine("        IDocumentSession session)");
+        }
+        else
+        {
+            sb.AppendLine($"    public {startCommandName} Handle({triggerCommandName} cmd)");
+        }
+
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine();
         sb.AppendLine("        FailedStepName = cmd.FailedStepName;");
         sb.AppendLine("        FailureExceptionMessage = cmd.ExceptionMessage;");
         sb.AppendLine("        FailureExceptionType = cmd.ExceptionType;");
         sb.AppendLine("        FailureStackTrace = cmd.StackTrace;");
         sb.AppendLine("        FailureTimestamp = DateTimeOffset.UtcNow;");
+
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"        session.Events.Append(");
+            sb.AppendLine("            WorkflowId,");
+            sb.AppendLine($"            new {model.PascalName}StepFailed(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine("                cmd.FailedStepName,");
+            sb.AppendLine("                cmd.ExceptionType,");
+            sb.AppendLine("                cmd.ExceptionMessage,");
+            sb.AppendLine("                FailureTimestamp.Value));");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"        return new {startCommandName}(WorkflowId);");
         sb.AppendLine("    }");

@@ -427,8 +427,123 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     // =============================================================================
+    // M. OnFailure Worker Handler Tests (#140 Task 3.1)
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a workflow with an OnFailure chain emits a dedicated worker
+    /// handler that handles the saga-dispatched
+    /// <c>ExecuteFailureHandler_{id}_{step}WorkerCommand</c> and returns the
+    /// <c>FailureHandler_{id}_{step}Completed</c> event. This is the previously-dead
+    /// receiver that left the OnFailure chain unrunnable.
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithOnFailure_EmitsFailureHandlerWorkerHandle()
+    {
+        // Arrange
+        var model = CreateOnFailureModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+
+        // Assert - a dedicated FailureHandler_{id}_{step}Handler class exists
+        await Assert.That(source).Contains("class FailureHandler_recovery_NotifyFailureHandler");
+
+        // It HANDLES the saga-dispatched failure-handler worker command...
+        await Assert.That(source).Contains("ExecuteFailureHandler_recovery_NotifyFailureWorkerCommand command,");
+
+        // ...and RETURNS the failure-handler completed event the saga folds and routes on.
+        await Assert.That(source).Contains("Task<FailureHandler_recovery_NotifyFailureCompleted> Handle");
+        await Assert.That(source).Contains("return new FailureHandler_recovery_NotifyFailureCompleted(");
+
+        // It executes the OnFailure step.
+        await Assert.That(source).Contains("await _step.ExecuteAsync(command.State, stepContext, ct)");
+    }
+
+    /// <summary>
+    /// Verifies that a main-flow step in a workflow with an OnFailure chain lowers a
+    /// trigger-publishing <c>Configure(HandlerChain)</c> so a thrown step routes into
+    /// the OnFailure chain at runtime (the previously-missing publish for a
+    /// non-compensated failing step).
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithOnFailure_MainFlowStep_PublishesTrigger()
+    {
+        // Arrange
+        var model = CreateOnFailureModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+
+        // Assert - the main-flow step's error chain publishes the trigger command.
+        await Assert.That(source).Contains("public static void Configure(HandlerChain chain)");
+        await Assert.That(source).Contains("bus.PublishAsync(new TriggerOnFailureProofFailureHandlerCommand(");
+        await Assert.That(source).Contains("// routes to OnFailure chain");
+    }
+
+    /// <summary>
+    /// Verifies that the OnFailure handler step itself does NOT publish the trigger
+    /// (it is the recovery path and must not re-trigger the OnFailure chain).
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithOnFailure_HandlerStep_DoesNotPublishTrigger()
+    {
+        // Arrange
+        var model = CreateOnFailureModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+
+        // Assert - the NotifyFailure step's plain main-flow handler has no Configure
+        // that publishes the trigger; only the dedicated failure-handler worker class
+        // references NotifyFailure as a recovery step. Confirm exactly the main-flow
+        // steps (ValidateOrder) carry the trigger publish but the OnFailure step's
+        // dedicated worker class never publishes a trigger.
+        const string notifyWorkerDecl = "class FailureHandler_recovery_NotifyFailureHandler";
+        var notifyWorkerStart = source.IndexOf(notifyWorkerDecl, StringComparison.Ordinal);
+        await Assert.That(notifyWorkerStart).IsGreaterThan(-1);
+
+        // Scope the negative assertion to THIS class body only: slice to the next
+        // class declaration (or EOF) so a trigger publish in any LATER generated
+        // class cannot false-fail the assertion on the NotifyFailure handler.
+        var nextClassStart = source.IndexOf(
+            "class ",
+            notifyWorkerStart + notifyWorkerDecl.Length,
+            StringComparison.Ordinal);
+        var notifyWorkerBody = nextClassStart > -1
+            ? source.Substring(notifyWorkerStart, nextClassStart - notifyWorkerStart)
+            : source.Substring(notifyWorkerStart);
+        await Assert.That(notifyWorkerBody).DoesNotContain("PublishAsync(new TriggerOnFailureProofFailureHandlerCommand");
+    }
+
+    // =============================================================================
     // Helper Methods
     // =============================================================================
+
+    private static WorkflowModel CreateOnFailureModel()
+    {
+        var handler = FailureHandlerModel.Create(
+            handlerId: "recovery",
+            scope: FailureHandlerScope.Workflow,
+            stepNames: ["NotifyFailure"],
+            isTerminal: true,
+            steps: [StepModel.Create("NotifyFailure", "TestNamespace.NotifyFailure")]);
+
+        var steps = new List<StepModel>
+        {
+            StepModel.Create("ValidateOrder", "TestNamespace.ValidateOrder"),
+            StepModel.Create("NotifyFailure", "TestNamespace.NotifyFailure"),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "on-failure-proof",
+            PascalName: "OnFailureProof",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateOrder", "NotifyFailure"],
+            StateTypeName: "OrderState",
+            Steps: steps,
+            FailureHandlers: [handler]);
+    }
 
     private static WorkflowModel CreateTestModel()
     {

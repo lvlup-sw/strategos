@@ -57,7 +57,11 @@ internal static class WorkerHandlerEmitter
         // Wolverine.Runtime.Handlers; the fluent OnAnyException()/RetryTimes()/
         // RetryWithCooldown()/WithExponentialJitter()/CompensatingAction() extensions
         // live in Wolverine.ErrorHandling.
-        if (model.Steps is not null && model.Steps.Any(s => s.Retry is not null || s.Compensation is not null))
+        // Also pulled in when the workflow declares an OnFailure chain: every
+        // main-flow step then lowers a trigger-publishing Configure(HandlerChain) so
+        // a thrown step routes into the OnFailure recovery chain (#140 Task 3.1).
+        if ((model.Steps is not null && model.Steps.Any(s => s.Retry is not null || s.Compensation is not null))
+            || model.HasFailureHandlers)
         {
             usings.Add("Wolverine.ErrorHandling");
             usings.Add("Wolverine.Runtime.Handlers");
@@ -140,7 +144,110 @@ internal static class WorkerHandlerEmitter
             }
         }
 
+        // Generate worker handlers for workflow-level OnFailure handler steps (#140
+        // Task 3.1). The saga dispatches a dedicated
+        // ExecuteFailureHandler_{id}_{step}WorkerCommand for each OnFailure step and
+        // expects a FailureHandler_{id}_{step}Completed event back; without this
+        // handler the dispatched command had no receiver and the OnFailure chain was
+        // dead. The handler is a DISTINCT class
+        // (FailureHandler_{id}_{step}Handler) so it never collides with the folded
+        // main-flow {step}Handler when the failure step type is also a main-flow step.
+        if (model.FailureHandlers is not null)
+        {
+            foreach (var handler in model.FailureHandlers)
+            {
+                var sanitizedId = handler.HandlerId.Replace("-", "_");
+                foreach (var stepName in handler.StepNames)
+                {
+                    EmitFailureHandlerWorkerClass(sb, model, stepName, sanitizedId);
+                    sb.AppendLine();
+                }
+            }
+        }
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emits the worker handler class for a single workflow-level OnFailure handler
+    /// step (#140 Task 3.1). The handler receives the saga-dispatched
+    /// <c>ExecuteFailureHandler_{id}_{step}WorkerCommand</c>, executes the OnFailure
+    /// step (the "Muscle"), and returns the
+    /// <c>FailureHandler_{id}_{step}Completed</c> event the saga folds and routes on.
+    /// </summary>
+    private static void EmitFailureHandlerWorkerClass(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        string sanitizedId)
+    {
+        var workerCommandName = $"ExecuteFailureHandler_{sanitizedId}_{stepName}WorkerCommand";
+        var completedEventName = $"FailureHandler_{sanitizedId}_{stepName}Completed";
+        var handlerClassName = $"FailureHandler_{sanitizedId}_{stepName}Handler";
+
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Worker handler for the {stepName} workflow-level OnFailure handler step.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("/// <remarks>");
+        sb.AppendLine("/// <para>");
+        sb.AppendLine("/// This handler implements the \"Muscle\" part of the Brain &amp; Muscle pattern for");
+        sb.AppendLine("/// the workflow's OnFailure recovery chain. It executes the failure-handler step");
+        sb.AppendLine("/// after a workflow step failed, then returns the completed event the saga folds");
+        sb.AppendLine("/// into state and routes on (chaining to the next OnFailure step or marking the");
+        sb.AppendLine("/// workflow Failed).");
+        sb.AppendLine("/// </para>");
+        sb.AppendLine("/// </remarks>");
+        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
+        sb.AppendLine($"public sealed partial class {handlerClassName}(");
+        sb.AppendLine($"    {stepName} step,");
+        sb.AppendLine($"    ILogger<{handlerClassName}> logger)");
+        sb.AppendLine("{");
+        sb.AppendLine($"    private readonly {stepName} _step = step;");
+        sb.AppendLine($"    private readonly ILogger<{handlerClassName}> _logger = logger;");
+        sb.AppendLine();
+
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Handles the {workerCommandName} by executing the failure-handler step.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <param name=\"command\">The worker command with workflow state and failure context.</param>");
+        sb.AppendLine("    /// <param name=\"ct\">The cancellation token.</param>");
+        sb.AppendLine("    /// <returns>The completion event for saga routing via cascading.</returns>");
+        sb.AppendLine("    /// <exception cref=\"ArgumentNullException\">Thrown when <paramref name=\"command\"/> is null.</exception>");
+        sb.AppendLine($"    public async Task<{completedEventName}> Handle(");
+        sb.AppendLine($"        {workerCommandName} command,");
+        sb.AppendLine("        CancellationToken ct)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
+        sb.AppendLine();
+        sb.AppendLine("        _logger.LogDebug(");
+        sb.AppendLine("            \"Executing failure handler step {StepName} for workflow {WorkflowId}\",");
+        sb.AppendLine($"            \"{stepName}\",");
+        sb.AppendLine("            command.WorkflowId);");
+        sb.AppendLine();
+        sb.AppendLine($"        using var activity = WorkflowTelemetry.StartStepSpan(\"{stepName}\", command.WorkflowId);");
+        sb.AppendLine("        var sw = Stopwatch.StartNew();");
+        sb.AppendLine();
+        sb.AppendLine($"        var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+        sb.AppendLine("        var result = await _step.ExecuteAsync(command.State, stepContext, ct);");
+        sb.AppendLine();
+        sb.AppendLine("        sw.Stop();");
+        sb.AppendLine("        activity?.SetStatus(ActivityStatusCode.Ok);");
+        sb.AppendLine("        activity?.SetTag(\"step.duration_ms\", sw.ElapsedMilliseconds);");
+        sb.AppendLine();
+        sb.AppendLine("        _logger.LogDebug(");
+        sb.AppendLine("            \"Failure handler step {StepName} completed for workflow {WorkflowId} in {ElapsedMs}ms\",");
+        sb.AppendLine($"            \"{stepName}\",");
+        sb.AppendLine("            command.WorkflowId,");
+        sb.AppendLine("            sw.ElapsedMilliseconds);");
+        sb.AppendLine();
+        sb.AppendLine("        // Return cascading: Wolverine routes via [SagaIdentity] on the event");
+        sb.AppendLine($"        return new {completedEventName}(");
+        sb.AppendLine("            command.WorkflowId,");
+        sb.AppendLine("            command.StepExecutionId,");
+        sb.AppendLine("            result.UpdatedState,");
+        sb.AppendLine("            DateTimeOffset.UtcNow);");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
     }
 
     /// <summary>
@@ -160,6 +267,31 @@ internal static class WorkerHandlerEmitter
     private static void EmitHandlerClassFromName(StringBuilder sb, WorkflowModel model, string stepName)
     {
         EmitHandlerClassCore(sb, model, stepName, step: null);
+    }
+
+    /// <summary>
+    /// Builds the set of step names that belong to a workflow-level OnFailure
+    /// recovery chain. These steps must NOT publish the failure-handler trigger
+    /// themselves (they ARE the recovery path); only main-flow steps route into the
+    /// OnFailure chain on failure.
+    /// </summary>
+    private static HashSet<string> BuildFailureHandlerStepNames(WorkflowModel model)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (model.FailureHandlers is null)
+        {
+            return set;
+        }
+
+        foreach (var handler in model.FailureHandlers)
+        {
+            foreach (var stepName in handler.StepNames)
+            {
+                set.Add(stepName);
+            }
+        }
+
+        return set;
     }
 
     private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName, StepModel? step)
@@ -218,15 +350,29 @@ internal static class WorkerHandlerEmitter
         // Handle method
         EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
 
-        // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation).
-        // Emitted ONLY when the step declared resilience that lowers onto the
-        // handler's chain (retry and/or compensation). The re-throw in the Handle
-        // catch block is what feeds this policy. Guarded so a step with no
-        // resilience keeps the no-policy baseline handler shape.
-        if (step is not null && (step.Retry is not null || step.Compensation is not null))
+        // A main-flow step routes into the workflow-level OnFailure chain when it
+        // fails (#140 Task 3.1): its error chain must publish the
+        // Trigger{Pascal}FailureHandlerCommand so the saga starts the OnFailure
+        // chain. This is the previously-missing publish for a NON-compensated failing
+        // step (compensation already publishes the same trigger via its own path).
+        // The failure-handler steps themselves are excluded — they ARE the recovery
+        // path and must not re-trigger it.
+        var publishOnFailureTrigger =
+            model.HasFailureHandlers
+            && !BuildFailureHandlerStepNames(model).Contains(stepName)
+            && (step is null || step.Compensation is null);
+
+        // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation, plus the
+        // OnFailure trigger publish above). Emitted when the step declared resilience
+        // that lowers onto the handler's chain (retry and/or compensation) OR when a
+        // main-flow step must publish the OnFailure trigger on failure. The re-throw
+        // in the Handle catch block is what feeds this policy. Guarded so a step with
+        // no resilience and no OnFailure routing keeps the no-policy baseline shape.
+        if ((step is not null && (step.Retry is not null || step.Compensation is not null))
+            || publishOnFailureTrigger)
         {
             sb.AppendLine();
-            EmitConfigureMethod(sb, model, step, workerCommandName);
+            EmitConfigureMethod(sb, model, step, stepName, workerCommandName, publishOnFailureTrigger);
         }
 
         sb.AppendLine("}");
@@ -243,32 +389,41 @@ internal static class WorkerHandlerEmitter
     /// <para>
     /// The chain composes additively: a retry prefix
     /// (<c>RetryTimes</c>/<c>RetryWithCooldown</c>) is followed, when the step also
-    /// declares <c>.Compensate&lt;T&gt;()</c>, by
+    /// declares <c>.Compensate&lt;T&gt;()</c> OR the workflow declares an
+    /// <c>OnFailure</c> chain, by
     /// <c>.Then.CompensatingAction&lt;{WorkerCommand}&gt;(...)</c> that PUBLISHES the
     /// trigger failure-handler command on terminal failure (after retries are
     /// exhausted), with <c>InvokeResult.Stop</c> so the message is not retried again.
     /// This is what makes the previously-never-published trigger command reach the
-    /// saga at runtime (DR-3), so the compensation step actually runs.
+    /// saga at runtime, so the compensation step (DR-3) and/or the workflow-level
+    /// OnFailure chain (#140 Task 3.1) actually runs.
     /// </para>
     /// <para>
-    /// When only compensation is declared (no retry), the compensating action
-    /// applies directly to <c>chain.OnAnyException()</c> with no retry prefix.
+    /// When only compensation (or only OnFailure routing) is declared with no retry,
+    /// the compensating action applies directly to <c>chain.OnAnyException()</c> with
+    /// no retry prefix.
     /// </para>
     /// </remarks>
     private static void EmitConfigureMethod(
         StringBuilder sb,
         WorkflowModel model,
-        StepModel step,
-        string workerCommandName)
+        StepModel? step,
+        string stepName,
+        string workerCommandName,
+        bool publishOnFailureTrigger)
     {
-        var retry = step.Retry;
-        var compensation = step.Compensation;
+        var retry = step?.Retry;
+        var compensation = step?.Compensation;
+
+        // The trigger is published on terminal failure when the step compensates OR
+        // when this main-flow step must route into the workflow-level OnFailure chain.
+        var publishesTrigger = compensation is not null || publishOnFailureTrigger;
 
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Configures this handler's Wolverine error policy. Lowered from the");
-        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> and/or <c>.Compensate&lt;T&gt;()</c>");
-        sb.AppendLine("    /// declaration; Wolverine discovers this static method by convention and");
-        sb.AppendLine("    /// scopes the policy to this handler.");
+        sb.AppendLine("    /// step's <c>.WithRetry(...)</c> / <c>.Compensate&lt;T&gt;()</c> declaration");
+        sb.AppendLine("    /// and/or the workflow's <c>OnFailure</c> chain; Wolverine discovers this");
+        sb.AppendLine("    /// static method by convention and scopes the policy to this handler.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    /// <param name=\"chain\">The handler chain to apply the error policy to.</param>");
         sb.AppendLine("    public static void Configure(HandlerChain chain)");
@@ -301,10 +456,11 @@ internal static class WorkerHandlerEmitter
             }
         }
 
-        if (compensation is not null)
+        if (publishesTrigger)
         {
             // On terminal failure (after any retries), publish the trigger
-            // failure-handler command so the saga runs the compensation step.
+            // failure-handler command so the saga runs the compensation step (DR-3)
+            // and/or the workflow OnFailure chain (#140 Task 3.1).
             // ".Then" is only needed to bridge from a retry continuation back to a
             // failure-action surface; with no retry, OnAnyException() already is one.
             if (retry is not null)
@@ -314,21 +470,28 @@ internal static class WorkerHandlerEmitter
             }
 
             var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
-            var compStepName = NamingHelper.GetSimpleTypeName(compensation.CompensationStepTypeName);
 
             sb.AppendLine();
             sb.AppendLine($"            .CompensatingAction<{workerCommandName}>(");
             sb.AppendLine($"                (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
             sb.AppendLine("                    cmd.WorkflowId,");
-            sb.AppendLine($"                    \"{step.StepName}\",");
+            sb.AppendLine($"                    \"{stepName}\",");
             sb.AppendLine("                    ex.Message,");
             sb.AppendLine("                    ex.GetType().Name,");
             sb.AppendLine("                    ex.StackTrace)),");
             sb.Append("                InvokeResult.Stop)");
 
-            // Reference the compensation step name in a comment so the lowering is
-            // traceable in the generated source.
-            sb.AppendLine($"; // runs {compStepName}");
+            if (compensation is not null)
+            {
+                // Reference the compensation step name in a comment so the lowering is
+                // traceable in the generated source.
+                var compStepName = NamingHelper.GetSimpleTypeName(compensation.CompensationStepTypeName);
+                sb.AppendLine($"; // runs {compStepName}");
+            }
+            else
+            {
+                sb.AppendLine("; // routes to OnFailure chain");
+            }
         }
         else
         {

@@ -27,12 +27,52 @@ This document catalogs all features from the Strategos design specification that
 > terminating** `OnLowConfidence` handler is lowered (multi-step chains + rejoin-to-main
 > are not yet); **workflow-level `OnFailure` handler-chain interop with `Compensate<T>` is
 > deferred** (see §2.1 — the workflow-level failure-handler chain is independently
-> non-functional); **terminal-failure / low-confidence audit is captured as queryable saga
-> document properties + structured logs, not yet as named `StepFailed` / `LowConfidenceRouted`
-> Marten *stream* events** (stream events apply only in EventSourced mode — a tracked
-> follow-on); resilience config is attachable only via `.Then<TStep>(s => …)` (not
+> non-functional); resilience config is attachable only via `.Then<TStep>(s => …)` (not
 > `StartWith`/`Finally`); and a `[Workflow("name")]` name must PascalCase to its
 > partial-class name. See `docs/designs/2026-06-17-step-resilience-lowering.md`.
+
+> **Status update — 2026-06-17 (#138, _audit-event taxonomy / Open Question #1_).** The
+> terminal-failure / low-confidence audit is now ALSO emitted as **named Marten *stream*
+> events** in EventSourced mode (it was previously captured only as queryable saga
+> document properties + structured logs — the document-mode behavior is unchanged). This
+> resolves the step-resilience design's **Open Question #1 (audit-event taxonomy)**:
+> - **`StepFailed`** `(WorkflowId, FailedStepName, ExceptionType?, ExceptionMessage?, Timestamp)` — appended at the single ordered terminal-failure trigger site (the OnFailure trigger handler, and the merged Compensate↔OnFailure trigger) when `Persistence = PersistenceMode.EventSourced`.
+> - **`LowConfidenceRouted`** `(WorkflowId, StepName, Confidence, Threshold, Timestamp)` — appended at the confidence gate when a step's result confidence routes below the configured threshold, in EventSourced mode.
+>
+> Both are `sealed`, init-only records implementing the workflow's `I{Pascal}Event` marker,
+> appended through the saga's existing `IDocumentSession` (INV-1, no parallel runtime).
+> They are emitted **only** in EventSourced mode (stream events apply only there), so
+> SagaDocument-mode output is byte-unchanged. Proven end-to-end on a real
+> Postgres-backed Marten host (`EventSourcedHostFixture` + `EventSourcedAuditEventTests`).
+
+> **Standing contract — 2026-06-18 (#143, G-6 _declared↔lowered parity_).** A step
+> configuration member is **"done" only with a behavioral proof or a tracked deferral** —
+> a shape/golden test (one that asserts the *emitted source text*, not a *running saga*)
+> does **not** count as proof that a configuration lowers. Two mechanisms enforce this:
+> - **Parity guard** (`StepConfigParityTests`, `Strategos.Generators.Tests/Parity/`): reflects
+>   the full `IStepConfiguration<TState>` surface + the `StepConfigurationDefinition` IR
+>   fields and fails the build if any member is not classified as either **Lowered** (with a
+>   named behavioral compile-run-saga test) or **Deferred** (with a tracking issue). Adding a
+>   new config member forces the author to point it at a behavioral proof or file a deferral.
+> - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
+>   concern the generator does **not** lower for that step's kind, so it silently has no
+>   effect. The guarded case is **confidence gating (`RequireConfidence`/`OnLowConfidence`)
+>   on a `Fork` path** — the fork-path parse threads the configure lambda into the IR (so an
+>   out-of-range threshold still surfaces the threshold-range code), but the saga emitter does
+>   not lower fork-path confidence routing. That variant is **deferred to v2.10.0 / DR-17
+>   (#134)**; until then the diagnostic prevents the inert configuration from masquerading as
+>   working. (Surfacing 6.1's backfill also fixed two real top-level `ValidateState` lowering
+>   gaps — configure-lambda validation was dropped for top-level/loop steps, and the predicate
+>   parameter had to be named literally `state` to compile.)
+>
+>   **Scope boundary — loop-body / nested-`RepeatUntil` confidence config is _not_ AGWF022-guarded.**
+>   Confidence configuration declared on a step inside a `RepeatUntil` loop body is **dropped
+>   from the IR entirely** by step extraction, so an IR-based diagnostic structurally **cannot**
+>   see it — there is nothing in the IR for AGWF022 to inspect. It is therefore **silently inert**
+>   (no compile-time warning), distinct from the fork-path case above which *is* threaded into the
+>   IR and *is* diagnosed. Loop-body confidence routing is likewise **deferred to v2.10.0 / DR-17
+>   (#134)**; emitting a diagnostic for it requires the lowering work that brings loop-body config
+>   into the IR in the first place.
 
 **Total Deferred Features:** 8
 **Deferral Categories:**

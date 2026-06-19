@@ -110,6 +110,23 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddLowConfidenceWorkflow();
                 opts.Services.AddHighConfidenceWorkflow();
 
+                // The multi-step / rejoining OnLowConfidence workflows (G-4 / #139):
+                // a two-step handler chain, a single-step REJOINING handler that
+                // resumes the main flow, and a single-step TERMINATING handler
+                // (back-compat default). All share the singleton invocation log.
+                opts.Services.AddLowConfidenceChainWorkflow();
+                opts.Services.AddLowConfidenceRejoinWorkflow();
+                opts.Services.AddLowConfidenceTerminatingWorkflow();
+
+                // The StartWith/Finally step-config workflows (#141). The
+                // start-with-retry-proof saga carries the per-handler retry policy
+                // lowered from .StartWith<StartFlakyStep>(s => s.WithRetry(2)) on the
+                // ENTRY step; the finally-timeout-proof saga carries the deadline race
+                // lowered from .Finally<FinallySlowTimedStep>(s => s.WithTimeout(...)) on
+                // the TERMINAL step. Both share the singleton invocation log below.
+                opts.Services.AddStartWithRetryProofWorkflow();
+                opts.Services.AddFinallyTimeoutProofWorkflow();
+
                 // The shared invocation log injected into instrumented steps.
                 opts.Services.AddSingleton(this.Invocations);
 
@@ -192,6 +209,80 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
         var saga = await query.LoadAsync<TSaga>(workflowId);
 
         return saga is null;
+    }
+
+    /// <summary>
+    /// Publishes a generated start command, awaits all synchronously-tracked cascaded
+    /// activity, then polls until the saga reaches its terminal phase (its document is
+    /// removed by <c>MarkCompleted()</c>) or the budget elapses. Unlike
+    /// <see cref="RunWorkflowAsync{TSaga}"/>, this additionally polls for terminal
+    /// completion AFTER the tracked publish settles, so a saga whose terminal route is
+    /// driven by a durable scheduled message (e.g. the timeout deadline race released by
+    /// Wolverine's background durability agent, which <c>TrackActivity()</c> does NOT
+    /// await) is observed deterministically.
+    /// </summary>
+    /// <typeparam name="TSaga">
+    /// The generated saga document type whose persistence is polled for terminal
+    /// completion (its absence signals the saga finished).
+    /// </typeparam>
+    /// <param name="workflowId">The workflow/saga identity to wait on.</param>
+    /// <param name="startCommand">The generated start command.</param>
+    /// <param name="terminalBudget">
+    /// Total budget to wait for the terminal phase, covering the scheduled timeout
+    /// message delivery and its handling. Defaults to 30 seconds.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when the saga reached its terminal phase within the
+    /// budget; otherwise <see langword="false"/>.
+    /// </returns>
+    public async Task<bool> RunToTerminalAsync<TSaga>(
+        Guid workflowId,
+        object startCommand,
+        TimeSpan? terminalBudget = null)
+        where TSaga : class
+    {
+        ArgumentNullException.ThrowIfNull(startCommand, nameof(startCommand));
+
+        var runtime = this.RequireHost();
+        var budget = terminalBudget ?? TimeSpan.FromSeconds(30);
+
+        // The budget is the TOTAL wall-clock allowance covering BOTH the tracked
+        // publish and the post-publish poll. Start the clock before the publish so
+        // the poll window is the remainder, never a fresh second budget (which would
+        // let the method wait up to ~2x the documented budget).
+        var store = runtime.Services.GetRequiredService<IDocumentStore>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        await runtime
+            .TrackActivity()
+            .Timeout(budget)
+            .PublishMessageAndWaitAsync(startCommand);
+
+        // Poll at least once after the publish settles (do/while), then bound every
+        // subsequent wait by the time left in the budget.
+        do
+        {
+            await using var query = store.QuerySession();
+            var saga = await query.LoadAsync<TSaga>(workflowId);
+            if (saga is null)
+            {
+                // MarkCompleted() removed the saga document: terminal reached
+                // (Completed for the happy path, or Failed for the timed-out path).
+                return true;
+            }
+
+            var remaining = budget - sw.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var pollInterval = TimeSpan.FromMilliseconds(50);
+            await Task.Delay(remaining < pollInterval ? remaining : pollInterval, CancellationToken.None);
+        }
+        while (true);
+
+        return false;
     }
 
     /// <summary>

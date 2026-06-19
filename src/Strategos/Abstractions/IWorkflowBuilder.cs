@@ -75,6 +75,54 @@ public interface IWorkflowBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Sets the entry step of the workflow with configuration.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if StartWith has already been called.</exception>
+    /// <remarks>
+    /// <para>
+    /// Step configuration allows the entry step to declare per-step resilience, e.g.:
+    /// <code>
+    /// .StartWith&lt;ValidateOrder&gt;(step => step
+    ///     .RequireConfidence(0.85)
+    ///     .Compensate&lt;RollbackValidation&gt;()
+    ///     .WithRetry(3))
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IWorkflowBuilder<TState> StartWith<TStep>(Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Sets the entry step of the workflow with an instance name and configuration.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="instanceName">
+    /// The instance name for this step. Enables reusing the same step type
+    /// in different contexts with distinct identities.
+    /// </param>
+    /// <param name="configure">Action to configure the step.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="instanceName"/> or <paramref name="configure"/> is null.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">Thrown if StartWith has already been called.</exception>
+    /// <remarks>
+    /// <para>
+    /// Combines the named-instance and configure overloads so the entry step can carry
+    /// both a distinct identity and per-step resilience, e.g.:
+    /// <code>
+    /// .StartWith&lt;ValidateOrder&gt;("InitialValidation", step => step.WithRetry(3))
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IWorkflowBuilder<TState> StartWith<TStep>(string instanceName, Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Adds a sequential step to the workflow.
     /// </summary>
     /// <typeparam name="TStep">The step implementation type.</typeparam>
@@ -167,6 +215,27 @@ public interface IWorkflowBuilder<TState>
     /// <returns>The completed workflow definition.</returns>
     /// <exception cref="InvalidOperationException">Thrown if StartWith has not been called.</exception>
     WorkflowDefinition<TState> Finally<TStep>()
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Sets the terminal step with configuration and builds the workflow definition.
+    /// </summary>
+    /// <typeparam name="TStep">The terminal step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the terminal step.</param>
+    /// <returns>The completed workflow definition.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if StartWith has not been called.</exception>
+    /// <remarks>
+    /// <para>
+    /// Step configuration allows the terminal step to declare per-step resilience, e.g.:
+    /// <code>
+    /// .Finally&lt;SendConfirmation&gt;(step => step
+    ///     .WithTimeout(TimeSpan.FromSeconds(5))
+    ///     .WithRetry(3))
+    /// </code>
+    /// </para>
+    /// </remarks>
+    WorkflowDefinition<TState> Finally<TStep>(Action<IStepConfiguration<TState>> configure)
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>

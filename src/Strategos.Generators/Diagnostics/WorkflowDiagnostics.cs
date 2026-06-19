@@ -261,4 +261,33 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A step timeout must be a positive duration. A zero or negative timeout cannot bound the step's execution meaningfully.");
+
+    /// <summary>
+    /// Declared-but-inert step configuration (#143, G-6).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a step declares a configuration concern that the generator does not
+    /// lower for that step's kind, so the configuration silently has no effect. The guarded
+    /// case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on a
+    /// <b>fork-path</b> step: the fork-path parse threads the configure lambda into the
+    /// StepModel IR (so an out-of-range threshold still surfaces
+    /// <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter does not lower
+    /// confidence-gated routing for fork-path steps — that lowering is deferred
+    /// (v2.10.0 / DR-17, #134), so the gate is inert. A warning (not an error) so an author
+    /// can suppress it by id while the deferral stands.
+    /// <para>
+    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence configuration is a distinct
+    /// case that this diagnostic does NOT cover — it is dropped from the IR entirely by step
+    /// extraction, so an IR-based diagnostic structurally cannot see it (also tracked under
+    /// #134 for v2.10.0).
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DeclaredButInert = new(
+        id: AgwfCodes.DeclaredButInert,
+        title: "Declared-but-inert step configuration",
+        messageFormat: "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A step configuration concern the generator does not lower for the step's kind is silently inert. Surfacing it prevents a deferred or unsupported configuration from masquerading as working.");
 }

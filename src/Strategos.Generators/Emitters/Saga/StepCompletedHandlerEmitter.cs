@@ -123,6 +123,14 @@ internal sealed class StepCompletedHandlerEmitter
         var thresholdLiteral = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         var proceedsToCompletion = context.IsTerminalStep || context.IsLastStep;
 
+        // #138 G-5: the gated step's own name (the step whose low-confidence result
+        // drove the route) for the LowConfidenceRouted audit event. Derive it from
+        // the completed event name (strip the trailing "Completed") so it is robust
+        // even when StepModel is unavailable.
+        var gatedStepName = eventName.EndsWith("Completed", System.StringComparison.Ordinal)
+            ? eventName.Substring(0, eventName.Length - "Completed".Length)
+            : eventName;
+
         sb.AppendLine($"    /// <returns>The low-confidence handler start command when below the");
         sb.AppendLine($"    /// confidence threshold; otherwise the normal next-step command.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
@@ -147,6 +155,7 @@ internal sealed class StepCompletedHandlerEmitter
         // "WorkflowState" track phase at the saga level only, so they are excluded
         // from the sync, exactly as EmitPhaseAwareNonFinalStepHandler does.
         if (model.HasFailureHandlers
+            && model.StateHasPhaseProperty
             && !string.IsNullOrEmpty(model.StateTypeName)
             && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
         {
@@ -185,6 +194,24 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine($"                {thresholdLiteral},");
         sb.AppendLine("                WorkflowId,");
         sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+
+        // #138 G-5: append the LowConfidenceRouted audit STREAM event when
+        // event-sourced. This is the single site where a confidence-gated step
+        // actually routes below-threshold, so it is where the named event belongs.
+        // The handler already receives IDocumentSession session in EventSourced mode.
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"            session.Events.Append(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine("                    WorkflowId,");
+            sb.AppendLine($"                    \"{gatedStepName}\",");
+            sb.AppendLine("                    confidenceScore,");
+            sb.AppendLine($"                    {thresholdLiteral},");
+            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
         sb.AppendLine("            yield break;");
@@ -336,10 +363,14 @@ internal sealed class StepCompletedHandlerEmitter
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
 
-            // Sync saga Phase from state for state types that have Phase property
-            // State types ending in "WorkflowState" typically don't have Phase property
-            // (e.g., OrchestratorWorkflowState uses saga-level phase tracking only)
-            if (!model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
+            // Sync saga Phase from state ONLY for state types that actually expose a
+            // Phase property (mechanically detected via StateHasPhaseProperty). State
+            // types tracking phase at the saga level only (e.g. OrchestratorWorkflowState,
+            // or any realistic exception-triggered OnFailure state) have no Phase member,
+            // so emitting State.Phase would not compile. The "WorkflowState" suffix check
+            // is retained as a defensive secondary guard.
+            if (model.StateHasPhaseProperty
+                && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
             {
                 sb.AppendLine($"        Phase = State.Phase;");
             }

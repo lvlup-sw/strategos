@@ -186,6 +186,14 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.SemanticModel,
             ct);
 
+        // Whether the state type exposes a public Phase property. Gates the
+        // failure-handler Phase = State.Phase sync so a realistic state type
+        // (no Phase member) never produces an uncompilable State.Phase reference.
+        var stateHasPhaseProperty = FluentDslParser.StateTypeHasPhaseProperty(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
         // Validate event-sourced mode requires a state type
         if (persistenceMode == Models.PersistenceMode.EventSourced
             && string.IsNullOrEmpty(stateTypeName))
@@ -482,9 +490,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // handler, start/completed commands and events, and a terminal saga completed handler.
         // The saga's confidence-gated completed handler then routes to Start{H}Command via a
         // Wolverine cascade when the result confidence is below the threshold (INV-1).
+        // Lower EVERY step in each OnLowConfidence handler chain (G-4 / #139), in order. Before
+        // #139 only the first Then<T> was lowered; a multi-step chain now contributes all of its
+        // steps so the chain runs end to end. The chain's ordered Steps are the source of truth;
+        // OnLowConfidenceHandlerStep (the first step) is retained only for the saga routing surface.
         var confidenceHandlerSteps = stepModels
-            .Where(s => s.Confidence?.OnLowConfidenceHandlerStep is not null)
-            .Select(s => s.Confidence!.OnLowConfidenceHandlerStep!)
+            .Where(s => s.Confidence?.OnLowConfidenceHandlerChain is not null)
+            .SelectMany(s => s.Confidence!.OnLowConfidenceHandlerChain!.Steps)
             .ToList();
 
         // Track the lowered handler step names so the saga emitter can keep them off the
@@ -628,7 +640,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, forkModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -723,7 +735,10 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
             ApprovalPoints: approvalModels,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames)
+        {
+            StateHasPhaseProperty = stateHasPhaseProperty,
+        };
 
         return new WorkflowGeneratorResult(model, diagnostics);
     }
@@ -733,11 +748,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
+    /// <param name="forkModels">The parsed fork models, used to detect declared-but-inert config on fork-path steps.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
+        IReadOnlyList<ForkModel> forkModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -798,6 +815,32 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                     location,
                     step.EffectiveName,
                     workflowName));
+            }
+        }
+
+        // DeclaredButInert (#143, G-6) — confidence gating on a fork-path step. The
+        // fork-path parse threads the configure lambda into the StepModel IR (so an
+        // out-of-range threshold still surfaces the ConfidenceThresholdOutOfRange code),
+        // but the saga emitter does NOT lower confidence-gated routing for fork-path steps
+        // — that variant is deferred to v2.10.0 / DR-17 (#134). The configuration is
+        // therefore inert: no confidence gate and no OnLowConfidence routing reach the
+        // generated saga. Surface it so a deferred configuration cannot masquerade as working.
+        foreach (var fork in forkModels)
+        {
+            foreach (var path in fork.Paths)
+            {
+                foreach (var forkStep in path.Steps)
+                {
+                    if (forkStep.Confidence is not null)
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            WorkflowDiagnostics.DeclaredButInert,
+                            location,
+                            forkStep.EffectiveName,
+                            workflowName,
+                            "confidence gating (RequireConfidence/OnLowConfidence) on a fork path"));
+                    }
+                }
             }
         }
     }

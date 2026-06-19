@@ -25,15 +25,16 @@ public sealed class AgwfCatalogEmitterTests
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
         "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
+        "AGWF022",
     ];
 
     /// <summary>
     /// Regenerates from committed schemas and asserts the emitted catalog JSON
-    /// has a <c>catalog_version</c> manifest field and exactly 15 entries ordered
-    /// by ID, each carrying the full metadata set.
+    /// has a <c>catalog_version</c> manifest field and exactly one entry per
+    /// ground-truth code, ordered by ID, each carrying the full metadata set.
     /// </summary>
     [Test]
-    public async Task AgwfCatalogEmitter_TenEntries_EmitsManifestAndEntries()
+    public async Task AgwfCatalogEmitter_AllEntries_EmitsManifestAndEntries()
     {
         var catalogPath = Path.Combine(
             RepoLayout.ContractsProjectDir, "Generated", "agwf-catalog.json");
@@ -49,7 +50,7 @@ public sealed class AgwfCatalogEmitterTests
 
         var entries = root.GetProperty("entries");
         await Assert.That(entries.GetArrayLength()).IsEqualTo(GroundTruthCodes.Length)
-            .Because("the catalog must enumerate exactly the 15 ground-truth entries.");
+            .Because($"the catalog must enumerate exactly the {GroundTruthCodes.Length} ground-truth entries.");
 
         var ids = new List<string>();
         foreach (var entry in entries.EnumerateArray())
