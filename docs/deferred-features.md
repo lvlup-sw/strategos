@@ -60,7 +60,7 @@ This document catalogs all features from the Strategos design specification that
 >   on a `Fork` path** — the fork-path parse threads the configure lambda into the IR (so an
 >   out-of-range threshold still surfaces the threshold-range code), but the saga emitter does
 >   not lower fork-path confidence routing. That variant is **deferred to v2.10.0 / DR-17
->   (#134)**; until then the diagnostic prevents the inert configuration from masquerading as
+>   (#145)**; until then the diagnostic prevents the inert configuration from masquerading as
 >   working. (Surfacing 6.1's backfill also fixed two real top-level `ValidateState` lowering
 >   gaps — configure-lambda validation was dropped for top-level/loop steps, and the predicate
 >   parameter had to be named literally `state` to compile.)
@@ -71,7 +71,7 @@ This document catalogs all features from the Strategos design specification that
 >   see it — there is nothing in the IR for AGWF022 to inspect. It is therefore **silently inert**
 >   (no compile-time warning), distinct from the fork-path case above which *is* threaded into the
 >   IR and *is* diagnosed. Loop-body confidence routing is likewise **deferred to v2.10.0 / DR-17
->   (#134)**; emitting a diagnostic for it requires the lowering work that brings loop-body config
+>   (#145)**; emitting a diagnostic for it requires the lowering work that brings loop-body config
 >   into the IR in the first place.
 
 **Total Deferred Features:** 8

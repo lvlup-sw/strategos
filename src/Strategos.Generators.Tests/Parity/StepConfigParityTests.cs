@@ -114,21 +114,21 @@ public sealed class StepConfigParityTests
             // bad threshold) but is not lowered into saga routing — it is structurally
             // diagnosable and is guarded by AGWF022 (DeclaredButInert / DeclaredButInertTests).
             ["RequireConfidence(fork-path)"] = new(
-                134,
+                145,
                 "Confidence gating on a fork path is deferred to v2.10.0 / DR-17; the config "
                 + "reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it is "
                 + "structurally diagnosable."),
             ["OnLowConfidence(fork-path)"] = new(
-                134,
+                145,
                 "OnLowConfidence routing on a fork path is deferred to v2.10.0 / DR-17; the "
                 + "config reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it "
                 + "is structurally diagnosable."),
             // Distinct from the fork-path case above: loop-body / nested-RepeatUntil confidence
             // config is DROPPED from the IR entirely by step extraction, so an IR-based
             // diagnostic structurally CANNOT see it — it is NOT AGWF022-guarded. Silently inert,
-            // tracked under #134 for v2.10.0.
+            // tracked under #145 for v2.10.0.
             ["OnLowConfidence(nested-RepeatUntil)"] = new(
-                134,
+                145,
                 "OnLowConfidence inside a nested RepeatUntil loop is dropped from the IR by step "
                 + "extraction (structurally undiagnosable — no AGWF022), deferred to "
                 + "v2.10.0 / DR-17."),
