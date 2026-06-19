@@ -45,6 +45,26 @@ This document catalogs all features from the Strategos design specification that
 > SagaDocument-mode output is byte-unchanged. Proven end-to-end on a real
 > Postgres-backed Marten host (`EventSourcedHostFixture` + `EventSourcedAuditEventTests`).
 
+> **Standing contract — 2026-06-18 (#143, G-6 _declared↔lowered parity_).** A step
+> configuration member is **"done" only with a behavioral proof or a tracked deferral** —
+> a shape/golden test (one that asserts the *emitted source text*, not a *running saga*)
+> does **not** count as proof that a configuration lowers. Two mechanisms enforce this:
+> - **Parity guard** (`StepConfigParityTests`, `Strategos.Generators.Tests/Parity/`): reflects
+>   the full `IStepConfiguration<TState>` surface + the `StepConfigurationDefinition` IR
+>   fields and fails the build if any member is not classified as either **Lowered** (with a
+>   named behavioral compile-run-saga test) or **Deferred** (with a tracking issue). Adding a
+>   new config member forces the author to point it at a behavioral proof or file a deferral.
+> - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
+>   concern the generator does **not** lower for that step's kind, so it silently has no
+>   effect. The first guarded case is **confidence gating (`RequireConfidence`/
+>   `OnLowConfidence`) on a `Fork` path** — the fork-path parse threads the configure lambda
+>   into the IR (so an out-of-range threshold still surfaces the threshold-range code), but the
+>   saga emitter does not lower fork-path confidence routing. That variant is **deferred to
+>   v2.10.0 / DR-17 (#134)**; until then the diagnostic prevents the inert configuration from
+>   masquerading as working. (Surfacing 6.1's backfill also fixed two real top-level
+>   `ValidateState` lowering gaps — configure-lambda validation was dropped for top-level/loop
+>   steps, and the predicate parameter had to be named literally `state` to compile.)
+
 **Total Deferred Features:** 8
 **Deferral Categories:**
 - Agent-Specific Patterns (4 features)

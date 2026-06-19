@@ -25,6 +25,7 @@ public sealed class AgwfCatalogEmitterTests
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
         "AGWF010", "AGWF012", "AGWF014", "AGWF015", "AGWF016",
         "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
+        "AGWF022",
     ];
 
     /// <summary>

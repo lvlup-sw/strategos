@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryDeclaredButInert.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF022"
+        },
+        "severity": {
+            "type": "string",
+            "const": "warning"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Declared-but-inert step configuration"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.9.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF022 — Declared-but-inert step configuration."
+}

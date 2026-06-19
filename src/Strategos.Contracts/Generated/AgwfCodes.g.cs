@@ -59,5 +59,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF021 — Non-positive timeout.</summary>
         public const string NonPositiveTimeout = "AGWF021";
+
+        /// <summary>AGWF022 — Declared-but-inert step configuration.</summary>
+        public const string DeclaredButInert = "AGWF022";
     }
 }

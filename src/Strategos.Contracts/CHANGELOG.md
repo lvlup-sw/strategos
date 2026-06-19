@@ -11,6 +11,16 @@ the wire contracts (JSON Schema + emitted C# records) are the public surface, so
 a **breaking schema change requires a major bump** (additive-only minors —
 enforced by the T30 structural diff in CI).
 
+## [Unreleased]
+
+### Added
+
+- **Diagnostics family — `AGWF022` (`DeclaredButInert`, severity `warning`):** a new
+  AGWF code for step configuration that is parsed into the IR but not lowered for the
+  step's kind, so it is silently inert (first guarded case: confidence gating on a
+  `Fork` path, deferred to v2.10.0 / DR-17, #134). Additive (a new enum member + a new
+  catalog entry), so it is a minor, non-breaking change (#143, G-6).
+
 ## [0.2.0] - 2026-05-24
 
 First published release of the cross-product schema substrate. **Must not

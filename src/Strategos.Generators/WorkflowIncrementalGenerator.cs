@@ -640,7 +640,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, forkModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -748,11 +748,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
+    /// <param name="forkModels">The parsed fork models, used to detect declared-but-inert config on fork-path steps.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
+        IReadOnlyList<ForkModel> forkModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -813,6 +815,32 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                     location,
                     step.EffectiveName,
                     workflowName));
+            }
+        }
+
+        // DeclaredButInert (#143, G-6) — confidence gating on a fork-path step. The
+        // fork-path parse threads the configure lambda into the StepModel IR (so an
+        // out-of-range threshold still surfaces the ConfidenceThresholdOutOfRange code),
+        // but the saga emitter does NOT lower confidence-gated routing for fork-path steps
+        // — that variant is deferred to v2.10.0 / DR-17 (#134). The configuration is
+        // therefore inert: no confidence gate and no OnLowConfidence routing reach the
+        // generated saga. Surface it so a deferred configuration cannot masquerade as working.
+        foreach (var fork in forkModels)
+        {
+            foreach (var path in fork.Paths)
+            {
+                foreach (var forkStep in path.Steps)
+                {
+                    if (forkStep.Confidence is not null)
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            WorkflowDiagnostics.DeclaredButInert,
+                            location,
+                            forkStep.EffectiveName,
+                            workflowName,
+                            "confidence gating (RequireConfidence/OnLowConfidence) on a fork path"));
+                    }
+                }
             }
         }
     }

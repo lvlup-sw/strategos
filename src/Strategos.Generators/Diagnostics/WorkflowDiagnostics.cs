@@ -261,4 +261,24 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A step timeout must be a positive duration. A zero or negative timeout cannot bound the step's execution meaningfully.");
+
+    /// <summary>
+    /// Declared-but-inert step configuration (#143, G-6).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a step declares a configuration concern that the generator does not
+    /// lower for that step's kind, so the configuration silently has no effect. The first
+    /// guarded case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>)
+    /// on a loop-body step — that variant is deferred (v2.10.0 / DR-17, #134), so the
+    /// configuration reaches the IR but no confidence-gated routing is emitted. A warning
+    /// (not an error) so an author can suppress it by id while the deferral stands.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DeclaredButInert = new(
+        id: AgwfCodes.DeclaredButInert,
+        title: "Declared-but-inert step configuration",
+        messageFormat: "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A step configuration concern the generator does not lower for the step's kind is silently inert. Surfacing it prevents a deferred or unsupported configuration from masquerading as working.");
 }

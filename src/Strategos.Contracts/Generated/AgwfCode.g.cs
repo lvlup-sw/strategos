@@ -78,4 +78,8 @@ public enum AgwfCode
     /// <summary>AGWF021 — Non-positive timeout.</summary>
     [JsonStringEnumMemberName("AGWF021")]
     NonPositiveTimeout,
+
+    /// <summary>AGWF022 — Declared-but-inert step configuration.</summary>
+    [JsonStringEnumMemberName("AGWF022")]
+    DeclaredButInert,
 }
