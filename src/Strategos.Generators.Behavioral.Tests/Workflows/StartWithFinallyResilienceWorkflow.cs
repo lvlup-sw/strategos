@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Marten;
+
 using Strategos.Abstractions;
 using Strategos.Attributes;
 using Strategos.Builders;
@@ -125,17 +127,33 @@ public sealed class FinallyKickoffStep(WorkflowInvocationLog log) : IWorkflowSte
 /// <summary>
 /// The TERMINAL step of the Finally-timeout behavioral workflow, declared via the new
 /// <c>Finally&lt;TStep&gt;(step =&gt; step.WithTimeout(...))</c> overload (#141). It sleeps
-/// ~500 ms while configured with a 50 ms timeout, so the saga's deadline-race timeout
-/// message arrives long before this step's <c>Completed</c> event; the saga must route
-/// to its timeout/failure path while this terminal step is still in flight. Its single
-/// invocation (the step runs to completion — this is a deadline race, not hard
-/// cancellation) together with the saga reaching a terminal phase via the timeout route
-/// is the proof that the timeout lowered from the <c>Finally</c> configure lambda.
+/// ~3 s while configured with a 50 ms timeout (a deliberately generous ~60x margin so the
+/// timeout reliably preempts even under scheduled-delivery jitter), so the saga's
+/// deadline-race timeout message arrives long before this step's <c>Completed</c> event;
+/// the saga must route to its timeout/failure path while this terminal step is still in
+/// flight. Because the timeout terminal (<c>Phase = Failed</c>) and the normal terminal
+/// (<c>Phase = Completed</c>) both call <c>MarkCompleted()</c> — which deletes the saga
+/// document and leaves no post-hoc phase to read — this step proves the route DURING the
+/// race: after its delay it loads its own saga by id and, if it is already gone, records
+/// <see cref="TimeoutPreemptedMarker"/>. On the timeout route the saga was deleted at
+/// ~50 ms so the marker is recorded; on a (broken) normal completion the saga still
+/// exists at check time, the marker is absent, and the route-specific assertion fails.
 /// </summary>
 /// <param name="log">The shared invocation log injected by the host.</param>
-public sealed class FinallySlowTimedStep(WorkflowInvocationLog log) : IWorkflowStep<StartFinallyState>
+/// <param name="store">The Marten document store used to probe the saga document.</param>
+public sealed class FinallySlowTimedStep(WorkflowInvocationLog log, IDocumentStore store) : IWorkflowStep<StartFinallyState>
 {
+    /// <summary>
+    /// Distinct marker recorded when, on completing its delay, the step finds its own
+    /// saga document already removed — proof that the 50 ms Finally-timeout fired and
+    /// drove the saga to its <c>Failed</c> terminal BEFORE this step finished. Asserting
+    /// this marker (rather than only "some terminal was reached") makes the behavioral
+    /// test route-specific: it cannot false-pass on a normal completion.
+    /// </summary>
+    public const string TimeoutPreemptedMarker = "FinallySlowTimedStep:timeout-preempted";
+
     private readonly WorkflowInvocationLog log = log;
+    private readonly IDocumentStore store = store;
 
     /// <inheritdoc />
     public async Task<StepResult<StartFinallyState>> ExecuteAsync(
@@ -145,11 +163,23 @@ public sealed class FinallySlowTimedStep(WorkflowInvocationLog log) : IWorkflowS
     {
         this.log.Record(nameof(FinallySlowTimedStep));
 
-        // Exceed the configured 50 ms deadline. Honest deadline race: the step runs to
-        // completion; what matters is the timeout message reaches the saga first. Do
-        // NOT honour the cancellation token — the saga-level deadline race does not
-        // cancel the in-flight handler.
-        await Task.Delay(TimeSpan.FromMilliseconds(500), CancellationToken.None);
+        // Exceed the configured 50 ms deadline by a wide margin. Honest deadline race:
+        // the step runs to completion; what matters is the timeout message reaches the
+        // saga first. Do NOT honour the cancellation token — the saga-level deadline
+        // race does not cancel the in-flight handler.
+        await Task.Delay(TimeSpan.FromMilliseconds(3000), CancellationToken.None);
+
+        // Route-specific proof: by now the 50 ms timeout must have driven the saga to
+        // Failed + MarkCompleted (which removes the document). If the saga document is
+        // already gone, the timeout preempted this completion — record the marker the
+        // test asserts. If it still exists, the timeout did NOT win and the marker stays
+        // absent, failing the route-specific assertion instead of passing silently.
+        await using var query = this.store.QuerySession();
+        var saga = await query.LoadAsync<FinallyTimeoutProofSaga>(context.WorkflowId);
+        if (saga is null)
+        {
+            this.log.Record(TimeoutPreemptedMarker);
+        }
 
         var updated = state with { StepCount = state.StepCount + 1 };
         return StepResult<StartFinallyState>.FromState(updated);

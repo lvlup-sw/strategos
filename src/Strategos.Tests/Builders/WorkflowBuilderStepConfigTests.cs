@@ -15,7 +15,7 @@ namespace Strategos.Tests.Builders;
 /// steps can declare per-step resilience inline.
 /// </summary>
 [Property("Category", "Unit")]
-public class WorkflowBuilderStepConfigTests
+public sealed class WorkflowBuilderStepConfigTests
 {
     // =============================================================================
     // A. StartWith(configure)

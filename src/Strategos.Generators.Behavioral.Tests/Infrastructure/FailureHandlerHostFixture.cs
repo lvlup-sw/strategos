@@ -67,29 +67,39 @@ public sealed class FailureHandlerHostFixture : IAsyncInitializer, IAsyncDisposa
     {
         await this.postgres.InitializeAsync();
 
-        this.host = await Host.CreateDefaultBuilder()
-            .UseWolverine(opts =>
-            {
-                opts.Services
-                    .AddMarten(storeOptions =>
-                    {
-                        storeOptions.Connection(this.postgres.ConnectionString);
-                        storeOptions.AutoCreateSchemaObjects = JasperFx.AutoCreate.All;
-                    })
-                    .IntegrateWithWolverine()
-                    .ApplyAllDatabaseChangesOnStartup();
+        try
+        {
+            this.host = await Host.CreateDefaultBuilder()
+                .UseWolverine(opts =>
+                {
+                    opts.Services
+                        .AddMarten(storeOptions =>
+                        {
+                            storeOptions.Connection(this.postgres.ConnectionString);
+                            storeOptions.AutoCreateSchemaObjects = JasperFx.AutoCreate.All;
+                        })
+                        .IntegrateWithWolverine()
+                        .ApplyAllDatabaseChangesOnStartup();
 
-                // The generated failure-handler workflow: its FailureHandlerFailingStep
-                // handler carries the generated Configure(HandlerChain) that publishes
-                // the Trigger{Pascal}FailureHandlerCommand on terminal failure, and its
-                // NotifyFailure handler carries the generated worker handler for the
-                // ExecuteFailureHandler_..WorkerCommand (#140 Task 3.1).
-                opts.Services.AddFailureHandlerProofWorkflow();
+                    // The generated failure-handler workflow: its FailureHandlerFailingStep
+                    // handler carries the generated Configure(HandlerChain) that publishes
+                    // the Trigger{Pascal}FailureHandlerCommand on terminal failure, and its
+                    // NotifyFailure handler carries the generated worker handler for the
+                    // ExecuteFailureHandler_..WorkerCommand (#140 Task 3.1).
+                    opts.Services.AddFailureHandlerProofWorkflow();
 
-                opts.Services.AddSingleton(this.Invocations);
-                opts.Services.AddResourceSetupOnStartup();
-            })
-            .StartAsync();
+                    opts.Services.AddSingleton(this.Invocations);
+                    opts.Services.AddResourceSetupOnStartup();
+                })
+                .StartAsync();
+        }
+        catch
+        {
+            // If host startup throws after the container is up, dispose the Postgres
+            // fixture so a failed Initialize does not leak a container for the run.
+            await this.postgres.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>

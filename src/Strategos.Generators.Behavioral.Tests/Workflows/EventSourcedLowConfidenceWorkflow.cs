@@ -50,7 +50,7 @@ public sealed record EventSourcedLowConfidenceState : IEventSourcedState<EventSo
     /// <param name="evt">The prepare-step completed event.</param>
     /// <returns>The aggregate seeded with the stream id and the step counted.</returns>
     public EventSourcedLowConfidenceState Apply(EventSourcedLcPrepareStepCompleted evt) =>
-        this with { Id = this.WorkflowId, StepCount = this.StepCount + 1 };
+        this with { Id = evt.WorkflowId, WorkflowId = evt.WorkflowId, StepCount = this.StepCount + 1 };
 
     /// <inheritdoc />
     public EventSourcedLowConfidenceState ApplyEvent(IProgressEvent evt)

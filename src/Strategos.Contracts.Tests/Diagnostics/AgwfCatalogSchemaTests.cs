@@ -33,10 +33,10 @@ public sealed class AgwfCatalogSchemaTests
     /// <summary>
     /// Compiles the TypeSpec sources, then asserts each AGWF entry schema carries
     /// the five metadata fields as <c>const</c> literals and the union of their
-    /// <c>id</c> consts equals exactly the 15 ground-truth codes.
+    /// <c>id</c> consts equals exactly the ground-truth codes.
     /// </summary>
     [Test]
-    public async Task AgwfCatalogSchema_TenCodes_EmittedWithMetadata()
+    public async Task AgwfCatalogSchema_AllCodes_EmittedWithMetadata()
     {
         var compile = await TspToolchain.CompileAsync();
         await Assert.That(compile.ExitCode).IsEqualTo(0).Because(compile.Output);
@@ -66,6 +66,6 @@ public sealed class AgwfCatalogSchemaTests
 
         await Assert.That(ids.OrderBy(x => x, StringComparer.Ordinal).ToArray())
             .IsEquivalentTo(GroundTruthCodes.OrderBy(x => x, StringComparer.Ordinal).ToArray())
-            .Because("the catalog must enumerate exactly the 15 ground-truth codes (INV-5: gaps stay gaps).");
+            .Because($"the catalog must enumerate exactly the {GroundTruthCodes.Length} ground-truth codes (INV-5: gaps stay gaps).");
     }
 }

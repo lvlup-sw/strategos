@@ -57,7 +57,7 @@ public sealed class AgwfMarkdownTests
             .ToList();
 
         await Assert.That(dataRows.Count).IsEqualTo(GroundTruthCodes.Length)
-            .Because("the table must have exactly 15 data rows, one per code.");
+            .Because($"the table must have exactly {GroundTruthCodes.Length} data rows, one per code.");
 
         var rowIds = dataRows
             .Select(r => GroundTruthCodes.First(c => r.Contains(c, StringComparison.Ordinal)))

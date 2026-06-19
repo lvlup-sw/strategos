@@ -499,12 +499,20 @@ public class WorkerHandlerEmitterUnitTests
         // references NotifyFailure as a recovery step. Confirm exactly the main-flow
         // steps (ValidateOrder) carry the trigger publish but the OnFailure step's
         // dedicated worker class never publishes a trigger.
-        var notifyWorkerStart = source.IndexOf(
-            "class FailureHandler_recovery_NotifyFailureHandler",
-            StringComparison.Ordinal);
+        const string notifyWorkerDecl = "class FailureHandler_recovery_NotifyFailureHandler";
+        var notifyWorkerStart = source.IndexOf(notifyWorkerDecl, StringComparison.Ordinal);
         await Assert.That(notifyWorkerStart).IsGreaterThan(-1);
 
-        var notifyWorkerBody = source.Substring(notifyWorkerStart);
+        // Scope the negative assertion to THIS class body only: slice to the next
+        // class declaration (or EOF) so a trigger publish in any LATER generated
+        // class cannot false-fail the assertion on the NotifyFailure handler.
+        var nextClassStart = source.IndexOf(
+            "class ",
+            notifyWorkerStart + notifyWorkerDecl.Length,
+            StringComparison.Ordinal);
+        var notifyWorkerBody = nextClassStart > -1
+            ? source.Substring(notifyWorkerStart, nextClassStart - notifyWorkerStart)
+            : source.Substring(notifyWorkerStart);
         await Assert.That(notifyWorkerBody).DoesNotContain("PublishAsync(new TriggerOnFailureProofFailureHandlerCommand");
     }
 

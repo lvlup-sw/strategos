@@ -1175,15 +1175,18 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// </summary>
     /// <typeparam name="T">The CLR type whose backing table should be created.</typeparam>
     /// <param name="descriptorName">
-    /// Optional explicit descriptor name identifying the target table. When
-    /// <c>null</c>, the target is resolved via
+    /// Explicit descriptor name identifying the target table, or <c>null</c> to
+    /// resolve the target via
     /// <see cref="ResolveTableNameForDefaultOverload{T}(OntologyGraph?)"/>
     /// using the provider's optional <see cref="OntologyGraph"/>; for
     /// multi-registered types the resolution throws and callers must
-    /// specify the name explicitly (one call per descriptor).
+    /// specify the name explicitly (one call per descriptor). The parameter is
+    /// required (no default) so a zero-argument <c>EnsureSchemaAsync&lt;T&gt;()</c>
+    /// resolves unambiguously to the safe
+    /// <see cref="EnsureSchemaAsync{T}(CancellationToken)"/> overload (CS0121 guard).
     /// </param>
     /// <param name="ct">The cancellation token.</param>
-    public async Task EnsureSchemaAsync<T>(string? descriptorName = null, CancellationToken ct = default) where T : class
+    public async Task EnsureSchemaAsync<T>(string? descriptorName, CancellationToken ct = default) where T : class
     {
         var tableName = ResolveEnsureSchemaTableName<T>(descriptorName, _graph);
         var keyPropertyName = ResolveEnsureSchemaKeyProperty<T>(descriptorName, _graph);

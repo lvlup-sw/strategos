@@ -49,7 +49,7 @@ public sealed record EventSourcedFailureState : IEventSourcedState<EventSourcedF
     /// <param name="evt">The prepare-step completed event.</param>
     /// <returns>The aggregate seeded with the stream id and the step counted.</returns>
     public EventSourcedFailureState Apply(EventSourcedFailurePrepareStepCompleted evt) =>
-        this with { Id = this.WorkflowId, StepCount = this.StepCount + 1 };
+        this with { Id = evt.WorkflowId, WorkflowId = evt.WorkflowId, StepCount = this.StepCount + 1 };
 
     /// <inheritdoc />
     public EventSourcedFailureState ApplyEvent(IProgressEvent evt)

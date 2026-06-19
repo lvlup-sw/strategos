@@ -91,11 +91,15 @@ public sealed class StartWithFinallyResilienceTests
     /// <summary>
     /// Proves that <c>.WithTimeout(50 ms)</c> declared on the TERMINAL step via the new
     /// <c>Finally</c> configure overload is honored at runtime: the terminal step sleeps
-    /// ~500 ms, so the saga's deadline-race timeout message reaches it before the step's
+    /// ~3 s, so the saga's deadline-race timeout message reaches it before the step's
     /// completion event and routes the saga to its timeout/failure path while the step is
     /// still in flight. Asserts the kickoff and the slow terminal step both ran (the slow
-    /// step runs to completion — a deadline race, not hard cancellation) and the saga
-    /// reached a terminal phase via the timeout route.
+    /// step runs to completion — a deadline race, not hard cancellation) AND, route-
+    /// specifically, that the timeout PREEMPTED the completion: the slow step found its
+    /// own saga document already removed when it finished
+    /// (<see cref="FinallySlowTimedStep.TimeoutPreemptedMarker"/>). That last assertion is
+    /// what prevents a false pass on a normal completion — both terminals delete the saga,
+    /// so "reached terminal" alone cannot distinguish the timeout route.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -120,5 +124,12 @@ public sealed class StartWithFinallyResilienceTests
         // completion — this is a deadline race, not hard cancellation).
         await Assert.That(this.host.Invocations.CountFor(nameof(FinallyKickoffStep))).IsEqualTo(1);
         await Assert.That(this.host.Invocations.CountFor(nameof(FinallySlowTimedStep))).IsEqualTo(1);
+
+        // ROUTE-SPECIFIC: the 50 ms timeout preempted the ~3 s step — the step found its
+        // saga already gone (Failed terminal) when it finished. A normal completion would
+        // leave the marker absent and fail here, so this cannot false-pass on the wrong
+        // terminal path.
+        await Assert.That(this.host.Invocations.CountFor(FinallySlowTimedStep.TimeoutPreemptedMarker))
+            .IsEqualTo(1);
     }
 }

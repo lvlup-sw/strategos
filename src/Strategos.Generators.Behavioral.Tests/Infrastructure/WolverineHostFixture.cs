@@ -246,15 +246,21 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
         var runtime = this.RequireHost();
         var budget = terminalBudget ?? TimeSpan.FromSeconds(30);
 
+        // The budget is the TOTAL wall-clock allowance covering BOTH the tracked
+        // publish and the post-publish poll. Start the clock before the publish so
+        // the poll window is the remainder, never a fresh second budget (which would
+        // let the method wait up to ~2x the documented budget).
+        var store = runtime.Services.GetRequiredService<IDocumentStore>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
         await runtime
             .TrackActivity()
             .Timeout(budget)
             .PublishMessageAndWaitAsync(startCommand);
 
-        var store = runtime.Services.GetRequiredService<IDocumentStore>();
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        while (sw.Elapsed < budget)
+        // Poll at least once after the publish settles (do/while), then bound every
+        // subsequent wait by the time left in the budget.
+        do
         {
             await using var query = store.QuerySession();
             var saga = await query.LoadAsync<TSaga>(workflowId);
@@ -265,8 +271,16 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 return true;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), CancellationToken.None);
+            var remaining = budget - sw.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            var pollInterval = TimeSpan.FromMilliseconds(50);
+            await Task.Delay(remaining < pollInterval ? remaining : pollInterval, CancellationToken.None);
         }
+        while (true);
 
         return false;
     }
