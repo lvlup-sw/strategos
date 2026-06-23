@@ -71,22 +71,6 @@ public class WorkerHandlerEmitterUnitTests
         await Assert.That(source).Contains("namespace TestNamespace;");
     }
 
-    /// <summary>
-    /// Verifies that the emitter includes GeneratedCode attribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_WithValidModel_IncludesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = WorkerHandlerEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
     // =============================================================================
     // B. Handler Class Generation Tests
     // =============================================================================

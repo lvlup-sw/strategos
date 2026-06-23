@@ -294,17 +294,19 @@ public class StateReducerGeneratorIntegrationTests
     }
 
     /// <summary>
-    /// Verifies that generated code includes GeneratedCode attribute.
+    /// Verifies that generated code carries the centrally-stamped coverage attributes
+    /// (<c>[GeneratedCode("LevelUp.Strategos", ...)]</c> and <c>[ExcludeFromCodeCoverage]</c>).
     /// </summary>
     [Test]
-    public async Task Generator_IncludesGeneratedCodeAttribute()
+    public async Task Generator_IncludesCoverageStampingAttributes()
     {
         // Arrange & Act
         var result = GeneratorTestHelper.RunStateReducerGenerator(SourceTexts.StateWithStandardProperties);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "OrderStateReducer.g.cs");
 
         // Assert
-        await Assert.That(generatedSource).Contains("[GeneratedCode(\"Strategos.Generators\"");
+        await Assert.That(generatedSource).Contains("GeneratedCode(\"LevelUp.Strategos\"");
+        await Assert.That(generatedSource).Contains("ExcludeFromCodeCoverage");
     }
 
     // =============================================================================

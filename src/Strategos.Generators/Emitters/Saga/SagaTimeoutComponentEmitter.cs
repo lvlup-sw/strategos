@@ -95,7 +95,6 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("    /// <see cref=\"Wolverine.TimeoutMessage\"/> so Wolverine auto-schedules its");
         sb.AppendLine("    /// delayed delivery and ignores it if the saga has already completed.");
         sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    [GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"    public sealed record {phaseName}Timeout(");
         sb.AppendLine("        [property: Wolverine.Persistence.Sagas.SagaIdentity] Guid WorkflowId)");
         sb.AppendLine($"        : TimeoutMessage(System.TimeSpan.FromTicks({ticks}L));");

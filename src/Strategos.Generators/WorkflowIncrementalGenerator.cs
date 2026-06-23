@@ -44,24 +44,24 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             {
                 // Emit Phase enum
                 var phaseSource = PhaseEnumEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PhaseEnumName}.g.cs", SourceText.From(phaseSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PhaseEnumName}.g.cs", phaseSource);
 
                 // Emit Commands
                 var commandsSource = CommandsEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PascalName}Commands.g.cs", SourceText.From(commandsSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Commands.g.cs", commandsSource);
 
                 // Emit Events
                 var eventsSource = EventsEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PascalName}Events.g.cs", SourceText.From(eventsSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Events.g.cs", eventsSource);
 
                 // Emit Transitions
                 var transitionsSource = TransitionsEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PascalName}Transitions.g.cs", SourceText.From(transitionsSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Transitions.g.cs", transitionsSource);
 
                 // Emit Saga
                 var sagaClassName = SagaEmitter.GetSagaClassName(result.Model);
                 var sagaSource = SagaEmitter.Emit(result.Model);
-                spc.AddSource($"{sagaClassName}.g.cs", SourceText.From(sagaSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{sagaClassName}.g.cs", sagaSource);
 
                 // Emit Context Assemblers (DR-6). Only steps that declared
                 // .WithContext(...) produce a {Step}ContextAssembler; when no step
@@ -72,21 +72,21 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 var assemblersSource = ContextAssemblerEmitter.Emit(result.Model);
                 if (!string.IsNullOrWhiteSpace(assemblersSource))
                 {
-                    spc.AddSource($"{result.Model.PascalName}Assemblers.g.cs", SourceText.From(assemblersSource, Encoding.UTF8));
+                    GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Assemblers.g.cs", assemblersSource);
                 }
 
                 // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
                 var handlersSource = WorkerHandlerEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PascalName}Handlers.g.cs", SourceText.From(handlersSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Handlers.g.cs", handlersSource);
 
                 // Emit DI Extensions
                 var extensionsSource = ExtensionsEmitter.Emit(result.Model);
-                spc.AddSource($"{result.Model.PascalName}Extensions.g.cs", SourceText.From(extensionsSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Extensions.g.cs", extensionsSource);
 
                 // Emit Mermaid Diagram (as C# file with diagram in raw string constant)
                 var diagramContent = MermaidEmitter.Emit(result.Model);
                 var diagramSource = WrapMermaidAsCSharp(result.Model, diagramContent);
-                spc.AddSource($"{result.Model.PascalName}Diagram.g.cs", SourceText.From(diagramSource, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Diagram.g.cs", diagramSource);
             }
         });
     }
@@ -868,7 +868,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         sb.AppendLine($"/// Mermaid state diagram for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// Copy the content of the Diagram field to a Mermaid renderer to visualize.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[System.CodeDom.Compiler.GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"internal static partial class {model.PascalName}Diagram");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");

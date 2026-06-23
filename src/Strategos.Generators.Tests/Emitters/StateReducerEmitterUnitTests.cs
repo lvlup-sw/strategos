@@ -118,22 +118,6 @@ public class StateReducerEmitterUnitTests
         await Assert.That(source).Contains("public static partial class OrderStateReducer");
     }
 
-    /// <summary>
-    /// Verifies that GeneratedCode attribute is included.
-    /// </summary>
-    [Test]
-    public async Task Emit_WithValidModel_IncludesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = StateReducerEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
     // =============================================================================
     // C. Reduce Method Tests
     // =============================================================================

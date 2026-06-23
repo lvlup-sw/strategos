@@ -55,22 +55,6 @@ public class TransitionsEmitterUnitTests
         await Assert.That(source).Contains("ValidTransitions");
     }
 
-    /// <summary>
-    /// Verifies that the transitions class has GeneratedCode attribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_TransitionsClass_HasGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = TransitionsEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
     // =============================================================================
     // B. Transition Entries Tests
     // =============================================================================

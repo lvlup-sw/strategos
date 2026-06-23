@@ -47,17 +47,21 @@ public class PhaseEnumEmitterTests
     }
 
     /// <summary>
-    /// Verifies that the generated enum includes the GeneratedCode attribute.
+    /// Verifies that the generated phase enum carries the centrally-stamped
+    /// <c>[GeneratedCode("LevelUp.Strategos", ...)]</c> marker. An enum does NOT receive
+    /// <c>[ExcludeFromCodeCoverage]</c> — the compiler rejects that attribute on enums (CS0592),
+    /// and an enum has no executable code to cover.
     /// </summary>
     [Test]
-    public async Task Emit_IncludesGeneratedCodeAttribute()
+    public async Task Emit_IncludesGeneratedCodeMarker()
     {
         // Arrange & Act
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.ClassWithWorkflowAttribute);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "Phase.g.cs");
 
         // Assert
-        await Assert.That(generatedSource).Contains("[GeneratedCode(\"Strategos.Generators\"");
+        await Assert.That(generatedSource).Contains("GeneratedCode(\"LevelUp.Strategos\"");
+        await Assert.That(generatedSource).DoesNotContain("ExcludeFromCodeCoverage");
     }
 
     /// <summary>
