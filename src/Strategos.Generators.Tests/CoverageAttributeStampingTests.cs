@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 using Strategos.Generators.Tests.Fixtures;
@@ -85,12 +86,13 @@ public sealed class CoverageAttributeStampingTests
 
         await Assert.That(sourceFiles).IsNotEmpty();
 
-        // Every direct AddSource call must live in the stamper; every other generator source
-        // must route through AddStampedSource ("AddSource(" is not a substring of
-        // "AddStampedSource(", so this catches only genuine bypasses).
+        // Every direct AddSource call must live in the stamper; every other generator source must
+        // route through AddStampedSource. Detect AddSource via a Roslyn invocation scan rather than
+        // a substring match, so whitespace variants (`AddSource (`) are still caught and AddSource
+        // mentioned in a comment or string literal is not falsely flagged.
         var bypassingFiles = sourceFiles
             .Where(path => Path.GetFileName(path) != stamperFileName)
-            .Where(path => File.ReadAllText(path).Contains("AddSource(", StringComparison.Ordinal))
+            .Where(CallsAddSource)
             .Select(Path.GetFileName)
             .ToList();
 
@@ -104,9 +106,25 @@ public sealed class CoverageAttributeStampingTests
         // The chokepoint itself must still exist (guards against the call being removed).
         var stamperPath = Path.Combine(generatorDir, "Helpers", stamperFileName);
         await Assert.That(File.Exists(stamperPath)).IsTrue();
-        await Assert.That(File.ReadAllText(stamperPath).Contains("AddSource(", StringComparison.Ordinal))
+        await Assert.That(CallsAddSource(stamperPath))
             .IsTrue()
             .Because("the central stamper must own the single AddSource call");
+    }
+
+    // Parses a C# file and reports whether it contains an actual `AddSource` method invocation
+    // (member-access `x.AddSource(...)` or bare `AddSource(...)`), ignoring comments/strings.
+    private static bool CallsAddSource(string filePath)
+    {
+        var root = CSharpSyntaxTree.ParseText(File.ReadAllText(filePath)).GetRoot();
+
+        return root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Any(invocation => invocation.Expression switch
+            {
+                MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text == "AddSource",
+                IdentifierNameSyntax identifier => identifier.Identifier.Text == "AddSource",
+                _ => false,
+            });
     }
 
     private static async Task<bool> AssertEveryTopLevelTypeStamped(GeneratorDriverRunResult result)

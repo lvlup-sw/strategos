@@ -17,7 +17,7 @@ namespace Strategos.Generators.Tests.Helpers;
 /// stamps every emitted top-level type with <c>[GeneratedCode]</c> + <c>[ExcludeFromCodeCoverage]</c> (#148).
 /// </summary>
 [Property("Category", "Unit")]
-public class GeneratedCodeStamperTests
+public sealed class GeneratedCodeStamperTests
 {
     private const string GeneratedCodeMarker = "global::System.CodeDom.Compiler.GeneratedCode(\"LevelUp.Strategos\"";
     private const string ExcludeMarker = "global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage";
