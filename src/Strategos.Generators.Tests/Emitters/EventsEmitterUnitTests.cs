@@ -323,22 +323,6 @@ public class EventsEmitterUnitTests
         await Assert.That(source).Contains("using Strategos.Agents.Abstractions;");
     }
 
-    /// <summary>
-    /// Verifies that GeneratedCode attribute is included.
-    /// </summary>
-    [Test]
-    public async Task Emit_WithValidModel_IncludesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = EventsEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
     // =============================================================================
     // D. Guard Clause Tests
     // =============================================================================

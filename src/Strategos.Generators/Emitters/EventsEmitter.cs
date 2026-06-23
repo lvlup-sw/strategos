@@ -35,7 +35,6 @@ internal static class EventsEmitter
         FileHeaderHelper.AppendUsings(
             sb,
             "System",
-            "System.CodeDom.Compiler",
             "Strategos.Agents.Abstractions",
             "Wolverine.Marten",
             "Wolverine.Persistence.Sagas");
@@ -215,7 +214,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Marker interface for {model.WorkflowName} workflow events.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public partial interface I{model.PascalName}Event : IProgressEvent");
         sb.AppendLine("{");
         sb.AppendLine("}");
@@ -228,7 +226,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Event published when the {model.WorkflowName} workflow starts.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {model.PascalName}Started(");
         sb.AppendLine("    Guid WorkflowId,");
         sb.AppendLine($"    {stateType} InitialState,");
@@ -242,7 +239,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Event published when the {stepName} step completes.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {stepName}Completed(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    Guid StepExecutionId,");
@@ -256,7 +252,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Event published when a validation guard fails in the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {model.PascalName}ValidationFailed(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string StepName,");
@@ -281,7 +276,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// </list>");
         sb.AppendLine("/// </para>");
         sb.AppendLine("/// </remarks>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {model.PascalName}Failed(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string FailedStepName,");
@@ -299,7 +293,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// type/message so the failure is queryable from the Marten event stream, not only");
         sb.AppendLine("/// from the saga document properties + structured logs.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {model.PascalName}StepFailed(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string FailedStepName,");
@@ -317,7 +310,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// observed confidence score, and the threshold so the routing decision is queryable");
         sb.AppendLine("/// from the Marten event stream, not only from the structured logs.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record {model.PascalName}LowConfidenceRouted(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string StepName,");
@@ -352,7 +344,6 @@ internal static class EventsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Event published when the {stepName} failure handler step completes.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial record FailureHandler_{sanitizedId}_{stepName}Completed(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    Guid StepExecutionId,");

@@ -875,7 +875,7 @@ Outer_Inner_Step       // Nested loop hierarchy preserved
 For each workflow, a source generator produces an enumeration of all possible phases:
 
 ```csharp
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public enum ProcessClaimPhase
 {
     NotStarted,
@@ -891,12 +891,20 @@ public enum ProcessClaimPhase
 
 This provides type-safe workflow position tracking and enables efficient queries.
 
+> **Coverage marking (#148).** Every generated type carries
+> `[GeneratedCode("LevelUp.Strategos", <version>)]`, and every generated
+> class/struct/record additionally carries `[ExcludeFromCodeCoverage]` (omitted from the
+> snippets in this document for brevity; the attribute is invalid on enum/interface/delegate,
+> which have no executable code to cover). These are applied **centrally** at the generator's
+> single `AddSource` boundary by `GeneratedCodeStamper`, not per emit site, so generated
+> code is excluded from every consumer's coverage report with no `.runsettings`.
+
 ### Transition Validation
 
 The generator produces a transition table for validation:
 
 ```csharp
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public static class ProcessClaimTransitions
 {
     public static readonly IReadOnlyDictionary<Phase, Phase[]>
@@ -953,7 +961,7 @@ The source generator produces the following artifacts (condensed for illustratio
 // 1. Phase Enumeration
 // ═══════════════════════════════════════════════════════════════════════
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public enum ProcessClaimPhase
 {
     NotStarted,
@@ -971,16 +979,16 @@ public enum ProcessClaimPhase
 // 2. Commands (Wolverine Messages)
 // ═══════════════════════════════════════════════════════════════════════
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public sealed record StartProcessClaimCommand(
     Guid WorkflowId,
     ClaimState InitialState);
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public sealed record ExecuteGatherContextCommand(
     [property: SagaIdentity] Guid WorkflowId);
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public sealed record ExecuteAssessClaimCommand(
     [property: SagaIdentity] Guid WorkflowId);
 
@@ -990,7 +998,7 @@ public sealed record ExecuteAssessClaimCommand(
 // 3. Saga Class
 // ═══════════════════════════════════════════════════════════════════════
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public partial class ProcessClaimSaga : Saga
 {
     [SagaIdentity]
@@ -1096,7 +1104,7 @@ public partial class ProcessClaimSaga : Saga
 // 4. Projection (Read Model)
 // ═══════════════════════════════════════════════════════════════════════
 
-[GeneratedCode("Strategos", "1.0")]
+[GeneratedCode("LevelUp.Strategos", "<version>")]
 public class ProcessClaimProjection : SingleStreamProjection<ProcessClaimReadModel>
 {
     public ProcessClaimReadModel Create(ProcessClaimStarted evt) => new()

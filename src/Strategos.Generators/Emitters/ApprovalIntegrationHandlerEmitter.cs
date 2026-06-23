@@ -67,7 +67,6 @@ internal sealed class ApprovalIntegrationHandlerEmitter
         sb.AppendLine();
         sb.AppendLine($"namespace {model.Namespace};");
         sb.AppendLine();
-        sb.AppendLine("using System.CodeDom.Compiler;");
         sb.AppendLine("using Strategos.Abstractions;");
         sb.AppendLine("using Strategos.Models;");
         sb.AppendLine("using Microsoft.Extensions.Logging;");
@@ -82,7 +81,6 @@ internal sealed class ApprovalIntegrationHandlerEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Handles approval request events for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed class {className}");
         sb.AppendLine("{");
         sb.AppendLine($"    private readonly IHumanApprovalHandler _approvalHandler;");

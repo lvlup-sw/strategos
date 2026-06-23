@@ -38,7 +38,6 @@ internal static class ExtensionsEmitter
         var usings = new List<string>
         {
             "System",
-            "System.CodeDom.Compiler",
             "Microsoft.Extensions.DependencyInjection",
         };
 
@@ -107,7 +106,6 @@ internal static class ExtensionsEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// DI extension methods for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public static partial class {model.PascalName}WorkflowExtensions");
         sb.AppendLine("{");
 

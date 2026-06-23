@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+**Generators stamp `[GeneratedCode]` + `[ExcludeFromCodeCoverage]` on every emitted
+type, centrally (#148).** Every type the workflow and state-reducer generators emit
+into a consumer assembly (sagas, events, commands, phase enums, transitions, worker
+handlers, DI extensions, context assemblers, state reducers, mermaid diagrams) now
+carries `[global::System.CodeDom.Compiler.GeneratedCode("LevelUp.Strategos", <version>)]`,
+and every generated class/struct/record additionally carries
+`[global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]` (the compiler rejects
+that attribute on enum/interface, which carry no executable code to cover). Because
+Microsoft.CodeCoverage honours `[ExcludeFromCodeCoverage]` by default, **every Strategos
+consumer gets clean coverage with zero per-repo `.runsettings`** — this de-pollutes the
+~22k+ generated lines that previously counted against consumers' coverage denominators
+(consumed by lvlup-sw/basileus#325 Wave 0 via a `Directory.Packages.props` bump).
+
+Stamping is enforced *structurally*: a single `GeneratedCodeStamper` rewrites every
+generated source at the one `AddSource` chokepoint, the ~30 hand-rolled per-emitter
+`[GeneratedCode("Strategos.Generators", "1.0.0")]` literals are removed (fixing the wrong
+tool name and the stale hard-coded version, now resolved from generator assembly
+metadata), and an architecture-guard test fails the build if any emit path bypasses the
+stamper. No change to generated runtime behaviour.
+
 ## [2.9.0] - 2026-06-19
 
 ### Added

@@ -49,7 +49,6 @@ internal static class ContextAssemblerEmitter
         FileHeaderHelper.AppendUsings(
             sb,
             "System",
-            "System.CodeDom.Compiler",
             "System.Collections.Generic",
             "System.Linq",
             "System.Threading",
@@ -107,7 +106,6 @@ internal static class ContextAssemblerEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Assembles runtime context for the {step.StepName} step.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial class {className} : IContextAssembler<{stateType}>");
         sb.AppendLine("{");
 

@@ -41,7 +41,6 @@ internal static class WorkerHandlerEmitter
         var usings = new List<string>
         {
             "System",
-            "System.CodeDom.Compiler",
             "System.Diagnostics",
             "System.Threading",
             "System.Threading.Tasks",
@@ -197,7 +196,6 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("/// workflow Failed).");
         sb.AppendLine("/// </para>");
         sb.AppendLine("/// </remarks>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial class {handlerClassName}(");
         sb.AppendLine($"    {stepName} step,");
         sb.AppendLine($"    ILogger<{handlerClassName}> logger)");
@@ -324,7 +322,6 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("/// to allow Wolverine's retry policies to handle transient failures.");
         sb.AppendLine("/// </para>");
         sb.AppendLine("/// </remarks>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public sealed partial class {handlerClassName}(");
         sb.AppendLine($"    {stepName} step,");
         if (hasContext)

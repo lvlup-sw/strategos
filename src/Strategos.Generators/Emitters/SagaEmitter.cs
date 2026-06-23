@@ -72,7 +72,6 @@ internal static class SagaEmitter
         var usings = new List<string>
         {
             "System",
-            "System.CodeDom.Compiler",
             "System.Collections.Generic",
             "Strategos.Identity.Abstractions",
             "Strategos.Services",
@@ -155,7 +154,6 @@ internal static class SagaEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Wolverine saga for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("[GeneratedCode(\"Strategos.Generators\", \"1.0.0\")]");
         sb.AppendLine($"public partial class {sagaClassName} : Saga, IPhaseAwareSaga");
         sb.AppendLine("{");
     }

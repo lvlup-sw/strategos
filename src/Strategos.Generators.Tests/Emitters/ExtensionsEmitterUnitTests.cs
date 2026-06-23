@@ -71,22 +71,6 @@ public class ExtensionsEmitterUnitTests
     }
 
     /// <summary>
-    /// Verifies that the emitter includes GeneratedCode attribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_WithValidModel_IncludesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = ExtensionsEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
-    /// <summary>
     /// Verifies that the emitter includes required usings.
     /// </summary>
     [Test]

@@ -74,25 +74,6 @@ public class ApprovalIntegrationHandlerEmitterTests
         await Assert.That(result).Contains("public sealed class TestWorkflowApprovalIntegrationHandler");
     }
 
-    /// <summary>
-    /// Verifies that Emit generates GeneratedCodeAttribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_GeneratesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var emitter = new ApprovalIntegrationHandlerEmitter();
-        var sb = new StringBuilder();
-        var model = CreateModelWithApproval();
-
-        // Act
-        emitter.Emit(sb, model);
-        var result = sb.ToString();
-
-        // Assert
-        await Assert.That(result).Contains("[GeneratedCode(");
-    }
-
     // =============================================================================
     // C. Dependency Injection Tests
     // =============================================================================

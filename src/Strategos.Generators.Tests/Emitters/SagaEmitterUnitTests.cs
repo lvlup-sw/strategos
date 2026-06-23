@@ -226,22 +226,6 @@ public class SagaEmitterUnitTests
         await Assert.That(result).Contains(": Saga");
     }
 
-    /// <summary>
-    /// Verifies that Emit includes GeneratedCode attribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_ValidModel_HasGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateMinimalModel();
-
-        // Act
-        var result = SagaEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(result).Contains("[GeneratedCode(");
-    }
-
     // =============================================================================
     // E. Emit with Empty StepNames Tests
     // =============================================================================

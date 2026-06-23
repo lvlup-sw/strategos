@@ -224,22 +224,6 @@ public class CommandsEmitterUnitTests
     }
 
     /// <summary>
-    /// Verifies that GeneratedCode attribute is included.
-    /// </summary>
-    [Test]
-    public async Task Emit_WithValidModel_IncludesGeneratedCodeAttribute()
-    {
-        // Arrange
-        var model = CreateTestModel();
-
-        // Act
-        var source = CommandsEmitter.Emit(model);
-
-        // Assert
-        await Assert.That(source).Contains("[GeneratedCode(\"Strategos.Generators\"");
-    }
-
-    /// <summary>
     /// Verifies that XML documentation is included for the Start command.
     /// </summary>
     [Test]

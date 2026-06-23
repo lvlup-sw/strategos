@@ -6,6 +6,7 @@
 
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Emitters;
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 
 namespace Strategos.Generators;
@@ -45,7 +46,7 @@ public sealed class StateReducerIncrementalGenerator : IIncrementalGenerator
             {
                 var source = StateReducerEmitter.Emit(result.Model);
                 var hintName = $"{result.Model.ReducerClassName}.g.cs";
-                spc.AddSource(hintName, SourceText.From(source, Encoding.UTF8));
+                GeneratedCodeStamper.AddStampedSource(spc, hintName, source);
             }
         });
     }
