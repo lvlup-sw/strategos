@@ -82,6 +82,21 @@ The library builds on proven .NET infrastructure rather than reinventing durabil
 
 **Roslyn Source Generators** transform fluent DSL definitions into type-safe artifacts at compile time: phase enums, commands, events, saga handlers, and state reducers. Invalid workflows fail at build time with clear diagnostics, not at runtime with cryptic exceptions.
 
+## How It Compares
+
+Strategos is not an agent framework, and it is not a general workflow engine. It sits between the two: the durability and audit of a workflow engine, with execution primitives that understand agents.
+
+| | Strategos | [LangGraph](https://www.langchain.com/langgraph) | [MAF Workflows](https://learn.microsoft.com/en-us/agent-framework/user-guide/workflows/overview) | [Temporal](https://temporal.io/) |
+|---|---|---|---|---|
+| Platform | .NET | Python, JS | .NET, Python | polyglot |
+| Durability | event-sourced on Postgres | checkpoints | checkpoints (BSP) | event history |
+| Authoring | compiled DSL, source-generated saga | imperative graph | fluent graph | SDK code |
+| Compensation | built into the DSL | your code | your code | saga pattern |
+| Agent-native controls | confidence routing, budgets, loop detection, agent selection | not built in | not built in | not agent-aware |
+| Decision audit | replay the exact state behind any step | checkpoint state | checkpoint state | event history |
+
+Where the others lead: LangGraph has the largest ecosystem, MAF has a visual designer and the rest of the Microsoft stack behind it, and Temporal has years of production hardening and a mature operations dashboard. Strategos trades that breadth for determinism, event-sourced audit, and agent-aware execution on .NET.
+
 ## Packages
 
 Everything ships on NuGet under the `LevelUp.` prefix. Add what a given project needs.
