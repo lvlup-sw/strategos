@@ -4,7 +4,20 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/lvlup-sw/strategos/ci.yml?branch=main)](https://github.com/lvlup-sw/strategos/actions)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-> Deterministic orchestration for AI-powered workflows
+> A compiled, durable-execution runtime for agentic workflows.
+
+Strategos is a .NET library for building AI workflows that survive restarts, roll
+back on failure, and answer "what did the agent see when it made that decision?"
+Agent outputs are stochastic. The workflow around them is deterministic.
+
+**Declare.** Write the workflow in a fluent C# DSL: steps, branches, approvals,
+and compensation.
+
+**Compile.** A Roslyn source generator lowers the definition to a typed saga at
+build time. Invalid workflows fail compilation instead of failing in production.
+
+**Run.** The saga executes durably on Wolverine and Marten, with rollback, budget
+ceilings, confidence-based escalation, and an event log you can audit or replay.
 
 ## Documentation
 
@@ -40,7 +53,7 @@ dotnet run --project samples/AgenticCoder
 
 ## The Problem
 
-AI agents are inherently probabilistic—given the same input, an LLM may produce different outputs. Current solutions force an unsatisfying choice:
+AI agents are inherently stochastic. Given the same input, an LLM may produce different outputs. Current solutions force an unsatisfying choice:
 
 - **Agent frameworks** ([LangGraph](https://www.langchain.com/langgraph), [MS Agent Framework](https://learn.microsoft.com/en-us/agent-framework/overview/agent-framework-overview)) offer great developer experience but rely on checkpoint-based persistence—they can resume workflows, but can't answer "what did the agent see when it made that decision?"
 
@@ -48,7 +61,7 @@ AI agents are inherently probabilistic—given the same input, an LLM may produc
 
 ## The Solution
 
-Strategos bridges these domains with a key insight: while agent *outputs* are probabilistic, the *workflow itself* can be deterministic if we treat each agent decision as an immutable event in an event-sourced system.
+Strategos bridges these domains with a key insight: while agent *outputs* are stochastic, the *workflow itself* can be deterministic if we treat each agent decision as an immutable event in an event-sourced system.
 
 ```csharp
 var workflow = Workflow<OrderState>
