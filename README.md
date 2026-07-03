@@ -84,105 +84,25 @@ The library builds on proven .NET infrastructure rather than reinventing durabil
 
 ## Packages
 
+Everything ships on NuGet under the `LevelUp.` prefix. Add what a given project needs.
+
 | Package | Purpose |
 |---------|---------|
-| `Strategos` | Core fluent DSL and abstractions |
-| `Strategos.Generators` | Compile-time source generation (sagas, events, phase enums) |
-| `Strategos.Identity.Abstractions` | Agent-identity ports (workflow + agent identity records, IPhaseAwareSaga, IAgentIdentityProvider, StrategosHeaders) |
-| `Strategos.Infrastructure` | Production implementations (Thompson Sampling, loop detection, budgets) |
-| `Strategos.Agents` | Microsoft Agent Framework integration for LLM-powered steps |
-| `Strategos.Rag` | Vector store adapters for RAG patterns |
+| `LevelUp.Strategos` | Fluent workflow DSL and core abstractions: steps, branches, compensation, fork/join |
+| `LevelUp.Strategos.Generators` | Roslyn source generators that emit the saga, phase enum, commands, events, and DI wiring |
+| `LevelUp.Strategos.Infrastructure` | Runtime implementations: Thompson Sampling selection, loop detection, budget enforcement |
+| `LevelUp.Strategos.Identity.Abstractions` | Identity seam: workflow and agent identity records, ports, and header constants |
+| `LevelUp.Strategos.Contracts` | TypeSpec-canonical event, workflow-IR, and invariant contracts as C# records plus JSON Schema |
+| `LevelUp.Strategos.Agents` | Microsoft Agent Framework integration for LLM-powered steps |
+| `LevelUp.Strategos.Agents.Mcp` | Model Context Protocol tool source for agent steps |
+| `LevelUp.Strategos.Ontology` | Type-safe domain ontology DSL: object types, links, actions, and an ingestion pipeline |
+| `LevelUp.Strategos.Ontology.Generators` | Compile-time ontology analyzers (AONT diagnostics) |
+| `LevelUp.Strategos.Ontology.Embeddings` | OpenAI-compatible embedding provider for vector search |
+| `LevelUp.Strategos.Ontology.Npgsql` | PostgreSQL pgvector object-set provider |
+| `LevelUp.Strategos.Ontology.MCP` | Ontology exposed as MCP tools for exploration, querying, and action dispatch |
+| `LevelUp.Strategos.Ontology.MCP.Hosting` | Hosting bridge that registers ontology tools on an MCP server |
 
-**Minimal setup** (workflows without LLM agents):
-```bash
-dotnet add package LevelUp.Strategos
-dotnet add package LevelUp.Strategos.Generators
-```
-
-**With LLM integration** (most common):
-```bash
-dotnet add package LevelUp.Strategos
-dotnet add package LevelUp.Strategos.Generators
-dotnet add package LevelUp.Strategos.Agents
-dotnet add package LevelUp.Strategos.Infrastructure
-```
-
-See [Package Documentation](docs/packages.md) for detailed guidance.
-
-### Identity Seam (v2.7.0-preview.1)
-
-Sagas surface their current phase via the `IPhaseAwareSaga` marker
-interface (every generated saga implements it automatically). The
-basileus SPIFFE adapter uses this seam to attribute every outgoing
-message to a per-step `AgentIdentity` derived from
-`(WorkflowIdentity, saga.CurrentPhaseName)`. Identity rides on
-Wolverine envelope headers — there are no new fields on the saga.
-
-Consumers register the workflow-identity propagation policy in their
-`UseWolverine` block:
-
-```csharp
-using Strategos.Identity.Abstractions;
-
-services.AddWolverine(opts =>
-{
-    opts.Policies.PropagateIncomingHeaderToOutgoing(
-        StrategosHeaders.WorkflowIdentity);
-});
-```
-
-`StrategosHeaders.AgentIdentity` is per-message-derived — each handler
-stamps its own (matches OpenTelemetry `traceparent` semantics). The
-basileus middleware (lvlup-sw/basileus PR #184) provides the SPIFFE
-provider + the stamping middleware; see
-`docs/designs/2026-05-16-g1-agent-identity-seam.md` for the design.
-
-## How It Compares
-
-| Capability | Strategos | [LangGraph](https://www.langchain.com/langgraph) | [MAF Workflows](https://learn.microsoft.com/en-us/agent-framework/user-guide/workflows/overview) | [Temporal](https://temporal.io/) |
-|------------|:----------------:|:---------:|:-------------:|:--------:|
-| .NET native | ✓ | | ✓ | ✓ |
-| Durable execution | event-sourced | checkpoints | checkpoints (BSP) | event history |
-| Compensation/rollback | ✓ DSL | | | ✓ Saga |
-| Human-in-the-loop | ✓ | ✓ | ✓ | ✓ |
-| Decision explainability | ✓ | | | |
-| Confidence routing | ✓ | | | |
-| Budget governance | ✓ | | | |
-| Loop detection | ✓ | | | |
-| Intelligent agent selection | ✓ | | | |
-| Visual dashboard | | | ✓ DTS | ✓ |
-| Cloud-agnostic | ✓ | ✓ | | ✓ |
-
-## Key Features
-
-- **Fluent DSL** — Workflow definitions that read like natural language
-- **Decision Explainability** — Full audit trail: what the agent saw, what it decided, which model produced the output
-- **Budget Governance** — Enforce per-workflow resource limits; prevent runaway costs
-- **Confidence Routing** — Low-confidence decisions automatically escalate to human review
-- **Intelligent Agent Selection** — Learning-based routing that improves over time (Thompson Sampling)
-- **Loop Detection** — Catch stuck agents before they burn through your budget
-- **Compensation Handlers** — DSL-based rollback when workflows fail
-- **Compile-Time Validation** — Invalid workflows fail at build time, not runtime
-- **Durable by Default** — Automatic persistence via Wolverine sagas and Marten event sourcing
-
-## Quick Start
-
-```csharp
-// Register workflows at startup
-services.AddStrategos()
-    .AddWorkflow<ProcessOrderWorkflow>();
-
-// Define a workflow
-public class ProcessOrderWorkflow : IWorkflowDefinition<OrderState>
-{
-    public IWorkflow<OrderState> Define() =>
-        Workflow<OrderState>
-            .Create("process-order")
-            .StartWith<ValidateOrder>()
-            .Then<ProcessPayment>()
-            .Finally<SendConfirmation>();
-}
-```
+`LevelUp.Strategos.Rag` is deprecated; use `LevelUp.Strategos.Ontology` instead.
 
 ## Requirements
 
