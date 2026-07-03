@@ -95,8 +95,6 @@ Strategos is not an agent framework, and it is not a general workflow engine. It
 | Agent-native controls | confidence routing, budgets, loop detection, agent selection | not built in | not built in | not agent-aware |
 | Decision audit | replay the exact state behind any step | checkpoint state | checkpoint state | event history |
 
-Where the others lead: LangGraph has the largest ecosystem, MAF has a visual designer and the rest of the Microsoft stack behind it, and Temporal has years of production hardening and a mature operations dashboard. Strategos trades that breadth for determinism, event-sourced audit, and agent-aware execution on .NET.
-
 ## Packages
 
 Everything ships on NuGet under the `LevelUp.` prefix. Add what a given project needs.
