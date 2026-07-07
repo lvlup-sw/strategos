@@ -72,6 +72,13 @@ public static class WorkflowDefinitionProjection
             ForkPoints = [.. workflow.ForkPoints.Select(ProjectForkPoint)],
             FailureHandlers = [.. workflow.FailureHandlers.Select(ProjectFailureHandler)],
             ApprovalPoints = [.. workflow.ApprovalPoints.Select(ProjectApproval)],
+
+            // DR-7 (#151): the diagnostic-fork edges are OPTIONAL and additive on the
+            // wire (the diagnosticForks? slot). A workflow that declares none omits the
+            // slot entirely, so the projection maps an empty list to null.
+            DiagnosticForks = workflow.DiagnosticForks.Count == 0
+                ? null
+                : [.. workflow.DiagnosticForks.Select(ProjectDiagnosticFork)],
             EntryStepId = workflow.EntryStep?.StepId,
             TerminalStepId = workflow.TerminalStep?.StepId,
         };
@@ -170,6 +177,27 @@ public static class WorkflowDefinitionProjection
                 "Add an explicit arm to WorkflowDefinitionProjection.ProjectMappedKind; " +
                 "the projection must never silently default an unrecognized kind."),
         };
+
+    /// <summary>
+    /// Projects a builder diagnostic-fork edge (DR-7, #151) to its wire form. Every
+    /// reference is a string moniker (INV-8) except the closed <see cref="ForkTrigger"/>
+    /// vocabulary, which is a shared enum carried by value — not a CLR type.
+    /// </summary>
+    private static Wire.DiagnosticForkDefinition ProjectDiagnosticFork(DiagnosticForkDefinition f) => new()
+    {
+        AnchorStepIds = [.. f.AnchorStepIds],
+        PermittedTriggers = [.. f.PermittedTriggers.Select(ProjectPermittedForkTrigger)],
+        MaxForks = f.MaxForks,
+        CompensationSeed = f.CompensationSeed,
+    };
+
+    private static Wire.PermittedForkTrigger ProjectPermittedForkTrigger(PermittedForkTriggerDefinition p) => new()
+    {
+        // The closed ForkTrigger enum is shared across the contract boundary (DR-8);
+        // it round-trips by value, so the builder-IR enum maps directly to the wire enum.
+        Trigger = p.Trigger,
+        RequiredEvidenceFields = [.. p.RequiredEvidenceFields],
+    };
 
     private static Wire.TransitionDefinition ProjectTransition(TransitionDefinition t) => new()
     {

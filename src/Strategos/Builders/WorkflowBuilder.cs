@@ -21,6 +21,7 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
     private readonly List<FailureHandlerDefinition> _failureHandlers = [];
     private readonly List<ApprovalDefinition> _approvalPoints = [];
     private readonly List<ForkPointDefinition> _forkPoints = [];
+    private readonly List<DiagnosticForkDefinition> _diagnosticForks = [];
     private readonly List<(string BranchPointId, List<string> LastStepIds)> _pendingBranchRejoins = [];
     private StepDefinition? _entryStep;
     private StepDefinition? _lastStep;
@@ -351,7 +352,8 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
             .WithLoops(_loops)
             .WithFailureHandlers(_failureHandlers)
             .WithApprovalPoints(_approvalPoints)
-            .WithForkPoints(_forkPoints);
+            .WithForkPoints(_forkPoints)
+            .WithDiagnosticForks(_diagnosticForks);
     }
 
     /// <inheritdoc/>
@@ -653,5 +655,24 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
         _forkPoints.Add(forkPoint);
         _steps.Add(joinStep);
         _lastStep = joinStep;
+    }
+
+    /// <summary>
+    /// Registers a diagnostic-fork edge (DR-7, #151) on the workflow. Invoked by the
+    /// <c>AllowDiagnosticFork</c> fluent extension once its staged builder has produced
+    /// a validated definition.
+    /// </summary>
+    /// <param name="diagnosticFork">The validated diagnostic-fork edge definition.</param>
+    /// <exception cref="InvalidOperationException">Thrown when StartWith has not been called.</exception>
+    internal void AddDiagnosticFork(DiagnosticForkDefinition diagnosticFork)
+    {
+        ArgumentNullException.ThrowIfNull(diagnosticFork, nameof(diagnosticFork));
+
+        if (_entryStep is null)
+        {
+            throw new InvalidOperationException("StartWith must be called before AllowDiagnosticFork.");
+        }
+
+        _diagnosticForks.Add(diagnosticFork);
     }
 }
