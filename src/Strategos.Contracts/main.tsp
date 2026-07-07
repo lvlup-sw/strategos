@@ -7,6 +7,8 @@ import "./Events/JourneyResult.tsp";
 import "./Events/Lifecycle.tsp";
 import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";
+import "./Events/ForkOccurrence.tsp";
+import "./Workflow/ForkTrigger.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Workflow/WorkflowRef.tsp";
 import "./Workflow/WorkflowCatalog.tsp";

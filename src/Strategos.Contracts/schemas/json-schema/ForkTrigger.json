@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ForkTrigger.json",
+    "type": "string",
+    "enum": [
+        "ratification_failure",
+        "gate_contradiction",
+        "operator_explicit"
+    ],
+    "description": "Closed enum of the TRIGGERS that may fork a workflow's diagnostic path\n(#151, DR-8) — the declaration-side trigger vocabulary shared across the\ncontract boundary so both runtimes fork on ONE trigger identity.\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these by VALUE (INV-8 polyglot identity) — never by\nordinal.\n\nAdditive-evolution posture (DR-18): the set is CLOSED, but a future\nbudget-bounded trigger (the planned exploratory member, basileus PR #401\nrec L-4) is admitted by APPENDING a member — a NON-BREAKING additive minor,\nnot a redesign (the ForkOccurrence payload carries an explicit schemaVersion\nmarker so this evolution is versioned, not implicit). Because emitted\nconverters stay strict, an added member is flagged NOTICE: consumers upgrade\nbefore producers emit it. Removing or renaming a member is a breaking major."
+}

@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ForkOccurrence.json",
+    "type": "object",
+    "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "const": "fork.v1",
+            "description": "Wire schema version literal — the DR-18 version marker (additive minors; breaking ⇒ fork.v2)."
+        },
+        "trigger": {
+            "$ref": "ForkTrigger.json",
+            "description": "The closed trigger that fired this fork (DR-8 — the shared trigger identity)."
+        },
+        "evidence": {
+            "$ref": "ForkEvidence.json",
+            "description": "The runtime evidence values that justify the fork — REQUIRED (no unjustified fork)."
+        }
+    },
+    "required": [
+        "schemaVersion",
+        "trigger",
+        "evidence"
+    ],
+    "description": "Runtime payload of a workflow fork (#151, DR-8): the `{Pascal}WorkflowForked`\nevent body and the occurrence-side sibling of exarchos's `workflow.forked`.\nThe generated saga emits exactly one of these at the single fork decision\nsite (DR-9); it is never hand-authored.\n\nIt carries the closed trigger (ForkTrigger) that fired plus the runtime\nevidence VALUES that justify it. Both are REQUIRED — an occurrence missing\nits trigger or its evidence fails schema validation, so an unjustified fork\nis unrepresentable on the wire.\n\nAdditive-evolution posture (DR-18): schemaVersion is a pinned literal version\nmarker. A future budget-bounded trigger (the planned exploratory member) is\nadmitted by appending it to ForkTrigger — a NON-BREAKING additive minor under\nthe enum-evolution policy, not a payload redesign. A breaking change to this\nshape would bump the marker to fork.v2, never mutate fork.v1 in place."
+}
