@@ -142,6 +142,50 @@ public class ProjectionStepKindMappingTests
     }
 
     /// <summary>
+    /// T-KM5 — a diagnostic-fork edge (DR-10, #151) is orthogonal to the step-kind
+    /// mapping: declaring an <c>AllowDiagnosticFork</c> edge does NOT introduce a new
+    /// step arm. The fork edge lands on the dedicated <c>diagnosticForks</c> slot, and
+    /// the workflow's step union stays the asserted 2-of-5 subset (skill/delegate) —
+    /// the fork edge is never smuggled into the <c>StepDefinition</c> union.
+    /// </summary>
+    [Test]
+    public async Task DiagnosticForkEdge_DoesNotPerturb_TheStepKindMapping()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("fork-mapping")
+            .StartWith<ValidateStep>()
+            .Then("InlineProcess", (state, context, ct) =>
+                Task.FromResult(StepResult<TestWorkflowState>.FromState(state)))
+            .AllowDiagnosticFork(fork => fork
+                .Anchor("InlineProcess")
+                .PermitTrigger(Strategos.Contracts.Generated.ForkTrigger.RatificationFailure, "eventId")
+                .WithCompensationSeed("RollbackSeed")
+                .MaxForks(2))
+            .Finally<CompleteStep>();
+
+        var v1 = workflow.ToContract();
+
+        // The fork edge is projected onto its own slot — not the step union.
+        await Assert.That(v1.DiagnosticForks).IsNotNull()
+            .Because("the fork edge must land on the diagnosticForks slot.");
+        await Assert.That(v1.DiagnosticForks!.Count).IsEqualTo(1);
+
+        // The step arms remain the asserted 2-of-5 subset; the fork edge added none.
+        await Assert.That(v1.Steps.Count).IsGreaterThan(0);
+        foreach (var step in v1.Steps)
+        {
+            var isMappedArm = step is SkillStep or DelegateStep;
+            await Assert.That(isMappedArm).IsTrue()
+                .Because(
+                    $"a fork-edge workflow must still project only skill/delegate step arms; " +
+                    $"{step.GetType().Name} implies the fork edge leaked into the step union.");
+        }
+
+        await Assert.That(v1.Steps.OfType<SkillStep>().Any()).IsTrue();
+        await Assert.That(v1.Steps.OfType<DelegateStep>().Any()).IsTrue();
+    }
+
+    /// <summary>
     /// Invokes the private static <c>ProjectStep</c> seam.
     /// </summary>
     private static Strategos.Contracts.Generated.StepDefinition ProjectStep(BuilderStep step)
