@@ -16,9 +16,16 @@ public enum ChangeSeverity
     /// <summary>An additive, backward-compatible change (additive-only minor).</summary>
     NonBreaking = 0,
 
+    /// <summary>An additive change that is compatible on the wire but demands a
+    /// consumer-notice release-notes line before producers may exercise it — the
+    /// DR-18 posture for a new closed-enum member. Permitted on a minor bump; does
+    /// not block the CI gate, but is surfaced (flagged) rather than silent, because
+    /// strict converters reject unknown members until consumers upgrade.</summary>
+    Notice = 1,
+
     /// <summary>A change that invalidates previously-valid documents or removes a
     /// guarantee a consumer relied on (requires a major version bump).</summary>
-    Breaking = 1,
+    Breaking = 2,
 }
 
 /// <summary>A single structural change detected between a previous and a next schema.</summary>
@@ -33,10 +40,17 @@ public sealed record SchemaDiffResult(IReadOnlyList<SchemaChange> Changes)
     /// <summary>Gets a value indicating whether any change is breaking.</summary>
     public bool HasBreakingChanges => Changes.Any(c => c.Severity == ChangeSeverity.Breaking);
 
-    /// <summary>Gets the overall severity: <see cref="ChangeSeverity.Breaking"/> if
-    /// any single change is breaking, otherwise <see cref="ChangeSeverity.NonBreaking"/>.</summary>
+    /// <summary>Gets a value indicating whether any change is a flagged
+    /// <see cref="ChangeSeverity.Notice"/> (e.g. an added enum member) — non-breaking
+    /// but requiring a consumer-notice release-notes line under DR-18.</summary>
+    public bool HasNotices => Changes.Any(c => c.Severity == ChangeSeverity.Notice);
+
+    /// <summary>Gets the overall severity: the highest severity of any single change
+    /// (<see cref="ChangeSeverity.Breaking"/> &gt; <see cref="ChangeSeverity.Notice"/>
+    /// &gt; <see cref="ChangeSeverity.NonBreaking"/>), or
+    /// <see cref="ChangeSeverity.NonBreaking"/> when there are no changes.</summary>
     public ChangeSeverity Severity =>
-        HasBreakingChanges ? ChangeSeverity.Breaking : ChangeSeverity.NonBreaking;
+        Changes.Count == 0 ? ChangeSeverity.NonBreaking : Changes.Max(c => c.Severity);
 }
 
 /// <summary>
@@ -47,14 +61,20 @@ public sealed record SchemaDiffResult(IReadOnlyList<SchemaChange> Changes)
 /// </summary>
 /// <remarks>
 /// Scope (intentionally narrow — this gate guards the cross-product wire contract,
-/// not arbitrary JSON Schema): top-level <c>properties</c> + <c>required</c> and
-/// each property's declared <c>type</c>. Rules:
+/// not arbitrary JSON Schema): top-level <c>properties</c> + <c>required</c>, each
+/// property's declared <c>type</c>, and closed-enum member lists (the schema itself,
+/// or a property's inline <c>enum</c>). Rules:
 /// <list type="bullet">
 ///   <item>Removed property ⇒ BREAKING.</item>
 ///   <item>Property newly added to <c>required</c> (existing or new) ⇒ BREAKING.</item>
 ///   <item>Property's declared <c>type</c> changed ⇒ BREAKING (type narrowing/swap).</item>
+///   <item>Enum member removed ⇒ BREAKING (a rename is a removal + an add, so it is
+///   BREAKING too — DR-18 enum-evolution policy).</item>
 ///   <item>Added optional property ⇒ NON-BREAKING.</item>
 ///   <item>Property removed from <c>required</c> (relaxed) ⇒ NON-BREAKING.</item>
+///   <item>Enum member added ⇒ NOTICE (additive on a minor, but flagged: strict
+///   converters reject unknown members, so consumers must upgrade before producers
+///   emit the new member).</item>
 /// </list>
 /// CI compares the previous published tag's <c>schemas/json-schema/*.json</c>
 /// against the working tree's; the tests compare in-test fixtures so they stay
@@ -130,7 +150,15 @@ public static class JsonSchemaDiff
                     ChangeSeverity.Breaking,
                     $"property '{name}' changed type from '{prevType}' to '{nextType}'"));
             }
+
+            // Inline enum member evolution on a retained property.
+            DiffEnumMembers(ReadEnumValues(prevSchema), ReadEnumValues(nextSchema), name, changes);
         }
+
+        // Enum member evolution (DR-18) — the schema itself may BE an enum: TypeSpec
+        // closed enums emit as a top-level `{ "type": "string", "enum": [...] }`
+        // referenced by $ref, so diff the root enum member list too.
+        DiffEnumMembers(ReadEnumValues(previous), ReadEnumValues(next), propertyName: null, changes);
 
         // Newly-required existing properties — breaking.
         foreach (var name in nextRequired)
@@ -202,5 +230,67 @@ public static class JsonSchemaDiff
         }
 
         return null;
+    }
+
+    private static IReadOnlyList<string> ReadEnumValues(JsonElement schema)
+    {
+        var result = new List<string>();
+        if (schema.ValueKind == JsonValueKind.Object
+            && schema.TryGetProperty("enum", out var members)
+            && members.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var member in members.EnumerateArray())
+            {
+                // Only string members are wire tokens for a closed enum; anything
+                // else is outside this contract's scope and is ignored.
+                if (member.ValueKind == JsonValueKind.String)
+                {
+                    result.Add(member.GetString()!);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static void DiffEnumMembers(
+        IReadOnlyList<string> previous,
+        IReadOnlyList<string> next,
+        string? propertyName,
+        List<SchemaChange> changes)
+    {
+        if (previous.Count == 0 && next.Count == 0)
+        {
+            return;
+        }
+
+        var previousSet = new HashSet<string>(previous, StringComparer.Ordinal);
+        var nextSet = new HashSet<string>(next, StringComparer.Ordinal);
+        var prefix = propertyName is null ? string.Empty : $"property '{propertyName}' ";
+
+        // Removed (or renamed-away) member ⇒ BREAKING: a producer may still emit it
+        // and a consumer may still switch on it, yet it is gone from the closed set.
+        // (A rename surfaces as a removal + an add, so the removal makes it BREAKING.)
+        foreach (var member in previous)
+        {
+            if (!nextSet.Contains(member))
+            {
+                changes.Add(new SchemaChange(
+                    ChangeSeverity.Breaking,
+                    $"{prefix}enum member '{member}' was removed"));
+            }
+        }
+
+        // Added member ⇒ NOTICE: additive on a minor, but flagged — strict converters
+        // reject unknown members, so consumers must upgrade before producers emit it.
+        foreach (var member in next)
+        {
+            if (!previousSet.Contains(member))
+            {
+                changes.Add(new SchemaChange(
+                    ChangeSeverity.Notice,
+                    $"{prefix}enum member '{member}' was added"));
+            }
+        }
     }
 }

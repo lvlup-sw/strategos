@@ -161,4 +161,110 @@ public class SchemaDiffTests
         await Assert.That(result.HasBreakingChanges).IsFalse();
         await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.NonBreaking);
     }
+
+    // -------------------------------------------------------------------------
+    // DR-18 enum-evolution policy. TypeSpec closed enums emit as a top-level
+    // `{ "type": "string", "enum": [...] }` schema (referenced by $ref elsewhere),
+    // so the differ diffs the schema's own enum member list. Removal or rename ⇒
+    // BREAKING; addition ⇒ flagged NOTICE (permitted on a minor, but surfaced).
+    // -------------------------------------------------------------------------
+
+    private const string EnumBaseSchema =
+        """
+        {
+          "$id": "TriggerKind.json",
+          "type": "string",
+          "enum": ["manual", "scheduled", "signal"],
+          "description": "How a workflow run is triggered."
+        }
+        """;
+
+    /// <summary>
+    /// Removing an enum member is BREAKING: a producer may still emit the removed
+    /// token and a consumer may still switch on it, yet it is gone from the closed set.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_RemovedEnumMember_IsBreaking()
+    {
+        const string next =
+            """
+            {
+              "$id": "TriggerKind.json",
+              "type": "string",
+              "enum": ["manual", "scheduled"],
+              "description": "How a workflow run is triggered."
+            }
+            """;
+
+        var result = JsonSchemaDiff.Compare(EnumBaseSchema, next);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Breaking);
+        await Assert.That(result.HasBreakingChanges).IsTrue();
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Breaking
+                && c.Description.Contains("signal", StringComparison.Ordinal)
+                && c.Description.Contains("removed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Renaming an enum member (drop the old token, add a new one) is BREAKING: it
+    /// surfaces as a removal (⇒ BREAKING) plus an addition (⇒ NOTICE), and the removal
+    /// dominates the overall severity.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_RenamedEnumMember_IsBreaking()
+    {
+        const string next =
+            """
+            {
+              "$id": "TriggerKind.json",
+              "type": "string",
+              "enum": ["manual", "cron", "signal"],
+              "description": "How a workflow run is triggered."
+            }
+            """;
+
+        var result = JsonSchemaDiff.Compare(EnumBaseSchema, next);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Breaking);
+        await Assert.That(result.HasBreakingChanges).IsTrue();
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Breaking
+                && c.Description.Contains("scheduled", StringComparison.Ordinal)
+                && c.Description.Contains("removed", StringComparison.Ordinal));
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Notice
+                && c.Description.Contains("cron", StringComparison.Ordinal)
+                && c.Description.Contains("added", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Adding an enum member is a flagged NOTICE, not BREAKING: additive on a minor
+    /// bump, but surfaced so a consumer-notice release-notes line is written (strict
+    /// converters reject unknown members until consumers upgrade). The CI gate stays
+    /// green on NOTICE.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_AddedEnumMember_IsNoticeNotBreaking()
+    {
+        const string next =
+            """
+            {
+              "$id": "TriggerKind.json",
+              "type": "string",
+              "enum": ["manual", "scheduled", "signal", "webhook"],
+              "description": "How a workflow run is triggered."
+            }
+            """;
+
+        var result = JsonSchemaDiff.Compare(EnumBaseSchema, next);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Notice);
+        await Assert.That(result.HasBreakingChanges).IsFalse();
+        await Assert.That(result.HasNotices).IsTrue();
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Notice
+                && c.Description.Contains("webhook", StringComparison.Ordinal)
+                && c.Description.Contains("added", StringComparison.Ordinal));
+    }
 }
