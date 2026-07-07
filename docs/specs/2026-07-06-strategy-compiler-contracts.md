@@ -492,7 +492,7 @@ Reject every runtime-bindable-behavior carrier (delegate step, branch point, loo
 Prove the two-bucket partition over the whole corpus (importable ⇒ equivalent; carrier-bearing ⇒ the specific rejection diagnostic; nothing in neither), with behavioral equivalence via hand-authored source twins and full-partition IR fidelity.
 **Risk Tier:** high · **Boundary Touching:** true
 **Implements:** DR-15, DR-3 (gates import fixtures)
-**Files:** `src/Strategos.Tests/FixtureExport/RoundTripEquivalenceTests.cs` (new; partition + IR fidelity), `src/Strategos.Generators.Behavioral.Tests/RoundTripBehavioralTests.cs` (new; per-family `[Workflow]` source twins), hand-authored import-fixture family (delegate, gates, reliability-bearing, dangling `gateId`, version skew), CI wiring alongside fixture-export tests
+**Files:** `src/Strategos.Tests/FixtureExport/RoundTripEquivalenceTests.cs` (new; partition + IR fidelity — if the generator's internal `WorkflowModel` is needed, home the test in `Strategos.Generators.Tests` or extend its IVT rather than widening generator visibility), `src/Strategos.Generators.Behavioral.Tests/RoundTripBehavioralTests.cs` (new; per-family `[Workflow]` source twins), hand-authored import-fixture family (delegate, gates, reliability-bearing, dangling `gateId`, version skew), CI wiring alongside fixture-export tests
 **Verification:** partition assertion (every fixture in exactly one bucket); twin behavioral equivalence per importable family; IR field-for-field fidelity across the importable partition; integration suite.
 **Dependencies:** 017, 018, 014 · **Parallelizable:** No
 
@@ -557,16 +557,16 @@ Hand-author the internal wire-DTO twins and the vendored minimal JSON reader ins
 **Implements:** DR-12 (ingestion mechanism)
 **Files:** `src/Strategos.Generators/Import/WireDtos.cs` (new; netstandard2.0-safe twins), `src/Strategos.Generators/Import/MinimalJsonReader.cs` (new; vendored, dependency-free), `src/Strategos.Generators.Tests/Import/WireDtoSchemaConformanceTests.cs` (new; twins validated against the Contracts-emitted JSON Schema — drift in either direction fails)
 **Verification:** scoped tests + kill-probe; generator packaging unchanged (no new analyzer dependencies — packaging test); conformance test red on either-direction drift.
-**Dependencies:** 006 (wire shapes settled) · **Parallelizable:** Yes (after contracts track)
+**Dependencies:** 006, 024 (twins must include the `hasContext` marker from birth — avoids a known-red conformance window) · **Parallelizable:** Yes (after contracts track)
 
 ### Parallelization
 
 Four tracks run concurrently from the start; integration stays linear per wave (ff-merge discipline):
 
 - **Wave 1 (parallel worktrees):** contracts track head (001→002→003→004→005→006, serialized internally), 007, 008, 009, 020, 025
-- **Wave 2:** 024 (contracts track tail), 010 (after 009), 011 (after 004), 021 (after 020), 026 (after 006)
-- **Wave 3:** 012→013 (013 also waits on 008), 014 (after 011+005+024), 022 (after 006+021), 015 (after 026)
-- **Wave 4:** 016→017 (017 also waits on 009+012) →018
+- **Wave 2:** 024 (contracts track tail), 010 (after 009), 011 (after 004), 021 (after 020)
+- **Wave 3:** 026 (after 024), 012→013 (013 also waits on 008), 014 (after 011+005+024), 022 (after 006+021)
+- **Wave 4:** 015 (after 026), then 016→017 (017 also waits on 009+012) →018
 - **Wave 5:** 019 (after 014+017+018), then 023
 
-**Critical path:** 001→…→006→026→015→016→017→018→019→023 (the contracts track feeds the import front-end; #145/#151 lowering and the ontology track hang off it in parallel).
+**Critical path:** 001→…→006→024→026→015→016→017→018→019→023 (the contracts track feeds the import front-end; #145/#151 lowering and the ontology track hang off it in parallel).
