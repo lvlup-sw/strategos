@@ -30,6 +30,7 @@ namespace Strategos.Generators.Models;
 /// <param name="FailureHandlers">The failure handler constructs in this workflow (OnFailure).</param>
 /// <param name="ApprovalPoints">The approval checkpoints in this workflow (AwaitApproval).</param>
 /// <param name="Forks">The fork constructs in this workflow (Fork/Join).</param>
+/// <param name="DiagnosticForks">The diagnostic-fork edges in this workflow (AllowDiagnosticFork, DR-9).</param>
 /// <param name="ConfidenceHandlerStepNames">
 /// The step names lowered from <c>OnLowConfidence</c> handler branches (DR-5). These steps are
 /// appended to <paramref name="StepNames"/> so they get full lowering (phase, worker handler,
@@ -51,7 +52,8 @@ internal sealed record WorkflowModel(
     IReadOnlyList<FailureHandlerModel>? FailureHandlers = null,
     IReadOnlyList<ApprovalModel>? ApprovalPoints = null,
     IReadOnlyList<ForkModel>? Forks = null,
-    IReadOnlyList<string>? ConfidenceHandlerStepNames = null)
+    IReadOnlyList<string>? ConfidenceHandlerStepNames = null,
+    IReadOnlyList<DiagnosticForkModel>? DiagnosticForks = null)
 {
     /// <summary>
     /// Gets a value indicating whether the workflow's state type exposes a public
@@ -168,6 +170,13 @@ internal sealed record WorkflowModel(
     /// Gets a value indicating whether this workflow contains any fork constructs.
     /// </summary>
     public bool HasForks => Forks is not null && Forks.Count > 0;
+
+    /// <summary>
+    /// Gets a value indicating whether this workflow declares any diagnostic-fork edge
+    /// (<c>AllowDiagnosticFork</c>, DR-9). The saga lowering that consumes
+    /// <see cref="DiagnosticForks"/> is deferred (#151).
+    /// </summary>
+    public bool HasDiagnosticForks => DiagnosticForks is not null && DiagnosticForks.Count > 0;
 
     /// <summary>
     /// Gets a value indicating whether this workflow lowers any <c>OnLowConfidence</c>
@@ -342,6 +351,7 @@ internal sealed record WorkflowModel(
     /// <param name="failureHandlers">The optional failure handler constructs in this workflow.</param>
     /// <param name="approvalPoints">The optional approval checkpoints in this workflow.</param>
     /// <param name="forks">The optional fork constructs in this workflow.</param>
+    /// <param name="diagnosticForks">The optional diagnostic-fork edges in this workflow (AllowDiagnosticFork, DR-9).</param>
     /// <param name="confidenceHandlerStepNames">
     /// The optional step names lowered from <c>OnLowConfidence</c> handler branches (DR-5).
     /// Threaded through so <see cref="HasConfidenceHandlers"/> / <see cref="IsConfidenceHandlerStep"/>
@@ -365,7 +375,8 @@ internal sealed record WorkflowModel(
         IReadOnlyList<FailureHandlerModel>? failureHandlers = null,
         IReadOnlyList<ApprovalModel>? approvalPoints = null,
         IReadOnlyList<ForkModel>? forks = null,
-        IReadOnlyList<string>? confidenceHandlerStepNames = null)
+        IReadOnlyList<string>? confidenceHandlerStepNames = null,
+        IReadOnlyList<DiagnosticForkModel>? diagnosticForks = null)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNullOrWhiteSpace(workflowName, nameof(workflowName));
@@ -420,6 +431,7 @@ internal sealed record WorkflowModel(
             FailureHandlers: failureHandlers,
             ApprovalPoints: approvalPoints,
             Forks: forks,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames,
+            DiagnosticForks: diagnosticForks);
     }
 }

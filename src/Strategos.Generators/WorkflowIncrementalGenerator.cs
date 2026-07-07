@@ -253,6 +253,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             pascalName,
             ct);
 
+        // Extract diagnostic-fork edges into generator IR (DR-9, #151). The saga lowering
+        // that consumes these is deferred; here they are only parsed and attached to the model.
+        var diagnosticForkModels = FluentDslParser.ExtractDiagnosticForkModels(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
         // Extract failure handler models for saga handler generation
         var failureHandlerModels = FluentDslParser.ExtractFailureHandlerModels(
             context.TargetNode,
@@ -759,7 +766,8 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
             ApprovalPoints: approvalModels,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames)
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames,
+            DiagnosticForks: diagnosticForkModels)
         {
             StateHasPhaseProperty = stateHasPhaseProperty,
         };

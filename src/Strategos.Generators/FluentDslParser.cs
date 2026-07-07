@@ -278,6 +278,32 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Extracts diagnostic-fork models from the workflow DSL (DR-9, #151).
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A list of diagnostic-fork models in the order they appear in the workflow. Empty when the
+    /// workflow declares no <c>AllowDiagnosticFork(...)</c> edge.
+    /// </returns>
+    /// <remarks>
+    /// This parses the fork edge into generator IR only; the saga lowering that emits fork
+    /// guards/events from the model is deferred (#151).
+    /// </remarks>
+    public static IReadOnlyList<DiagnosticForkModel> ExtractDiagnosticForkModels(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return DiagnosticForkExtractor.Extract(context);
+    }
+
+    /// <summary>
     /// Validates that all loops have non-empty bodies.
     /// Returns a list of loop names that have empty bodies.
     /// </summary>

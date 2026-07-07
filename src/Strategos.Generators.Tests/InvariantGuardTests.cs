@@ -422,4 +422,75 @@ public class InvariantGuardTests
         // And the audit stream event record was not emitted (document mode, no confidence).
         await Assert.That(eventsSource).DoesNotContain("LowConfidenceRouted");
     }
+
+    /// <summary>
+    /// INV-6 (sealed-by-default) + init-only, DR-9 diagnostic-fork IR (#151): the new
+    /// generator-IR records (<c>DiagnosticForkModel</c>, <c>PermittedForkTriggerModel</c>) and
+    /// their fluent extractor (<c>DiagnosticForkExtractor</c>) must be sealed, and the IR
+    /// records must expose only init-only members. The records carry the structural equality the
+    /// incremental generator relies on for cache-keying; a future edit that unseals one or adds a
+    /// mutable setter fails the build here rather than at a distant integration point.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InvariantGuard_DiagnosticForkIr_IsSealedAndInitOnly()
+    {
+        var irRecordNames = new[]
+        {
+            "Strategos.Generators.Models.DiagnosticForkModel",
+            "Strategos.Generators.Models.PermittedForkTriggerModel",
+        };
+
+        var sealedOnlyNames = new[]
+        {
+            "Strategos.Generators.Helpers.DiagnosticForkExtractor",
+        };
+
+        var offenders = new List<string>();
+
+        foreach (var name in irRecordNames.Concat(sealedOnlyNames))
+        {
+            var type = GeneratorsAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        foreach (var name in irRecordNames)
+        {
+            var type = GeneratorsAssembly.GetType(name);
+            if (type is null)
+            {
+                continue;
+            }
+
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            foreach (var prop in type.GetProperties(flags).Where(p => p.DeclaringType == type))
+            {
+                var setter = prop.SetMethod;
+                if (setter is null)
+                {
+                    continue;
+                }
+
+                var isInitOnly = setter.ReturnParameter
+                    .GetRequiredCustomModifiers()
+                    .Any(m => m.FullName == "System.Runtime.CompilerServices.IsExternalInit");
+
+                if (!isInitOnly)
+                {
+                    offenders.Add($"{type.FullName}.{prop.Name} has a mutable (non-init) setter");
+                }
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
 }
