@@ -204,15 +204,19 @@ internal sealed record WorkflowModel(
     /// </returns>
     public (string? NextHandlerStepName, bool IsLastInChain, string? RejoinStepName) GetConfidenceHandlerChainRouting(string stepName)
     {
-        if (Steps is null || !IsConfidenceHandlerStep(stepName))
+        if (!IsConfidenceHandlerStep(stepName))
         {
             return (null, false, null);
         }
 
-        // Find the gated step whose OnLowConfidence chain contains this handler step.
-        for (var gatedIndex = 0; gatedIndex < Steps.Count; gatedIndex++)
+        // Find the gated step whose OnLowConfidence chain contains this handler step. The
+        // gated step may be a top-level/loop step (in Steps) OR a fork path's last step
+        // (DR-4 / #145 gap A), which lives on Forks and is never added to Steps — so both
+        // sources must be searched or a lowered fork-path handler step would fail to resolve
+        // its chain routing (emitting a Start{null}Command).
+        foreach (var gatedStep in EnumerateConfidenceGatedSteps())
         {
-            var chain = Steps[gatedIndex].Confidence?.OnLowConfidenceHandlerChain;
+            var chain = gatedStep.Confidence?.OnLowConfidenceHandlerChain;
             if (chain is null)
             {
                 continue;
@@ -239,13 +243,44 @@ internal sealed record WorkflowModel(
             string? rejoinStepName = null;
             if (isLastInChain && chain.RejoinsMainFlow)
             {
-                rejoinStepName = NextMainFlowStepName(Steps[gatedIndex].PhaseName);
+                rejoinStepName = NextMainFlowStepName(gatedStep.PhaseName);
             }
 
             return (nextHandlerStepName, isLastInChain, rejoinStepName);
         }
 
         return (null, false, null);
+    }
+
+    /// <summary>
+    /// Enumerates every step that can carry a confidence gate: the top-level/loop steps
+    /// (<see cref="Steps"/>) plus each fork path's LAST step (DR-4 / #145 gap A), which is
+    /// gated in the fork path-completed handler and is not present in <see cref="Steps"/>.
+    /// </summary>
+    /// <returns>The candidate confidence-gated step models, top-level first.</returns>
+    private IEnumerable<StepModel> EnumerateConfidenceGatedSteps()
+    {
+        if (Steps is not null)
+        {
+            foreach (var step in Steps)
+            {
+                yield return step;
+            }
+        }
+
+        if (Forks is not null)
+        {
+            foreach (var fork in Forks)
+            {
+                foreach (var path in fork.Paths)
+                {
+                    if (path.Steps.Count > 0)
+                    {
+                        yield return path.Steps[path.Steps.Count - 1];
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>

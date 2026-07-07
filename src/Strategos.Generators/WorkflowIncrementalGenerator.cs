@@ -499,6 +499,30 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             .SelectMany(s => s.Confidence!.OnLowConfidenceHandlerChain!.Steps)
             .ToList();
 
+        // DR-4 (#145 gap A): a fork-path step's confidence gate lowers into the fork
+        // PATH-COMPLETED handler (the LAST step of each path — "the fork handler"). Lower
+        // that step's OnLowConfidence handler chain exactly like a top-level gated step's,
+        // so Start{H}Command, the worker handler, the phase, the events and a terminal
+        // completed handler all exist and the path handler can cascade to the chain
+        // (INV-1). Only the last step of each path is gated here; an intermediate
+        // (non-last) fork-path step's confidence stays inert and is structurally guarded.
+        foreach (var fork in forkModels)
+        {
+            foreach (var path in fork.Paths)
+            {
+                if (path.Steps.Count == 0)
+                {
+                    continue;
+                }
+
+                var lastStep = path.Steps[path.Steps.Count - 1];
+                if (lastStep.Confidence?.OnLowConfidenceHandlerChain is not null)
+                {
+                    confidenceHandlerSteps.AddRange(lastStep.Confidence.OnLowConfidenceHandlerChain.Steps);
+                }
+            }
+        }
+
         // Track the lowered handler step names so the saga emitter can keep them off the
         // main linear flow (they must not displace the workflow's terminal step nor be
         // chained to as a normal "next" step).
@@ -818,27 +842,32 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             }
         }
 
-        // DeclaredButInert (#143, G-6) — confidence gating on a fork-path step. The
-        // fork-path parse threads the configure lambda into the StepModel IR (so an
+        // DeclaredButInert (#143, G-6) — confidence gating on an INTERMEDIATE (non-last)
+        // fork-path step. Confidence on the LAST step of a fork path now lowers into the
+        // fork path-completed handler (DR-4 / #145 gap A), so it is NOT flagged. An
+        // intermediate fork-path step, however, still runs through the generic completed
+        // handler with no confidence gate: its configure lambda reaches the IR (so an
         // out-of-range threshold still surfaces the ConfidenceThresholdOutOfRange code),
-        // but the saga emitter does NOT lower confidence-gated routing for fork-path steps
-        // — that variant is deferred to v2.10.0 / DR-17 (#134). The configuration is
-        // therefore inert: no confidence gate and no OnLowConfidence routing reach the
-        // generated saga. Surface it so a deferred configuration cannot masquerade as working.
+        // but no confidence gate and no OnLowConfidence routing reach the generated saga.
+        // That variant remains deferred (v2.10.0 / DR-17, #134). Surface it so a deferred
+        // configuration cannot masquerade as working.
         foreach (var fork in forkModels)
         {
             foreach (var path in fork.Paths)
             {
-                foreach (var forkStep in path.Steps)
+                for (var i = 0; i < path.Steps.Count; i++)
                 {
-                    if (forkStep.Confidence is not null)
+                    var isLastStepInPath = i == path.Steps.Count - 1;
+                    var forkStep = path.Steps[i];
+
+                    if (!isLastStepInPath && forkStep.Confidence is not null)
                     {
                         diagnostics.Add(Diagnostic.Create(
                             WorkflowDiagnostics.DeclaredButInert,
                             location,
                             forkStep.EffectiveName,
                             workflowName,
-                            "confidence gating (RequireConfidence/OnLowConfidence) on a fork path"));
+                            "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate fork-path step"));
                     }
                 }
             }

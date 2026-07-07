@@ -106,6 +106,15 @@ internal sealed class ForkJoinHandlerEmitter
             sb.AppendLine();
         }
 
+        // Confidence gate (DR-4 / #145 gap A): a fork path's LAST step may declare
+        // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()). Mirroring the
+        // top-level StepCompletedHandlerEmitter.EmitConfidenceGatedHandler, compare the
+        // completed event's Confidence to the threshold BEFORE marking the path complete:
+        // when below, cascade the OnLowConfidence handler chain's start command (INV-1)
+        // and do NOT mark the path succeeded nor check the join — the path diverts to the
+        // handler chain, which terminates or rejoins per its own routing.
+        EmitForkPathConfidenceGate(sb, model, path, baseStepName);
+
         // Update path status to Success
         sb.AppendLine($"        // Mark path {path.PathIndex} as completed");
         sb.AppendLine($"        Fork_{sanitizedId}_Path{path.PathIndex}Status = Strategos.Definitions.ForkPathStatus.Success;");
@@ -130,6 +139,77 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine("        }");
         sb.AppendLine("        // IEnumerable return ensures Wolverine always persists saga state after handler");
         sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits the confidence gate for a fork path's last step (DR-4 / #145 gap A), when that
+    /// step declared <c>.RequireConfidence(t).OnLowConfidence(alt =&gt; ...)</c>. Emits nothing
+    /// when the last step is not confidence-gated, keeping non-confidence fork output
+    /// byte-unchanged. Mirrors <c>StepCompletedHandlerEmitter.EmitConfidenceGatedHandler</c>:
+    /// below-threshold confidence routes to the lowered OnLowConfidence handler chain's start
+    /// command and, in EventSourced mode, appends the <c>{Pascal}LowConfidenceRouted</c> audit
+    /// stream event.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="path">The fork path whose last step is being handled.</param>
+    /// <param name="gatedStepName">The gated step's base (unprefixed) name, for the audit event.</param>
+    private static void EmitForkPathConfidenceGate(
+        StringBuilder sb,
+        WorkflowModel model,
+        ForkPathModel path,
+        string gatedStepName)
+    {
+        if (path.Steps.Count == 0)
+        {
+            return;
+        }
+
+        var confidence = path.Steps[path.Steps.Count - 1].Confidence;
+        if (confidence?.OnLowConfidenceHandlerStep is null)
+        {
+            return;
+        }
+
+        var handlerStepName = confidence.OnLowConfidenceHandlerStep.StepName;
+        var lowConfidenceCommand = $"Start{handlerStepName}Command";
+        var thresholdLiteral = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
+        sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the fork-path");
+        sb.AppendLine("        // step's result confidence is present and below the configured threshold.");
+        sb.AppendLine($"        if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.{handlerStepName};");
+        sb.AppendLine();
+        sb.AppendLine("            logger.LogWarning(");
+        sb.AppendLine("                \"Fork-path step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
+        sb.AppendLine("                confidenceScore,");
+        sb.AppendLine($"                {thresholdLiteral},");
+        sb.AppendLine("                WorkflowId,");
+        sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+
+        // Append the LowConfidenceRouted audit STREAM event when event-sourced. This is the
+        // single site where a confidence-gated fork path actually routes below-threshold, so
+        // it is where the named event belongs. The handler already receives IDocumentSession
+        // session in EventSourced mode.
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine("            session.Events.Append(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine("                    WorkflowId,");
+            sb.AppendLine($"                    \"{gatedStepName}\",");
+            sb.AppendLine("                    confidenceScore,");
+            sb.AppendLine($"                    {thresholdLiteral},");
+            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
     }
 
     /// <summary>

@@ -17,12 +17,18 @@ namespace Strategos.Generators.Tests.Diagnostics;
 /// <remarks>
 /// <para>
 /// The concrete inert case this guards (verified against the generated saga): confidence
-/// gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on a step that lives
-/// on a <c>Fork</c> path. The fork-path parse threads the configure lambda into the IR —
-/// so an out-of-range threshold still surfaces AGWF018 — but the saga emitter does not
-/// lower confidence-gated routing for fork-path steps. That variant is deferred to
-/// v2.10.0 / DR-17 (#134), so the configuration is inert: no <c>confidenceScore</c> gate
-/// and no <c>OnLowConfidence</c> routing reach the generated saga.
+/// gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on an INTERMEDIATE
+/// (non-last) step of a <c>Fork</c> path. The fork-path parse threads the configure lambda
+/// into the IR — so an out-of-range threshold still surfaces AGWF018 — but the saga emitter
+/// only lowers confidence-gated routing for a fork path's LAST step (DR-4 / #145 gap A, the
+/// fork path-completed handler); an intermediate fork-path step runs through the generic
+/// completed handler with no gate. That variant is deferred to v2.10.0 / DR-17 (#134), so
+/// the configuration is inert: no <c>confidenceScore</c> gate and no <c>OnLowConfidence</c>
+/// routing reach the generated saga.
+/// </para>
+/// <para>
+/// Confidence on a fork path's LAST step is NOT flagged: it is now lowered, proven
+/// behaviorally by <c>ForkPathConfidenceTests</c>.
 /// </para>
 /// <para>
 /// AGWF022 is the next monotonic id past the live ceiling AGWF021 (INV-5: never reuse,
@@ -35,13 +41,37 @@ public sealed class DeclaredButInertTests
     private const string DeclaredButInertId = "AGWF022";
 
     /// <summary>
-    /// Verifies that confidence gating declared on a fork-path step — a configuration the
-    /// generator does not lower for fork-path steps — fires AGWF022 at the workflow
-    /// attribute call site.
+    /// Verifies that confidence gating declared on an INTERMEDIATE (non-last) fork-path
+    /// step — a configuration the generator still does not lower — fires AGWF022 at the
+    /// workflow attribute call site. Only a fork path's LAST step is lowered (DR-4 / #145
+    /// gap A); an intermediate one remains inert.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task Generator_StepConfigFieldInertForStepKind_ReportsAgwf022()
+    {
+        var source = ForkWorkflowWithIntermediatePathConfig(
+            intermediateStepConfig: "step => step"
+                + ".RequireConfidence(0.85)"
+                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
+        await Assert.That(diagnostic).IsNotNull()
+            .Because("confidence gating on an intermediate fork-path step is inert and must surface as AGWF022");
+        await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        await Assert.That(diagnostic.GetMessage()).Contains("ForkedAssess");
+    }
+
+    /// <summary>
+    /// Conformant-negative: confidence gating declared on a fork path's LAST step (which
+    /// IS lowered into the fork path-completed handler — DR-4 / #145 gap A) must NOT fire
+    /// AGWF022. This is the flip: before the lowering it fired; now it does not.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_ForkPathLastStepConfidenceLowered_DoesNotReportAgwf022()
     {
         var source = ForkWorkflowWithPathConfig(
             forkPathStepConfig: "step => step"
@@ -50,11 +80,8 @@ public sealed class DeclaredButInertTests
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
-        await Assert.That(diagnostic).IsNotNull()
-            .Because("confidence gating on a fork-path step is inert and must surface as AGWF022");
-        await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
-        await Assert.That(diagnostic.GetMessage()).Contains("ForkedAssess");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("confidence gating on a fork path's last step IS lowered, so AGWF022 must not fire");
     }
 
     /// <summary>
@@ -170,6 +197,93 @@ public sealed class DeclaredButInertTests
                 .StartWith<IntakeClaim>()
                 .Fork(
                     path => path.Then<ForkedAssess>({{forkPathStepConfig}}),
+                    path => path.Then<ForkedReview>())
+                .Join<AggregateClaim>()
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// Builds a workflow whose first <c>Fork</c> path has TWO steps: an INTERMEDIATE
+    /// <c>ForkedAssess</c> step carrying the supplied configure lambda followed by a
+    /// terminating <c>ForkedFollowup</c> step, so the configured step is NOT the path's
+    /// last step. A fork path's LAST step is lowered (DR-4), but an intermediate one is
+    /// not — this exercises the still-inert surface AGWF022 guards.
+    /// </summary>
+    private static string ForkWorkflowWithIntermediatePathConfig(string intermediateStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class ForkedAssess : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class ForkedFollowup : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class ForkedReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AggregateClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("inert-fork-claim-intermediate")]
+        public static partial class InertForkClaimIntermediateWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("inert-fork-claim-intermediate")
+                .StartWith<IntakeClaim>()
+                .Fork(
+                    path => path.Then<ForkedAssess>({{intermediateStepConfig}}).Then<ForkedFollowup>(),
                     path => path.Then<ForkedReview>())
                 .Join<AggregateClaim>()
                 .Finally<SettleClaim>();

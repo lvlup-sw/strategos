@@ -9,6 +9,7 @@ using System.Diagnostics;
 using JasperFx.Resources;
 
 using Marten;
+using Marten.Exceptions;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +18,7 @@ using Strategos.Agents.Abstractions;
 using Strategos.Generators.Behavioral.Tests.Workflows;
 
 using Wolverine;
+using Wolverine.ErrorHandling;
 using Wolverine.Marten;
 using Wolverine.Tracking;
 
@@ -73,6 +75,31 @@ public sealed class EventSourcedHostFixture : IAsyncInitializer, IAsyncDisposabl
         this.host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                // Parallel fork paths append step-completed events to the SAME Marten
+                // event stream, so their appends race under optimistic concurrency and one
+                // can lose with a Marten concurrency exception. That conflict is transient
+                // and self-heals on a retry with a fresh stream version (standard for
+                // concurrent event-stream writes), so retry it rather than dead-lettering
+                // the saga message — otherwise a fork path can stall the saga. Document-mode
+                // saga-document conflicts are already retried by Wolverine's saga machinery;
+                // this extends the same treatment to the event-stream append.
+                var concurrencyCooldown = new[]
+                {
+                    TimeSpan.FromMilliseconds(50),
+                    TimeSpan.FromMilliseconds(100),
+                    TimeSpan.FromMilliseconds(200),
+                    TimeSpan.FromMilliseconds(400),
+                    TimeSpan.FromMilliseconds(800),
+                };
+
+                // The event-stream append conflict surfaces as Marten's (internal)
+                // EventStreamUnexpectedMaxEventIdException, matched by name; document-store
+                // conflicts as the public ConcurrentUpdateException. Retry both.
+                opts.OnException(ex =>
+                        ex is ConcurrentUpdateException
+                        || ex.GetType().Name.Contains("EventStreamUnexpected", StringComparison.Ordinal))
+                    .RetryWithCooldown(concurrencyCooldown);
+
                 // Marten owns BOTH the event store (the appended workflow events)
                 // and Wolverine's durable inbox/outbox. The generated
                 // Add{Name}Workflow() registrations call ConfigureMarten(...) to
@@ -98,6 +125,12 @@ public sealed class EventSourcedHostFixture : IAsyncInitializer, IAsyncDisposabl
                 // The event-sourced low-confidence proof (Task 5.3): its gated step
                 // returns low confidence; the confidence gate appends LowConfidenceRouted.
                 opts.Services.AddEventSourcedLowConfidenceWorkflow();
+
+                // The fork-path confidence proof (DR-4 / #145 gap A): a fork path's last
+                // step is confidence-gated and returns low confidence; the generated fork
+                // path-completed handler routes to the OnLowConfidence handler AND appends
+                // LowConfidenceRouted to the stream, instead of marking the path joined.
+                opts.Services.AddForkPathConfidenceWorkflow();
 
                 opts.Services.AddSingleton(this.Invocations);
                 opts.Services.AddResourceSetupOnStartup();

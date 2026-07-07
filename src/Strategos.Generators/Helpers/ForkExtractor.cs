@@ -401,13 +401,46 @@ internal static class ForkExtractor
             }
         }
 
-        // Process Then calls in the main path (excluding those in failure handlers)
+        // Collect every step's configure lambda — the Action<IStepConfiguration<TState>>
+        // argument passed to a path-level Then<TStep>(step => ...). A confidence-gated step
+        // declares .OnLowConfidence(alt => alt.Then<THandler>()) INSIDE that configure lambda,
+        // so the handler's nested Then is a descendant of the path lambda and would otherwise
+        // be captured as a spurious fork-path step (dispatching the handler as a path's first
+        // step instead of the real step). Excluding invocations inside configure lambdas keeps
+        // only the path's TOP-LEVEL fluent Then chain, mirroring how the top-level/loop parse
+        // walks the fluent chain rather than all descendants.
+        var configureLambdas = new List<LambdaExpressionSyntax>();
+        foreach (var inv in allInvocations)
+        {
+            if (!SyntaxHelper.IsMethodCall(inv, "Then") || inv.ArgumentList is null)
+            {
+                continue;
+            }
+
+            foreach (var arg in inv.ArgumentList.Arguments)
+            {
+                if (arg.Expression is LambdaExpressionSyntax configureLambda)
+                {
+                    configureLambdas.Add(configureLambda);
+                }
+            }
+        }
+
+        // Process Then calls in the main path (excluding those in failure handlers and in
+        // step configure lambdas).
         foreach (var inv in allInvocations)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             // Skip invocations inside failure handler lambdas
             if (failureLambdas.Any(lambda => lambda.Span.Contains(inv.Span)))
+            {
+                continue;
+            }
+
+            // Skip Then invocations nested inside a step's configure lambda (e.g. the
+            // OnLowConfidence handler chain) — they are not fork-path steps.
+            if (configureLambdas.Any(lambda => lambda.Span.Contains(inv.Span)))
             {
                 continue;
             }
