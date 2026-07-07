@@ -19,6 +19,25 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
+  <!--
+    #152 (DR-11) API-stability tracking. Microsoft.CodeAnalysis.PublicApiAnalyzers
+    tracks the whole public surface against PublicAPI.{Shipped,Unshipped}.txt; the
+    package auto-globs those root files as AdditionalFiles. New public API trips
+    RS0016/RS0017 and must be reflected in PublicAPI.Unshipped.txt in the same change.
+    The scope of this bootstrap is DECLARE/REMOVE tracking (RS0016/RS0017); the
+    backcompat overload-design opinions (RS0026/RS0027) are out of scope across the
+    three ontology projects — disable them for a uniform bootstrap posture.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
   </ItemGroup>
