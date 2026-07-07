@@ -228,7 +228,36 @@ internal static class CommandsEmitter
             EmitTriggerFailureHandlerCommand(sb, model);
         }
 
+        // Diagnostic-fork decision command (DR-9): the message that carries a fork
+        // occurrence (trigger + evidence) to the saga's single fork decision site. Emitted
+        // only when the workflow declares an AllowDiagnosticFork edge, so a non-fork
+        // workflow's command output is byte-unchanged.
+        if (model.HasDiagnosticForks)
+        {
+            sb.AppendLine();
+            EmitDiagnosticForkCommand(sb, model);
+        }
+
         return sb.ToString();
+    }
+
+    private static void EmitDiagnosticForkCommand(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Requests a diagnostic fork of the {model.WorkflowName} workflow (DR-9).");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("/// <remarks>");
+        sb.AppendLine("/// Routed to the saga by <c>WorkflowId</c>; the saga's single fork decision site");
+        sb.AppendLine("/// enforces the anchor, permitted-trigger, evidence-completeness, and maxForks guards.");
+        sb.AppendLine("/// The evidence mirrors the contract fork-occurrence shape (a provisional-stamp event");
+        sb.AppendLine("/// id plus a non-empty taint set); both are required for a fork to be admitted.");
+        sb.AppendLine("/// </remarks>");
+        sb.AppendLine($"public sealed partial record Fork{model.PascalName}Command(");
+        sb.AppendLine("    [property: Wolverine.Persistence.Sagas.SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    string Anchor,");
+        sb.AppendLine("    string Trigger,");
+        sb.AppendLine("    string ProvisionalStampEventId,");
+        sb.AppendLine("    System.Collections.Generic.IReadOnlyList<string> Taints);");
     }
 
     private static void EmitApprovalCommands(

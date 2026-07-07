@@ -424,6 +424,37 @@ public class InvariantGuardTests
     }
 
     /// <summary>
+    /// DR-9 byte-unchanged guard (#151): the diagnostic-fork lowering only adds artifacts
+    /// for a workflow that declares an <c>AllowDiagnosticFork</c> edge. A workflow WITHOUT
+    /// the fork edge must gain NONE of them — no <c>Fork{Pascal}Command</c>, no
+    /// <c>DiagnosticForkCount</c> saga property or fork decision handler, no
+    /// <c>ForkBlocked</c> phase, and (regardless of persistence mode) no
+    /// <c>{Pascal}WorkflowForked</c> audit event — so its generated output is unchanged by
+    /// the fork lowering. Uses the linear <see cref="DocumentModeAuditWorkflow"/> (no
+    /// diagnostic fork edge) as the counterpart.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InvariantGuard_WorkflowWithoutForkEdge_HasNoDiagnosticForkArtifacts()
+    {
+        var result = GeneratorTestHelper.RunGenerator(DocumentModeAuditWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsSaga.g.cs");
+        var commandsSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsCommands.g.cs");
+        var eventsSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsEvents.g.cs");
+        var phaseSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsPhase.g.cs");
+
+        // No fork decision command, decision handler, count property, or blocked phase.
+        await Assert.That(commandsSource).DoesNotContain("ForkAuditEventsCommand");
+        await Assert.That(sagaSource).DoesNotContain("ForkAuditEventsCommand");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount");
+        await Assert.That(phaseSource).DoesNotContain("ForkBlocked");
+
+        // No WorkflowForked audit event (record or append) in either mode.
+        await Assert.That(eventsSource).DoesNotContain("WorkflowForked");
+        await Assert.That(sagaSource).DoesNotContain("WorkflowForked");
+    }
+
+    /// <summary>
     /// INV-6 (sealed-by-default) + init-only, DR-9 diagnostic-fork IR (#151): the new
     /// generator-IR records (<c>DiagnosticForkModel</c>, <c>PermittedForkTriggerModel</c>) and
     /// their fluent extractor (<c>DiagnosticForkExtractor</c>) must be sealed, and the IR

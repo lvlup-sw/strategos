@@ -38,6 +38,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     private readonly BranchHandlerEmitter _branchEmitter = new();
     private readonly ForkDispatchHandlerEmitter _forkDispatchEmitter = new();
     private readonly ForkJoinHandlerEmitter _forkJoinEmitter = new();
+    private readonly DiagnosticForkHandlerEmitter _diagnosticForkEmitter = new();
 
     /// <inheritdoc />
     /// <exception cref="ArgumentNullException">
@@ -76,6 +77,13 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                 _forkJoinEmitter.EmitJoinHandler(sb, model, fork);
             }
         }
+
+        // Emit the diagnostic-fork decision-site handler (DR-9). A single
+        // Handle(Fork{Pascal}Command) is the occurrence chokepoint that enforces the
+        // anchor, permitted-trigger + evidence, and maxForks guards and seeds
+        // compensation into the merged trigger site. No-op when the workflow declares
+        // no AllowDiagnosticFork edge (byte-unchanged for non-fork workflows).
+        _diagnosticForkEmitter.EmitDecisionSiteHandler(sb, model);
 
         // Emit handlers for branch case steps
         // These steps execute conditionally based on discriminator

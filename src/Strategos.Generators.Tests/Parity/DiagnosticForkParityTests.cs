@@ -31,19 +31,19 @@ namespace Strategos.Generators.Tests.Parity;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This task (the builder surface) delivers the declarative half end to end: the fork
-/// is captured in the builder IR and projected to the wire contract. The generator IR
-/// model and the saga lowering are the follow-on tasks under #151, so EVERY fork IR
-/// member is <see cref="Deferred"/> today. When the lowering lands, the author must move
-/// the member to <see cref="Lowered"/> (pointing at a behavioral proof) — the guard
-/// makes silence impossible.
+/// The declarative half (builder IR + wire projection), the generator IR model, and the
+/// saga lowering all landed under #151, so EVERY fork IR member is now
+/// <see cref="Lowered"/>, each pointing at a real-host behavioral proof. The guard makes
+/// silence impossible: a NEW (or renamed) fork IR member fails this test until the author
+/// classifies it as <see cref="Lowered"/> (with a behavioral proof) or <see cref="Deferred"/>
+/// (with a tracking issue + declared-but-inert diagnosability guarantee).
 /// </para>
 /// <para>
 /// The "declared-but-inert diagnosability guarantee" is the promise that a declared but
 /// unlowered fork is surfaced by the AGWF022 declared-but-inert diagnostic (the same
 /// mechanism <c>DeclaredButInertTests</c> proves for step config), rather than being
-/// silently dropped by the generator. Registering it here as a structural field — not
-/// merely prose — keeps the deferral honest: emitting the fork parse without the
+/// silently dropped by the generator. Registering a deferred member as a structural field —
+/// not merely prose — keeps any future deferral honest: emitting the fork parse without the
 /// diagnostic, or dropping the diagnostic, is a forcing-function violation.
 /// </para>
 /// </remarks>
@@ -51,51 +51,54 @@ namespace Strategos.Generators.Tests.Parity;
 public sealed class DiagnosticForkParityTests
 {
     /// <summary>
-    /// The declared-but-inert diagnostic that guarantees a deferred (declared but not yet
-    /// lowered) fork member is surfaced at compile time rather than silently dropped.
+    /// The behavioral test file (in the behavioral suite) that carries the real-host fork
+    /// lowering proofs — every <see cref="Lowered"/> member points at a test method here.
     /// </summary>
-    private const string DeclaredButInertDiagnostic = "AGWF022";
+    private const string LoweringProofFile =
+        "Strategos.Generators.Behavioral.Tests/DiagnosticForkLoweringTests.cs";
 
     /// <summary>
-    /// Fork IR members that LOWER into the generated saga, each mapped to the behavioral
-    /// (compile-run-saga, real-host) test that proves the lowering. Empty until the
-    /// #151 lowering follow-on lands.
+    /// Fork IR members that LOWER into the generated saga (DR-9, #151), each mapped to the
+    /// behavioral (compile-run-saga, real-host) test that proves the lowering. The saga
+    /// lowering landed under #151, so EVERY fork IR member is now classified here.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, LoweredProof> Lowered =
-        new Dictionary<string, LoweredProof>(StringComparer.Ordinal);
+        new Dictionary<string, LoweredProof>(StringComparer.Ordinal)
+        {
+            // Anchor-step lowering: the fork decision site's anchor guard admits a fork only
+            // at a declared anchor moniker; a fork at an undeclared anchor is refused.
+            [nameof(DiagnosticForkDefinition.AnchorStepIds)] = new(
+                "Behavioral_ForkAtUndeclaredAnchor_IsRefused",
+                LoweringProofFile),
+
+            // Permitted-trigger / evidence-schema lowering: the DR-8 occurrence chokepoint
+            // refuses a fork whose permitted trigger arrives without its required evidence.
+            [nameof(DiagnosticForkDefinition.PermittedTriggers)] = new(
+                "Behavioral_ForkWithoutEvidence_IsRefused",
+                LoweringProofFile),
+
+            // Compensation-seed lowering: a valid fork seeds compensation by routing its
+            // declared seed into the merged Compensate/OnFailure trigger site (#140).
+            [nameof(DiagnosticForkDefinition.CompensationSeed)] = new(
+                "Behavioral_ValidFork_SeedsCompensationThroughMergedTriggerSite",
+                LoweringProofFile),
+
+            // maxForks-bound lowering: the forced-exit guard routes an overflowing fork to the
+            // blocked / human-escalation terminal phase (the loop MaxIterations precedent).
+            [nameof(DiagnosticForkDefinition.MaxForks)] = new(
+                "Behavioral_ForkExceedingMaxForks_RoutesToBlockedTerminal",
+                LoweringProofFile),
+        };
 
     /// <summary>
-    /// Fork IR members intentionally NOT yet lowered, each carrying its tracking issue
-    /// and its declared-but-inert diagnosability guarantee. #151 (the saga-lowering
-    /// follow-on) will move these to <see cref="Lowered"/> with behavioral proofs.
+    /// Fork IR members intentionally NOT yet lowered. Empty now that the #151 saga-lowering
+    /// follow-on has landed and moved every member to <see cref="Lowered"/> with a
+    /// behavioral proof; retained so a FUTURE fork IR member can be parked here (with a
+    /// tracking issue + declared-but-inert diagnosability guarantee) rather than silently
+    /// dropped.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, DeferredEntry> Deferred =
-        new Dictionary<string, DeferredEntry>(StringComparer.Ordinal)
-        {
-            [nameof(DiagnosticForkDefinition.AnchorStepIds)] = new(
-                151,
-                DeclaredButInertDiagnostic,
-                "Anchor-step lowering (the fork-guard site) is deferred to the #151 saga-lowering "
-                + "follow-on; until then a declared fork is surfaced by the declared-but-inert "
-                + "diagnostic rather than silently dropped."),
-            [nameof(DiagnosticForkDefinition.PermittedTriggers)] = new(
-                151,
-                DeclaredButInertDiagnostic,
-                "Permitted-trigger / evidence-schema lowering (the per-trigger evidence guard) is "
-                + "deferred to the #151 saga-lowering follow-on; declared-but-inert diagnosable."),
-            [nameof(DiagnosticForkDefinition.CompensationSeed)] = new(
-                151,
-                DeclaredButInertDiagnostic,
-                "Compensation-seed lowering (routing the fork's rollback into the merged "
-                + "Compensate/OnFailure trigger site) is deferred to the #151 saga-lowering "
-                + "follow-on; declared-but-inert diagnosable."),
-            [nameof(DiagnosticForkDefinition.MaxForks)] = new(
-                151,
-                DeclaredButInertDiagnostic,
-                "maxForks-bound lowering (the forced-exit guard routing an overflowing fork to a "
-                + "blocked / human-escalation terminal) is deferred to the #151 saga-lowering "
-                + "follow-on; declared-but-inert diagnosable."),
-        };
+        new Dictionary<string, DeferredEntry>(StringComparer.Ordinal);
 
     /// <summary>
     /// Asserts every fork IR member is classified in exactly one of <see cref="Lowered"/>
@@ -159,7 +162,7 @@ public sealed class DiagnosticForkParityTests
     {
         var syntheticSurface = new[]
         {
-            nameof(DiagnosticForkDefinition.AnchorStepIds), // classified (Deferred)
+            nameof(DiagnosticForkDefinition.AnchorStepIds), // classified (Lowered)
             "SomeBrandNewForkKnob",                         // unclassified -> must be flagged
         };
 

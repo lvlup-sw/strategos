@@ -149,6 +149,19 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             }
         }
 
+        // Diagnostic-fork count (DR-9): the workflow-scoped tally of admitted diagnostic
+        // forks. The decision-site handler increments it and the maxForks guard enforces
+        // the declared bound against it (the loop MaxIterations forced-exit precedent).
+        // Emitted only for a workflow that declares a fork edge (byte-unchanged otherwise).
+        if (model.HasDiagnosticForks)
+        {
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the number of diagnostic forks this workflow has admitted.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public int DiagnosticForkCount { get; set; }");
+            sb.AppendLine();
+        }
+
         // Failure tracking properties (if failure handlers OR compensation are
         // defined). Compensation (DR-3) reuses the same failure-context fields,
         // populated by the saga's Trigger{Pascal}FailureHandlerCommand handler.
