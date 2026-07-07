@@ -54,6 +54,18 @@ public class ZodConsumabilityTests
             await Assert.That(zod).Contains("z.")
                 .Because("the generated module must contain Zod schema code.");
 
+            // DR-1 (#150) — the GateClass closed enum must also derive to Zod with
+            // no manual post-processing, carrying its snake_case wire vocabulary so
+            // the Exarchos side consumes the same typed gate identity.
+            var gateClassZod = Path.Combine(outDir, "GateClass.ts");
+            await Assert.That(File.Exists(gateClassZod)).IsTrue()
+                .Because($"expected generated Zod for the GateClass enum at {gateClassZod}\n{run.Output}");
+            var gateClassCode = await File.ReadAllTextAsync(gateClassZod);
+            await Assert.That(gateClassCode).Contains("z.")
+                .Because("the generated GateClass module must contain Zod schema code.");
+            await Assert.That(gateClassCode).Contains("scoped_test")
+                .Because("the derived Zod must carry the GateClass snake_case wire vocabulary.");
+
             // A barrel index re-exports the generated modules.
             await Assert.That(File.Exists(Path.Combine(outDir, "index.ts"))).IsTrue()
                 .Because("the smoke script must emit a barrel index.ts.");

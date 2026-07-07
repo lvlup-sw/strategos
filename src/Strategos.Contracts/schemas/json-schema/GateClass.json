@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "GateClass.json",
+    "type": "string",
+    "enum": [
+        "typecheck",
+        "lint",
+        "scoped_test",
+        "full_suite",
+        "mutation_adequacy",
+        "merge_gate",
+        "llm_judge"
+    ],
+    "description": "Closed enum of the gate CLASSES a workflow's quality/merge gates evaluate\n(#150, DR-1). This is the single typed gate identity shared across the\ncontract boundary so both runtimes consume ONE gate vocabulary.\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these **by value** (INV-8 polyglot identity) — never by\nordinal. Adding a class is an additive minor; renaming or removing one is a\nbreaking major."
+}
