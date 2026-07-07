@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "name": "import-gate",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImportGatePrepareStep", "isTerminal": false, "stepType": "ImportGatePrepareStep" },
+    { "kind": "gate", "stepId": "s2", "stepName": "ImportGateDecisionStep", "isTerminal": false, "stepType": "ImportGateDecisionStep", "gateId": "g1" },
+    { "kind": "skill", "stepId": "s3", "stepName": "ImportGateFinishStep", "isTerminal": true, "stepType": "ImportGateFinishStep" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false },
+    { "transitionId": "t2", "fromStepId": "s2", "toStepId": "s3", "isDefault": false }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "gates": [
+    { "class": "AntipatternDetection", "id": "g1" }
+  ],
+  "entryStepId": "s1",
+  "terminalStepId": "s3"
+}

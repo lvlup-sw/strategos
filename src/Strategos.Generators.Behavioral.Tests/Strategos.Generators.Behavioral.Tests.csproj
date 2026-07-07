@@ -15,6 +15,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Task 017 (DR-12 import keystone): the gate-bearing JSON workflow the
+         source-generator import front-end bridges to a WorkflowModel and lowers
+         through the SAME saga emitters at build time. The generated
+         ImportGateSaga / StartImportGateCommand / AddImportGateWorkflow()
+         compiling into THIS assembly is the required semantic check
+         (JsonWorkflowImportTests references them). The *.workflow.json
+         convention makes it an AdditionalFile the generator discovers. -->
+    <AdditionalFiles Include="Workflows\import-gate.workflow.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Used now: the Postgres Testcontainers fixture + smoke test. -->
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.PostgreSql" />

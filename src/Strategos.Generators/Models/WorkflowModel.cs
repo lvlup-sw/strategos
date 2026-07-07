@@ -71,6 +71,21 @@ internal sealed record WorkflowModel(
     public bool StateHasPhaseProperty { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether this workflow is backed by a C#-authored fluent
+    /// <c>{PascalName}WorkflowDefinition.Definition</c> class.
+    /// </summary>
+    /// <remarks>
+    /// The DI extension emits <c>_ = {PascalName}WorkflowDefinition.Definition;</c> to force the
+    /// fluent builder chain to run (registering loop conditions in the runtime registry). A
+    /// JSON-IMPORTED workflow (DR-12, task 017) has NO such fluent class — it is declarative — so
+    /// that line would reference a non-existent symbol and fail to compile. The import bridge sets
+    /// this <see langword="false"/> so the extension omits the definition-evaluation line;
+    /// C#-authored workflows leave it at its <see langword="true"/> default so their generated
+    /// output is unchanged.
+    /// </remarks>
+    public bool HasFluentDefinition { get; init; } = true;
+
+    /// <summary>
     /// Gets the derived phase enum name.
     /// </summary>
     public string PhaseEnumName => $"{PascalName}Phase";

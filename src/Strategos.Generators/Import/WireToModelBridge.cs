@@ -1,0 +1,892 @@
+// -----------------------------------------------------------------------
+// <copyright file="WireToModelBridge.cs" company="Levelup Software">
+// Copyright (c) Levelup Software. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------
+
+using Strategos.Generators.Helpers;
+using Strategos.Generators.Models;
+
+namespace Strategos.Generators.Import;
+
+// =============================================================================
+// DR-12 (bridge half) + DR-3 (gates tolerated), task 017 (#100) — the import
+// KEYSTONE.
+//
+// This is the second front-end of the compiler. The C#-authoring front-end
+// (FluentDslParser + WorkflowIncrementalGenerator.TransformToResult) parses a
+// fluent [Workflow] definition over Roslyn syntax into a WorkflowModel; this
+// bridge maps the parsed wire IR (task 026's WireDtos) into the SAME
+// WorkflowModel for the importable subset. Both models flow into the identical
+// saga emitters via WorkflowIncrementalGenerator.EmitWorkflowSources — one
+// lowering path, zero forked emitter logic (INV-1). A JSON-authored workflow
+// therefore lowers behaviorally identically to its C#-authored twin.
+//
+// INV-8: a wire step type is a plain simple-name string moniker. This bridge
+// consumes the moniker through WireMonikerResolver (task 016), which yields a
+// compile-time INamedTypeSymbol — never a CLR System.Type. The resolved symbol's
+// namespaced display name is retained as the StepModel's descriptor string; no
+// CLR Type is ever persisted onto the IR.
+//
+// DR-3 (gates tolerated, saga unaffected): a gate STEP lowers as an ordinary
+// step (its stepType resolves and runs like any other), and the workflow's gate
+// DECLARATIONS (`gates[]`) plus a step's `gateId` back-reference are
+// consumer-plane data the saga never observes. A gate-bearing workflow therefore
+// imports IDENTICALLY to its gate-free twin.
+//
+// SCOPE (task 017): the IMPORTABLE subset only — linear/fork flows, retry/
+// timeout/compensation/confidence step config, context-free approval, gates, and
+// diagnostic-fork edges. The REJECTION of carriers (delegate steps, branch
+// points, loops, validation predicates, approval-with-context) and semantic
+// violations (dangling gateId, reliability-bearing gates) is task 018. Here a
+// non-importable construct is simply not lowered (a workflow carrying one that
+// cannot be mapped produces no model); task 018 adds the loud rejection
+// diagnostics on top.
+// =============================================================================
+
+/// <summary>
+/// Bridges a parsed wire-IR workflow definition (task 026) to the generator's
+/// <see cref="WorkflowModel"/> IR for the importable subset (task 017). Step monikers are
+/// resolved to CLR step symbols via <see cref="WireMonikerResolver"/> (task 016), and the mapped
+/// model is lowered through the same emitters as a C#-authored workflow.
+/// </summary>
+internal static class WireToModelBridge
+{
+    /// <summary>
+    /// Symbol display format producing <c>Namespace.TypeName</c> without the <c>global::</c> prefix
+    /// — the IDENTICAL format the C#-authoring path uses for a step's descriptor
+    /// (<c>StepModel.StepTypeName</c>), so an imported step's DI registration and worker-handler
+    /// namespacing match its C#-authored twin's byte-for-byte.
+    /// </summary>
+    private static readonly SymbolDisplayFormat NamespacedTypeFormat = new SymbolDisplayFormat(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces);
+
+    /// <summary>
+    /// Bridges <paramref name="definition"/> into a <see cref="WorkflowModel"/> for the importable
+    /// subset.
+    /// </summary>
+    /// <param name="definition">The parsed wire-IR workflow definition.</param>
+    /// <param name="compilation">The compilation whose symbol table resolves step monikers.</param>
+    /// <param name="jsonFilePath">The import file path, threaded into moniker-resolution diagnostics.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>
+    /// The lowered model (or null when the document is not lowerable — an empty/unnamed workflow, a
+    /// step whose moniker does not resolve, or a step arm the importable subset does not carry) plus
+    /// any moniker-resolution diagnostics.
+    /// </returns>
+    public static BridgeResult Bridge(
+        WorkflowDefinitionV1 definition,
+        Compilation compilation,
+        string jsonFilePath,
+        CancellationToken ct)
+    {
+        if (definition is null)
+        {
+            throw new ArgumentNullException(nameof(definition));
+        }
+
+        if (compilation is null)
+        {
+            throw new ArgumentNullException(nameof(compilation));
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        var diagnostics = new List<Diagnostic>();
+
+        var workflowName = definition.Name;
+        if (string.IsNullOrWhiteSpace(workflowName) || definition.Steps.Count == 0)
+        {
+            // An unnamed or step-less document is not lowerable; nothing to emit.
+            return new BridgeResult(null, diagnostics);
+        }
+
+        // Resolve the entry step first: it anchors the generated namespace and the inferred state
+        // type (the wire IR carries neither — both are recovered from the resolved step symbol).
+        var entryStep = ResolveEntryStep(definition);
+        if (entryStep is null || GetStepMoniker(entryStep) is not { } entryMoniker)
+        {
+            return new BridgeResult(null, diagnostics);
+        }
+
+        var entrySymbol = ResolveStepSymbol(compilation, entryMoniker, jsonFilePath, diagnostics);
+        if (entrySymbol is null)
+        {
+            return new BridgeResult(null, diagnostics);
+        }
+
+        var @namespace = entrySymbol.ContainingNamespace?.ToDisplayString();
+        if (string.IsNullOrEmpty(@namespace) || @namespace == "<global namespace>")
+        {
+            // A step in the global namespace has no home for the generated saga; do not lower.
+            return new BridgeResult(null, diagnostics);
+        }
+
+        var stateSymbol = GetWorkflowStateType(entrySymbol);
+        var stateTypeName = stateSymbol?.Name;
+        var stateHasPhaseProperty = stateSymbol is not null && HasPublicPhaseProperty(stateSymbol);
+
+        var pascalName = WorkflowIncrementalGenerator.ToPascalCase(workflowName!);
+
+        // Map every top-level step. A moniker that does not resolve, or an arm the importable
+        // subset does not carry (e.g. a delegate step), makes the whole workflow non-lowerable —
+        // returning no model rather than a partial, uncompilable saga (task 018 adds the loud
+        // rejection diagnostic for these; here they simply do not lower).
+        var baseStepModels = new List<StepModel>(definition.Steps.Count);
+        var stepIdToName = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var stepDef in definition.Steps)
+        {
+            var stepModel = MapStep(stepDef, compilation, jsonFilePath, diagnostics);
+            if (stepModel is null)
+            {
+                return new BridgeResult(null, diagnostics);
+            }
+
+            baseStepModels.Add(stepModel);
+            if (!string.IsNullOrEmpty(stepDef.StepId))
+            {
+                stepIdToName[stepDef.StepId!] = stepModel.PhaseName;
+            }
+        }
+
+        // Fork points → ForkModel. Each fork's parallel path steps are woven INLINE into the linear
+        // step-name list (at the fork position) by ComposeStepNames below — never into the step
+        // MODEL list — mirroring the C#-authoring fluent walk so the fork saga emitter sees the
+        // identical shape.
+        var forkModels = MapForks(definition, pascalName, compilation, jsonFilePath, stepIdToName, diagnostics);
+        if (forkModels is null)
+        {
+            return new BridgeResult(null, diagnostics);
+        }
+
+        // Context-free approval points → ApprovalModel (DR-14: a context-bearing approval is a
+        // rejected carrier handled by task 018; here only the bare, context-free arm is mapped).
+        var approvalModels = MapApprovals(definition, compilation, jsonFilePath, stepIdToName, diagnostics);
+        if (approvalModels is null)
+        {
+            return new BridgeResult(null, diagnostics);
+        }
+
+        // Diagnostic-fork edges (DR-10) → DiagnosticForkModel, attached to the model. The saga
+        // lowering that consumes them is deferred (#151); the bridge only carries the edge.
+        var diagnosticForkModels = MapDiagnosticForks(definition);
+
+        // Compose the final step graph exactly as the C#-authoring path does. NOTE the deliberate
+        // asymmetry the C# path exhibits:
+        //   * StepNames  = top-level linear steps in document order, then each fork's path steps
+        //                  APPENDED (fork paths are off the top-level phase chain).
+        //   * Steps      = the fork's path step models are woven INLINE at the fork position (the C#
+        //                  ExtractStepModels walk inlines them), which is the order the saga's
+        //                  not-found handlers are emitted in.
+        // Both orders must be reproduced or the generated saga diverges from a C# twin.
+        var stepNames = ComposeStepNames(definition, baseStepModels, forkModels);
+        var stepModels = ComposeStepModels(definition, baseStepModels, forkModels);
+        (stepNames, stepModels) = AppendApprovalSteps(stepNames, stepModels, approvalModels);
+        var confidenceHandlerStepNames = AppendConfidenceHandlerSteps(ref stepNames, ref stepModels);
+        stepModels = FoldCompensationSteps(stepModels);
+
+        var model = new WorkflowModel(
+            WorkflowName: workflowName!,
+            PascalName: pascalName,
+            Namespace: @namespace!,
+            StepNames: stepNames,
+            StateTypeName: stateTypeName,
+            Version: 1,
+            PersistenceMode: PersistenceMode.SagaDocument,
+            Steps: stepModels,
+            Loops: null,
+            Branches: null,
+            FailureHandlers: null,
+            ApprovalPoints: approvalModels.Count > 0 ? approvalModels : null,
+            Forks: forkModels.Count > 0 ? forkModels : null,
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames,
+            DiagnosticForks: diagnosticForkModels.Count > 0 ? diagnosticForkModels : null)
+        {
+            StateHasPhaseProperty = stateHasPhaseProperty,
+
+            // A JSON import has no fluent {Pascal}WorkflowDefinition class, so the DI extension must
+            // NOT emit the definition-evaluation line that references it (it would not compile).
+            HasFluentDefinition = false,
+        };
+
+        return new BridgeResult(model, diagnostics);
+    }
+
+    /// <summary>
+    /// Resolves the entry step — the step named by <see cref="WorkflowDefinitionV1.EntryStepId"/>,
+    /// or the first step in document order when no entry id is declared.
+    /// </summary>
+    private static StepDefinition? ResolveEntryStep(WorkflowDefinitionV1 definition)
+    {
+        if (!string.IsNullOrEmpty(definition.EntryStepId))
+        {
+            foreach (var step in definition.Steps)
+            {
+                if (string.Equals(step.StepId, definition.EntryStepId, StringComparison.Ordinal))
+                {
+                    return step;
+                }
+            }
+        }
+
+        return definition.Steps.Count > 0 ? definition.Steps[0] : null;
+    }
+
+    /// <summary>
+    /// Gets the simple-name step-type moniker for an importable step arm (skill/handler/gate), or
+    /// null for an arm the importable subset does not carry (a delegate step, an approval step).
+    /// </summary>
+    private static string? GetStepMoniker(StepDefinition step) => step switch
+    {
+        SkillStep skill => skill.StepType,
+        HandlerStep handler => handler.StepType,
+        GateStep gate => gate.StepType,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Maps one importable step definition to a <see cref="StepModel"/>, resolving its moniker and
+    /// its retry/timeout/compensation/confidence configuration. Returns null when the moniker does
+    /// not resolve or the arm is not importable.
+    /// </summary>
+    private static StepModel? MapStep(
+        StepDefinition step,
+        Compilation compilation,
+        string jsonFilePath,
+        List<Diagnostic> diagnostics)
+    {
+        if (GetStepMoniker(step) is not { } moniker)
+        {
+            return null;
+        }
+
+        var symbol = ResolveStepSymbol(compilation, moniker, jsonFilePath, diagnostics);
+        if (symbol is null)
+        {
+            return null;
+        }
+
+        var stepTypeName = symbol.ToDisplayString(NamespacedTypeFormat);
+        var instanceName = string.IsNullOrEmpty(step.InstanceName) ? null : step.InstanceName;
+
+        var (retry, timeout, compensation, confidence) = MapConfiguration(
+            step.Configuration,
+            compilation,
+            jsonFilePath,
+            diagnostics);
+
+        return StepModel.Create(
+            symbol.Name,
+            stepTypeName,
+            instanceName: instanceName,
+            retry: retry,
+            timeout: timeout,
+            compensation: compensation,
+            confidence: confidence);
+    }
+
+    /// <summary>
+    /// Maps a wire step configuration tree to the generator's resilience IR
+    /// (<see cref="RetryModel"/> / <see cref="TimeoutModel"/> / <see cref="CompensationModel"/> /
+    /// <see cref="ConfidenceModel"/>). A validation guard (LB-1 declarative predicate) is a rejected
+    /// carrier (task 018) and is intentionally not mapped here.
+    /// </summary>
+    private static (RetryModel? Retry, TimeoutModel? Timeout, CompensationModel? Compensation, ConfidenceModel? Confidence) MapConfiguration(
+        StepConfigurationDefinition? config,
+        Compilation compilation,
+        string jsonFilePath,
+        List<Diagnostic> diagnostics)
+    {
+        if (config is null)
+        {
+            return (null, null, null, null);
+        }
+
+        RetryModel? retry = config.Retry is { } r
+            ? new RetryModel(
+                MaxAttempts: r.MaxAttempts,
+                InitialDelay: ParseIsoDuration(r.InitialDelay),
+                BackoffMultiplier: r.BackoffMultiplier,
+                MaxDelay: ParseIsoDuration(r.MaxDelay),
+                UseJitter: r.UseJitter ?? false)
+            : null;
+
+        TimeoutModel? timeout = ParseIsoDuration(config.Timeout) is { } t
+            ? new TimeoutModel(t)
+            : null;
+
+        CompensationModel? compensation = null;
+        if (config.Compensation is { } c && !string.IsNullOrEmpty(c.CompensationStepType))
+        {
+            var compSymbol = WireMonikerResolver.Resolve(compilation, c.CompensationStepType!, jsonFilePath);
+            var compTypeName = compSymbol.IsResolved
+                ? compSymbol.Symbol!.ToDisplayString(NamespacedTypeFormat)
+                : c.CompensationStepType!;
+            compensation = new CompensationModel(
+                CompensationStepTypeName: compTypeName,
+                RequiredOnFailure: c.RequiredOnFailure ?? true,
+                IsRegisteredStep: compSymbol.IsResolved);
+        }
+
+        ConfidenceModel? confidence = null;
+        if (config.OnLowConfidence is { } handler)
+        {
+            confidence = MapConfidence(config.ConfidenceThreshold ?? 0.0, handler, compilation, jsonFilePath, diagnostics);
+        }
+
+        return (retry, timeout, compensation, confidence);
+    }
+
+    /// <summary>
+    /// Maps a wire low-confidence handler to a <see cref="ConfidenceModel"/> carrying the ordered
+    /// handler chain (G-4). A wire handler that terminates (<c>isTerminal</c>) maps to a
+    /// non-rejoining chain (the DR-5 back-compat default); a non-terminal handler rejoins the main
+    /// flow.
+    /// </summary>
+    private static ConfidenceModel? MapConfidence(
+        double threshold,
+        LowConfidenceHandlerDefinition handler,
+        Compilation compilation,
+        string jsonFilePath,
+        List<Diagnostic> diagnostics)
+    {
+        if (handler.HandlerSteps.Count == 0)
+        {
+            return new ConfidenceModel(threshold);
+        }
+
+        var handlerSteps = new List<StepModel>(handler.HandlerSteps.Count);
+        foreach (var handlerStepDef in handler.HandlerSteps)
+        {
+            var handlerStep = MapStep(handlerStepDef, compilation, jsonFilePath, diagnostics);
+            if (handlerStep is null)
+            {
+                // A handler step that does not resolve leaves the confidence gate unmappable; the
+                // moniker diagnostic is already recorded. Drop the whole handler so the parent
+                // step still lowers as an ungated step rather than referencing a phantom step.
+                return new ConfidenceModel(threshold);
+            }
+
+            handlerSteps.Add(handlerStep);
+        }
+
+        var chain = new LowConfidenceHandlerChainModel(
+            Steps: handlerSteps,
+            RejoinsMainFlow: !handler.IsTerminal);
+
+        return new ConfidenceModel(
+            Threshold: threshold,
+            OnLowConfidenceHandlerId: handlerSteps[0].StepName,
+            OnLowConfidenceHandlerStep: handlerSteps[0],
+            OnLowConfidenceHandlerChain: chain);
+    }
+
+    /// <summary>
+    /// Maps the wire fork points to <see cref="ForkModel"/>s. The generator-internal
+    /// <see cref="ForkModel.ForkId"/> is derived deterministically as
+    /// <c>{pascalName}-Fork{index}</c> — the IDENTICAL id the C#-authoring <c>ForkExtractor</c>
+    /// mints (it is passed the workflow's PascalName) — so the generated fork command/event names
+    /// match a C#-authored twin's. The wire <c>forkPointId</c> (the builder's edge id) is
+    /// intentionally NOT used for the generated identity. Returns null when a fork path step does
+    /// not resolve.
+    /// </summary>
+    private static IReadOnlyList<ForkModel>? MapForks(
+        WorkflowDefinitionV1 definition,
+        string pascalName,
+        Compilation compilation,
+        string jsonFilePath,
+        IReadOnlyDictionary<string, string> stepIdToName,
+        List<Diagnostic> diagnostics)
+    {
+        if (definition.ForkPoints.Count == 0)
+        {
+            return [];
+        }
+
+        var forks = new List<ForkModel>(definition.ForkPoints.Count);
+        for (var forkIndex = 0; forkIndex < definition.ForkPoints.Count; forkIndex++)
+        {
+            var forkPoint = definition.ForkPoints[forkIndex];
+
+            var previousStepName = forkPoint.FromStepId is { } fromId && stepIdToName.TryGetValue(fromId, out var prev)
+                ? prev
+                : string.Empty;
+            var joinStepName = forkPoint.JoinStepId is { } joinId && stepIdToName.TryGetValue(joinId, out var join)
+                ? join
+                : string.Empty;
+
+            var paths = new List<ForkPathModel>(forkPoint.Paths.Count);
+            foreach (var pathDef in forkPoint.Paths)
+            {
+                var pathSteps = new List<StepModel>(pathDef.Steps.Count);
+                foreach (var pathStepDef in pathDef.Steps)
+                {
+                    var pathStep = MapStep(pathStepDef, compilation, jsonFilePath, diagnostics);
+                    if (pathStep is null)
+                    {
+                        return null;
+                    }
+
+                    pathSteps.Add(pathStep);
+                }
+
+                if (pathSteps.Count == 0)
+                {
+                    // A fork path with no steps is unrepresentable; do not lower.
+                    return null;
+                }
+
+                paths.Add(ForkPathModel.Create(
+                    pathDef.PathIndex,
+                    pathSteps,
+                    hasFailureHandler: pathDef.FailureHandler is not null,
+                    isTerminalOnFailure: pathDef.FailureHandler?.IsTerminal ?? false));
+            }
+
+            if (paths.Count < 2)
+            {
+                // A fork with fewer than two paths is not a fork; do not lower.
+                return null;
+            }
+
+            forks.Add(ForkModel.Create(
+                $"{pascalName}-Fork{forkIndex}",
+                previousStepName,
+                paths,
+                joinStepName));
+        }
+
+        return forks;
+    }
+
+    /// <summary>
+    /// Maps the wire approval points to context-free <see cref="ApprovalModel"/>s. An approval that
+    /// declares context (<c>hasContext</c>), an escalation, or a rejection handler is a rejected
+    /// carrier (task 018) and makes the workflow non-lowerable here (returns null); only the bare,
+    /// context-free approval arm is importable.
+    /// </summary>
+    private static IReadOnlyList<ApprovalModel>? MapApprovals(
+        WorkflowDefinitionV1 definition,
+        Compilation compilation,
+        string jsonFilePath,
+        IReadOnlyDictionary<string, string> stepIdToName,
+        List<Diagnostic> diagnostics)
+    {
+        if (definition.ApprovalPoints.Count == 0)
+        {
+            return [];
+        }
+
+        var approvals = new List<ApprovalModel>(definition.ApprovalPoints.Count);
+        foreach (var approvalDef in definition.ApprovalPoints)
+        {
+            // Context-bearing / escalation / rejection approvals are carriers rejected by task 018.
+            if (approvalDef.HasContext
+                || approvalDef.EscalationHandler is not null
+                || approvalDef.RejectionHandler is not null
+                || string.IsNullOrEmpty(approvalDef.ApproverType)
+                || string.IsNullOrEmpty(approvalDef.PrecedingStepId))
+            {
+                return null;
+            }
+
+            var approverSymbol = WireMonikerResolver.Resolve(compilation, approvalDef.ApproverType!, jsonFilePath);
+            var approverTypeName = approverSymbol.IsResolved
+                ? approverSymbol.Symbol!.ToDisplayString(NamespacedTypeFormat)
+                : approvalDef.ApproverType!;
+
+            if (!stepIdToName.TryGetValue(approvalDef.PrecedingStepId!, out var precedingStepName))
+            {
+                return null;
+            }
+
+            approvals.Add(ApprovalModel.Create(
+                approvalDef.ApprovalPointId ?? approverSymbol.Symbol?.Name ?? "Approval",
+                approverTypeName,
+                precedingStepName));
+        }
+
+        return approvals;
+    }
+
+    /// <summary>
+    /// Maps the wire diagnostic-fork edges (DR-10) to <see cref="DiagnosticForkModel"/>s. Each edge
+    /// is carried onto the model; the saga lowering that consumes them is deferred (#151).
+    /// </summary>
+    private static IReadOnlyList<DiagnosticForkModel> MapDiagnosticForks(WorkflowDefinitionV1 definition)
+    {
+        if (definition.DiagnosticForks.Count == 0)
+        {
+            return [];
+        }
+
+        var edges = new List<DiagnosticForkModel>(definition.DiagnosticForks.Count);
+        foreach (var edgeDef in definition.DiagnosticForks)
+        {
+            var triggers = new List<PermittedForkTriggerModel>(edgeDef.PermittedTriggers.Count);
+            foreach (var trigger in edgeDef.PermittedTriggers)
+            {
+                triggers.Add(PermittedForkTriggerModel.Create(
+                    trigger.Trigger ?? string.Empty,
+                    [.. trigger.RequiredEvidenceFields]));
+            }
+
+            edges.Add(DiagnosticForkModel.Create(
+                [.. edgeDef.AnchorStepIds],
+                triggers,
+                edgeDef.CompensationSeed ?? string.Empty,
+                edgeDef.MaxForks));
+        }
+
+        return edges;
+    }
+
+    /// <summary>
+    /// Composes the linear step-NAME order, weaving each fork's parallel path steps INLINE right
+    /// after the step the fork originates from (its wire <c>fromStepId</c>). This mirrors the
+    /// C#-authoring fluent walk, which places a fork's path steps between the pre-fork step and the
+    /// join step (e.g. <c>Intake, Assess, Review, Aggregate, Settle</c>) rather than appending them.
+    /// The join step is an ordinary top-level step, emitted in its own document position; fork path
+    /// steps are NEVER added to the step MODEL list — their completion is handled by the fork
+    /// path-completed handler, not the generic step-completed handler.
+    /// </summary>
+    private static List<string> ComposeStepNames(
+        WorkflowDefinitionV1 definition,
+        IReadOnlyList<StepModel> baseStepModels,
+        IReadOnlyList<ForkModel> forkModels)
+    {
+        var stepNames = new List<string>(baseStepModels.Count);
+        var existing = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddName(string name)
+        {
+            if (existing.Add(name))
+            {
+                stepNames.Add(name);
+            }
+        }
+
+        // The top-level linear steps (including the join step, itself a top-level step) come first,
+        // in document order — the C#-authoring path's ExtractStepInfos yields exactly this order.
+        foreach (var step in baseStepModels)
+        {
+            AddName(step.PhaseName);
+        }
+
+        // Each fork's parallel path steps are then appended, in fork then path then step order,
+        // mirroring the C#-authoring post-processing (fork path steps live off the top-level chain).
+        foreach (var fork in forkModels)
+        {
+            foreach (var path in fork.Paths)
+            {
+                foreach (var step in path.Steps)
+                {
+                    AddName(step.PhaseName);
+                }
+            }
+        }
+
+        return stepNames;
+    }
+
+    /// <summary>
+    /// Composes the step MODEL list, weaving each fork's parallel path step models INLINE right
+    /// after the step the fork originates from (its wire <c>fromStepId</c>). This mirrors the
+    /// C#-authoring <c>ExtractStepModels</c> walk, which inlines fork path steps into
+    /// <c>model.Steps</c> (e.g. <c>Intake, Assess, Review, Aggregate, Settle</c>) — the order the
+    /// saga's per-step not-found handlers are emitted in. The generic step-completed handler skips
+    /// these fork path steps (recognizing them via <c>model.Forks</c>); their completion is handled
+    /// by the fork path-completed handler instead.
+    /// </summary>
+    private static List<StepModel> ComposeStepModels(
+        WorkflowDefinitionV1 definition,
+        IReadOnlyList<StepModel> baseStepModels,
+        IReadOnlyList<ForkModel> forkModels)
+    {
+        // Map the wire step id a fork originates from to its ForkModel (same order as the wire fork
+        // points), so a fork's path step models can be woven in right after the step that precedes it.
+        var forksByFromStepId = new Dictionary<string, ForkModel>(StringComparer.Ordinal);
+        for (var i = 0; i < forkModels.Count && i < definition.ForkPoints.Count; i++)
+        {
+            var fromId = definition.ForkPoints[i].FromStepId;
+            if (!string.IsNullOrEmpty(fromId))
+            {
+                forksByFromStepId[fromId!] = forkModels[i];
+            }
+        }
+
+        var stepModels = new List<StepModel>(baseStepModels.Count);
+        var existing = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddModel(StepModel step)
+        {
+            if (existing.Add(step.StepName))
+            {
+                stepModels.Add(step);
+            }
+        }
+
+        for (var i = 0; i < baseStepModels.Count; i++)
+        {
+            AddModel(baseStepModels[i]);
+
+            var stepId = definition.Steps[i].StepId;
+            if (!string.IsNullOrEmpty(stepId) && forksByFromStepId.TryGetValue(stepId!, out var fork))
+            {
+                foreach (var path in fork.Paths)
+                {
+                    foreach (var step in path.Steps)
+                    {
+                        AddModel(step);
+                    }
+                }
+            }
+        }
+
+        return stepModels;
+    }
+
+    /// <summary>
+    /// Appends each approval's rejection/escalation steps to the step lists. A context-free approval
+    /// (the only importable arm, per <see cref="MapApprovals"/>) has none, so this is a no-op for
+    /// the importable subset; it is kept for parity with the C#-authoring composition.
+    /// </summary>
+    private static (List<string> StepNames, List<StepModel> StepModels) AppendApprovalSteps(
+        List<string> stepNames,
+        List<StepModel> stepModels,
+        IReadOnlyList<ApprovalModel> approvals)
+    {
+        if (approvals.Count == 0)
+        {
+            return (stepNames, stepModels);
+        }
+
+        var existingNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
+        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+
+        void AddSteps(IReadOnlyList<StepModel>? steps)
+        {
+            if (steps is null)
+            {
+                return;
+            }
+
+            foreach (var step in steps)
+            {
+                if (existingNames.Add(step.StepName))
+                {
+                    stepNames.Add(step.StepName);
+                }
+
+                if (existingModelNames.Add(step.StepName))
+                {
+                    stepModels.Add(step);
+                }
+            }
+        }
+
+        foreach (var approval in approvals)
+        {
+            AddSteps(approval.RejectionSteps);
+            AddSteps(approval.EscalationSteps);
+        }
+
+        return (stepNames, stepModels);
+    }
+
+    /// <summary>
+    /// Derives the <c>OnLowConfidence</c> handler-chain steps from the step models and appends them
+    /// to the step lists (they get full lowering but stay off the main linear flow), returning the
+    /// lowered handler step names. Mirrors the C#-authoring path's confidence lowering.
+    /// </summary>
+    private static IReadOnlyList<string>? AppendConfidenceHandlerSteps(
+        ref List<string> stepNames,
+        ref List<StepModel> stepModels)
+    {
+        var handlerSteps = stepModels
+            .Where(s => s.Confidence?.OnLowConfidenceHandlerChain is not null)
+            .SelectMany(s => s.Confidence!.OnLowConfidenceHandlerChain!.Steps)
+            .ToList();
+
+        if (handlerSteps.Count == 0)
+        {
+            return null;
+        }
+
+        var confidenceHandlerStepNames = new List<string>(handlerSteps.Count);
+        var existingNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
+        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+
+        foreach (var handlerStep in handlerSteps)
+        {
+            confidenceHandlerStepNames.Add(handlerStep.StepName);
+
+            if (existingNames.Add(handlerStep.StepName))
+            {
+                stepNames.Add(handlerStep.StepName);
+            }
+
+            if (existingModelNames.Add(handlerStep.StepName))
+            {
+                stepModels.Add(handlerStep);
+            }
+        }
+
+        return confidenceHandlerStepNames;
+    }
+
+    /// <summary>
+    /// Folds each step's compensation (rollback) step TYPE into the model list — mirroring the
+    /// C#-authoring compensation fold — so the compensation step gets its worker command, worker
+    /// handler, completed event, and DI registration. The compensation step is folded into the step
+    /// MODELS only, never into the linear step NAMES: it is reached exclusively via the saga
+    /// compensation handler chain, not the happy path.
+    /// </summary>
+    private static List<StepModel> FoldCompensationSteps(List<StepModel> stepModels)
+    {
+        if (!stepModels.Any(s => s.Compensation is not null))
+        {
+            return stepModels;
+        }
+
+        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+        foreach (var step in stepModels.ToList())
+        {
+            if (step.Compensation is null)
+            {
+                continue;
+            }
+
+            var compTypeName = step.Compensation.CompensationStepTypeName;
+            var compStepName = NamingHelper.GetSimpleTypeName(compTypeName);
+            if (existingModelNames.Add(compStepName))
+            {
+                stepModels.Add(StepModel.Create(compStepName, compTypeName));
+            }
+        }
+
+        return stepModels;
+    }
+
+    /// <summary>
+    /// Resolves a wire step moniker to its CLR step symbol, recording the stable resolution
+    /// diagnostic (unresolvable / ambiguous) when it does not bind to exactly one type.
+    /// </summary>
+    private static INamedTypeSymbol? ResolveStepSymbol(
+        Compilation compilation,
+        string moniker,
+        string jsonFilePath,
+        List<Diagnostic> diagnostics)
+    {
+        var resolution = WireMonikerResolver.Resolve(compilation, moniker, jsonFilePath);
+        if (resolution.IsResolved)
+        {
+            return resolution.Symbol;
+        }
+
+        if (resolution.Diagnostic is not null)
+        {
+            diagnostics.Add(resolution.Diagnostic);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Recovers the workflow state type from a step symbol's
+    /// <c>Strategos.Abstractions.IWorkflowStep&lt;TState&gt;</c> implementation. The wire IR carries
+    /// no state type, so the bridge infers it from the resolved step (every step in a workflow
+    /// shares one <c>TState</c>).
+    /// </summary>
+    private static INamedTypeSymbol? GetWorkflowStateType(INamedTypeSymbol stepSymbol)
+    {
+        foreach (var iface in stepSymbol.AllInterfaces)
+        {
+            if (!iface.IsGenericType)
+            {
+                continue;
+            }
+
+            var original = iface.OriginalDefinition;
+            if (string.Equals(original.MetadataName, "IWorkflowStep`1", StringComparison.Ordinal)
+                && string.Equals(
+                    original.ContainingNamespace?.ToDisplayString(),
+                    "Strategos.Abstractions",
+                    StringComparison.Ordinal))
+            {
+                return iface.TypeArguments.Length == 1
+                    ? iface.TypeArguments[0] as INamedTypeSymbol
+                    : null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="stateSymbol"/> declares (or inherits) a public, non-static
+    /// <c>Phase</c> property — the same signal the C#-authoring path computes to gate the
+    /// failure-handler <c>Phase = State.Phase</c> sync.
+    /// </summary>
+    private static bool HasPublicPhaseProperty(INamedTypeSymbol stateSymbol)
+    {
+        for (var current = stateSymbol; current is not null; current = current.BaseType)
+        {
+            foreach (var member in current.GetMembers("Phase"))
+            {
+                if (member is IPropertySymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public })
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses an ISO-8601 duration string (the language-neutral form the wire projection emits via
+    /// <c>XmlConvert.ToString(TimeSpan)</c>) back into a <see cref="TimeSpan"/>. Returns null for a
+    /// null/empty or unparseable value so an absent or malformed duration simply carries no policy.
+    /// </summary>
+    private static TimeSpan? ParseIsoDuration(string? iso)
+    {
+        if (string.IsNullOrEmpty(iso))
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Xml.XmlConvert.ToTimeSpan(iso!);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// The outcome of <see cref="WireToModelBridge.Bridge"/>: the lowered <see cref="WorkflowModel"/>
+/// (or null when the document is not lowerable) plus any moniker-resolution diagnostics the bridge
+/// surfaced.
+/// </summary>
+internal sealed class BridgeResult
+{
+    /// <summary>Initializes a new instance of the <see cref="BridgeResult"/> class.</summary>
+    /// <param name="model">The lowered model, or null.</param>
+    /// <param name="diagnostics">The bridge diagnostics.</param>
+    public BridgeResult(WorkflowModel? model, IReadOnlyList<Diagnostic> diagnostics)
+    {
+        this.Model = model;
+        this.Diagnostics = diagnostics;
+    }
+
+    /// <summary>Gets the lowered workflow model, or null when nothing was lowered.</summary>
+    public WorkflowModel? Model { get; }
+
+    /// <summary>Gets the moniker-resolution diagnostics the bridge surfaced.</summary>
+    public IReadOnlyList<Diagnostic> Diagnostics { get; }
+}

@@ -51,10 +51,12 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // the parsed DTO is only validated and its failure modes reported. The read step
         // (path + content) is separated from the analysis step so the incremental driver can
         // cache the parse when a file's content is unchanged and re-run it when it is edited.
-        var workflowImports = context.AdditionalTextsProvider
+        var importReads = context.AdditionalTextsProvider
             .Where(static text => IsWorkflowDefinitionFile(text.Path))
             .Select(static (text, ct) => ReadImportFile(text, ct))
-            .WithTrackingName(ImportReadTrackingName)
+            .WithTrackingName(ImportReadTrackingName);
+
+        var workflowImports = importReads
             .Select(static (file, ct) => AnalyzeImportFile(file, ct))
             .WithTrackingName(ImportAnalyzeTrackingName);
 
@@ -81,53 +83,131 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             // Generate source if model is valid
             if (result.Model is not null)
             {
-                // Emit Phase enum
-                var phaseSource = PhaseEnumEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PhaseEnumName}.g.cs", phaseSource);
-
-                // Emit Commands
-                var commandsSource = CommandsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Commands.g.cs", commandsSource);
-
-                // Emit Events
-                var eventsSource = EventsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Events.g.cs", eventsSource);
-
-                // Emit Transitions
-                var transitionsSource = TransitionsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Transitions.g.cs", transitionsSource);
-
-                // Emit Saga
-                var sagaClassName = SagaEmitter.GetSagaClassName(result.Model);
-                var sagaSource = SagaEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{sagaClassName}.g.cs", sagaSource);
-
-                // Emit Context Assemblers (DR-6). Only steps that declared
-                // .WithContext(...) produce a {Step}ContextAssembler; when no step
-                // has context the emitter returns empty and no file is added, so a
-                // context-free workflow keeps its prior generated-file set
-                // byte-identical. The worker handler below wires each assembler into
-                // its step's execution path.
-                var assemblersSource = ContextAssemblerEmitter.Emit(result.Model);
-                if (!string.IsNullOrWhiteSpace(assemblersSource))
-                {
-                    GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Assemblers.g.cs", assemblersSource);
-                }
-
-                // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
-                var handlersSource = WorkerHandlerEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Handlers.g.cs", handlersSource);
-
-                // Emit DI Extensions
-                var extensionsSource = ExtensionsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Extensions.g.cs", extensionsSource);
-
-                // Emit Mermaid Diagram (as C# file with diagram in raw string constant)
-                var diagramContent = MermaidEmitter.Emit(result.Model);
-                var diagramSource = WrapMermaidAsCSharp(result.Model, diagramContent);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Diagram.g.cs", diagramSource);
+                EmitWorkflowSources(spc, result.Model);
             }
         });
+
+        // DR-12 (#100), task 017 — the JSON import BRIDGE half. Combine each parsed
+        // workflow-definition AdditionalFile with the compilation (needed to resolve wire
+        // step monikers to CLR step symbols, task 016) and lower the importable subset to a
+        // WorkflowModel via WireToModelBridge. The bridged model flows into the SAME
+        // EmitWorkflowSources call the C#-authoring path uses — one lowering path, zero forked
+        // emitter logic (INV-1). The malformed/schemaVersion failure modes stay owned by the
+        // task-015 diagnostic pipeline above; this pipeline only lowers a well-formed, supported
+        // document and surfaces the moniker-resolution diagnostics the bridge encounters.
+        var bridgedImports = importReads
+            .Combine(context.CompilationProvider)
+            .Select(static (pair, ct) => BridgeImportFile(pair.Left, pair.Right, ct));
+
+        context.RegisterSourceOutput(bridgedImports, static (spc, bridged) =>
+        {
+            foreach (var diagnostic in bridged.Diagnostics)
+            {
+                spc.ReportDiagnostic(diagnostic);
+            }
+
+            if (bridged.Model is not null)
+            {
+                EmitWorkflowSources(spc, bridged.Model);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The single lowering path (INV-1): emits the full generated-source set for a
+    /// <see cref="WorkflowModel"/> — phase enum, commands, events, transitions, saga, context
+    /// assemblers, worker handlers, DI extensions, and the Mermaid diagram. BOTH the C#-authoring
+    /// pipeline and the JSON import pipeline (task 017) feed their model through this one method, so
+    /// the fork/loop/confidence (and every other) emitter has exactly one call site — an imported
+    /// JSON workflow lowers through the IDENTICAL emitters as its C#-authored twin, with no forked
+    /// emitter logic.
+    /// </summary>
+    /// <param name="spc">The source-production context.</param>
+    /// <param name="model">The workflow model to lower.</param>
+    internal static void EmitWorkflowSources(SourceProductionContext spc, WorkflowModel model)
+    {
+        // Emit Phase enum
+        var phaseSource = PhaseEnumEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PhaseEnumName}.g.cs", phaseSource);
+
+        // Emit Commands
+        var commandsSource = CommandsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Commands.g.cs", commandsSource);
+
+        // Emit Events
+        var eventsSource = EventsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Events.g.cs", eventsSource);
+
+        // Emit Transitions
+        var transitionsSource = TransitionsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Transitions.g.cs", transitionsSource);
+
+        // Emit Saga
+        var sagaClassName = SagaEmitter.GetSagaClassName(model);
+        var sagaSource = SagaEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{sagaClassName}.g.cs", sagaSource);
+
+        // Emit Context Assemblers (DR-6). Only steps that declared
+        // .WithContext(...) produce a {Step}ContextAssembler; when no step
+        // has context the emitter returns empty and no file is added, so a
+        // context-free workflow keeps its prior generated-file set
+        // byte-identical. The worker handler below wires each assembler into
+        // its step's execution path.
+        var assemblersSource = ContextAssemblerEmitter.Emit(model);
+        if (!string.IsNullOrWhiteSpace(assemblersSource))
+        {
+            GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Assemblers.g.cs", assemblersSource);
+        }
+
+        // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
+        var handlersSource = WorkerHandlerEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Handlers.g.cs", handlersSource);
+
+        // Emit DI Extensions
+        var extensionsSource = ExtensionsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Extensions.g.cs", extensionsSource);
+
+        // Emit Mermaid Diagram (as C# file with diagram in raw string constant)
+        var diagramContent = MermaidEmitter.Emit(model);
+        var diagramSource = WrapMermaidAsCSharp(model, diagramContent);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Diagram.g.cs", diagramSource);
+    }
+
+    /// <summary>
+    /// Bridges one parsed workflow-definition import file to the generator IR (task 017). A
+    /// well-formed document declaring the supported schema version is lowered through
+    /// <see cref="WireToModelBridge"/> (which resolves step monikers against
+    /// <paramref name="compilation"/> and maps the importable subset to a
+    /// <see cref="WorkflowModel"/>); malformed or version-skewed documents are left to the
+    /// task-015 diagnostic pipeline and produce no model here.
+    /// </summary>
+    /// <param name="file">The path + content read by <see cref="ReadImportFile"/>.</param>
+    /// <param name="compilation">The compilation whose symbol table resolves wire step monikers.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The bridged model (or null) plus any moniker-resolution diagnostics.</returns>
+    private static BridgedImport BridgeImportFile(ImportFile file, Compilation compilation, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        WorkflowDefinitionV1 definition;
+        try
+        {
+            definition = WireWorkflowReader.Read(file.Text);
+        }
+        catch (JsonParseException)
+        {
+            // Malformed input is reported by the task-015 diagnostic pipeline; nothing to bridge.
+            return BridgedImport.Empty;
+        }
+
+        // Only the supported schema version is bridged; version skew is reported by task 015.
+        if (!string.Equals(definition.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
+        {
+            return BridgedImport.Empty;
+        }
+
+        var result = WireToModelBridge.Bridge(definition, compilation, file.Path, ct);
+        return new BridgedImport(result.Model, result.Diagnostics);
     }
 
     private static bool IsValidTargetNode(SyntaxNode node)
@@ -1082,7 +1162,16 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static string ToPascalCase(string kebabCase)
+    /// <summary>
+    /// Converts a kebab-case workflow name to PascalCase (e.g. <c>process-order</c> →
+    /// <c>ProcessOrder</c>). Shared with the JSON import bridge (task 017) so an imported
+    /// workflow's <c>PascalName</c> — and therefore its <c>Start{Pascal}Command</c>, saga class,
+    /// and <c>Add{Pascal}Workflow()</c> names — are derived by the IDENTICAL rule as a C#-authored
+    /// workflow's.
+    /// </summary>
+    /// <param name="kebabCase">The kebab-case workflow name.</param>
+    /// <returns>The PascalCase form.</returns>
+    internal static string ToPascalCase(string kebabCase)
     {
         if (string.IsNullOrEmpty(kebabCase))
         {
@@ -1123,6 +1212,20 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// <param name="Path">The AdditionalFile path.</param>
     /// <param name="Text">The full textual content of the file.</param>
     private sealed record ImportFile(string Path, string Text);
+
+    /// <summary>
+    /// The bridged outcome of one import file (task 017): the lowered <see cref="WorkflowModel"/>
+    /// (or null when the document was malformed, version-skewed, or not lowerable) plus any
+    /// moniker-resolution diagnostics the bridge surfaced. The model flows into
+    /// <see cref="EmitWorkflowSources"/> — the same lowering path as the C#-authoring pipeline.
+    /// </summary>
+    /// <param name="Model">The lowered workflow model, or null when nothing was lowered.</param>
+    /// <param name="Diagnostics">The diagnostics the bridge surfaced (moniker resolution failures).</param>
+    private sealed record BridgedImport(WorkflowModel? Model, IReadOnlyList<Diagnostic> Diagnostics)
+    {
+        /// <summary>Gets the empty bridged result — no model, no diagnostics.</summary>
+        public static BridgedImport Empty { get; } = new(null, []);
+    }
 
     /// <summary>The classified outcome of parsing a workflow-definition import file.</summary>
     private enum ImportFailure
