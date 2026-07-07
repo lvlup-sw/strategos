@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 20,
+  "count": 27,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -160,6 +160,62 @@
       "severity": "error",
       "summary": "Ambiguous workflow step moniker",
       "remediation": "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportRejectedDelegateStep",
+      "id": "AGWF027",
+      "severity": "error",
+      "summary": "Imported delegate (lambda) step is not supported",
+      "remediation": "Workflow import file '{0}' declares a delegate (lambda) step at {1} (step '{2}'). A lambda step body is dropped on export (LB-1) and cannot be re-bound on import, so the workflow is rejected and no saga is generated. Replace it with a named IWorkflowStep<TState> step type.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportRejectedBranchPoint",
+      "id": "AGWF028",
+      "severity": "error",
+      "summary": "Imported branch point is not supported",
+      "remediation": "Workflow import file '{0}' declares a branch point at {1} (branch point '{2}'). A conditional branch point carries a runtime-bound condition that is not importable, so the workflow is rejected and no saga is generated.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportRejectedLoop",
+      "id": "AGWF029",
+      "severity": "error",
+      "summary": "Imported loop is not supported",
+      "remediation": "Workflow import file '{0}' declares a loop at {1} (loop '{2}'). A RepeatUntil loop carries a runtime-bound exit condition that is not importable, so the workflow is rejected and no saga is generated.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportRejectedValidationPredicate",
+      "id": "AGWF030",
+      "severity": "error",
+      "summary": "Imported validation predicate is not supported",
+      "remediation": "Workflow import file '{0}' declares a validation predicate at {1} (step '{2}'). A declarative validation predicate carries no re-bindable executable body (LB-1), so the workflow is rejected and no saga is generated.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportRejectedApprovalContext",
+      "id": "AGWF031",
+      "severity": "error",
+      "summary": "Imported approval context is not supported",
+      "remediation": "Workflow import file '{0}' declares a context-bearing approval at {1} (approval '{2}'). Approval context is dropped on export (LB-1) and cannot be re-bound on import, so the workflow is rejected and no saga is generated. Use a context-free approval.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportDanglingGateId",
+      "id": "AGWF032",
+      "severity": "error",
+      "summary": "Imported gate id does not resolve",
+      "remediation": "Workflow import file '{0}' references gate id '{2}' at {1}, which is not declared in the workflow's gates[]. The dangling gate reference is rejected and no saga is generated; declare the gate in gates[] or remove the gateId.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "ImportReliabilityBearingGate",
+      "id": "AGWF033",
+      "severity": "error",
+      "summary": "Imported gate declaration carries reliability",
+      "remediation": "Workflow import file '{0}' declares a reliability block at {1} (gate '{2}'). Gate reliability enters a definition only from measured telemetry, never from authored JSON, so the workflow is rejected and no saga is generated. Remove the reliability block.",
       "since": "2.10.0"
     }
   ]

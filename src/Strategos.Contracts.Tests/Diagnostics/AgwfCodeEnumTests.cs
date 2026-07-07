@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
-/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 20
+/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 27
 /// members carrying <em>symbolic</em> names (the contract Exarchos round-trips
 /// against by name; INV-5), each serializing to its <c>AGWF0xx</c> wire string
 /// via the <c>[JsonStringEnumMemberName]</c> path.
@@ -41,6 +41,13 @@ public sealed class AgwfCodeEnumTests
         ("UnsupportedSchemaVersion", "AGWF024"),
         ("UnresolvableStepMoniker", "AGWF025"),
         ("AmbiguousStepMoniker", "AGWF026"),
+        ("ImportRejectedDelegateStep", "AGWF027"),
+        ("ImportRejectedBranchPoint", "AGWF028"),
+        ("ImportRejectedLoop", "AGWF029"),
+        ("ImportRejectedValidationPredicate", "AGWF030"),
+        ("ImportRejectedApprovalContext", "AGWF031"),
+        ("ImportDanglingGateId", "AGWF032"),
+        ("ImportReliabilityBearingGate", "AGWF033"),
     ];
 
     /// <summary>
@@ -61,7 +68,7 @@ public sealed class AgwfCodeEnumTests
 
         var members = Enum.GetNames(enumType!);
         await Assert.That(members.Length).IsEqualTo(Expected.Length)
-            .Because("AgwfCode must have exactly 20 members.");
+            .Because("AgwfCode must have exactly 27 members.");
 
         var options = Strategos.Contracts.ContractsJson.Options;
         foreach (var (name, wire) in Expected)

@@ -402,6 +402,41 @@ public partial class OrderProcessingSaga
 
 ---
 
+### 2.3 JSON Import Re-binding of Dropped Bodies (#100)
+
+**Design Spec Reference:** DR-14 (carrier rejection), LB-1 (lossy export)
+
+**Current State (task 018, #100):**
+- The JSON import front-end (`WireToModelBridge`) now REJECTS every runtime-bindable carrier and semantic violation LOUDLY, with a per-case stable diagnostic that names the construct + its JSON path, and emits NO saga for that workflow:
+  - delegate (lambda) step → `AgwfCodes.ImportRejectedDelegateStep`
+  - branch point → `AgwfCodes.ImportRejectedBranchPoint`
+  - loop (`RepeatUntil`) → `AgwfCodes.ImportRejectedLoop`
+  - validation predicate → `AgwfCodes.ImportRejectedValidationPredicate`
+  - context-bearing approval (task-024 `hasContext`, escalation, or rejection) → `AgwfCodes.ImportRejectedApprovalContext`
+  - dangling `gateId` (DR-3) → `AgwfCodes.ImportDanglingGateId`
+  - reliability-bearing gate declaration (DR-2) → `AgwfCodes.ImportReliabilityBearingGate`
+
+**Deferred (follow-ons on #100):** the *acceptance* half — re-binding the bodies the wire export drops (LB-1) so these carriers can be IMPORTED rather than rejected:
+- **Condition re-binding** — a branch point's branch condition and a loop's `RepeatUntil` exit condition are dropped on export; importing them needs a way to re-bind a declarative condition to executable code. Validation predicates share this gap.
+- **Lambda re-binding registry** — a delegate (lambda) step's body is dropped; importing one needs a named step registry the wire moniker can resolve a re-bound implementation against.
+- **Context re-binding** — an approval's context body (static message or runtime context factory), escalation, and rejection handlers are dropped; importing a context-bearing approval needs a way to re-bind that context.
+
+**Deferral Rationale:**
+- **Reject before accept:** a loud rejection (task 018) is strictly safer than a silent drop — a lossy import cannot masquerade as a working saga while the re-binding mechanism is designed.
+- **Mechanism not yet designed:** each re-binding needs a declarative→executable bridge (a registry or an expression language) that is out of scope for the import subset.
+
+**Impact:**
+| Aspect | Impact Level | Description |
+|--------|--------------|-------------|
+| Import coverage | Medium | Workflows using conditions, lambdas, or approval context cannot be authored via JSON; they must be authored in C# |
+| Safety | Positive | Carriers are rejected loudly with an actionable diagnostic + JSON path rather than silently dropped |
+
+**Workaround:** Author workflows that need conditions, lambda bodies, or approval context via the C# fluent `[Workflow]` DSL (the primary front-end); reserve JSON import for the importable subset.
+
+**Recommendation:** Design the re-binding mechanisms as #100 follow-ons; keep the rejection diagnostics as the contract boundary in the meantime.
+
+---
+
 ## Category 3: Consumer-Responsibility Features
 
 These features are better implemented at the application layer.
@@ -593,5 +628,6 @@ All deferred features have documented workarounds using standard library pattern
 - Conversation History -> `[Append]` attribute + manual summarization
 - Workflow-level OnFailure handler chain -> Partial class extension (step-level `Compensate<T>()` resolved by #135; see §2.1)
 - Multi-step / rejoining `OnLowConfidence` handlers -> single-step terminating handler lowered by #135; chains/rejoin pending
+- JSON import of condition / lambda / approval-context carriers (#100) -> rejected loudly at import (task 018); author these in the C# fluent DSL until re-binding lands (see §2.3)
 - Projections -> Manual Marten projections
 - Agent Versioning -> Custom events in step implementations

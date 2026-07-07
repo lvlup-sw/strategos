@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 
@@ -36,12 +37,17 @@ namespace Strategos.Generators.Import;
 //
 // SCOPE (task 017): the IMPORTABLE subset only — linear/fork flows, retry/
 // timeout/compensation/confidence step config, context-free approval, gates, and
-// diagnostic-fork edges. The REJECTION of carriers (delegate steps, branch
-// points, loops, validation predicates, approval-with-context) and semantic
-// violations (dangling gateId, reliability-bearing gates) is task 018. Here a
-// non-importable construct is simply not lowered (a workflow carrying one that
-// cannot be mapped produces no model); task 018 adds the loud rejection
-// diagnostics on top.
+// diagnostic-fork edges.
+//
+// REJECTION (task 018, DR-14 rejection half + DR-2 + DR-3): before any mapping,
+// CollectImportRejections walks the definition and emits a LOUD, per-case stable
+// diagnostic — naming the construct + its JSON path — for every runtime-bindable
+// carrier (delegate steps, branch points, loops, validation predicates,
+// context-bearing approvals) and every semantic violation (a dangling gateId,
+// DR-3; a reliability-bearing gate declaration, DR-2). When the scan finds any,
+// the bridge returns NO model (so NO saga is emitted for that workflow) with the
+// rejection diagnostics attached. Re-binding the dropped bodies (condition,
+// lambda, context) is a #100 follow-on (see docs/deferred-features.md).
 // =============================================================================
 
 /// <summary>
@@ -100,6 +106,15 @@ internal static class WireToModelBridge
         {
             // An unnamed or step-less document is not lowerable; nothing to emit.
             return new BridgeResult(null, diagnostics);
+        }
+
+        // DR-14 (rejection half) + DR-2 + DR-3: reject runtime-bindable carriers and semantic
+        // violations LOUDLY before any mapping. A workflow carrying one is not lowered — the
+        // rejection diagnostics are surfaced and NO model (hence NO saga) is produced.
+        var rejections = CollectImportRejections(definition, jsonFilePath);
+        if (rejections.Count > 0)
+        {
+            return new BridgeResult(null, rejections);
         }
 
         // Resolve the entry step first: it anchors the generated namespace and the inferred state
@@ -212,6 +227,185 @@ internal static class WireToModelBridge
 
         return new BridgeResult(model, diagnostics);
     }
+
+    /// <summary>
+    /// Walks <paramref name="definition"/> and collects a LOUD, per-case stable rejection diagnostic
+    /// for every runtime-bindable carrier (DR-14 rejection half) and every semantic violation
+    /// (DR-2 / DR-3) an import cannot lower. Each diagnostic names the construct and its JSON path.
+    /// A non-empty result means the workflow is not lowered (no saga is emitted).
+    /// </summary>
+    /// <remarks>
+    /// Rejected carriers: a delegate (lambda) step, a branch point, a loop (RepeatUntil), a step's
+    /// validation predicate, and a context-bearing approval (a <c>hasContext</c> marker, escalation,
+    /// or rejection handler). Rejected semantic violations: a gate step whose <c>gateId</c>
+    /// back-reference names an id absent from <c>gates[]</c> (DR-3), and a gate declaration carrying
+    /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry).
+    /// </remarks>
+    private static List<Diagnostic> CollectImportRejections(
+        WorkflowDefinitionV1 definition,
+        string jsonFilePath)
+    {
+        var rejections = new List<Diagnostic>();
+
+        // The ids a gate step's gateId may back-reference (DR-3): the workflow's gate declarations.
+        var gateIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var gate in definition.Gates)
+        {
+            if (!string.IsNullOrEmpty(gate.Id))
+            {
+                gateIds.Add(gate.Id!);
+            }
+        }
+
+        // (1) Importable step positions — the top-level steps (recursing into confidence handler
+        // chains) and every fork path — are scanned for a delegate step, a validation predicate,
+        // and the DR-3 dangling-gateId violation. Branch/loop/approval-handler steps live under
+        // constructs rejected wholesale below, so they are not descended into here.
+        ScanImportableSteps(definition.Steps, "$.steps", jsonFilePath, gateIds, rejections);
+        for (var f = 0; f < definition.ForkPoints.Count; f++)
+        {
+            var fork = definition.ForkPoints[f];
+            for (var p = 0; p < fork.Paths.Count; p++)
+            {
+                ScanImportableSteps(
+                    fork.Paths[p].Steps,
+                    $"$.forkPoints[{f}].paths[{p}].steps",
+                    jsonFilePath,
+                    gateIds,
+                    rejections);
+            }
+        }
+
+        // (2) Root-level construct carriers rejected wholesale (DR-14): branch points and loops.
+        for (var i = 0; i < definition.BranchPoints.Count; i++)
+        {
+            rejections.Add(Diagnostic.Create(
+                WorkflowDiagnostics.ImportRejectedBranchPoint,
+                Location.None,
+                jsonFilePath,
+                $"$.branchPoints[{i}]",
+                DescribeId(definition.BranchPoints[i].BranchPointId)));
+        }
+
+        for (var i = 0; i < definition.Loops.Count; i++)
+        {
+            var loop = definition.Loops[i];
+            rejections.Add(Diagnostic.Create(
+                WorkflowDiagnostics.ImportRejectedLoop,
+                Location.None,
+                jsonFilePath,
+                $"$.loops[{i}]",
+                DescribeId(string.IsNullOrEmpty(loop.LoopName) ? loop.LoopId : loop.LoopName)));
+        }
+
+        // (3) Context-bearing approvals rejected (DR-14): a hasContext marker (task 024), an
+        // escalation handler, or a rejection handler carries behavior the wire IR drops on export.
+        for (var i = 0; i < definition.ApprovalPoints.Count; i++)
+        {
+            var approval = definition.ApprovalPoints[i];
+            if (approval.HasContext
+                || approval.EscalationHandler is not null
+                || approval.RejectionHandler is not null)
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.ImportRejectedApprovalContext,
+                    Location.None,
+                    jsonFilePath,
+                    $"$.approvalPoints[{i}]",
+                    DescribeId(approval.ApprovalPointId)));
+            }
+        }
+
+        // (4) Reliability-bearing gate declarations rejected (DR-2 machine-check): reliability
+        // enters a definition only from measured telemetry, never from authored import JSON.
+        for (var i = 0; i < definition.Gates.Count; i++)
+        {
+            if (definition.Gates[i].Reliability is not null)
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.ImportReliabilityBearingGate,
+                    Location.None,
+                    jsonFilePath,
+                    $"$.gates[{i}].reliability",
+                    DescribeId(definition.Gates[i].Id)));
+            }
+        }
+
+        return rejections;
+    }
+
+    /// <summary>
+    /// Scans one importable step list (and, recursively, each step's low-confidence handler chain)
+    /// for a delegate (lambda) step, a validation predicate, and a DR-3 dangling <c>gateId</c>,
+    /// appending a rejection diagnostic — naming the construct + its JSON path — for each.
+    /// </summary>
+    private static void ScanImportableSteps(
+        IReadOnlyList<StepDefinition> steps,
+        string pathPrefix,
+        string jsonFilePath,
+        HashSet<string> gateIds,
+        List<Diagnostic> rejections)
+    {
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var path = $"{pathPrefix}[{i}]";
+
+            // Delegate (lambda) step — a runtime-bindable carrier (DR-14).
+            if (step is DelegateStep)
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.ImportRejectedDelegateStep,
+                    Location.None,
+                    jsonFilePath,
+                    path,
+                    DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId)));
+            }
+
+            // Validation predicate on the step configuration — a runtime-bindable carrier (DR-14).
+            if (step.Configuration?.Validation is not null)
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.ImportRejectedValidationPredicate,
+                    Location.None,
+                    jsonFilePath,
+                    $"{path}.configuration.validation",
+                    DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId)));
+            }
+
+            // Dangling gateId back-reference — a DR-3 semantic violation.
+            if (step is GateStep gate
+                && !string.IsNullOrEmpty(gate.GateId)
+                && !gateIds.Contains(gate.GateId!))
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.ImportDanglingGateId,
+                    Location.None,
+                    jsonFilePath,
+                    $"{path}.gateId",
+                    gate.GateId!));
+            }
+
+            // The low-confidence handler chain is the only importable nested step position; descend
+            // into it so a carrier buried in a handler step is still rejected.
+            var handlerSteps = step.Configuration?.OnLowConfidence?.HandlerSteps;
+            if (handlerSteps is not null && handlerSteps.Count > 0)
+            {
+                ScanImportableSteps(
+                    handlerSteps,
+                    $"{path}.configuration.onLowConfidence.handlerSteps",
+                    jsonFilePath,
+                    gateIds,
+                    rejections);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renders a wire id/name for a rejection message, substituting a stable placeholder when the
+    /// construct declares neither, so the diagnostic still names an actionable position.
+    /// </summary>
+    private static string DescribeId(string? id) => string.IsNullOrEmpty(id) ? "(unnamed)" : id!;
 
     /// <summary>
     /// Resolves the entry step — the step named by <see cref="WorkflowDefinitionV1.EntryStepId"/>,

@@ -74,5 +74,26 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF026 — Ambiguous workflow step moniker.</summary>
         public const string AmbiguousStepMoniker = "AGWF026";
+
+        /// <summary>AGWF027 — Imported delegate (lambda) step is not supported.</summary>
+        public const string ImportRejectedDelegateStep = "AGWF027";
+
+        /// <summary>AGWF028 — Imported branch point is not supported.</summary>
+        public const string ImportRejectedBranchPoint = "AGWF028";
+
+        /// <summary>AGWF029 — Imported loop is not supported.</summary>
+        public const string ImportRejectedLoop = "AGWF029";
+
+        /// <summary>AGWF030 — Imported validation predicate is not supported.</summary>
+        public const string ImportRejectedValidationPredicate = "AGWF030";
+
+        /// <summary>AGWF031 — Imported approval context is not supported.</summary>
+        public const string ImportRejectedApprovalContext = "AGWF031";
+
+        /// <summary>AGWF032 — Imported gate id does not resolve.</summary>
+        public const string ImportDanglingGateId = "AGWF032";
+
+        /// <summary>AGWF033 — Imported gate declaration carries reliability.</summary>
+        public const string ImportReliabilityBearingGate = "AGWF033";
     }
 }
