@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "NoAnswerRecorded.json",
+    "type": "object",
+    "properties": {
+        "answerKind": {
+            "type": "string",
+            "const": "noAnswerRecorded",
+            "description": "Discriminator — pins this arm to the `noAnswerRecorded` branch of the union."
+        },
+        "nearestRecords": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordRef.json"
+            },
+            "description": "The nearest non-matching records (may be empty). Each is a polyglot RecordRef moniker (INV-8), never a CLR type."
+        }
+    },
+    "required": [
+        "answerKind",
+        "nearestRecords"
+    ],
+    "description": "The `answerKind: \"noAnswerRecorded\"` arm of `AbstentionResponse` (DR-16): a\nrecorded abstention. `nearestRecords` surfaces the closest non-matching records\n(may be empty) so the caller sees WHAT was searched — never a silent null. Each\nis a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire twin of\nthe Strategos.Ontology.MCP `NoAnswerRecorded`."
+}
