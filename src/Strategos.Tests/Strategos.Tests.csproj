@@ -12,10 +12,22 @@
     <!-- #53 equivalence gate (T23): validates every exported builder fixture
          against the bundled workflow-definition-v1.schema.json. -->
     <PackageReference Include="NJsonSchema" />
+    <!-- DR-15 round-trip partition gate (task 019, #100): drives the workflow
+         source generator's import front-end over each exported corpus fixture to
+         prove the two-bucket partition (importable ⇒ saga; carrier-bearing ⇒ the
+         specific DR-14 rejection). Roslyn is needed to build the driver + host
+         compilation; the generator is referenced as a plain library (NOT an
+         analyzer) so it does not run over this project's own compilation. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Strategos\Strategos.csproj" />
+    <!-- Plain library reference (no OutputItemType=Analyzer): the round-trip
+         partition test constructs a CSharpGeneratorDriver over
+         WorkflowIncrementalGenerator directly. -->
+    <ProjectReference Include="..\Strategos.Generators\Strategos.Generators.csproj"
+                      ReferenceOutputAssembly="true" />
   </ItemGroup>
 
 </Project>
