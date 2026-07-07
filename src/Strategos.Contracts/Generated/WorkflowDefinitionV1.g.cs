@@ -81,6 +81,20 @@ public sealed record WorkflowDefinitionV1
     public IReadOnlyList<ApprovalDefinition> ApprovalPoints { get; init; } = default!;
 
     /// <summary>
+    /// Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the
+    /// generated saga does NOT consume gates — they flow through the shared wire IR
+    /// so both runtimes see the same gate vocabulary from birth. OPTIONAL and
+    /// additive; a workflow with no declared gates omits the slot entirely.
+    /// 
+    /// A GateStep may back-reference a declaration here by its `gateId`. That a
+    /// `gateId` must name an id present in this list is a semantic rule JSON Schema
+    /// cannot express (see README, &quot;Dangling gateId&quot;); the build-time import
+    /// front-end enforces it (DR-13/DR-15), not this schema.
+    /// </summary>
+    [JsonPropertyName("gates")]
+    public IReadOnlyList<GateDeclaration>? Gates { get; init; }
+
+    /// <summary>
     /// Step id of the workflow entry step, if set.
     /// </summary>
     [JsonPropertyName("entryStepId")]

@@ -142,6 +142,36 @@ bump). The classification rules are unit-tested in C# by `SchemaDiffTests` /
 `JsonSchemaDiff` — the authoritative spec — and mirrored by the Node CI driver
 over the schema file set.
 
+## Gate wire slots & the dangling-`gateId` rule (DR-3, #150 → #100)
+
+The workflow wire IR carries gate declarations from birth so the same gate
+vocabulary flows through the shared IR to both runtimes:
+
+- `WorkflowDefinitionV1.gates?: GateDeclaration[]` — the workflow's declared
+  gates (the DR-2 `GateDeclaration` / `GateClass` / `GateReliability` family).
+- `GateStep.gateId?: string` — a gate step's optional back-reference to a
+  declaration's `id`.
+
+Both slots are **optional and additive** (a `JsonSchemaDiff` NON-BREAKING
+change; a gate-less workflow omits them). Gate declarations are **consumer-plane
+data** — the generated saga does not consume them; they exist so cross-product
+consumers (Exarchos Zod, Basileus) and the visualization/diff tooling see the
+gate model directly on the wire.
+
+**Dangling `gateId`.** A `GateStep.gateId` that references an `id` **absent from
+the workflow's `gates` list** is a *semantic* (referential-integrity) rule that
+**JSON Schema cannot express** — JSON Schema validates each object's shape, not
+cross-object id references within the document. This contract therefore does
+**not** reject a dangling `gateId`; the slots validate structurally in
+isolation. Enforcement lives with the *consumers of the schema*, not the schema:
+
+- **Zod consumers** (Exarchos) refine it themselves — a `.superRefine` (or
+  equivalent) that asserts every `gateId` resolves to a declared `gates[].id`.
+- **The build-time import front-end** rejects a dangling `gateId` at import
+  (forward-reference to DR-13 / task 018 / DR-15) — that is where a gate-bearing
+  import is accepted and a dangling reference is turned into a build error. No
+  rejection logic lives in this schema package.
+
 ## Versioning & publishing (T32)
 
 This package versions at **0.3.0** (see `Strategos.Contracts.csproj`). Per the

@@ -62,6 +62,13 @@
             },
             "description": "Approval points (human-approval pauses)."
         },
+        "gates": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/GateDeclaration"
+            },
+            "description": "Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the\ngenerated saga does NOT consume gates — they flow through the shared wire IR\nso both runtimes see the same gate vocabulary from birth. OPTIONAL and\nadditive; a workflow with no declared gates omits the slot entirely.\n\nA GateStep may back-reference a declaration here by its `gateId`. That a\n`gateId` must name an id present in this list is a semantic rule JSON Schema\ncannot express (see README, \"Dangling gateId\"); the build-time import\nfront-end enforces it (DR-13/DR-15), not this schema."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."
@@ -459,6 +466,72 @@
             ],
             "description": "Wire-IR fork point — a fan-out into concurrent paths that rejoin at a join\nstep (mirrors the builder's `ForkPointDefinition`)."
         },
+        "GateClass": {
+            "type": "string",
+            "enum": [
+                "typecheck",
+                "lint",
+                "scoped_test",
+                "full_suite",
+                "mutation_adequacy",
+                "merge_gate",
+                "llm_judge"
+            ],
+            "description": "Closed enum of the gate CLASSES a workflow's quality/merge gates evaluate\n(#150, DR-1). This is the single typed gate identity shared across the\ncontract boundary so both runtimes consume ONE gate vocabulary.\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these **by value** (INV-8 polyglot identity) — never by\nordinal. Adding a class is an additive minor; renaming or removing one is a\nbreaking major."
+        },
+        "GateDeclaration": {
+            "type": "object",
+            "properties": {
+                "class": {
+                    "$ref": "#/definitions/GateClass",
+                    "description": "The typed gate class this declaration evaluates (DR-1 — the shared gate identity)."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Stable identifier for this gate declaration."
+                },
+                "reliability": {
+                    "$ref": "#/definitions/GateReliability",
+                    "description": "Measured-reliability telemetry — present ONLY when measured; never hand-authored."
+                }
+            },
+            "required": [
+                "class",
+                "id"
+            ],
+            "description": "A single gate declaration on a workflow (#150, DR-2): the typed gate CLASS it\nevaluates, a stable id, and — ONLY when measured — its reliability telemetry.\n\n`class` is the single typed gate identity (DR-1, GateClass) both runtimes\nconsume; it is non-optional. `reliability` is optional because it is stamped\nfrom telemetry after the fact — a freshly-declared gate carries none, and no\nauthoring channel may supply it. When present, its `source` provenance is\nmandatory (see GateReliability)."
+        },
+        "GateReliability": {
+            "type": "object",
+            "properties": {
+                "fpr": {
+                    "type": "number",
+                    "description": "Measured false-positive rate of the gate, a fraction in the closed unit interval."
+                },
+                "sampleSize": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                    "description": "Number of observations the measurement was computed over."
+                },
+                "asOf": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the measurement was taken (UTC)."
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Provenance of the measurement — where this reliability number came from.\nREQUIRED: reliability is telemetry-measured, never hand-authored, so a\nreliability block without a source is invalid."
+                }
+            },
+            "required": [
+                "fpr",
+                "sampleSize",
+                "asOf",
+                "source"
+            ],
+            "description": "Measured-reliability telemetry for a gate (#150, DR-2).\n\nThis block is NEVER hand-authored: it is populated only from measured gate\ntelemetry, so `source` — the PROVENANCE of the measurement — is REQUIRED. A\nreliability block that omits `source` is rejected at the schema boundary\n(there is no anonymous, unattributable reliability number). The authoring\nchannel (the builder DSL / import) surfaces no reliability field at all, so\nnothing on the write path can smuggle a value in; reliability is stamped only\nfrom telemetry."
+        },
         "GateStep": {
             "type": "object",
             "properties": {
@@ -493,6 +566,10 @@
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
+                },
+                "gateId": {
+                    "type": "string",
+                    "description": "Optional back-reference to a gate declaration on the workflow root (#150,\nDR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.\nOPTIONAL and additive. A value naming an id absent from `gates` is a\ndangling reference — a semantic rule JSON Schema cannot express (see README,\n\"Dangling gateId\"); the build-time import front-end rejects it (DR-13/DR-15),\nnot this schema."
                 }
             },
             "required": [
@@ -863,6 +940,13 @@
                         "$ref": "#/definitions/ApprovalDefinition"
                     },
                     "description": "Approval points (human-approval pauses)."
+                },
+                "gates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GateDeclaration"
+                    },
+                    "description": "Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the\ngenerated saga does NOT consume gates — they flow through the shared wire IR\nso both runtimes see the same gate vocabulary from birth. OPTIONAL and\nadditive; a workflow with no declared gates omits the slot entirely.\n\nA GateStep may back-reference a declaration here by its `gateId`. That a\n`gateId` must name an id present in this list is a semantic rule JSON Schema\ncannot express (see README, \"Dangling gateId\"); the build-time import\nfront-end enforces it (DR-13/DR-15), not this schema."
                 },
                 "entryStepId": {
                     "type": "string",

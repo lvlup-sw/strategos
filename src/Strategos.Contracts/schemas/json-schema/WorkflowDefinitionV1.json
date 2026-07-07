@@ -62,6 +62,13 @@
             },
             "description": "Approval points (human-approval pauses)."
         },
+        "gates": {
+            "type": "array",
+            "items": {
+                "$ref": "GateDeclaration.json"
+            },
+            "description": "Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the\ngenerated saga does NOT consume gates — they flow through the shared wire IR\nso both runtimes see the same gate vocabulary from birth. OPTIONAL and\nadditive; a workflow with no declared gates omits the slot entirely.\n\nA GateStep may back-reference a declaration here by its `gateId`. That a\n`gateId` must name an id present in this list is a semantic rule JSON Schema\ncannot express (see README, \"Dangling gateId\"); the build-time import\nfront-end enforces it (DR-13/DR-15), not this schema."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."

@@ -34,6 +34,10 @@
         "stepType": {
             "type": "string",
             "description": "Simple-name CLR moniker of the step type (LB-2)."
+        },
+        "gateId": {
+            "type": "string",
+            "description": "Optional back-reference to a gate declaration on the workflow root (#150,\nDR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.\nOPTIONAL and additive. A value naming an id absent from `gates` is a\ndangling reference — a semantic rule JSON Schema cannot express (see README,\n\"Dangling gateId\"); the build-time import front-end rejects it (DR-13/DR-15),\nnot this schema."
         }
     },
     "required": [

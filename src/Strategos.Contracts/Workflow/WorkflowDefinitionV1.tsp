@@ -1,6 +1,7 @@
 import "@typespec/json-schema";
 import "./StepDefinition.tsp";
 import "./Structural.tsp";
+import "../Gates/GateDeclaration.tsp";
 
 using JsonSchema;
 
@@ -48,6 +49,19 @@ model WorkflowDefinitionV1 {
 
   /** Approval points (human-approval pauses). */
   approvalPoints: ApprovalDefinition[];
+
+  /**
+   * Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the
+   * generated saga does NOT consume gates — they flow through the shared wire IR
+   * so both runtimes see the same gate vocabulary from birth. OPTIONAL and
+   * additive; a workflow with no declared gates omits the slot entirely.
+   *
+   * A GateStep may back-reference a declaration here by its `gateId`. That a
+   * `gateId` must name an id present in this list is a semantic rule JSON Schema
+   * cannot express (see README, "Dangling gateId"); the build-time import
+   * front-end enforces it (DR-13/DR-15), not this schema.
+   */
+  gates?: GateDeclaration[];
 
   /** Step id of the workflow entry step, if set. */
   entryStepId?: string;
