@@ -62,5 +62,11 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF022 — Declared-but-inert step configuration.</summary>
         public const string DeclaredButInert = "AGWF022";
+
+        /// <summary>AGWF023 — Malformed workflow import JSON.</summary>
+        public const string MalformedWorkflowJson = "AGWF023";
+
+        /// <summary>AGWF024 — Unsupported workflow schema version.</summary>
+        public const string UnsupportedSchemaVersion = "AGWF024";
     }
 }

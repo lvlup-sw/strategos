@@ -28,3 +28,5 @@ from the generated `AgwfCode` enum; this table is generated from the same source
 | AGWF020 | error | Retry maxAttempts below one | Step '{0}' in workflow '{1}' configures WithRetry({2}). The maxAttempts value must be at least 1. | 2.10.0 |
 | AGWF021 | error | Non-positive timeout | Step '{0}' in workflow '{1}' configures WithTimeout with a non-positive duration. The timeout must be greater than zero. | 2.10.0 |
 | AGWF022 | warning | Declared-but-inert step configuration | Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered. | 2.9.0 |
+| AGWF023 | error | Malformed workflow import JSON | Workflow import file '{0}' is not well-formed JSON and was skipped: {1} | 2.10.0 |
+| AGWF024 | error | Unsupported workflow schema version | Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported. | 2.10.0 |

@@ -82,4 +82,12 @@ public enum AgwfCode
     /// <summary>AGWF022 — Declared-but-inert step configuration.</summary>
     [JsonStringEnumMemberName("AGWF022")]
     DeclaredButInert,
+
+    /// <summary>AGWF023 — Malformed workflow import JSON.</summary>
+    [JsonStringEnumMemberName("AGWF023")]
+    MalformedWorkflowJson,
+
+    /// <summary>AGWF024 — Unsupported workflow schema version.</summary>
+    [JsonStringEnumMemberName("AGWF024")]
+    UnsupportedSchemaVersion,
 }

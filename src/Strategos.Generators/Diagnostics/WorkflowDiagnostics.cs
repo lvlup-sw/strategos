@@ -300,4 +300,41 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "A step configuration concern the generator does not lower for the step's kind is silently inert. Surfacing it prevents a deferred or unsupported configuration from masquerading as working.");
+
+    /// <summary>
+    /// Malformed workflow import JSON (DR-12).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a <c>*.workflow.json</c> AdditionalFile is not well-formed JSON. The
+    /// vendored reader (<c>WireWorkflowReader</c>) throws <c>JsonParseException</c>; the
+    /// import front-end catches it and reports this stable diagnostic so a malformed file
+    /// surfaces as a build error rather than crashing the generator. Argument 0 is the file
+    /// name; argument 1 is the parser's failure message.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MalformedWorkflowJson = new(
+        id: AgwfCodes.MalformedWorkflowJson,
+        title: "Malformed workflow import JSON",
+        messageFormat: "Workflow import file '{0}' is not well-formed JSON and was skipped: {1}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A workflow-definition JSON AdditionalFile must be well-formed JSON. Malformed input cannot be bound to the wire IR and is skipped; fix the JSON syntax so the workflow can be imported.");
+
+    /// <summary>
+    /// Unsupported workflow schema version (DR-12).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a <c>*.workflow.json</c> AdditionalFile parses successfully but declares a
+    /// <c>schemaVersion</c> other than the supported <c>"1.0"</c> (including an absent version).
+    /// The import front-end rejects the skew with this stable diagnostic rather than binding an
+    /// incompatible shape. Argument 0 is the file name; argument 1 is the declared version.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnsupportedSchemaVersion = new(
+        id: AgwfCodes.UnsupportedSchemaVersion,
+        title: "Unsupported workflow schema version",
+        messageFormat: "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The workflow import front-end binds the wire IR at schema version 1.0. A file declaring a different (or missing) schemaVersion is rejected so incompatible shapes are not silently misbound.");
 }

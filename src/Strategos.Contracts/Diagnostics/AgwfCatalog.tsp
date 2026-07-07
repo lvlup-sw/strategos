@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **16 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **18 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -37,6 +37,8 @@ enum AgwfCode {
   RetryMaxAttemptsBelowOne: "AGWF020",
   NonPositiveTimeout: "AGWF021",
   DeclaredButInert: "AGWF022",
+  MalformedWorkflowJson: "AGWF023",
+  UnsupportedSchemaVersion: "AGWF024",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -197,4 +199,24 @@ model AgwfEntryDeclaredButInert {
   summary: "Declared-but-inert step configuration";
   remediation: "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.";
   since: "2.9.0";
+}
+
+/** AGWF023 — Malformed workflow import JSON (DR-12). */
+@jsonSchema
+model AgwfEntryMalformedWorkflowJson {
+  id: "AGWF023";
+  severity: "error";
+  summary: "Malformed workflow import JSON";
+  remediation: "Workflow import file '{0}' is not well-formed JSON and was skipped: {1}";
+  since: "2.10.0";
+}
+
+/** AGWF024 — Unsupported workflow schema version (DR-12). */
+@jsonSchema
+model AgwfEntryUnsupportedSchemaVersion {
+  id: "AGWF024";
+  severity: "error";
+  summary: "Unsupported workflow schema version";
+  remediation: "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.";
+  since: "2.10.0";
 }

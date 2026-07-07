@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 16,
+  "count": 18,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -129,6 +129,22 @@
       "summary": "Declared-but-inert step configuration",
       "remediation": "Step '{0}' in workflow '{1}' declares {2}, which the generator does not lower for this step kind, so the configuration is inert. Remove it or move the step to a position where the configuration is lowered.",
       "since": "2.9.0"
+    },
+    {
+      "name": "MalformedWorkflowJson",
+      "id": "AGWF023",
+      "severity": "error",
+      "summary": "Malformed workflow import JSON",
+      "remediation": "Workflow import file '{0}' is not well-formed JSON and was skipped: {1}",
+      "since": "2.10.0"
+    },
+    {
+      "name": "UnsupportedSchemaVersion",
+      "id": "AGWF024",
+      "severity": "error",
+      "summary": "Unsupported workflow schema version",
+      "remediation": "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.",
+      "since": "2.10.0"
     }
   ]
 }
