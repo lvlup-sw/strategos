@@ -90,4 +90,12 @@ public enum AgwfCode
     /// <summary>AGWF024 — Unsupported workflow schema version.</summary>
     [JsonStringEnumMemberName("AGWF024")]
     UnsupportedSchemaVersion,
+
+    /// <summary>AGWF025 — Unresolvable workflow step moniker.</summary>
+    [JsonStringEnumMemberName("AGWF025")]
+    UnresolvableStepMoniker,
+
+    /// <summary>AGWF026 — Ambiguous workflow step moniker.</summary>
+    [JsonStringEnumMemberName("AGWF026")]
+    AmbiguousStepMoniker,
 }

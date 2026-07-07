@@ -68,5 +68,11 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF024 — Unsupported workflow schema version.</summary>
         public const string UnsupportedSchemaVersion = "AGWF024";
+
+        /// <summary>AGWF025 — Unresolvable workflow step moniker.</summary>
+        public const string UnresolvableStepMoniker = "AGWF025";
+
+        /// <summary>AGWF026 — Ambiguous workflow step moniker.</summary>
+        public const string AmbiguousStepMoniker = "AGWF026";
     }
 }

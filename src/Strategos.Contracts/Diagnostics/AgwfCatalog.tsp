@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **18 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **20 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -39,6 +39,8 @@ enum AgwfCode {
   DeclaredButInert: "AGWF022",
   MalformedWorkflowJson: "AGWF023",
   UnsupportedSchemaVersion: "AGWF024",
+  UnresolvableStepMoniker: "AGWF025",
+  AmbiguousStepMoniker: "AGWF026",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -218,5 +220,25 @@ model AgwfEntryUnsupportedSchemaVersion {
   severity: "error";
   summary: "Unsupported workflow schema version";
   remediation: "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.";
+  since: "2.10.0";
+}
+
+/** AGWF025 — Unresolvable workflow step moniker (DR-13). */
+@jsonSchema
+model AgwfEntryUnresolvableStepMoniker {
+  id: "AGWF025";
+  severity: "error";
+  summary: "Unresolvable workflow step moniker";
+  remediation: "Workflow import file '{0}' references step moniker '{1}', which does not resolve to any accessible workflow step type in the compilation. Add the step type (implementing IWorkflowStep<TState>) or correct the moniker.";
+  since: "2.10.0";
+}
+
+/** AGWF026 — Ambiguous workflow step moniker (DR-13). */
+@jsonSchema
+model AgwfEntryAmbiguousStepMoniker {
+  id: "AGWF026";
+  severity: "error";
+  summary: "Ambiguous workflow step moniker";
+  remediation: "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type.";
   since: "2.10.0";
 }

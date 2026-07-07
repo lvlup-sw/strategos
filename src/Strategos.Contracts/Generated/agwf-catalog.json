@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 18,
+  "count": 20,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -144,6 +144,22 @@
       "severity": "error",
       "summary": "Unsupported workflow schema version",
       "remediation": "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "UnresolvableStepMoniker",
+      "id": "AGWF025",
+      "severity": "error",
+      "summary": "Unresolvable workflow step moniker",
+      "remediation": "Workflow import file '{0}' references step moniker '{1}', which does not resolve to any accessible workflow step type in the compilation. Add the step type (implementing IWorkflowStep<TState>) or correct the moniker.",
+      "since": "2.10.0"
+    },
+    {
+      "name": "AmbiguousStepMoniker",
+      "id": "AGWF026",
+      "severity": "error",
+      "summary": "Ambiguous workflow step moniker",
+      "remediation": "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type.",
       "since": "2.10.0"
     }
   ]
