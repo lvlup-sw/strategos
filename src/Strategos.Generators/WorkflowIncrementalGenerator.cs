@@ -7,6 +7,7 @@
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
+using Strategos.Generators.Import;
 using Strategos.Generators.Models;
 
 namespace Strategos.Generators;
@@ -20,9 +21,47 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 {
     private const string WorkflowAttributeFullName = "Strategos.Attributes.WorkflowAttribute";
 
+    /// <summary>
+    /// The file-name convention for workflow-definition JSON <c>AdditionalFiles</c> the
+    /// import front-end discovers (DR-12, #100). A file participates in JSON import when its
+    /// path ends with this suffix (case-insensitive).
+    /// </summary>
+    internal const string WorkflowDefinitionFileSuffix = ".workflow.json";
+
+    /// <summary>The tracking name of the import file-read pipeline step (incremental-cache test hook).</summary>
+    internal const string ImportReadTrackingName = "StrategosWorkflowImportRead";
+
+    /// <summary>The tracking name of the import analysis pipeline step (incremental-cache test hook).</summary>
+    internal const string ImportAnalyzeTrackingName = "StrategosWorkflowImportAnalyze";
+
+    /// <summary>The only wire-IR schema version the import front-end binds (DR-12).</summary>
+    private const string SupportedSchemaVersion = "1.0";
+
+    /// <summary>The placeholder surfaced in a version-skew diagnostic when no schemaVersion was declared.</summary>
+    private const string MissingSchemaVersionText = "(none)";
+
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        // DR-12 (#100) — the JSON import front-end (ingestion half). Discover
+        // workflow-definition AdditionalFiles by the *.workflow.json convention, parse each
+        // through task 026's vendored WireWorkflowReader, and surface malformed input and
+        // schemaVersion skew as stable build diagnostics instead of crashing the generator.
+        // The wire-IR -> WorkflowModel bridge and moniker resolution are separate tasks; here
+        // the parsed DTO is only validated and its failure modes reported. The read step
+        // (path + content) is separated from the analysis step so the incremental driver can
+        // cache the parse when a file's content is unchanged and re-run it when it is edited.
+        var workflowImports = context.AdditionalTextsProvider
+            .Where(static text => IsWorkflowDefinitionFile(text.Path))
+            .Select(static (text, ct) => ReadImportFile(text, ct))
+            .WithTrackingName(ImportReadTrackingName)
+            .Select(static (file, ct) => AnalyzeImportFile(file, ct))
+            .WithTrackingName(ImportAnalyzeTrackingName);
+
+        context.RegisterSourceOutput(
+            workflowImports,
+            static (spc, analysis) => ReportImportDiagnostics(spc, analysis));
+
         // Find all classes/structs with [Workflow] attribute
         var workflowDeclarations = context.SyntaxProvider
             .ForAttributeWithMetadataName(
@@ -94,6 +133,102 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     private static bool IsValidTargetNode(SyntaxNode node)
     {
         return node is ClassDeclarationSyntax or StructDeclarationSyntax;
+    }
+
+    /// <summary>
+    /// Whether an <c>AdditionalFile</c> path is a workflow-definition JSON document, matched by
+    /// the <see cref="WorkflowDefinitionFileSuffix"/> convention (case-insensitive).
+    /// </summary>
+    /// <param name="path">The AdditionalFile path.</param>
+    /// <returns><see langword="true"/> when the file participates in JSON import.</returns>
+    private static bool IsWorkflowDefinitionFile(string? path) =>
+        path is not null && path.EndsWith(WorkflowDefinitionFileSuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads an import <c>AdditionalText</c> into an equatable (path + content) value so the
+    /// downstream parse step caches on content. The read is kept free of Roslyn objects
+    /// (<c>SourceText</c>, <c>Location</c>) so the incremental cache key is a plain string pair.
+    /// </summary>
+    /// <param name="text">The workflow-definition AdditionalFile.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The path and full textual content of the file.</returns>
+    private static ImportFile ReadImportFile(AdditionalText text, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var content = text.GetText(ct)?.ToString() ?? string.Empty;
+        return new ImportFile(text.Path, content);
+    }
+
+    /// <summary>
+    /// Parses an import file through task 026's <see cref="WireWorkflowReader"/> and classifies
+    /// its outcome: a <see cref="JsonParseException"/> becomes <see cref="ImportFailure.Malformed"/>;
+    /// a bound document whose <c>schemaVersion</c> is not the supported <c>"1.0"</c> becomes
+    /// <see cref="ImportFailure.UnsupportedSchemaVersion"/>; anything else is
+    /// <see cref="ImportFailure.None"/>. The parsed DTO is intentionally discarded — the
+    /// wire-IR -> WorkflowModel bridge is a separate task — but parsing is what surfaces the
+    /// malformed-input failure mode without crashing the generator.
+    /// </summary>
+    /// <param name="file">The path + content read by <see cref="ReadImportFile"/>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The equatable analysis result the source-output step reports from.</returns>
+    private static ImportAnalysis AnalyzeImportFile(ImportFile file, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var fileName = System.IO.Path.GetFileName(file.Path);
+
+        WorkflowDefinitionV1 definition;
+        try
+        {
+            definition = WireWorkflowReader.Read(file.Text);
+        }
+        catch (JsonParseException ex)
+        {
+            return new ImportAnalysis(fileName, ImportFailure.Malformed, ex.Message);
+        }
+
+        if (!string.Equals(definition.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
+        {
+            return new ImportAnalysis(
+                fileName,
+                ImportFailure.UnsupportedSchemaVersion,
+                definition.SchemaVersion ?? MissingSchemaVersionText);
+        }
+
+        return new ImportAnalysis(fileName, ImportFailure.None, string.Empty);
+    }
+
+    /// <summary>
+    /// Materializes the import diagnostic (if any) from an <see cref="ImportAnalysis"/>. The
+    /// <see cref="Diagnostic"/> — and its <see cref="Location"/> — are built here, at report
+    /// time, rather than in the cached analysis step, so the incremental cache value stays a
+    /// plain equatable record.
+    /// </summary>
+    /// <param name="spc">The source-production context.</param>
+    /// <param name="analysis">The classified import outcome.</param>
+    private static void ReportImportDiagnostics(SourceProductionContext spc, ImportAnalysis analysis)
+    {
+        switch (analysis.Failure)
+        {
+            case ImportFailure.Malformed:
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    WorkflowDiagnostics.MalformedWorkflowJson,
+                    Location.None,
+                    analysis.FileName,
+                    analysis.Detail));
+                break;
+
+            case ImportFailure.UnsupportedSchemaVersion:
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    WorkflowDiagnostics.UnsupportedSchemaVersion,
+                    Location.None,
+                    analysis.FileName,
+                    analysis.Detail));
+                break;
+
+            case ImportFailure.None:
+            default:
+                break;
+        }
     }
 
     private static WorkflowGeneratorResult TransformToResult(
@@ -978,4 +1113,37 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     private sealed record WorkflowGeneratorResult(
         WorkflowModel? Model,
         IReadOnlyList<Diagnostic> Diagnostics);
+
+    /// <summary>
+    /// The equatable (path + content) snapshot of a workflow-definition AdditionalFile. Value
+    /// equality on these two strings is the import pipeline's incremental cache key: an unchanged
+    /// file yields an equal <see cref="ImportFile"/> and the parse step is cached; an edit yields
+    /// a different content string and the parse re-runs (DR-12 incremental correctness).
+    /// </summary>
+    /// <param name="Path">The AdditionalFile path.</param>
+    /// <param name="Text">The full textual content of the file.</param>
+    private sealed record ImportFile(string Path, string Text);
+
+    /// <summary>The classified outcome of parsing a workflow-definition import file.</summary>
+    private enum ImportFailure
+    {
+        /// <summary>The file parsed and declared the supported schema version — no diagnostic.</summary>
+        None,
+
+        /// <summary>The file is not well-formed JSON (the reader threw <c>JsonParseException</c>).</summary>
+        Malformed,
+
+        /// <summary>The file parsed but declared a <c>schemaVersion</c> other than the supported one.</summary>
+        UnsupportedSchemaVersion,
+    }
+
+    /// <summary>
+    /// The equatable classification of a single import file, produced by the cached analysis step
+    /// and consumed by the source-output step. Carries only strings + an enum so it stays a stable
+    /// incremental cache value (no <see cref="Diagnostic"/> or <see cref="Location"/>).
+    /// </summary>
+    /// <param name="FileName">The file's leaf name, threaded into the diagnostic message.</param>
+    /// <param name="Failure">The classified failure mode (or <see cref="ImportFailure.None"/>).</param>
+    /// <param name="Detail">The failure detail — the parser message, or the offending schema version.</param>
+    private sealed record ImportAnalysis(string FileName, ImportFailure Failure, string Detail);
 }
