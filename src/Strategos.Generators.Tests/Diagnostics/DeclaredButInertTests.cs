@@ -121,6 +121,53 @@ public sealed class DeclaredButInertTests
             .Because("a fork-path step with only lowered (retry) config must not fire AGWF022");
     }
 
+    /// <summary>
+    /// Verifies that confidence gating declared on an INTERMEDIATE (non-last) loop-body step —
+    /// a configuration the generator still does not lower for that position — fires AGWF022 at
+    /// the workflow attribute call site. Task 009 promoted the loop body to configured
+    /// <c>StepModel</c> records on <c>LoopModel.BodySteps</c>, so the config is now IN the IR
+    /// (previously it was dropped entirely and structurally undiagnosable — #145 gap B); this
+    /// diagnostic can now see it. Only a loop body's LAST step is lowered (DR-5 / #145 gap B).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_LoopBodyIntermediateStepConfig_ReportsAgwf022()
+    {
+        var source = LoopWorkflowWithIntermediateBodyConfig(
+            intermediateStepConfig: "step => step"
+                + ".RequireConfidence(0.85)"
+                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
+        await Assert.That(diagnostic).IsNotNull()
+            .Because("confidence gating on an intermediate loop-body step is inert and must surface as AGWF022");
+        await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        await Assert.That(diagnostic.GetMessage()).Contains("CritiqueStep");
+    }
+
+    /// <summary>
+    /// Conformant-negative: confidence gating declared on a loop body's LAST step (which IS
+    /// lowered into the loop completed handler — DR-5 / #145 gap B) must NOT fire AGWF022. This
+    /// is the flip that mirrors the fork path's last step: task 009 made the config visible in
+    /// the IR and this task lowers it, so the diagnostic must not fire.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_LoopBodyLastStepConfidenceLowered_DoesNotReportAgwf022()
+    {
+        var source = LoopWorkflowWithLastBodyStepConfig(
+            lastStepConfig: "step => step"
+                + ".RequireConfidence(0.85)"
+                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("confidence gating on a loop body's last step IS lowered, so AGWF022 must not fire");
+    }
+
     // =========================================================================
     // Source builder helpers
     // =========================================================================
@@ -347,6 +394,151 @@ public sealed class DeclaredButInertTests
                 .StartWith<IntakeClaim>()
                 .Then<AssessClaim>({{stepConfig}})
                 .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// Builds a workflow whose <c>RepeatUntil</c> loop body has TWO steps: an INTERMEDIATE
+    /// <c>CritiqueStep</c> carrying the supplied configure lambda followed by a terminating
+    /// <c>RefineStep</c>, so the configured step is NOT the loop body's last step. A loop
+    /// body's LAST step is lowered (DR-5 / #145 gap B), but an intermediate one is not — this
+    /// exercises the still-inert surface AGWF022 guards.
+    /// </summary>
+    private static string LoopWorkflowWithIntermediateBodyConfig(string intermediateStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record RefinementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public decimal QualityScore { get; init; }
+        }
+
+        public class ValidateInput : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class CritiqueStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.WithConfidence(state, 0.5));
+        }
+
+        public class RefineStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class PublishResult : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        [Workflow("inert-loop-refinement")]
+        public static partial class InertLoopRefinementWorkflow
+        {
+            public static WorkflowDefinition<RefinementState> Definition => Workflow<RefinementState>
+                .Create("inert-loop-refinement")
+                .StartWith<ValidateInput>()
+                .RepeatUntil(
+                    state => state.QualityScore >= 0.9m,
+                    "Refinement",
+                    loop => loop
+                        .Then<CritiqueStep>({{intermediateStepConfig}})
+                        .Then<RefineStep>(),
+                    maxIterations: 5)
+                .Finally<PublishResult>();
+        }
+        """;
+
+    /// <summary>
+    /// Builds a workflow whose <c>RepeatUntil</c> loop body has a SINGLE step,
+    /// <c>CritiqueStep</c> (both first and LAST), carrying the supplied configure lambda — the
+    /// conformant-lowered baseline for loops (DR-5 / #145 gap B, lowered into the loop completed
+    /// handler).
+    /// </summary>
+    private static string LoopWorkflowWithLastBodyStepConfig(string lastStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record RefinementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public decimal QualityScore { get; init; }
+        }
+
+        public class ValidateInput : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class CritiqueStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.WithConfidence(state, 0.5));
+        }
+
+        public class HumanReview : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class PublishResult : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        [Workflow("lowered-loop-refinement")]
+        public static partial class LoweredLoopRefinementWorkflow
+        {
+            public static WorkflowDefinition<RefinementState> Definition => Workflow<RefinementState>
+                .Create("lowered-loop-refinement")
+                .StartWith<ValidateInput>()
+                .RepeatUntil(
+                    state => state.QualityScore >= 0.9m,
+                    "Refinement",
+                    loop => loop
+                        .Then<CritiqueStep>({{lastStepConfig}}),
+                    maxIterations: 5)
+                .Finally<PublishResult>();
         }
         """;
 }

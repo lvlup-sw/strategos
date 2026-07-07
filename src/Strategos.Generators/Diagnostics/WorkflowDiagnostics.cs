@@ -267,19 +267,29 @@ internal static class WorkflowDiagnostics
     /// </summary>
     /// <remarks>
     /// Reported when a step declares a configuration concern that the generator does not
-    /// lower for that step's kind, so the configuration silently has no effect. The guarded
-    /// case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on a
-    /// <b>fork-path</b> step: the fork-path parse threads the configure lambda into the
-    /// StepModel IR (so an out-of-range threshold still surfaces
-    /// <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter does not lower
-    /// confidence-gated routing for fork-path steps — that lowering is deferred
-    /// (v2.10.0 / DR-17, #134), so the gate is inert. A warning (not an error) so an author
-    /// can suppress it by id while the deferral stands.
+    /// lower for that step's kind, so the configuration silently has no effect. Two guarded
+    /// cases, both confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on an
+    /// INTERMEDIATE (non-last) step of a construct whose LAST step IS lowered:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     an intermediate <b>fork-path</b> step — a fork path's last step lowers into the fork
+    ///     path-completed handler (DR-4 / #145 gap A), an intermediate one does not; and
+    ///   </description></item>
+    ///   <item><description>
+    ///     an intermediate <b>loop-body</b> step — a loop body's last step lowers into the loop
+    ///     completed handler (DR-5 / #145 gap B), an intermediate one does not.
+    ///   </description></item>
+    /// </list>
+    /// In both cases the configure lambda is threaded into the IR (so an out-of-range threshold
+    /// still surfaces <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter's
+    /// lowering for the intermediate position is deferred (v2.10.0 / DR-17, #145). A warning
+    /// (not an error) so an author can suppress it by id while the deferral stands.
     /// <para>
-    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence configuration is a distinct
-    /// case that this diagnostic does NOT cover — it is dropped from the IR entirely by step
-    /// extraction, so an IR-based diagnostic structurally cannot see it (also tracked under
-    /// #134 for v2.10.0).
+    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence used to be a distinct, structurally
+    /// undiagnosable case — it was dropped from the IR entirely by step extraction, so an
+    /// IR-based diagnostic could not see it. Promoting the loop body to configured
+    /// <c>StepModel</c> records on <c>LoopModel.BodySteps</c> (#145) brought it into the IR, so
+    /// the intermediate loop-body case is now covered here.
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor DeclaredButInert = new(

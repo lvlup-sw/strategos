@@ -664,7 +664,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, forkModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, forkModels, loopModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -773,12 +773,14 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
     /// <param name="forkModels">The parsed fork models, used to detect declared-but-inert config on fork-path steps.</param>
+    /// <param name="loopModels">The parsed loop models, used to detect declared-but-inert config on intermediate loop-body steps.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
         IReadOnlyList<ForkModel> forkModels,
+        IReadOnlyList<LoopModel> loopModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -869,6 +871,34 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                             workflowName,
                             "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate fork-path step"));
                     }
+                }
+            }
+        }
+
+        // DeclaredButInert (#145 gap B) — confidence gating on an INTERMEDIATE (non-last)
+        // loop-body step. Confidence on the LAST step of a loop body now lowers into the loop
+        // completed handler (DR-5 / #145 gap B, mirroring the fork path-completed handler), so
+        // it is NOT flagged. An intermediate loop-body step's confidence lowering is deferred
+        // (v2.10.0 / DR-17, #145). Task 009 promoted the loop body to configured StepModel
+        // records on LoopModel.BodySteps, so — unlike before, when loop-body confidence was
+        // dropped from the IR entirely and was structurally undiagnosable — the config is now in
+        // the IR and this diagnostic can see it. Surface it so a deferred configuration cannot
+        // masquerade as working.
+        foreach (var loop in loopModels)
+        {
+            for (var i = 0; i < loop.BodySteps.Count; i++)
+            {
+                var isLastBodyStep = i == loop.BodySteps.Count - 1;
+                var bodyStep = loop.BodySteps[i];
+
+                if (!isLastBodyStep && bodyStep.Confidence is not null)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.DeclaredButInert,
+                        location,
+                        bodyStep.EffectiveName,
+                        workflowName,
+                        "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate loop-body step"));
                 }
             }
         }

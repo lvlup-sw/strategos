@@ -101,11 +101,86 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
 
+        // Confidence gate (DR-5 / #145 gap B): the loop body's LAST step may declare
+        // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()). Its completed event is
+        // handled here (this loop completed handler), so — mirroring the fork path-completed
+        // handler's EmitForkPathConfidenceGate — compare the completed event's confidence to the
+        // threshold BEFORE the loop-condition checks: when below, route to the OnLowConfidence
+        // handler chain's start command (a Wolverine cascade, INV-1) and do NOT continue or exit
+        // the loop. Confidence on a NON-last (intermediate) loop-body step is deferred and is
+        // diagnosed separately.
+        EmitLoopBodyConfidenceGate(sb, model, stepModel, baseStepName);
+
         // For nested loops, we need to check innermost first, then outer loops
         // Each loop has: max iteration guard, condition check, then continue/exit logic
         EmitNestedLoopChecks(sb, model, loops, 0);
 
         sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits the confidence gate for a loop body's LAST step (DR-5 / #145 gap B), when that step
+    /// declared <c>.RequireConfidence(t).OnLowConfidence(alt =&gt; ...)</c>. Emits nothing when the
+    /// last body step is not confidence-gated, keeping non-confidence loop output byte-unchanged.
+    /// Mirrors <c>ForkJoinHandlerEmitter.EmitForkPathConfidenceGate</c>, but uses a plain
+    /// <c>return</c> (the loop completed handler's return type is <c>object</c>, not
+    /// <c>IEnumerable&lt;object&gt;</c>): below-threshold confidence routes to the lowered
+    /// OnLowConfidence handler chain's start command and, in EventSourced mode, appends the
+    /// <c>{Pascal}LowConfidenceRouted</c> audit stream event.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="stepModel">The last body step's model, or null when semantic resolution failed.</param>
+    /// <param name="gatedStepName">The gated step's base (unprefixed) name, for the audit event.</param>
+    private static void EmitLoopBodyConfidenceGate(
+        StringBuilder sb,
+        WorkflowModel model,
+        StepModel? stepModel,
+        string gatedStepName)
+    {
+        if (stepModel?.Confidence?.OnLowConfidenceHandlerStep is not { } handlerStep)
+        {
+            return;
+        }
+
+        var handlerStepName = handlerStep.StepName;
+        var lowConfidenceCommand = $"Start{handlerStepName}Command";
+        var thresholdLiteral = stepModel.Confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
+        sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the loop-body");
+        sb.AppendLine("        // step's result confidence is present and below the configured threshold.");
+        sb.AppendLine($"        if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.{handlerStepName};");
+        sb.AppendLine();
+        sb.AppendLine("            logger.LogWarning(");
+        sb.AppendLine("                \"Loop-body step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
+        sb.AppendLine("                confidenceScore,");
+        sb.AppendLine($"                {thresholdLiteral},");
+        sb.AppendLine("                WorkflowId,");
+        sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+
+        // Append the LowConfidenceRouted audit STREAM event when event-sourced. This is the
+        // single site where a confidence-gated loop-body step actually routes below-threshold,
+        // so it is where the named event belongs. The handler already receives IDocumentSession
+        // session in EventSourced mode.
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine("            session.Events.Append(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine("                    WorkflowId,");
+            sb.AppendLine($"                    \"{gatedStepName}\",");
+            sb.AppendLine("                    confidenceScore,");
+            sb.AppendLine($"                    {thresholdLiteral},");
+            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"            return new {lowConfidenceCommand}(WorkflowId);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
     }
 
     private static void EmitNestedLoopChecks(
