@@ -23,6 +23,14 @@
          (JsonWorkflowImportTests references them). The *.workflow.json
          convention makes it an AdditionalFile the generator discovers. -->
     <AdditionalFiles Include="Workflows\import-gate.workflow.json" />
+    <!-- Task 019 (DR-15 round-trip behavioral twins): the fork-join and config
+         (retry) importable-family JSON workflows the generator bridges + lowers
+         through the SAME saga emitters as their C# twins. Each generated
+         AddRoundtrip{Family}ImportWorkflow() compiling into THIS assembly is the
+         semantic check; the real-host RoundTripBehavioralTests assert each import
+         runs identically to its C# twin. -->
+    <AdditionalFiles Include="Workflows\roundtrip-fork.workflow.json" />
+    <AdditionalFiles Include="Workflows\roundtrip-config.workflow.json" />
   </ItemGroup>
 
   <ItemGroup>
