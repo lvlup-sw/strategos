@@ -337,4 +337,40 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "The workflow import front-end binds the wire IR at schema version 1.0. A file declaring a different (or missing) schemaVersion is rejected so incompatible shapes are not silently misbound.");
+
+    /// <summary>
+    /// Unresolvable workflow step moniker (DR-13).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a wire simple-name step moniker on an imported <c>*.workflow.json</c> does not
+    /// resolve to any accessible <c>IWorkflowStep&lt;TState&gt;</c> type in the compilation symbol
+    /// table. Argument 0 is the import file path; argument 1 is the offending moniker. The moniker is
+    /// consumed as a string descriptor (INV-8) — nothing persists a CLR <see cref="System.Type"/>.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnresolvableStepMoniker = new(
+        id: AgwfCodes.UnresolvableStepMoniker,
+        title: "Unresolvable workflow step moniker",
+        messageFormat: "Workflow import file '{0}' references step moniker '{1}', which does not resolve to any accessible workflow step type in the compilation. Add the step type (implementing IWorkflowStep<TState>) or correct the moniker.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A wire step moniker must bind to exactly one accessible IWorkflowStep<TState> type in the compilation. A moniker that resolves to no such type is rejected so an import cannot silently drop a step.");
+
+    /// <summary>
+    /// Ambiguous workflow step moniker (DR-13).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a wire simple-name step moniker on an imported <c>*.workflow.json</c> resolves to
+    /// two or more accessible <c>IWorkflowStep&lt;TState&gt;</c> types sharing that simple name.
+    /// Argument 0 is the import file path; argument 1 is the moniker; argument 2 is the deterministic,
+    /// ordinal-sorted list of all candidate fully-qualified type names.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor AmbiguousStepMoniker = new(
+        id: AgwfCodes.AmbiguousStepMoniker,
+        title: "Ambiguous workflow step moniker",
+        messageFormat: "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A wire step moniker must bind to exactly one accessible IWorkflowStep<TState> type. When two or more candidates share the simple name, the moniker is ambiguous and rejected; the candidates are listed deterministically so the collision is actionable.");
 }
