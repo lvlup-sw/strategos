@@ -15,6 +15,7 @@ import "./Diagnostics/Enforcement.tsp";
 import "./Diagnostics/InvariantEntry.tsp";
 import "./Diagnostics/AgwfCatalog.tsp";
 import "./Gates/GateClass.tsp";
+import "./Gates/GateDeclaration.tsp";
 
 using JsonSchema;
 
