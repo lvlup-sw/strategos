@@ -11,6 +11,11 @@
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="TUnit" />
     <PackageReference Include="NSubstitute" />
+    <!-- Task 022 (DR-16 parity half, event side): validate the hosting-mapped
+         abstained payload (OntologyAbstainedRecord) against the Contracts-emitted
+         OntologyAbstained.json event schema. Schema loaded as a FILE; the ontology
+         core/hosting take NO Strategos.Contracts reference — only this TEST project. -->
+    <PackageReference Include="NJsonSchema" />
   </ItemGroup>
 
   <ItemGroup>
