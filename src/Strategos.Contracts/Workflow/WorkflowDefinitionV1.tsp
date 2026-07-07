@@ -63,6 +63,19 @@ model WorkflowDefinitionV1 {
    */
   gates?: GateDeclaration[];
 
+  /**
+   * Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of
+   * the fork/compensation edge (DR-7): where the workflow may fork, the closed
+   * triggers permitted with their evidence-ref schema, the `maxForks` bound, and
+   * the compensation seed. OPTIONAL and additive — a workflow with no fork edge
+   * omits the slot entirely, so this is a NON-BREAKING wire change.
+   *
+   * INV-8: every reference inside a DiagnosticForkDefinition is a string moniker,
+   * never a CLR type. The generated saga lowers the edge (DR-9); the runtime
+   * companion is ForkOccurrence (DR-8) in the Events family.
+   */
+  diagnosticForks?: DiagnosticForkDefinition[];
+
   /** Step id of the workflow entry step, if set. */
   entryStepId?: string;
 

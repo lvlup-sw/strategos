@@ -1,0 +1,41 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DiagnosticForkDefinition.json",
+    "type": "object",
+    "properties": {
+        "anchorStepIds": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 1,
+            "description": "The anchor step monikers — the step ids where this workflow may fork (INV-8:\nsimple-name step id monikers, never CLR types). At least one anchor: a fork\nedge with nowhere to fork is unrepresentable."
+        },
+        "permittedTriggers": {
+            "type": "array",
+            "items": {
+                "$ref": "PermittedForkTrigger.json"
+            },
+            "minItems": 1,
+            "description": "The closed triggers permitted to fork this workflow, each paired with its\ndeclaration-side evidence-ref schema (PermittedForkTrigger). At least one:\nthe edge is inexpressible without declaring a permitted trigger (DR-7)."
+        },
+        "maxForks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "description": "Upper bound on the forks this edge may spawn. The generated guard enforces it\n(DR-9; the LoopDefinition.maxIterations forced-exit precedent) — exceeding it\nroutes to a blocked / human-escalation terminal. At least 1: a bound of 0\nforbids the very fork the edge exists to permit."
+        },
+        "compensationSeed": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The compensation seed moniker (INV-8: a plain string moniker, never a CLR\ntype) — the seed the fork routes compensation to, composing with the existing\nCompensate / OnFailure merged trigger site (DR-9). REQUIRED and non-empty."
+        }
+    },
+    "required": [
+        "anchorStepIds",
+        "permittedTriggers",
+        "maxForks",
+        "compensationSeed"
+    ],
+    "description": "Wire-IR diagnostic fork edge (#151, DR-10 → #100): the DECLARATIVE half of the\nbasileus #394 rollback-and-fork verb, and the shared combinator exarchos #1258\nlowers to. Names WHERE a workflow may fork (anchor step monikers), WHICH closed\ntriggers may fork it paired with the evidence fields each requires\n(PermittedForkTrigger — the declaration side), a `maxForks` upper bound the\ngenerated guard enforces (DR-9; the LoopDefinition.maxIterations forced-exit\nprecedent), and the compensation seed the fork routes to.\n\nINV-8: EVERY step/type reference on this shape is a string moniker — the anchor\nstep ids, the evidence field names, and the compensation seed are all plain\nstrings; the only typed reference is the closed ForkTrigger enum (a snake_case\nwire vocabulary, not a CLR type). Nothing here carries a runtime `Type`, an\nassembly-qualified name, or executable code.\n\nOPTIONAL and additive on WorkflowDefinitionV1 (the `diagnosticForks?` slot): a\nworkflow that declares no fork edge omits the slot entirely, so introducing it\nis a NON-BREAKING wire change. The generated saga lowers it (DR-9); the\nruntime-occurrence companion is ForkOccurrence (DR-8), in the Events family."
+}
