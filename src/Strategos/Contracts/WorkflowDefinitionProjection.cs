@@ -246,7 +246,28 @@ public static class WorkflowDefinitionProjection
         PrecedingStepId = a.PrecedingStepId,
         EscalationHandler = a.EscalationHandler is null ? null : ProjectEscalation(a.EscalationHandler),
         RejectionHandler = a.RejectionHandler is null ? null : ProjectRejection(a.RejectionHandler),
+
+        // DR-14 (marking half): the approval's context body (a static message or
+        // a runtime context factory) is not carried on the wire (LB-1); its loss
+        // is made visible by hasContext:true rather than dropped silently. The
+        // marker is emitted only when context was configured and is omitted for a
+        // context-free approval point, so the addition stays additive/non-breaking.
+        HasContext = HasApprovalContext(a.Configuration) ? true : null,
     };
+
+    /// <summary>
+    /// Whether an approval carried context configuration — a static context
+    /// message (<see cref="ApprovalConfiguration.StaticContext"/>) or a runtime
+    /// context factory expression
+    /// (<see cref="ApprovalConfiguration.ContextFactoryExpression"/>). Either is
+    /// the LB-1 lossy body the wire does not carry; both are surfaced by the
+    /// single <c>hasContext</c> marker (DR-14). A context-free approval point
+    /// returns <see langword="false"/> and carries no marker.
+    /// </summary>
+    private static bool HasApprovalContext(ApprovalConfiguration? configuration) =>
+        configuration is not null
+        && (!string.IsNullOrEmpty(configuration.StaticContext)
+            || !string.IsNullOrEmpty(configuration.ContextFactoryExpression));
 
     private static Wire.ApprovalEscalationDefinition ProjectEscalation(ApprovalEscalationDefinition e) => new()
     {

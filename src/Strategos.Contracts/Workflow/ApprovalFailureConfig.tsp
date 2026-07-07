@@ -54,9 +54,10 @@ model ApprovalRejectionDefinition {
 /**
  * Wire-IR approval point — a human-approval pause (mirrors the builder's
  * `ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker
- * (LB-2); the approval configuration's runtime context factory (a CLR
- * expression) is intentionally **not** carried on the wire (declarative-only,
- * LB-1).
+ * (LB-2); the approval configuration's context body (a static message or a
+ * runtime context factory, a CLR expression) is intentionally **not** carried
+ * on the wire (declarative-only, LB-1), but its presence is marked by
+ * `hasContext` so the loss is visible in the data rather than silent (DR-14).
  */
 @jsonSchema
 model ApprovalDefinition {
@@ -74,6 +75,15 @@ model ApprovalDefinition {
 
   /** Optional rejection handler. */
   rejectionHandler?: ApprovalRejectionDefinition;
+
+  /**
+   * Declares this approval carried context configuration (a static message or a
+   * runtime context factory) whose body is dropped from the wire — the
+   * declarative-only lossiness marker for approvals (DR-14), mirroring the
+   * delegate step's lambda marker. Present and true only when context was
+   * configured; omitted for a context-free approval point.
+   */
+  hasContext?: true;
 }
 
 /**
