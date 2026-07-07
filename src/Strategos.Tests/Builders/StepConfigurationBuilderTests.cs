@@ -76,6 +76,69 @@ public class StepConfigurationBuilderTests
             .Throws<ArgumentOutOfRangeException>();
     }
 
+    /// <summary>
+    /// Verifies that RequireConfidence called AFTER other setters preserves them (DR-6, #145).
+    /// </summary>
+    /// <remarks>
+    /// Guards the replace-not-merge regression: RequireConfidence must compose with prior
+    /// WithRetry/Compensate/WithTimeout rather than discarding them.
+    /// </remarks>
+    [Test]
+    public async Task Then_RequireConfidenceAfterOtherSetters_PreservesAllConfiguration()
+    {
+        // Act
+        var workflow = Workflow<TestWorkflowState>
+            .Create("test-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg
+                .WithRetry(3)
+                .Compensate<RollbackStep>()
+                .WithTimeout(TimeSpan.FromMinutes(2))
+                .RequireConfidence(0.85))
+            .Finally<CompleteStep>();
+
+        // Assert
+        var processStep = workflow.Steps.First(s => s.StepType == typeof(ProcessStep));
+        await Assert.That(processStep.Configuration!.ConfidenceThreshold).IsEqualTo(0.85);
+        await Assert.That(processStep.Configuration!.Retry!.MaxAttempts).IsEqualTo(3);
+        await Assert.That(processStep.Configuration!.Compensation!.CompensationStepType).IsEqualTo(typeof(RollbackStep));
+        await Assert.That(processStep.Configuration!.Timeout).IsEqualTo(TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
+    /// Verifies that confidence-first and confidence-last chains compose to an equal
+    /// configuration via record equality (DR-6, #145).
+    /// </summary>
+    [Test]
+    public async Task Then_RequireConfidenceOrderIndependent_ProducesEqualConfiguration()
+    {
+        // Act
+        var confidenceFirst = Workflow<TestWorkflowState>
+            .Create("test-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg
+                .RequireConfidence(0.85)
+                .WithRetry(3)
+                .Compensate<RollbackStep>()
+                .WithTimeout(TimeSpan.FromMinutes(2)))
+            .Finally<CompleteStep>();
+
+        var confidenceLast = Workflow<TestWorkflowState>
+            .Create("test-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg
+                .WithRetry(3)
+                .Compensate<RollbackStep>()
+                .WithTimeout(TimeSpan.FromMinutes(2))
+                .RequireConfidence(0.85))
+            .Finally<CompleteStep>();
+
+        // Assert
+        var firstConfig = confidenceFirst.Steps.First(s => s.StepType == typeof(ProcessStep)).Configuration;
+        var lastConfig = confidenceLast.Steps.First(s => s.StepType == typeof(ProcessStep)).Configuration;
+        await Assert.That(lastConfig).IsEqualTo(firstConfig);
+    }
+
     // =============================================================================
     // B. Compensate Tests
     // =============================================================================
