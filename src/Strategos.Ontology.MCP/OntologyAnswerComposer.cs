@@ -18,6 +18,31 @@ namespace Strategos.Ontology.MCP;
 /// </remarks>
 public sealed class OntologyAnswerComposer
 {
+    private readonly IOntologyAuditSink _auditSink;
+
+    /// <summary>
+    /// Creates a composer that audits nothing: abstentions are emitted through the no-op
+    /// <see cref="NoOpOntologyAuditSink"/>. Kept for source- and behavior-compatibility with
+    /// consumers that constructed the composer before the audit seam (DR-17) existed.
+    /// </summary>
+    public OntologyAnswerComposer()
+        : this(NoOpOntologyAuditSink.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Creates a composer that emits an <see cref="OntologyAbstainedRecord"/> through
+    /// <paramref name="auditSink"/> on every <see cref="NoAnswerRecorded"/> it produces
+    /// (DR-17). A host supplies a concrete sink; the parameterless overload defaults to
+    /// the no-op sink.
+    /// </summary>
+    /// <param name="auditSink">The audit seam abstentions are emitted through.</param>
+    public OntologyAnswerComposer(IOntologyAuditSink auditSink)
+    {
+        ArgumentNullException.ThrowIfNull(auditSink);
+        _auditSink = auditSink;
+    }
+
     /// <summary>
     /// Decides <see cref="Answer"/> vs <see cref="NoAnswerRecorded"/> from a retrieval
     /// outcome. The null is decided by the RETRIEVAL layer by construction:
@@ -48,7 +73,14 @@ public sealed class OntologyAnswerComposer
         // records so the caller sees what was searched (never a hidden result set).
         if (matchedRecords.Count == 0)
         {
-            return new NoAnswerRecorded(nearestRecords, meta);
+            var abstention = new NoAnswerRecorded(nearestRecords, meta);
+
+            // DR-17 (emission half): every abstention this chokepoint produces is audited.
+            // The record carries only the COUNT of nearest records — never their monikers —
+            // so a record identity cannot be exfiltrated through the audit stream.
+            _auditSink.RecordAbstention(new OntologyAbstainedRecord(nearestRecords.Count));
+
+            return abstention;
         }
 
         // Matched records present ⇒ cite them. The Answer constructor re-asserts the

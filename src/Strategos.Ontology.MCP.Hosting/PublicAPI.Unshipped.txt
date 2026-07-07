@@ -2,5 +2,6 @@
 Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions
 static Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions.AddOntologyTools(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!
 static Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions.AddOntologyTools(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder, Strategos.Ontology.OntologyGraph! graph) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!
+static Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory.CreateAnswerComposer(Microsoft.Extensions.Logging.ILoggerFactory! loggerFactory) -> Strategos.Ontology.MCP.OntologyAnswerComposer!
 static Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory.CreateServerTools(Strategos.Ontology.OntologyGraph! graph) -> System.Collections.Generic.IEnumerable<ModelContextProtocol.Server.McpServerTool!>!
 Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory

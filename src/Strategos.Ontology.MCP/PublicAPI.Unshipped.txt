@@ -1,6 +1,8 @@
 #nullable enable
+const Strategos.Ontology.MCP.OntologyAbstainedRecord.EventType = "ontology.abstained" -> string!
 const Strategos.Ontology.MCP.OntologyTraversalLimits.MaxDepth = 3 -> int
 const Strategos.Ontology.MCP.OntologyTraverseTool.RowBudget = 100 -> int
+static Strategos.Ontology.MCP.NoOpOntologyAuditSink.Instance.get -> Strategos.Ontology.MCP.NoOpOntologyAuditSink!
 static Strategos.Ontology.MCP.OntologyAnswerComposer.AdvertisedOutputSchema() -> System.Text.Json.JsonElement
 static Strategos.Ontology.MCP.ResponseMeta.ForGraph(Strategos.Ontology.OntologyGraph! graph) -> Strategos.Ontology.MCP.ResponseMeta!
 Strategos.Ontology.MCP.ActionConstraintSummary
@@ -75,11 +77,19 @@ Strategos.Ontology.MCP.HybridMeta.Hybrid.init -> void
 Strategos.Ontology.MCP.HybridMeta.HybridMeta(bool Hybrid, string? FusionMethod = null, string? Degraded = null, double? DenseTopScore = null, double? SparseTopScore = null, double? BmSaturationThreshold = null) -> void
 Strategos.Ontology.MCP.HybridMeta.SparseTopScore.get -> double?
 Strategos.Ontology.MCP.HybridMeta.SparseTopScore.init -> void
+Strategos.Ontology.MCP.IOntologyAuditSink
+Strategos.Ontology.MCP.IOntologyAuditSink.RecordAbstention(Strategos.Ontology.MCP.OntologyAbstainedRecord! record) -> void
 Strategos.Ontology.MCP.NoAnswerRecorded
 Strategos.Ontology.MCP.NoAnswerRecorded.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
 Strategos.Ontology.MCP.NoAnswerRecorded.Meta.init -> void
 Strategos.Ontology.MCP.NoAnswerRecorded.NearestRecords.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>!
 Strategos.Ontology.MCP.NoAnswerRecorded.NearestRecords.init -> void
+Strategos.Ontology.MCP.NoOpOntologyAuditSink
+Strategos.Ontology.MCP.NoOpOntologyAuditSink.RecordAbstention(Strategos.Ontology.MCP.OntologyAbstainedRecord! record) -> void
+Strategos.Ontology.MCP.OntologyAbstainedRecord
+Strategos.Ontology.MCP.OntologyAbstainedRecord.NearestRecordsCount.get -> int
+Strategos.Ontology.MCP.OntologyAbstainedRecord.OntologyAbstainedRecord(int nearestRecordsCount) -> void
+Strategos.Ontology.MCP.OntologyAbstainedRecord.Type.get -> string!
 Strategos.Ontology.MCP.OntologyActionTool
 Strategos.Ontology.MCP.OntologyActionTool.ExecuteAsync(string! objectType, string! action, object! request, string? domain = null, string? objectId = null, string? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.ActionToolResult!>!
 Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider) -> void
@@ -87,6 +97,7 @@ Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.
 Strategos.Ontology.MCP.OntologyAnswerComposer
 Strategos.Ontology.MCP.OntologyAnswerComposer.Compose(string! content, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>! matchedRecords, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>! nearestRecords, Strategos.Ontology.MCP.ResponseMeta! meta) -> Strategos.Ontology.MCP.OntologyAnswerUnion!
 Strategos.Ontology.MCP.OntologyAnswerComposer.OntologyAnswerComposer() -> void
+Strategos.Ontology.MCP.OntologyAnswerComposer.OntologyAnswerComposer(Strategos.Ontology.MCP.IOntologyAuditSink! auditSink) -> void
 Strategos.Ontology.MCP.OntologyAnswerUnion
 Strategos.Ontology.MCP.OntologyExploreTool
 Strategos.Ontology.MCP.OntologyExploreTool.Explore(string! scope, string? domain = null, string? objectType = null, string? traverseFrom = null, int maxDepth = 2) -> Strategos.Ontology.MCP.ExploreResult!

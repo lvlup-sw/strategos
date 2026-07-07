@@ -84,6 +84,23 @@ public static class OntologyServerToolFactory
         return tools;
     }
 
+    /// <summary>
+    /// Wires an <see cref="OntologyAnswerComposer"/> bound to the concrete
+    /// <see cref="LoggingOntologyAuditSink"/> (DR-17, emission half): every abstention the
+    /// composer produces through this instance is audited to <paramref name="loggerFactory"/>.
+    /// The core's parameterless composer still defaults to the no-op sink, so this is the
+    /// hosting-side opt-in that turns audit emission on without changing that default.
+    /// </summary>
+    /// <param name="loggerFactory">The host's logger factory; the audit sink logs abstentions through it.</param>
+    /// <returns>A composer that emits <c>ontology.abstained</c> audit records on every abstention.</returns>
+    public static OntologyAnswerComposer CreateAnswerComposer(ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        var logger = loggerFactory.CreateLogger<OntologyAnswerComposer>();
+        return new OntologyAnswerComposer(new LoggingOntologyAuditSink(logger));
+    }
+
     private static McpServerTool CreateServerTool(OntologyGraph graph, OntologyToolDescriptor descriptor)
     {
         var handler = BuildHandler(graph, descriptor.Name);
