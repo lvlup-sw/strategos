@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "name": "import-fixture-reliability-gate",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImpStepA", "isTerminal": false, "stepType": "ImpStepA" },
+    { "kind": "skill", "stepId": "s2", "stepName": "ImpStepB", "isTerminal": true, "stepType": "ImpStepB" }
+  ],
+  "transitions": [],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "gates": [
+    { "class": "AntipatternDetection", "id": "g1",
+      "reliability": { "fpr": 0.02, "sampleSize": 500, "asOf": "2026-01-01T00:00:00Z", "source": "telemetry" } }
+  ],
+  "entryStepId": "s1",
+  "terminalStepId": "s2"
+}

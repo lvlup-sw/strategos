@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "name": "import-fixture-dangling-gate",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImpStepA", "isTerminal": false, "stepType": "ImpStepA" },
+    { "kind": "gate", "stepId": "s2", "stepName": "ImpStepB", "isTerminal": true, "stepType": "ImpStepB", "gateId": "gX" }
+  ],
+  "transitions": [],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "gates": [
+    { "class": "AntipatternDetection", "id": "g1" }
+  ],
+  "entryStepId": "s1",
+  "terminalStepId": "s2"
+}

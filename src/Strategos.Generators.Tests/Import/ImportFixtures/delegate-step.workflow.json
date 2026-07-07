@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "name": "import-fixture-delegate",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImpStepA", "isTerminal": false, "stepType": "ImpStepA" },
+    { "kind": "delegate", "stepId": "d1", "stepName": "InlineLog", "isTerminal": true, "lambda": true }
+  ],
+  "transitions": [],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "entryStepId": "s1",
+  "terminalStepId": "d1"
+}
