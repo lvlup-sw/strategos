@@ -178,6 +178,81 @@ public static class SourceTexts
         """;
 
     /// <summary>
+    /// A workflow whose RepeatUntil loop body declares a confidence-gated step via the
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.RequireConfidence(...).OnLowConfidence(...))</c> configure-lambda
+    /// overload. Exercises the DR-5 IR half: the loop-body configure lambda is parsed so
+    /// <see cref="Strategos.Generators.Models.StepModel.Confidence"/> is populated on the loop body.
+    /// </summary>
+    public const string WorkflowWithLoopBodyConfidence = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record RefinementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public decimal QualityScore { get; init; }
+        }
+
+        public class ValidateInput : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class CritiqueStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.WithConfidence(state, 0.5));
+        }
+
+        public class ReviewStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class RefineStep : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        public class PublishResult : IWorkflowStep<RefinementState>
+        {
+            public Task<StepResult<RefinementState>> ExecuteAsync(
+                RefinementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RefinementState>.FromState(state));
+        }
+
+        [Workflow("iterative-refinement")]
+        public static partial class IterativeRefinementWorkflow
+        {
+            public static WorkflowDefinition<RefinementState> Definition => Workflow<RefinementState>
+                .Create("iterative-refinement")
+                .StartWith<ValidateInput>()
+                .RepeatUntil(
+                    state => state.QualityScore >= 0.9m,
+                    "Refinement",
+                    loop => loop
+                        .Then<CritiqueStep>(step => step
+                            .RequireConfidence(0.85)
+                            .OnLowConfidence(alt => alt.Then<ReviewStep>()))
+                        .Then<RefineStep>(),
+                    maxIterations: 5)
+                .Finally<PublishResult>();
+        }
+        """;
+
+    /// <summary>
     /// A workflow definition with multiple separate RepeatUntil loops.
     /// </summary>
     public const string WorkflowWithMultipleLoops = """

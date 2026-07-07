@@ -14,6 +14,13 @@ namespace Strategos.Generators.Tests.Models;
 [Property("Category", "Unit")]
 public class LoopModelTests
 {
+    /// <summary>
+    /// Builds a bare configured step whose <see cref="StepModel.PhaseName"/> equals the supplied
+    /// (already loop-prefixed) name, so the loop's <c>FirstBodyStepName</c>/<c>LastBodyStepName</c>
+    /// projections resolve to the expected prefixed names.
+    /// </summary>
+    private static StepModel Step(string phaseName) => StepModel.Create(phaseName, $"TestNamespace.{phaseName}");
+
     // =============================================================================
     // A. Constructor Tests
     // =============================================================================
@@ -29,8 +36,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "ProcessClaim-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_CritiqueStep",
-            LastBodyStepName: "Refinement_RefineStep",
+            BodySteps: [Step("Refinement_CritiqueStep"), Step("Refinement_RefineStep")],
             ContinuationStepName: "PublishResult",
             ParentLoopName: null);
 
@@ -55,8 +61,7 @@ public class LoopModelTests
             LoopName: "FinalLoop",
             ConditionId: "Workflow-FinalLoop",
             MaxIterations: 3,
-            FirstBodyStepName: "FinalLoop_Step",
-            LastBodyStepName: "FinalLoop_Step",
+            BodySteps: [Step("FinalLoop_Step")],
             ContinuationStepName: null,
             ParentLoopName: null);
 
@@ -79,8 +84,7 @@ public class LoopModelTests
             LoopName: "Inner",
             ConditionId: "Workflow-Outer_Inner",
             MaxIterations: 3,
-            FirstBodyStepName: "Outer_Inner_InnerStep",
-            LastBodyStepName: "Outer_Inner_InnerStep",
+            BodySteps: [Step("Outer_Inner_InnerStep")],
             ContinuationStepName: "Outer_OuterStep2",
             ParentLoopName: "Outer");
 
@@ -103,8 +107,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: [Step("Refinement_Step")],
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -123,8 +126,7 @@ public class LoopModelTests
             LoopName: "Inner",
             ConditionId: "Workflow-Outer_Inner",
             MaxIterations: 3,
-            FirstBodyStepName: "Outer_Inner_Step",
-            LastBodyStepName: "Outer_Inner_Step",
+            BodySteps: [Step("Outer_Inner_Step")],
             ContinuationStepName: "Outer_NextStep",
             ParentLoopName: "Outer");
 
@@ -143,8 +145,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: [Step("Refinement_Step")],
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -163,8 +164,7 @@ public class LoopModelTests
             LoopName: "Inner",
             ConditionId: "Workflow-Outer_Inner",
             MaxIterations: 3,
-            FirstBodyStepName: "Outer_Inner_Step",
-            LastBodyStepName: "Outer_Inner_Step",
+            BodySteps: [Step("Outer_Inner_Step")],
             ContinuationStepName: "Outer_NextStep",
             ParentLoopName: "Outer");
 
@@ -183,8 +183,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: [Step("Refinement_Step")],
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -203,8 +202,7 @@ public class LoopModelTests
             LoopName: "Inner",
             ConditionId: "Workflow-Outer_Inner",
             MaxIterations: 3,
-            FirstBodyStepName: "Outer_Inner_Step",
-            LastBodyStepName: "Outer_Inner_Step",
+            BodySteps: [Step("Outer_Inner_Step")],
             ContinuationStepName: "Outer_NextStep",
             ParentLoopName: "Outer");
 
@@ -213,7 +211,47 @@ public class LoopModelTests
     }
 
     // =============================================================================
-    // D. Record Equality Tests
+    // D. Body-Step Projection Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that the loop carries configured <see cref="StepModel"/> body steps and that
+    /// <c>FirstBodyStepName</c>/<c>LastBodyStepName</c> are computed projections over them
+    /// (mirroring <see cref="ForkPathModel"/>), so per-step configuration is preserved on the
+    /// loop body rather than collapsed to bare names.
+    /// </summary>
+    [Test]
+    public async Task LoopModel_CarriesConfiguredBodySteps_WithComputedFirstLastNames()
+    {
+        // Arrange - a loop body whose first step declares a confidence gate
+        var gatedStep = StepModel.Create(
+            "CritiqueStep",
+            "TestNamespace.CritiqueStep",
+            loopName: "Refinement",
+            confidence: new ConfidenceModel(0.85));
+        var plainStep = StepModel.Create("RefineStep", "TestNamespace.RefineStep", loopName: "Refinement");
+
+        // Act
+        var model = new LoopModel(
+            LoopName: "Refinement",
+            ConditionId: "Workflow-Refinement",
+            MaxIterations: 5,
+            BodySteps: [gatedStep, plainStep],
+            ContinuationStepName: "PublishResult",
+            ParentLoopName: null);
+
+        // Assert - the body is carried as configured StepModels, not just names
+        await Assert.That(model.BodySteps.Count).IsEqualTo(2);
+        await Assert.That(model.BodySteps[0].Confidence).IsNotNull();
+        await Assert.That(model.BodySteps[0].Confidence!.Threshold).IsEqualTo(0.85);
+
+        // Assert - first/last names are computed projections over the body step phase names
+        await Assert.That(model.FirstBodyStepName).IsEqualTo("Refinement_CritiqueStep");
+        await Assert.That(model.LastBodyStepName).IsEqualTo("Refinement_RefineStep");
+    }
+
+    // =============================================================================
+    // E. Record Equality Tests
     // =============================================================================
 
     /// <summary>
@@ -222,13 +260,15 @@ public class LoopModelTests
     [Test]
     public async Task LoopModel_IsValueEqual()
     {
-        // Arrange
+        // Arrange - share the body-step list instance so the collection member compares equal
+        // (records compare IReadOnlyList members by reference, matching ForkModel/ForkPathModel).
+        var bodySteps = new List<StepModel> { Step("Refinement_Step") };
+
         var model1 = new LoopModel(
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: bodySteps,
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -236,8 +276,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: bodySteps,
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -256,8 +295,7 @@ public class LoopModelTests
             LoopName: "Refinement",
             ConditionId: "Workflow-Refinement",
             MaxIterations: 5,
-            FirstBodyStepName: "Refinement_Step",
-            LastBodyStepName: "Refinement_Step",
+            BodySteps: [Step("Refinement_Step")],
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 
@@ -265,8 +303,7 @@ public class LoopModelTests
             LoopName: "Validation",
             ConditionId: "Workflow-Validation",
             MaxIterations: 3,
-            FirstBodyStepName: "Validation_Step",
-            LastBodyStepName: "Validation_Step",
+            BodySteps: [Step("Validation_Step")],
             ContinuationStepName: "NextStep",
             ParentLoopName: null);
 

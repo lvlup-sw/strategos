@@ -329,8 +329,11 @@ public class WorkflowModelTests
                 LoopName: "Refinement",
                 ConditionId: "ProcessClaim-Refinement",
                 MaxIterations: 5,
-                FirstBodyStepName: "Refinement_CritiqueStep",
-                LastBodyStepName: "Refinement_RefineStep",
+                BodySteps:
+                [
+                    StepModel.Create("Refinement_CritiqueStep", "TestNamespace.Refinement_CritiqueStep"),
+                    StepModel.Create("Refinement_RefineStep", "TestNamespace.Refinement_RefineStep"),
+                ],
                 ContinuationStepName: "PublishResult",
                 ParentLoopName: null),
         };
@@ -359,7 +362,7 @@ public class WorkflowModelTests
         // Arrange
         var loops = new List<LoopModel>
         {
-            new("Refinement", "ProcessClaim-Refinement", 5, "Refinement_Step", "Refinement_Step", "Done", null),
+            new("Refinement", "ProcessClaim-Refinement", 5, [StepModel.Create("Refinement_Step", "TestNamespace.Refinement_Step")], "Done", null),
         };
 
         var model = new WorkflowModel(
@@ -541,7 +544,7 @@ public class WorkflowModelTests
         // Arrange
         var loops = new List<LoopModel>
         {
-            new("Refinement", "Workflow-Refinement", 3, "Refinement_Step", "Refinement_Step", "Done", null),
+            new("Refinement", "Workflow-Refinement", 3, [StepModel.Create("Refinement_Step", "TestNamespace.Refinement_Step")], "Done", null),
         };
 
         var branches = new List<BranchModel>

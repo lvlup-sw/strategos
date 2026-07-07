@@ -243,8 +243,7 @@ public class LoopConditionEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             parentLoopName: "Outer");
 
         // Act
@@ -283,7 +282,10 @@ public class LoopConditionEmitterTests
             loopName: loopName,
             conditionId: $"TestWorkflow-{loopName}",
             maxIterations: 5,
-            firstBodyStepName: $"{loopName}_Start",
-            lastBodyStepName: $"{loopName}_End");
+            bodySteps:
+            [
+                StepModel.Create($"{loopName}_Start", $"TestNamespace.{loopName}_Start"),
+                StepModel.Create($"{loopName}_End", $"TestNamespace.{loopName}_End"),
+            ]);
     }
 }

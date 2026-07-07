@@ -301,8 +301,11 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Refinement",
             conditionId: "Test-Refinement",
             maxIterations: 5,
-            firstBodyStepName: "Refine_Start",
-            lastBodyStepName: "Refine_End",
+            bodySteps:
+            [
+                StepModel.Create("Refine_Start", "TestNamespace.Refine_Start"),
+                StepModel.Create("Refine_End", "TestNamespace.Refine_End"),
+            ],
             continuationStepName: "FinalizeStep");
         var context = CreateContext([loop]);
 
@@ -388,8 +391,7 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             continuationStepName: "NextStep",
             parentLoopName: "Outer");
         var context = CreateContext([nestedLoop]);
@@ -420,8 +422,7 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             continuationStepName: "NextStep",
             parentLoopName: "Outer");
         var context = CreateContext([nestedLoop]);
@@ -459,8 +460,11 @@ public class LoopCompletedHandlerEmitterTests
                 loopName: "Refinement",
                 conditionId: "TestWorkflow-Refinement",
                 maxIterations: 5,
-                firstBodyStepName: "Refine_Start",
-                lastBodyStepName: "Refine_End"),
+                bodySteps:
+                [
+                    StepModel.Create("Refine_Start", "TestNamespace.Refine_Start"),
+                    StepModel.Create("Refine_End", "TestNamespace.Refine_End"),
+                ]),
         ];
     }
 

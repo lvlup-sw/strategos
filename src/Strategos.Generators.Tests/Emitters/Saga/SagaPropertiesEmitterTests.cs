@@ -260,8 +260,11 @@ public class SagaPropertiesEmitterTests
             loopName: "Refinement",
             conditionId: "TestWorkflow-Refinement",
             maxIterations: 5,
-            firstBodyStepName: "Refinement_Analyze",
-            lastBodyStepName: "Refinement_Refine");
+            bodySteps:
+            [
+                StepModel.Create("Refinement_Analyze", "TestNamespace.Refinement_Analyze"),
+                StepModel.Create("Refinement_Refine", "TestNamespace.Refinement_Refine"),
+            ]);
         var model = CreateMinimalModel(loops: [loop]);
 
         // Act
@@ -306,8 +309,7 @@ public class SagaPropertiesEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             parentLoopName: "Outer");
         var model = CreateMinimalModel(loops: [nestedLoop]);
 

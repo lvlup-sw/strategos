@@ -44,7 +44,20 @@ internal static class LoopExtractor
             allSteps.Add((stepInfos[i].PhaseName, i));
         }
 
-        WalkInvocationChainForLoopModels(context.FinallyInvocation, loops, context.SemanticModel, context.WorkflowName ?? string.Empty, null, allSteps, context.CancellationToken);
+        // DR-5 (IR half): index the fully configured step models by phase name so each loop's
+        // body can be carried as configured StepModel records (with per-step confidence /
+        // OnLowConfidence and other resilience), not just bare names. ExtractStepModels already
+        // threads the loop-body configure lambda through TryGetStepModel, so a loop-body step's
+        // Confidence is populated here; attaching those models to the loop keeps the first/last
+        // body-step-name projections byte-identical while making the config reachable from the
+        // LoopModel IR.
+        var stepModelsByPhase = new Dictionary<string, StepModel>(StringComparer.Ordinal);
+        foreach (var stepModel in StepExtractor.ExtractStepModels(context))
+        {
+            stepModelsByPhase[stepModel.PhaseName] = stepModel;
+        }
+
+        WalkInvocationChainForLoopModels(context.FinallyInvocation, loops, context.SemanticModel, context.WorkflowName ?? string.Empty, null, allSteps, stepModelsByPhase, context.CancellationToken);
 
         return loops;
     }
@@ -56,12 +69,13 @@ internal static class LoopExtractor
         string workflowName,
         string? parentLoopName,
         List<(string PhaseName, int Order)> allSteps,
+        IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Check if this is a RepeatUntil call
-        if (TryParseRepeatUntilForLoopModel(invocation, semanticModel, workflowName, parentLoopName, allSteps, out var loopModel, out var nestedPrefix, cancellationToken))
+        if (TryParseRepeatUntilForLoopModel(invocation, semanticModel, workflowName, parentLoopName, allSteps, stepModelsByPhase, out var loopModel, out var nestedPrefix, cancellationToken))
         {
             loops.Insert(0, loopModel);
 
@@ -76,7 +90,7 @@ internal static class LoopExtractor
 
             if (bodyLambda is not null)
             {
-                ParseLoopBodyForLoopModels(bodyLambda, loops, semanticModel, workflowName, loopModel.LoopName, allSteps, cancellationToken);
+                ParseLoopBodyForLoopModels(bodyLambda, loops, semanticModel, workflowName, loopModel.LoopName, allSteps, stepModelsByPhase, cancellationToken);
             }
         }
 
@@ -85,7 +99,7 @@ internal static class LoopExtractor
         {
             if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
             {
-                WalkInvocationChainForLoopModels(previousInvocation, loops, semanticModel, workflowName, parentLoopName, allSteps, cancellationToken);
+                WalkInvocationChainForLoopModels(previousInvocation, loops, semanticModel, workflowName, parentLoopName, allSteps, stepModelsByPhase, cancellationToken);
             }
         }
     }
@@ -97,6 +111,7 @@ internal static class LoopExtractor
         string workflowName,
         string currentLoopName,
         List<(string PhaseName, int Order)> allSteps,
+        IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         CancellationToken cancellationToken)
     {
         // Reverse to process in source order
@@ -125,7 +140,7 @@ internal static class LoopExtractor
 
             if (SyntaxHelper.IsMethodCall(inv, "RepeatUntil"))
             {
-                if (TryParseRepeatUntilForLoopModel(inv, semanticModel, workflowName, currentLoopName, allSteps, out var nestedLoopModel, out _, cancellationToken))
+                if (TryParseRepeatUntilForLoopModel(inv, semanticModel, workflowName, currentLoopName, allSteps, stepModelsByPhase, out var nestedLoopModel, out _, cancellationToken))
                 {
                     loops.Add(nestedLoopModel);
 
@@ -140,7 +155,7 @@ internal static class LoopExtractor
 
                     if (nestedBodyLambda is not null)
                     {
-                        ParseLoopBodyForLoopModels(nestedBodyLambda, loops, semanticModel, workflowName, nestedLoopModel.LoopName, allSteps, cancellationToken);
+                        ParseLoopBodyForLoopModels(nestedBodyLambda, loops, semanticModel, workflowName, nestedLoopModel.LoopName, allSteps, stepModelsByPhase, cancellationToken);
                     }
                 }
             }
@@ -153,6 +168,7 @@ internal static class LoopExtractor
         string workflowName,
         string? parentLoopName,
         List<(string PhaseName, int Order)> allSteps,
+        IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         out LoopModel loopModel,
         out string effectivePrefix,
         CancellationToken cancellationToken)
@@ -194,6 +210,13 @@ internal static class LoopExtractor
             return false;
         }
 
+        // Carry the loop body as configured StepModel records (DR-5 IR half). Each direct body
+        // phase name is resolved to its fully configured StepModel (populated by ExtractStepModels,
+        // which threads the loop-body configure lambda through TryGetStepModel), so per-step
+        // confidence / OnLowConfidence reaches the LoopModel IR. FirstBodyStepName/LastBodyStepName
+        // are computed projections over these, so the emitted output is byte-identical.
+        var bodyStepModels = BuildBodyStepModels(bodySteps, stepModelsByPhase);
+
         // Find continuation step (first step after the loop body that is not a child of this loop)
         var continuationStepName = FindContinuationStepName(computedPrefix, bodySteps, allSteps);
 
@@ -207,14 +230,41 @@ internal static class LoopExtractor
             LoopName: loopName,
             ConditionId: conditionId,
             MaxIterations: maxIterations,
-            FirstBodyStepName: bodySteps.First().PhaseName,
-            LastBodyStepName: bodySteps.Last().PhaseName,
+            BodySteps: bodyStepModels,
             ContinuationStepName: continuationStepName,
             ParentLoopName: parentLoopName,
             BranchOnExitId: branchOnExit?.BranchId,
             BranchOnExit: branchOnExit);
 
         return true;
+    }
+
+    /// <summary>
+    /// Resolves each direct loop-body phase name (in body order) to its fully configured
+    /// <see cref="StepModel"/>, falling back to a bare model carrying just the phase name when a
+    /// matching configured model is not indexed.
+    /// </summary>
+    /// <remarks>
+    /// The name-order discovery stays authoritative (<see cref="FindDirectBodySteps"/>), so the
+    /// resulting first/last <see cref="StepModel.PhaseName"/> — and therefore
+    /// <see cref="LoopModel.FirstBodyStepName"/>/<see cref="LoopModel.LastBodyStepName"/> — are
+    /// byte-identical to the pre-DR-5 bare-name shape. The lookup only ENRICHES each body step
+    /// with its parsed configuration (e.g. <see cref="StepModel.Confidence"/>); a fallback keeps
+    /// the projection intact for any body phase name the step-model parse did not surface.
+    /// </remarks>
+    private static IReadOnlyList<StepModel> BuildBodyStepModels(
+        List<(string PhaseName, int Order)> bodySteps,
+        IReadOnlyDictionary<string, StepModel> stepModelsByPhase)
+    {
+        var bodyStepModels = new List<StepModel>(bodySteps.Count);
+        foreach (var (phaseName, _) in bodySteps)
+        {
+            bodyStepModels.Add(stepModelsByPhase.TryGetValue(phaseName, out var stepModel)
+                ? stepModel
+                : StepModel.Create(phaseName, phaseName));
+        }
+
+        return bodyStepModels;
     }
 
     /// <summary>

@@ -315,12 +315,16 @@ public class SagaEmitterOrchestrationTests
         string loopName,
         string? lastBodyStepName = null)
     {
+        var lastName = lastBodyStepName ?? $"{loopName}_End";
         return LoopModel.Create(
             loopName: loopName,
             conditionId: $"TestWorkflow-{loopName}",
             maxIterations: 5,
-            firstBodyStepName: $"{loopName}_Start",
-            lastBodyStepName: lastBodyStepName ?? $"{loopName}_End",
+            bodySteps:
+            [
+                StepModel.Create($"{loopName}_Start", $"TestNamespace.{loopName}_Start"),
+                StepModel.Create(lastName, $"TestNamespace.{lastName}"),
+            ],
             continuationStepName: "Complete",
             parentLoopName: null);
     }

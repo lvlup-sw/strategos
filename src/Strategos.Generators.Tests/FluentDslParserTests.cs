@@ -465,6 +465,43 @@ public class FluentDslParserTests
     }
 
     /// <summary>
+    /// DR-5 (IR half): the loop body is carried as configured <c>StepModel</c> records, and a
+    /// loop-body step's confidence gate (declared via the
+    /// <c>Then&lt;TStep&gt;(step =&gt; step.RequireConfidence(...).OnLowConfidence(...))</c>
+    /// configure-lambda overload) reaches <c>StepModel.Confidence</c> in the <c>LoopModel</c> IR —
+    /// the config is PARSED, not just the step name. <c>FirstBodyStepName</c>/<c>LastBodyStepName</c>
+    /// stay computed projections over the body steps, so the emitted contract is unchanged.
+    /// </summary>
+    [Test]
+    public async Task Parse_LoopBodyConfidence_ReachesBodyStepModelConfidence()
+    {
+        // Arrange
+        var loops = ParserTestHelper.ExtractLoopModels(SourceTexts.WorkflowWithLoopBodyConfidence, "iterative-refinement");
+
+        // Assert - single loop carrying its body as configured StepModel records (not bare names)
+        await Assert.That(loops.Count).IsEqualTo(1);
+        var body = loops[0].BodySteps;
+        await Assert.That(body.Count).IsEqualTo(2);
+
+        // The gated loop-body step's confidence config reached the IR (the configure lambda was
+        // parsed, not dropped): threshold + the OnLowConfidence handler chain are both present.
+        var gated = body.Single(s => s.StepName == "CritiqueStep");
+        await Assert.That(gated.Confidence).IsNotNull();
+        await Assert.That(gated.Confidence!.Threshold).IsEqualTo(0.85);
+        await Assert.That(gated.Confidence!.OnLowConfidenceHandlerId).IsEqualTo("ReviewStep");
+        await Assert.That(gated.Confidence!.OnLowConfidenceHandlerChain).IsNotNull();
+        await Assert.That(gated.Confidence!.OnLowConfidenceHandlerChain!.Steps[0].StepName).IsEqualTo("ReviewStep");
+
+        // The non-gated body step carries no confidence.
+        var plain = body.Single(s => s.StepName == "RefineStep");
+        await Assert.That(plain.Confidence).IsNull();
+
+        // First/Last body-step-name projections are byte-identical to the pre-DR-5 bare-name shape.
+        await Assert.That(loops[0].FirstBodyStepName).IsEqualTo("Refinement_CritiqueStep");
+        await Assert.That(loops[0].LastBodyStepName).IsEqualTo("Refinement_RefineStep");
+    }
+
+    /// <summary>
     /// Verifies that top-level loop has null parent loop name.
     /// </summary>
     [Test]
