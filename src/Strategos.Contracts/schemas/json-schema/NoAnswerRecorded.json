@@ -5,8 +5,8 @@
     "properties": {
         "answerKind": {
             "type": "string",
-            "const": "noAnswerRecorded",
-            "description": "Discriminator — pins this arm to the `noAnswerRecorded` branch of the union."
+            "const": "no_answer_recorded",
+            "description": "Discriminator — pins this arm to the `no_answer_recorded` branch of the union."
         },
         "nearestRecords": {
             "type": "array",
@@ -20,5 +20,5 @@
         "answerKind",
         "nearestRecords"
     ],
-    "description": "The `answerKind: \"noAnswerRecorded\"` arm of `AbstentionResponse` (DR-16): a\nrecorded abstention. `nearestRecords` surfaces the closest non-matching records\n(may be empty) so the caller sees WHAT was searched — never a silent null. Each\nis a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire twin of\nthe Strategos.Ontology.MCP `NoAnswerRecorded`."
+    "description": "The `answerKind: \"no_answer_recorded\"` arm of `AbstentionResponse` (DR-16): a\nrecorded abstention. `nearestRecords` surfaces the closest non-matching records\n(may be empty) so the caller sees WHAT was searched — never a silent null. Each\nis a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire twin of\nthe Strategos.Ontology.MCP `NoAnswerRecorded`."
 }

@@ -18,7 +18,7 @@ namespace Strategos.Contracts.Generated;
 /// The discriminated-union emission path lowers this to a `[JsonPolymorphic]`
 /// abstract record carrying one `[JsonDerivedType]` per arm — the mechanical wire
 /// twin of the Strategos.Ontology.MCP `OntologyAnswerUnion` (same `answerKind`
-/// discriminator, same `answer` / `noAnswerRecorded` arms, same RecordRef shape),
+/// discriminator, same `answer` / `no_answer_recorded` arms, same RecordRef shape),
 /// so the C# union serializes to exactly this schema.
 /// 
 /// Because the union is closed over exactly these two arms and the `answer` arm
@@ -28,5 +28,5 @@ namespace Strategos.Contracts.Generated;
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "answerKind")]
 [JsonDerivedType(typeof(Answer), "answer")]
-[JsonDerivedType(typeof(NoAnswerRecorded), "noAnswerRecorded")]
+[JsonDerivedType(typeof(NoAnswerRecorded), "no_answer_recorded")]
 public abstract record AbstentionResponse;

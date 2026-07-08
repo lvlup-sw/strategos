@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
-/// The <c>answerKind: "noAnswerRecorded"</c> branch of <see cref="OntologyAnswerUnion"/>
+/// The <c>answerKind: "no_answer_recorded"</c> branch of <see cref="OntologyAnswerUnion"/>
 /// (DR-11): a recorded abstention. The composer emits this when retrieval matched
 /// nothing to cite; <see cref="NearestRecords"/> surfaces the closest non-matching
 /// records (may be empty) so the caller sees WHAT was searched — never a silent null.

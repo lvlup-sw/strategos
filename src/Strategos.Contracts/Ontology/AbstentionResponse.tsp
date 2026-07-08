@@ -40,15 +40,15 @@ model Answer {
 }
 
 /**
- * The `answerKind: "noAnswerRecorded"` arm of `AbstentionResponse` (DR-16): a
+ * The `answerKind: "no_answer_recorded"` arm of `AbstentionResponse` (DR-16): a
  * recorded abstention. `nearestRecords` surfaces the closest non-matching records
  * (may be empty) so the caller sees WHAT was searched — never a silent null. Each
  * is a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire twin of
  * the Strategos.Ontology.MCP `NoAnswerRecorded`.
  */
 model NoAnswerRecorded {
-  /** Discriminator — pins this arm to the `noAnswerRecorded` branch of the union. */
-  answerKind: "noAnswerRecorded";
+  /** Discriminator — pins this arm to the `no_answer_recorded` branch of the union. */
+  answerKind: "no_answer_recorded";
 
   /** The nearest non-matching records (may be empty). Each is a polyglot RecordRef moniker (INV-8), never a CLR type. */
   nearestRecords: RecordRef[];
@@ -62,7 +62,7 @@ model NoAnswerRecorded {
  * The discriminated-union emission path lowers this to a `[JsonPolymorphic]`
  * abstract record carrying one `[JsonDerivedType]` per arm — the mechanical wire
  * twin of the Strategos.Ontology.MCP `OntologyAnswerUnion` (same `answerKind`
- * discriminator, same `answer` / `noAnswerRecorded` arms, same RecordRef shape),
+ * discriminator, same `answer` / `no_answer_recorded` arms, same RecordRef shape),
  * so the C# union serializes to exactly this schema.
  *
  * Because the union is closed over exactly these two arms and the `answer` arm

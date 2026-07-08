@@ -19,9 +19,12 @@ namespace LevelUp.Strategos.Contracts;
 @jsonSchema
 model GateReliability {
   /** Measured false-positive rate of the gate, a fraction in the closed unit interval. */
+  @minValue(0)
+  @maxValue(1)
   fpr: float32;
 
   /** Number of observations the measurement was computed over. */
+  @minValue(0)
   sampleSize: int32;
 
   /** When the measurement was taken (UTC). */

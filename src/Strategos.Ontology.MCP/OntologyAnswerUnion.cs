@@ -18,5 +18,5 @@ namespace Strategos.Ontology.MCP;
 /// </remarks>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "answerKind")]
 [JsonDerivedType(typeof(Answer), "answer")]
-[JsonDerivedType(typeof(NoAnswerRecorded), "noAnswerRecorded")]
+[JsonDerivedType(typeof(NoAnswerRecorded), "no_answer_recorded")]
 public abstract record OntologyAnswerUnion;

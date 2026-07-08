@@ -70,6 +70,52 @@ public sealed class GateDeclarationSchemaTests
     }
 
     /// <summary>
+    /// L7 — <c>GateReliability.fpr</c> is a fraction in the CLOSED unit interval
+    /// (<c>@minValue(0)</c> / <c>@maxValue(1)</c>) and <c>sampleSize</c> is
+    /// non-negative (<c>@minValue(0)</c>). An fpr above 1, a negative fpr, or a
+    /// negative sampleSize FAILS schema validation — an out-of-range reliability
+    /// number can never reach the downstream autonomy math (basileus#392 /
+    /// exarchos#1646). A bounded, in-range block validates. The interval floor/ceiling
+    /// are the mechanical enforcement of the "closed unit interval" contract the
+    /// property has always documented but never bounded.
+    /// </summary>
+    [Test]
+    public async Task GateReliability_FprOutsideUnitInterval_FailsSchemaValidation()
+    {
+        await Assert.That(EventSchemas.Exists(GateReliabilitySchema)).IsTrue()
+            .Because("`tsp compile` must emit GateReliability.json (run scripts/contracts-codegen.sh).");
+
+        var schema = await JsonSchema.FromFileAsync(
+            Path.Combine(EventSchemas.SchemaDir, GateReliabilitySchema + ".json"));
+
+        // fpr ABOVE the closed unit interval (@maxValue 1) — rejected.
+        const string fprTooHigh =
+            """{ "fpr": 2.5, "sampleSize": 500, "asOf": "2026-07-07T00:00:00Z", "source": "telemetry://x" }""";
+        await Assert.That(schema.Validate(fprTooHigh).Count).IsGreaterThan(0)
+            .Because("an fpr of 2.5 is above the closed unit interval (@maxValue 1) and must fail validation.");
+
+        // fpr BELOW the closed unit interval (@minValue 0) — rejected.
+        const string fprNegative =
+            """{ "fpr": -0.1, "sampleSize": 500, "asOf": "2026-07-07T00:00:00Z", "source": "telemetry://x" }""";
+        await Assert.That(schema.Validate(fprNegative).Count).IsGreaterThan(0)
+            .Because("a negative fpr is below the closed unit interval (@minValue 0) and must fail validation.");
+
+        // NEGATIVE sampleSize (@minValue 0) — an impossible observation count — rejected.
+        const string negativeSample =
+            """{ "fpr": 0.02, "sampleSize": -1, "asOf": "2026-07-07T00:00:00Z", "source": "telemetry://x" }""";
+        await Assert.That(schema.Validate(negativeSample).Count).IsGreaterThan(0)
+            .Because("a negative sampleSize is impossible (@minValue 0) and must fail validation.");
+
+        // A bounded, in-range block — validates (fpr on the closed interval, non-negative sampleSize).
+        const string inRange =
+            """{ "fpr": 0.02, "sampleSize": 500, "asOf": "2026-07-07T00:00:00Z", "source": "telemetry://x" }""";
+        var okErrors = schema.Validate(inRange);
+        await Assert.That(okErrors.Count).IsEqualTo(0)
+            .Because("a bounded, in-range reliability block must validate:\n"
+                + string.Join("\n", okErrors.Select(e => e.ToString())));
+    }
+
+    /// <summary>
     /// The declaration shape: <c>class</c> (the DR-1 typed gate identity) and
     /// <c>id</c> are REQUIRED; <c>reliability</c> is OPTIONAL (a freshly-declared
     /// gate carries none). <c>class</c> is a <c>$ref</c> to the shared

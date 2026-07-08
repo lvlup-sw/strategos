@@ -12,7 +12,7 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// The `answerKind: &quot;noAnswerRecorded&quot;` arm of `AbstentionResponse` (DR-16): a
+/// The `answerKind: &quot;no_answer_recorded&quot;` arm of `AbstentionResponse` (DR-16): a
 /// recorded abstention. `nearestRecords` surfaces the closest non-matching records
 /// (may be empty) so the caller sees WHAT was searched — never a silent null. Each
 /// is a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire twin of

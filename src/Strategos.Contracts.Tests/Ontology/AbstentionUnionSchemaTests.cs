@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 using NJsonSchema;
 
@@ -39,10 +40,11 @@ public sealed class AbstentionUnionSchemaTests
     private const string GeneratedNs = "Strategos.Contracts.Generated";
 
     // These constants ARE the C# union's shape (read from the task-020 files):
-    // OntologyAnswerUnion pins `answerKind`; the arms are "answer" / "noAnswerRecorded".
+    // OntologyAnswerUnion pins `answerKind`; the arms are "answer" / "no_answer_recorded"
+    // (both wire values snake_case — DR-1 shared-Zod-consumer casing).
     private const string DiscriminatorWireName = "answerKind";
     private const string AnswerDiscriminator = "answer";
-    private const string NoAnswerDiscriminator = "noAnswerRecorded";
+    private const string NoAnswerDiscriminator = "no_answer_recorded";
 
     // ---------------------------------------------------------------------
     // DR-16 — the discriminated-union emission shape (schema side).
@@ -82,13 +84,13 @@ public sealed class AbstentionUnionSchemaTests
         await Assert.That(noAnswer.GetProperty("properties").GetProperty(DiscriminatorWireName)
                 .GetProperty("const").GetString())
             .IsEqualTo(NoAnswerDiscriminator)
-            .Because("the NoAnswerRecorded arm pins answerKind: \"noAnswerRecorded\" (mirrors the C# union).");
+            .Because("the NoAnswerRecorded arm pins answerKind: \"no_answer_recorded\" (mirrors the C# union).");
     }
 
     /// <summary>
     /// The generated C# surface is a <c>[JsonPolymorphic]</c> ABSTRACT RECORD whose
     /// discriminator property is <c>answerKind</c> and whose two <c>[JsonDerivedType]</c>
-    /// mappings bind <c>answer</c> → <c>Answer</c> and <c>noAnswerRecorded</c> →
+    /// mappings bind <c>answer</c> → <c>Answer</c> and <c>no_answer_recorded</c> →
     /// <c>NoAnswerRecorded</c> — the exact twin of the MCP <c>OntologyAnswerUnion</c>.
     /// The arms are sealed records deriving from the base, and (like the MCP arms) do
     /// NOT re-declare the discriminator as an ordinary property (STJ owns it).
@@ -131,7 +133,7 @@ public sealed class AbstentionUnionSchemaTests
             .Because("[JsonDerivedType(typeof(Answer), \"answer\")] must bind the answer arm.");
         await Assert.That(derived.ContainsKey(NoAnswerDiscriminator)
                 && derived[NoAnswerDiscriminator] == noAnswerType).IsTrue()
-            .Because("[JsonDerivedType(typeof(NoAnswerRecorded), \"noAnswerRecorded\")] must bind the abstention arm.");
+            .Because("[JsonDerivedType(typeof(NoAnswerRecorded), \"no_answer_recorded\")] must bind the abstention arm.");
 
         // The arms are sealed records deriving from the base.
         await Assert.That(answerType!.IsSealed).IsTrue()
@@ -149,6 +151,48 @@ public sealed class AbstentionUnionSchemaTests
             .Because("the Answer arm must not re-declare the answerKind discriminator (STJ owns it).");
         await Assert.That(noAnswerType.GetProperty("AnswerKind")).IsNull()
             .Because("the NoAnswerRecorded arm must not re-declare the answerKind discriminator (STJ owns it).");
+    }
+
+    /// <summary>
+    /// DR-1 (casing) — the abstention discriminator WIRE VALUE is snake_case, the
+    /// same frozen-value guard the <c>GateClass</c>/<c>ForkTrigger</c> vocabularies
+    /// carry. This is the regression sentinel for FIX-2 H2: the arm once pinned the
+    /// lone camelCase multi-word wire value <c>"noAnswerRecorded"</c> in the whole
+    /// contract set; a future re-camelCasing (schema const OR generated
+    /// <c>[JsonDerivedType]</c>) must go red here. Asserted on BOTH the emitted schema
+    /// const (the wire truth) and the generated discriminator binding.
+    /// </summary>
+    [Test]
+    public async Task AbstentionDiscriminator_WireValueIsSnakeCase_NotCamelCase()
+    {
+        // Strict snake_case: lowercase words joined by single underscores — no
+        // uppercase letter can slip back in (the "noAnswerRecorded" regression).
+        await Assert.That(NoAnswerDiscriminator).IsEqualTo("no_answer_recorded")
+            .Because("the abstention arm's wire value is snake_case (DR-1), never camelCase.");
+        await Assert.That(Regex.IsMatch(NoAnswerDiscriminator, "^[a-z0-9]+(_[a-z0-9]+)*$")).IsTrue()
+            .Because("the discriminator must be snake_case; a camelCase value (e.g. \"noAnswerRecorded\") is a DR-1 violation.");
+        await Assert.That(NoAnswerDiscriminator.Any(char.IsUpper)).IsFalse()
+            .Because("no uppercase letter may appear in the snake_case wire value.");
+
+        // The emitted schema const IS the snake_case wire value.
+        var noAnswer = await EventSchemas.LoadAsync("NoAnswerRecorded");
+        var schemaConst = noAnswer.GetProperty("properties").GetProperty(DiscriminatorWireName)
+            .GetProperty("const").GetString();
+        await Assert.That(schemaConst).IsEqualTo(NoAnswerDiscriminator)
+            .Because("the emitted NoAnswerRecorded.json const must be the snake_case wire value.");
+
+        // The generated [JsonDerivedType] binds the snake_case discriminator to the arm.
+        var asm = typeof(ContractsMarker).Assembly;
+        var unionType = asm.GetType($"{GeneratedNs}.AbstentionResponse");
+        var noAnswerType = asm.GetType($"{GeneratedNs}.NoAnswerRecorded");
+        await Assert.That(unionType).IsNotNull()
+            .Because("the codegen must emit the AbstentionResponse [JsonPolymorphic] base.");
+
+        var derived = unionType!.GetCustomAttributes<JsonDerivedTypeAttribute>()
+            .ToDictionary(a => a.TypeDiscriminator?.ToString()!, a => a.DerivedType, StringComparer.Ordinal);
+        await Assert.That(derived.ContainsKey(NoAnswerDiscriminator)
+                && derived[NoAnswerDiscriminator] == noAnswerType).IsTrue()
+            .Because("the generated [JsonDerivedType] must bind the snake_case \"no_answer_recorded\" to the abstention arm.");
     }
 
     /// <summary>

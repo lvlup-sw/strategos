@@ -178,7 +178,7 @@ public sealed class AbstentionUnionTests
 
         var json = JsonSerializer.Serialize(result);
 
-        await Assert.That(json).Contains("\"answerKind\":\"noAnswerRecorded\"");
+        await Assert.That(json).Contains("\"answerKind\":\"no_answer_recorded\"");
         await Assert.That(json).Contains("\"_meta\"");
         await Assert.That(json).Contains("\"nearestRecords\"");
     }
