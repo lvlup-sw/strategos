@@ -127,8 +127,11 @@ public sealed class RoundTripIrFidelityTests
     }
 
     /// <summary>
-    /// A step's retry policy round-trips value-for-value: the model step's
-    /// <c>Retry.MaxAttempts</c> equals the wire configuration's <c>MaxAttempts</c>.
+    /// A step's retry policy round-trips value-for-value across ALL five sub-fields: the model step's
+    /// <c>Retry</c> carries <c>MaxAttempts</c>, <c>InitialDelay</c> and <c>MaxDelay</c> (parsed back
+    /// from the wire ISO-8601 durations), <c>BackoffMultiplier</c>, and <c>UseJitter</c> — not just
+    /// <c>MaxAttempts</c> (L1: the delay-shaping sub-fields were previously untested, so a bridge
+    /// regression dropping any of them passed the suite).
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -146,11 +149,26 @@ public sealed class RoundTripIrFidelityTests
             .Because("the exported JSON must carry the retry configuration.");
         await Assert.That(wireRetry!.MaxAttempts).IsEqualTo(4);
 
+        // The delay-shaping sub-fields are exported (defaults from RetryConfiguration.Create): assert
+        // the wire actually carries each so the round-trip below is a real comparison, not vacuous.
+        await Assert.That(wireRetry.InitialDelay).IsNotNull();
+        await Assert.That(wireRetry.MaxDelay).IsNotNull();
+        await Assert.That(wireRetry.BackoffMultiplier).IsNotNull();
+        await Assert.That(wireRetry.UseJitter).IsNotNull();
+
         var modelStep = model.Steps!.Single(s => s.StepName == "FidProcessStep");
         await Assert.That(modelStep.Retry).IsNotNull()
             .Because("the bridge must carry the wire retry policy onto the model step.");
         await Assert.That(modelStep.Retry!.MaxAttempts).IsEqualTo(wireRetry.MaxAttempts)
             .Because("the model's retry MaxAttempts must match the wire value field-for-field.");
+        await Assert.That(modelStep.Retry.InitialDelay).IsEqualTo(XmlConvert.ToTimeSpan(wireRetry.InitialDelay!))
+            .Because("the model's InitialDelay must equal the wire ISO-8601 duration parsed back.");
+        await Assert.That(modelStep.Retry.MaxDelay).IsEqualTo(XmlConvert.ToTimeSpan(wireRetry.MaxDelay!))
+            .Because("the model's MaxDelay must equal the wire ISO-8601 duration parsed back.");
+        await Assert.That(modelStep.Retry.BackoffMultiplier).IsEqualTo(wireRetry.BackoffMultiplier)
+            .Because("the model's BackoffMultiplier must match the wire value field-for-field.");
+        await Assert.That(modelStep.Retry.UseJitter).IsEqualTo(wireRetry.UseJitter ?? false)
+            .Because("the model's UseJitter must match the wire value field-for-field.");
     }
 
     /// <summary>
@@ -177,6 +195,59 @@ public sealed class RoundTripIrFidelityTests
         await Assert.That(modelStep.Timeout!.Timeout).IsEqualTo(XmlConvert.ToTimeSpan(wireTimeout!))
             .Because("the model's timeout must equal the wire ISO-8601 duration parsed back.");
         await Assert.That(modelStep.Timeout.Timeout).IsEqualTo(TimeSpan.FromSeconds(45));
+    }
+
+    /// <summary>
+    /// M3: a step's compensation (rollback) policy round-trips field-for-field. The model step's
+    /// <c>Compensation</c> carries the resolved compensation step type (its namespaced descriptor,
+    /// leaf = the wire simple-name moniker), the <c>RequiredOnFailure</c> default, and
+    /// <c>IsRegisteredStep</c> = true (the moniker resolves against the test assembly); and the
+    /// compensation step type is FOLDED into the model's step list (so it gets its worker command /
+    /// handler / completed event / DI registration) while staying OFF the linear phase-name chain. A
+    /// regression dropping the compensation fold or flipping the <c>RequiredOnFailure</c> default was
+    /// previously undetectable across the whole suite.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep()
+    {
+        var (dto, model) = BridgeRoundTrip(
+            Workflow<FidState>.Create("rt-comp")
+                .StartWith<FidValidateStep>()
+                .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>())
+                .Finally<FidCompleteStep>(),
+            "rt-comp");
+
+        var wireComp = FindSkill(dto, "FidProcessStep").Configuration?.Compensation;
+        await Assert.That(wireComp).IsNotNull()
+            .Because("the exported JSON must carry the compensation configuration.");
+        await Assert.That(wireComp!.CompensationStepType).IsEqualTo("FidCompensateStep")
+            .Because("the wire compensation moniker is the compensation step's simple type name (LB-2).");
+
+        var modelStep = model.Steps!.Single(s => s.StepName == "FidProcessStep");
+        await Assert.That(modelStep.Compensation).IsNotNull()
+            .Because("the bridge must carry the wire compensation policy onto the model step.");
+        await Assert.That(
+                modelStep.Compensation!.CompensationStepTypeName.EndsWith("." + wireComp.CompensationStepType!, StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the model's compensation type name must be the namespaced form of the wire moniker.");
+        await Assert.That(modelStep.Compensation.RequiredOnFailure).IsEqualTo(wireComp.RequiredOnFailure ?? true)
+            .Because("the model's RequiredOnFailure must match the wire value (default true) field-for-field.");
+        await Assert.That(modelStep.Compensation.IsRegisteredStep).IsTrue()
+            .Because("the compensation moniker resolves to a real IWorkflowStep<FidState> in the test assembly.");
+
+        // The compensation step type is folded into the model's step MODELS (for its worker command /
+        // handler / DI registration) but NOT onto the linear phase-name chain (it is reached only via
+        // the saga compensation handler, never the happy path).
+        var foldedComp = model.Steps!.SingleOrDefault(s => s.StepName == "FidCompensateStep");
+        await Assert.That(foldedComp).IsNotNull()
+            .Because("FoldCompensationSteps must add the compensation step type to the model step list.");
+        await Assert.That(
+                foldedComp!.StepTypeName.EndsWith(".FidCompensateStep", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the folded compensation StepModel must carry the compensation step's descriptor.");
+        await Assert.That(model.StepNames).DoesNotContain("FidCompensateStep")
+            .Because("the compensation step stays off the linear phase-name chain (compensation-handler-only).");
     }
 
     /// <summary>
@@ -498,6 +569,14 @@ public sealed class FidRefineStep : IWorkflowStep<FidState>
 
 /// <summary>A failure-handler step for the fidelity fixtures.</summary>
 public sealed class FidLogStep : IWorkflowStep<FidState>
+{
+    /// <inheritdoc />
+    public Task<StepResult<FidState>> ExecuteAsync(FidState s, StepContext c, CancellationToken ct)
+        => Task.FromResult(StepResult<FidState>.FromState(s));
+}
+
+/// <summary>A compensation (rollback) step for the fidelity fixtures.</summary>
+public sealed class FidCompensateStep : IWorkflowStep<FidState>
 {
     /// <inheritdoc />
     public Task<StepResult<FidState>> ExecuteAsync(FidState s, StepContext c, CancellationToken ct)

@@ -173,15 +173,19 @@ internal sealed class JsonValue
             return i;
         }
 
+        // An integer lexeme outside int range fails CLOSED (returns null) rather than silently
+        // wrapping via unchecked truncation (e.g. 4000000000 -> -294967296), which would corrupt a
+        // maxAttempts / maxIterations / maxForks slot into a nonsensical value.
         if (long.TryParse(this._text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l))
         {
-            return unchecked((int)l);
+            return l >= int.MinValue && l <= int.MaxValue ? (int)l : (int?)null;
         }
 
-        // Tolerate a fractional/exponential lexeme in an integer slot (e.g. "5.0").
+        // Tolerate a fractional/exponential lexeme in an integer slot (e.g. "5.0"), but still fail
+        // closed when the value is outside int range instead of wrapping.
         if (double.TryParse(this._text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
         {
-            return unchecked((int)d);
+            return d >= int.MinValue && d <= int.MaxValue ? (int)d : (int?)null;
         }
 
         return null;
@@ -209,11 +213,23 @@ internal sealed class JsonValue
 /// </summary>
 internal static class MinimalJsonReader
 {
+    /// <summary>
+    /// The maximum object/array nesting depth the parser will descend before rejecting the input.
+    /// The recursive-descent parser recurses once per nested container, so an unbounded input (e.g.
+    /// thousands of <c>[</c>) would otherwise overflow the CLR stack with an UNCATCHABLE
+    /// <see cref="StackOverflowException"/>, crashing the whole generator/IDE host — defeating the
+    /// file's own "never a generator crash" contract. Exceeding this bound throws a CATCHABLE
+    /// <see cref="JsonParseException"/> instead, which the import front-end turns into a stable build
+    /// diagnostic. A well-formed workflow document nests only a handful of levels, so a bound this
+    /// generous never rejects a legitimate import while still fitting comfortably within the stack.
+    /// </summary>
+    private const int MaxDepth = 128;
+
     /// <summary>Parses a JSON document into a <see cref="JsonValue"/> tree.</summary>
     /// <param name="text">The JSON text.</param>
     /// <returns>The parsed root node.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="text"/> is null.</exception>
-    /// <exception cref="JsonParseException">When the text is not well-formed JSON.</exception>
+    /// <exception cref="JsonParseException">When the text is not well-formed JSON or nests beyond <see cref="MaxDepth"/>.</exception>
     public static JsonValue Parse(string text)
     {
         if (text is null)
@@ -223,7 +239,7 @@ internal static class MinimalJsonReader
 
         var cursor = new Cursor(text);
         cursor.SkipWhitespace();
-        var value = ParseValue(ref cursor);
+        var value = ParseValue(ref cursor, depth: 1);
         cursor.SkipWhitespace();
         if (!cursor.AtEnd)
         {
@@ -233,8 +249,16 @@ internal static class MinimalJsonReader
         return value;
     }
 
-    private static JsonValue ParseValue(ref Cursor cursor)
+    private static JsonValue ParseValue(ref Cursor cursor, int depth)
     {
+        // Depth guard (never a generator crash): each nested object/array recurses through this
+        // method once, so bounding the depth here bounds the recursion — turning a would-be
+        // StackOverflowException (uncatchable) into a catchable JsonParseException.
+        if (depth > MaxDepth)
+        {
+            throw cursor.Error($"maximum nesting depth of {MaxDepth} exceeded");
+        }
+
         if (cursor.AtEnd)
         {
             throw cursor.Error("unexpected end of input");
@@ -244,9 +268,9 @@ internal static class MinimalJsonReader
         switch (c)
         {
             case '{':
-                return ParseObject(ref cursor);
+                return ParseObject(ref cursor, depth);
             case '[':
-                return ParseArray(ref cursor);
+                return ParseArray(ref cursor, depth);
             case '"':
                 return JsonValue.NewString(ParseString(ref cursor));
             case 't':
@@ -265,7 +289,7 @@ internal static class MinimalJsonReader
         }
     }
 
-    private static JsonValue ParseObject(ref Cursor cursor)
+    private static JsonValue ParseObject(ref Cursor cursor, int depth)
     {
         cursor.Advance(); // consume '{'
         var members = new Dictionary<string, JsonValue>(StringComparer.Ordinal);
@@ -291,7 +315,7 @@ internal static class MinimalJsonReader
             }
 
             cursor.SkipWhitespace();
-            members[name] = ParseValue(ref cursor); // last-writer-wins on duplicate keys
+            members[name] = ParseValue(ref cursor, depth + 1); // last-writer-wins on duplicate keys
             cursor.SkipWhitespace();
 
             if (cursor.TryConsume(','))
@@ -310,7 +334,7 @@ internal static class MinimalJsonReader
         return JsonValue.NewObject(members);
     }
 
-    private static JsonValue ParseArray(ref Cursor cursor)
+    private static JsonValue ParseArray(ref Cursor cursor, int depth)
     {
         cursor.Advance(); // consume '['
         var items = new List<JsonValue>();
@@ -323,7 +347,7 @@ internal static class MinimalJsonReader
         while (true)
         {
             cursor.SkipWhitespace();
-            items.Add(ParseValue(ref cursor));
+            items.Add(ParseValue(ref cursor, depth + 1));
             cursor.SkipWhitespace();
 
             if (cursor.TryConsume(','))

@@ -101,10 +101,24 @@ internal static class WireToModelBridge
 
         var diagnostics = new List<Diagnostic>();
 
+        // DR-12 / DR-18: a recognized *.workflow.json that parses as well-formed JSON but binds to a
+        // structurally schema-invalid workflow (no name, or no steps — including a non-array `steps`
+        // field the reader coerces to an empty list, or scalar values coerced to defaults) must
+        // surface a STABLE build diagnostic, not be silently swallowed. Fail closed with the stable
+        // AGWF code identity rather than returning an empty result the build never sees.
         var workflowName = definition.Name;
-        if (string.IsNullOrWhiteSpace(workflowName) || definition.Steps.Count == 0)
+        if (string.IsNullOrWhiteSpace(workflowName))
         {
-            // An unnamed or step-less document is not lowerable; nothing to emit.
+            diagnostics.Add(Diagnostic.Create(WorkflowDiagnostics.EmptyWorkflowName, Location.None));
+            return new BridgeResult(null, diagnostics);
+        }
+
+        if (definition.Steps.Count == 0)
+        {
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.NoStepsFound,
+                Location.None,
+                workflowName!));
             return new BridgeResult(null, diagnostics);
         }
 
@@ -464,11 +478,21 @@ internal static class WireToModelBridge
         var stepTypeName = symbol.ToDisplayString(NamespacedTypeFormat);
         var instanceName = string.IsNullOrEmpty(step.InstanceName) ? null : step.InstanceName;
 
-        var (retry, timeout, compensation, confidence) = MapConfiguration(
-            step.Configuration,
-            compilation,
-            jsonFilePath,
-            diagnostics);
+        if (!TryMapConfiguration(
+                step.Configuration,
+                compilation,
+                jsonFilePath,
+                diagnostics,
+                out var retry,
+                out var timeout,
+                out var compensation,
+                out var confidence))
+        {
+            // An unresolvable compensation moniker (its Error diagnostic already recorded) makes the
+            // whole workflow non-lowerable — matching the fail-closed primary-step path — rather than
+            // silently lowering a saga that references an unregistered compensation step.
+            return null;
+        }
 
         return StepModel.Create(
             symbol.Name,
@@ -484,20 +508,33 @@ internal static class WireToModelBridge
     /// Maps a wire step configuration tree to the generator's resilience IR
     /// (<see cref="RetryModel"/> / <see cref="TimeoutModel"/> / <see cref="CompensationModel"/> /
     /// <see cref="ConfidenceModel"/>). A validation guard (LB-1 declarative predicate) is a rejected
-    /// carrier (task 018) and is intentionally not mapped here.
+    /// carrier (task 018) and is intentionally not mapped here. Returns <see langword="false"/> (with
+    /// the resolution diagnostic recorded) when a declared compensation moniker does not resolve, so
+    /// the caller can treat the whole workflow as non-lowerable — matching the fail-closed
+    /// primary-step path (<see cref="ResolveStepSymbol"/>) rather than silently lowering a saga that
+    /// references an unregistered compensation step.
     /// </summary>
-    private static (RetryModel? Retry, TimeoutModel? Timeout, CompensationModel? Compensation, ConfidenceModel? Confidence) MapConfiguration(
+    private static bool TryMapConfiguration(
         StepConfigurationDefinition? config,
         Compilation compilation,
         string jsonFilePath,
-        List<Diagnostic> diagnostics)
+        List<Diagnostic> diagnostics,
+        out RetryModel? retry,
+        out TimeoutModel? timeout,
+        out CompensationModel? compensation,
+        out ConfidenceModel? confidence)
     {
+        retry = null;
+        timeout = null;
+        compensation = null;
+        confidence = null;
+
         if (config is null)
         {
-            return (null, null, null, null);
+            return true;
         }
 
-        RetryModel? retry = config.Retry is { } r
+        retry = config.Retry is { } r
             ? new RetryModel(
                 MaxAttempts: r.MaxAttempts,
                 InitialDelay: ParseIsoDuration(r.InitialDelay),
@@ -506,30 +543,34 @@ internal static class WireToModelBridge
                 UseJitter: r.UseJitter ?? false)
             : null;
 
-        TimeoutModel? timeout = ParseIsoDuration(config.Timeout) is { } t
+        timeout = ParseIsoDuration(config.Timeout) is { } t
             ? new TimeoutModel(t)
             : null;
 
-        CompensationModel? compensation = null;
         if (config.Compensation is { } c && !string.IsNullOrEmpty(c.CompensationStepType))
         {
-            var compSymbol = WireMonikerResolver.Resolve(compilation, c.CompensationStepType!, jsonFilePath);
-            var compTypeName = compSymbol.IsResolved
-                ? compSymbol.Symbol!.ToDisplayString(NamespacedTypeFormat)
-                : c.CompensationStepType!;
+            // Fail CLOSED on an unresolvable compensation moniker: ResolveStepSymbol records the
+            // stable Error diagnostic and returns null, and we propagate the failure so no saga is
+            // lowered — the SAME contract the primary step moniker follows (was fail-open: the
+            // resolution diagnostic was discarded and the raw moniker lowered with IsRegisteredStep:false).
+            var compSymbol = ResolveStepSymbol(compilation, c.CompensationStepType!, jsonFilePath, diagnostics);
+            if (compSymbol is null)
+            {
+                return false;
+            }
+
             compensation = new CompensationModel(
-                CompensationStepTypeName: compTypeName,
+                CompensationStepTypeName: compSymbol.ToDisplayString(NamespacedTypeFormat),
                 RequiredOnFailure: c.RequiredOnFailure ?? true,
-                IsRegisteredStep: compSymbol.IsResolved);
+                IsRegisteredStep: true);
         }
 
-        ConfidenceModel? confidence = null;
         if (config.OnLowConfidence is { } handler)
         {
             confidence = MapConfidence(config.ConfidenceThreshold ?? 0.0, handler, compilation, jsonFilePath, diagnostics);
         }
 
-        return (retry, timeout, compensation, confidence);
+        return true;
     }
 
     /// <summary>
@@ -685,10 +726,17 @@ internal static class WireToModelBridge
                 return null;
             }
 
-            var approverSymbol = WireMonikerResolver.Resolve(compilation, approvalDef.ApproverType!, jsonFilePath);
-            var approverTypeName = approverSymbol.IsResolved
-                ? approverSymbol.Symbol!.ToDisplayString(NamespacedTypeFormat)
-                : approvalDef.ApproverType!;
+            // Fail CLOSED on an unresolvable approver moniker: ResolveStepSymbol records the stable
+            // Error diagnostic and returns null, and we treat the workflow as non-lowerable — the
+            // SAME contract the primary step moniker follows (was fail-open: the resolution diagnostic
+            // was discarded and the raw moniker lowered into the approval).
+            var approverSymbol = ResolveStepSymbol(compilation, approvalDef.ApproverType!, jsonFilePath, diagnostics);
+            if (approverSymbol is null)
+            {
+                return null;
+            }
+
+            var approverTypeName = approverSymbol.ToDisplayString(NamespacedTypeFormat);
 
             if (!stepIdToName.TryGetValue(approvalDef.PrecedingStepId!, out var precedingStepName))
             {
@@ -696,7 +744,7 @@ internal static class WireToModelBridge
             }
 
             approvals.Add(ApprovalModel.Create(
-                approvalDef.ApprovalPointId ?? approverSymbol.Symbol?.Name ?? "Approval",
+                approvalDef.ApprovalPointId ?? approverSymbol.Name,
                 approverTypeName,
                 precedingStepName));
         }

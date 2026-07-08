@@ -256,4 +256,98 @@ public sealed class MinimalJsonReaderTests
         await Assert.That(() => WireWorkflowReader.Read("[ 1, 2, 3 ]"))
             .Throws<JsonParseException>();
     }
+
+    /// <summary>
+    /// M1: deeply-nested input surfaces a CATCHABLE <see cref="JsonParseException"/> at the
+    /// nesting-depth guard rather than recursing until an UNCATCHABLE
+    /// <see cref="StackOverflowException"/> crashes the whole generator/IDE host. The parser recurses
+    /// once per nested container, so an adversarial "thousands of <c>[</c>" input would otherwise blow
+    /// the stack — the exact failure the file's "never a generator crash" contract forbids.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Parse_DeeplyNestedInput_ThrowsJsonParseExceptionNotStackOverflow()
+    {
+        // 1,000,000 opening brackets: far past any depth guard, and deep enough that recursing one
+        // CLR frame per level (the pre-fix behavior) reliably overflows the ~1 MB thread stack — an
+        // UNCATCHABLE crash. The guard trips at its bound (a few hundred frames in), so this throws a
+        // CATCHABLE JsonParseException instead, fast, without ever building the deep structure.
+        var deeplyNested = new string('[', 1_000_000);
+
+        await Assert.That(() => MinimalJsonReader.Parse(deeplyNested))
+            .Throws<JsonParseException>();
+    }
+
+    /// <summary>
+    /// M1 (negative control): a legitimately-nested document well within the depth bound still parses,
+    /// proving the guard rejects only adversarial depth, not real workflow nesting.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Parse_ModeratelyNestedInput_ParsesWithoutError()
+    {
+        // 40 levels of nested arrays around a scalar — deeper than any real workflow document, still
+        // comfortably under the depth bound.
+        const int levels = 40;
+        var doc = new string('[', levels) + "1" + new string(']', levels);
+
+        var root = MinimalJsonReader.Parse(doc);
+
+        var node = root;
+        for (var i = 0; i < levels; i++)
+        {
+            await Assert.That(node.Kind).IsEqualTo(JsonKind.Array);
+            await Assert.That(node.Items.Count).IsEqualTo(1);
+            node = node.Items[0];
+        }
+
+        await Assert.That(node.AsIntOrNull()).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// L2: an integer lexeme outside <see cref="int"/> range fails CLOSED (yields null) instead of
+    /// silently wrapping via unchecked truncation (e.g. 4000000000 -> -294967296), which would
+    /// corrupt a maxAttempts / maxIterations / maxForks slot into a nonsensical value.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task AsIntOrNull_ValueOutsideIntRange_ReturnsNullNotWrapped()
+    {
+        var overLong = MinimalJsonReader.Parse("{ \"n\": 4000000000 }");
+        await Assert.That(overLong.TryGetMember("n", out var nLong)).IsTrue();
+        await Assert.That(nLong.AsIntOrNull()).IsNull()
+            .Because("an out-of-int-range integer must fail closed, not wrap to a negative value.");
+
+        var overDouble = MinimalJsonReader.Parse("{ \"n\": 9e18 }");
+        await Assert.That(overDouble.TryGetMember("n", out var nDouble)).IsTrue();
+        await Assert.That(nDouble.AsIntOrNull()).IsNull()
+            .Because("an out-of-int-range fractional/exponential lexeme must also fail closed.");
+
+        var negOverLong = MinimalJsonReader.Parse("{ \"n\": -4000000000 }");
+        await Assert.That(negOverLong.TryGetMember("n", out var nNeg)).IsTrue();
+        await Assert.That(nNeg.AsIntOrNull()).IsNull()
+            .Because("a large negative out-of-range value must fail closed too.");
+    }
+
+    /// <summary>
+    /// L2 (tolerance preserved): an in-range fractional lexeme in an integer slot (e.g. "5.0") still
+    /// coerces to its truncated integer — the deliberate tolerance the fix must NOT regress.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task AsIntOrNull_InRangeFractionalLexeme_StillCoercesToInt()
+    {
+        var doc = MinimalJsonReader.Parse("{ \"a\": 5.0, \"b\": 2147483647, \"c\": -2147483648 }");
+
+        await Assert.That(doc.TryGetMember("a", out var a)).IsTrue();
+        await Assert.That(a.AsIntOrNull()).IsEqualTo(5);
+
+        await Assert.That(doc.TryGetMember("b", out var b)).IsTrue();
+        await Assert.That(b.AsIntOrNull()).IsEqualTo(int.MaxValue)
+            .Because("the in-range int boundary must still parse.");
+
+        await Assert.That(doc.TryGetMember("c", out var c)).IsTrue();
+        await Assert.That(c.AsIntOrNull()).IsEqualTo(int.MinValue)
+            .Because("the in-range int boundary must still parse.");
+    }
 }
