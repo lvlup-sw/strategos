@@ -85,6 +85,9 @@ public sealed class RoundTripEquivalenceTests
     /// <summary>
     /// The corpus combinator tags that must land in bucket (b) — carrier-bearing ⇒ the specific
     /// DR-14 rejection diagnostic fires, no saga. Each maps to the ONE AGWF id its carrier triggers.
+    /// Every corpus <c>awaitApproval</c> fixture is context-bearing (see the M10 note in
+    /// <c>WorkflowCorpus.AwaitApprovalCases</c>: builder-produced context-free approvals crash the
+    /// import bridge on a GUID <c>approvalPointId</c>), so the whole tag maps to the AGWF031 carrier.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> CarrierTagToCode =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -206,9 +209,10 @@ public sealed class RoundTripEquivalenceTests
             // The partition invariant: exactly one of {saga emitted, carrier rejected}.
             if (sagaEmitted == (rejectionCode is not null))
             {
+                var allDiags = string.Join(" || ", result.Diagnostics.Select(d => d.Id + ": " + d.GetMessage()).Distinct());
                 violations.Add(
                     $"{c.Tag}/{c.Name}: NOT exactly one bucket (sagaEmitted={sagaEmitted}, " +
-                    $"rejection={rejectionCode ?? "<none>"}).");
+                    $"rejection={rejectionCode ?? "<none>"}, allDiagnostics=[{allDiags}]).");
                 continue;
             }
 

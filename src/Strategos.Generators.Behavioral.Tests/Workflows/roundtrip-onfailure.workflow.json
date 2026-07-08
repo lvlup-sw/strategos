@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "name": "roundtrip-on-failure-import",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "RtOnFailureImportStart", "isTerminal": false, "stepType": "RtOnFailureImportStart" },
+    { "kind": "skill", "stepId": "s2", "stepName": "RtOnFailureImportWork", "isTerminal": false, "stepType": "RtOnFailureImportWork" },
+    { "kind": "skill", "stepId": "s3", "stepName": "RtOnFailureImportEnd", "isTerminal": true, "stepType": "RtOnFailureImportEnd" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": true },
+    { "transitionId": "t2", "fromStepId": "s2", "toStepId": "s3", "isDefault": true }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [
+    {
+      "handlerId": "h1",
+      "scope": "workflow",
+      "triggerStepId": null,
+      "steps": [
+        { "kind": "skill", "stepId": "h1s1", "stepName": "RtOnFailureImportLog", "isTerminal": false, "stepType": "RtOnFailureImportLog" }
+      ],
+      "isTerminal": false
+    }
+  ],
+  "approvalPoints": [],
+  "entryStepId": "s1",
+  "terminalStepId": "s3"
+}

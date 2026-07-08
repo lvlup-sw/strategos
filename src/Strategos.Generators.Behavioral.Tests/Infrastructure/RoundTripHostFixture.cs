@@ -63,11 +63,16 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
                     .IntegrateWithWolverine()
                     .ApplyAllDatabaseChangesOnStartup();
 
-                // The config family in both authoring forms (twin-equivalence) and the fork import
-                // (runtime proof), all lowered through the SAME saga emitters (INV-1).
+                // The config family in both authoring forms (twin-equivalence), the fork import
+                // (runtime proof) plus its C# twin (DR-15 twin equivalence — registered so the SKIPPED
+                // ForkJoinCSharpTwin_RunsIdentically_ToJsonImport goes green once strategos#155 lands),
+                // and the onFailure import (bucket-(a) compile + runtime proof) — all lowered through
+                // the SAME saga emitters (INV-1).
                 opts.Services.AddRoundtripForkImportWorkflow();
+                opts.Services.AddRoundtripForkTwinWorkflow();
                 opts.Services.AddRoundtripConfigImportWorkflow();
                 opts.Services.AddRoundtripConfigTwinWorkflow();
+                opts.Services.AddRoundtripOnFailureImportWorkflow();
 
                 opts.Services.AddSingleton(this.Invocations);
                 opts.Services.AddResourceSetupOnStartup();

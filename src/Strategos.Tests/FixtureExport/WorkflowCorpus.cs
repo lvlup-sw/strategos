@@ -171,20 +171,36 @@ internal static class WorkflowCorpus
         }
     }
 
-    // awaitApproval — human-approval pauses with a CLR approver type.
+    // awaitApproval — human-approval pauses with a CLR approver type. Every corpus approval here is
+    // CONTEXT-BEARING (.WithContext) and therefore a rejected carrier (bucket b, AGWF031).
+    //
+    // NOTE (M10, DR-15): a CONTEXT-FREE approval is importable per DR-12/DR-14 (bucket a), but a
+    // BUILDER-produced context-free approval cannot currently be added here — the builder mints
+    // ApprovalPointId = Guid.NewGuid().ToString("N") (ApprovalDefinition.Create), and the IMPORT bridge
+    // (WireToModelBridge.MapApprovals) feeds that raw GUID to ApprovalModel.Create, which requires a
+    // VALID C# IDENTIFIER, so the generator throws (CS8785: "'…' is not a valid C# identifier
+    // (approvalPointName)"). The C#-authoring path does not hit this because ApprovalExtractor derives a
+    // valid name via GenerateApprovalPointName(approverType, index) and ignores the GUID id. Fixing the
+    // divergence (the import bridge must derive/sanitize the approval name the same way) lives in the
+    // import layer (owned by another agent), so the context-free importable arm is left unexercised here
+    // and reported as a blocker rather than added as a red fixture.
     private static IEnumerable<Case> AwaitApprovalCases()
     {
         for (var i = 0; i < 13; i++)
         {
             var n = i;
+
+            // Context-bearing (bucket b): a static-context approval — a lossy carrier the import rejects.
             yield return new Case("awaitApproval", $"approval-context-{n:D2}",
                 Workflow<TestWorkflowState>.Create($"approval-context-{n}")
                     .StartWith<ValidateStep>()
                     .AwaitApproval<ManagerApprover>(a => a.WithContext($"Approve request {n}"))
                     .Finally<CompleteStep>());
 
-            yield return new Case("awaitApproval", $"approval-plain-{n:D2}",
-                Workflow<TestWorkflowState>.Create($"approval-plain-{n}")
+            // Context-bearing (bucket b): renamed from the misleading "approval-plain" — it also carries
+            // .WithContext(...), so it is a context-bearing carrier, not a plain/context-free approval.
+            yield return new Case("awaitApproval", $"approval-signoff-{n:D2}",
+                Workflow<TestWorkflowState>.Create($"approval-signoff-{n}")
                     .StartWith<ValidateStep>()
                     .Then<ProcessStep>()
                     .AwaitApproval<ManagerApprover>(a => a.WithContext($"Sign off {n}"))
