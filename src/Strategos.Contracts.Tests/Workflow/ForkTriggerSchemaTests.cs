@@ -26,18 +26,27 @@ namespace Strategos.Contracts.Tests.Workflow;
 /// C# enum round-trips each member to its snake_case wire value via the
 /// <c>[JsonStringEnumMemberName]</c> + <c>JsonStringEnumConverter&lt;T&gt;</c> path
 /// (the GateClass/DR-1 precedent) by VALUE, never ordinal (INV-8); (c) an
-/// occurrence missing its REQUIRED evidence fails schema validation (no unjustified
-/// fork); (d) the occurrence carries the explicit <c>schemaVersion</c> version
-/// marker; and (e) appending a future <c>exploratory</c> trigger member is a
-/// NON-BREAKING additive change under the DR-18 enum-evolution policy — the reason
-/// the marker exists.
+/// occurrence missing its REQUIRED evidence — or carrying an EMPTY evidence map —
+/// fails schema validation (no unjustified fork); (d) the occurrence carries the
+/// explicit <c>schemaVersion</c> version marker; and (e) appending a future
+/// <c>exploratory</c> trigger member is a NON-BREAKING additive change under the
+/// DR-18 enum-evolution policy — the reason the marker exists.
 /// </summary>
+/// <remarks>
+/// The evidence is a field-name → value MAP (<c>ForkEvidence</c> = <c>Record&lt;string&gt;</c>),
+/// so ANY permitted trigger's declared evidence fields are representable on the wire
+/// (a <c>gate_contradiction</c> fork carries <c>leftGateId</c>/<c>rightGateId</c>, a
+/// <c>ratification_failure</c> fork carries <c>provisionalStampEventId</c>/<c>taints</c>).
+/// The schema floor is only that the map is present and non-empty; PER-TRIGGER
+/// completeness (WHICH fields a given trigger requires — author-declared per edge, not
+/// fixed in the closed enum) is enforced by the generated guard (DR-9), never at the
+/// contract level.
+/// </remarks>
 [Property("Category", "WorkflowIr")]
 public sealed class ForkTriggerSchemaTests
 {
     private const string TriggerSchema = "ForkTrigger";
     private const string OccurrenceSchema = "ForkOccurrence";
-    private const string EvidenceSchema = "ForkEvidence";
 
     // The frozen identity map: C# member name -> snake_case wire value, in the
     // exact declaration order of the closed enum (DR-8, #151). Order is part of
@@ -152,56 +161,43 @@ public sealed class ForkTriggerSchemaTests
     }
 
     /// <summary>
-    /// The evidence floor: <c>ForkEvidence</c> makes both the provisional-stamp
-    /// event id and a NON-EMPTY taint set REQUIRED, so evidence missing either fails
-    /// schema validation. This is the mechanical "no unjustified fork" enforcement at
-    /// the schema boundary (a complete block validates). <c>ForkEvidence.json</c> is
-    /// self-contained (no external <c>$ref</c>s), so it is validated directly.
+    /// The evidence shape: <c>ForkEvidence</c> is a field-name → value MAP
+    /// (<c>Record&lt;string&gt;</c>), so any permitted trigger's declared evidence fields
+    /// are representable — a <c>gate_contradiction</c> occurrence carries its own
+    /// <c>leftGateId</c>/<c>rightGateId</c>, not a fixed ratification pair. The emitted
+    /// <c>evidence</c> slot on <c>ForkOccurrence</c> refs the string-valued
+    /// <c>RecordString</c> map and carries the <c>minProperties: 1</c> non-empty floor.
     /// </summary>
     [Test]
-    public async Task ForkEvidence_MissingEventIdOrEmptyTaints_FailsSchemaValidation()
+    public async Task ForkEvidence_IsNonEmptyFieldNameValueMap()
     {
-        await Assert.That(EventSchemas.Exists(EvidenceSchema)).IsTrue()
-            .Because("`tsp compile` must emit ForkEvidence.json (run scripts/contracts-codegen.sh).");
+        await Assert.That(EventSchemas.Exists(OccurrenceSchema)).IsTrue()
+            .Because("`tsp compile` must emit ForkOccurrence.json (run scripts/contracts-codegen.sh).");
 
-        var schema = await JsonSchema.FromFileAsync(
-            Path.Combine(EventSchemas.SchemaDir, EvidenceSchema + ".json"));
+        var root = await EventSchemas.LoadAsync(OccurrenceSchema);
+        await Assert.That(root.TryGetProperty("properties", out var props)).IsTrue();
+        await Assert.That(props.TryGetProperty("evidence", out var evidence)).IsTrue()
+            .Because("ForkOccurrence carries an evidence slot.");
 
-        // Missing the provisional-stamp event id — must be rejected as REQUIRED.
-        const string missingEventId = """{ "taints": ["state:dirty"] }""";
-        var missingErrors = schema.Validate(missingEventId);
-        await Assert.That(missingErrors.Count).IsGreaterThan(0)
-            .Because("evidence without a provisional-stamp event id must fail schema validation.");
-        await Assert.That(missingErrors.Any(e =>
-                e.Kind == ValidationErrorKind.PropertyRequired
-                && e.Property == "provisionalStampEventId"))
-            .IsTrue()
-            .Because("the failure must be the MISSING REQUIRED `provisionalStampEventId`.");
+        // The evidence slot is a map ($ref to the string-valued RecordString map), not a
+        // fixed pair of ratification fields — so ANY trigger's evidence is representable.
+        await Assert.That(evidence.TryGetProperty("$ref", out var evidenceRef)).IsTrue()
+            .Because("evidence is a field-name → value map (Record<string>), carried as a $ref.");
+        await Assert.That(evidenceRef.GetString()).IsEqualTo("RecordString.json")
+            .Because("the evidence map is the string-valued RecordString map.");
 
-        // An EMPTY taint set — a fork with no taints carries no evidence.
-        const string emptyTaints =
-            """{ "provisionalStampEventId": "evt-42", "taints": [] }""";
-        var emptyErrors = schema.Validate(emptyTaints);
-        await Assert.That(emptyErrors.Count).IsGreaterThan(0)
-            .Because("an empty taint set carries no evidence and must fail (@minItems 1).");
+        // The non-empty floor: an occurrence with an empty evidence map carries no
+        // justification (@minProperties(1)); per-trigger completeness is the guard's job.
+        await Assert.That(evidence.TryGetProperty("minProperties", out var minProps)).IsTrue()
+            .Because("the evidence map declares a non-empty floor (@minProperties(1)).");
+        await Assert.That(minProps.GetInt32()).IsEqualTo(1);
 
-        // Missing the taint set entirely — required.
-        const string missingTaints =
-            """{ "provisionalStampEventId": "evt-42" }""";
-        var missingTaintErrors = schema.Validate(missingTaints);
-        await Assert.That(missingTaintErrors.Any(e =>
-                e.Kind == ValidationErrorKind.PropertyRequired
-                && e.Property == "taints"))
-            .IsTrue()
-            .Because("the taint set is REQUIRED evidence.");
-
-        // A complete evidence block — must validate.
-        const string complete =
-            """{ "provisionalStampEventId": "evt-42", "taints": ["state:dirty", "gate:contested"] }""";
-        var okErrors = schema.Validate(complete);
-        await Assert.That(okErrors.Count).IsEqualTo(0)
-            .Because("a complete evidence block must validate:\n"
-                + string.Join("\n", okErrors.Select(e => e.ToString())));
+        // The RecordString map itself is a string-valued open map (unevaluated/additional
+        // properties typed as string).
+        await Assert.That(EventSchemas.Exists("RecordString")).IsTrue()
+            .Because("the Record<string> map schema must be emitted.");
+        var mapRoot = await EventSchemas.LoadAsync("RecordString");
+        await Assert.That(mapRoot.GetProperty("type").GetString()).IsEqualTo("object");
     }
 
     /// <summary>
@@ -237,7 +233,8 @@ public sealed class ForkTriggerSchemaTests
             .IsTrue()
             .Because("an occurrence missing its REQUIRED `evidence` must fail schema validation.");
 
-        // A complete, justified occurrence — must validate (exercises $ref resolution).
+        // A complete, justified occurrence — the evidence is a non-empty field-name → value
+        // map keyed by the trigger's declared fields (exercises $ref resolution to the map).
         const string complete =
             """
             {
@@ -245,7 +242,7 @@ public sealed class ForkTriggerSchemaTests
               "trigger": "ratification_failure",
               "evidence": {
                 "provisionalStampEventId": "evt-42",
-                "taints": ["state:dirty"]
+                "taints": "state:dirty"
               }
             }
             """;
@@ -253,6 +250,24 @@ public sealed class ForkTriggerSchemaTests
         await Assert.That(okErrors.Count).IsEqualTo(0)
             .Because("a complete, justified fork occurrence must validate:\n"
                 + string.Join("\n", okErrors.Select(e => e.ToString())));
+
+        // A non-ratification trigger carrying its OWN declared evidence fields is equally
+        // representable — the map is not fixed to the ratification fields.
+        const string gateContradiction =
+            """
+            {
+              "schemaVersion": "fork.v1",
+              "trigger": "gate_contradiction",
+              "evidence": {
+                "leftGateId": "gate-L",
+                "rightGateId": "gate-R"
+              }
+            }
+            """;
+        var gateErrors = schema.Validate(gateContradiction);
+        await Assert.That(gateErrors.Count).IsEqualTo(0)
+            .Because("a gate_contradiction occurrence carrying its own evidence fields must validate:\n"
+                + string.Join("\n", gateErrors.Select(e => e.ToString())));
     }
 
     /// <summary>
@@ -294,23 +309,25 @@ public sealed class ForkTriggerSchemaTests
     /// INV-6/INV-7 mirror for the DR-8 occurrence surface: <c>ForkOccurrence</c> is a
     /// sealed record whose <c>Trigger</c> is the typed generated <c>ForkTrigger</c>
     /// enum (the shared identity, not a string) and whose <c>Evidence</c> is the
-    /// non-nullable nested <c>ForkEvidence</c> (required — no unjustified fork). A
-    /// focused mirror of the surface-wide <c>EmitterShapeTests</c>, pinned to DR-8.
+    /// non-nullable field-name → value map (<c>IReadOnlyDictionary&lt;string, string&gt;</c>,
+    /// required — no unjustified fork). A focused mirror of the surface-wide
+    /// <c>EmitterShapeTests</c>, pinned to DR-8.
     /// </summary>
     [Test]
-    public async Task ForkOccurrence_EmittedRecord_TriggerIsEnum_EvidenceRequired_InitOnly()
+    public async Task ForkOccurrence_EmittedRecord_TriggerIsEnum_EvidenceIsRequiredMap_InitOnly()
     {
         var asm = typeof(ContractsMarker).Assembly;
         var occType = asm.GetType("Strategos.Contracts.Generated.ForkOccurrence");
-        var evidenceType = asm.GetType("Strategos.Contracts.Generated.ForkEvidence");
         var triggerType = asm.GetType("Strategos.Contracts.Generated.ForkTrigger");
 
         await Assert.That(occType).IsNotNull()
             .Because("the codegen must emit Strategos.Contracts.Generated.ForkOccurrence.");
-        await Assert.That(evidenceType).IsNotNull()
-            .Because("the codegen must emit Strategos.Contracts.Generated.ForkEvidence.");
         await Assert.That(triggerType).IsNotNull()
             .Because("the codegen must emit Strategos.Contracts.Generated.ForkTrigger.");
+
+        // The monomorphic ForkEvidence record is gone — evidence is now a map.
+        await Assert.That(asm.GetType("Strategos.Contracts.Generated.ForkEvidence")).IsNull()
+            .Because("the monomorphic ForkEvidence record is replaced by a field-name → value map.");
 
         await Assert.That(occType!.IsSealed).IsTrue()
             .Because("ForkOccurrence must be a sealed record (INV-6).");
@@ -321,11 +338,11 @@ public sealed class ForkTriggerSchemaTests
         await Assert.That(triggerProp!.PropertyType).IsEqualTo(triggerType)
             .Because("ForkOccurrence.Trigger must be the typed ForkTrigger enum (INV-8).");
 
-        // Evidence is the required (non-nullable) nested block.
+        // Evidence is the required (non-nullable) field-name → value map.
         var evidenceProp = occType.GetProperty("Evidence");
         await Assert.That(evidenceProp).IsNotNull();
-        await Assert.That(evidenceProp!.PropertyType).IsEqualTo(evidenceType)
-            .Because("ForkOccurrence.Evidence must be the nested ForkEvidence block.");
+        await Assert.That(evidenceProp!.PropertyType).IsEqualTo(typeof(IReadOnlyDictionary<string, string>))
+            .Because("ForkOccurrence.Evidence must be a field-name → value map (Record<string>).");
         await Assert.That(IsInitOnly(evidenceProp)).IsTrue()
             .Because("Evidence must be init-only (INV-7).");
         await Assert.That(new NullabilityInfoContext().Create(evidenceProp).ReadState)
