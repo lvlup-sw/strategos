@@ -18,15 +18,20 @@ namespace Strategos.Contracts.Generated;
 /// site (DR-9); it is never hand-authored.
 /// 
 /// It carries the closed trigger (ForkTrigger) that fired plus the runtime
-/// evidence VALUES that justify it. Both are REQUIRED — an occurrence missing
-/// its trigger or its evidence fails schema validation, so an unjustified fork
-/// is unrepresentable on the wire.
+/// evidence VALUES that justify it — a field-name → value map (`ForkEvidence`)
+/// keyed by the trigger&apos;s declared `requiredEvidenceFields`. Both are REQUIRED,
+/// and the evidence map is non-empty (`@minProperties(1)`), so an occurrence
+/// missing its trigger or carrying no evidence fails schema validation.
+/// Per-trigger completeness — that the map carries EXACTLY the declared fields
+/// for the trigger that fired — is enforced by the generated guard (DR-9) at the
+/// single decision site, so an unjustified fork is unrepresentable there.
 /// 
 /// Additive-evolution posture (DR-18): schemaVersion is a pinned literal version
 /// marker. A future budget-bounded trigger (the planned exploratory member) is
 /// admitted by appending it to ForkTrigger — a NON-BREAKING additive minor under
-/// the enum-evolution policy, not a payload redesign. A breaking change to this
-/// shape would bump the marker to fork.v2, never mutate fork.v1 in place.
+/// the enum-evolution policy — and its evidence is representable in the same map
+/// with no payload change. A breaking change to this shape would bump the marker
+/// to fork.v2, never mutate fork.v1 in place.
 /// </summary>
 public sealed record ForkOccurrence
 {
@@ -43,8 +48,11 @@ public sealed record ForkOccurrence
     public ForkTrigger Trigger { get; init; }
 
     /// <summary>
-    /// The runtime evidence values that justify the fork — REQUIRED (no unjustified fork).
+    /// The runtime evidence values that justify the fork — a non-empty field-name →
+    /// value map (`ForkEvidence`) keyed by the trigger&apos;s declared evidence fields.
+    /// REQUIRED and non-empty (no unjustified fork); per-trigger completeness is
+    /// enforced by the generated guard (DR-9).
     /// </summary>
     [JsonPropertyName("evidence")]
-    public ForkEvidence Evidence { get; init; } = default!;
+    public IReadOnlyDictionary<string, string> Evidence { get; init; } = default!;
 }

@@ -229,16 +229,15 @@ internal static class EventsEmitter
         sb.AppendLine($"/// Audit stream event appended when a diagnostic fork of the {model.WorkflowName}");
         sb.AppendLine("/// workflow is admitted at the single fork decision site (DR-9, #151). Mirrors the");
         sb.AppendLine("/// contract fork-occurrence shape: a pinned schema-version marker, the trigger wire");
-        sb.AppendLine("/// value that fired, and the evidence values (a provisional-stamp event id plus the");
-        sb.AppendLine("/// non-empty taint set) that justify the fork, so the decision is queryable from the");
+        sb.AppendLine("/// value that fired, and the evidence map (the fired trigger's declared field-name");
+        sb.AppendLine("/// -> value evidence) that justifies the fork, so the decision is queryable from the");
         sb.AppendLine("/// Marten event stream and not only from the structured logs.");
         sb.AppendLine("/// </summary>");
         sb.AppendLine($"public sealed partial record {model.PascalName}WorkflowForked(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string SchemaVersion,");
         sb.AppendLine("    string Trigger,");
-        sb.AppendLine("    string ProvisionalStampEventId,");
-        sb.AppendLine("    System.Collections.Generic.IReadOnlyList<string> Taints,");
+        sb.AppendLine("    System.Collections.Generic.IReadOnlyDictionary<string, string> Evidence,");
         sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
     }
 

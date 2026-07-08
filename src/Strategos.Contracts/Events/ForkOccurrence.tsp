@@ -6,35 +6,32 @@ using JsonSchema;
 namespace LevelUp.Strategos.Contracts;
 
 /**
- * The runtime evidence VALUES a fork occurrence must carry to justify itself
- * (#151, DR-8). Where the declaration side (DiagnosticForkDefinition, DR-10)
- * names WHICH evidence fields a permitted trigger requires, this is the
- * concrete evidence captured when a fork actually happens.
+ * The runtime evidence VALUES a fork occurrence carries to justify itself
+ * (#151, DR-8) — a field-name → value map. Where the declaration side
+ * (`DiagnosticForkDefinition` / `PermittedForkTrigger`, DR-10) names WHICH
+ * evidence fields a permitted trigger requires (`requiredEvidenceFields`), this
+ * is the concrete evidence captured when a fork actually happens, keyed by
+ * those same field names.
  *
- * Both fields are REQUIRED, so an occurrence that omits them fails schema
- * validation — there is no unjustified fork. For a ratification_failure fork
- * the evidence is the provisional-stamp event id that failed plus the non-empty
- * taint set it carried. Per-trigger completeness (which evidence each trigger
- * requires) is enforced where occurrences are born — the generated guard
- * (DR-9) — never at authoring time; this model pins the schema-level floor.
+ * A map (not a fixed pair of fields) is the polyglot shape that lets ANY
+ * trigger's declared evidence be represented: a `ratification_failure` fork
+ * carries `{ provisionalStampEventId, taints }`, a `gate_contradiction` fork
+ * carries `{ leftGateId, rightGateId }`, and a future trigger carries whatever
+ * fields its edge declares — all without a payload redesign. It is the
+ * occurrence-side companion of the declaration-side `requiredEvidenceFields`
+ * list, subsuming the earlier monomorphic ratification-only shape.
+ *
+ * `@minProperties(1)` is the only schema-level floor: an occurrence with an
+ * empty evidence map carries no justification and fails validation. WHICH
+ * fields a given trigger requires is not knowable at the contract level (the
+ * fields are author-declared per workflow edge, not fixed in the closed
+ * `ForkTrigger` enum), so PER-TRIGGER completeness is enforced where
+ * occurrences are born — the generated guard (DR-9) — which reads each edge's
+ * declared `requiredEvidenceFields` and refuses a fork whose map omits any of
+ * them. That is the only place occurrences are produced, so an unjustified fork
+ * is unrepresentable.
  */
-@jsonSchema
-model ForkEvidence {
-  /**
-   * The provisional-stamp event id that seeded the fork's justification.
-   * REQUIRED and non-empty — a fork with no anchoring event is unrepresentable.
-   */
-  @minLength(1)
-  provisionalStampEventId: string;
-
-  /**
-   * The taint set carried at fork time. REQUIRED and NON-EMPTY (at least one
-   * taint): a ratification_failure fork with an empty taint set carries no
-   * evidence and is rejected at the schema boundary.
-   */
-  @minItems(1)
-  taints: string[];
-}
+alias ForkEvidence = Record<string>;
 
 /**
  * Runtime payload of a workflow fork (#151, DR-8): the `{Pascal}WorkflowForked`
@@ -43,15 +40,20 @@ model ForkEvidence {
  * site (DR-9); it is never hand-authored.
  *
  * It carries the closed trigger (ForkTrigger) that fired plus the runtime
- * evidence VALUES that justify it. Both are REQUIRED — an occurrence missing
- * its trigger or its evidence fails schema validation, so an unjustified fork
- * is unrepresentable on the wire.
+ * evidence VALUES that justify it — a field-name → value map (`ForkEvidence`)
+ * keyed by the trigger's declared `requiredEvidenceFields`. Both are REQUIRED,
+ * and the evidence map is non-empty (`@minProperties(1)`), so an occurrence
+ * missing its trigger or carrying no evidence fails schema validation.
+ * Per-trigger completeness — that the map carries EXACTLY the declared fields
+ * for the trigger that fired — is enforced by the generated guard (DR-9) at the
+ * single decision site, so an unjustified fork is unrepresentable there.
  *
  * Additive-evolution posture (DR-18): schemaVersion is a pinned literal version
  * marker. A future budget-bounded trigger (the planned exploratory member) is
  * admitted by appending it to ForkTrigger — a NON-BREAKING additive minor under
- * the enum-evolution policy, not a payload redesign. A breaking change to this
- * shape would bump the marker to fork.v2, never mutate fork.v1 in place.
+ * the enum-evolution policy — and its evidence is representable in the same map
+ * with no payload change. A breaking change to this shape would bump the marker
+ * to fork.v2, never mutate fork.v1 in place.
  */
 @jsonSchema
 model ForkOccurrence {
@@ -61,6 +63,12 @@ model ForkOccurrence {
   /** The closed trigger that fired this fork (DR-8 — the shared trigger identity). */
   trigger: ForkTrigger;
 
-  /** The runtime evidence values that justify the fork — REQUIRED (no unjustified fork). */
+  /**
+   * The runtime evidence values that justify the fork — a non-empty field-name →
+   * value map (`ForkEvidence`) keyed by the trigger's declared evidence fields.
+   * REQUIRED and non-empty (no unjustified fork); per-trigger completeness is
+   * enforced by the generated guard (DR-9).
+   */
+  @minProperties(1)
   evidence: ForkEvidence;
 }

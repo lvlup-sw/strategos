@@ -88,6 +88,21 @@ public sealed class DiagnosticForkParityTests
             [nameof(DiagnosticForkDefinition.MaxForks)] = new(
                 "Behavioral_ForkExceedingMaxForks_RoutesToBlockedTerminal",
                 LoweringProofFile),
+
+            // Per-trigger identity lowering (the nested PermittedForkTriggerDefinition.Trigger):
+            // the guard admits a fork only for a permitted trigger, keyed by the closed trigger's
+            // wire value — proven by a non-ratification trigger driving the guard.
+            [$"{nameof(DiagnosticForkDefinition.PermittedTriggers)}.{nameof(PermittedForkTriggerDefinition.Trigger)}"] = new(
+                "Behavioral_GateContradictionFork_RequiresItsOwnDeclaredEvidence",
+                LoweringProofFile),
+
+            // Per-trigger evidence lowering (the nested PermittedForkTriggerDefinition
+            // .RequiredEvidenceFields, the DR-8 per-trigger evidence schema): the guard requires
+            // EXACTLY the fired trigger's declared fields, so a gate_contradiction fork must carry
+            // its own leftGateId/rightGateId — not the ratification evidence.
+            [$"{nameof(DiagnosticForkDefinition.PermittedTriggers)}.{nameof(PermittedForkTriggerDefinition.RequiredEvidenceFields)}"] = new(
+                "Behavioral_GateContradictionFork_RequiresItsOwnDeclaredEvidence",
+                LoweringProofFile),
         };
 
     /// <summary>
@@ -222,14 +237,48 @@ public sealed class DiagnosticForkParityTests
 
     /// <summary>
     /// Enumerates the declarable diagnostic-fork surface: the public instance properties
-    /// of <see cref="DiagnosticForkDefinition"/> that represent lowerable state.
+    /// of <see cref="DiagnosticForkDefinition"/> that represent lowerable state, PLUS the
+    /// nested per-trigger members of <see cref="PermittedForkTriggerDefinition"/>
+    /// (qualified as <c>PermittedTriggers.&lt;member&gt;</c>). Descending into the nested
+    /// trigger IR is the M7 forcing function: the DR-8 per-trigger evidence schema
+    /// (<see cref="PermittedForkTriggerDefinition.RequiredEvidenceFields"/>) is itself a
+    /// classifiable member, so leaving it unlowered — declared but never read by any
+    /// emitter — can never again masquerade as a fully-Lowered fork surface.
     /// </summary>
     /// <returns>The distinct set of classifiable member names.</returns>
-    private static IEnumerable<string> EnumerateForkSurface() =>
-        typeof(DiagnosticForkDefinition)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Select(p => p.Name)
-            .Distinct(StringComparer.Ordinal);
+    private static IEnumerable<string> EnumerateForkSurface()
+    {
+        var members = new List<string>();
+
+        foreach (var prop in typeof(DiagnosticForkDefinition)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            members.Add(prop.Name);
+
+            if (NestedElementType(prop.PropertyType) == typeof(PermittedForkTriggerDefinition))
+            {
+                foreach (var nested in typeof(PermittedForkTriggerDefinition)
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                {
+                    members.Add($"{prop.Name}.{nested.Name}");
+                }
+            }
+        }
+
+        return members.Distinct(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Unwraps the element type of an <see cref="IReadOnlyList{T}"/> (or any single-arg
+    /// generic collection) so the parity guard can descend into a nested IR collection;
+    /// returns the type unchanged when it is not such a collection.
+    /// </summary>
+    /// <param name="type">The candidate property type.</param>
+    /// <returns>The element type, or the type itself when it is not a single-arg generic.</returns>
+    private static Type NestedElementType(Type type) =>
+        type.IsGenericType && type.GetGenericArguments().Length == 1
+            ? type.GetGenericArguments()[0]
+            : type;
 
     /// <summary>
     /// A lowered-member proof: the behavioral test name and the file it lives in.

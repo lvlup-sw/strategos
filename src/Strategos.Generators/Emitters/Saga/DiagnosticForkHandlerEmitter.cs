@@ -28,11 +28,14 @@ namespace Strategos.Generators.Emitters.Saga;
 ///     anchor is not declared is refused.
 ///   </description></item>
 ///   <item><description>
-///     <b>Permitted-trigger + evidence guard</b> (the DR-8 occurrence-completeness
-///     chokepoint) — the fork is admitted only for a permitted trigger whose
-///     occurrence carries its required evidence (a non-empty provisional-stamp event id
-///     and a non-empty taint set). A fork WITHOUT a permitted trigger or WITHOUT its
-///     evidence is refused, so an unjustified occurrence cannot be born.
+///     <b>Permitted-trigger + per-trigger evidence guard</b> (the DR-8 occurrence-
+///     completeness chokepoint) — the fork is admitted only for a permitted trigger whose
+///     occurrence evidence map carries EXACTLY the fields that trigger declared
+///     (<see cref="PermittedForkTriggerModel.RequiredEvidenceFields"/>), each present and
+///     non-empty. A fork WITHOUT a permitted trigger, or WHOSE map omits any of the fired
+///     trigger's declared fields, is refused — so a <c>gate_contradiction</c> fork must
+///     carry its own <c>leftGateId</c>/<c>rightGateId</c>, not ratification evidence, and
+///     an unjustified occurrence cannot be born.
 ///   </description></item>
 ///   <item><description>
 ///     <b>maxForks bound</b> (<see cref="DiagnosticForkModel.MaxForks"/>, the loop
@@ -51,9 +54,10 @@ namespace Strategos.Generators.Emitters.Saga;
 /// <c>Trigger{Pascal}FailureHandlerCommand</c>.
 /// </para>
 /// <para>
-/// The fork count is workflow-scoped (a single <c>DiagnosticForkCount</c> saga
-/// property): the guard enforces the matched edge's bound against the total forks the
-/// workflow has spawned.
+/// The fork count is PER EDGE (a <c>DiagnosticForkCount_{index}</c> saga property per
+/// declared fork edge): each edge enforces its declared <c>maxForks</c> bound against its
+/// OWN tally, so a high-bound edge cannot exhaust a shared pool and starve a low-bound
+/// edge (L3).
 /// </para>
 /// </remarks>
 internal sealed class DiagnosticForkHandlerEmitter
@@ -94,11 +98,12 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Handles the diagnostic-fork decision command (DR-9) - the single occurrence");
         sb.AppendLine("    /// chokepoint where a diagnostic fork is born. Enforces the anchor guard, the");
-        sb.AppendLine("    /// permitted-trigger + evidence-completeness guard, and the maxForks bound; on a");
-        sb.AppendLine("    /// valid fork appends the WorkflowForked audit event (event-sourced) and seeds");
-        sb.AppendLine("    /// compensation via the merged failure/compensation trigger site.");
+        sb.AppendLine("    /// permitted-trigger + per-trigger evidence-completeness guard, and the per-edge");
+        sb.AppendLine("    /// maxForks bound; on a valid fork appends the WorkflowForked audit event");
+        sb.AppendLine("    /// (event-sourced) and seeds compensation via the merged failure/compensation");
+        sb.AppendLine("    /// trigger site.");
         sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    /// <param name=\"cmd\">The fork decision command carrying the occurrence (trigger + evidence).</param>");
+        sb.AppendLine("    /// <param name=\"cmd\">The fork decision command carrying the occurrence (trigger + evidence map).</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
         sb.AppendLine("    /// <returns>The compensation trigger command when the fork is admitted; empty otherwise.</returns>");
@@ -124,6 +129,45 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("            WorkflowId,");
         sb.AppendLine("            cmd.Anchor);");
         sb.AppendLine("    }");
+
+        EmitEvidenceCompletenessHelper(sb);
+    }
+
+    /// <summary>
+    /// Emits the shared per-trigger evidence-completeness helper (DR-8): true only when the
+    /// occurrence evidence map carries every one of the fired trigger's declared evidence
+    /// field names with a present, non-empty value. Driving the guard off the declared
+    /// fields is what makes each trigger require ITS OWN evidence rather than a single
+    /// hardcoded ratification shape.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    private static void EmitEvidenceCompletenessHelper(StringBuilder sb)
+    {
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Returns true when the fork occurrence evidence map carries every one of the");
+        sb.AppendLine("    /// fired trigger's declared evidence field names with a present, non-empty value");
+        sb.AppendLine("    /// (the DR-8 per-trigger occurrence-completeness check).");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    private static bool ForkEvidenceComplete(");
+        sb.AppendLine("        System.Collections.Generic.IReadOnlyDictionary<string, string> evidence,");
+        sb.AppendLine("        params string[] requiredFields)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (evidence is null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return false;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        foreach (var field in requiredFields)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (!evidence.TryGetValue(field, out var value) || string.IsNullOrWhiteSpace(value))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return false;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return true;");
+        sb.AppendLine("    }");
     }
 
     private static void EmitEdgeBlock(
@@ -137,7 +181,14 @@ internal sealed class DiagnosticForkHandlerEmitter
     {
         var permittedVar = $"edge{edgeIndex}Permitted";
         var evidenceVar = $"edge{edgeIndex}EvidencePresent";
-        var seed = fork.CompensationSeedMoniker;
+        var countVar = $"DiagnosticForkCount_{edgeIndex}";
+
+        // Every moniker below is authored in user DSL string literals (anchors, evidence
+        // field names, the compensation seed), so it may contain a double-quote or a
+        // backslash. Emit each as a SymbolDisplay.FormatLiteral quote-wrapped literal so a
+        // hostile value cannot break out of the generated string literal (M5) - the same
+        // pattern StepStartHandlerEmitter uses for the validation message.
+        var seedLiteral = SymbolDisplay.FormatLiteral(fork.CompensationSeedMoniker, quote: true);
 
         sb.AppendLine($"        // Diagnostic fork edge {edgeIndex} - admissible at anchor(s): {string.Join(", ", fork.AnchorStepMonikers)}.");
         sb.Append("        if (");
@@ -149,49 +200,66 @@ internal sealed class DiagnosticForkHandlerEmitter
                 sb.Append("            || ");
             }
 
-            sb.Append($"cmd.Anchor == \"{fork.AnchorStepMonikers[a]}\"");
+            var anchorLiteral = SymbolDisplay.FormatLiteral(fork.AnchorStepMonikers[a], quote: true);
+            sb.Append($"cmd.Anchor == {anchorLiteral}");
         }
 
         sb.AppendLine(")");
         sb.AppendLine("        {");
 
-        // Permitted-trigger + evidence-completeness guard (DR-8 occurrence chokepoint).
+        // Permitted-trigger + per-trigger evidence-completeness guard (DR-8 occurrence
+        // chokepoint). The permitted check is the disjunction of the edge's triggers; the
+        // evidence check is a per-trigger switch requiring EXACTLY the fired trigger's
+        // declared RequiredEvidenceFields, so each trigger requires its own evidence.
         sb.AppendLine("            // Occurrence-completeness guard (DR-8): admit only a permitted trigger whose");
-        sb.AppendLine("            // occurrence carries its required evidence; a fork without them is refused.");
+        sb.AppendLine("            // occurrence evidence map carries the fields THAT trigger declared; a fork");
+        sb.AppendLine("            // without a permitted trigger or missing its declared evidence is refused.");
         sb.Append($"            var {permittedVar} =");
         for (var t = 0; t < fork.PermittedTriggers.Count; t++)
         {
-            var wireValue = PascalToSnake(fork.PermittedTriggers[t].TriggerName);
+            var wireLiteral = SymbolDisplay.FormatLiteral(PascalToSnake(fork.PermittedTriggers[t].TriggerName), quote: true);
             if (t > 0)
             {
                 sb.AppendLine();
-                sb.Append($"                || cmd.Trigger == \"{wireValue}\"");
+                sb.Append($"                || cmd.Trigger == {wireLiteral}");
             }
             else
             {
-                sb.Append($" cmd.Trigger == \"{wireValue}\"");
+                sb.Append($" cmd.Trigger == {wireLiteral}");
             }
         }
 
         sb.AppendLine(";");
-        sb.AppendLine($"            var {evidenceVar} =");
-        sb.AppendLine("                !string.IsNullOrWhiteSpace(cmd.ProvisionalStampEventId)");
-        sb.AppendLine("                && cmd.Taints is not null");
-        sb.AppendLine("                && cmd.Taints.Count > 0;");
+        sb.AppendLine($"            var {evidenceVar} = cmd.Trigger switch");
+        sb.AppendLine("            {");
+        for (var t = 0; t < fork.PermittedTriggers.Count; t++)
+        {
+            var trigger = fork.PermittedTriggers[t];
+            var wireLiteral = SymbolDisplay.FormatLiteral(PascalToSnake(trigger.TriggerName), quote: true);
+            var fieldArgs = string.Join(
+                ", ",
+                trigger.RequiredEvidenceFields.Select(f => SymbolDisplay.FormatLiteral(f, quote: true)));
+            sb.AppendLine($"                {wireLiteral} => ForkEvidenceComplete(cmd.Evidence, {fieldArgs}),");
+        }
+
+        sb.AppendLine("                _ => false,");
+        sb.AppendLine("            };");
         sb.AppendLine($"            if (!{permittedVar} || !{evidenceVar})");
         sb.AppendLine("            {");
         sb.AppendLine("                logger.LogWarning(");
-        sb.AppendLine("                    \"Refusing diagnostic fork for workflow {WorkflowId}: trigger {Trigger} is not permitted or its evidence is incomplete\",");
+        sb.AppendLine("                    \"Refusing diagnostic fork for workflow {WorkflowId}: trigger {Trigger} is not permitted or its declared evidence is incomplete\",");
         sb.AppendLine("                    WorkflowId,");
         sb.AppendLine("                    cmd.Trigger);");
         sb.AppendLine("                yield break;");
         sb.AppendLine("            }");
         sb.AppendLine();
 
-        // maxForks bound (the loop MaxIterations forced-exit precedent).
-        sb.AppendLine("            // maxForks bound (the loop MaxIterations forced-exit precedent): once the bound");
-        sb.AppendLine("            // is reached, an overflowing fork routes to the blocked / human-escalation terminal.");
-        sb.AppendLine($"            if (DiagnosticForkCount >= {fork.MaxForks})");
+        // Per-edge maxForks bound (L3; the loop MaxIterations forced-exit precedent). Each
+        // edge counts against its OWN tally so a high-bound edge cannot starve a low-bound
+        // one out of a shared pool.
+        sb.AppendLine("            // maxForks bound (per edge; the loop MaxIterations forced-exit precedent): once");
+        sb.AppendLine("            // THIS edge's bound is reached, an overflowing fork routes to the blocked terminal.");
+        sb.AppendLine($"            if ({countVar} >= {fork.MaxForks})");
         sb.AppendLine("            {");
         sb.AppendLine("                logger.LogWarning(");
         sb.AppendLine("                    \"Diagnostic fork bound {Bound} reached for workflow {WorkflowId}; routing to blocked terminal for human escalation\",");
@@ -201,20 +269,20 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("                yield break;");
         sb.AppendLine("            }");
         sb.AppendLine();
-        sb.AppendLine("            DiagnosticForkCount++;");
+        sb.AppendLine($"            {countVar}++;");
 
         if (model.IsEventSourced)
         {
             sb.AppendLine();
-            sb.AppendLine("            // Append the WorkflowForked audit stream event at the single decision site.");
+            sb.AppendLine("            // Append the WorkflowForked audit stream event at the single decision site,");
+            sb.AppendLine("            // carrying the fired trigger's own evidence map (DR-8 occurrence payload).");
             sb.AppendLine("            session.Events.Append(");
             sb.AppendLine("                WorkflowId,");
             sb.AppendLine($"                new {eventName}(");
             sb.AppendLine("                    WorkflowId,");
             sb.AppendLine($"                    \"{SchemaVersionLiteral}\",");
             sb.AppendLine("                    cmd.Trigger,");
-            sb.AppendLine("                    cmd.ProvisionalStampEventId,");
-            sb.AppendLine("                    cmd.Taints,");
+            sb.AppendLine("                    cmd.Evidence,");
             sb.AppendLine("                    DateTimeOffset.UtcNow));");
         }
 
@@ -223,7 +291,7 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("                \"Diagnostic fork admitted for workflow {WorkflowId} on trigger {Trigger}; seeding compensation to {Seed}\",");
         sb.AppendLine("                WorkflowId,");
         sb.AppendLine("                cmd.Trigger,");
-        sb.AppendLine($"                \"{seed}\");");
+        sb.AppendLine($"                {seedLiteral});");
 
         if (canSeedCompensation)
         {
@@ -232,7 +300,7 @@ internal sealed class DiagnosticForkHandlerEmitter
             sb.AppendLine("            // the fork routes rollback to its declared compensation seed.");
             sb.AppendLine($"            yield return new {triggerCommandName}(");
             sb.AppendLine("                WorkflowId,");
-            sb.AppendLine($"                \"{seed}\",");
+            sb.AppendLine($"                {seedLiteral},");
             sb.AppendLine("                \"Diagnostic fork remediation seeded by a permitted fork trigger.\",");
             sb.AppendLine("                \"DiagnosticFork\",");
             sb.AppendLine("                null);");

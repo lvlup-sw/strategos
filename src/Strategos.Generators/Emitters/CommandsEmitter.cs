@@ -248,16 +248,19 @@ internal static class CommandsEmitter
         sb.AppendLine("/// </summary>");
         sb.AppendLine("/// <remarks>");
         sb.AppendLine("/// Routed to the saga by <c>WorkflowId</c>; the saga's single fork decision site");
-        sb.AppendLine("/// enforces the anchor, permitted-trigger, evidence-completeness, and maxForks guards.");
-        sb.AppendLine("/// The evidence mirrors the contract fork-occurrence shape (a provisional-stamp event");
-        sb.AppendLine("/// id plus a non-empty taint set); both are required for a fork to be admitted.");
+        sb.AppendLine("/// enforces the anchor, permitted-trigger, per-trigger evidence-completeness, and");
+        sb.AppendLine("/// maxForks guards. The evidence mirrors the contract fork-occurrence shape: a");
+        sb.AppendLine("/// field-name -> value map keyed by the trigger's declared evidence fields, so any");
+        sb.AppendLine("/// permitted trigger's declared evidence is representable (a ratification_failure");
+        sb.AppendLine("/// fork carries its provisional-stamp event id + taints, a gate_contradiction fork");
+        sb.AppendLine("/// carries its gate ids, etc.). The guard requires the fired trigger's declared");
+        sb.AppendLine("/// fields to be present and non-empty before the fork is admitted.");
         sb.AppendLine("/// </remarks>");
         sb.AppendLine($"public sealed partial record Fork{model.PascalName}Command(");
         sb.AppendLine("    [property: Wolverine.Persistence.Sagas.SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    string Anchor,");
         sb.AppendLine("    string Trigger,");
-        sb.AppendLine("    string ProvisionalStampEventId,");
-        sb.AppendLine("    System.Collections.Generic.IReadOnlyList<string> Taints);");
+        sb.AppendLine("    System.Collections.Generic.IReadOnlyDictionary<string, string> Evidence);");
     }
 
     private static void EmitApprovalCommands(
