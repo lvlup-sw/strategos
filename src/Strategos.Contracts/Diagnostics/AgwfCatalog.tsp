@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **27 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **28 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -48,6 +48,7 @@ enum AgwfCode {
   ImportRejectedApprovalContext: "AGWF031",
   ImportDanglingGateId: "AGWF032",
   ImportReliabilityBearingGate: "AGWF033",
+  ImportForkTriggerWithoutEvidence: "AGWF034",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -317,5 +318,15 @@ model AgwfEntryImportReliabilityBearingGate {
   severity: "error";
   summary: "Imported gate declaration carries reliability";
   remediation: "Workflow import file '{0}' declares a reliability block at {1} (gate '{2}'). Gate reliability enters a definition only from measured telemetry, never from authored JSON, so the workflow is rejected and no saga is generated. Remove the reliability block.";
+  since: "2.10.0";
+}
+
+/** AGWF034 — Imported fork trigger declares no required evidence fields (DR-8). */
+@jsonSchema
+model AgwfEntryImportForkTriggerWithoutEvidence {
+  id: "AGWF034";
+  severity: "error";
+  summary: "Imported fork trigger declares no required evidence fields";
+  remediation: "Workflow import file '{0}' declares a diagnostic-fork permitted trigger at {1} (trigger '{2}') with no required evidence fields. A permitted fork trigger must declare at least one required evidence field (wire @minItems(1)) so the DR-8 no-unjustified-fork guard has an evidence floor to enforce; the workflow is rejected and no saga is generated. Add the evidence field(s) the trigger requires.";
   since: "2.10.0";
 }

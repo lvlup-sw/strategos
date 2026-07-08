@@ -21,6 +21,7 @@ catalogued in [`agwf.md`](./agwf.md).
 | Approval-with-context at import | `AGWF031` ImportRejectedApprovalContext | `ImportRejectionTests.ApprovalWithContext_IsRejected_WithDiagnosticAndNoSaga` |
 | Dangling `gateId` (DR-3 semantic) | `AGWF032` ImportDanglingGateId | `ImportRejectionTests.DanglingGateId_IsRejected_WithDiagnosticAndNoSaga` |
 | Reliability-bearing gate declaration (DR-2 machine-check) | `AGWF033` ImportReliabilityBearingGate | `ImportRejectionTests.ReliabilityBearingGate_IsRejected_WithDiagnosticAndNoSaga` |
+| Fork trigger with empty `requiredEvidenceFields` (DR-8 evidence floor) | `AGWF034` ImportForkTriggerWithoutEvidence | `ImportRejectionTests.ForkTriggerWithEmptyEvidence_IsRejected_WithDiagnosticAndNoSaga` |
 
 Every rejected import emits **no saga** for that workflow (proven per-case), and the whole
 corpus partitions into importable-equivalent vs specifically-rejected with no silent third

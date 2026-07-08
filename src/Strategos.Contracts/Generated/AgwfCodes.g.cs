@@ -95,5 +95,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF033 — Imported gate declaration carries reliability.</summary>
         public const string ImportReliabilityBearingGate = "AGWF033";
+
+        /// <summary>AGWF034 — Imported fork trigger declares no required evidence fields.</summary>
+        public const string ImportForkTriggerWithoutEvidence = "AGWF034";
     }
 }

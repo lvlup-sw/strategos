@@ -126,4 +126,8 @@ public enum AgwfCode
     /// <summary>AGWF033 — Imported gate declaration carries reliability.</summary>
     [JsonStringEnumMemberName("AGWF033")]
     ImportReliabilityBearingGate,
+
+    /// <summary>AGWF034 — Imported fork trigger declares no required evidence fields.</summary>
+    [JsonStringEnumMemberName("AGWF034")]
+    ImportForkTriggerWithoutEvidence,
 }

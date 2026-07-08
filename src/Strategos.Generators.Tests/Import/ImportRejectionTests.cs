@@ -32,6 +32,7 @@ public sealed class ImportRejectionTests
     private const string ApprovalContextCode = "AGWF031";
     private const string DanglingGateIdCode = "AGWF032";
     private const string ReliabilityGateCode = "AGWF033";
+    private const string ForkTriggerEvidenceCode = "AGWF034";
 
     /// <summary>
     /// Real step types so a NON-rejected import can resolve its monikers and lower a saga — the
@@ -202,6 +203,61 @@ public sealed class ImportRejectionTests
         }
         """;
 
+    // A diagnostic-fork permitted trigger declaring an EMPTY requiredEvidenceFields at
+    // $.diagnosticForks[0].permittedTriggers[0] — the DR-8 evidence-floor violation (wire
+    // @minItems(1)). Absent the AGWF034 rejection, MapDiagnosticForks copies the empty list into
+    // PermittedForkTriggerModel.Create, which enforces the floor by THROWING — an unhandled throw
+    // that crashes the whole generator (CS8785) and drops ALL output for the compilation. The rest
+    // of the workflow is a valid linear import (a NON-empty-evidence twin lowers cleanly — the
+    // negative control), so the empty evidence floor is the sole reason this one is rejected.
+    private const string ForkEmptyEvidenceJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-empty-evidence",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [ { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false } ],
+          "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "diagnosticForks": [
+            {
+              "anchorStepIds": [ "RejectStepA" ],
+              "permittedTriggers": [ { "trigger": "RatificationFailure", "requiredEvidenceFields": [] } ],
+              "maxForks": 2,
+              "compensationSeed": "RejectStepB"
+            }
+          ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // Negative control: a diagnostic-fork permitted trigger with a NON-EMPTY requiredEvidenceFields
+    // is tolerated (DR-8 floor satisfied) — no AGWF034 — and still lowers a saga.
+    private const string ForkWithEvidenceJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-with-evidence-ok",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [ { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false } ],
+          "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "diagnosticForks": [
+            {
+              "anchorStepIds": [ "RejectStepA" ],
+              "permittedTriggers": [ { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] } ],
+              "maxForks": 2,
+              "compensationSeed": "RejectStepB"
+            }
+          ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
     // Negative control: a well-declared gate (resolvable gateId, no reliability) — DR-3 tolerated.
     private const string WellDeclaredGateJson = """
         {
@@ -283,8 +339,44 @@ public sealed class ImportRejectionTests
     }
 
     /// <summary>
+    /// A diagnostic-fork permitted trigger with an EMPTY <c>requiredEvidenceFields</c> is rejected
+    /// with AGWF034 naming the trigger + its JSON path; no saga. This closes the DR-8 evidence floor
+    /// on the import channel — the wire <c>@minItems(1)</c> that the builder enforces but the import
+    /// path previously copied verbatim, which would have lowered an always-true occurrence guard.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkTriggerWithEmptyEvidence_IsRejected_WithDiagnosticAndNoSaga()
+    {
+        var result = RunGenerator(StepTypes, ("reject-fork-empty-evidence.workflow.json", ForkEmptyEvidenceJson));
+        await AssertRejected(result, ForkTriggerEvidenceCode, "$.diagnosticForks[0].permittedTriggers[0]", "RatificationFailure");
+    }
+
+    /// <summary>
+    /// Negative control: a diagnostic-fork permitted trigger with a NON-EMPTY
+    /// <c>requiredEvidenceFields</c> satisfies the DR-8 floor — no AGWF034 — and still lowers a saga.
+    /// Proves the AGWF034 check is additive (the empty-list floor), not over-broad (a declared floor
+    /// is tolerated). Also anchors the kill-probe: the empty-evidence twin only differs in the floor,
+    /// so its rejection is the sole reason it does not lower this same saga.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkTriggerWithDeclaredEvidence_IsNotRejected_AndLowersSaga()
+    {
+        var result = RunGenerator(StepTypes, ("reject-fork-with-evidence-ok.workflow.json", ForkWithEvidenceJson));
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == ForkTriggerEvidenceCode))
+            .IsFalse()
+            .Because("a fork trigger declaring at least one required evidence field satisfies the DR-8 floor, not rejected.");
+
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("a fork import whose trigger declares its evidence floor must still lower a saga.");
+    }
+
+    /// <summary>
     /// Each rejected carrier/violation surfaces its OWN distinct diagnostic id — no case borrows
-    /// another's. Pins that AGWF027–AGWF033 are one-per-case (not a single shared "rejected" id).
+    /// another's. Pins that AGWF027–AGWF034 are one-per-case (not a single shared "rejected" id).
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -299,6 +391,7 @@ public sealed class ImportRejectionTests
             ("reject-approval-context.workflow.json", ApprovalContextJson, ApprovalContextCode),
             ("reject-dangling-gate.workflow.json", DanglingGateJson, DanglingGateIdCode),
             ("reject-reliability-gate.workflow.json", ReliabilityGateJson, ReliabilityGateCode),
+            ("reject-fork-empty-evidence.workflow.json", ForkEmptyEvidenceJson, ForkTriggerEvidenceCode),
         };
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -318,7 +411,7 @@ public sealed class ImportRejectionTests
         }
 
         await Assert.That(seen.Count).IsEqualTo(cases.Length)
-            .Because("every rejected case must own a distinct AGWF id (one-per-case, AGWF027–AGWF033).");
+            .Because("every rejected case must own a distinct AGWF id (one-per-case, AGWF027–AGWF034).");
     }
 
     /// <summary>

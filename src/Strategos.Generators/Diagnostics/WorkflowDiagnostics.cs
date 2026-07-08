@@ -503,4 +503,30 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A gate reliability block is measured telemetry provenance, never hand-authored. An import channel is a hand-authoring surface, so a gate declaration carrying reliability is rejected to keep telemetry out of the authored definition.");
+
+    /// <summary>
+    /// Imported diagnostic-fork permitted trigger declares no required evidence fields (DR-8 evidence floor).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> declares a diagnostic-fork permitted trigger
+    /// whose <c>requiredEvidenceFields</c> is empty. The wire contract pins <c>@minItems(1)</c> on that
+    /// list, and the C# builder's <c>PermitTrigger</c> forces at least one field — but the import path
+    /// copies the list verbatim into <c>MapDiagnosticForks</c> →
+    /// <c>PermittedForkTriggerModel.Create</c>, which enforces the floor by THROWING on an empty list.
+    /// That unhandled throw crashes the whole generator (CS8785) and drops ALL generated output for the
+    /// compilation. (Were the model floor bypassed, the emitter would instead lower a guard arm
+    /// <c>ForkEvidenceComplete(cmd.Evidence)</c> with ZERO required fields — always true for any evidence
+    /// map, defeating the DR-8 "no unjustified fork" invariant.) Rejecting here, before mapping, turns
+    /// both failure modes into one loud, fail-closed diagnostic: the whole workflow is rejected and NO
+    /// saga is generated. Argument 0 is the import file path; argument 1 is the JSON path; argument 2
+    /// names the offending trigger.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportForkTriggerWithoutEvidence = new(
+        id: AgwfCodes.ImportForkTriggerWithoutEvidence,
+        title: "Imported fork trigger declares no required evidence fields",
+        messageFormat: "Workflow import file '{0}' declares a diagnostic-fork permitted trigger at {1} (trigger '{2}') with no required evidence fields. A permitted fork trigger must declare at least one required evidence field (wire @minItems(1)) so the DR-8 no-unjustified-fork guard has an evidence floor to enforce; the workflow is rejected and no saga is generated. Add the evidence field(s) the trigger requires.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A permitted fork trigger with no required evidence fields has no DR-8 evidence floor: on import it crashes the generator (the model floor throws, CS8785), and were that bypassed the emitted occurrence guard would be always-true. The wire contract pins @minItems(1); the import channel is a hand-authoring surface, so a trigger declaring no evidence floor is rejected before mapping to fail closed with a stable diagnostic.");
 }

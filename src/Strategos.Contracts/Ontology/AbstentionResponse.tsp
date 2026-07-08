@@ -73,5 +73,5 @@ model NoAnswerRecorded {
 @jsonSchema
 union AbstentionResponse {
   answer: Answer,
-  noAnswerRecorded: NoAnswerRecorded,
+  no_answer_recorded: NoAnswerRecorded,
 }

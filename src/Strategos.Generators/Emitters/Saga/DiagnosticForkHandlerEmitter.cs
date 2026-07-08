@@ -30,10 +30,11 @@ namespace Strategos.Generators.Emitters.Saga;
 ///   <item><description>
 ///     <b>Permitted-trigger + per-trigger evidence guard</b> (the DR-8 occurrence-
 ///     completeness chokepoint) — the fork is admitted only for a permitted trigger whose
-///     occurrence evidence map carries EXACTLY the fields that trigger declared
+///     occurrence evidence map carries at least every field that trigger declared
 ///     (<see cref="PermittedForkTriggerModel.RequiredEvidenceFields"/>), each present and
-///     non-empty. A fork WITHOUT a permitted trigger, or WHOSE map omits any of the fired
-///     trigger's declared fields, is refused — so a <c>gate_contradiction</c> fork must
+///     non-empty (extra keys are ignored). A fork WITHOUT a permitted trigger, or WHOSE map
+///     omits any of the fired trigger's declared fields, is refused — so a
+///     <c>gate_contradiction</c> fork must
 ///     carry its own <c>leftGateId</c>/<c>rightGateId</c>, not ratification evidence, and
 ///     an unjustified occurrence cannot be born.
 ///   </description></item>
@@ -209,7 +210,7 @@ internal sealed class DiagnosticForkHandlerEmitter
 
         // Permitted-trigger + per-trigger evidence-completeness guard (DR-8 occurrence
         // chokepoint). The permitted check is the disjunction of the edge's triggers; the
-        // evidence check is a per-trigger switch requiring EXACTLY the fired trigger's
+        // evidence check is a per-trigger switch requiring every one of the fired trigger's
         // declared RequiredEvidenceFields, so each trigger requires its own evidence.
         sb.AppendLine("            // Occurrence-completeness guard (DR-8): admit only a permitted trigger whose");
         sb.AppendLine("            // occurrence evidence map carries the fields THAT trigger declared; a fork");

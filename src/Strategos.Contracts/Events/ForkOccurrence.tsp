@@ -44,9 +44,10 @@ alias ForkEvidence = Record<string>;
  * keyed by the trigger's declared `requiredEvidenceFields`. Both are REQUIRED,
  * and the evidence map is non-empty (`@minProperties(1)`), so an occurrence
  * missing its trigger or carrying no evidence fails schema validation.
- * Per-trigger completeness — that the map carries EXACTLY the declared fields
- * for the trigger that fired — is enforced by the generated guard (DR-9) at the
- * single decision site, so an unjustified fork is unrepresentable there.
+ * Per-trigger completeness — that the map carries at least every declared field
+ * for the trigger that fired (extra keys ignored) — is enforced by the generated
+ * guard (DR-9) at the single decision site, so an unjustified fork is
+ * unrepresentable there.
  *
  * Additive-evolution posture (DR-18): schemaVersion is a pinned literal version
  * marker. A future budget-bounded trigger (the planned exploratory member) is

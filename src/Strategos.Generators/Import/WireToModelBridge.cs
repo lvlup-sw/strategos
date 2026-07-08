@@ -252,8 +252,10 @@ internal static class WireToModelBridge
     /// Rejected carriers: a delegate (lambda) step, a branch point, a loop (RepeatUntil), a step's
     /// validation predicate, and a context-bearing approval (a <c>hasContext</c> marker, escalation,
     /// or rejection handler). Rejected semantic violations: a gate step whose <c>gateId</c>
-    /// back-reference names an id absent from <c>gates[]</c> (DR-3), and a gate declaration carrying
-    /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry).
+    /// back-reference names an id absent from <c>gates[]</c> (DR-3), a gate declaration carrying
+    /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry), and a
+    /// diagnostic-fork permitted trigger declaring no <c>requiredEvidenceFields</c> (DR-8 — the wire
+    /// <c>@minItems(1)</c> evidence floor; an empty list would lower an always-true occurrence guard).
     /// </remarks>
     private static List<Diagnostic> CollectImportRejections(
         WorkflowDefinitionV1 definition,
@@ -342,6 +344,33 @@ internal static class WireToModelBridge
                     jsonFilePath,
                     $"$.gates[{i}].reliability",
                     DescribeId(definition.Gates[i].Id)));
+            }
+        }
+
+        // (5) Diagnostic-fork permitted triggers declaring NO required evidence fields rejected
+        // (DR-8 evidence floor). The wire contract pins @minItems(1) on requiredEvidenceFields and
+        // the C# builder forces >= 1, but the import path copies the list verbatim into
+        // MapDiagnosticForks -> PermittedForkTriggerModel.Create, which enforces the floor by
+        // THROWING on an empty list — an unhandled throw that crashes the whole generator (CS8785)
+        // and drops ALL generated output for the compilation. (Were the model floor bypassed, the
+        // emitter would instead lower a guard arm ForkEvidenceComplete(cmd.Evidence) with ZERO
+        // required fields, an always-true no-op that defeats the DR-8 no-unjustified-fork check.)
+        // Reject it here, BEFORE mapping, so it fails closed with a stable per-file diagnostic and
+        // no saga is lowered — never a generator crash.
+        for (var i = 0; i < definition.DiagnosticForks.Count; i++)
+        {
+            var permittedTriggers = definition.DiagnosticForks[i].PermittedTriggers;
+            for (var j = 0; j < permittedTriggers.Count; j++)
+            {
+                if (permittedTriggers[j].RequiredEvidenceFields.Count == 0)
+                {
+                    rejections.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.ImportForkTriggerWithoutEvidence,
+                        Location.None,
+                        jsonFilePath,
+                        $"$.diagnosticForks[{i}].permittedTriggers[{j}]",
+                        DescribeId(permittedTriggers[j].Trigger)));
+                }
             }
         }
 
