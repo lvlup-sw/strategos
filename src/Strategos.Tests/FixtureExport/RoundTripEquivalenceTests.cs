@@ -33,6 +33,9 @@ namespace Strategos.Tests.FixtureExport;
 ///     rejection proof is not vacuous.
 ///   </description></item>
 /// </list>
+/// The <c>awaitApproval</c> family straddles BOTH buckets: a context-bearing approval is a carrier
+/// (bucket b, AGWF031), while a CONTEXT-FREE approval (<c>approval-free-*</c>) is importable (bucket a,
+/// M10) — so this family is classified PER CASE, not by tag.
 /// A fixture in NEITHER bucket (no saga AND no rejection — e.g. a bridge crash or an unresolvable
 /// moniker) FAILS the gate.
 /// </summary>
@@ -83,11 +86,11 @@ public sealed class RoundTripEquivalenceTests
     };
 
     /// <summary>
-    /// The corpus combinator tags that must land in bucket (b) — carrier-bearing ⇒ the specific
-    /// DR-14 rejection diagnostic fires, no saga. Each maps to the ONE AGWF id its carrier triggers.
-    /// Every corpus <c>awaitApproval</c> fixture is context-bearing (see the M10 note in
-    /// <c>WorkflowCorpus.AwaitApprovalCases</c>: builder-produced context-free approvals crash the
-    /// import bridge on a GUID <c>approvalPointId</c>), so the whole tag maps to the AGWF031 carrier.
+    /// The corpus combinator tags that map to a bucket-(b) carrier code when the case is NOT importable.
+    /// Each maps to the ONE AGWF id its carrier triggers. The <c>awaitApproval</c> tag is here for its
+    /// context-BEARING cases (AGWF031); its context-FREE cases (<c>approval-free-*</c>) are importable
+    /// and classified as bucket (a) by <see cref="IsContextFreeApproval"/> — see the M10 note in
+    /// <c>WorkflowCorpus.AwaitApprovalCases</c>.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> CarrierTagToCode =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -96,6 +99,18 @@ public sealed class RoundTripEquivalenceTests
             ["repeatUntil"] = LoopCode,
             ["awaitApproval"] = ApprovalContextCode,
         };
+
+    /// <summary>The corpus name prefix of the importable, CONTEXT-FREE approval fixtures (bucket a, M10).</summary>
+    private const string ContextFreeApprovalNamePrefix = "approval-free";
+
+    /// <summary>
+    /// Whether a corpus case is a CONTEXT-FREE approval — importable (bucket a) despite sharing the
+    /// <c>awaitApproval</c> tag with the context-bearing carriers (bucket b). Context-free approval
+    /// fixtures are named <c>approval-free-*</c> (see <c>WorkflowCorpus.AwaitApprovalCases</c>).
+    /// </summary>
+    private static bool IsContextFreeApproval(WorkflowCorpus.Case c) =>
+        string.Equals(c.Tag, "awaitApproval", StringComparison.Ordinal)
+        && c.Name.StartsWith(ContextFreeApprovalNamePrefix, StringComparison.Ordinal);
 
     // Public step types whose SIMPLE NAMES match every moniker the corpus emits, so the importable
     // subset resolves its monikers (LB-2, by simple name) and lowers. Declared in a real namespace
@@ -174,6 +189,15 @@ public sealed class RoundTripEquivalenceTests
             public Task<StepResult<RoundTripState>> ExecuteAsync(RoundTripState s, StepContext c, CancellationToken ct)
                 => Task.FromResult(StepResult<RoundTripState>.FromState(s));
         }
+
+        // The context-free approval fixture's approver moniker resolves through the same step resolver
+        // as any step (the established import contract), so it is declared as a step here; its simple
+        // name (ReviewerApprover) derives the approval-point name (Reviewer).
+        public sealed class ReviewerApprover : IWorkflowStep<RoundTripState>
+        {
+            public Task<StepResult<RoundTripState>> ExecuteAsync(RoundTripState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<RoundTripState>.FromState(s));
+        }
         """;
 
     /// <summary>
@@ -216,7 +240,9 @@ public sealed class RoundTripEquivalenceTests
                 continue;
             }
 
-            if (ImportableTags.Contains(c.Tag))
+            // A context-free approval (approval-free-*) is importable (bucket a) even though it shares
+            // the awaitApproval tag with the context-bearing carriers (bucket b) — classify per case.
+            if (ImportableTags.Contains(c.Tag) || IsContextFreeApproval(c))
             {
                 if (!sagaEmitted)
                 {
@@ -318,7 +344,9 @@ public sealed class RoundTripEquivalenceTests
         string expectedCode,
         string expectedJsonPathPrefix)
     {
-        var c = cases.First(x => x.Tag == tag);
+        // Pick a CARRIER case for this tag: exclude the importable context-free approval so the
+        // awaitApproval spot-check lands on a context-bearing carrier (bucket b), not approval-free-*.
+        var c = cases.First(x => x.Tag == tag && !IsContextFreeApproval(x));
         var json = ContractsJson.Serialize(c.Workflow.ToContract());
         var result = RunImport(compilation, c.Name + ".workflow.json", json);
 

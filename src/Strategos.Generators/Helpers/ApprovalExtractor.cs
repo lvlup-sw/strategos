@@ -80,8 +80,10 @@ internal static class ApprovalExtractor
             return false;
         }
 
-        // Generate approval point name based on approver type (without "Approver" suffix)
-        var approvalPointName = GenerateApprovalPointName(approverTypeName, approvalIndex);
+        // Generate approval point name based on approver type (without "Approver" suffix). The SAME
+        // derivation is used by the JSON-import path (WireToModelBridge.MapApprovals) via the shared
+        // ApprovalPointNaming.Derive, so the two authoring channels cannot drift.
+        var approvalPointName = ApprovalPointNaming.Derive(approverTypeName, approvalIndex);
 
         // Parse Phase 2 configuration: OnTimeout and OnRejection
         IReadOnlyList<StepModel>? escalationSteps = null;
@@ -340,7 +342,7 @@ internal static class ApprovalExtractor
             return false;
         }
 
-        var approvalPointName = GenerateApprovalPointName(approverTypeName, nestedIndex);
+        var approvalPointName = ApprovalPointNaming.Derive(approverTypeName, nestedIndex);
 
         // For nested approvals, the preceding step is the parent approval context
         // We use "Escalation" as a placeholder since the actual preceding step depends on runtime
@@ -533,23 +535,5 @@ internal static class ApprovalExtractor
         // Fallback to syntax-based name
         stepName = SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
         return !string.IsNullOrEmpty(stepName);
-    }
-
-    private static string GenerateApprovalPointName(string approverTypeName, int index)
-    {
-        // Remove "Approver" suffix if present for cleaner phase names
-        var baseName = approverTypeName;
-        if (baseName.EndsWith("Approver", StringComparison.Ordinal))
-        {
-            baseName = baseName.Substring(0, baseName.Length - 8); // Remove "Approver" (8 chars)
-        }
-
-        // If the name would be empty after removing suffix, use original with index
-        if (string.IsNullOrEmpty(baseName))
-        {
-            return $"Approval{index}";
-        }
-
-        return baseName;
     }
 }

@@ -714,6 +714,7 @@ internal static class WireToModelBridge
         }
 
         var approvals = new List<ApprovalModel>(definition.ApprovalPoints.Count);
+        var approvalIndex = 0;
         foreach (var approvalDef in definition.ApprovalPoints)
         {
             // Context-bearing / escalation / rejection approvals are carriers rejected by task 018.
@@ -743,8 +744,17 @@ internal static class WireToModelBridge
                 return null;
             }
 
+            // DERIVE the approval-point name (a valid C# identifier) from the approver type name, via
+            // the SAME shared derivation the C#-authoring path uses (ApprovalPointNaming.Derive), so
+            // the two channels cannot drift. The wire ApprovalPointId is a GUID IDENTITY (e.g.
+            // Guid.NewGuid().ToString("N")), NOT a C# identifier — feeding a digit-leading GUID to
+            // ApprovalModel.Create fails IdentifierValidator and crashes the generator (CS8785). It is
+            // kept for wire identity/lookup only and never used as the generated point name.
+            var approvalPointName = ApprovalPointNaming.Derive(approverSymbol.Name, approvalIndex);
+            approvalIndex++;
+
             approvals.Add(ApprovalModel.Create(
-                approvalDef.ApprovalPointId ?? approverSymbol.Name,
+                approvalPointName,
                 approverTypeName,
                 precedingStepName));
         }

@@ -34,6 +34,8 @@ internal static class WorkflowCorpus
 
     private sealed class ManagerApprover;
 
+    private sealed class ReviewerApprover;
+
     /// <summary>A single corpus case: a named, tagged, built workflow.</summary>
     public sealed record Case(string Tag, string Name, WorkflowDefinition<TestWorkflowState> Workflow);
 
@@ -171,19 +173,20 @@ internal static class WorkflowCorpus
         }
     }
 
-    // awaitApproval — human-approval pauses with a CLR approver type. Every corpus approval here is
-    // CONTEXT-BEARING (.WithContext) and therefore a rejected carrier (bucket b, AGWF031).
+    // awaitApproval — human-approval pauses with a CLR approver type. This family straddles BOTH
+    // partition buckets: a CONTEXT-BEARING approval (.WithContext) is a rejected carrier (bucket b,
+    // AGWF031), while a CONTEXT-FREE approval is importable (bucket a, DR-12/DR-14).
     //
-    // NOTE (M10, DR-15): a CONTEXT-FREE approval is importable per DR-12/DR-14 (bucket a), but a
-    // BUILDER-produced context-free approval cannot currently be added here — the builder mints
-    // ApprovalPointId = Guid.NewGuid().ToString("N") (ApprovalDefinition.Create), and the IMPORT bridge
-    // (WireToModelBridge.MapApprovals) feeds that raw GUID to ApprovalModel.Create, which requires a
-    // VALID C# IDENTIFIER, so the generator throws (CS8785: "'…' is not a valid C# identifier
-    // (approvalPointName)"). The C#-authoring path does not hit this because ApprovalExtractor derives a
-    // valid name via GenerateApprovalPointName(approverType, index) and ignores the GUID id. Fixing the
-    // divergence (the import bridge must derive/sanitize the approval name the same way) lives in the
-    // import layer (owned by another agent), so the context-free importable arm is left unexercised here
-    // and reported as a blocker rather than added as a red fixture.
+    // M10 (DR-15) — the context-free arm IS now exercised. A builder-produced context-free approval
+    // mints ApprovalPointId = Guid.NewGuid().ToString("N") (ApprovalDefinition.Create). The import
+    // bridge (WireToModelBridge.MapApprovals) used to feed that raw GUID to ApprovalModel.Create as the
+    // approval-point NAME; a digit-leading GUID is not a valid C# identifier, so the generator threw
+    // (CS8785) and no saga was emitted. FIX-5 DERIVES a valid identifier from the approver type via the
+    // shared ApprovalPointNaming.Derive (the SAME derivation the C#-authoring ApprovalExtractor uses),
+    // keeping the GUID for identity only — so the context-free approval now lowers a saga (bucket a).
+    // That the lowered approval saga COMPILES is proven on a real reference graph by the
+    // Strategos.Generators.Behavioral.Tests build (roundtrip-approval.workflow.json →
+    // AddRoundtripApprovalImportWorkflow()); this corpus arm proves bucket-(a) MEMBERSHIP.
     private static IEnumerable<Case> AwaitApprovalCases()
     {
         for (var i = 0; i < 13; i++)
@@ -204,6 +207,17 @@ internal static class WorkflowCorpus
                     .StartWith<ValidateStep>()
                     .Then<ProcessStep>()
                     .AwaitApproval<ManagerApprover>(a => a.WithContext($"Sign off {n}"))
+                    .Finally<CompleteStep>());
+
+            // Context-FREE (bucket a): no .WithContext / escalation / rejection, so nothing lossy is
+            // carried and the approval is importable (DR-14). The bridge derives the approval-point name
+            // from the approver type (ReviewerApprover -> Reviewer) rather than the GUID approvalPointId,
+            // so the import lowers a saga instead of crashing (CS8785). RoundTripEquivalenceTests
+            // classifies this as bucket (a); the Behavioral.Tests build proves the lowered saga COMPILES.
+            yield return new Case("awaitApproval", $"approval-free-{n:D2}",
+                Workflow<TestWorkflowState>.Create($"approval-free-{n}")
+                    .StartWith<ValidateStep>()
+                    .AwaitApproval<ReviewerApprover>(_ => { })
                     .Finally<CompleteStep>());
         }
     }
