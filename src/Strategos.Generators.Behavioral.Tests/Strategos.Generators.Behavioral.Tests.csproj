@@ -31,6 +31,13 @@
          runs identically to its C# twin. -->
     <AdditionalFiles Include="Workflows\roundtrip-fork.workflow.json" />
     <AdditionalFiles Include="Workflows\roundtrip-config.workflow.json" />
+    <!-- M11 (DR-15): the onFailure importable family's bucket-(a) COMPILE + runtime
+         proof — a failureHandlers-bearing JSON the generator lowers to
+         RoundtripOnFailureImportSaga + AddRoundtripOnFailureImportWorkflow(). Its
+         compiling into THIS assembly is the real semantic check the in-memory
+         partition gate (RoundTripEquivalenceTests) only proxies; RoundTripBehavioralTests
+         runs it on the happy path. -->
+    <AdditionalFiles Include="Workflows\roundtrip-onfailure.workflow.json" />
   </ItemGroup>
 
   <ItemGroup>

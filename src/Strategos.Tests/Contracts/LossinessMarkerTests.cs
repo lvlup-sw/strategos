@@ -5,8 +5,11 @@
 // =============================================================================
 
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Strategos.Contracts;
 using Strategos.Contracts.SchemaDiff;
+using Strategos.Tests.FixtureExport;
 
 namespace Strategos.Tests.Contracts;
 
@@ -343,53 +346,58 @@ public class LossinessMarkerTests
     /// <summary>
     /// T-LM11 — adding the optional <c>hasContext</c> marker to the approval schema
     /// is a NON-BREAKING change: it lands in <c>properties</c> but never in
-    /// <c>required</c>, so existing producers/consumers are unaffected.
+    /// <c>required</c>, so existing producers/consumers are unaffected. Diffs the
+    /// REAL shipped <c>ApprovalDefinition.json</c> schema against a copy of itself
+    /// with the <c>hasContext</c> root property removed (mirroring
+    /// <c>ForkEdgeFixtureTests</c> T-FE6 via <c>RemoveRootProperty</c>), so the
+    /// versioning claim stays coupled to the actual emitted schema rather than to a
+    /// hand-written literal that can drift from it.
     /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task HasContextMarker_IsAdditive_NonBreaking()
     {
-        const string previous =
-            """
-            {
-              "$id": "ApprovalDefinition.json",
-              "type": "object",
-              "properties": {
-                "approvalPointId": { "type": "string" },
-                "approverType": { "type": "string" },
-                "precedingStepId": { "type": "string" }
-              },
-              "required": ["approvalPointId", "approverType", "precedingStepId"]
-            }
-            """;
+        var emitted = await File.ReadAllTextAsync(ApprovalSchemaPath);
 
-        const string next =
-            """
-            {
-              "$id": "ApprovalDefinition.json",
-              "type": "object",
-              "properties": {
-                "approvalPointId": { "type": "string" },
-                "approverType": { "type": "string" },
-                "precedingStepId": { "type": "string" },
-                "hasContext": { "type": "boolean", "const": true }
-              },
-              "required": ["approvalPointId", "approverType", "precedingStepId"]
-            }
-            """;
+        // The shipped schema must actually carry the root hasContext marker to remove.
+        using var doc = JsonDocument.Parse(emitted);
+        await Assert.That(doc.RootElement.GetProperty("properties").TryGetProperty("hasContext", out _))
+            .IsTrue()
+            .Because("the emitted ApprovalDefinition schema must actually carry the root hasContext marker (DR-14).");
 
-        var result = JsonSchemaDiff.Compare(previous, next);
+        // Synthesize the pre-marker root: the shipped schema with the hasContext root property removed.
+        var before = RemoveRootProperty(emitted, "hasContext");
+
+        var result = JsonSchemaDiff.Compare(before, emitted);
 
         await Assert.That(result.HasBreakingChanges).IsFalse()
             .Because("hasContext is optional (never in required) — an additive marker must be non-breaking (DR-14).");
         await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.NonBreaking);
         await Assert.That(result.Changes)
             .Contains(c => c.Severity == ChangeSeverity.NonBreaking
-                && c.Description.Contains("hasContext", StringComparison.Ordinal));
+                && c.Description.Contains("hasContext", StringComparison.Ordinal))
+            .Because("the differ must report the added optional hasContext property on the real emitted schema.");
     }
 
     // -------------------------------------------------------------------------
     // Helpers.
     // -------------------------------------------------------------------------
+
+    /// <summary>The shipped per-type <c>ApprovalDefinition.json</c> JSON Schema (the emitted artifact).</summary>
+    private static string ApprovalSchemaPath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos.Contracts", "schemas", "json-schema", "ApprovalDefinition.json");
+
+    /// <summary>
+    /// Returns <paramref name="schemaJson"/> with a single top-level
+    /// <c>properties.&lt;name&gt;</c> entry removed — the "before" baseline for the
+    /// additive-marker diff (mirrors <c>ForkEdgeFixtureTests.RemoveRootProperty</c>).
+    /// </summary>
+    private static string RemoveRootProperty(string schemaJson, string name)
+    {
+        var node = JsonNode.Parse(schemaJson)!;
+        node["properties"]!.AsObject().Remove(name);
+        return node.ToJsonString();
+    }
 
     /// <summary>
     /// Runs each <see cref="MarkerProbes"/> config through the projection and
