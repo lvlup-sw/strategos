@@ -82,4 +82,52 @@ public enum AgwfCode
     /// <summary>AGWF022 — Declared-but-inert step configuration.</summary>
     [JsonStringEnumMemberName("AGWF022")]
     DeclaredButInert,
+
+    /// <summary>AGWF023 — Malformed workflow import JSON.</summary>
+    [JsonStringEnumMemberName("AGWF023")]
+    MalformedWorkflowJson,
+
+    /// <summary>AGWF024 — Unsupported workflow schema version.</summary>
+    [JsonStringEnumMemberName("AGWF024")]
+    UnsupportedSchemaVersion,
+
+    /// <summary>AGWF025 — Unresolvable workflow step moniker.</summary>
+    [JsonStringEnumMemberName("AGWF025")]
+    UnresolvableStepMoniker,
+
+    /// <summary>AGWF026 — Ambiguous workflow step moniker.</summary>
+    [JsonStringEnumMemberName("AGWF026")]
+    AmbiguousStepMoniker,
+
+    /// <summary>AGWF027 — Imported delegate (lambda) step is not supported.</summary>
+    [JsonStringEnumMemberName("AGWF027")]
+    ImportRejectedDelegateStep,
+
+    /// <summary>AGWF028 — Imported branch point is not supported.</summary>
+    [JsonStringEnumMemberName("AGWF028")]
+    ImportRejectedBranchPoint,
+
+    /// <summary>AGWF029 — Imported loop is not supported.</summary>
+    [JsonStringEnumMemberName("AGWF029")]
+    ImportRejectedLoop,
+
+    /// <summary>AGWF030 — Imported validation predicate is not supported.</summary>
+    [JsonStringEnumMemberName("AGWF030")]
+    ImportRejectedValidationPredicate,
+
+    /// <summary>AGWF031 — Imported approval context is not supported.</summary>
+    [JsonStringEnumMemberName("AGWF031")]
+    ImportRejectedApprovalContext,
+
+    /// <summary>AGWF032 — Imported gate id does not resolve.</summary>
+    [JsonStringEnumMemberName("AGWF032")]
+    ImportDanglingGateId,
+
+    /// <summary>AGWF033 — Imported gate declaration carries reliability.</summary>
+    [JsonStringEnumMemberName("AGWF033")]
+    ImportReliabilityBearingGate,
+
+    /// <summary>AGWF034 — Imported fork trigger declares no required evidence fields.</summary>
+    [JsonStringEnumMemberName("AGWF034")]
+    ImportForkTriggerWithoutEvidence,
 }

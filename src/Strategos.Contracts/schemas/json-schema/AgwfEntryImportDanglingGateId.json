@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryImportDanglingGateId.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF032"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Imported gate id does not resolve"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' references gate id '{2}' at {1}, which is not declared in the workflow's gates[]. The dangling gate reference is rejected and no saga is generated; declare the gate in gates[] or remove the gateId."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF032 — Imported gate id does not resolve (DR-3)."
+}

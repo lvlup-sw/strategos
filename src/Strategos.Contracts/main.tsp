@@ -7,6 +7,9 @@ import "./Events/JourneyResult.tsp";
 import "./Events/Lifecycle.tsp";
 import "./Events/OntologicalLifecycle.tsp";
 import "./Events/FabricDelegation.tsp";
+import "./Events/ForkOccurrence.tsp";
+import "./Events/OntologyAbstained.tsp";
+import "./Workflow/ForkTrigger.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Workflow/WorkflowRef.tsp";
 import "./Workflow/WorkflowCatalog.tsp";
@@ -14,6 +17,9 @@ import "./Diagnostics/CheckNode.tsp";
 import "./Diagnostics/Enforcement.tsp";
 import "./Diagnostics/InvariantEntry.tsp";
 import "./Diagnostics/AgwfCatalog.tsp";
+import "./Gates/GateClass.tsp";
+import "./Gates/GateDeclaration.tsp";
+import "./Ontology/AbstentionResponse.tsp";
 
 using JsonSchema;
 

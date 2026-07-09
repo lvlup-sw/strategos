@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryUnresolvableStepMoniker.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF025"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Unresolvable workflow step moniker"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' references step moniker '{1}', which does not resolve to any accessible workflow step type in the compilation. Add the step type (implementing IWorkflowStep<TState>) or correct the moniker."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF025 — Unresolvable workflow step moniker (DR-13)."
+}

@@ -30,7 +30,7 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
         ArgumentOutOfRangeException.ThrowIfLessThan(threshold, 0.0, nameof(threshold));
         ArgumentOutOfRangeException.ThrowIfGreaterThan(threshold, 1.0, nameof(threshold));
 
-        _configuration = StepConfigurationDefinition.WithConfidence(threshold);
+        _configuration = _configuration with { ConfidenceThreshold = threshold };
         return this;
     }
 

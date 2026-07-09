@@ -72,6 +72,13 @@ public static class WorkflowDefinitionProjection
             ForkPoints = [.. workflow.ForkPoints.Select(ProjectForkPoint)],
             FailureHandlers = [.. workflow.FailureHandlers.Select(ProjectFailureHandler)],
             ApprovalPoints = [.. workflow.ApprovalPoints.Select(ProjectApproval)],
+
+            // DR-7 (#151): the diagnostic-fork edges are OPTIONAL and additive on the
+            // wire (the diagnosticForks? slot). A workflow that declares none omits the
+            // slot entirely, so the projection maps an empty list to null.
+            DiagnosticForks = workflow.DiagnosticForks.Count == 0
+                ? null
+                : [.. workflow.DiagnosticForks.Select(ProjectDiagnosticFork)],
             EntryStepId = workflow.EntryStep?.StepId,
             TerminalStepId = workflow.TerminalStep?.StepId,
         };
@@ -171,6 +178,27 @@ public static class WorkflowDefinitionProjection
                 "the projection must never silently default an unrecognized kind."),
         };
 
+    /// <summary>
+    /// Projects a builder diagnostic-fork edge (DR-7, #151) to its wire form. Every
+    /// reference is a string moniker (INV-8) except the closed <see cref="ForkTrigger"/>
+    /// vocabulary, which is a shared enum carried by value — not a CLR type.
+    /// </summary>
+    private static Wire.DiagnosticForkDefinition ProjectDiagnosticFork(DiagnosticForkDefinition f) => new()
+    {
+        AnchorStepIds = [.. f.AnchorStepIds],
+        PermittedTriggers = [.. f.PermittedTriggers.Select(ProjectPermittedForkTrigger)],
+        MaxForks = f.MaxForks,
+        CompensationSeed = f.CompensationSeed,
+    };
+
+    private static Wire.PermittedForkTrigger ProjectPermittedForkTrigger(PermittedForkTriggerDefinition p) => new()
+    {
+        // The closed ForkTrigger enum is shared across the contract boundary (DR-8);
+        // it round-trips by value, so the builder-IR enum maps directly to the wire enum.
+        Trigger = p.Trigger,
+        RequiredEvidenceFields = [.. p.RequiredEvidenceFields],
+    };
+
     private static Wire.TransitionDefinition ProjectTransition(TransitionDefinition t) => new()
     {
         TransitionId = t.TransitionId,
@@ -246,7 +274,28 @@ public static class WorkflowDefinitionProjection
         PrecedingStepId = a.PrecedingStepId,
         EscalationHandler = a.EscalationHandler is null ? null : ProjectEscalation(a.EscalationHandler),
         RejectionHandler = a.RejectionHandler is null ? null : ProjectRejection(a.RejectionHandler),
+
+        // DR-14 (marking half): the approval's context body (a static message or
+        // a runtime context factory) is not carried on the wire (LB-1); its loss
+        // is made visible by hasContext:true rather than dropped silently. The
+        // marker is emitted only when context was configured and is omitted for a
+        // context-free approval point, so the addition stays additive/non-breaking.
+        HasContext = HasApprovalContext(a.Configuration) ? true : null,
     };
+
+    /// <summary>
+    /// Whether an approval carried context configuration — a static context
+    /// message (<see cref="ApprovalConfiguration.StaticContext"/>) or a runtime
+    /// context factory expression
+    /// (<see cref="ApprovalConfiguration.ContextFactoryExpression"/>). Either is
+    /// the LB-1 lossy body the wire does not carry; both are surfaced by the
+    /// single <c>hasContext</c> marker (DR-14). A context-free approval point
+    /// returns <see langword="false"/> and carries no marker.
+    /// </summary>
+    private static bool HasApprovalContext(ApprovalConfiguration? configuration) =>
+        configuration is not null
+        && (!string.IsNullOrEmpty(configuration.StaticContext)
+            || !string.IsNullOrEmpty(configuration.ContextFactoryExpression));
 
     private static Wire.ApprovalEscalationDefinition ProjectEscalation(ApprovalEscalationDefinition e) => new()
     {

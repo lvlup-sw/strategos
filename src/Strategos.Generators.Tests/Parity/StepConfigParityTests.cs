@@ -61,6 +61,29 @@ public sealed class StepConfigParityTests
             ["OnLowConfidence"] = new(
                 "ConfidenceBehaviorTests.Saga_LowConfidence_RoutesToOnLowConfidenceBranch",
                 "Strategos.Generators.Behavioral.Tests/ConfidenceBehaviorTests.cs"),
+
+            // Fork-path confidence lowering (DR-4 / #145 gap A): a fork path's LAST step
+            // (the "fork handler") now lowers its confidence gate into the generated fork
+            // path-completed handler, proven behaviorally on the real host. Intermediate
+            // (non-last) fork-path confidence stays deferred (see Deferred below).
+            ["RequireConfidence(fork-path)"] = new(
+                "ForkPathConfidenceTests.Saga_ForkPathLowConfidence_RoutesToOnLowConfidenceHandler",
+                "Strategos.Generators.Behavioral.Tests/ForkPathConfidenceTests.cs"),
+            ["OnLowConfidence(fork-path)"] = new(
+                "ForkPathConfidenceTests.Saga_ForkPathLowConfidence_AppendsLowConfidenceRoutedEvent",
+                "Strategos.Generators.Behavioral.Tests/ForkPathConfidenceTests.cs"),
+
+            // Loop-body / nested-RepeatUntil confidence lowering (DR-5 / #145 gap B): a loop
+            // body's LAST step now lowers its confidence gate into the generated loop completed
+            // handler, proven behaviorally on the real host. Confidence on an INTERMEDIATE
+            // (non-last) loop-body step stays deferred (see Deferred below). Before this, ALL
+            // nested-RepeatUntil confidence was dropped from the IR and inert.
+            ["RequireConfidence(nested-RepeatUntil)"] = new(
+                "NestedRepeatUntilConfidenceTests.Saga_LoopBodyHighConfidence_ContinuesLoopEvaluation",
+                "Strategos.Generators.Behavioral.Tests/NestedRepeatUntilConfidenceTests.cs"),
+            ["OnLowConfidence(nested-RepeatUntil)"] = new(
+                "NestedRepeatUntilConfidenceTests.Saga_LoopBodyLowConfidence_RoutesToOnLowConfidenceHandler",
+                "Strategos.Generators.Behavioral.Tests/NestedRepeatUntilConfidenceTests.cs"),
             ["Compensate"] = new(
                 "CompensationBehaviorTests.Saga_RetryExhaustedWithCompensate_RunsCompensationOnceAndTransitionsToFailed",
                 "Strategos.Generators.Behavioral.Tests/CompensationBehaviorTests.cs"),
@@ -110,28 +133,42 @@ public sealed class StepConfigParityTests
     private static readonly IReadOnlyDictionary<string, DeferredEntry> Deferred =
         new Dictionary<string, DeferredEntry>(StringComparer.Ordinal)
         {
-            // Fork-path confidence config IS threaded into the IR (so AGWF018 still fires on a
-            // bad threshold) but is not lowered into saga routing — it is structurally
-            // diagnosable and is guarded by AGWF022 (DeclaredButInert / DeclaredButInertTests).
-            ["RequireConfidence(fork-path)"] = new(
+            // Confidence config on an INTERMEDIATE (non-last) fork-path step IS threaded into
+            // the IR (so AGWF018 still fires on a bad threshold) but is not lowered into saga
+            // routing: only a fork path's LAST step lowers its gate into the path-completed
+            // handler (the moved (fork-path) entries above). An intermediate fork-path step
+            // runs through the generic completed handler with no gate — structurally
+            // diagnosable and still guarded by AGWF022 (DeclaredButInert / DeclaredButInertTests).
+            ["RequireConfidence(fork-path-intermediate)"] = new(
                 145,
-                "Confidence gating on a fork path is deferred to v2.10.0 / DR-17; the config "
-                + "reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it is "
-                + "structurally diagnosable."),
-            ["OnLowConfidence(fork-path)"] = new(
+                "Confidence gating on an intermediate (non-last) fork-path step is deferred to "
+                + "v2.10.0 / DR-17; the config reaches the IR and is AGWF022-guarded "
+                + "(DeclaredButInertTests), so it is structurally diagnosable."),
+            ["OnLowConfidence(fork-path-intermediate)"] = new(
                 145,
-                "OnLowConfidence routing on a fork path is deferred to v2.10.0 / DR-17; the "
-                + "config reaches the IR and is AGWF022-guarded (DeclaredButInertTests), so it "
-                + "is structurally diagnosable."),
-            // Distinct from the fork-path case above: loop-body / nested-RepeatUntil confidence
-            // config is DROPPED from the IR entirely by step extraction, so an IR-based
-            // diagnostic structurally CANNOT see it — it is NOT AGWF022-guarded. Silently inert,
-            // tracked under #145 for v2.10.0.
-            ["OnLowConfidence(nested-RepeatUntil)"] = new(
+                "OnLowConfidence routing on an intermediate (non-last) fork-path step is deferred "
+                + "to v2.10.0 / DR-17; the config reaches the IR and is AGWF022-guarded "
+                + "(DeclaredButInertTests), so it is structurally diagnosable."),
+            // Loop-body / nested-RepeatUntil confidence on an INTERMEDIATE (non-last) loop-body
+            // step is threaded into the IR (task 009 promoted the loop body to configured
+            // StepModel records on LoopModel.BodySteps) but is not lowered into saga routing:
+            // only a loop body's LAST step lowers its gate into the loop completed handler (the
+            // moved (nested-RepeatUntil) entries above). An intermediate loop-body step is
+            // structurally diagnosable and guarded by the declared-but-inert diagnostic
+            // (DeclaredButInertTests) — no longer the silently-inert, undiagnosable case it was
+            // (#145 gap B).
+            ["RequireConfidence(nested-RepeatUntil-intermediate)"] = new(
                 145,
-                "OnLowConfidence inside a nested RepeatUntil loop is dropped from the IR by step "
-                + "extraction (structurally undiagnosable — no AGWF022), deferred to "
-                + "v2.10.0 / DR-17."),
+                "Confidence gating on an intermediate (non-last) loop-body step is deferred to "
+                + "v2.10.0 / DR-17; the config reaches the IR (LoopModel.BodySteps) and is "
+                + "declared-but-inert-guarded (DeclaredButInertTests), so it is structurally "
+                + "diagnosable."),
+            ["OnLowConfidence(nested-RepeatUntil-intermediate)"] = new(
+                145,
+                "OnLowConfidence routing on an intermediate (non-last) loop-body step is deferred "
+                + "to v2.10.0 / DR-17; the config reaches the IR (LoopModel.BodySteps) and is "
+                + "declared-but-inert-guarded (DeclaredButInertTests), so it is structurally "
+                + "diagnosable."),
         };
 
     /// <summary>

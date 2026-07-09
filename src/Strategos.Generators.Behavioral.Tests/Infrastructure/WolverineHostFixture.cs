@@ -110,6 +110,14 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddLowConfidenceWorkflow();
                 opts.Services.AddHighConfidenceWorkflow();
 
+                // The loop-body confidence-gate workflows (DR-5 / #145 gap B). Each generated
+                // saga carries the loop completed handler whose confidence gate compares the
+                // loop body's LAST step result confidence to the 0.85 threshold and either routes
+                // to the lowered OnLowConfidence handler (low case) or falls through to the loop
+                // condition evaluation (high case). Both share the singleton invocation log below.
+                opts.Services.AddLowLoopConfidenceWorkflow();
+                opts.Services.AddHighLoopConfidenceWorkflow();
+
                 // The multi-step / rejoining OnLowConfidence workflows (G-4 / #139):
                 // a two-step handler chain, a single-step REJOINING handler that
                 // resumes the main flow, and a single-step TERMINATING handler

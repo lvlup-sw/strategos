@@ -56,23 +56,28 @@ This document catalogs all features from the Strategos design specification that
 >   new config member forces the author to point it at a behavioral proof or file a deferral.
 > - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
 >   concern the generator does **not** lower for that step's kind, so it silently has no
->   effect. The guarded case is **confidence gating (`RequireConfidence`/`OnLowConfidence`)
->   on a `Fork` path** — the fork-path parse threads the configure lambda into the IR (so an
->   out-of-range threshold still surfaces the threshold-range code), but the saga emitter does
->   not lower fork-path confidence routing. That variant is **deferred to v2.10.0 / DR-17
+>   effect. The guarded cases are **confidence gating (`RequireConfidence`/`OnLowConfidence`)
+>   on an INTERMEDIATE (non-last) step of a `Fork` path OR a `RepeatUntil` loop body** — the
+>   parse threads the configure lambda into the IR (so an out-of-range threshold still surfaces
+>   the threshold-range code), but the saga emitter lowers confidence routing only for the
+>   construct's LAST step (the fork path-completed handler, DR-4 / #145 gap A; the loop completed
+>   handler, DR-5 / #145 gap B). The intermediate variant is **deferred to v2.10.0 / DR-17
 >   (#145)**; until then the diagnostic prevents the inert configuration from masquerading as
 >   working. (Surfacing 6.1's backfill also fixed two real top-level `ValidateState` lowering
 >   gaps — configure-lambda validation was dropped for top-level/loop steps, and the predicate
 >   parameter had to be named literally `state` to compile.)
 >
->   **Scope boundary — loop-body / nested-`RepeatUntil` confidence config is _not_ AGWF022-guarded.**
->   Confidence configuration declared on a step inside a `RepeatUntil` loop body is **dropped
->   from the IR entirely** by step extraction, so an IR-based diagnostic structurally **cannot**
->   see it — there is nothing in the IR for AGWF022 to inspect. It is therefore **silently inert**
->   (no compile-time warning), distinct from the fork-path case above which *is* threaded into the
->   IR and *is* diagnosed. Loop-body confidence routing is likewise **deferred to v2.10.0 / DR-17
->   (#145)**; emitting a diagnostic for it requires the lowering work that brings loop-body config
->   into the IR in the first place.
+>   **Scope boundary (updated — #145 gap B, loop-body confidence lowering).** A loop body's
+>   **LAST step** now lowers its confidence gate into the generated **loop completed handler**
+>   (DR-5, mirroring the fork path-completed handler): the handler compares the completed event's
+>   confidence to the threshold BEFORE the loop-condition checks and, when below, routes to the
+>   `OnLowConfidence` handler chain instead of continuing/exiting the loop. Proven behaviorally
+>   (`NestedRepeatUntilConfidenceTests`, real host). Confidence on an **INTERMEDIATE (non-last)**
+>   loop-body step remains **deferred to v2.10.0 / DR-17 (#145)** and is now **AGWF022-guarded**:
+>   promoting the loop body to configured `StepModel` records on `LoopModel.BodySteps` (#145)
+>   brought loop-body config into the IR, so the previously **structurally-undiagnosable** class
+>   is eliminated — an intermediate loop-body confidence declaration now surfaces the
+>   declared-but-inert warning instead of being silently dropped.
 
 **Total Deferred Features:** 8
 **Deferral Categories:**
@@ -128,6 +133,7 @@ public class AssessClaimValidity : AgentStep<InsuranceClaimState>
 - **Configuration Complexity:** Model selection, prompt templating, output parsing, retry strategies vary by use case
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Developer Experience | Medium | Consumers must implement `IWorkflowStep<T>` manually for agent steps |
@@ -182,6 +188,7 @@ public abstract class MyAgentStep<TState> : IWorkflowStep<TState>
 - **Complex Serialization:** Context capture for audit trails requires domain-specific formatting
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Auditability | Medium | Consumers must manually capture assembled context in events |
@@ -237,6 +244,7 @@ public class AnalyzeDocument : IWorkflowStep<DocState>
 - **Configuration Complexity:** Embedding models, chunk strategies, and retrieval parameters are highly domain-specific
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Development Velocity | Medium | No turnkey RAG; consumers implement retrieval manually |
@@ -286,6 +294,7 @@ public ConversationHistory Messages { get; init; }
 - **LLM Dependency:** Summarization requires LLM calls, adding cost and latency
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Long Conversations | Medium | Consumers must implement windowing/summarization |
@@ -348,6 +357,7 @@ These features relate to source generator capabilities.
 - **Priority:** Fork/Join and Approval patterns prioritized for MVP
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Error Recovery | Medium | Workflow-level `OnFailure` *handler chain* still routes to `Failed` without running its handler steps |
@@ -385,6 +395,7 @@ public partial class OrderProcessingSaga
 - **Runtime-Only by Nature:** Lambdas capture closures that don't exist at generation time
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Worker Handlers | None | Lambda steps execute inline in saga; no worker needed |
@@ -394,6 +405,42 @@ public partial class OrderProcessingSaga
 **Workaround:** None needed—lambda steps work correctly at runtime. They're intentionally lightweight and don't require generation.
 
 **Recommendation:** Document as expected behavior; no generator support needed.
+
+---
+
+### 2.3 JSON Import Re-binding of Dropped Bodies (#100)
+
+**Design Spec Reference:** DR-14 (carrier rejection), LB-1 (lossy export)
+
+**Current State (task 018, #100):**
+- The JSON import front-end (`WireToModelBridge`) now REJECTS every runtime-bindable carrier and semantic violation LOUDLY, with a per-case stable diagnostic that names the construct + its JSON path, and emits NO saga for that workflow:
+  - delegate (lambda) step → `AgwfCodes.ImportRejectedDelegateStep`
+  - branch point → `AgwfCodes.ImportRejectedBranchPoint`
+  - loop (`RepeatUntil`) → `AgwfCodes.ImportRejectedLoop`
+  - validation predicate → `AgwfCodes.ImportRejectedValidationPredicate`
+  - context-bearing approval (task-024 `hasContext`, escalation, or rejection) → `AgwfCodes.ImportRejectedApprovalContext`
+  - dangling `gateId` (DR-3) → `AgwfCodes.ImportDanglingGateId`
+  - reliability-bearing gate declaration (DR-2) → `AgwfCodes.ImportReliabilityBearingGate`
+
+**Deferred (follow-ons on #100):** the *acceptance* half — re-binding the bodies the wire export drops (LB-1) so these carriers can be IMPORTED rather than rejected:
+- **Condition re-binding** — a branch point's branch condition and a loop's `RepeatUntil` exit condition are dropped on export; importing them needs a way to re-bind a declarative condition to executable code. Validation predicates share this gap.
+- **Lambda re-binding registry** — a delegate (lambda) step's body is dropped; importing one needs a named step registry the wire moniker can resolve a re-bound implementation against.
+- **Context re-binding** — an approval's context body (static message or runtime context factory), escalation, and rejection handlers are dropped; importing a context-bearing approval needs a way to re-bind that context.
+
+**Deferral Rationale:**
+- **Reject before accept:** a loud rejection (task 018) is strictly safer than a silent drop — a lossy import cannot masquerade as a working saga while the re-binding mechanism is designed.
+- **Mechanism not yet designed:** each re-binding needs a declarative→executable bridge (a registry or an expression language) that is out of scope for the import subset.
+
+**Impact:**
+
+| Aspect | Impact Level | Description |
+|--------|--------------|-------------|
+| Import coverage | Medium | Workflows using conditions, lambdas, or approval context cannot be authored via JSON; they must be authored in C# |
+| Safety | Positive | Carriers are rejected loudly with an actionable diagnostic + JSON path rather than silently dropped |
+
+**Workaround:** Author workflows that need conditions, lambda bodies, or approval context via the C# fluent `[Workflow]` DSL (the primary front-end); reserve JSON import for the importable subset.
+
+**Recommendation:** Design the re-binding mechanisms as #100 follow-ons; keep the rejection diagnostics as the contract boundary in the meantime.
 
 ---
 
@@ -421,6 +468,7 @@ public class ProcessClaimProjection : SingleStreamProjection<ProcessClaimReadMod
 - **Marten Expertise Required:** Projection strategies (inline, async, live) depend on scale and consistency requirements
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Query Support | Medium | Consumers must create projections for workflow queries |
@@ -474,6 +522,7 @@ AgentDecisionEvent {
 - **Application Concern:** Version management is a deployment/operations concern
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | A/B Testing | Medium | Consumers must track agent versions manually |
@@ -588,5 +637,6 @@ All deferred features have documented workarounds using standard library pattern
 - Conversation History -> `[Append]` attribute + manual summarization
 - Workflow-level OnFailure handler chain -> Partial class extension (step-level `Compensate<T>()` resolved by #135; see §2.1)
 - Multi-step / rejoining `OnLowConfidence` handlers -> single-step terminating handler lowered by #135; chains/rejoin pending
+- JSON import of condition / lambda / approval-context carriers (#100) -> rejected loudly at import (task 018); author these in the C# fluent DSL until re-binding lands (see §2.3)
 - Projections -> Manual Marten projections
 - Agent Versioning -> Custom events in step implementations

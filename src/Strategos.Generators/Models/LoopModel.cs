@@ -21,6 +21,15 @@ namespace Strategos.Generators.Models;
 /// - Loop exit/continue transition logic.
 /// </para>
 /// <para>
+/// The loop body is carried as configured <see cref="StepModel"/> records (mirroring the
+/// top-level/fork emitters' step model) rather than bare names, so per-step configuration
+/// declared via <c>Then&lt;TStep&gt;(step =&gt; step.RequireConfidence(...).OnLowConfidence(...))</c>
+/// is preserved on the loop body and lowers into the saga exactly as a top-level/fork step's
+/// does (DR-5). <see cref="FirstBodyStepName"/>/<see cref="LastBodyStepName"/> are computed
+/// projections over <see cref="BodySteps"/> (the <see cref="ForkPathModel"/> precedent), so
+/// existing emitter call sites that key off the first/last body step name compile unchanged.
+/// </para>
+/// <para>
 /// Nested loops are supported via ParentLoopName, which enables hierarchical naming
 /// for generated code (e.g., "OuterLoop_InnerLoop_StepName").
 /// </para>
@@ -28,8 +37,7 @@ namespace Strategos.Generators.Models;
 /// <param name="LoopName">The name of the loop (e.g., "Refinement").</param>
 /// <param name="ConditionId">The unique identifier for registry lookup (e.g., "ProcessClaim-Refinement").</param>
 /// <param name="MaxIterations">The maximum allowed iterations before forced exit.</param>
-/// <param name="FirstBodyStepName">The prefixed name of the first step in the loop body.</param>
-/// <param name="LastBodyStepName">The prefixed name of the last step in the loop body.</param>
+/// <param name="BodySteps">The ordered list of configured steps that make up the loop body.</param>
 /// <param name="ContinuationStepName">The step to execute after loop exit, or null if terminal.</param>
 /// <param name="ParentLoopName">The name of the parent loop for nested loops, or null for top-level.</param>
 /// <param name="BranchOnExitId">The ID of the branch that should be evaluated when the loop exits, or null if no branch follows.</param>
@@ -38,13 +46,38 @@ internal sealed record LoopModel(
     string LoopName,
     string ConditionId,
     int MaxIterations,
-    string FirstBodyStepName,
-    string LastBodyStepName,
+    IReadOnlyList<StepModel> BodySteps,
     string? ContinuationStepName,
     string? ParentLoopName,
     string? BranchOnExitId = null,
     BranchModel? BranchOnExit = null)
 {
+    /// <summary>
+    /// Gets the prefixed name of the first step in the loop body.
+    /// </summary>
+    /// <remarks>
+    /// Projects <see cref="BodySteps"/> to the first step's <see cref="StepModel.PhaseName"/>
+    /// (which includes the loop prefix). Emitters that key off the first body step name continue
+    /// to consume this projection unchanged.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when <see cref="BodySteps"/> is empty.</exception>
+    public string FirstBodyStepName => BodySteps.Count > 0
+        ? BodySteps[0].PhaseName
+        : throw new InvalidOperationException("Cannot access FirstBodyStepName: BodySteps is empty.");
+
+    /// <summary>
+    /// Gets the prefixed name of the last step in the loop body.
+    /// </summary>
+    /// <remarks>
+    /// Projects <see cref="BodySteps"/> to the last step's <see cref="StepModel.PhaseName"/>
+    /// (which includes the loop prefix). Emitters that key off the last body step name continue
+    /// to consume this projection unchanged.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when <see cref="BodySteps"/> is empty.</exception>
+    public string LastBodyStepName => BodySteps.Count > 0
+        ? BodySteps[BodySteps.Count - 1].PhaseName
+        : throw new InvalidOperationException("Cannot access LastBodyStepName: BodySteps is empty.");
+
     /// <summary>
     /// Gets the full hierarchical prefix for steps in this loop.
     /// </summary>
@@ -89,8 +122,7 @@ internal sealed record LoopModel(
     /// <param name="loopName">The name of the loop (e.g., "Refinement"). Must be a valid C# identifier.</param>
     /// <param name="conditionId">The unique identifier for registry lookup. Cannot be null or whitespace.</param>
     /// <param name="maxIterations">The maximum allowed iterations before forced exit. Must be >= 1.</param>
-    /// <param name="firstBodyStepName">The prefixed name of the first step in the loop body. Cannot be null or whitespace.</param>
-    /// <param name="lastBodyStepName">The prefixed name of the last step in the loop body. Cannot be null or whitespace.</param>
+    /// <param name="bodySteps">The ordered list of configured loop-body steps. Must have at least one step.</param>
     /// <param name="continuationStepName">The optional step to execute after loop exit.</param>
     /// <param name="parentLoopName">The optional name of the parent loop. If provided, must be a valid C# identifier.</param>
     /// <param name="branchOnExitId">The optional ID of the branch to evaluate on loop exit (deprecated, use branchOnExit).</param>
@@ -103,8 +135,7 @@ internal sealed record LoopModel(
         string loopName,
         string conditionId,
         int maxIterations,
-        string firstBodyStepName,
-        string lastBodyStepName,
+        IReadOnlyList<StepModel> bodySteps,
         string? continuationStepName = null,
         string? parentLoopName = null,
         string? branchOnExitId = null,
@@ -115,8 +146,12 @@ internal sealed record LoopModel(
         IdentifierValidator.ValidateIdentifier(loopName, nameof(loopName));
         ThrowHelper.ThrowIfNullOrWhiteSpace(conditionId, nameof(conditionId));
         ThrowHelper.ThrowIfLessThan(maxIterations, 1, nameof(maxIterations));
-        ThrowHelper.ThrowIfNullOrWhiteSpace(firstBodyStepName, nameof(firstBodyStepName));
-        ThrowHelper.ThrowIfNullOrWhiteSpace(lastBodyStepName, nameof(lastBodyStepName));
+        ThrowHelper.ThrowIfNull(bodySteps, nameof(bodySteps));
+
+        if (bodySteps.Count == 0)
+        {
+            throw new ArgumentException("Loop must have at least one body step.", nameof(bodySteps));
+        }
 
         // Validate optional parent loop name if provided
         if (parentLoopName is not null && !IdentifierValidator.IsValidIdentifier(parentLoopName))
@@ -130,8 +165,7 @@ internal sealed record LoopModel(
             LoopName: loopName,
             ConditionId: conditionId,
             MaxIterations: maxIterations,
-            FirstBodyStepName: firstBodyStepName,
-            LastBodyStepName: lastBodyStepName,
+            BodySteps: bodySteps,
             ContinuationStepName: continuationStepName,
             ParentLoopName: parentLoopName,
             BranchOnExitId: branchOnExitId,

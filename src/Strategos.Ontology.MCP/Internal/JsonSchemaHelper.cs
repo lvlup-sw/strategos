@@ -70,6 +70,61 @@ internal static class JsonSchemaHelper
             JsonSerializerOptions.Default,
             typeof(T));
 
+        RewriteRootAnyOfToOneOf(node, typeof(T).Name);
+
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    /// <summary>
+    /// Returns a JSON Schema for the <see cref="OntologyAnswerUnion"/> (DR-11),
+    /// rewriting the root <c>anyOf</c> to <c>oneOf</c> (as <see cref="JsonSchemaForUnion{T}"/>
+    /// does) AND injecting <c>minItems: 1</c> onto the <see cref="Answer"/> branch's
+    /// <c>citations</c> array so the advertised schema pins the non-empty-citations
+    /// guarantee the composer enforces at runtime. <see cref="NoAnswerRecorded"/>'s
+    /// <c>nearestRecords</c> is left unconstrained (it may legitimately be empty).
+    /// </summary>
+    [RequiresUnreferencedCode("Schema generation reflects over the union types; not safe under trimming.")]
+    [RequiresDynamicCode("Schema generation may require runtime code generation.")]
+    public static JsonElement JsonSchemaForAnswerUnion()
+    {
+        var exporterOptions = new JsonSchemaExporterOptions
+        {
+            TransformSchemaNode = static (context, node) =>
+            {
+                // Match the Answer branch's citations array by its JSON property name
+                // (NoAnswerRecorded.nearestRecords is a different name, so it is left
+                // alone). minItems: 1 advertises "no free-text uncited answer" (DR-11).
+                if (context.PropertyInfo?.Name == "citations"
+                    && node is JsonObject arraySchema
+                    && arraySchema["type"] is JsonValue typeValue
+                    && typeValue.GetValueKind() == JsonValueKind.String
+                    && typeValue.GetValue<string>() == "array")
+                {
+                    arraySchema["minItems"] = 1;
+                }
+
+                return node;
+            },
+        };
+
+        var node = JsonSchemaExporter.GetJsonSchemaAsNode(
+            JsonSerializerOptions.Default,
+            typeof(OntologyAnswerUnion),
+            exporterOptions);
+
+        RewriteRootAnyOfToOneOf(node, nameof(OntologyAnswerUnion));
+
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    /// <summary>
+    /// Rewrites the root <c>anyOf</c> emitted by <see cref="JsonSchemaExporter"/> for a
+    /// polymorphic type to <c>oneOf</c> in place, then asserts a top-level <c>oneOf</c>
+    /// survived — failing loudly if the exporter output shape changed (e.g. wrapping in
+    /// <c>$defs</c>/<c>$ref</c>) so the rewrite can never silently no-op.
+    /// </summary>
+    private static void RewriteRootAnyOfToOneOf(JsonNode? node, string unionTypeName)
+    {
         if (node is JsonObject obj && obj["anyOf"] is JsonArray anyOf)
         {
             // Replace anyOf with oneOf in-place. The branch sub-schemas already
@@ -79,18 +134,16 @@ internal static class JsonSchemaHelper
             obj["oneOf"] = anyOf.DeepClone();
         }
 
-        // Positive root-shape assertion: a polymorphic T must yield a top-level
-        // 'oneOf' (after the rewrite). If it doesn't, JsonSchemaExporter's
-        // output shape has changed and our rewrite has silently no-op'd —
-        // fail loudly so the descriptor never ships a malformed schema.
+        // Positive root-shape assertion: a polymorphic type must yield a top-level
+        // 'oneOf' (after the rewrite). If it doesn't, JsonSchemaExporter's output
+        // shape has changed and our rewrite has silently no-op'd — fail loudly so the
+        // descriptor never ships a malformed schema.
         if (node is not JsonObject after || after["oneOf"] is null)
         {
             throw new InvalidOperationException(
-                $"Expected JsonSchemaExporter output for polymorphic type {typeof(T).Name} " +
+                $"Expected JsonSchemaExporter output for polymorphic type {unionTypeName} " +
                 $"to contain a top-level 'oneOf' (after 'anyOf'->'oneOf' rewrite); got: {node?.ToJsonString() ?? "<null>"}. " +
                 "JsonSchemaExporter output shape may have changed.");
         }
-
-        return JsonSerializer.SerializeToElement(node);
     }
 }

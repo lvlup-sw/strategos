@@ -1,0 +1,254 @@
+#nullable enable
+const Strategos.Ontology.MCP.OntologyAbstainedRecord.EventType = "ontology.abstained" -> string!
+const Strategos.Ontology.MCP.OntologyTraversalLimits.MaxDepth = 3 -> int
+const Strategos.Ontology.MCP.OntologyTraverseTool.RowBudget = 100 -> int
+static Strategos.Ontology.MCP.NoOpOntologyAuditSink.Instance.get -> Strategos.Ontology.MCP.NoOpOntologyAuditSink!
+static Strategos.Ontology.MCP.OntologyAnswerComposer.AdvertisedOutputSchema() -> System.Text.Json.JsonElement
+static Strategos.Ontology.MCP.ResponseMeta.ForGraph(Strategos.Ontology.OntologyGraph! graph) -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.ActionConstraintSummary
+Strategos.Ontology.MCP.ActionConstraintSummary.ActionConstraintSummary(string! ObjectTypeName, string! ActionName, int HardConstraintCount, int SoftConstraintCount, System.Collections.Generic.IReadOnlyList<string!>! ConstraintDescriptions) -> void
+Strategos.Ontology.MCP.ActionConstraintSummary.ActionName.get -> string!
+Strategos.Ontology.MCP.ActionConstraintSummary.ActionName.init -> void
+Strategos.Ontology.MCP.ActionConstraintSummary.ConstraintDescriptions.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Strategos.Ontology.MCP.ActionConstraintSummary.ConstraintDescriptions.init -> void
+Strategos.Ontology.MCP.ActionConstraintSummary.HardConstraintCount.get -> int
+Strategos.Ontology.MCP.ActionConstraintSummary.HardConstraintCount.init -> void
+Strategos.Ontology.MCP.ActionConstraintSummary.ObjectTypeName.get -> string!
+Strategos.Ontology.MCP.ActionConstraintSummary.ObjectTypeName.init -> void
+Strategos.Ontology.MCP.ActionConstraintSummary.SoftConstraintCount.get -> int
+Strategos.Ontology.MCP.ActionConstraintSummary.SoftConstraintCount.init -> void
+Strategos.Ontology.MCP.ActionToolResult
+Strategos.Ontology.MCP.ActionToolResult.ActionToolResult(System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>! Results, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.ActionToolResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.ActionToolResult.Meta.init -> void
+Strategos.Ontology.MCP.ActionToolResult.Results.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>!
+Strategos.Ontology.MCP.ActionToolResult.Results.init -> void
+Strategos.Ontology.MCP.Answer
+Strategos.Ontology.MCP.Answer.Citations.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>!
+Strategos.Ontology.MCP.Answer.Citations.init -> void
+Strategos.Ontology.MCP.Answer.Content.get -> string!
+Strategos.Ontology.MCP.Answer.Content.init -> void
+Strategos.Ontology.MCP.Answer.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.Answer.Meta.init -> void
+Strategos.Ontology.MCP.AssemblyMarker
+Strategos.Ontology.MCP.AssociationEdgeRow
+Strategos.Ontology.MCP.AssociationEdgeRow.AssociationEdgeRow(string! AssociationName, string! SourceDescriptor, string! SourceId, string! DestinationDescriptor, string! DestinationId) -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.AssociationId.get -> string?
+Strategos.Ontology.MCP.AssociationEdgeRow.AssociationId.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.AssociationName.get -> string!
+Strategos.Ontology.MCP.AssociationEdgeRow.AssociationName.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.DestinationDescriptor.get -> string!
+Strategos.Ontology.MCP.AssociationEdgeRow.DestinationDescriptor.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.DestinationId.get -> string!
+Strategos.Ontology.MCP.AssociationEdgeRow.DestinationId.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.EdgeAttributes.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+Strategos.Ontology.MCP.AssociationEdgeRow.EdgeAttributes.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.SourceDescriptor.get -> string!
+Strategos.Ontology.MCP.AssociationEdgeRow.SourceDescriptor.init -> void
+Strategos.Ontology.MCP.AssociationEdgeRow.SourceId.get -> string!
+Strategos.Ontology.MCP.AssociationEdgeRow.SourceId.init -> void
+Strategos.Ontology.MCP.AssociationQueryResult
+Strategos.Ontology.MCP.AssociationQueryResult.AssociationQueryResult(string! AssociationType, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.AssociationEdgeRow!>! Edges, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.AssociationQueryResult.AssociationType.get -> string!
+Strategos.Ontology.MCP.AssociationQueryResult.AssociationType.init -> void
+Strategos.Ontology.MCP.AssociationQueryResult.Edges.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.AssociationEdgeRow!>!
+Strategos.Ontology.MCP.AssociationQueryResult.Edges.init -> void
+Strategos.Ontology.MCP.AssociationQueryResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.AssociationQueryResult.Meta.init -> void
+Strategos.Ontology.MCP.ExploreResult
+Strategos.Ontology.MCP.ExploreResult.ExploreResult(string! Scope, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.Dictionary<string!, object?>!>! Items, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.ExploreResult.Items.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.Dictionary<string!, object?>!>!
+Strategos.Ontology.MCP.ExploreResult.Items.init -> void
+Strategos.Ontology.MCP.ExploreResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.ExploreResult.Meta.init -> void
+Strategos.Ontology.MCP.ExploreResult.Scope.get -> string!
+Strategos.Ontology.MCP.ExploreResult.Scope.init -> void
+Strategos.Ontology.MCP.HybridMeta
+Strategos.Ontology.MCP.HybridMeta.BmSaturationThreshold.get -> double?
+Strategos.Ontology.MCP.HybridMeta.BmSaturationThreshold.init -> void
+Strategos.Ontology.MCP.HybridMeta.Degraded.get -> string?
+Strategos.Ontology.MCP.HybridMeta.Degraded.init -> void
+Strategos.Ontology.MCP.HybridMeta.DenseTopScore.get -> double?
+Strategos.Ontology.MCP.HybridMeta.DenseTopScore.init -> void
+Strategos.Ontology.MCP.HybridMeta.FusionMethod.get -> string?
+Strategos.Ontology.MCP.HybridMeta.FusionMethod.init -> void
+Strategos.Ontology.MCP.HybridMeta.Hybrid.get -> bool
+Strategos.Ontology.MCP.HybridMeta.Hybrid.init -> void
+Strategos.Ontology.MCP.HybridMeta.HybridMeta(bool Hybrid, string? FusionMethod = null, string? Degraded = null, double? DenseTopScore = null, double? SparseTopScore = null, double? BmSaturationThreshold = null) -> void
+Strategos.Ontology.MCP.HybridMeta.SparseTopScore.get -> double?
+Strategos.Ontology.MCP.HybridMeta.SparseTopScore.init -> void
+Strategos.Ontology.MCP.IOntologyAuditSink
+Strategos.Ontology.MCP.IOntologyAuditSink.RecordAbstention(Strategos.Ontology.MCP.OntologyAbstainedRecord! record) -> void
+Strategos.Ontology.MCP.NoAnswerRecorded
+Strategos.Ontology.MCP.NoAnswerRecorded.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.NoAnswerRecorded.Meta.init -> void
+Strategos.Ontology.MCP.NoAnswerRecorded.NearestRecords.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>!
+Strategos.Ontology.MCP.NoAnswerRecorded.NearestRecords.init -> void
+Strategos.Ontology.MCP.NoOpOntologyAuditSink
+Strategos.Ontology.MCP.NoOpOntologyAuditSink.RecordAbstention(Strategos.Ontology.MCP.OntologyAbstainedRecord! record) -> void
+Strategos.Ontology.MCP.OntologyAbstainedRecord
+Strategos.Ontology.MCP.OntologyAbstainedRecord.NearestRecordsCount.get -> int
+Strategos.Ontology.MCP.OntologyAbstainedRecord.OntologyAbstainedRecord(int nearestRecordsCount) -> void
+Strategos.Ontology.MCP.OntologyAbstainedRecord.Type.get -> string!
+Strategos.Ontology.MCP.OntologyActionTool
+Strategos.Ontology.MCP.OntologyActionTool.ExecuteAsync(string! objectType, string! action, object! request, string? domain = null, string? objectId = null, string? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.ActionToolResult!>!
+Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider) -> void
+Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.MCP.OntologyActionTool!>! logger) -> void
+Strategos.Ontology.MCP.OntologyAnswerComposer
+Strategos.Ontology.MCP.OntologyAnswerComposer.Compose(string! content, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>! matchedRecords, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.RecordRef!>! nearestRecords, Strategos.Ontology.MCP.ResponseMeta! meta) -> Strategos.Ontology.MCP.OntologyAnswerUnion!
+Strategos.Ontology.MCP.OntologyAnswerComposer.OntologyAnswerComposer() -> void
+Strategos.Ontology.MCP.OntologyAnswerComposer.OntologyAnswerComposer(Strategos.Ontology.MCP.IOntologyAuditSink! auditSink) -> void
+Strategos.Ontology.MCP.OntologyAnswerUnion
+Strategos.Ontology.MCP.OntologyExploreTool
+Strategos.Ontology.MCP.OntologyExploreTool.Explore(string! scope, string? domain = null, string? objectType = null, string? traverseFrom = null, int maxDepth = 2) -> Strategos.Ontology.MCP.ExploreResult!
+Strategos.Ontology.MCP.OntologyExploreTool.OntologyExploreTool(Strategos.Ontology.OntologyGraph! graph) -> void
+Strategos.Ontology.MCP.OntologyQueryTool
+Strategos.Ontology.MCP.OntologyQueryTool.OntologyQueryTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider, Strategos.Ontology.Events.IEventStreamProvider! eventStreamProvider, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.MCP.OntologyQueryTool!>! logger, Strategos.Ontology.Retrieval.IKeywordSearchProvider? keywordProvider = null) -> void
+Strategos.Ontology.MCP.OntologyQueryTool.QueryAsync(string! objectType, string? domain = null, string? filter = null, string? traverseLink = null, string? interfaceName = null, string? include = null, string? semanticQuery = null, int topK = 5, double minRelevance = 0.7, string? distanceMetric = null, Strategos.Ontology.Retrieval.HybridQueryOptions? hybridOptions = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.QueryResultUnion!>!
+Strategos.Ontology.MCP.OntologyQueryTool.QueryEventsAsync(string! objectType, string! domain, string? objectId = null, System.DateTimeOffset? since = null, System.Collections.Generic.IReadOnlyList<string!>? eventTypes = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Events.OntologyEvent!>!>!
+Strategos.Ontology.MCP.OntologyServerCapabilities
+Strategos.Ontology.MCP.OntologyServerCapabilities.OntologyServerCapabilities(string! OntologyVersion) -> void
+Strategos.Ontology.MCP.OntologyServerCapabilities.OntologyVersion.get -> string!
+Strategos.Ontology.MCP.OntologyServerCapabilities.OntologyVersion.init -> void
+Strategos.Ontology.MCP.OntologyServerCapabilitiesProvider
+Strategos.Ontology.MCP.OntologyServerCapabilitiesProvider.GetServerCapabilities() -> Strategos.Ontology.MCP.OntologyServerCapabilities!
+Strategos.Ontology.MCP.OntologyServerCapabilitiesProvider.OntologyServerCapabilitiesProvider(Strategos.Ontology.OntologyGraph! graph) -> void
+Strategos.Ontology.MCP.OntologyStubGenerator
+Strategos.Ontology.MCP.OntologyStubGenerator.Generate() -> System.Collections.Generic.IReadOnlyList<string!>!
+Strategos.Ontology.MCP.OntologyStubGenerator.OntologyStubGenerator(Strategos.Ontology.OntologyGraph! graph) -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor
+Strategos.Ontology.MCP.OntologyToolDescriptor.Annotations.get -> Strategos.Ontology.MCP.ToolAnnotations!
+Strategos.Ontology.MCP.OntologyToolDescriptor.Annotations.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionConstraintSummary!>!
+Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.Description.get -> string!
+Strategos.Ontology.MCP.OntologyToolDescriptor.Description.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.Name.get -> string!
+Strategos.Ontology.MCP.OntologyToolDescriptor.Name.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.OntologyToolDescriptor(string! Name, string! Description) -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.OutputSchema.get -> System.Text.Json.JsonElement?
+Strategos.Ontology.MCP.OntologyToolDescriptor.OutputSchema.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.Title.get -> string?
+Strategos.Ontology.MCP.OntologyToolDescriptor.Title.init -> void
+Strategos.Ontology.MCP.OntologyToolDiscovery
+Strategos.Ontology.MCP.OntologyToolDiscovery.Discover() -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.OntologyToolDescriptor!>!
+Strategos.Ontology.MCP.OntologyToolDiscovery.OntologyToolDiscovery(Strategos.Ontology.OntologyGraph! graph) -> void
+Strategos.Ontology.MCP.OntologyTraversalLimits
+Strategos.Ontology.MCP.OntologyTraverseTool
+Strategos.Ontology.MCP.OntologyTraverseTool.OntologyTraverseTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider) -> void
+Strategos.Ontology.MCP.OntologyTraverseTool.TraverseAsync(Strategos.Ontology.MCP.TraversalRequest! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.TraversalResult!>!
+Strategos.Ontology.MCP.OntologyValidateTool
+Strategos.Ontology.MCP.OntologyValidateTool.OntologyValidateTool(Strategos.Ontology.Query.IOntologyQuery! query, Strategos.Ontology.Query.IOntologyCoverageProvider? coverage = null) -> void
+Strategos.Ontology.MCP.OntologyValidateTool.Validate(Strategos.Ontology.Query.DesignIntent! intent) -> Strategos.Ontology.MCP.ValidationVerdict!
+Strategos.Ontology.MCP.QueryResult
+Strategos.Ontology.MCP.QueryResult.Filter.get -> string?
+Strategos.Ontology.MCP.QueryResult.Filter.init -> void
+Strategos.Ontology.MCP.QueryResult.Include.get -> string?
+Strategos.Ontology.MCP.QueryResult.Include.init -> void
+Strategos.Ontology.MCP.QueryResult.InterfaceName.get -> string?
+Strategos.Ontology.MCP.QueryResult.InterfaceName.init -> void
+Strategos.Ontology.MCP.QueryResult.Items.get -> System.Collections.Generic.IReadOnlyList<object!>!
+Strategos.Ontology.MCP.QueryResult.Items.init -> void
+Strategos.Ontology.MCP.QueryResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.QueryResult.Meta.init -> void
+Strategos.Ontology.MCP.QueryResult.ObjectType.get -> string!
+Strategos.Ontology.MCP.QueryResult.ObjectType.init -> void
+Strategos.Ontology.MCP.QueryResult.QueryResult(string! ObjectType, System.Collections.Generic.IReadOnlyList<object!>! Items, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.QueryResult.TraverseLink.get -> string?
+Strategos.Ontology.MCP.QueryResult.TraverseLink.init -> void
+Strategos.Ontology.MCP.QueryResultUnion
+Strategos.Ontology.MCP.RecordRef
+Strategos.Ontology.MCP.RecordRef.Descriptor.get -> string!
+Strategos.Ontology.MCP.RecordRef.Descriptor.init -> void
+Strategos.Ontology.MCP.RecordRef.RecordId.get -> string!
+Strategos.Ontology.MCP.RecordRef.RecordId.init -> void
+Strategos.Ontology.MCP.RecordRef.RecordRef(string! Descriptor, string! RecordId) -> void
+Strategos.Ontology.MCP.ResponseMeta
+Strategos.Ontology.MCP.ResponseMeta.Hybrid.get -> Strategos.Ontology.MCP.HybridMeta?
+Strategos.Ontology.MCP.ResponseMeta.Hybrid.init -> void
+Strategos.Ontology.MCP.ResponseMeta.OntologyVersion.get -> string!
+Strategos.Ontology.MCP.ResponseMeta.OntologyVersion.init -> void
+Strategos.Ontology.MCP.ResponseMeta.ResponseMeta(string! OntologyVersion) -> void
+Strategos.Ontology.MCP.SemanticQueryResult
+Strategos.Ontology.MCP.SemanticQueryResult.MinRelevance.get -> double
+Strategos.Ontology.MCP.SemanticQueryResult.MinRelevance.init -> void
+Strategos.Ontology.MCP.SemanticQueryResult.Scores.get -> System.Collections.Generic.IReadOnlyList<double>!
+Strategos.Ontology.MCP.SemanticQueryResult.Scores.init -> void
+Strategos.Ontology.MCP.SemanticQueryResult.SemanticQuery.get -> string?
+Strategos.Ontology.MCP.SemanticQueryResult.SemanticQuery.init -> void
+Strategos.Ontology.MCP.SemanticQueryResult.SemanticQueryResult(string! ObjectType, System.Collections.Generic.IReadOnlyList<object!>! Items, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.SemanticQueryResult.TopK.get -> int
+Strategos.Ontology.MCP.SemanticQueryResult.TopK.init -> void
+Strategos.Ontology.MCP.ToolAnnotations
+Strategos.Ontology.MCP.ToolAnnotations.DestructiveHint.get -> bool
+Strategos.Ontology.MCP.ToolAnnotations.DestructiveHint.init -> void
+Strategos.Ontology.MCP.ToolAnnotations.IdempotentHint.get -> bool
+Strategos.Ontology.MCP.ToolAnnotations.IdempotentHint.init -> void
+Strategos.Ontology.MCP.ToolAnnotations.OpenWorldHint.get -> bool
+Strategos.Ontology.MCP.ToolAnnotations.OpenWorldHint.init -> void
+Strategos.Ontology.MCP.ToolAnnotations.ReadOnlyHint.get -> bool
+Strategos.Ontology.MCP.ToolAnnotations.ReadOnlyHint.init -> void
+Strategos.Ontology.MCP.ToolAnnotations.ToolAnnotations(bool ReadOnlyHint, bool DestructiveHint, bool IdempotentHint, bool OpenWorldHint) -> void
+Strategos.Ontology.MCP.TraversalDirection
+Strategos.Ontology.MCP.TraversalDirection.ToDestination = 0 -> Strategos.Ontology.MCP.TraversalDirection
+Strategos.Ontology.MCP.TraversalDirection.ToSource = 1 -> Strategos.Ontology.MCP.TraversalDirection
+Strategos.Ontology.MCP.TraversalEndpoint
+Strategos.Ontology.MCP.TraversalEndpoint.DestinationDescriptor.get -> string!
+Strategos.Ontology.MCP.TraversalEndpoint.DestinationDescriptor.init -> void
+Strategos.Ontology.MCP.TraversalEndpoint.DestinationId.get -> string!
+Strategos.Ontology.MCP.TraversalEndpoint.DestinationId.init -> void
+Strategos.Ontology.MCP.TraversalEndpoint.EdgeAttributes.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
+Strategos.Ontology.MCP.TraversalEndpoint.EdgeAttributes.init -> void
+Strategos.Ontology.MCP.TraversalEndpoint.TraversalEndpoint(string! DestinationDescriptor, string! DestinationId) -> void
+Strategos.Ontology.MCP.TraversalRequest
+Strategos.Ontology.MCP.TraversalRequest.Cursor.get -> string?
+Strategos.Ontology.MCP.TraversalRequest.Cursor.init -> void
+Strategos.Ontology.MCP.TraversalRequest.Depth.get -> int
+Strategos.Ontology.MCP.TraversalRequest.Depth.init -> void
+Strategos.Ontology.MCP.TraversalRequest.Direction.get -> Strategos.Ontology.MCP.TraversalDirection
+Strategos.Ontology.MCP.TraversalRequest.Direction.init -> void
+Strategos.Ontology.MCP.TraversalRequest.Domain.get -> string?
+Strategos.Ontology.MCP.TraversalRequest.Domain.init -> void
+Strategos.Ontology.MCP.TraversalRequest.EdgeFilter.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Strategos.Ontology.MCP.TraversalRequest.EdgeFilter.init -> void
+Strategos.Ontology.MCP.TraversalRequest.LinkName.get -> string!
+Strategos.Ontology.MCP.TraversalRequest.LinkName.init -> void
+Strategos.Ontology.MCP.TraversalRequest.ObjectId.get -> string!
+Strategos.Ontology.MCP.TraversalRequest.ObjectId.init -> void
+Strategos.Ontology.MCP.TraversalRequest.ObjectType.get -> string!
+Strategos.Ontology.MCP.TraversalRequest.ObjectType.init -> void
+Strategos.Ontology.MCP.TraversalRequest.TraversalRequest(string! ObjectType, string! ObjectId, string! LinkName, Strategos.Ontology.MCP.TraversalDirection Direction, int Depth, string? Domain = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? EdgeFilter = null, string? Cursor = null) -> void
+Strategos.Ontology.MCP.TraversalResult
+Strategos.Ontology.MCP.TraversalResult.Endpoints.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.TraversalEndpoint!>!
+Strategos.Ontology.MCP.TraversalResult.Endpoints.init -> void
+Strategos.Ontology.MCP.TraversalResult.Error.get -> string?
+Strategos.Ontology.MCP.TraversalResult.Error.init -> void
+Strategos.Ontology.MCP.TraversalResult.IsError.get -> bool
+Strategos.Ontology.MCP.TraversalResult.IsError.init -> void
+Strategos.Ontology.MCP.TraversalResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.TraversalResult.Meta.init -> void
+Strategos.Ontology.MCP.TraversalResult.NextCursor.get -> string?
+Strategos.Ontology.MCP.TraversalResult.NextCursor.init -> void
+Strategos.Ontology.MCP.TraversalResult.TraversalResult(Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.TraversalResult.Truncated.get -> bool
+Strategos.Ontology.MCP.TraversalResult.Truncated.init -> void
+Strategos.Ontology.MCP.ValidateResult
+Strategos.Ontology.MCP.ValidateResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.ValidateResult.Meta.init -> void
+Strategos.Ontology.MCP.ValidateResult.ValidateResult(Strategos.Ontology.MCP.ValidationVerdict! Verdict, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
+Strategos.Ontology.MCP.ValidateResult.Verdict.get -> Strategos.Ontology.MCP.ValidationVerdict!
+Strategos.Ontology.MCP.ValidateResult.Verdict.init -> void
+Strategos.Ontology.MCP.ValidationVerdict
+Strategos.Ontology.MCP.ValidationVerdict.BlastRadius.get -> Strategos.Ontology.Query.BlastRadius!
+Strategos.Ontology.MCP.ValidationVerdict.BlastRadius.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.Coverage.get -> Strategos.Ontology.Query.CoverageReport?
+Strategos.Ontology.MCP.ValidationVerdict.Coverage.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.HardViolations.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>!
+Strategos.Ontology.MCP.ValidationVerdict.HardViolations.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.Passed.get -> bool
+Strategos.Ontology.MCP.ValidationVerdict.Passed.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.PatternViolations.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.PatternViolation!>!
+Strategos.Ontology.MCP.ValidationVerdict.PatternViolations.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.SoftWarnings.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>!
+Strategos.Ontology.MCP.ValidationVerdict.SoftWarnings.init -> void
+Strategos.Ontology.MCP.ValidationVerdict.ValidationVerdict(bool Passed, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>! HardViolations, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>! SoftWarnings, Strategos.Ontology.Query.BlastRadius! BlastRadius, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.PatternViolation!>! PatternViolations, Strategos.Ontology.Query.CoverageReport? Coverage) -> void

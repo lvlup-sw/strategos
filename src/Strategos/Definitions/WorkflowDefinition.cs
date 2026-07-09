@@ -67,6 +67,14 @@ public sealed record WorkflowDefinition<TState>
     public IReadOnlyList<ForkPointDefinition> ForkPoints { get; init; } = [];
 
     /// <summary>
+    /// Gets the collection of diagnostic-fork edge definitions (DR-7, #151) — where
+    /// this workflow may fork a diagnostic remediation path, the closed triggers
+    /// permitted to fork it (with their evidence-ref schema), the compensation seed,
+    /// and the per-edge <c>maxForks</c> bound.
+    /// </summary>
+    public IReadOnlyList<DiagnosticForkDefinition> DiagnosticForks { get; init; } = [];
+
+    /// <summary>
     /// Gets the entry step definition (first step in workflow).
     /// </summary>
     public StepDefinition? EntryStep { get; init; }
@@ -228,5 +236,18 @@ public sealed record WorkflowDefinition<TState>
         ArgumentNullException.ThrowIfNull(forkPoints, nameof(forkPoints));
 
         return this with { ForkPoints = forkPoints.ToList() };
+    }
+
+    /// <summary>
+    /// Creates a new workflow definition with the specified diagnostic-fork edges.
+    /// </summary>
+    /// <param name="diagnosticForks">The diagnostic-fork edge definitions.</param>
+    /// <returns>A new workflow definition with the diagnostic-fork edges set.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="diagnosticForks"/> is null.</exception>
+    public WorkflowDefinition<TState> WithDiagnosticForks(IEnumerable<DiagnosticForkDefinition> diagnosticForks)
+    {
+        ArgumentNullException.ThrowIfNull(diagnosticForks, nameof(diagnosticForks));
+
+        return this with { DiagnosticForks = diagnosticForks.ToList() };
     }
 }

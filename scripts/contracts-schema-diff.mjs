@@ -15,8 +15,12 @@
 //
 // Usage:  node scripts/contracts-schema-diff.mjs <previous-schemas-dir> <current-schemas-dir>
 //
-// A removed property, a newly-required property, or a narrowed property type is
-// BREAKING; an added optional property or a relaxed `required` is NON-BREAKING.
+// A removed property, a newly-required property, a narrowed property type, or a
+// removed/renamed enum member is BREAKING; an added optional property or a relaxed
+// `required` is NON-BREAKING. An ADDED enum member is a flagged NOTICE (permitted on
+// a Contracts minor bump, but requires a consumer-notice release-notes line — strict
+// converters reject unknown members, so consumers must upgrade before producers emit
+// the new member; DR-18). NOTICE does not fail the gate; only BREAKING does.
 // A schema present in CURRENT but absent in PREVIOUS is a new schema file
 // (NON-BREAKING); a schema present in PREVIOUS but absent in CURRENT is a
 // removed contract (BREAKING).
@@ -32,6 +36,7 @@ if (!prevDir || !nextDir) {
 }
 
 const BREAKING = "BREAKING";
+const NOTICE = "NOTICE";
 const NON_BREAKING = "NON-BREAKING";
 
 async function readSchemas(dir) {
@@ -56,6 +61,29 @@ function required(schema) {
 }
 function typeOf(propSchema) {
   return propSchema && typeof propSchema.type === "string" ? propSchema.type : null;
+}
+function enumValues(schema) {
+  // Only string members are wire tokens for a closed enum; ignore anything else.
+  return Array.isArray(schema?.enum) ? schema.enum.filter((v) => typeof v === "string") : [];
+}
+
+function diffEnum(file, prevVals, nextVals, propLabel, changes) {
+  if (prevVals.length === 0 && nextVals.length === 0) return;
+  const pSet = new Set(prevVals);
+  const nSet = new Set(nextVals);
+  const prefix = propLabel ? `property '${propLabel}' ` : "";
+  // Removed (or renamed-away) member ⇒ BREAKING.
+  for (const v of prevVals) {
+    if (!nSet.has(v)) {
+      changes.push({ severity: BREAKING, desc: `${file}: ${prefix}enum member '${v}' was removed` });
+    }
+  }
+  // Added member ⇒ flagged NOTICE.
+  for (const v of nextVals) {
+    if (!pSet.has(v)) {
+      changes.push({ severity: NOTICE, desc: `${file}: ${prefix}enum member '${v}' was added` });
+    }
+  }
 }
 
 function diffSchema(file, prev, next) {
@@ -91,7 +119,12 @@ function diffSchema(file, prev, next) {
         desc: `${file}: property '${name}' changed type from '${pt}' to '${nt}'`,
       });
     }
+    // Inline enum member evolution on a retained property.
+    diffEnum(file, enumValues(pProps[name]), enumValues(nProps[name]), name, changes);
   }
+  // Root enum member evolution — TypeSpec closed enums emit as a top-level
+  // `{ "type": "string", "enum": [...] }` schema (referenced by $ref).
+  diffEnum(file, enumValues(prev), enumValues(next), null, changes);
   for (const name of nReq) {
     if (name in pProps && !pReq.has(name)) {
       changes.push({ severity: BREAKING, desc: `${file}: property '${name}' became required` });
@@ -124,6 +157,7 @@ async function main() {
   }
 
   const breaking = changes.filter((c) => c.severity === BREAKING);
+  const notices = changes.filter((c) => c.severity === NOTICE);
   for (const c of changes) {
     console.log(`[${c.severity}] ${c.desc}`);
   }
@@ -137,6 +171,14 @@ async function main() {
         `schema change requires a MAJOR version bump (design §Resilience item 3).`,
     );
     process.exit(1);
+  }
+  if (notices.length > 0) {
+    console.log(
+      `\nschema-diff: ${changes.length} change(s), no breaking — but ${notices.length} ` +
+        `NOTICE(s) (added enum member): add a consumer-notice release-notes line and ` +
+        `ensure consumers upgrade before producers emit the new member(s) (DR-18). OK.`,
+    );
+    return;
   }
   console.log(`\nschema-diff: ${changes.length} change(s), all non-breaking. OK.`);
 }

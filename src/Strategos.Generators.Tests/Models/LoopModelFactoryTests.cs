@@ -13,6 +13,12 @@ namespace Strategos.Generators.Tests.Models;
 /// </summary>
 public sealed class LoopModelFactoryTests
 {
+    /// <summary>
+    /// Builds a bare configured step whose <see cref="StepModel.PhaseName"/> equals the supplied
+    /// (already loop-prefixed) name.
+    /// </summary>
+    private static StepModel Step(string phaseName) => StepModel.Create(phaseName, $"TestNamespace.{phaseName}");
+
     [Test]
     public async Task Create_WithValidParameters_ReturnsModel()
     {
@@ -28,8 +34,7 @@ public sealed class LoopModelFactoryTests
             loopName: loopName,
             conditionId: conditionId,
             maxIterations: maxIterations,
-            firstBodyStepName: firstBodyStepName,
-            lastBodyStepName: lastBodyStepName);
+            bodySteps: [Step(firstBodyStepName), Step(lastBodyStepName)]);
 
         // Assert
         await Assert.That(model.LoopName).IsEqualTo(loopName);
@@ -58,8 +63,7 @@ public sealed class LoopModelFactoryTests
             loopName: loopName,
             conditionId: conditionId,
             maxIterations: maxIterations,
-            firstBodyStepName: firstBodyStepName,
-            lastBodyStepName: lastBodyStepName,
+            bodySteps: [Step(firstBodyStepName), Step(lastBodyStepName)],
             continuationStepName: continuationStepName,
             parentLoopName: parentLoopName);
 
@@ -75,8 +79,6 @@ public sealed class LoopModelFactoryTests
         // Arrange
         string? loopName = null;
         var conditionId = "ProcessClaim-Refinement";
-        var firstBodyStepName = "Refinement_Analyze";
-        var lastBodyStepName = "Refinement_Validate";
 
         // Act
         var exception = Assert.Throws<ArgumentNullException>(() =>
@@ -85,8 +87,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName!,
                 conditionId: conditionId,
                 maxIterations: 10,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName);
+                bodySteps: [Step("Refinement_Analyze"), Step("Refinement_Validate")]);
         });
 
         // Assert
@@ -99,8 +100,6 @@ public sealed class LoopModelFactoryTests
         // Arrange
         var loopName = "Invalid-Loop"; // Hyphen is not valid
         var conditionId = "ProcessClaim-Refinement";
-        var firstBodyStepName = "Refinement_Analyze";
-        var lastBodyStepName = "Refinement_Validate";
 
         // Act
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -109,8 +108,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName,
                 conditionId: conditionId,
                 maxIterations: 10,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName);
+                bodySteps: [Step("Refinement_Analyze"), Step("Refinement_Validate")]);
         });
 
         // Assert
@@ -123,8 +121,6 @@ public sealed class LoopModelFactoryTests
         // Arrange
         var loopName = "Refinement";
         var conditionId = "";
-        var firstBodyStepName = "Refinement_Analyze";
-        var lastBodyStepName = "Refinement_Validate";
 
         // Act
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -133,8 +129,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName,
                 conditionId: conditionId,
                 maxIterations: 10,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName);
+                bodySteps: [Step("Refinement_Analyze"), Step("Refinement_Validate")]);
         });
 
         // Assert
@@ -147,8 +142,6 @@ public sealed class LoopModelFactoryTests
         // Arrange
         var loopName = "Refinement";
         var conditionId = "ProcessClaim-Refinement";
-        var firstBodyStepName = "Refinement_Analyze";
-        var lastBodyStepName = "Refinement_Validate";
 
         // Act
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -157,8 +150,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName,
                 conditionId: conditionId,
                 maxIterations: 0,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName);
+                bodySteps: [Step("Refinement_Analyze"), Step("Refinement_Validate")]);
         });
 
         // Assert
@@ -166,13 +158,11 @@ public sealed class LoopModelFactoryTests
     }
 
     [Test]
-    public async Task Create_WithEmptyFirstBodyStepName_ThrowsArgumentException()
+    public async Task Create_WithEmptyBodySteps_ThrowsArgumentException()
     {
         // Arrange
         var loopName = "Refinement";
         var conditionId = "ProcessClaim-Refinement";
-        var firstBodyStepName = "";
-        var lastBodyStepName = "Refinement_Validate";
 
         // Act
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -181,8 +171,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName,
                 conditionId: conditionId,
                 maxIterations: 10,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName);
+                bodySteps: []);
         });
 
         // Assert
@@ -195,8 +184,6 @@ public sealed class LoopModelFactoryTests
         // Arrange
         var loopName = "Inner";
         var conditionId = "ProcessClaim-Inner";
-        var firstBodyStepName = "Outer_Inner_Process";
-        var lastBodyStepName = "Outer_Inner_Validate";
         var parentLoopName = "Invalid-Parent"; // Hyphen is not valid
 
         // Act
@@ -206,8 +193,7 @@ public sealed class LoopModelFactoryTests
                 loopName: loopName,
                 conditionId: conditionId,
                 maxIterations: 5,
-                firstBodyStepName: firstBodyStepName,
-                lastBodyStepName: lastBodyStepName,
+                bodySteps: [Step("Outer_Inner_Process"), Step("Outer_Inner_Validate")],
                 parentLoopName: parentLoopName);
         });
 

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "name": "import-fixture-gate-ok",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImpStepA", "isTerminal": false, "stepType": "ImpStepA" },
+    { "kind": "gate", "stepId": "s2", "stepName": "ImpStepB", "isTerminal": false, "stepType": "ImpStepB", "gateId": "g1" },
+    { "kind": "skill", "stepId": "s3", "stepName": "ImpStepC", "isTerminal": true, "stepType": "ImpStepC" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": true },
+    { "transitionId": "t2", "fromStepId": "s2", "toStepId": "s3", "isDefault": true }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "gates": [
+    { "class": "AntipatternDetection", "id": "g1" }
+  ],
+  "entryStepId": "s1",
+  "terminalStepId": "s3"
+}

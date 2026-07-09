@@ -85,8 +85,11 @@ public class HandlerContextTests
             loopName: "Refinement",
             conditionId: "TestWorkflow-Refinement",
             maxIterations: 5,
-            firstBodyStepName: "Refinement_Analyze",
-            lastBodyStepName: "Refinement_Refine");
+            bodySteps:
+            [
+                StepModel.Create("Refinement_Analyze", "TestNamespace.Refinement_Analyze"),
+                StepModel.Create("Refinement_Refine", "TestNamespace.Refinement_Refine"),
+            ]);
 
         var loops = new List<LoopModel> { loop };
 

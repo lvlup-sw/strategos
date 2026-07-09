@@ -1,0 +1,23 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "OntologyAbstained.json",
+    "type": "object",
+    "properties": {
+        "type": {
+            "type": "string",
+            "const": "ontology.abstained",
+            "description": "Envelope type discriminator — pins this event to `ontology.abstained` (satisfies SdlcEventEnvelope.type)."
+        },
+        "nearestRecordsCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "How many nearest non-matching records the abstention surfaced — a COUNT, never the record identities or contents (no data exfiltration through audit)."
+        }
+    },
+    "required": [
+        "type",
+        "nearestRecordsCount"
+    ],
+    "description": "`ontology.abstained` audit event (DR-17) — the occurrence-side sibling of the\n`NoAnswerRecorded` arm of AbstentionResponse (DR-16). Recorded whenever the\nontology answering surface abstains: retrieval matched nothing to cite, so the\nsurface returns a recorded abstention rather than a free-text uncited answer.\n\nEnvelope-compatible: `type` pins the SdlcEventEnvelope discriminator to\n`ontology.abstained`, so the event routes through the shared event envelope.\n\nThe payload carries the COUNT of nearest records, never their identities or\ncontents. The abstention's RecordRef monikers stay out of the audit stream — a\nrecord identity cannot be exfiltrated through audit, and the count is enough to\nsee that a search happened and how wide it reached.\n\nEmitted server-side by the ontology answering surface at the point it records\nthe abstention; it is never authored by a client and never round-tripped from\nthe wire into the surface."
+}

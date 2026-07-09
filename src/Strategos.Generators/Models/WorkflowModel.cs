@@ -30,6 +30,7 @@ namespace Strategos.Generators.Models;
 /// <param name="FailureHandlers">The failure handler constructs in this workflow (OnFailure).</param>
 /// <param name="ApprovalPoints">The approval checkpoints in this workflow (AwaitApproval).</param>
 /// <param name="Forks">The fork constructs in this workflow (Fork/Join).</param>
+/// <param name="DiagnosticForks">The diagnostic-fork edges in this workflow (AllowDiagnosticFork, DR-9).</param>
 /// <param name="ConfidenceHandlerStepNames">
 /// The step names lowered from <c>OnLowConfidence</c> handler branches (DR-5). These steps are
 /// appended to <paramref name="StepNames"/> so they get full lowering (phase, worker handler,
@@ -51,7 +52,8 @@ internal sealed record WorkflowModel(
     IReadOnlyList<FailureHandlerModel>? FailureHandlers = null,
     IReadOnlyList<ApprovalModel>? ApprovalPoints = null,
     IReadOnlyList<ForkModel>? Forks = null,
-    IReadOnlyList<string>? ConfidenceHandlerStepNames = null)
+    IReadOnlyList<string>? ConfidenceHandlerStepNames = null,
+    IReadOnlyList<DiagnosticForkModel>? DiagnosticForks = null)
 {
     /// <summary>
     /// Gets a value indicating whether the workflow's state type exposes a public
@@ -67,6 +69,21 @@ internal sealed record WorkflowModel(
     /// the default for the many positional/factory model constructions in tests.
     /// </remarks>
     public bool StateHasPhaseProperty { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether this workflow is backed by a C#-authored fluent
+    /// <c>{PascalName}WorkflowDefinition.Definition</c> class.
+    /// </summary>
+    /// <remarks>
+    /// The DI extension emits <c>_ = {PascalName}WorkflowDefinition.Definition;</c> to force the
+    /// fluent builder chain to run (registering loop conditions in the runtime registry). A
+    /// JSON-IMPORTED workflow (DR-12, task 017) has NO such fluent class — it is declarative — so
+    /// that line would reference a non-existent symbol and fail to compile. The import bridge sets
+    /// this <see langword="false"/> so the extension omits the definition-evaluation line;
+    /// C#-authored workflows leave it at its <see langword="true"/> default so their generated
+    /// output is unchanged.
+    /// </remarks>
+    public bool HasFluentDefinition { get; init; } = true;
 
     /// <summary>
     /// Gets the derived phase enum name.
@@ -170,6 +187,13 @@ internal sealed record WorkflowModel(
     public bool HasForks => Forks is not null && Forks.Count > 0;
 
     /// <summary>
+    /// Gets a value indicating whether this workflow declares any diagnostic-fork edge
+    /// (<c>AllowDiagnosticFork</c>, DR-9). The saga lowering that consumes
+    /// <see cref="DiagnosticForks"/> is deferred (#151).
+    /// </summary>
+    public bool HasDiagnosticForks => DiagnosticForks is not null && DiagnosticForks.Count > 0;
+
+    /// <summary>
     /// Gets a value indicating whether this workflow lowers any <c>OnLowConfidence</c>
     /// handler branch (DR-5).
     /// </summary>
@@ -204,15 +228,19 @@ internal sealed record WorkflowModel(
     /// </returns>
     public (string? NextHandlerStepName, bool IsLastInChain, string? RejoinStepName) GetConfidenceHandlerChainRouting(string stepName)
     {
-        if (Steps is null || !IsConfidenceHandlerStep(stepName))
+        if (!IsConfidenceHandlerStep(stepName))
         {
             return (null, false, null);
         }
 
-        // Find the gated step whose OnLowConfidence chain contains this handler step.
-        for (var gatedIndex = 0; gatedIndex < Steps.Count; gatedIndex++)
+        // Find the gated step whose OnLowConfidence chain contains this handler step. The
+        // gated step may be a top-level/loop step (in Steps) OR a fork path's last step
+        // (DR-4 / #145 gap A), which lives on Forks and is never added to Steps — so both
+        // sources must be searched or a lowered fork-path handler step would fail to resolve
+        // its chain routing (emitting a Start{null}Command).
+        foreach (var gatedStep in EnumerateConfidenceGatedSteps())
         {
-            var chain = Steps[gatedIndex].Confidence?.OnLowConfidenceHandlerChain;
+            var chain = gatedStep.Confidence?.OnLowConfidenceHandlerChain;
             if (chain is null)
             {
                 continue;
@@ -239,13 +267,44 @@ internal sealed record WorkflowModel(
             string? rejoinStepName = null;
             if (isLastInChain && chain.RejoinsMainFlow)
             {
-                rejoinStepName = NextMainFlowStepName(Steps[gatedIndex].PhaseName);
+                rejoinStepName = NextMainFlowStepName(gatedStep.PhaseName);
             }
 
             return (nextHandlerStepName, isLastInChain, rejoinStepName);
         }
 
         return (null, false, null);
+    }
+
+    /// <summary>
+    /// Enumerates every step that can carry a confidence gate: the top-level/loop steps
+    /// (<see cref="Steps"/>) plus each fork path's LAST step (DR-4 / #145 gap A), which is
+    /// gated in the fork path-completed handler and is not present in <see cref="Steps"/>.
+    /// </summary>
+    /// <returns>The candidate confidence-gated step models, top-level first.</returns>
+    private IEnumerable<StepModel> EnumerateConfidenceGatedSteps()
+    {
+        if (Steps is not null)
+        {
+            foreach (var step in Steps)
+            {
+                yield return step;
+            }
+        }
+
+        if (Forks is not null)
+        {
+            foreach (var fork in Forks)
+            {
+                foreach (var path in fork.Paths)
+                {
+                    if (path.Steps.Count > 0)
+                    {
+                        yield return path.Steps[path.Steps.Count - 1];
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -307,6 +366,7 @@ internal sealed record WorkflowModel(
     /// <param name="failureHandlers">The optional failure handler constructs in this workflow.</param>
     /// <param name="approvalPoints">The optional approval checkpoints in this workflow.</param>
     /// <param name="forks">The optional fork constructs in this workflow.</param>
+    /// <param name="diagnosticForks">The optional diagnostic-fork edges in this workflow (AllowDiagnosticFork, DR-9).</param>
     /// <param name="confidenceHandlerStepNames">
     /// The optional step names lowered from <c>OnLowConfidence</c> handler branches (DR-5).
     /// Threaded through so <see cref="HasConfidenceHandlers"/> / <see cref="IsConfidenceHandlerStep"/>
@@ -330,7 +390,8 @@ internal sealed record WorkflowModel(
         IReadOnlyList<FailureHandlerModel>? failureHandlers = null,
         IReadOnlyList<ApprovalModel>? approvalPoints = null,
         IReadOnlyList<ForkModel>? forks = null,
-        IReadOnlyList<string>? confidenceHandlerStepNames = null)
+        IReadOnlyList<string>? confidenceHandlerStepNames = null,
+        IReadOnlyList<DiagnosticForkModel>? diagnosticForks = null)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNullOrWhiteSpace(workflowName, nameof(workflowName));
@@ -385,6 +446,7 @@ internal sealed record WorkflowModel(
             FailureHandlers: failureHandlers,
             ApprovalPoints: approvalPoints,
             Forks: forks,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames);
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames,
+            DiagnosticForks: diagnosticForks);
     }
 }

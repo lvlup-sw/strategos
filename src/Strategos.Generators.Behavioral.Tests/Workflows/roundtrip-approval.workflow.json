@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "name": "roundtrip-approval-import",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "RtApprovalImportStart", "isTerminal": false, "stepType": "RtApprovalImportStart" },
+    { "kind": "skill", "stepId": "s2", "stepName": "RtApprovalImportEnd", "isTerminal": true, "stepType": "RtApprovalImportEnd" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": true }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [
+    { "approvalPointId": "3f2504e04f8941d39a0c0305e82c3301", "approverType": "RtApprovalReviewerApprover", "precedingStepId": "s1" }
+  ],
+  "entryStepId": "s1",
+  "terminalStepId": "s2"
+}

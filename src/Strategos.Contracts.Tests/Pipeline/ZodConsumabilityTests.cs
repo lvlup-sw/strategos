@@ -54,6 +54,39 @@ public class ZodConsumabilityTests
             await Assert.That(zod).Contains("z.")
                 .Because("the generated module must contain Zod schema code.");
 
+            // DR-1 (#150) — the GateClass closed enum must also derive to Zod with
+            // no manual post-processing, carrying its snake_case wire vocabulary so
+            // the Exarchos side consumes the same typed gate identity.
+            var gateClassZod = Path.Combine(outDir, "GateClass.ts");
+            await Assert.That(File.Exists(gateClassZod)).IsTrue()
+                .Because($"expected generated Zod for the GateClass enum at {gateClassZod}\n{run.Output}");
+            var gateClassCode = await File.ReadAllTextAsync(gateClassZod);
+            await Assert.That(gateClassCode).Contains("z.")
+                .Because("the generated GateClass module must contain Zod schema code.");
+            await Assert.That(gateClassCode).Contains("scoped_test")
+                .Because("the derived Zod must carry the GateClass snake_case wire vocabulary.");
+
+            // DR-8 (#151) — the ForkTrigger closed enum must likewise derive to Zod
+            // with no manual post-processing, carrying its snake_case wire vocabulary
+            // so the Exarchos side consumes the same typed fork-trigger identity.
+            var forkTriggerZod = Path.Combine(outDir, "ForkTrigger.ts");
+            await Assert.That(File.Exists(forkTriggerZod)).IsTrue()
+                .Because($"expected generated Zod for the ForkTrigger enum at {forkTriggerZod}\n{run.Output}");
+            var forkTriggerCode = await File.ReadAllTextAsync(forkTriggerZod);
+            await Assert.That(forkTriggerCode).Contains("z.")
+                .Because("the generated ForkTrigger module must contain Zod schema code.");
+            await Assert.That(forkTriggerCode).Contains("ratification_failure")
+                .Because("the derived Zod must carry the ForkTrigger snake_case wire vocabulary.");
+
+            // The ForkOccurrence payload (DR-8) derives to Zod as well — its evidence
+            // block dereferences without manual post-processing.
+            var forkOccurrenceZod = Path.Combine(outDir, "ForkOccurrence.ts");
+            await Assert.That(File.Exists(forkOccurrenceZod)).IsTrue()
+                .Because($"expected generated Zod for the ForkOccurrence payload at {forkOccurrenceZod}\n{run.Output}");
+            var forkOccurrenceCode = await File.ReadAllTextAsync(forkOccurrenceZod);
+            await Assert.That(forkOccurrenceCode).Contains("z.")
+                .Because("the generated ForkOccurrence module must contain Zod schema code.");
+
             // A barrel index re-exports the generated modules.
             await Assert.That(File.Exists(Path.Combine(outDir, "index.ts"))).IsTrue()
                 .Because("the smoke script must emit a barrel index.ts.");

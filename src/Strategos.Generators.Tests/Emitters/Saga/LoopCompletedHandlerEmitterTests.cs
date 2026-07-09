@@ -301,8 +301,11 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Refinement",
             conditionId: "Test-Refinement",
             maxIterations: 5,
-            firstBodyStepName: "Refine_Start",
-            lastBodyStepName: "Refine_End",
+            bodySteps:
+            [
+                StepModel.Create("Refine_Start", "TestNamespace.Refine_Start"),
+                StepModel.Create("Refine_End", "TestNamespace.Refine_End"),
+            ],
             continuationStepName: "FinalizeStep");
         var context = CreateContext([loop]);
 
@@ -388,8 +391,7 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             continuationStepName: "NextStep",
             parentLoopName: "Outer");
         var context = CreateContext([nestedLoop]);
@@ -420,8 +422,7 @@ public class LoopCompletedHandlerEmitterTests
             loopName: "Inner",
             conditionId: "TestWorkflow-Outer-Inner",
             maxIterations: 3,
-            firstBodyStepName: "Outer_Inner_InnerStep",
-            lastBodyStepName: "Outer_Inner_InnerStep",
+            bodySteps: [StepModel.Create("Outer_Inner_InnerStep", "TestNamespace.Outer_Inner_InnerStep")],
             continuationStepName: "NextStep",
             parentLoopName: "Outer");
         var context = CreateContext([nestedLoop]);
@@ -437,8 +438,101 @@ public class LoopCompletedHandlerEmitterTests
     }
 
     // =============================================================================
+    // L. Confidence Gate Tests (DR-5 / #145 gap B)
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that when the loop body's LAST step is confidence-gated, the loop completed
+    /// handler emits a confidence gate that routes to the OnLowConfidence handler's start
+    /// command BEFORE the loop-condition checks (mirroring the fork path-completed handler).
+    /// This is the DR-5 / #145 gap B lowering: reverting it drops the gate and this test
+    /// goes red.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task EmitHandler_ConfidenceGatedLastBodyStep_EmitsConfidenceGateRoutingToHandler()
+    {
+        // Arrange
+        var emitter = new LoopCompletedHandlerEmitter();
+        var sb = new StringBuilder();
+        var model = CreateMinimalModel();
+        var loops = CreateSingleLoop();
+        var context = CreateConfidenceGatedContext(loops);
+
+        // Act
+        emitter.EmitHandler(sb, model, "Refine_End", context);
+        var result = sb.ToString();
+
+        // Assert — the confidence comparison and the route to the handler start command are
+        // emitted, ahead of the loop-condition machinery.
+        await Assert.That(result).Contains("evt.Confidence is double confidenceScore && confidenceScore < 0.85");
+        await Assert.That(result).Contains("return new StartHumanReviewStepCommand(WorkflowId);");
+        await Assert.That(result).Contains("Phase = TestWorkflowPhase.HumanReviewStep;");
+
+        // The gate precedes the max-iteration guard (routes before the loop continues/exits).
+        var gateIndex = result.IndexOf("confidenceScore < 0.85", StringComparison.Ordinal);
+        var maxGuardIndex = result.IndexOf("max iteration guard", StringComparison.Ordinal);
+        await Assert.That(gateIndex).IsGreaterThan(0);
+        await Assert.That(maxGuardIndex).IsGreaterThan(gateIndex);
+    }
+
+    /// <summary>
+    /// Verifies that a loop whose last body step is NOT confidence-gated emits no confidence
+    /// gate — non-confidence loop output stays byte-unchanged.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task EmitHandler_NoConfidenceOnLastBodyStep_EmitsNoConfidenceGate()
+    {
+        // Arrange
+        var emitter = new LoopCompletedHandlerEmitter();
+        var sb = new StringBuilder();
+        var model = CreateMinimalModel();
+        var loops = CreateSingleLoop();
+        var context = CreateContext(loops);
+
+        // Act
+        emitter.EmitHandler(sb, model, "Refine_End", context);
+        var result = sb.ToString();
+
+        // Assert — no confidence comparison is emitted.
+        await Assert.That(result).DoesNotContain("evt.Confidence is double confidenceScore");
+    }
+
+    // =============================================================================
     // Helper Methods
     // =============================================================================
+
+    private static HandlerContext CreateConfidenceGatedContext(List<LoopModel> loops)
+    {
+        // The gated LAST body step's StepModel carries a single-step terminating OnLowConfidence
+        // handler (HumanReviewStep), exactly as the parser threads it from
+        // .RequireConfidence(0.85).OnLowConfidence(alt => alt.Then<HumanReviewStep>()).
+        var handlerStep = StepModel.Create("HumanReviewStep", "TestNamespace.HumanReviewStep");
+        var gatedStep = StepModel.Create(
+            "End",
+            "TestNamespace.Refine_End",
+            loopName: "Refine",
+            confidence: new ConfidenceModel(
+                Threshold: 0.85,
+                OnLowConfidenceHandlerId: "HumanReviewStep",
+                OnLowConfidenceHandlerStep: handlerStep,
+                OnLowConfidenceHandlerChain: new LowConfidenceHandlerChainModel([handlerStep])));
+
+        return new HandlerContext(
+            StepIndex: 1,
+            IsLastStep: false,
+            IsTerminalStep: false,
+            NextStepName: "FinalizeStep",
+            StepModel: gatedStep,
+            LoopsAtStep: loops,
+            BranchAtStep: null,
+            ApprovalAtStep: null,
+            ForkAtStep: null,
+            ForkPathEnding: null,
+            JoinForkAtStep: null,
+            IsForkPathStep: false);
+    }
 
     private static WorkflowModel CreateMinimalModel()
     {
@@ -459,8 +553,11 @@ public class LoopCompletedHandlerEmitterTests
                 loopName: "Refinement",
                 conditionId: "TestWorkflow-Refinement",
                 maxIterations: 5,
-                firstBodyStepName: "Refine_Start",
-                lastBodyStepName: "Refine_End"),
+                bodySteps:
+                [
+                    StepModel.Create("Refine_Start", "TestNamespace.Refine_Start"),
+                    StepModel.Create("Refine_End", "TestNamespace.Refine_End"),
+                ]),
         ];
     }
 

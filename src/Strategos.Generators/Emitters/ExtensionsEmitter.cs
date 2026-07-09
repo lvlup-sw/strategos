@@ -297,9 +297,16 @@ internal static class ExtensionsEmitter
 
         // Force evaluation of workflow definition to register loop conditions
         // The Definition property triggers the fluent DSL builder chain which
-        // registers conditions in WorkflowConditionRegistry for runtime lookup
-        sb.AppendLine("        // Force evaluation of workflow definition to register loop conditions");
-        sb.AppendLine($"        _ = {model.PascalName}WorkflowDefinition.Definition;");
+        // registers conditions in WorkflowConditionRegistry for runtime lookup.
+        // A JSON-imported workflow (DR-12, task 017) has no fluent
+        // {Pascal}WorkflowDefinition class — it is declarative — so this line is
+        // both meaningless (imports reject loops) and uncompilable for it; it is
+        // emitted only for C#-authored workflows (HasFluentDefinition).
+        if (model.HasFluentDefinition)
+        {
+            sb.AppendLine("        // Force evaluation of workflow definition to register loop conditions");
+            sb.AppendLine($"        _ = {model.PascalName}WorkflowDefinition.Definition;");
+        }
 
         // Configure Marten SnapshottedAggregation for event-sourced workflows
         if (model.IsEventSourced && !string.IsNullOrEmpty(model.StateTypeName))

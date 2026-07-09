@@ -1,0 +1,30 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "Answer.json",
+    "type": "object",
+    "properties": {
+        "answerKind": {
+            "type": "string",
+            "const": "answer",
+            "description": "Discriminator — pins this arm to the `answer` branch of the union."
+        },
+        "content": {
+            "type": "string",
+            "description": "The answer text."
+        },
+        "citations": {
+            "type": "array",
+            "items": {
+                "$ref": "RecordRef.json"
+            },
+            "minItems": 1,
+            "description": "The supporting records — NON-EMPTY (`@minItems(1)`). Each is a polyglot RecordRef moniker (INV-8), never a CLR type."
+        }
+    },
+    "required": [
+        "answerKind",
+        "content",
+        "citations"
+    ],
+    "description": "The `answerKind: \"answer\"` arm of `AbstentionResponse` (DR-16): a cited answer.\n`citations` is NON-EMPTY (`@minItems(1)`) — a free-text uncited answer is\nunrepresentable, so an answer that cites nothing fails schema validation. Each\ncitation is a polyglot `RecordRef` moniker (INV-8), never a CLR type. The wire\ntwin of the Strategos.Ontology.MCP `Answer`."
+}

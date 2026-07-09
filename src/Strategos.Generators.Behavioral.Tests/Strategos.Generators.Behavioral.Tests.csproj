@@ -15,6 +15,41 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Task 017 (DR-12 import keystone): the gate-bearing JSON workflow the
+         source-generator import front-end bridges to a WorkflowModel and lowers
+         through the SAME saga emitters at build time. The generated
+         ImportGateSaga / StartImportGateCommand / AddImportGateWorkflow()
+         compiling into THIS assembly is the required semantic check
+         (JsonWorkflowImportTests references them). The *.workflow.json
+         convention makes it an AdditionalFile the generator discovers. -->
+    <AdditionalFiles Include="Workflows\import-gate.workflow.json" />
+    <!-- Task 019 (DR-15 round-trip behavioral twins): the fork-join and config
+         (retry) importable-family JSON workflows the generator bridges + lowers
+         through the SAME saga emitters as their C# twins. Each generated
+         AddRoundtrip{Family}ImportWorkflow() compiling into THIS assembly is the
+         semantic check; the real-host RoundTripBehavioralTests assert each import
+         runs identically to its C# twin. -->
+    <AdditionalFiles Include="Workflows\roundtrip-fork.workflow.json" />
+    <AdditionalFiles Include="Workflows\roundtrip-config.workflow.json" />
+    <!-- M11 (DR-15): the onFailure importable family's bucket-(a) COMPILE + runtime
+         proof — a failureHandlers-bearing JSON the generator lowers to
+         RoundtripOnFailureImportSaga + AddRoundtripOnFailureImportWorkflow(). Its
+         compiling into THIS assembly is the real semantic check the in-memory
+         partition gate (RoundTripEquivalenceTests) only proxies; RoundTripBehavioralTests
+         runs it on the happy path. -->
+    <AdditionalFiles Include="Workflows\roundtrip-onfailure.workflow.json" />
+    <!-- FIX-5 (M10, DR-14 bucket a): the CONTEXT-FREE approval importable family's
+         bucket-(a) COMPILE proof — a JSON approval whose approvalPointId is a FIXED
+         digit-leading GUID (the shape that crashed the generator with CS8785 before
+         the name-derivation fix). The generator lowers it to RoundtripApprovalImportSaga
+         + AddRoundtripApprovalImportWorkflow(); its compiling into THIS assembly (the
+         generated saga references Strategos.Models.ApprovalDecision) is the real
+         semantic check the in-memory partition gate only proxies.
+         RoundTripApprovalImportCompileTests references the generated surface Docker-free. -->
+    <AdditionalFiles Include="Workflows\roundtrip-approval.workflow.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Used now: the Postgres Testcontainers fixture + smoke test. -->
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Testcontainers.PostgreSql" />

@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "RecordRef.json",
+    "type": "object",
+    "properties": {
+        "descriptor": {
+            "type": "string",
+            "description": "Descriptor name of the record's object type (INV-8: a name, never a CLR type)."
+        },
+        "recordId": {
+            "type": "string",
+            "description": "Projected id of the record instance."
+        }
+    },
+    "required": [
+        "descriptor",
+        "recordId"
+    ],
+    "description": "The polyglot STRING identity of one ontology record (DR-16): a descriptor NAME\n(INV-8 — never a CLR type) paired with the projected record id. Citations and\nnearest-record monikers cross the wire as language-neutral string pairs a\nnon-.NET consumer (Exarchos, Basileus) can read without a shared type system.\nThe wire twin of the Strategos.Ontology.MCP `RecordRef` — same string pair, so\nthe two serialize to one shape."
+}

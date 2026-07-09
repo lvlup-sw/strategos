@@ -319,6 +319,16 @@ public class ProjectionExhaustivenessTests
             JoinStepId = "wf-terminal",
             Paths = [],
         };
+        var diagnosticFork = DiagnosticForkDefinition.Create(
+            anchorStepIds: ["wf-entry"],
+            permittedTriggers:
+            [
+                PermittedForkTriggerDefinition.Create(
+                    Wire.ForkTrigger.RatificationFailure,
+                    ["df-probe-evidence"]),
+            ],
+            compensationSeed: "df-probe-seed",
+            maxForks: 4);
 
         var workflow = WorkflowDefinition<TestWorkflowState>.Create("probe-workflow")
             .WithStep(entry)
@@ -330,7 +340,8 @@ public class ProjectionExhaustivenessTests
             .WithLoops([loop])
             .WithFailureHandlers([failureHandler])
             .WithApprovalPoints([approval])
-            .WithForkPoints([forkPoint]);
+            .WithForkPoints([forkPoint])
+            .WithDiagnosticForks([diagnosticFork]);
 
         var v1 = workflow.ToContract();
         var json = ContractsJson.Serialize(v1);
@@ -343,6 +354,7 @@ public class ProjectionExhaustivenessTests
         Record(present, "FailureHandlers", json, "fh-probe");
         Record(present, "ApprovalPoints", json, "ap-probe");
         Record(present, "ForkPoints", json, "fp-probe");
+        Record(present, "DiagnosticForks", json, "df-probe-seed");
         Record(present, "EntryStep", json, "wf-entry");
         Record(present, "TerminalStep", json, "wf-terminal");
 

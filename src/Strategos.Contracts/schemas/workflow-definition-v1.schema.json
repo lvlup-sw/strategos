@@ -62,6 +62,20 @@
             },
             "description": "Approval points (human-approval pauses)."
         },
+        "gates": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/GateDeclaration"
+            },
+            "description": "Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the\ngenerated saga does NOT consume gates — they flow through the shared wire IR\nso both runtimes see the same gate vocabulary from birth. OPTIONAL and\nadditive; a workflow with no declared gates omits the slot entirely.\n\nA GateStep may back-reference a declaration here by its `gateId`. That a\n`gateId` must name an id present in this list is a semantic rule JSON Schema\ncannot express (see README, \"Dangling gateId\"); the build-time import\nfront-end enforces it (DR-13/DR-15), not this schema."
+        },
+        "diagnosticForks": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/DiagnosticForkDefinition"
+            },
+            "description": "Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of\nthe fork/compensation edge (DR-7): where the workflow may fork, the closed\ntriggers permitted with their evidence-ref schema, the `maxForks` bound, and\nthe compensation seed. OPTIONAL and additive — a workflow with no fork edge\nomits the slot entirely, so this is a NON-BREAKING wire change.\n\nINV-8: every reference inside a DiagnosticForkDefinition is a string moniker,\nnever a CLR type. The generated saga lowers the edge (DR-9); the runtime\ncompanion is ForkOccurrence (DR-8) in the Events family."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."
@@ -106,6 +120,11 @@
                 "rejectionHandler": {
                     "$ref": "#/definitions/ApprovalRejectionDefinition",
                     "description": "Optional rejection handler."
+                },
+                "hasContext": {
+                    "type": "boolean",
+                    "const": true,
+                    "description": "Declares this approval carried context configuration (a static message or a\nruntime context factory) whose body is dropped from the wire — the\ndeclarative-only lossiness marker for approvals (DR-14), mirroring the\ndelegate step's lambda marker. Present and true only when context was\nconfigured; omitted for a context-free approval point."
                 }
             },
             "required": [
@@ -113,7 +132,7 @@
                 "approverType",
                 "precedingStepId"
             ],
-            "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's runtime context factory (a CLR\nexpression) is intentionally **not** carried on the wire (declarative-only,\nLB-1)."
+            "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's context body (a static message or a\nruntime context factory, a CLR expression) is intentionally **not** carried\non the wire (declarative-only, LB-1), but its presence is marked by\n`hasContext` so the loss is visible in the data rather than silent (DR-14)."
         },
         "ApprovalEscalationDefinition": {
             "type": "object",
@@ -352,6 +371,45 @@
             ],
             "description": "Delegate (lambda) step — built via `StepDefinition.CreateFromLambda` (LB-1).\nThe wire contract **never carries executable code**: the `Delegate` body is\ndropped and its loss made visible by the `lambda: true` marker. There is no\nfield on this arm that can hold a delegate or executable."
         },
+        "DiagnosticForkDefinition": {
+            "type": "object",
+            "properties": {
+                "anchorStepIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "description": "The anchor step monikers — the step ids where this workflow may fork (INV-8:\nsimple-name step id monikers, never CLR types). At least one anchor: a fork\nedge with nowhere to fork is unrepresentable."
+                },
+                "permittedTriggers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/PermittedForkTrigger"
+                    },
+                    "minItems": 1,
+                    "description": "The closed triggers permitted to fork this workflow, each paired with its\ndeclaration-side evidence-ref schema (PermittedForkTrigger). At least one:\nthe edge is inexpressible without declaring a permitted trigger (DR-7)."
+                },
+                "maxForks": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647,
+                    "description": "Upper bound on the forks this edge may spawn. The generated guard enforces it\n(DR-9; the LoopDefinition.maxIterations forced-exit precedent) — exceeding it\nroutes to a blocked / human-escalation terminal. At least 1: a bound of 0\nforbids the very fork the edge exists to permit."
+                },
+                "compensationSeed": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The compensation seed moniker (INV-8: a plain string moniker, never a CLR\ntype) — the seed the fork routes compensation to, composing with the existing\nCompensate / OnFailure merged trigger site (DR-9). REQUIRED and non-empty."
+                }
+            },
+            "required": [
+                "anchorStepIds",
+                "permittedTriggers",
+                "maxForks",
+                "compensationSeed"
+            ],
+            "description": "Wire-IR diagnostic fork edge (#151, DR-10 → #100): the DECLARATIVE half of the\nbasileus #394 rollback-and-fork verb, and the shared combinator exarchos #1258\nlowers to. Names WHERE a workflow may fork (anchor step monikers), WHICH closed\ntriggers may fork it paired with the evidence fields each requires\n(PermittedForkTrigger — the declaration side), a `maxForks` upper bound the\ngenerated guard enforces (DR-9; the LoopDefinition.maxIterations forced-exit\nprecedent), and the compensation seed the fork routes to.\n\nINV-8: EVERY step/type reference on this shape is a string moniker — the anchor\nstep ids, the evidence field names, and the compensation seed are all plain\nstrings; the only typed reference is the closed ForkTrigger enum (a snake_case\nwire vocabulary, not a CLR type). Nothing here carries a runtime `Type`, an\nassembly-qualified name, or executable code.\n\nOPTIONAL and additive on WorkflowDefinitionV1 (the `diagnosticForks?` slot): a\nworkflow that declares no fork edge omits the slot entirely, so introducing it\nis a NON-BREAKING wire change. The generated saga lowers it (DR-9); the\nruntime-occurrence companion is ForkOccurrence (DR-8), in the Events family."
+        },
         "FailureHandlerDefinition": {
             "type": "object",
             "properties": {
@@ -459,6 +517,83 @@
             ],
             "description": "Wire-IR fork point — a fan-out into concurrent paths that rejoin at a join\nstep (mirrors the builder's `ForkPointDefinition`)."
         },
+        "ForkTrigger": {
+            "type": "string",
+            "enum": [
+                "ratification_failure",
+                "gate_contradiction",
+                "operator_explicit"
+            ],
+            "description": "Closed enum of the TRIGGERS that may fork a workflow's diagnostic path\n(#151, DR-8) — the declaration-side trigger vocabulary shared across the\ncontract boundary so both runtimes fork on ONE trigger identity.\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these by VALUE (INV-8 polyglot identity) — never by\nordinal.\n\nAdditive-evolution posture (DR-18): the set is CLOSED, but a future\nbudget-bounded trigger (the planned exploratory member, basileus PR #401\nrec L-4) is admitted by APPENDING a member — a NON-BREAKING additive minor,\nnot a redesign (the ForkOccurrence payload carries an explicit schemaVersion\nmarker so this evolution is versioned, not implicit). Because emitted\nconverters stay strict, an added member is flagged NOTICE: consumers upgrade\nbefore producers emit it. Removing or renaming a member is a breaking major."
+        },
+        "GateClass": {
+            "type": "string",
+            "enum": [
+                "typecheck",
+                "lint",
+                "scoped_test",
+                "full_suite",
+                "mutation_adequacy",
+                "merge_gate",
+                "llm_judge"
+            ],
+            "description": "Closed enum of the gate CLASSES a workflow's quality/merge gates evaluate\n(#150, DR-1). This is the single typed gate identity shared across the\ncontract boundary so both runtimes consume ONE gate vocabulary.\n\nMember names are PascalCase; the wire VALUES are the exact snake_case tokens\ncross-repo consumers match on. Exarchos's TypeScript enum and Basileus's C#\nenum round-trip against these **by value** (INV-8 polyglot identity) — never by\nordinal. Adding a class is an additive minor; renaming or removing one is a\nbreaking major."
+        },
+        "GateDeclaration": {
+            "type": "object",
+            "properties": {
+                "class": {
+                    "$ref": "#/definitions/GateClass",
+                    "description": "The typed gate class this declaration evaluates (DR-1 — the shared gate identity)."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Stable identifier for this gate declaration."
+                },
+                "reliability": {
+                    "$ref": "#/definitions/GateReliability",
+                    "description": "Measured-reliability telemetry — present ONLY when measured; never hand-authored."
+                }
+            },
+            "required": [
+                "class",
+                "id"
+            ],
+            "description": "A single gate declaration on a workflow (#150, DR-2): the typed gate CLASS it\nevaluates, a stable id, and — ONLY when measured — its reliability telemetry.\n\n`class` is the single typed gate identity (DR-1, GateClass) both runtimes\nconsume; it is non-optional. `reliability` is optional because it is stamped\nfrom telemetry after the fact — a freshly-declared gate carries none, and no\nauthoring channel may supply it. When present, its `source` provenance is\nmandatory (see GateReliability)."
+        },
+        "GateReliability": {
+            "type": "object",
+            "properties": {
+                "fpr": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Measured false-positive rate of the gate, a fraction in the closed unit interval."
+                },
+                "sampleSize": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "description": "Number of observations the measurement was computed over."
+                },
+                "asOf": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the measurement was taken (UTC)."
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Provenance of the measurement — where this reliability number came from.\nREQUIRED: reliability is telemetry-measured, never hand-authored, so a\nreliability block without a source is invalid."
+                }
+            },
+            "required": [
+                "fpr",
+                "sampleSize",
+                "asOf",
+                "source"
+            ],
+            "description": "Measured-reliability telemetry for a gate (#150, DR-2).\n\nThis block is NEVER hand-authored: it is populated only from measured gate\ntelemetry, so `source` — the PROVENANCE of the measurement — is REQUIRED. A\nreliability block that omits `source` is rejected at the schema boundary\n(there is no anonymous, unattributable reliability number). The authoring\nchannel (the builder DSL / import) surfaces no reliability field at all, so\nnothing on the write path can smuggle a value in; reliability is stamped only\nfrom telemetry."
+        },
         "GateStep": {
             "type": "object",
             "properties": {
@@ -493,6 +628,10 @@
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
+                },
+                "gateId": {
+                    "type": "string",
+                    "description": "Optional back-reference to a gate declaration on the workflow root (#150,\nDR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.\nOPTIONAL and additive. A value naming an id absent from `gates` is a\ndangling reference — a semantic rule JSON Schema cannot express (see README,\n\"Dangling gateId\"); the build-time import front-end rejects it (DR-13/DR-15),\nnot this schema."
                 }
             },
             "required": [
@@ -620,6 +759,28 @@
                 "isTerminal"
             ],
             "description": "Wire-IR low-confidence handler (mirrors the builder's\n`LowConfidenceHandlerDefinition`)."
+        },
+        "PermittedForkTrigger": {
+            "type": "object",
+            "properties": {
+                "trigger": {
+                    "$ref": "#/definitions/ForkTrigger",
+                    "description": "The closed trigger this entry permits (DR-8 — the shared trigger identity)."
+                },
+                "requiredEvidenceFields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "description": "The evidence FIELD NAMES a future fork occurrence must carry for this trigger\n(declaration side — NOT runtime values). Each is a plain string moniker\n(INV-8): the name of a field on the occurrence's evidence (for example\n`provisionalStampEventId`), never a CLR type. At least one field: a permitted\ntrigger that names no evidence declares no justification schema. Per-trigger\nruntime completeness is enforced where occurrences are born — the generated\nguard (DR-9) — never at authoring time; this shape pins the declared floor."
+                }
+            },
+            "required": [
+                "trigger",
+                "requiredEvidenceFields"
+            ],
+            "description": "Wire-IR permitted fork trigger with its DECLARATION-side evidence-ref schema\n(#151, DR-10 / DR-8). Pairs one closed ForkTrigger the workflow may fork on\nwith the NAMES of the evidence fields a future fork occurrence must carry to\njustify that trigger.\n\nThis is the declaration half: field-NAME declarations, never runtime VALUES —\nthose exist only when a fork actually happens (see the occurrence side,\nForkOccurrence / ForkEvidence, in the Events family). Every entry is a plain\nstring moniker (INV-8): a field name, never a CLR type or a runtime payload."
         },
         "RetryConfiguration": {
             "type": "object",
@@ -863,6 +1024,20 @@
                         "$ref": "#/definitions/ApprovalDefinition"
                     },
                     "description": "Approval points (human-approval pauses)."
+                },
+                "gates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GateDeclaration"
+                    },
+                    "description": "Gate declarations for this workflow (#150, DR-3). Consumer-plane data: the\ngenerated saga does NOT consume gates — they flow through the shared wire IR\nso both runtimes see the same gate vocabulary from birth. OPTIONAL and\nadditive; a workflow with no declared gates omits the slot entirely.\n\nA GateStep may back-reference a declaration here by its `gateId`. That a\n`gateId` must name an id present in this list is a semantic rule JSON Schema\ncannot express (see README, \"Dangling gateId\"); the build-time import\nfront-end enforces it (DR-13/DR-15), not this schema."
+                },
+                "diagnosticForks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/DiagnosticForkDefinition"
+                    },
+                    "description": "Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of\nthe fork/compensation edge (DR-7): where the workflow may fork, the closed\ntriggers permitted with their evidence-ref schema, the `maxForks` bound, and\nthe compensation seed. OPTIONAL and additive — a workflow with no fork edge\nomits the slot entirely, so this is a NON-BREAKING wire change.\n\nINV-8: every reference inside a DiagnosticForkDefinition is a string moniker,\nnever a CLR type. The generated saga lowers the edge (DR-9); the runtime\ncompanion is ForkOccurrence (DR-8) in the Events family."
                 },
                 "entryStepId": {
                     "type": "string",

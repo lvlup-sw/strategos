@@ -94,6 +94,17 @@ internal static class PhaseEnumEmitter
             sb.AppendLine();
         }
 
+        // Diagnostic-fork blocked terminal (DR-9): the blocked / human-escalation phase a
+        // fork routes to when it exceeds its maxForks bound (the loop MaxIterations
+        // forced-exit precedent). Emitted only for a workflow that declares a fork edge,
+        // so non-fork workflows are byte-unchanged.
+        if (model.HasDiagnosticForks)
+        {
+            sb.AppendLine("    /// <summary>Diagnostic fork bound exceeded; blocked awaiting human escalation.</summary>");
+            sb.AppendLine("    ForkBlocked,");
+            sb.AppendLine();
+        }
+
         // Standard terminal phases
         sb.AppendLine("    /// <summary>Workflow completed successfully.</summary>");
         sb.AppendLine("    Completed,");

@@ -267,19 +267,29 @@ internal static class WorkflowDiagnostics
     /// </summary>
     /// <remarks>
     /// Reported when a step declares a configuration concern that the generator does not
-    /// lower for that step's kind, so the configuration silently has no effect. The guarded
-    /// case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on a
-    /// <b>fork-path</b> step: the fork-path parse threads the configure lambda into the
-    /// StepModel IR (so an out-of-range threshold still surfaces
-    /// <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter does not lower
-    /// confidence-gated routing for fork-path steps — that lowering is deferred
-    /// (v2.10.0 / DR-17, #134), so the gate is inert. A warning (not an error) so an author
-    /// can suppress it by id while the deferral stands.
+    /// lower for that step's kind, so the configuration silently has no effect. Two guarded
+    /// cases, both confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on an
+    /// INTERMEDIATE (non-last) step of a construct whose LAST step IS lowered:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     an intermediate <b>fork-path</b> step — a fork path's last step lowers into the fork
+    ///     path-completed handler (DR-4 / #145 gap A), an intermediate one does not; and
+    ///   </description></item>
+    ///   <item><description>
+    ///     an intermediate <b>loop-body</b> step — a loop body's last step lowers into the loop
+    ///     completed handler (DR-5 / #145 gap B), an intermediate one does not.
+    ///   </description></item>
+    /// </list>
+    /// In both cases the configure lambda is threaded into the IR (so an out-of-range threshold
+    /// still surfaces <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter's
+    /// lowering for the intermediate position is deferred (v2.10.0 / DR-17, #145). A warning
+    /// (not an error) so an author can suppress it by id while the deferral stands.
     /// <para>
-    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence configuration is a distinct
-    /// case that this diagnostic does NOT cover — it is dropped from the IR entirely by step
-    /// extraction, so an IR-based diagnostic structurally cannot see it (also tracked under
-    /// #134 for v2.10.0).
+    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence used to be a distinct, structurally
+    /// undiagnosable case — it was dropped from the IR entirely by step extraction, so an
+    /// IR-based diagnostic could not see it. Promoting the loop body to configured
+    /// <c>StepModel</c> records on <c>LoopModel.BodySteps</c> (#145) brought it into the IR, so
+    /// the intermediate loop-body case is now covered here.
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor DeclaredButInert = new(
@@ -290,4 +300,233 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "A step configuration concern the generator does not lower for the step's kind is silently inert. Surfacing it prevents a deferred or unsupported configuration from masquerading as working.");
+
+    /// <summary>
+    /// Malformed workflow import JSON (DR-12).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a <c>*.workflow.json</c> AdditionalFile is not well-formed JSON. The
+    /// vendored reader (<c>WireWorkflowReader</c>) throws <c>JsonParseException</c>; the
+    /// import front-end catches it and reports this stable diagnostic so a malformed file
+    /// surfaces as a build error rather than crashing the generator. Argument 0 is the file
+    /// name; argument 1 is the parser's failure message.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MalformedWorkflowJson = new(
+        id: AgwfCodes.MalformedWorkflowJson,
+        title: "Malformed workflow import JSON",
+        messageFormat: "Workflow import file '{0}' is not well-formed JSON and was skipped: {1}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A workflow-definition JSON AdditionalFile must be well-formed JSON. Malformed input cannot be bound to the wire IR and is skipped; fix the JSON syntax so the workflow can be imported.");
+
+    /// <summary>
+    /// Unsupported workflow schema version (DR-12).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a <c>*.workflow.json</c> AdditionalFile parses successfully but declares a
+    /// <c>schemaVersion</c> other than the supported <c>"1.0"</c> (including an absent version).
+    /// The import front-end rejects the skew with this stable diagnostic rather than binding an
+    /// incompatible shape. Argument 0 is the file name; argument 1 is the declared version.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnsupportedSchemaVersion = new(
+        id: AgwfCodes.UnsupportedSchemaVersion,
+        title: "Unsupported workflow schema version",
+        messageFormat: "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The workflow import front-end binds the wire IR at schema version 1.0. A file declaring a different (or missing) schemaVersion is rejected so incompatible shapes are not silently misbound.");
+
+    /// <summary>
+    /// Unresolvable workflow step moniker (DR-13).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a wire simple-name step moniker on an imported <c>*.workflow.json</c> does not
+    /// resolve to any accessible <c>IWorkflowStep&lt;TState&gt;</c> type in the compilation symbol
+    /// table. Argument 0 is the import file path; argument 1 is the offending moniker. The moniker is
+    /// consumed as a string descriptor (INV-8) — nothing persists a CLR <see cref="System.Type"/>.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnresolvableStepMoniker = new(
+        id: AgwfCodes.UnresolvableStepMoniker,
+        title: "Unresolvable workflow step moniker",
+        messageFormat: "Workflow import file '{0}' references step moniker '{1}', which does not resolve to any accessible workflow step type in the compilation. Add the step type (implementing IWorkflowStep<TState>) or correct the moniker.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A wire step moniker must bind to exactly one accessible IWorkflowStep<TState> type in the compilation. A moniker that resolves to no such type is rejected so an import cannot silently drop a step.");
+
+    /// <summary>
+    /// Ambiguous workflow step moniker (DR-13).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a wire simple-name step moniker on an imported <c>*.workflow.json</c> resolves to
+    /// two or more accessible <c>IWorkflowStep&lt;TState&gt;</c> types sharing that simple name.
+    /// Argument 0 is the import file path; argument 1 is the moniker; argument 2 is the deterministic,
+    /// ordinal-sorted list of all candidate fully-qualified type names.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor AmbiguousStepMoniker = new(
+        id: AgwfCodes.AmbiguousStepMoniker,
+        title: "Ambiguous workflow step moniker",
+        messageFormat: "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A wire step moniker must bind to exactly one accessible IWorkflowStep<TState> type. When two or more candidates share the simple name, the moniker is ambiguous and rejected; the candidates are listed deterministically so the collision is actionable.");
+
+    /// <summary>
+    /// Imported delegate (lambda) step is not supported (DR-14 rejection half).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> carries a delegate step (its
+    /// <c>lambda</c> lossiness marker is set, LB-1). A lambda body is dropped on export and cannot
+    /// be re-bound on import, so the whole workflow is rejected and NO saga is generated. Argument 0
+    /// is the import file path; argument 1 is the JSON path of the offending step; argument 2 names
+    /// the step. Lambda re-binding (a step registry) is a #100 follow-on.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportRejectedDelegateStep = new(
+        id: AgwfCodes.ImportRejectedDelegateStep,
+        title: "Imported delegate (lambda) step is not supported",
+        messageFormat: "Workflow import file '{0}' declares a delegate (lambda) step at {1} (step '{2}'). A lambda step body is dropped on export (LB-1) and cannot be re-bound on import, so the workflow is rejected and no saga is generated. Replace it with a named IWorkflowStep<TState> step type.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A delegate (lambda) step carries an executable body the wire IR cannot represent (LB-1). An import carrying one is rejected loudly rather than silently dropped, so a lossy workflow cannot masquerade as a working saga.");
+
+    /// <summary>
+    /// Imported branch point is not supported (DR-14 rejection half).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> declares a branch point (a conditional
+    /// fan-out). A branch point carries a runtime-bound condition the import subset cannot re-bind,
+    /// so the whole workflow is rejected and NO saga is generated. Argument 0 is the import file
+    /// path; argument 1 is the JSON path; argument 2 names the branch point. Condition re-binding is
+    /// a #100 follow-on.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportRejectedBranchPoint = new(
+        id: AgwfCodes.ImportRejectedBranchPoint,
+        title: "Imported branch point is not supported",
+        messageFormat: "Workflow import file '{0}' declares a branch point at {1} (branch point '{2}'). A conditional branch point carries a runtime-bound condition that is not importable, so the workflow is rejected and no saga is generated.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A conditional branch point routes on a runtime-bound predicate the wire IR cannot represent. An import carrying one is rejected loudly rather than silently dropped.");
+
+    /// <summary>
+    /// Imported loop is not supported (DR-14 rejection half).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> declares a loop (a <c>RepeatUntil</c>
+    /// construct). A loop carries a runtime-bound exit condition the import subset cannot re-bind,
+    /// so the whole workflow is rejected and NO saga is generated. Argument 0 is the import file
+    /// path; argument 1 is the JSON path; argument 2 names the loop. Condition re-binding is a #100
+    /// follow-on.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportRejectedLoop = new(
+        id: AgwfCodes.ImportRejectedLoop,
+        title: "Imported loop is not supported",
+        messageFormat: "Workflow import file '{0}' declares a loop at {1} (loop '{2}'). A RepeatUntil loop carries a runtime-bound exit condition that is not importable, so the workflow is rejected and no saga is generated.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A RepeatUntil loop terminates on a runtime-bound exit condition the wire IR cannot represent. An import carrying one is rejected loudly rather than silently dropped.");
+
+    /// <summary>
+    /// Imported validation predicate is not supported (DR-14 rejection half).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> step carries a validation guard (a
+    /// declarative predicate, LB-1). The predicate has no re-bindable executable body, so the whole
+    /// workflow is rejected and NO saga is generated. Argument 0 is the import file path; argument 1
+    /// is the JSON path; argument 2 names the step. Condition re-binding is a #100 follow-on.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportRejectedValidationPredicate = new(
+        id: AgwfCodes.ImportRejectedValidationPredicate,
+        title: "Imported validation predicate is not supported",
+        messageFormat: "Workflow import file '{0}' declares a validation predicate at {1} (step '{2}'). A declarative validation predicate carries no re-bindable executable body (LB-1), so the workflow is rejected and no saga is generated.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A validation guard is a declarative description of a predicate, not executable code (LB-1). An import carrying one is rejected loudly rather than silently dropped, since the guard cannot be lowered.");
+
+    /// <summary>
+    /// Imported approval context is not supported (DR-14 rejection half).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> approval carries context (its
+    /// <c>hasContext</c> marker is set), an escalation handler, or a rejection handler. That
+    /// behavior is dropped on export and cannot be re-bound on import, so the whole workflow is
+    /// rejected and NO saga is generated. Argument 0 is the import file path; argument 1 is the JSON
+    /// path; argument 2 names the approval point. Context re-binding is a #100 follow-on.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportRejectedApprovalContext = new(
+        id: AgwfCodes.ImportRejectedApprovalContext,
+        title: "Imported approval context is not supported",
+        messageFormat: "Workflow import file '{0}' declares a context-bearing approval at {1} (approval '{2}'). Approval context is dropped on export (LB-1) and cannot be re-bound on import, so the workflow is rejected and no saga is generated. Use a context-free approval.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "An approval carrying context (or an escalation / rejection handler) carries behavior the wire IR drops on export (LB-1). An import carrying it is rejected loudly rather than silently dropped; only a context-free approval is importable.");
+
+    /// <summary>
+    /// Imported gate id does not resolve (DR-3 semantic rule).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> gate step's <c>gateId</c> back-reference
+    /// names an id absent from the workflow's <c>gates[]</c> declarations. The dangling reference is
+    /// a semantic error, so the whole workflow is rejected and NO saga is generated. Argument 0 is
+    /// the import file path; argument 1 is the JSON path; argument 2 is the dangling gate id.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportDanglingGateId = new(
+        id: AgwfCodes.ImportDanglingGateId,
+        title: "Imported gate id does not resolve",
+        messageFormat: "Workflow import file '{0}' references gate id '{2}' at {1}, which is not declared in the workflow's gates[]. The dangling gate reference is rejected and no saga is generated; declare the gate in gates[] or remove the gateId.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A gate step's gateId must back-reference a gate declared in the workflow's gates[]. A gateId naming an absent declaration is a dangling reference and is rejected so the semantic error surfaces at import rather than silently.");
+
+    /// <summary>
+    /// Imported gate declaration carries reliability (DR-2 import-channel machine-check).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> gate declaration carries a <c>reliability</c>
+    /// block. Reliability enters a definition only from measured telemetry, never from authored JSON,
+    /// so the whole workflow is rejected and NO saga is generated. Argument 0 is the import file
+    /// path; argument 1 is the JSON path; argument 2 names the gate declaration.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportReliabilityBearingGate = new(
+        id: AgwfCodes.ImportReliabilityBearingGate,
+        title: "Imported gate declaration carries reliability",
+        messageFormat: "Workflow import file '{0}' declares a reliability block at {1} (gate '{2}'). Gate reliability enters a definition only from measured telemetry, never from authored JSON, so the workflow is rejected and no saga is generated. Remove the reliability block.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A gate reliability block is measured telemetry provenance, never hand-authored. An import channel is a hand-authoring surface, so a gate declaration carrying reliability is rejected to keep telemetry out of the authored definition.");
+
+    /// <summary>
+    /// Imported diagnostic-fork permitted trigger declares no required evidence fields (DR-8 evidence floor).
+    /// </summary>
+    /// <remarks>
+    /// Reported when an imported <c>*.workflow.json</c> declares a diagnostic-fork permitted trigger
+    /// whose <c>requiredEvidenceFields</c> is empty. The wire contract pins <c>@minItems(1)</c> on that
+    /// list, and the C# builder's <c>PermitTrigger</c> forces at least one field — but the import path
+    /// copies the list verbatim into <c>MapDiagnosticForks</c> →
+    /// <c>PermittedForkTriggerModel.Create</c>, which enforces the floor by THROWING on an empty list.
+    /// That unhandled throw crashes the whole generator (CS8785) and drops ALL generated output for the
+    /// compilation. (Were the model floor bypassed, the emitter would instead lower a guard arm
+    /// <c>ForkEvidenceComplete(cmd.Evidence)</c> with ZERO required fields — always true for any evidence
+    /// map, defeating the DR-8 "no unjustified fork" invariant.) Rejecting here, before mapping, turns
+    /// both failure modes into one loud, fail-closed diagnostic: the whole workflow is rejected and NO
+    /// saga is generated. Argument 0 is the import file path; argument 1 is the JSON path; argument 2
+    /// names the offending trigger.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportForkTriggerWithoutEvidence = new(
+        id: AgwfCodes.ImportForkTriggerWithoutEvidence,
+        title: "Imported fork trigger declares no required evidence fields",
+        messageFormat: "Workflow import file '{0}' declares a diagnostic-fork permitted trigger at {1} (trigger '{2}') with no required evidence fields. A permitted fork trigger must declare at least one required evidence field (wire @minItems(1)) so the DR-8 no-unjustified-fork guard has an evidence floor to enforce; the workflow is rejected and no saga is generated. Add the evidence field(s) the trigger requires.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A permitted fork trigger with no required evidence fields has no DR-8 evidence floor: on import it crashes the generator (the model floor throws, CS8785), and were that bypassed the emitted occurrence guard would be always-true. The wire contract pins @minItems(1); the import channel is a hand-authoring surface, so a trigger declaring no evidence floor is rejected before mapping to fail closed with a stable diagnostic.");
 }

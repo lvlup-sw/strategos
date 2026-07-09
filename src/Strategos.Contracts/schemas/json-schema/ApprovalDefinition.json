@@ -22,6 +22,11 @@
         "rejectionHandler": {
             "$ref": "ApprovalRejectionDefinition.json",
             "description": "Optional rejection handler."
+        },
+        "hasContext": {
+            "type": "boolean",
+            "const": true,
+            "description": "Declares this approval carried context configuration (a static message or a\nruntime context factory) whose body is dropped from the wire — the\ndeclarative-only lossiness marker for approvals (DR-14), mirroring the\ndelegate step's lambda marker. Present and true only when context was\nconfigured; omitted for a context-free approval point."
         }
     },
     "required": [
@@ -29,5 +34,5 @@
         "approverType",
         "precedingStepId"
     ],
-    "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's runtime context factory (a CLR\nexpression) is intentionally **not** carried on the wire (declarative-only,\nLB-1)."
+    "description": "Wire-IR approval point — a human-approval pause (mirrors the builder's\n`ApprovalDefinition`). The approver CLR type reduces to a simple-name moniker\n(LB-2); the approval configuration's context body (a static message or a\nruntime context factory, a CLR expression) is intentionally **not** carried\non the wire (declarative-only, LB-1), but its presence is marked by\n`hasContext` so the loss is visible in the data rather than silent (DR-14)."
 }

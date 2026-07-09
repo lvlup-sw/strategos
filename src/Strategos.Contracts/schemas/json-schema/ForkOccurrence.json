@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ForkOccurrence.json",
+    "type": "object",
+    "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "const": "fork.v1",
+            "description": "Wire schema version literal — the DR-18 version marker (additive minors; breaking ⇒ fork.v2)."
+        },
+        "trigger": {
+            "$ref": "ForkTrigger.json",
+            "description": "The closed trigger that fired this fork (DR-8 — the shared trigger identity)."
+        },
+        "evidence": {
+            "$ref": "RecordString.json",
+            "minProperties": 1,
+            "description": "The runtime evidence values that justify the fork — a non-empty field-name →\nvalue map (`ForkEvidence`) keyed by the trigger's declared evidence fields.\nREQUIRED and non-empty (no unjustified fork); per-trigger completeness is\nenforced by the generated guard (DR-9)."
+        }
+    },
+    "required": [
+        "schemaVersion",
+        "trigger",
+        "evidence"
+    ],
+    "description": "Runtime payload of a workflow fork (#151, DR-8): the `{Pascal}WorkflowForked`\nevent body and the occurrence-side sibling of exarchos's `workflow.forked`.\nThe generated saga emits exactly one of these at the single fork decision\nsite (DR-9); it is never hand-authored.\n\nIt carries the closed trigger (ForkTrigger) that fired plus the runtime\nevidence VALUES that justify it — a field-name → value map (`ForkEvidence`)\nkeyed by the trigger's declared `requiredEvidenceFields`. Both are REQUIRED,\nand the evidence map is non-empty (`@minProperties(1)`), so an occurrence\nmissing its trigger or carrying no evidence fails schema validation.\nPer-trigger completeness — that the map carries at least every declared field\nfor the trigger that fired (extra keys ignored) — is enforced by the generated\nguard (DR-9) at the single decision site, so an unjustified fork is\nunrepresentable there.\n\nAdditive-evolution posture (DR-18): schemaVersion is a pinned literal version\nmarker. A future budget-bounded trigger (the planned exploratory member) is\nadmitted by appending it to ForkTrigger — a NON-BREAKING additive minor under\nthe enum-evolution policy — and its evidence is representable in the same map\nwith no payload change. A breaking change to this shape would bump the marker\nto fork.v2, never mutate fork.v1 in place."
+}

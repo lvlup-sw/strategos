@@ -57,4 +57,15 @@ public sealed record GateStep : StepDefinition
     /// </summary>
     [JsonPropertyName("stepType")]
     public string StepType { get; init; } = default!;
+
+    /// <summary>
+    /// Optional back-reference to a gate declaration on the workflow root (#150,
+    /// DR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.
+    /// OPTIONAL and additive. A value naming an id absent from `gates` is a
+    /// dangling reference — a semantic rule JSON Schema cannot express (see README,
+    /// &quot;Dangling gateId&quot;); the build-time import front-end rejects it (DR-13/DR-15),
+    /// not this schema.
+    /// </summary>
+    [JsonPropertyName("gateId")]
+    public string? GateId { get; init; }
 }

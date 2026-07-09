@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "2.0",
+  "name": "import-fixture-schema-skew",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "ImpStepA", "isTerminal": true, "stepType": "ImpStepA" }
+  ],
+  "transitions": [],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "entryStepId": "s1",
+  "terminalStepId": "s1"
+}

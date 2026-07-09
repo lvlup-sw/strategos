@@ -206,7 +206,39 @@ internal static class EventsEmitter
             EmitLowConfidenceRoutedEvent(sb, model);
         }
 
+        // WorkflowForked audit STREAM event (DR-9, #151). Named, queryable Marten stream
+        // event appended at the single fork decision site when a diagnostic fork is
+        // admitted. It mirrors the Contracts ForkOccurrence shape (schema-version marker,
+        // trigger wire value, and the evidence values that justify the fork) — the
+        // netstandard2.0 generator cannot reference the Contracts type, so the shape is
+        // mirrored here as other {Pascal}...Routed audit events are. Emitted ONLY in
+        // EventSourced mode and only when the workflow declares a fork edge; SagaDocument
+        // mode (and any workflow without the fork edge) is byte-unchanged.
+        if (model.IsEventSourced && model.HasDiagnosticForks)
+        {
+            sb.AppendLine();
+            EmitWorkflowForkedEvent(sb, model);
+        }
+
         return sb.ToString();
+    }
+
+    private static void EmitWorkflowForkedEvent(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Audit stream event appended when a diagnostic fork of the {model.WorkflowName}");
+        sb.AppendLine("/// workflow is admitted at the single fork decision site (DR-9, #151). Mirrors the");
+        sb.AppendLine("/// contract fork-occurrence shape: a pinned schema-version marker, the trigger wire");
+        sb.AppendLine("/// value that fired, and the evidence map (the fired trigger's declared field-name");
+        sb.AppendLine("/// -> value evidence) that justifies the fork, so the decision is queryable from the");
+        sb.AppendLine("/// Marten event stream and not only from the structured logs.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public sealed partial record {model.PascalName}WorkflowForked(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    string SchemaVersion,");
+        sb.AppendLine("    string Trigger,");
+        sb.AppendLine("    System.Collections.Generic.IReadOnlyDictionary<string, string> Evidence,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
     }
 
     private static void EmitEventInterface(StringBuilder sb, WorkflowModel model)

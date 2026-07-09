@@ -165,8 +165,11 @@ public class SagaStepHandlersEmitterTests
             loopName: "Refinement",
             conditionId: "TestWorkflow-Refinement",
             maxIterations: 5,
-            firstBodyStepName: "Analyze",
-            lastBodyStepName: "Refine",
+            bodySteps:
+            [
+                StepModel.Create("Analyze", "TestNamespace.Analyze"),
+                StepModel.Create("Refine", "TestNamespace.Refine"),
+            ],
             continuationStepName: "Complete",
             parentLoopName: null);
         var model = CreateMinimalModel(

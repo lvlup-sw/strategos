@@ -13,6 +13,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Task 019 (DR-15 / DR-3 / DR-2): hand-authored import-fixture family (DISTINCT
+         from the builder-produced #53 corpus, whose charter forbids hand-written JSON).
+         Copied to the output dir so ImportFixtureLoader reads them at runtime and drives
+         the generator over each. -->
+    <Content Include="Import\ImportFixtures\*.workflow.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Reference the generator as analyzer AND regular reference for testing -->
     <ProjectReference Include="..\Strategos.Generators\Strategos.Generators.csproj"
                       OutputItemType="Analyzer"

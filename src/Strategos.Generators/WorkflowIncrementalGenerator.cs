@@ -7,6 +7,7 @@
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
+using Strategos.Generators.Import;
 using Strategos.Generators.Models;
 
 namespace Strategos.Generators;
@@ -20,9 +21,49 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 {
     private const string WorkflowAttributeFullName = "Strategos.Attributes.WorkflowAttribute";
 
+    /// <summary>
+    /// The file-name convention for workflow-definition JSON <c>AdditionalFiles</c> the
+    /// import front-end discovers (DR-12, #100). A file participates in JSON import when its
+    /// path ends with this suffix (case-insensitive).
+    /// </summary>
+    internal const string WorkflowDefinitionFileSuffix = ".workflow.json";
+
+    /// <summary>The tracking name of the import file-read pipeline step (incremental-cache test hook).</summary>
+    internal const string ImportReadTrackingName = "StrategosWorkflowImportRead";
+
+    /// <summary>The tracking name of the import analysis pipeline step (incremental-cache test hook).</summary>
+    internal const string ImportAnalyzeTrackingName = "StrategosWorkflowImportAnalyze";
+
+    /// <summary>The only wire-IR schema version the import front-end binds (DR-12).</summary>
+    private const string SupportedSchemaVersion = "1.0";
+
+    /// <summary>The placeholder surfaced in a version-skew diagnostic when no schemaVersion was declared.</summary>
+    private const string MissingSchemaVersionText = "(none)";
+
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        // DR-12 (#100) — the JSON import front-end (ingestion half). Discover
+        // workflow-definition AdditionalFiles by the *.workflow.json convention, parse each
+        // through task 026's vendored WireWorkflowReader, and surface malformed input and
+        // schemaVersion skew as stable build diagnostics instead of crashing the generator.
+        // The wire-IR -> WorkflowModel bridge and moniker resolution are separate tasks; here
+        // the parsed DTO is only validated and its failure modes reported. The read step
+        // (path + content) is separated from the analysis step so the incremental driver can
+        // cache the parse when a file's content is unchanged and re-run it when it is edited.
+        var importReads = context.AdditionalTextsProvider
+            .Where(static text => IsWorkflowDefinitionFile(text.Path))
+            .Select(static (text, ct) => ReadImportFile(text, ct))
+            .WithTrackingName(ImportReadTrackingName);
+
+        var workflowImports = importReads
+            .Select(static (file, ct) => AnalyzeImportFile(file, ct))
+            .WithTrackingName(ImportAnalyzeTrackingName);
+
+        context.RegisterSourceOutput(
+            workflowImports,
+            static (spc, analysis) => ReportImportDiagnostics(spc, analysis));
+
         // Find all classes/structs with [Workflow] attribute
         var workflowDeclarations = context.SyntaxProvider
             .ForAttributeWithMetadataName(
@@ -42,58 +83,232 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             // Generate source if model is valid
             if (result.Model is not null)
             {
-                // Emit Phase enum
-                var phaseSource = PhaseEnumEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PhaseEnumName}.g.cs", phaseSource);
-
-                // Emit Commands
-                var commandsSource = CommandsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Commands.g.cs", commandsSource);
-
-                // Emit Events
-                var eventsSource = EventsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Events.g.cs", eventsSource);
-
-                // Emit Transitions
-                var transitionsSource = TransitionsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Transitions.g.cs", transitionsSource);
-
-                // Emit Saga
-                var sagaClassName = SagaEmitter.GetSagaClassName(result.Model);
-                var sagaSource = SagaEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{sagaClassName}.g.cs", sagaSource);
-
-                // Emit Context Assemblers (DR-6). Only steps that declared
-                // .WithContext(...) produce a {Step}ContextAssembler; when no step
-                // has context the emitter returns empty and no file is added, so a
-                // context-free workflow keeps its prior generated-file set
-                // byte-identical. The worker handler below wires each assembler into
-                // its step's execution path.
-                var assemblersSource = ContextAssemblerEmitter.Emit(result.Model);
-                if (!string.IsNullOrWhiteSpace(assemblersSource))
-                {
-                    GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Assemblers.g.cs", assemblersSource);
-                }
-
-                // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
-                var handlersSource = WorkerHandlerEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Handlers.g.cs", handlersSource);
-
-                // Emit DI Extensions
-                var extensionsSource = ExtensionsEmitter.Emit(result.Model);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Extensions.g.cs", extensionsSource);
-
-                // Emit Mermaid Diagram (as C# file with diagram in raw string constant)
-                var diagramContent = MermaidEmitter.Emit(result.Model);
-                var diagramSource = WrapMermaidAsCSharp(result.Model, diagramContent);
-                GeneratedCodeStamper.AddStampedSource(spc, $"{result.Model.PascalName}Diagram.g.cs", diagramSource);
+                EmitWorkflowSources(spc, result.Model);
             }
         });
+
+        // DR-12 (#100), task 017 — the JSON import BRIDGE half. Combine each parsed
+        // workflow-definition AdditionalFile with the compilation (needed to resolve wire
+        // step monikers to CLR step symbols, task 016) and lower the importable subset to a
+        // WorkflowModel via WireToModelBridge. The bridged model flows into the SAME
+        // EmitWorkflowSources call the C#-authoring path uses — one lowering path, zero forked
+        // emitter logic (INV-1). The malformed/schemaVersion failure modes stay owned by the
+        // task-015 diagnostic pipeline above; this pipeline only lowers a well-formed, supported
+        // document and surfaces the moniker-resolution diagnostics the bridge encounters.
+        var bridgedImports = importReads
+            .Combine(context.CompilationProvider)
+            .Select(static (pair, ct) => BridgeImportFile(pair.Left, pair.Right, ct));
+
+        context.RegisterSourceOutput(bridgedImports, static (spc, bridged) =>
+        {
+            foreach (var diagnostic in bridged.Diagnostics)
+            {
+                spc.ReportDiagnostic(diagnostic);
+            }
+
+            if (bridged.Model is not null)
+            {
+                EmitWorkflowSources(spc, bridged.Model);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The single lowering path (INV-1): emits the full generated-source set for a
+    /// <see cref="WorkflowModel"/> — phase enum, commands, events, transitions, saga, context
+    /// assemblers, worker handlers, DI extensions, and the Mermaid diagram. BOTH the C#-authoring
+    /// pipeline and the JSON import pipeline (task 017) feed their model through this one method, so
+    /// the fork/loop/confidence (and every other) emitter has exactly one call site — an imported
+    /// JSON workflow lowers through the IDENTICAL emitters as its C#-authored twin, with no forked
+    /// emitter logic.
+    /// </summary>
+    /// <param name="spc">The source-production context.</param>
+    /// <param name="model">The workflow model to lower.</param>
+    internal static void EmitWorkflowSources(SourceProductionContext spc, WorkflowModel model)
+    {
+        // Emit Phase enum
+        var phaseSource = PhaseEnumEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PhaseEnumName}.g.cs", phaseSource);
+
+        // Emit Commands
+        var commandsSource = CommandsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Commands.g.cs", commandsSource);
+
+        // Emit Events
+        var eventsSource = EventsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Events.g.cs", eventsSource);
+
+        // Emit Transitions
+        var transitionsSource = TransitionsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Transitions.g.cs", transitionsSource);
+
+        // Emit Saga
+        var sagaClassName = SagaEmitter.GetSagaClassName(model);
+        var sagaSource = SagaEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{sagaClassName}.g.cs", sagaSource);
+
+        // Emit Context Assemblers (DR-6). Only steps that declared
+        // .WithContext(...) produce a {Step}ContextAssembler; when no step
+        // has context the emitter returns empty and no file is added, so a
+        // context-free workflow keeps its prior generated-file set
+        // byte-identical. The worker handler below wires each assembler into
+        // its step's execution path.
+        var assemblersSource = ContextAssemblerEmitter.Emit(model);
+        if (!string.IsNullOrWhiteSpace(assemblersSource))
+        {
+            GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Assemblers.g.cs", assemblersSource);
+        }
+
+        // Emit Worker Handlers (Brain & Muscle pattern - Muscle component)
+        var handlersSource = WorkerHandlerEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Handlers.g.cs", handlersSource);
+
+        // Emit DI Extensions
+        var extensionsSource = ExtensionsEmitter.Emit(model);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Extensions.g.cs", extensionsSource);
+
+        // Emit Mermaid Diagram (as C# file with diagram in raw string constant)
+        var diagramContent = MermaidEmitter.Emit(model);
+        var diagramSource = WrapMermaidAsCSharp(model, diagramContent);
+        GeneratedCodeStamper.AddStampedSource(spc, $"{model.PascalName}Diagram.g.cs", diagramSource);
+    }
+
+    /// <summary>
+    /// Bridges one parsed workflow-definition import file to the generator IR (task 017). A
+    /// well-formed document declaring the supported schema version is lowered through
+    /// <see cref="WireToModelBridge"/> (which resolves step monikers against
+    /// <paramref name="compilation"/> and maps the importable subset to a
+    /// <see cref="WorkflowModel"/>); malformed or version-skewed documents are left to the
+    /// task-015 diagnostic pipeline and produce no model here.
+    /// </summary>
+    /// <param name="file">The path + content read by <see cref="ReadImportFile"/>.</param>
+    /// <param name="compilation">The compilation whose symbol table resolves wire step monikers.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The bridged model (or null) plus any moniker-resolution diagnostics.</returns>
+    private static BridgedImport BridgeImportFile(ImportFile file, Compilation compilation, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        WorkflowDefinitionV1 definition;
+        try
+        {
+            definition = WireWorkflowReader.Read(file.Text);
+        }
+        catch (JsonParseException)
+        {
+            // Malformed input is reported by the task-015 diagnostic pipeline; nothing to bridge.
+            return BridgedImport.Empty;
+        }
+
+        // Only the supported schema version is bridged; version skew is reported by task 015.
+        if (!string.Equals(definition.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
+        {
+            return BridgedImport.Empty;
+        }
+
+        var result = WireToModelBridge.Bridge(definition, compilation, file.Path, ct);
+        return new BridgedImport(result.Model, result.Diagnostics);
     }
 
     private static bool IsValidTargetNode(SyntaxNode node)
     {
         return node is ClassDeclarationSyntax or StructDeclarationSyntax;
+    }
+
+    /// <summary>
+    /// Whether an <c>AdditionalFile</c> path is a workflow-definition JSON document, matched by
+    /// the <see cref="WorkflowDefinitionFileSuffix"/> convention (case-insensitive).
+    /// </summary>
+    /// <param name="path">The AdditionalFile path.</param>
+    /// <returns><see langword="true"/> when the file participates in JSON import.</returns>
+    private static bool IsWorkflowDefinitionFile(string? path) =>
+        path is not null && path.EndsWith(WorkflowDefinitionFileSuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads an import <c>AdditionalText</c> into an equatable (path + content) value so the
+    /// downstream parse step caches on content. The read is kept free of Roslyn objects
+    /// (<c>SourceText</c>, <c>Location</c>) so the incremental cache key is a plain string pair.
+    /// </summary>
+    /// <param name="text">The workflow-definition AdditionalFile.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The path and full textual content of the file.</returns>
+    private static ImportFile ReadImportFile(AdditionalText text, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var content = text.GetText(ct)?.ToString() ?? string.Empty;
+        return new ImportFile(text.Path, content);
+    }
+
+    /// <summary>
+    /// Parses an import file through task 026's <see cref="WireWorkflowReader"/> and classifies
+    /// its outcome: a <see cref="JsonParseException"/> becomes <see cref="ImportFailure.Malformed"/>;
+    /// a bound document whose <c>schemaVersion</c> is not the supported <c>"1.0"</c> becomes
+    /// <see cref="ImportFailure.UnsupportedSchemaVersion"/>; anything else is
+    /// <see cref="ImportFailure.None"/>. The parsed DTO is intentionally discarded — the
+    /// wire-IR -> WorkflowModel bridge is a separate task — but parsing is what surfaces the
+    /// malformed-input failure mode without crashing the generator.
+    /// </summary>
+    /// <param name="file">The path + content read by <see cref="ReadImportFile"/>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The equatable analysis result the source-output step reports from.</returns>
+    private static ImportAnalysis AnalyzeImportFile(ImportFile file, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var fileName = System.IO.Path.GetFileName(file.Path);
+
+        WorkflowDefinitionV1 definition;
+        try
+        {
+            definition = WireWorkflowReader.Read(file.Text);
+        }
+        catch (JsonParseException ex)
+        {
+            return new ImportAnalysis(fileName, ImportFailure.Malformed, ex.Message);
+        }
+
+        if (!string.Equals(definition.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
+        {
+            return new ImportAnalysis(
+                fileName,
+                ImportFailure.UnsupportedSchemaVersion,
+                definition.SchemaVersion ?? MissingSchemaVersionText);
+        }
+
+        return new ImportAnalysis(fileName, ImportFailure.None, string.Empty);
+    }
+
+    /// <summary>
+    /// Materializes the import diagnostic (if any) from an <see cref="ImportAnalysis"/>. The
+    /// <see cref="Diagnostic"/> — and its <see cref="Location"/> — are built here, at report
+    /// time, rather than in the cached analysis step, so the incremental cache value stays a
+    /// plain equatable record.
+    /// </summary>
+    /// <param name="spc">The source-production context.</param>
+    /// <param name="analysis">The classified import outcome.</param>
+    private static void ReportImportDiagnostics(SourceProductionContext spc, ImportAnalysis analysis)
+    {
+        switch (analysis.Failure)
+        {
+            case ImportFailure.Malformed:
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    WorkflowDiagnostics.MalformedWorkflowJson,
+                    Location.None,
+                    analysis.FileName,
+                    analysis.Detail));
+                break;
+
+            case ImportFailure.UnsupportedSchemaVersion:
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    WorkflowDiagnostics.UnsupportedSchemaVersion,
+                    Location.None,
+                    analysis.FileName,
+                    analysis.Detail));
+                break;
+
+            case ImportFailure.None:
+            default:
+                break;
+        }
     }
 
     private static WorkflowGeneratorResult TransformToResult(
@@ -251,6 +466,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.TargetNode,
             context.SemanticModel,
             pascalName,
+            ct);
+
+        // Extract diagnostic-fork edges into generator IR (DR-9, #151). The saga lowering
+        // that consumes these is deferred; here they are only parsed and attached to the model.
+        var diagnosticForkModels = FluentDslParser.ExtractDiagnosticForkModels(
+            context.TargetNode,
+            context.SemanticModel,
             ct);
 
         // Extract failure handler models for saga handler generation
@@ -499,6 +721,30 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             .SelectMany(s => s.Confidence!.OnLowConfidenceHandlerChain!.Steps)
             .ToList();
 
+        // DR-4 (#145 gap A): a fork-path step's confidence gate lowers into the fork
+        // PATH-COMPLETED handler (the LAST step of each path — "the fork handler"). Lower
+        // that step's OnLowConfidence handler chain exactly like a top-level gated step's,
+        // so Start{H}Command, the worker handler, the phase, the events and a terminal
+        // completed handler all exist and the path handler can cascade to the chain
+        // (INV-1). Only the last step of each path is gated here; an intermediate
+        // (non-last) fork-path step's confidence stays inert and is structurally guarded.
+        foreach (var fork in forkModels)
+        {
+            foreach (var path in fork.Paths)
+            {
+                if (path.Steps.Count == 0)
+                {
+                    continue;
+                }
+
+                var lastStep = path.Steps[path.Steps.Count - 1];
+                if (lastStep.Confidence?.OnLowConfidenceHandlerChain is not null)
+                {
+                    confidenceHandlerSteps.AddRange(lastStep.Confidence.OnLowConfidenceHandlerChain.Steps);
+                }
+            }
+        }
+
         // Track the lowered handler step names so the saga emitter can keep them off the
         // main linear flow (they must not displace the workflow's terminal step nor be
         // chained to as a normal "next" step).
@@ -640,7 +886,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, forkModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, forkModels, loopModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -735,7 +981,8 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             FailureHandlers: failureHandlerModels,
             Forks: forkModels,
             ApprovalPoints: approvalModels,
-            ConfidenceHandlerStepNames: confidenceHandlerStepNames)
+            ConfidenceHandlerStepNames: confidenceHandlerStepNames,
+            DiagnosticForks: diagnosticForkModels)
         {
             StateHasPhaseProperty = stateHasPhaseProperty,
         };
@@ -749,12 +996,14 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
     /// <param name="forkModels">The parsed fork models, used to detect declared-but-inert config on fork-path steps.</param>
+    /// <param name="loopModels">The parsed loop models, used to detect declared-but-inert config on intermediate loop-body steps.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
         IReadOnlyList<ForkModel> forkModels,
+        IReadOnlyList<LoopModel> loopModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -818,28 +1067,61 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             }
         }
 
-        // DeclaredButInert (#143, G-6) — confidence gating on a fork-path step. The
-        // fork-path parse threads the configure lambda into the StepModel IR (so an
+        // DeclaredButInert (#143, G-6) — confidence gating on an INTERMEDIATE (non-last)
+        // fork-path step. Confidence on the LAST step of a fork path now lowers into the
+        // fork path-completed handler (DR-4 / #145 gap A), so it is NOT flagged. An
+        // intermediate fork-path step, however, still runs through the generic completed
+        // handler with no confidence gate: its configure lambda reaches the IR (so an
         // out-of-range threshold still surfaces the ConfidenceThresholdOutOfRange code),
-        // but the saga emitter does NOT lower confidence-gated routing for fork-path steps
-        // — that variant is deferred to v2.10.0 / DR-17 (#134). The configuration is
-        // therefore inert: no confidence gate and no OnLowConfidence routing reach the
-        // generated saga. Surface it so a deferred configuration cannot masquerade as working.
+        // but no confidence gate and no OnLowConfidence routing reach the generated saga.
+        // That variant remains deferred (v2.10.0 / DR-17, #134). Surface it so a deferred
+        // configuration cannot masquerade as working.
         foreach (var fork in forkModels)
         {
             foreach (var path in fork.Paths)
             {
-                foreach (var forkStep in path.Steps)
+                for (var i = 0; i < path.Steps.Count; i++)
                 {
-                    if (forkStep.Confidence is not null)
+                    var isLastStepInPath = i == path.Steps.Count - 1;
+                    var forkStep = path.Steps[i];
+
+                    if (!isLastStepInPath && forkStep.Confidence is not null)
                     {
                         diagnostics.Add(Diagnostic.Create(
                             WorkflowDiagnostics.DeclaredButInert,
                             location,
                             forkStep.EffectiveName,
                             workflowName,
-                            "confidence gating (RequireConfidence/OnLowConfidence) on a fork path"));
+                            "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate fork-path step"));
                     }
+                }
+            }
+        }
+
+        // DeclaredButInert (#145 gap B) — confidence gating on an INTERMEDIATE (non-last)
+        // loop-body step. Confidence on the LAST step of a loop body now lowers into the loop
+        // completed handler (DR-5 / #145 gap B, mirroring the fork path-completed handler), so
+        // it is NOT flagged. An intermediate loop-body step's confidence lowering is deferred
+        // (v2.10.0 / DR-17, #145). Task 009 promoted the loop body to configured StepModel
+        // records on LoopModel.BodySteps, so — unlike before, when loop-body confidence was
+        // dropped from the IR entirely and was structurally undiagnosable — the config is now in
+        // the IR and this diagnostic can see it. Surface it so a deferred configuration cannot
+        // masquerade as working.
+        foreach (var loop in loopModels)
+        {
+            for (var i = 0; i < loop.BodySteps.Count; i++)
+            {
+                var isLastBodyStep = i == loop.BodySteps.Count - 1;
+                var bodyStep = loop.BodySteps[i];
+
+                if (!isLastBodyStep && bodyStep.Confidence is not null)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.DeclaredButInert,
+                        location,
+                        bodyStep.EffectiveName,
+                        workflowName,
+                        "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate loop-body step"));
                 }
             }
         }
@@ -880,7 +1162,16 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static string ToPascalCase(string kebabCase)
+    /// <summary>
+    /// Converts a kebab-case workflow name to PascalCase (e.g. <c>process-order</c> →
+    /// <c>ProcessOrder</c>). Shared with the JSON import bridge (task 017) so an imported
+    /// workflow's <c>PascalName</c> — and therefore its <c>Start{Pascal}Command</c>, saga class,
+    /// and <c>Add{Pascal}Workflow()</c> names — are derived by the IDENTICAL rule as a C#-authored
+    /// workflow's.
+    /// </summary>
+    /// <param name="kebabCase">The kebab-case workflow name.</param>
+    /// <returns>The PascalCase form.</returns>
+    internal static string ToPascalCase(string kebabCase)
     {
         if (string.IsNullOrEmpty(kebabCase))
         {
@@ -911,4 +1202,51 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     private sealed record WorkflowGeneratorResult(
         WorkflowModel? Model,
         IReadOnlyList<Diagnostic> Diagnostics);
+
+    /// <summary>
+    /// The equatable (path + content) snapshot of a workflow-definition AdditionalFile. Value
+    /// equality on these two strings is the import pipeline's incremental cache key: an unchanged
+    /// file yields an equal <see cref="ImportFile"/> and the parse step is cached; an edit yields
+    /// a different content string and the parse re-runs (DR-12 incremental correctness).
+    /// </summary>
+    /// <param name="Path">The AdditionalFile path.</param>
+    /// <param name="Text">The full textual content of the file.</param>
+    private sealed record ImportFile(string Path, string Text);
+
+    /// <summary>
+    /// The bridged outcome of one import file (task 017): the lowered <see cref="WorkflowModel"/>
+    /// (or null when the document was malformed, version-skewed, or not lowerable) plus any
+    /// moniker-resolution diagnostics the bridge surfaced. The model flows into
+    /// <see cref="EmitWorkflowSources"/> — the same lowering path as the C#-authoring pipeline.
+    /// </summary>
+    /// <param name="Model">The lowered workflow model, or null when nothing was lowered.</param>
+    /// <param name="Diagnostics">The diagnostics the bridge surfaced (moniker resolution failures).</param>
+    private sealed record BridgedImport(WorkflowModel? Model, IReadOnlyList<Diagnostic> Diagnostics)
+    {
+        /// <summary>Gets the empty bridged result — no model, no diagnostics.</summary>
+        public static BridgedImport Empty { get; } = new(null, []);
+    }
+
+    /// <summary>The classified outcome of parsing a workflow-definition import file.</summary>
+    private enum ImportFailure
+    {
+        /// <summary>The file parsed and declared the supported schema version — no diagnostic.</summary>
+        None,
+
+        /// <summary>The file is not well-formed JSON (the reader threw <c>JsonParseException</c>).</summary>
+        Malformed,
+
+        /// <summary>The file parsed but declared a <c>schemaVersion</c> other than the supported one.</summary>
+        UnsupportedSchemaVersion,
+    }
+
+    /// <summary>
+    /// The equatable classification of a single import file, produced by the cached analysis step
+    /// and consumed by the source-output step. Carries only strings + an enum so it stays a stable
+    /// incremental cache value (no <see cref="Diagnostic"/> or <see cref="Location"/>).
+    /// </summary>
+    /// <param name="FileName">The file's leaf name, threaded into the diagnostic message.</param>
+    /// <param name="Failure">The classified failure mode (or <see cref="ImportFailure.None"/>).</param>
+    /// <param name="Detail">The failure detail — the parser message, or the offending schema version.</param>
+    private sealed record ImportAnalysis(string FileName, ImportFailure Failure, string Detail);
 }

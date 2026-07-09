@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryAmbiguousStepMoniker.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF026"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Ambiguous workflow step moniker"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' references step moniker '{1}', which resolves to more than one workflow step type: {2}. Rename all but one, or make the others inaccessible, so the moniker binds a single type."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF026 — Ambiguous workflow step moniker (DR-13)."
+}

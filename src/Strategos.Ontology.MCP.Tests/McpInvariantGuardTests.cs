@@ -78,6 +78,22 @@ public sealed class McpInvariantGuardTests
     }
 
     [Test]
+    public async Task OntologyAnswerUnion_BranchPosture_Holds()
+    {
+        // DR-11: the abstention response union is a second discriminated base in this
+        // assembly. Its base is abstract+unsealed (the inheritance seam); its two
+        // branches are sealed concrete leaves, caught by the sweep above but named
+        // explicitly here so a rename that drops one is still caught.
+        await Assert.That(typeof(OntologyAnswerUnion).IsAbstract).IsTrue();
+        await Assert.That(typeof(OntologyAnswerUnion).IsSealed).IsFalse();
+
+        await Assert.That(typeof(Answer).IsSealed).IsTrue();
+        await Assert.That(typeof(NoAnswerRecorded).IsSealed).IsTrue();
+        await Assert.That(typeof(RecordRef).IsSealed).IsTrue();
+        await Assert.That(typeof(OntologyAnswerComposer).IsSealed).IsTrue();
+    }
+
+    [Test]
     public async Task QueryResultUnion_BranchPosture_Holds()
     {
         // The union base is the inheritance seam: abstract, never sealed.

@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-07-07
+
+The **strategy-compiler contract layer** (roadmap #153): the shared `Strategos.Contracts`
+IR spine gains gate, fork, and abstention shapes, and the workflow generator gains a
+compiler-first JSON import front-end — so an exarchos-authored `WorkflowDefinitionV1` can
+lower through the identical saga emitters a C#-authored `[Workflow]` does. The Contracts
+substrate bumps **0.3.0 → 0.4.0** (additive minor); the full v2.9.1→2.10.0 schema delta is
+machine-verified NON-BREAKING (24 new schema documents + 2 optional root slots, zero
+breaking changes).
+
+### Added
+
+**Gate taxonomy + measured reliability (#150).** A closed `GateClass` enum
+(`typecheck | lint | scoped_test | full_suite | mutation_adequacy | merge_gate | llm_judge`,
+snake_case wire values) and a `GateDeclaration { class, id, reliability? }` record whose
+optional `reliability` block is provenance-required (`source` mandatory — reliability is
+telemetry-measured, never hand-authored). `WorkflowDefinitionV1` gains additive optional
+`gates[]` and a `gateId` back-reference on the gate step; gates are consumer-plane data, so
+the generated saga is unaffected.
+
+**Fork/compensation DSL edge (#151).** An `AllowDiagnosticFork(...)` builder surface
+(staged so a fork without an anchor or a permitted trigger cannot compile) declaring where a
+workflow may fork, its permitted `ForkTrigger`s
+(`ratification_failure | gate_contradiction | operator_explicit`) with per-trigger
+evidence-ref schemas, a `maxForks` bound, and a compensation seed. It lowers into the
+generated saga as a single decision-site handler with a `maxForks`→human-escalation guard,
+an evidence-required fork guard, a `{Pascal}WorkflowForked` event (EventSourced), and
+compensation seeding into the existing merged trigger site. The closed `ForkOccurrence`
+runtime payload carries the evidence values, versioned for a future `exploratory` member.
+
+**Compiler-first JSON import (#100).** JSON `WorkflowDefinitionV1` files registered as
+`AdditionalFiles` are parsed (vendored dependency-free reader + schema-pinned wire-DTO twins
+inside the isolated netstandard2.0 analyzer), moniker-resolved against the compilation symbol
+table, and bridged into the same `WorkflowModel` IR — a single lowering path, zero forked
+emitter logic. The importable subset is the runtime-bindable-behavior-free subset; delegate
+steps, branch points, loops, validation predicates, approval-with-context, dangling
+`gateId`, and reliability-bearing gate declarations are each rejected with their own stable
+build diagnostic (AGWF023–034). A behavioral round-trip gate partitions the #53 corpus (210
+fixtures) into importable-equivalent vs specifically-rejected with no silent third bucket.
+
+**Licensed abstention (#152).** A closed `AbstentionResponse` union
+(`Answer { content, citations[] (non-empty) } | NoAnswerRecorded { nearestRecords[] }`) in
+`Strategos.Ontology.MCP` with internal constructors and a sole `OntologyAnswerComposer`
+producer — a free-text uncited answer is unrepresentable, and the abstention null is decided
+by the retrieval layer. Every `NoAnswerRecorded` emits an `ontology.abstained` audit record
+(counts, not contents) through an `IOntologyAuditSink` chokepoint. The union and event have
+Contracts TypeSpec twins with mechanical schema-conformance parity on both halves.
+
+### Changed
+
+**Enum-aware schema-evolution guardrail (DR-18).** `JsonSchemaDiff` and its CI driver now
+classify enum-member removal/rename as BREAKING and additions as flagged NOTICE; emitted
+converters stay strict (unknown member ⇒ `JsonException`), so enum additions require
+consumers to upgrade before producers emit new members.
+
+### Fixed
+
+**#145 confidence-gate lowering debt.** `RequireConfidence` now composes with other step
+setters instead of replacing them; fork-path and nested-`RepeatUntil` `OnLowConfidence`
+confidence gates now lower into the generated saga (previously declared-but-inert), with the
+remaining intermediate cases made AGWF022-diagnosable rather than structurally invisible.
+
 ## [2.9.1] - 2026-06-22
 
 ### Changed

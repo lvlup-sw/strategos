@@ -219,8 +219,11 @@ public class SagaLoopConditionsEmitterTests
             loopName: loopName,
             conditionId: $"TestWorkflow-{loopName}",
             maxIterations: 5,
-            firstBodyStepName: $"{loopName}_Start",
-            lastBodyStepName: $"{loopName}_End",
+            bodySteps:
+            [
+                StepModel.Create($"{loopName}_Start", $"TestNamespace.{loopName}_Start"),
+                StepModel.Create($"{loopName}_End", $"TestNamespace.{loopName}_End"),
+            ],
             continuationStepName: null,
             parentLoopName: null);
     }

@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryImportRejectedBranchPoint.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF028"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Imported branch point is not supported"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' declares a branch point at {1} (branch point '{2}'). A conditional branch point carries a runtime-bound condition that is not importable, so the workflow is rejected and no saga is generated."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF028 — Imported branch point is not supported (DR-14)."
+}

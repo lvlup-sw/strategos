@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0",
+  "name": "roundtrip-fork-import",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "RtForkImportStart", "isTerminal": false, "stepType": "RtForkImportStart" },
+    { "kind": "skill", "stepId": "s2", "stepName": "RtForkImportLeft", "isTerminal": false, "stepType": "RtForkImportLeft" },
+    { "kind": "skill", "stepId": "s3", "stepName": "RtForkImportRight", "isTerminal": false, "stepType": "RtForkImportRight" },
+    { "kind": "skill", "stepId": "s4", "stepName": "RtForkImportJoin", "isTerminal": false, "stepType": "RtForkImportJoin" },
+    { "kind": "skill", "stepId": "s5", "stepName": "RtForkImportEnd", "isTerminal": true, "stepType": "RtForkImportEnd" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s4", "toStepId": "s5", "isDefault": true }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [
+    {
+      "forkPointId": "f1",
+      "fromStepId": "s1",
+      "paths": [
+        { "pathId": "p0", "pathIndex": 0, "steps": [ { "kind": "skill", "stepId": "s2", "stepName": "RtForkImportLeft", "isTerminal": false, "stepType": "RtForkImportLeft" } ] },
+        { "pathId": "p1", "pathIndex": 1, "steps": [ { "kind": "skill", "stepId": "s3", "stepName": "RtForkImportRight", "isTerminal": false, "stepType": "RtForkImportRight" } ] }
+      ],
+      "joinStepId": "s4"
+    }
+  ],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "entryStepId": "s1",
+  "terminalStepId": "s5"
+}

@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryImportRejectedDelegateStep.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF027"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Imported delegate (lambda) step is not supported"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' declares a delegate (lambda) step at {1} (step '{2}'). A lambda step body is dropped on export (LB-1) and cannot be re-bound on import, so the workflow is rejected and no saga is generated. Replace it with a named IWorkflowStep<TState> step type."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF027 — Imported delegate (lambda) step is not supported (DR-14)."
+}

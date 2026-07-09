@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "GateReliability.json",
+    "type": "object",
+    "properties": {
+        "fpr": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Measured false-positive rate of the gate, a fraction in the closed unit interval."
+        },
+        "sampleSize": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "Number of observations the measurement was computed over."
+        },
+        "asOf": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the measurement was taken (UTC)."
+        },
+        "source": {
+            "type": "string",
+            "description": "Provenance of the measurement — where this reliability number came from.\nREQUIRED: reliability is telemetry-measured, never hand-authored, so a\nreliability block without a source is invalid."
+        }
+    },
+    "required": [
+        "fpr",
+        "sampleSize",
+        "asOf",
+        "source"
+    ],
+    "description": "Measured-reliability telemetry for a gate (#150, DR-2).\n\nThis block is NEVER hand-authored: it is populated only from measured gate\ntelemetry, so `source` — the PROVENANCE of the measurement — is REQUIRED. A\nreliability block that omits `source` is rejected at the schema boundary\n(there is no anonymous, unattributable reliability number). The authoring\nchannel (the builder DSL / import) surfaces no reliability field at all, so\nnothing on the write path can smuggle a value in; reliability is stamped only\nfrom telemetry."
+}

@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "PermittedForkTrigger.json",
+    "type": "object",
+    "properties": {
+        "trigger": {
+            "$ref": "ForkTrigger.json",
+            "description": "The closed trigger this entry permits (DR-8 — the shared trigger identity)."
+        },
+        "requiredEvidenceFields": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 1,
+            "description": "The evidence FIELD NAMES a future fork occurrence must carry for this trigger\n(declaration side — NOT runtime values). Each is a plain string moniker\n(INV-8): the name of a field on the occurrence's evidence (for example\n`provisionalStampEventId`), never a CLR type. At least one field: a permitted\ntrigger that names no evidence declares no justification schema. Per-trigger\nruntime completeness is enforced where occurrences are born — the generated\nguard (DR-9) — never at authoring time; this shape pins the declared floor."
+        }
+    },
+    "required": [
+        "trigger",
+        "requiredEvidenceFields"
+    ],
+    "description": "Wire-IR permitted fork trigger with its DECLARATION-side evidence-ref schema\n(#151, DR-10 / DR-8). Pairs one closed ForkTrigger the workflow may fork on\nwith the NAMES of the evidence fields a future fork occurrence must carry to\njustify that trigger.\n\nThis is the declaration half: field-NAME declarations, never runtime VALUES —\nthose exist only when a fork actually happens (see the occurrence side,\nForkOccurrence / ForkEvidence, in the Events family). Every entry is a plain\nstring moniker (INV-8): a field name, never a CLR type or a runtime payload."
+}

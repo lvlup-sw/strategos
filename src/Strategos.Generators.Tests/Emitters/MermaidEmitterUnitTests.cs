@@ -391,8 +391,11 @@ public class MermaidEmitterUnitTests
                 LoopName: "Refinement",
                 ConditionId: "iterative-refinement-Refinement",
                 MaxIterations: 5,
-                FirstBodyStepName: "Refinement_Critique",
-                LastBodyStepName: "Refinement_Refine",
+                BodySteps:
+                [
+                    StepModel.Create("Refinement_Critique", "TestNamespace.Refinement_Critique"),
+                    StepModel.Create("Refinement_Refine", "TestNamespace.Refinement_Refine"),
+                ],
                 ContinuationStepName: "Publish",
                 ParentLoopName: null),
         };

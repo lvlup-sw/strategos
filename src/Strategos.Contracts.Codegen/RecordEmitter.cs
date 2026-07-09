@@ -391,6 +391,14 @@ public static class RecordEmitter
                     // A union ref resolves to the [JsonPolymorphic] base record.
                     return target.TypeName;
             }
+
+            // A typed map (TypeSpec Record<T> with a scalar value type, e.g.
+            // Record<string>) resolves to a strongly-typed dictionary rather than an
+            // opaque object; an untyped open object (Record<unknown>) stays `object`.
+            if (target.MapValueScalar is not null)
+            {
+                return $"IReadOnlyDictionary<string, {MapScalar(target.MapValueScalar)}>";
+            }
         }
 
         // Open object / scalar alias / unknown ref: an opaque payload.
@@ -514,6 +522,15 @@ public static class RecordEmitter
         /// <summary>Arm document names (file names) for a discriminated-union document.</summary>
         public IReadOnlyList<string> UnionArmRefs { get; init; } = [];
 
+        /// <summary>
+        /// For an open object that is a typed map (TypeSpec <c>Record&lt;T&gt;</c>, emitted
+        /// as an object with a typed <c>additionalProperties</c>/<c>unevaluatedProperties</c>
+        /// value schema): the JSON scalar type of the map values (e.g. <c>string</c> for
+        /// <c>Record&lt;string&gt;</c>). Null for an untyped open object
+        /// (<c>Record&lt;unknown&gt;</c>), which stays an opaque <c>object</c>.
+        /// </summary>
+        public string? MapValueScalar { get; init; }
+
         public static SchemaDoc Classify(string fileName, JsonElement root)
         {
             var typeName = ToPascalCase(Path.GetFileNameWithoutExtension(fileName));
@@ -589,13 +606,40 @@ public static class RecordEmitter
                 };
             }
 
+            // Open object with a typed value schema (TypeSpec Record<T>, emitted with a
+            // typed additionalProperties/unevaluatedProperties) → a strongly-typed map.
+            // Record<unknown> (no value type) has none and stays an opaque open object.
+            var mapValueScalar = isObject ? ReadMapValueScalar(root) : null;
+
             return new SchemaDoc
             {
                 FileName = fileName,
                 TypeName = typeName,
                 Kind = SchemaKind.OpenObjectOrScalar,
                 Description = description,
+                MapValueScalar = mapValueScalar,
             };
+        }
+
+        /// <summary>
+        /// Reads the scalar value type of a typed map schema — the <c>type</c> under a
+        /// <c>additionalProperties</c> or <c>unevaluatedProperties</c> value schema — or
+        /// null when the open object carries no typed value schema.
+        /// </summary>
+        private static string? ReadMapValueScalar(JsonElement root)
+        {
+            foreach (var keyword in new[] { "additionalProperties", "unevaluatedProperties" })
+            {
+                if (root.TryGetProperty(keyword, out var value)
+                    && value.ValueKind == JsonValueKind.Object
+                    && value.TryGetProperty("type", out var valueType)
+                    && valueType.ValueKind == JsonValueKind.String)
+                {
+                    return valueType.GetString();
+                }
+            }
+
+            return null;
         }
 
         private static PropertyInfo ReadProperty(string wireName, JsonElement prop, bool required)

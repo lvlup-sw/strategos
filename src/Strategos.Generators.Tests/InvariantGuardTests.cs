@@ -330,4 +330,198 @@ public class InvariantGuardTests
         await Assert.That(eventsSource).DoesNotContain("StepFailed");
         await Assert.That(eventsSource).DoesNotContain("LowConfidenceRouted");
     }
+
+    /// <summary>
+    /// A SagaDocument-mode FORK workflow whose fork paths declare NO confidence config.
+    /// The counterpart guard for the fork-path confidence lowering (DR-4 / #145 gap A):
+    /// that change only adds code down a confidence-gated path, so a fork without fork
+    /// confidence must be byte-unchanged.
+    /// </summary>
+    private const string DocumentModeForkWithoutConfidenceWorkflow = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        [WorkflowState]
+        public record ForkState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeStep : IWorkflowStep<ForkState>
+        {
+            public Task<StepResult<ForkState>> ExecuteAsync(ForkState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<ForkState>.FromState(s));
+        }
+
+        public class AssessStep : IWorkflowStep<ForkState>
+        {
+            public Task<StepResult<ForkState>> ExecuteAsync(ForkState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<ForkState>.FromState(s));
+        }
+
+        public class ReviewStep : IWorkflowStep<ForkState>
+        {
+            public Task<StepResult<ForkState>> ExecuteAsync(ForkState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<ForkState>.FromState(s));
+        }
+
+        public class AggregateStep : IWorkflowStep<ForkState>
+        {
+            public Task<StepResult<ForkState>> ExecuteAsync(ForkState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<ForkState>.FromState(s));
+        }
+
+        public class SettleStep : IWorkflowStep<ForkState>
+        {
+            public Task<StepResult<ForkState>> ExecuteAsync(ForkState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<ForkState>.FromState(s));
+        }
+
+        [Workflow("plain-fork")]
+        public static partial class PlainForkWorkflow
+        {
+            public static WorkflowDefinition<ForkState> Definition => Workflow<ForkState>
+                .Create("plain-fork")
+                .StartWith<IntakeStep>()
+                .Fork(
+                    path => path.Then<AssessStep>(),
+                    path => path.Then<ReviewStep>())
+                .Join<AggregateStep>()
+                .Finally<SettleStep>();
+        }
+        """;
+
+    /// <summary>
+    /// DR-4 / #145 gap A byte-unchanged guard: the fork-path confidence lowering only adds
+    /// code inside a confidence-gate branch (emitted solely when a fork path's last step
+    /// declares <c>RequireConfidence</c>/<c>OnLowConfidence</c>). A document-mode fork
+    /// WITHOUT fork confidence must therefore gain NO confidence-gate code — no
+    /// <c>confidenceScore</c> comparison, no <c>LowConfidenceRouted</c> routing/audit — so
+    /// its saga and events output is unchanged by the lowering.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InvariantGuard_DocumentModeForkWithoutConfidence_HasNoConfidenceGate()
+    {
+        var result = GeneratorTestHelper.RunGenerator(DocumentModeForkWithoutConfidenceWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+        var eventsSource = GeneratorTestHelper.GetGeneratedSource(result, "PlainForkEvents.g.cs");
+
+        // No confidence gate leaked into the fork saga handlers.
+        await Assert.That(sagaSource).DoesNotContain("confidenceScore");
+        await Assert.That(sagaSource).DoesNotContain("LowConfidenceRouted");
+
+        // And the audit stream event record was not emitted (document mode, no confidence).
+        await Assert.That(eventsSource).DoesNotContain("LowConfidenceRouted");
+    }
+
+    /// <summary>
+    /// DR-9 byte-unchanged guard (#151): the diagnostic-fork lowering only adds artifacts
+    /// for a workflow that declares an <c>AllowDiagnosticFork</c> edge. A workflow WITHOUT
+    /// the fork edge must gain NONE of them — no <c>Fork{Pascal}Command</c>, no
+    /// <c>DiagnosticForkCount</c> saga property or fork decision handler, no
+    /// <c>ForkBlocked</c> phase, and (regardless of persistence mode) no
+    /// <c>{Pascal}WorkflowForked</c> audit event — so its generated output is unchanged by
+    /// the fork lowering. Uses the linear <see cref="DocumentModeAuditWorkflow"/> (no
+    /// diagnostic fork edge) as the counterpart.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InvariantGuard_WorkflowWithoutForkEdge_HasNoDiagnosticForkArtifacts()
+    {
+        var result = GeneratorTestHelper.RunGenerator(DocumentModeAuditWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsSaga.g.cs");
+        var commandsSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsCommands.g.cs");
+        var eventsSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsEvents.g.cs");
+        var phaseSource = GeneratorTestHelper.GetGeneratedSource(result, "AuditEventsPhase.g.cs");
+
+        // No fork decision command, decision handler, count property, or blocked phase.
+        await Assert.That(commandsSource).DoesNotContain("ForkAuditEventsCommand");
+        await Assert.That(sagaSource).DoesNotContain("ForkAuditEventsCommand");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount");
+        await Assert.That(phaseSource).DoesNotContain("ForkBlocked");
+
+        // No WorkflowForked audit event (record or append) in either mode.
+        await Assert.That(eventsSource).DoesNotContain("WorkflowForked");
+        await Assert.That(sagaSource).DoesNotContain("WorkflowForked");
+    }
+
+    /// <summary>
+    /// INV-6 (sealed-by-default) + init-only, DR-9 diagnostic-fork IR (#151): the new
+    /// generator-IR records (<c>DiagnosticForkModel</c>, <c>PermittedForkTriggerModel</c>) and
+    /// their fluent extractor (<c>DiagnosticForkExtractor</c>) must be sealed, and the IR
+    /// records must expose only init-only members. The records carry the structural equality the
+    /// incremental generator relies on for cache-keying; a future edit that unseals one or adds a
+    /// mutable setter fails the build here rather than at a distant integration point.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InvariantGuard_DiagnosticForkIr_IsSealedAndInitOnly()
+    {
+        var irRecordNames = new[]
+        {
+            "Strategos.Generators.Models.DiagnosticForkModel",
+            "Strategos.Generators.Models.PermittedForkTriggerModel",
+        };
+
+        var sealedOnlyNames = new[]
+        {
+            "Strategos.Generators.Helpers.DiagnosticForkExtractor",
+        };
+
+        var offenders = new List<string>();
+
+        foreach (var name in irRecordNames.Concat(sealedOnlyNames))
+        {
+            var type = GeneratorsAssembly.GetType(name);
+            if (type is null)
+            {
+                offenders.Add($"{name} (type not found)");
+                continue;
+            }
+
+            if (!type.IsSealed)
+            {
+                offenders.Add($"{type.FullName} is not sealed");
+            }
+        }
+
+        foreach (var name in irRecordNames)
+        {
+            var type = GeneratorsAssembly.GetType(name);
+            if (type is null)
+            {
+                continue;
+            }
+
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            foreach (var prop in type.GetProperties(flags).Where(p => p.DeclaringType == type))
+            {
+                var setter = prop.SetMethod;
+                if (setter is null)
+                {
+                    continue;
+                }
+
+                var isInitOnly = setter.ReturnParameter
+                    .GetRequiredCustomModifiers()
+                    .Any(m => m.FullName == "System.Runtime.CompilerServices.IsExternalInit");
+
+                if (!isInitOnly)
+                {
+                    offenders.Add($"{type.FullName}.{prop.Name} has a mutable (non-init) setter");
+                }
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty();
+    }
 }

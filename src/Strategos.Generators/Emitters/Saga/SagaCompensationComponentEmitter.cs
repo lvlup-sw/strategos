@@ -65,6 +65,15 @@ namespace Strategos.Generators.Emitters.Saga;
 /// path is unaffected because the rollback's worker command is the same one the
 /// folded main-flow step model already produced.
 /// </para>
+/// <para>
+/// <b>Diagnostic-fork composition (DR-9, #151):</b> the fork decision site
+/// (<see cref="DiagnosticForkHandlerEmitter"/>) seeds compensation by routing its
+/// declared compensation seed into THIS same merged <c>Handle(Trigger…)</c> site — it
+/// yields a <c>Trigger{Pascal}FailureHandlerCommand</c> whose <c>FailedStepName</c> is
+/// the fork's seed moniker. The existing single/multi routing dispatches the matching
+/// rollback worker, so a fork's compensation composes additively with the
+/// Compensate/OnFailure merged trigger site with no change to this handler.
+/// </para>
 /// </remarks>
 internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
 {

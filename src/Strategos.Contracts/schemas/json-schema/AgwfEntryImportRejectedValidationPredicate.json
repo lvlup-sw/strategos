@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryImportRejectedValidationPredicate.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF030"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Imported validation predicate is not supported"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' declares a validation predicate at {1} (step '{2}'). A declarative validation predicate carries no re-bindable executable body (LB-1), so the workflow is rejected and no saga is generated."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF030 — Imported validation predicate is not supported (DR-14)."
+}

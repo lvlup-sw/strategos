@@ -15,10 +15,10 @@ namespace Strategos.Identity.Abstractions.Tests.Build;
 /// <para>
 /// The release artifact (nupkg files) is produced by <c>dotnet pack</c> at
 /// CI time. This test guards the in-repo state: CHANGELOG carries the
-/// preview.1 section, README documents the identity seam, and the new
-/// abstractions package csproj declares the expected PackageId. The full
-/// pack verification (three nupkgs at exactly <c>2.7.0-preview.1</c>) is
-/// run as a CI gate via:
+/// preview.1 section, the abstractions package csproj declares the expected
+/// PackageId, and its <c>&lt;Description&gt;</c> documents the identity seam
+/// so NuGet consumers can discover it. The full pack verification (three
+/// nupkgs at exactly <c>2.7.0-preview.1</c>) is run as a CI gate via:
 /// </para>
 /// <code>
 /// dotnet pack src/Strategos.Identity.Abstractions/Strategos.Identity.Abstractions.csproj /p:MinVerVersionOverride=2.7.0-preview.1
@@ -62,18 +62,22 @@ public class ReleaseShapeTests
     }
 
     /// <summary>
-    /// README.md must include the Identity Seam subsection so consumers know
-    /// to register the workflow-identity header-propagation policy.
+    /// The abstractions csproj <c>&lt;Description&gt;</c> — the consumer-facing NuGet
+    /// metadata — must document the identity seam and its header propagation so
+    /// consumers can discover it. This replaces an earlier assertion against a root
+    /// README.md subsection that was intentionally retired in the v2.9.1 README
+    /// refactor (commit d0657d8); the release-shape guard now anchors to stable
+    /// package metadata rather than mutable overview prose.
     /// </summary>
     [Test]
-    public async Task Release_Readme_ContainsIdentitySeamSubsection()
+    public async Task Release_AbstractionsCsproj_DocumentsIdentitySeam()
     {
-        var readmePath = Path.Combine(RepoRoot, "README.md");
-        var content = await File.ReadAllTextAsync(readmePath);
+        var csprojPath = Path.Combine(RepoRoot, "src", "Strategos.Identity.Abstractions", "Strategos.Identity.Abstractions.csproj");
+        var content = await File.ReadAllTextAsync(csprojPath);
 
-        await Assert.That(content).Contains("Identity Seam");
-        await Assert.That(content).Contains("PropagateIncomingHeaderToOutgoing");
-        await Assert.That(content).Contains("StrategosHeaders.WorkflowIdentity");
+        await Assert.That(content).Contains("Identity seam");
+        await Assert.That(content).Contains("IAgentIdentityProvider");
+        await Assert.That(content).Contains("propagation");
     }
 
     /// <summary>

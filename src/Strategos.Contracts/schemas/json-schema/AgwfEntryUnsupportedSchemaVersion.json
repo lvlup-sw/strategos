@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryUnsupportedSchemaVersion.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF024"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Unsupported workflow schema version"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow import file '{0}' declares schemaVersion '{1}'. Only schemaVersion '1.0' is supported."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.10.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF024 — Unsupported workflow schema version (DR-12)."
+}

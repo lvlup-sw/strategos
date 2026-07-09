@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "name": "roundtrip-config-import",
+  "steps": [
+    { "kind": "skill", "stepId": "s1", "stepName": "RtConfigImportStart", "isTerminal": false, "stepType": "RtConfigImportStart" },
+    { "kind": "skill", "stepId": "s2", "stepName": "RtConfigImportWork", "isTerminal": false, "stepType": "RtConfigImportWork",
+      "configuration": { "retry": { "maxAttempts": 3, "initialDelay": "PT1S", "backoffMultiplier": 2, "maxDelay": "PT1M", "useJitter": true } } },
+    { "kind": "skill", "stepId": "s3", "stepName": "RtConfigImportEnd", "isTerminal": true, "stepType": "RtConfigImportEnd" }
+  ],
+  "transitions": [
+    { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": true },
+    { "transitionId": "t2", "fromStepId": "s2", "toStepId": "s3", "isDefault": true }
+  ],
+  "branchPoints": [],
+  "loops": [],
+  "forkPoints": [],
+  "failureHandlers": [],
+  "approvalPoints": [],
+  "entryStepId": "s1",
+  "terminalStepId": "s3"
+}
