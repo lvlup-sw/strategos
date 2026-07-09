@@ -133,6 +133,7 @@ public class AssessClaimValidity : AgentStep<InsuranceClaimState>
 - **Configuration Complexity:** Model selection, prompt templating, output parsing, retry strategies vary by use case
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Developer Experience | Medium | Consumers must implement `IWorkflowStep<T>` manually for agent steps |
@@ -187,6 +188,7 @@ public abstract class MyAgentStep<TState> : IWorkflowStep<TState>
 - **Complex Serialization:** Context capture for audit trails requires domain-specific formatting
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Auditability | Medium | Consumers must manually capture assembled context in events |
@@ -242,6 +244,7 @@ public class AnalyzeDocument : IWorkflowStep<DocState>
 - **Configuration Complexity:** Embedding models, chunk strategies, and retrieval parameters are highly domain-specific
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Development Velocity | Medium | No turnkey RAG; consumers implement retrieval manually |
@@ -291,6 +294,7 @@ public ConversationHistory Messages { get; init; }
 - **LLM Dependency:** Summarization requires LLM calls, adding cost and latency
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Long Conversations | Medium | Consumers must implement windowing/summarization |
@@ -353,6 +357,7 @@ These features relate to source generator capabilities.
 - **Priority:** Fork/Join and Approval patterns prioritized for MVP
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Error Recovery | Medium | Workflow-level `OnFailure` *handler chain* still routes to `Failed` without running its handler steps |
@@ -390,6 +395,7 @@ public partial class OrderProcessingSaga
 - **Runtime-Only by Nature:** Lambdas capture closures that don't exist at generation time
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Worker Handlers | None | Lambda steps execute inline in saga; no worker needed |
@@ -426,6 +432,7 @@ public partial class OrderProcessingSaga
 - **Mechanism not yet designed:** each re-binding needs a declarative→executable bridge (a registry or an expression language) that is out of scope for the import subset.
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Import coverage | Medium | Workflows using conditions, lambdas, or approval context cannot be authored via JSON; they must be authored in C# |
@@ -461,6 +468,7 @@ public class ProcessClaimProjection : SingleStreamProjection<ProcessClaimReadMod
 - **Marten Expertise Required:** Projection strategies (inline, async, live) depend on scale and consistency requirements
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | Query Support | Medium | Consumers must create projections for workflow queries |
@@ -514,6 +522,7 @@ AgentDecisionEvent {
 - **Application Concern:** Version management is a deployment/operations concern
 
 **Impact:**
+
 | Aspect | Impact Level | Description |
 |--------|--------------|-------------|
 | A/B Testing | Medium | Consumers must track agent versions manually |

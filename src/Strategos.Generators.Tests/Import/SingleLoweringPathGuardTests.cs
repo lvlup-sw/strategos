@@ -476,7 +476,7 @@ public sealed class SingleLoweringPathGuardTests
           "diagnosticForks": [
             {
               "anchorStepIds": [ "GuardStepA" ],
-              "permittedTriggers": [ { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] } ],
+              "permittedTriggers": [ { "trigger": "ratification_failure", "requiredEvidenceFields": [ "stampId" ] } ],
               "maxForks": 2,
               "compensationSeed": "GuardStepB"
             }

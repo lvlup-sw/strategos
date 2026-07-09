@@ -89,8 +89,14 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     /// <typeparam name="TSaga">The generated saga document type polled for terminal completion.</typeparam>
     /// <param name="workflowId">The workflow/saga identity to wait on.</param>
     /// <param name="startCommand">The generated start command that kicks off the saga.</param>
-    /// <param name="timeout">Optional wait budget (defaults to 30 seconds).</param>
+    /// <param name="timeout">Optional per-phase wait budget (defaults to 30 seconds); see the remarks for how it bounds the two-phase wait.</param>
     /// <returns><see langword="true"/> when the saga reached its terminal phase within the budget.</returns>
+    /// <remarks>
+    /// The wait runs in two phases, each bounded by the budget: first the tracked-activity
+    /// <c>Timeout(budget)</c> wait, then — on <see cref="TimeoutException"/> — an authoritative
+    /// saga-absence poll for up to a further budget. So on the failure path (the saga never
+    /// routes to its terminal phase) the total wait is up to ~2× the budget, not one budget.
+    /// </remarks>
     public async Task<bool> RunWorkflowAsync<TSaga>(
         Guid workflowId,
         object startCommand,

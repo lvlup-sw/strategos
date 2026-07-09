@@ -42,7 +42,7 @@ table, and bridged into the same `WorkflowModel` IR — a single lowering path, 
 emitter logic. The importable subset is the runtime-bindable-behavior-free subset; delegate
 steps, branch points, loops, validation predicates, approval-with-context, dangling
 `gateId`, and reliability-bearing gate declarations are each rejected with their own stable
-build diagnostic (AGWF023–033). A behavioral round-trip gate partitions the #53 corpus (210
+build diagnostic (AGWF023–034). A behavioral round-trip gate partitions the #53 corpus (210
 fixtures) into importable-equivalent vs specifically-rejected with no silent third bucket.
 
 **Licensed abstention (#152).** A closed `AbstentionResponse` union
