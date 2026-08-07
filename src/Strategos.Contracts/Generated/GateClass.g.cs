@@ -44,4 +44,7 @@ public enum GateClass
 
     [JsonStringEnumMemberName("llm_judge")]
     LlmJudge,
+
+    [JsonStringEnumMemberName("rules")]
+    Rules,
 }

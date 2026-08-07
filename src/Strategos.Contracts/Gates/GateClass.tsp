@@ -37,4 +37,11 @@ enum GateClass {
 
   /** LLM-as-judge evaluation. */
   LlmJudge: "llm_judge",
+
+  /**
+   * A deterministic rule set, evaluated with no LLM or network cost. The class
+   * names the MECHANISM, not the input: a gate that merely *filters*
+   * LLM-produced findings is `rules`, not `llm_judge`.
+   */
+  Rules: "rules",
 }
