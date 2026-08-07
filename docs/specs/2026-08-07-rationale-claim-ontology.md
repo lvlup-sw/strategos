@@ -1,4 +1,18 @@
-# Spec: Canonical Rationale/Claim Ontology
+# Spec: Canonical Rationale/Claim Ontology — SUPERSEDED
+
+> **⛔ SUPERSEDED 2026-08-07 by [`2026-08-07-claim-contract.md`](./2026-08-07-claim-contract.md). Do not implement this document.**
+>
+> Refuted 3/3 (unanimous) by the plan-review adversarial panel. The design rests on premises the panel falsified against source:
+> - The descriptor-first path is **not** silently unvalidated — `AONT205` (Error, builder-runtime, `OntologyBuilder.cs:231-277`) and `AONT037` (analyzer tier) already cover it, and INV-5's tier 1 *is* builder-runtime. This was the sole ground for rejecting the C#-DSL alternative.
+> - An emitted `DomainOntology` **cannot carry actions**: AONT205 forbids ingested descriptors from populating `Actions`/`Events`/`Lifecycle`, so exarchos's `BoundToTool` criterion is unreachable by emission.
+> - CLR-free and polymorphic are **mutually exclusive** (`InterfaceDescriptor` takes a non-nullable `Type`); the shipped parity proof splits into two dimensions for exactly this reason.
+> - The descriptor emitter had **no viable output project** — `Strategos.Contracts` is a zero-ProjectReference, `IsAotCompatible` leaf.
+> - "Fails the build" overstated a **CI-only** guard; codegen is invoked by no MSBuild target.
+> - basileus does **not** encode rejection as `Decision.status` (its statuses are `proposed|accepted|superseded`), and #115's CLR-free proof already shipped in v2.9.0.
+>
+> Retained as provenance. The full 17-gap panel record is in workflow state for `rationale-claim-ontology`.
+
+
 
 **Date:** 2026-08-07 · **Feature:** `rationale-claim-ontology` · **Depth:** deep
 **Inputs:** roadmap `lvlup-sw/strategos#153` (strategy-compiler program) · issues #157 (DKG claim ontology) · #115 (generalize primitives for rationale ontologies) · #61 (`ProvenanceEnvelope`) · consumer specs `lvlup-sw/exarchos#1745` + [`exarchos:docs/specs/2026-08-05-design-knowledge-graph.md`](https://github.com/lvlup-sw/exarchos/blob/main/docs/specs/2026-08-05-design-knowledge-graph.md) (DR-1, D2, P-1) · `lvlup-sw/basileus#155` + [`basileus:docs/designs/2026-06-02-why-context-engine.md`](https://github.com/lvlup-sw/basileus/blob/main/docs/designs/2026-06-02-why-context-engine.md) §58 · `lvlup-sw/basileus#236` (schema spike, open) · in-session cross-repo source review (2026-08-07)
