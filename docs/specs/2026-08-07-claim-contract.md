@@ -197,4 +197,404 @@ The divergent loop ran twice. Round 1 chose TypeSpec-first authoring of a `Domai
 
 ## Decomposition
 
-> Authored by `/exarchos:plan`. DR-1 … DR-12 above are the decomposition source.
+The decomposition maps every task to one or more DR-N from the section above.
+
+### Scope
+
+**Target:** Full design — DR-1 … DR-12.
+
+**Excluded, with rationale:**
+- **Content-addressed identity and canonical byte-form.** Cut in this revision (see Alternatives). Not deferred-with-a-placeholder — no task, no DR, no half-specified field.
+- **basileus's ontology wiring.** This contract delivers records; turning them into a queryable graph with actions is hand-authored C# in their service. Flagged in Open Questions for confirmation.
+- **The authority question** — out of scope by construction, unchanged.
+
+**Contract-file layout (deliberate).** The contract is three `.tsp` files, and the tasks authoring them are **serialized**, with the single `main.tsp` import edit batched into the first. The previous revision had five tasks each creating a `.tsp` with no import and a worktree note that contradicted their file lists; this shape removes the conflict rather than documenting it.
+
+### Traceability matrix (DR-N → tasks)
+
+| DR | Requirement | Tasks |
+|----|-------------|-------|
+| DR-1 | Reliability class is the frozen axis | 003 |
+| DR-2 | Open kind vocabulary with a registered core | 004, 011 |
+| DR-3 | Status and lifecycle axes | 003 |
+| DR-4 | Scope is on the claim | 003 |
+| DR-5 | Typed body fields | 004 |
+| DR-6 | Relations are typed body references | 005 |
+| DR-7 | Provenance carriage | 003 |
+| DR-8 | Two projections, no emitted ontology | 006, 007 |
+| DR-9 | Additive evolution, honestly enforced | 008, 009 |
+| DR-10 | Failure modes | 010, 011, 012 |
+| DR-11 | #115 rebased on what already shipped | 013, 014 |
+| DR-12 | Reconcile upstream, including our own docs | 001, 002, 015, 016 |
+
+### Tasks
+
+### Task 001: Correct Strategos's own stale ontology docs
+
+**Risk Tier:** low
+**Test Layer:** unit
+**Implements:** DR-12
+
+**Files:**
+- `docs/src/content/docs/reference/platform-architecture.md`
+- `docs/src/content/docs/reference/ontology-theoretical-grounding.md`
+
+**Verification:** low — static. Documentation correction; no code surface.
+
+**Steps:**
+1. Remove or correct every description of `ComposedOntology` as "Source-generated in host assembly" — the ontology is analyzer-only and `ComposedOntology` does not exist in code.
+2. Correct any remaining `Agentic.*` naming to `Strategos.*`.
+3. This runs **first**: exarchos's ADR mirrors these pages, so correcting their copy while ours stays stale lets the error regenerate.
+
+**Dependencies:** None
+**Parallelizable:** Yes
+
+### Task 002: Post the axes and registered core, and close the objection window
+
+**Risk Tier:** low
+**Test Layer:** unit
+**Implements:** DR-12
+
+**Files:**
+- `docs/coordination/2026-08-07-claim-contract-freeze.md`
+
+**Verification:** low — static. The artifact is the coordination record.
+
+**Steps:**
+1. Write the freeze record: the DR-1/DR-3/DR-4 axes, the DR-2 registered core, the reference-relation model (DR-6), and the three cuts (emitted ontology, closed union, content-addressing) with their causes.
+2. Post to `lvlup-sw/exarchos#1745`, `lvlup-sw/basileus#236`, `lvlup-sw/strategos#157` and `#115`, explicitly renegotiating exarchos's `DomainOntology`/`ComposedOntology`/`BoundToTool` criteria against what this contract delivers.
+3. State a window with a **closing date that precedes implementation start**, and record the disposition of every objection in this file before Task 003 begins.
+4. **This gates the contract-authoring tasks.** A window that runs concurrently with implementation has zero length and enforces nothing.
+
+**Dependencies:** 001
+**Parallelizable:** No — it is the freeze gate.
+
+### Task 003: Claim envelope — reliability class, status and lifecycle axes, scope, provenance carriage
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** acceptance
+**Implements:** DR-1, DR-3, DR-4, DR-7
+
+**Files:**
+- `src/Strategos.Contracts/Ontology/Claims.tsp`
+- `src/Strategos.Contracts/main.tsp`
+- `src/Strategos.Contracts.Tests/Ontology/ClaimEnvelopeTests.cs`
+
+**Verification:** high — scoped tests + `check_test_adequacy` kill-probe + the Contracts round-trip suite. This is the north-star acceptance test for the frozen axes; it stays red until 004 and 005 land.
+
+**Steps:**
+1. Author the envelope: `reliability` (`authored|observed|measured`), `status` (`proposed|accepted|superseded`), `lifecycle` (`binding|durable|reinforced|episodic`), `scope {repo, featureId, branch}`, and provenance. All non-optional. snake_case wire names per the `GateClass` precedent.
+2. Batch **all three** contract-file imports into `main.tsp` here, so 004 and 005 touch no shared file.
+3. Test `Claim_WithoutReliabilityClass_Unrepresentable`.
+4. Test `Claim_WithoutScope_Unrepresentable`.
+5. Test `Claim_ObservedClass_NeverCoercedToAuthored`.
+6. Test `Constraint_LifecycleBinding_ExpressibleWithoutConsumerExtension`.
+
+**Dependencies:** 002
+**Parallelizable:** No (foundation)
+
+### Task 004: Open kind vocabulary with the registered core and typed bodies
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Acceptance Test Ref:** 003
+**Implements:** DR-2, DR-5
+
+**Files:**
+- `src/Strategos.Contracts/Ontology/ClaimKinds.tsp`
+- `src/Strategos.Contracts.Tests/Ontology/ClaimKindTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + round-trip.
+
+**Steps:**
+1. Author the eight core kinds as a **registered, enumerable** core — not a closed union — each with its typed body (forces, alternatives, costs, criteria, ordinal, cause).
+2. Author the extension path so an unregistered kind is carried with an open body.
+3. Test `Kind_Unregistered_RoundTripsWithoutLoss`.
+4. Test `Kind_Unregistered_ReadableAsUntypedCarrier` — basileus's front-matter-less majority path.
+5. Test `Kind_CoreEight_EnumerableFromSchema` — a consumer can tell core from extension.
+6. Test `ClaimBody_NoKindCarriesBareBodyString`.
+
+**Dependencies:** 003
+**Parallelizable:** No
+
+### Task 005: Reference relations with specified direction and cardinality
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Acceptance Test Ref:** 003
+**Implements:** DR-6
+
+**Files:**
+- `src/Strategos.Contracts/Ontology/ClaimRelations.tsp`
+- `src/Strategos.Contracts.Tests/Ontology/ClaimRelationTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + round-trip.
+
+**Steps:**
+1. Author relations as **typed reference fields on claim bodies**, targeting claim ids — never standalone edge objects, so exarchos's anti-drift property holds and no polymorphic CLR interface is implicated.
+2. Cover basileus's full declared vocabulary including `references`, which the previous revision dropped.
+3. Specify direction **and cardinality** for each relation (basileus #236 requires cardinality).
+4. Test `Relation_SupersedesPointer_FoldsForwardDeterministically`.
+5. Test `Relation_BasileusFrontMatterVocabulary_MapsWithoutLoss`.
+6. Test `Relation_Cardinality_SpecifiedForEveryRelation`.
+
+**Dependencies:** 004
+**Parallelizable:** No
+
+### Task 006: Regenerate and commit both projections
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-8
+
+**Files:**
+- `src/Strategos.Contracts/schemas/**`
+- `src/Strategos.Contracts/Generated/**`
+- `src/Strategos.Contracts.Tests/Ontology/ProjectionParityTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + integration. The previous revision left `schemas/` and `Generated/` unowned while two CI gates watch them.
+
+**Steps:**
+1. Run `scripts/contracts-codegen.sh`; commit regenerated JSON Schema and C# records.
+2. Confirm `contracts-codegen-guard` passes (a fresh run must produce no diff).
+3. Test `Projection_JsonSchemaAndCSharp_ValidateSameFixtures`.
+4. Test `Projection_NoObjectTypeDescriptorEmitted` — the C# projection is plain records, so no ingested-descriptor path and no AONT205 exposure.
+
+**Dependencies:** 005
+**Parallelizable:** No
+
+### Task 007: Contracts stays a dependency-free leaf
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-8
+
+**Files:**
+- `src/Strategos.Contracts.Tests/Ontology/PackageLeafTests.cs`
+
+**Verification:** high — scoped tests + kill-probe. This pins the constraint that made the previous revision's emitter unbuildable.
+
+**Steps:**
+1. Test `Contracts_ProjectReferences_IsEmpty` — asserts the published schema package never acquires a dependency on `Strategos.Ontology`.
+2. Test `Contracts_AotCompatibility_RemainsEnabled`.
+3. Test `Contracts_Projection_EmitsNoOntologyActionsOrInterfaces`.
+
+**Dependencies:** 006
+**Parallelizable:** Yes
+
+### Task 008: ContractsVersion bump and packaging assertions
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-9
+
+**Files:**
+- `src/Strategos.Contracts/Strategos.Contracts.csproj`
+- `src/Strategos.Contracts/CHANGELOG.md`
+- `src/Strategos.Contracts.Tests/PackagingTests.cs`
+
+**Verification:** high — scoped tests + kill-probe. `PackagingTests` hard-asserts the current version and goes red without this; the previous revision left it unowned.
+
+**Steps:**
+1. Bump `<ContractsVersion>` to the next minor (additive schema family) and update `CHANGELOG.md`.
+2. Update `PackagingTests` version assertions in the same change.
+3. Test `Packaging_NupkgVersion_MatchesContractsVersion` — `publish-contracts` fails closed when the tag disagrees.
+
+**Dependencies:** 006
+**Parallelizable:** Yes
+
+### Task 009: Additive-evolution policy and the schema-diff gate
+
+**Risk Tier:** medium
+**Test Layer:** integration
+**Implements:** DR-9
+
+**Files:**
+- `src/Strategos.Contracts/Ontology/EVOLUTION.md`
+- `src/Strategos.Contracts.Tests/Ontology/EvolutionPolicyTests.cs`
+
+**Verification:** medium — scoped tests + kill-probe.
+
+**Steps:**
+1. State the policy: new kinds and new optional fields are non-breaking; narrowing an enum or requiring a new field is breaking and needs a version bump.
+2. Confirm `contracts-schema-diff` reports NON-BREAKING for this change.
+3. Test `Evolution_NewRegisteredKind_IsNonBreaking` — the property that dissolves the release-per-kind cost.
+4. State explicitly that enforcement is **CI-scoped**, not a build failure — codegen is invoked by no MSBuild target.
+
+**Dependencies:** 006
+**Parallelizable:** Yes
+
+### Task 010: Failure modes — schema-skew detection
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-10
+
+**Files:**
+- `src/Strategos.Contracts/Ontology/Claims.tsp`
+- `src/Strategos.Contracts.Tests/Ontology/SchemaSkewTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + integration.
+
+**Steps:**
+1. Carry the taxonomy version on the claim.
+2. Test `Read_SkewedTaxonomyVersion_DetectedAndReported`.
+3. Test `Read_SkewedVersion_NeverMisParsedSilently`.
+
+**Dependencies:** 006
+**Parallelizable:** No — shares `Claims.tsp` with 003; sequenced after it.
+
+### Task 011: Failure modes — unrecognized kinds degrade, never error
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-2, DR-10
+
+**Files:**
+- `src/Strategos.Contracts.Tests/Ontology/GracefulDegradationTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + integration. This is the criterion whose inversion in the previous revision would have broken basileus's majority ingestion path.
+
+**Steps:**
+1. Test `Read_UnregisteredKind_DegradesGracefully_NeverThrows`.
+2. Test `Read_UnregisteredKind_NeverCoercedToFallbackKind`.
+3. Test `Read_UnregisteredKind_RelationsPreserved` — no silent relation loss.
+
+**Dependencies:** 006
+**Parallelizable:** Yes
+
+### Task 012: Failure modes — dangling references resolve later
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-10
+
+**Files:**
+- `src/Strategos.Contracts.Tests/Ontology/DanglingReferenceTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + integration. JSON Schema cannot express cross-object referential integrity, so this is a contract obligation pinned by conformance fixtures.
+
+**Steps:**
+1. Test `Reference_UnknownTargetId_RecordedAsDangling_NotDropped` — basileus's webhook ingestion is inherently out of order.
+2. Test `Reference_TargetArrivesLater_Resolves`.
+3. Test `Reference_Dangling_SurfacedInDiagnostics`.
+
+**Dependencies:** 005
+**Parallelizable:** Yes
+
+### Task 013: Deprecate the code-symbol paths mechanically
+
+**Risk Tier:** high
+**Boundary Touching:** true
+**Test Layer:** integration
+**Implements:** DR-11
+
+**Files:**
+- `src/Strategos.Ontology/Builder/IActionBuilderOfT.cs`
+- `src/Strategos.Ontology/PublicAPI.Unshipped.txt`
+- `src/Strategos.Ontology.Tests/Deprecation/CodeSymbolDeprecationTests.cs`
+
+**Verification:** high — scoped tests + kill-probe + integration. **Tiered high deliberately:** this is a published public-API change on `LevelUp.Strategos.Ontology` with RS0016/RS0017 active. The previous revision stamped the equivalent work `medium`, which the panel flagged as silently reducing verification depth.
+
+**Steps:**
+1. Mark `.Requires()` and the SCIP/source-extraction assumptions `[Obsolete]` with rationale and a **named** successor.
+2. Update `PublicAPI.Unshipped.txt` in the same change — omitting it fails the build.
+3. Test `Deprecation_RequiresPath_CarriesObsoleteWithNamedSuccessor`.
+4. Note the consumer-notification obligation: this ships on the uncut `v2.10.0` product track, not `contracts-v`.
+
+**Dependencies:** None
+**Parallelizable:** Yes — touches no file any other task edits.
+
+### Task 014: Record the CLR-free ⊕ polymorphic expressibility limit
+
+**Risk Tier:** low
+**Test Layer:** unit
+**Implements:** DR-11
+
+**Files:**
+- `docs/src/content/docs/reference/ontology-polyglot-limits.md`
+
+**Verification:** low — static. Documentation of an existing, already-proven limit.
+
+**Steps:**
+1. Record that a CLR-free descriptor cannot also be a polymorphic interface target, citing the shipped parity proof's two-dimension split as the evidence.
+2. Name this contract's reference-based relations (DR-6) as the reason the limit does not bind here.
+3. Cite the v2.9.0 parity proof as the existing #115 evidence so no task re-derives it.
+
+**Dependencies:** None
+**Parallelizable:** Yes
+
+### Task 015: Correct exarchos's ADR and DKG DR-1
+
+**Risk Tier:** low
+**Test Layer:** unit
+**Implements:** DR-12
+
+**Files:**
+- `docs/coordination/2026-08-07-exarchos-reconciliation.md` (the local record; the edits land cross-repo in `exarchos:docs/adrs/system-index.md` and `exarchos:docs/specs/2026-08-05-design-knowledge-graph.md`)
+
+**Verification:** low — static.
+
+**Steps:**
+1. Correct `Agentic.Ontology` → `Strategos.Ontology`/`Strategos.Contracts` and the "source-generated compile-time descriptors" mechanism claim.
+2. Remove the `ComposedOntology` reference.
+3. Replace DR-1's `DomainOntology`/`BoundToTool` criteria with what this contract delivers, per the Task 002 disposition.
+4. Update the `#1745` P-1 dependency to reference this spec.
+
+**Dependencies:** 002
+**Parallelizable:** Yes
+
+### Task 016: Correct basileus's design doc
+
+**Risk Tier:** low
+**Test Layer:** unit
+**Implements:** DR-12
+
+**Files:**
+- `docs/coordination/2026-08-07-basileus-reconciliation.md` (the local record; the edit lands cross-repo in `basileus:docs/designs/2026-06-02-why-context-engine.md`)
+
+**Verification:** low — static.
+
+**Steps:**
+1. Reconcile the node list, the `Decision.status` requirement, and the DR-5 front-matter vocabulary against this contract.
+2. Record the #236 disposition — answered by this contract, or a justified split.
+3. Edit the doc, not merely a comment: leaving it stale reproduces on basileus the exact defect this spec diagnoses in #157.
+
+**Dependencies:** 002
+**Parallelizable:** Yes
+
+### Parallelization
+
+**Critical path:** 001 → 002 (objection window **closes**) → 003 → 004 → 005 → 006. The freeze gate is on the critical path by design; the previous revision ran it concurrently with implementation, which gave it zero length.
+
+**Wave 0:** 001, then 002. Also 013 and 014, which touch no shared file and need no freeze.
+
+**Wave 1 (contract authoring, strictly serial):** 003 → 004 → 005. Serialized because they form one coherent contract; all `main.tsp` imports are batched into 003 so 004 and 005 share no file.
+
+**Wave 2 (projection + release):** 006, then 007 ∥ 008 ∥ 009 ∥ 011 ∥ 012 in parallel — each owns a distinct test file.
+
+**Wave 3:** 010 after 006 (it shares `Claims.tsp` with 003, so it is sequenced, not parallel).
+
+**Wave 4:** 015 ∥ 016 after 002.
+
+**File-conflict audit:** `Claims.tsp` is touched by 003 and 010 (sequenced). `main.tsp` is touched only by 003. `schemas/**` and `Generated/**` only by 006. `PublicAPI.Unshipped.txt` only by 013. Every other task owns a distinct test file. No two tasks marked parallel share a file.
+
+### Completion checklist
+
+- [ ] Every DR-N in `## Requirements` maps to at least one task in the matrix
+- [ ] Every task `Implements:` a DR-N that exists in this document
+- [ ] Every task carries a `riskTier` stamp; public-API and schema surfaces are tiered `high`
+- [ ] Medium/high-tier tasks carry adequacy-judged tests (test-after); low-tier tasks lean on static analysis
+- [ ] No two parallel tasks share a file
+- [ ] The objection window closes before contract authoring begins
+- [ ] Open questions resolved OR explicitly deferred with rationale
+- [ ] Ready for `plan-review`
