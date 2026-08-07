@@ -35,6 +35,7 @@ public sealed class GateClassSchemaTests
         ("MutationAdequacy", "mutation_adequacy"),
         ("MergeGate", "merge_gate"),
         ("LlmJudge", "llm_judge"),
+        ("Rules", "rules"),
     ];
 
     /// <summary>
