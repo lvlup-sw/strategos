@@ -26,7 +26,7 @@ Three areas of strong alignment stand out:
 
 1. **Frame-based knowledge representation.** Our `builder.Object<T>()` with `Property()` and `HasMany<T>()` is a typed, compile-time analog of N&R's concept frames with RELATION and ATTRIBUTE slots [Ch.7 §7.1.1].
 2. **Action preconditions and effects.** Our `.Requires()` / `.Modifies()` / `.CreatesLinked<T>()` DSL directly mirrors N&R's PRECONDITION and EFFECT slot facets on EVENT concepts [Ch.7 §7.1.5].
-3. **Cross-domain composition.** Our `ComposedOntology` with cross-domain links and extension points solves the same problem N&R address with their "society of microtheories" architecture [Ch.1, Preface].
+3. **Cross-domain composition.** Our `OntologyGraph` with cross-domain links and extension points solves the same problem N&R address with their "society of microtheories" architecture [Ch.1, Preface].
 
 Five significant gaps were identified (three now addressed):
 
@@ -90,11 +90,11 @@ This is a direct formalization. Where we improve on the textbook is in the *deco
 
 ### 3.3 Compositional Architecture
 
-N&R describe "a 'society' of microtheories" in the Preface and organize their knowledge architecture into four static resources: ontology, fact database, lexicon, and onomasticon [Ch.1, p.6-7]. Our multi-domain `ComposedOntology` with cross-domain links is an engineering analog:
+N&R describe "a 'society' of microtheories" in the Preface and organize their knowledge architecture into four static resources: ontology, fact database, lexicon, and onomasticon [Ch.1, p.6-7]. Our multi-domain `OntologyGraph` with cross-domain links is an engineering analog:
 
 | N&R Architecture | Our Architecture |
 |-----------------|------------------|
-| Multiple microtheories composed at runtime | Multiple `DomainOntology` subclasses composed at build time |
+| Multiple microtheories composed at runtime | Multiple `DomainOntology` subclasses composed at host startup |
 | Single ontology with branches for different domains | Separate domain assemblies with `CrossDomainLink` declarations |
 | Fact DB links instances to ontological concepts | No equivalent (see Gap Analysis §4.1) |
 
@@ -187,7 +187,7 @@ This facet system enables graceful degradation: "The program first attempts to m
 | **Cross-Domain Link** | (Inter-microtheory reference) | Novel term. N&R's society of microtheories uses implicit cross-references through a shared hierarchy. Our explicit "Cross-Domain Link" is more formal. |
 | **Extension Point** | (No equivalent; loosely: RANGE constraints) | Novel term. |
 | **Domain** / **DomainOntology** | Microtheory | Good correspondence. N&R's "microtheory" is a specialized knowledge module; our "domain" is a bounded context with its own ontology definition. The terms serve the same architectural purpose. |
-| **ComposedOntology** | "Society of microtheories" / full ontology | Good. Our composition at build time mirrors N&R's runtime integration of microtheories. |
+| **OntologyGraph** | "Society of microtheories" / full ontology | Good. Our composition at host startup mirrors N&R's runtime integration of microtheories. |
 
 **Key terminology recommendation:** ~~Consider adding an `ObjectKind` discriminator~~ **Implemented (T-022).** `ObjectKind` (`Entity` vs `Process`) is now available on `ObjectTypeDescriptor`, distinguishing object-like types from event/process-like types. This aligns with N&R's fundamental OBJECT/EVENT split [Ch.7 §7.1.1]. Additionally, `PropertyKind` (T-021) addresses the terminology gap around ATTRIBUTE vs RELATION.
 
@@ -222,7 +222,7 @@ builder.Object<FinancialTransaction>(obj =>
 
 **Behavior:**
 - `IsA<T>()` registers a parent-child relationship in the ontology graph
-- The source generator validates that the parent type is also registered
+- The analyzer validates that the parent type is also registered
 - `IOntologyQuery.GetObjectTypes()` gains an `includeSubtypes: bool` parameter
 - Agent queries can reason at higher abstraction levels: "find all FinancialTransactions" returns TradeOrders and any other subtypes
 - Property inheritance is metadata-only (the C# types are unchanged; the ontology records which properties are inherited vs. declared)
@@ -248,7 +248,7 @@ public enum PropertyKind
 }
 ```
 
-The source generator can infer `PropertyKind` from the C# type: properties whose type is a registered Object Type (or collection thereof) are `Reference`; others are `Scalar`; properties with `.Computed()` are `Computed`.
+The analyzer can infer `PropertyKind` from the C# type: properties whose type is a registered Object Type (or collection thereof) are `Reference`; others are `Scalar`; properties with `.Computed()` are `Computed`.
 
 **Benefit:** Agents can distinguish "properties I can filter on" (Scalar) from "properties that link to other entities" (Reference) without inspecting the C# type system. This improves the quality of `IOntologyQuery` responses and enables N&R-style distinction between structural navigation (follow References) and value comparison (filter on Scalars).
 
