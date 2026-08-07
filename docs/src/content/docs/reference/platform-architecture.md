@@ -36,7 +36,7 @@ The Basileus platform is a multi-tier architecture designed to orchestrate AI ag
 2. **Tool Abstraction** -- Execution environments have no knowledge of tool backend implementations. Tools are accessed through a filesystem-based progressive disclosure system, enriched with ontology schemas (Object Types, Actions, Links) to provide typed semantic discovery and constrain the valid action space. All tool invocations route back to the ControlPlane via envd callbacks; sandboxes never hold credentials or connect to external services directly.
 3. **Credential Isolation** -- API keys, database credentials, and OAuth tokens live exclusively in Azure Key Vault, accessed only by the ControlPlane. Secrets are injected at call time and never enter the sandbox.
 4. **Centralized Observability** -- All execution requests and tool invocations flow through a single control point, providing complete audit trails via event sourcing.
-5. **Semantic Type Safety** -- A compile-time ontology (Strategos.Ontology) maps domain types into a unified type graph of Object Types, Properties, Links, Actions, and Interfaces. Domain assemblies remain independent -- the ontology maps them, not owns them. A Roslyn source generator validates the type graph at build time, produces cross-domain link resolution, and generates typed tool stubs for progressive disclosure. Agents plan against the ontology rather than flat tool lists, directly reducing the CMDP action space (AI Theory, &sect;2.3).
+5. **Semantic Type Safety** -- A compile-time ontology (Strategos.Ontology) maps domain types into a unified type graph of Object Types, Properties, Links, Actions, and Interfaces. Domain assemblies remain independent -- the ontology maps them, not owns them. Roslyn **analyzers** validate the type graph at build time (`AONT*` diagnostics) and resolve cross-domain links; a separate runtime stub emitter produces typed tool stubs for progressive disclosure. Agents plan against the ontology rather than flat tool lists, directly reducing the CMDP action space (AI Theory, &sect;2.3).
 
 ### Three-Tier Architecture
 
@@ -152,10 +152,10 @@ This glossary provides the single authoritative definition for each term used th
 | **Tool Callback Hairpin** | The call chain where sandbox code invokes a tool wrapper, which communicates via envd vsock to the E2B orchestrator, which routes to the ControlPlane for actual tool execution, and results flow back through the same path. The ControlPlane is the sole gateway for all external access. |
 | **Strategos** | The fluent DSL library for defining durable, event-sourced agent workflows. Generates Wolverine sagas, Marten events, phase enums, and DI registrations from declarative workflow definitions. Distributed via [NuGet](https://www.nuget.org/packages/LevelUp.Strategos). |
 | **Thompson Sampling** | Contextual multi-armed bandit algorithm used for execution strategy selection. Maintains Beta(alpha, beta) distributions per (strategy, taskCategory) pair and samples to select the strategy with highest expected reward. Previously targeted specialist agents; retargeted to strategies in the Phronesis pattern. |
-| **Strategos.Ontology** | A semantic type system for agentic operations, distributed as a separate NuGet package within the Strategos repository. Provides a fluent DSL for declaring Object Types, Properties, Links, Actions, and Interfaces across domain boundaries. A Roslyn source generator produces compile-time descriptors, typed accessors, and cross-domain link validation. Enhances progressive disclosure with schema-driven tool stubs. Inspired by [Palantir Foundry's Ontology](https://www.palantir.com/docs/foundry/ontology/overview). |
-| **Domain Ontology** | A `DomainOntology` subclass declared per domain assembly (e.g., `TradingOntology`, `KnowledgeOntology`). Maps existing domain types into the ontology via a fluent builder API. The source generator parses these definitions at compile time to produce descriptors and validate the type graph. |
+| **Strategos.Ontology** | A semantic type system for agentic operations, distributed as a separate NuGet package within the Strategos repository. Provides a fluent DSL for declaring Object Types, Properties, Links, Actions, and Interfaces across domain boundaries. Roslyn **analyzers** provide compile-time validation of declarations and cross-domain links (`AONT*` diagnostics); descriptors are runtime records, not emitted code. Enhances progressive disclosure with schema-driven tool stubs. Inspired by [Palantir Foundry's Ontology](https://www.palantir.com/docs/foundry/ontology/overview). |
+| **Domain Ontology** | A `DomainOntology` subclass declared per domain assembly (e.g., `TradingOntology`, `KnowledgeOntology`). Maps existing domain types into the ontology via a fluent builder API. The analyzer parses these definitions at compile time to validate the type graph; descriptors are runtime records. |
 | **Ontology Interface** | A polymorphic shape declaration backed by a C# interface (e.g., `ISearchable`). Object types from different domains can implement the same ontology interface, enabling cross-domain queries ("find all Searchable objects matching X"). |
-| **Cross-Domain Link** | A typed relationship between object types in different domain assemblies. Declared by the originating domain using string-based external references (`ToExternal("trading", "Strategy")`), resolved and validated at composition time by the host assembly's source generator. |
+| **Cross-Domain Link** | A typed relationship between object types in different domain assemblies. Declared by the originating domain using string-based external references (`ToExternal("trading", "Strategy")`), resolved and validated at composition time by the host assembly's analyzer. |
 
 ---
 
@@ -389,12 +389,12 @@ public record TaskRequirements
 }
 ```
 
-`ObjectTypes` and `RequiredInterfaces` are resolved against the `ComposedOntology` (&sect;4.14) at the start of the Think step. If a task requires `trading.Position`, the ontology provides the available Actions on Position, the Links it participates in, and any cross-domain relationships -- constraining the agent's action space to valid operations.
+`ObjectTypes` and `RequiredInterfaces` are resolved against the `OntologyGraph` (&sect;4.14) at the start of the Think step. If a task requires `trading.Position`, the ontology provides the available Actions on Position, the Links it participates in, and any cross-domain relationships -- constraining the agent's action space to valid operations.
 
 **ThinkStep** -- Context assembly and approach decision. This single step replaces both the specialist selection and the specialist's reasoning phase:
 
 1. Resolve execution profile from task requirements (compose matching profiles)
-2. Resolve ontology context from task's `ObjectTypes` and `RequiredInterfaces` -- discover available Actions, Link relationships, and cross-domain traversals from the `ComposedOntology`. Filter the profile's `ToolSubset` to only tools bound to available Actions
+2. Resolve ontology context from task's `ObjectTypes` and `RequiredInterfaces` -- discover available Actions, Link relationships, and cross-domain traversals from the `OntologyGraph`. Filter the profile's `ToolSubset` to only tools bound to available Actions
 3. Query `IMultiCollectionRagProvider` with profile's collection set (vector similarity + optional hybrid BM25)
 4. **Rerank** results via Cohere Rerank API (`rerank-v4.0-pro`) — reorders multi-collection results by semantic relevance to the task, replacing simple relevance-score ordering. Filter by `RerankConfig.MinRelevanceScore` to discard low-quality retrievals before context assembly
 5. Optionally traverse knowledge graph links via `KnowledgeMcpTools`
@@ -1197,7 +1197,7 @@ Strategos is ideal for:
 
 ### 4.14 Ontology Layer (Strategos.Ontology)
 
-The Ontology Layer is a semantic type system for all agentic operations -- running on Basileus or orchestrated through Exarchos. Inspired by [Palantir Foundry's Ontology](https://www.palantir.com/docs/foundry/ontology/overview) and adapted for .NET source generation with runtime query capabilities, it provides a unified world model that agents plan and act against. Definitions are validated at compile time via Roslyn source generators; agents query the ontology at runtime through `IOntologyQuery`, a source-generated DI service.
+The Ontology Layer is a semantic type system for all agentic operations -- running on Basileus or orchestrated through Exarchos. Inspired by [Palantir Foundry's Ontology](https://www.palantir.com/docs/foundry/ontology/overview) and adapted for .NET with compile-time validation and runtime query capabilities, it provides a unified world model that agents plan and act against. Definitions are validated at compile time via Roslyn **analyzers** (`AONT*` diagnostics — the ontology emits no code); agents query the ontology at runtime through `IOntologyQuery`, a DI-registered service (`OntologyQueryService`).
 
 While it lives in the [Strategos repository](https://github.com/levelup-software/strategos) and ships as NuGet packages, it is architecturally independent from the workflow DSL. Workflows can declare ontological context (`Consumes<T>`, `Produces<T>`) but the ontology is usable without workflows.
 
@@ -1213,7 +1213,7 @@ Three architectural deficiencies motivate the ontology:
 
 #### 4.14.2 Palantir Concept Mapping
 
-The ontology adapts Palantir Foundry's key abstractions for compile-time .NET source generation:
+The ontology adapts Palantir Foundry's key abstractions for compile-time .NET validation:
 
 | Palantir Foundry | Strategos.Ontology | Adaptation |
 |-----------------|------------------|------------|
@@ -1223,19 +1223,19 @@ The ontology adapts Palantir Foundry's key abstractions for compile-time .NET so
 | Link Type | `obj.HasMany<T>()`, `ManyToMany<T>()` | Typed directional relationships with optional edge data; `.Inverse("name")` for bidirectional traversal (N&R INVERSE slot [Ch.7 &sect;7.1.1]) |
 | Action Type | `obj.Action("name")` | Bound to workflows (`BoundToWorkflow`) or MCP tools (`BoundToTool`) |
 | Interface | `builder.Interface<T>()` | Backed by C# interfaces; enables cross-domain polymorphic queries |
-| OSDK (code-gen) | `Strategos.Ontology.Generators` | Roslyn incremental source generator for validation and runtime service generation |
-| OMS (metadata registry) | `ComposedOntology` / `IOntologyQuery` | Source-generated in host assembly; merges all domain ontologies and exposes runtime query interface |
+| OSDK (code-gen) | `Strategos.Ontology.Generators` | Roslyn diagnostic ANALYZERS (`AONT*`) &mdash; validation only; despite the package name it emits no code |
+| OMS (metadata registry) | `OntologyGraph` / `IOntologyQuery` | Composed at runtime by `OntologyGraphBuilder` (multi-domain merge via `Merge/MergeTwo`); validated at compile time by Roslyn **analyzers** (`AONT*`), never source-generated |
 | Object Storage | Domain persistence (Marten, pgvector) | Ontology maps types, does not own storage |
 | Security layer | Policy Engine (&sect;5.5) + ontology action scoping | Object-level permissions evaluated at tool invocation |
 
-Key difference from Palantir: Foundry's ontology is a runtime-only metadata service queried via REST APIs with no build-time validation. Strategos.Ontology validates the entire type graph at compile time -- invalid definitions (broken links, missing keys, type mismatches) are compiler errors, not runtime exceptions. At runtime, the source-generated `IOntologyQuery` service (&sect;4.14.13) provides the same query capabilities Foundry exposes via REST, but with type-safe, DI-registered access.
+Key difference from Palantir: Foundry's ontology is a runtime-only metadata service queried via REST APIs with no build-time validation. Strategos.Ontology validates the entire type graph at compile time -- invalid definitions (broken links, missing keys, type mismatches) are compiler errors, not runtime exceptions. At runtime, the `IOntologyQuery` service (&sect;4.14.13) provides the same query capabilities Foundry exposes via REST, but with type-safe, DI-registered access.
 
 #### 4.14.3 Packages
 
 ```bash
 dotnet add package LevelUp.Strategos.Ontology              # Contracts, DomainOntology base, fluent builder interfaces,
                                                    # chunking, embedding abstractions, and ingestion pipeline
-dotnet add package LevelUp.Strategos.Ontology.Generators    # Roslyn incremental source generator
+dotnet add package LevelUp.Strategos.Ontology.Generators    # Roslyn diagnostic analyzers (validation only)
 dotnet add package LevelUp.Strategos.Ontology.MCP           # Progressive disclosure integration (§5.3)
 dotnet add package LevelUp.Strategos.Ontology.Embeddings    # OpenAI-compatible embedding provider (IEmbeddingProvider)
 dotnet add package LevelUp.Strategos.Ontology.Npgsql        # PostgreSQL pgvector-backed IObjectSetProvider + IObjectSetWriter
@@ -1278,7 +1278,7 @@ obj.HasMany<TradeOrder>("Orders").Inverse("Position");
 obj.HasOne<Position>("Position").Inverse("Orders");
 ```
 
-The source generator validates inverse link symmetry at freeze time: (1) the inverse link name must correspond to a declared link on the target type, and (2) the inverse relationship must be symmetric (if A's "Orders" link declares inverse "Position", then B's "Position" link must declare inverse "Orders"). Asymmetric or missing inverses produce diagnostics (AONT038, AONT039). This mirrors the INVERSE slot in N&amp;R's ontological semantics [Ch.7 &sect;7.1.1], ensuring navigation paths are always bidirectional.
+The analyzer validates inverse link symmetry at freeze time: (1) the inverse link name must correspond to a declared link on the target type, and (2) the inverse relationship must be symmetric (if A's "Orders" link declares inverse "Position", then B's "Position" link must declare inverse "Orders"). Asymmetric or missing inverses produce diagnostics (AONT038, AONT039). This mirrors the INVERSE slot in N&amp;R's ontological semantics [Ch.7 &sect;7.1.1], ensuring navigation paths are always bidirectional.
 
 #### 4.14.5 Action Preconditions & Postconditions
 
@@ -1673,9 +1673,9 @@ builder.Object<TradeOrder>(obj =>
 
 Design decisions:
 
-- `IsA<TParent>()` sets a single parent type. The parent must be a registered Object Type in the same or a referenced domain. The source generator validates parent existence at compile time (AONT036).
+- `IsA<TParent>()` sets a single parent type. The parent must be a registered Object Type in the same or a referenced domain. The analyzer validates parent existence at compile time (AONT036).
 - IS-A is **metadata-only** -- it does not imply runtime property inheritance or polymorphic dispatch. It enables subsumption queries ("give me all FinancialTransactions") and structural reasoning.
-- **Cycle detection**: The source generator detects and rejects IS-A cycles at compile time (AONT037). The hierarchy must form a directed acyclic graph.
+- **Cycle detection**: The analyzer detects and rejects IS-A cycles at compile time (AONT037). The hierarchy must form a directed acyclic graph.
 - **Transitive subsumption**: If `MarketOrder IsA TradeOrder` and `TradeOrder IsA FinancialTransaction`, then `MarketOrder` is transitively a `FinancialTransaction`. The `includeSubtypes` parameter on `GetObjectTypes()` returns the full transitive closure.
 - **Single inheritance**: Each Object Type has at most one IS-A parent. Multiple inheritance is expressed via Interfaces (&sect;4.14.8), which serve a different purpose (polymorphic shape, not subsumption).
 
@@ -1700,7 +1700,7 @@ public string? ParentTypeName { get; init; }
 
 #### 4.14.11 Domain Definition
 
-Each domain assembly declares one `DomainOntology` subclass. The source generator parses the `Define` method body at compile time via Roslyn syntax analysis (the same technique used by the Strategos DSL generator). The following example demonstrates the full set of schema refinements (preconditions, lifecycle, derivation chains, interface actions, extension points, IS-A hierarchy, inverse links, constraint strength):
+Each domain assembly declares one `DomainOntology` subclass. The analyzer parses the `Define` method body at compile time via Roslyn syntax analysis (the same technique used by the Strategos DSL generator). The following example demonstrates the full set of schema refinements (preconditions, lifecycle, derivation chains, interface actions, extension points, IS-A hierarchy, inverse links, constraint strength):
 
 ```csharp
 namespace Basileus.Trading;
@@ -2017,11 +2017,11 @@ public sealed class KnowledgeOntology : DomainOntology
 
 The `ToExternal("trading", "Strategy")` reference is unresolved until composition (&sect;4.14.12). The originating domain's generator emits the cross-domain link as metadata; the host's generator resolves it against all registered domain ontologies. The Trading domain's `Strategy` type declares an extension point (&sect;4.14.9) matching this link via `AcceptsExternalLinks("KnowledgeLinks")`.
 
-**Ontology Interfaces** enable polymorphic queries across domains. Multiple Object Types from different domains can implement the same interface. With interface-level actions (&sect;4.14.8), an agent querying "find all ISearchable objects matching 'machine learning'" receives both results and actionable capabilities (Search, Summarize) from Trading Positions and Knowledge AtomicNotes, without knowing which domains exist. The `ComposedOntology` resolves interface implementations and action mappings across all registered domains at build time.
+**Ontology Interfaces** enable polymorphic queries across domains. Multiple Object Types from different domains can implement the same interface. With interface-level actions (&sect;4.14.8), an agent querying "find all ISearchable objects matching 'machine learning'" receives both results and actionable capabilities (Search, Summarize) from Trading Positions and Knowledge AtomicNotes, without knowing which domains exist. The `OntologyGraph` resolves interface implementations and action mappings across all registered domains when the graph is built at host startup.
 
-#### 4.14.12 Source Generator Pipeline
+#### 4.14.12 Analyzer Pipeline
 
-The Roslyn incremental source generator operates in two phases:
+The Roslyn analyzer operates in two phases:
 
 **Phase 1: Per-Domain (runs in each domain assembly)**
 
@@ -2078,7 +2078,7 @@ The generator discovers classes deriving from `DomainOntology`, parses the `Defi
 
 The host assembly references all domain assemblies. Its generator discovers all `[assembly: OntologyDomain]` attributes from referenced assemblies and produces:
 
-- `ComposedOntology` -- Merged type graph with all Object Types, Properties, Links, Actions, Lifecycles, Derivation Chains, Interface Actions, Extension Points, and IS-A hierarchies across all domains
+- `OntologyGraph` -- Merged type graph with all Object Types, Properties, Links, Actions, Lifecycles, Derivation Chains, Interface Actions, Extension Points, and IS-A hierarchies across all domains
 - IS-A hierarchy validation -- Validates parent type references, detects cycles, computes transitive subsumption closure (AONT036, AONT037)
 - Inverse link symmetry validation -- Verifies bidirectional inverse link declarations are symmetric across all Object Types (AONT038, AONT039)
 - PropertyKind inference -- Automatically classifies properties as `Scalar`, `Reference` (if a link target property), or `Computed` (if `.Computed()` is declared)
@@ -2101,7 +2101,7 @@ services.AddOntology(ontology =>
 
 #### 4.14.13 Agent Query Interface
 
-At runtime, agents interact with the ontology through `IOntologyQuery`, a source-generated service registered via DI:
+At runtime, agents interact with the ontology through `IOntologyQuery`, a DI-registered service:
 
 ```csharp
 public interface IOntologyQuery
@@ -2411,7 +2411,7 @@ During code execution, when Python code calls a tool function, the sandbox issue
 The ControlPlane hosts MCP tool implementations. Tools are provisioned into sandboxes and accessed through a filesystem-based progressive disclosure system enriched with ontology metadata (&sect;4.14):
 
 1. At sandbox creation, the ControlPlane writes tool wrapper functions into the sandbox via `sandbox.files.write()`, populating a `servers/` directory structure
-2. Each tool wrapper includes ontology annotations: the Object Types it operates on, the Action it implements, and any cross-domain Links it may traverse. These annotations are generated from the `ComposedOntology` at ControlPlane startup
+2. Each tool wrapper includes ontology annotations: the Object Types it operates on, the Action it implements, and any cross-domain Links it may traverse. These annotations are generated from the `OntologyGraph` at ControlPlane startup
 3. Agents discover available tools by exploring the provisioned `servers/` directory. Discovery responses include ontology metadata alongside the tool's name, description, and parameter schema
 4. Each tool wrapper is a Python function that calls back to the ControlPlane via envd vsock
 5. The ControlPlane validates the request (Policy Engine, &sect;5.5), executes the actual tool implementation, and returns results back through envd
@@ -3584,7 +3584,7 @@ A graphical editor for designing workflows, with bidirectional sync to the DSL. 
 
 ### Cross-Workflow Coordination
 
-Patterns for workflows that depend on each other: Workflow A waiting for Workflow B's output, shared state projections, and rendezvous points. The ontology layer (&sect;4.14) provides a foundation for this via `Consumes<T>` / `Produces<T>` workflow declarations and cross-domain Links -- the `ComposedOntology` already contains a directed dependency graph of workflow input/output types that can be used for multi-workflow planning and scheduling.
+Patterns for workflows that depend on each other: Workflow A waiting for Workflow B's output, shared state projections, and rendezvous points. The ontology layer (&sect;4.14) provides a foundation for this via `Consumes<T>` / `Produces<T>` workflow declarations and cross-domain Links -- the `OntologyGraph` already contains a directed dependency graph of workflow input/output types that can be used for multi-workflow planning and scheduling.
 
 ### Speculative Execution
 

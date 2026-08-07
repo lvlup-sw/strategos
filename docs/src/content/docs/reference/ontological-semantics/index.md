@@ -39,7 +39,7 @@ A comprehensive approach to the treatment of text meaning by computer. Ontologic
 The following chapters are most directly relevant to the `Strategos.Ontology` layer (see `platform-architecture.md` section 4.14):
 
 - **Ch. 5 (Formal Ontology)** — Ontological categories, inheritance hierarchies, property types, and relations. Maps to our Object Types, Links, and Properties.
-- **Ch. 7 (Static Knowledge Sources)** — The ontology's internal structure (concepts as frames with property-value pairs), the fact database (instance patterns), and the lexicon (semantic mappings). Maps to our `ComposedOntology`, `IOntologyQuery`, cross-domain links, and interface system.
+- **Ch. 7 (Static Knowledge Sources)** — The ontology's internal structure (concepts as frames with property-value pairs), the fact database (instance patterns), and the lexicon (semantic mappings). Maps to our `OntologyGraph`, `IOntologyQuery`, cross-domain links, and interface system.
 - **Ch. 1 (Introduction)** — Foundational concepts: the agent model, knowledge architecture, and the role of ontology in constraining agent action spaces.
 - **Ch. 6 (Meaning Representation)** — TMR structure and the process/state representation model. Relevant to our Lifecycle and Action primitives.
 
