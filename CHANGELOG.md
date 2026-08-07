@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.10.0] - 2026-07-07
+## [2.10.0] - 2026-08-07
 
 The **strategy-compiler contract layer** (roadmap #153): the shared `Strategos.Contracts`
 IR spine gains gate, fork, and abstention shapes, and the workflow generator gains a
@@ -17,13 +17,15 @@ breaking changes).
 
 ### Added
 
-**Gate taxonomy + measured reliability (#150).** A closed `GateClass` enum
-(`typecheck | lint | scoped_test | full_suite | mutation_adequacy | merge_gate | llm_judge`,
-snake_case wire values) and a `GateDeclaration { class, id, reliability? }` record whose
+**Gate taxonomy + measured reliability (#150, #158).** A closed `GateClass` enum
+(`typecheck | lint | scoped_test | full_suite | mutation_adequacy | merge_gate | llm_judge |
+rules`, snake_case wire values) and a `GateDeclaration { class, id, reliability? }` record whose
 optional `reliability` block is provenance-required (`source` mandatory — reliability is
 telemetry-measured, never hand-authored). `WorkflowDefinitionV1` gains additive optional
 `gates[]` and a `gateId` back-reference on the gate step; gates are consumer-plane data, so
-the generated saga is unaffected.
+the generated saga is unaffected. The `rules` class (#158) names a deterministic rule set
+evaluated with no LLM or network cost — the class names the **mechanism, not the input**, so
+a gate that merely *filters* LLM-produced findings is `rules`, not `llm_judge`.
 
 **Fork/compensation DSL edge (#151).** An `AllowDiagnosticFork(...)` builder surface
 (staged so a fork without an anchor or a permitted trigger cannot compile) declaring where a
