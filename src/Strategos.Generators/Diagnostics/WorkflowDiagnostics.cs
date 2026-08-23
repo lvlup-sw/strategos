@@ -527,4 +527,40 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A permitted fork trigger with no required evidence fields has no DR-8 evidence floor: on import it crashes the generator (the model floor throws, CS8785), and were that bypassed the emitted occurrence guard would be always-true. The wire contract pins @minItems(1); the import channel is a hand-authoring surface, so a trigger declaring no evidence floor is rejected before mapping to fail closed with a stable diagnostic.");
+
+    /// <summary>
+    /// A workflow's main flow does not end at its declared termination (#155).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A workflow's step-name list is not purely the main flow: several lowering blocks append
+    /// names to it so an off-main-flow step gets a phase, a worker handler, commands and events,
+    /// even though that step is only ever reached through its own construct. Resolving a
+    /// successor by list position therefore chains a main-flow step — the declared terminal
+    /// above all — into a fork path, a branch case, a failure or approval handler, or a
+    /// low-confidence handler chain. The saga then runs past its termination; when the step it
+    /// lands on rejoins at that same terminal, it laps without bound and the saga document is
+    /// never deleted.
+    /// </para>
+    /// <para>
+    /// The whole class is decidable at emission — the generator holds both the declared terminal
+    /// and each computed successor — so this reports it there. Two conditions: the declared
+    /// terminal has a main-flow successor at all, or a main-flow step's computed successor is a
+    /// step owned by a construct. Argument 0 is the step whose successor is wrong; argument 1 is
+    /// the workflow name; argument 2 is the successor it resolved to.
+    /// </para>
+    /// <para>
+    /// An error, not a warning: a workflow that cannot reach its termination does not run. Until
+    /// this landed the only thing that caught the class was a container-backed run, which is the
+    /// wrong tier for a defect the generator can see.
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnreachableTermination = new(
+        id: AgwfCodes.UnreachableTermination,
+        title: "Workflow termination is unreachable",
+        messageFormat: "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A main-flow step whose successor is a step reached only through its own construct sends the saga past its declared termination. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
 }

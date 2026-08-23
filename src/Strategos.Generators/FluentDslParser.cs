@@ -410,6 +410,39 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Extracts the step the workflow declared as its termination — the type argument of its
+    /// <c>Finally&lt;T&gt;()</c> call.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The declared terminal step's name, or null when the workflow declares none.</returns>
+    /// <remarks>
+    /// Read from the authored syntax rather than inferred from the step-name list, so a check
+    /// against it stays independent of whatever the list ends up containing after lowering.
+    /// </remarks>
+    public static string? ExtractDeclaredTerminalStepName(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        if (context.FinallyInvocation is null)
+        {
+            return null;
+        }
+
+        return StepExtractor.TryGetStepName(context.FinallyInvocation, semanticModel, out var stepName)
+            ? stepName
+            : null;
+    }
+
+    /// <summary>
     /// Validates that the workflow starts with StartWith and returns the first method name found.
     /// </summary>
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>

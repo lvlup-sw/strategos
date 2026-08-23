@@ -15,6 +15,14 @@ enforced by the T30 structural diff in CI).
 
 ### Added
 
+- **Diagnostics family — `AGWF035` (`UnreachableTermination`, severity `error`):** a new
+  AGWF code for a workflow whose main flow chains into a step that is reached only
+  through its own construct — a fork path, a branch case, a failure or approval handler,
+  or a low-confidence handler chain — so the saga runs past its declared termination
+  instead of completing. Additive (a new enum member + a new catalog entry), so it is a
+  minor, non-breaking change; the package moves 0.4.0 → 0.5.0. **Consumers upgrade
+  first:** the emitted `AgwfCode` converter throws on a member it does not know, so a
+  consumer pinned to 0.4.0 cannot deserialize a payload carrying `AGWF035` (#155).
 - **Diagnostics family — `AGWF022` (`DeclaredButInert`, severity `warning`):** a new
   AGWF code for step configuration that is parsed into the IR but not lowered for the
   step's kind, so it is silently inert (first guarded case: confidence gating on a

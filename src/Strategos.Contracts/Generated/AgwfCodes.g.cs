@@ -98,5 +98,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF034 — Imported fork trigger declares no required evidence fields.</summary>
         public const string ImportForkTriggerWithoutEvidence = "AGWF034";
+
+        /// <summary>AGWF035 — Workflow termination is unreachable.</summary>
+        public const string UnreachableTermination = "AGWF035";
     }
 }

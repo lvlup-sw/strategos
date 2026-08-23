@@ -987,6 +987,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             StateHasPhaseProperty = stateHasPhaseProperty,
         };
 
+        // Termination reachability (#155). The model now carries both the declared terminal and
+        // every construct that contributes an appended step name, so whether the main flow ends
+        // where the author said it does is decidable right here — the earliest tier that can
+        // answer it, and the only one most contributors can run. The classification is passed in
+        // rather than read inside the guard so the counterfactual is testable.
+        TerminalReachabilityGuard.Report(
+            model,
+            MainFlowClassification.For(model).OffMainFlowStepNames,
+            FluentDslParser.ExtractDeclaredTerminalStepName(context.TargetNode, context.SemanticModel, ct),
+            GetAttributeLocation(context),
+            diagnostics);
+
         return new WorkflowGeneratorResult(model, diagnostics);
     }
 

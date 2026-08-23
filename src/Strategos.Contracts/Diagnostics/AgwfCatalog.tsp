@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **28 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **29 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
  * enum round-trips against *by name* (not ordinal).
  *
@@ -49,6 +49,7 @@ enum AgwfCode {
   ImportDanglingGateId: "AGWF032",
   ImportReliabilityBearingGate: "AGWF033",
   ImportForkTriggerWithoutEvidence: "AGWF034",
+  UnreachableTermination: "AGWF035",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -329,4 +330,14 @@ model AgwfEntryImportForkTriggerWithoutEvidence {
   summary: "Imported fork trigger declares no required evidence fields";
   remediation: "Workflow import file '{0}' declares a diagnostic-fork permitted trigger at {1} (trigger '{2}') with no required evidence fields. A permitted fork trigger must declare at least one required evidence field (wire @minItems(1)) so the DR-8 no-unjustified-fork guard has an evidence floor to enforce; the workflow is rejected and no saga is generated. Add the evidence field(s) the trigger requires.";
   since: "2.10.0";
+}
+
+/** AGWF035 — Workflow termination is unreachable (#155). */
+@jsonSchema
+model AgwfEntryUnreachableTermination {
+  id: "AGWF035";
+  severity: "error";
+  summary: "Workflow termination is unreachable";
+  remediation: "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing.";
+  since: "2.11.0";
 }
