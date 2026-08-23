@@ -128,23 +128,29 @@ jobs:
             const text = issue.title.toLowerCase();
             const labels = ['status:triage'];
 
-            // Type: at most one, word-anchored so ordinary prose does not match.
-            if (/\b(bug|regression|broken|crash|fails?|throws?)\b/.test(text)) {
+            // Every pattern below groups its alternatives, because `\b` binds
+            // tighter than `|`: /\bci|telemetry/ reads as (\bci)|(telemetry),
+            // so only the first alternative carries a boundary and "circular"
+            // matches. Alternatives that are meant to match a prefix or a
+            // plural spell that out rather than relying on a bare `\b`.
+
+            // Type: at most one.
+            if (/\b(?:bug|regression|broken|crash|fails?|throws?)\b/.test(text)) {
               labels.push('type:bug');
-            } else if (/\b(add|support|implement|introduce)\b/.test(text)) {
+            } else if (/\b(?:add|support|implement|introduce)\b/.test(text)) {
               labels.push('type:feature');
-            } else if (/\b(docs?|readme|typo|changelog)\b/.test(text)) {
+            } else if (/\b(?:docs?|readme|typo|changelog)\b/.test(text)) {
               labels.push('type:docs');
             }
 
             // Scope: at most one, first match wins, on the title only.
             const scopes = [
-              [/\bontolog|descriptor|analyzer|aont\b/, 'scope:ontology'],
-              [/\bgenerator|codegen|source.gen\b/,     'scope:generators'],
-              [/\bagent|orchestrat|subagent\b/,        'scope:agents'],
-              [/\brag|embedding|vector\b/,             'scope:rag'],
-              [/\bworkflow|saga|step\b/,               'scope:workflow'],
-              [/\bci|telemetry|logging|packaging\b/,   'scope:infrastructure'],
+              [/\b(?:ontolog\w*|descriptors?|analyzers?|aont\d*)\b/, 'scope:ontology'],
+              [/\b(?:generators?|codegen\w*|source.gen\w*)\b/,       'scope:generators'],
+              [/\b(?:agents?|orchestrat\w*|subagents?)\b/,           'scope:agents'],
+              [/\b(?:rag|embeddings?|vectors?)\b/,                   'scope:rag'],
+              [/\b(?:workflows?|sagas?|steps?)\b/,                   'scope:workflow'],
+              [/\b(?:ci|telemetry|logging|packaging)\b/,             'scope:infrastructure'],
             ];
             for (const [re, label] of scopes) {
               if (re.test(text)) { labels.push(label); break; }
