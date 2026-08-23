@@ -118,6 +118,14 @@ public sealed class WolverineHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddLowLoopConfidenceWorkflow();
                 opts.Services.AddHighLoopConfidenceWorkflow();
 
+                // The INTERMEDIATE-position confidence-gate workflows (#145). One gates the
+                // FIRST of two fork-path steps, the other the FIRST of two loop-body steps —
+                // positions no path-end handler intercepts, so each falls through to the
+                // generic completed handler whose gate must do the routing. Both share the
+                // singleton invocation log below.
+                opts.Services.AddIntermediateForkConfidenceWorkflow();
+                opts.Services.AddIntermediateLoopConfidenceWorkflow();
+
                 // The multi-step / rejoining OnLowConfidence workflows (G-4 / #139):
                 // a two-step handler chain, a single-step REJOINING handler that
                 // resumes the main flow, and a single-step TERMINATING handler

@@ -8,6 +8,7 @@ using System.Reflection;
 
 using Strategos.Builders;
 using Strategos.Definitions;
+using Strategos.Generators.Tests.Fixtures;
 
 namespace Strategos.Generators.Tests.Parity;
 
@@ -47,6 +48,149 @@ namespace Strategos.Generators.Tests.Parity;
 public sealed class StepConfigParityTests
 {
     /// <summary>
+    /// The declared-but-inert diagnostic the negative deferral guard cites.
+    /// </summary>
+    private const string DeclaredButInertId = "AGWF022";
+
+    /// <summary>
+    /// A workflow whose first branch case's LAST step is confidence-gated — a genuinely inert
+    /// shape: that step is intercepted by the branch path-end handler, which routes to the
+    /// case's rejoin target without reading the step's confidence.
+    /// </summary>
+    private const string InertBranchCaseWorkflow = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ClaimKind { Collision, Liability }
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public ClaimKind Kind { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class PriceRepair : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public class AssessLiability : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("parity-inert-branch-claim")]
+        public static partial class ParityInertBranchClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("parity-inert-branch-claim")
+                .StartWith<IntakeClaim>()
+                .Branch(state => state.Kind,
+                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path => path
+                        .Then<PriceRepair>(step => step
+                            .RequireConfidence(0.85)
+                            .OnLowConfidence(alt => alt.Then<HumanReview>()))),
+                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose confidence gate sits on a TOP-LEVEL step, where it demonstrably lowers.
+    /// Claiming a deferral against this shape is the mistake the negative guard catches.
+    /// </summary>
+    private const string LoweredTopLevelWorkflow = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("parity-lowered-claim")]
+        public static partial class ParityLoweredClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("parity-lowered-claim")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt.Then<HumanReview>()))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
     /// The set of declared step-configuration members that LOWER into the generated saga,
     /// each mapped to the behavioral (compile-run-saga, real-host) test that proves the
     /// lowering. Shape/golden tests do NOT qualify — the proof must run the generated saga.
@@ -74,16 +218,33 @@ public sealed class StepConfigParityTests
                 "Strategos.Generators.Behavioral.Tests/ForkPathConfidenceTests.cs"),
 
             // Loop-body / nested-RepeatUntil confidence lowering (DR-5 / #145 gap B): a loop
-            // body's LAST step now lowers its confidence gate into the generated loop completed
-            // handler, proven behaviorally on the real host. Confidence on an INTERMEDIATE
-            // (non-last) loop-body step stays deferred (see Deferred below). Before this, ALL
-            // nested-RepeatUntil confidence was dropped from the IR and inert.
+            // body's LAST step lowers its confidence gate into the generated loop completed
+            // handler, proven behaviorally on the real host. Before this, ALL nested-RepeatUntil
+            // confidence was dropped from the IR and inert.
             ["RequireConfidence(nested-RepeatUntil)"] = new(
                 "NestedRepeatUntilConfidenceTests.Saga_LoopBodyHighConfidence_ContinuesLoopEvaluation",
                 "Strategos.Generators.Behavioral.Tests/NestedRepeatUntilConfidenceTests.cs"),
             ["OnLowConfidence(nested-RepeatUntil)"] = new(
                 "NestedRepeatUntilConfidenceTests.Saga_LoopBodyLowConfidence_RoutesToOnLowConfidenceHandler",
                 "Strategos.Generators.Behavioral.Tests/NestedRepeatUntilConfidenceTests.cs"),
+
+            // INTERMEDIATE-position confidence lowering (#145). These four stood as Deferred
+            // on the strength of reading the path-end handlers, which do carry their own gates.
+            // An intermediate step never reaches those handlers: it falls through to the generic
+            // completed handler, whose gate applies no position test, so the configuration was
+            // lowered the whole time. Each now names a real-host run that observes the routing.
+            ["RequireConfidence(fork-path-intermediate)"] = new(
+                "IntermediateConfidenceBehaviorTests.Saga_IntermediateForkPathLowConfidence_RoutesToHandler",
+                "Strategos.Generators.Behavioral.Tests/IntermediateConfidenceBehaviorTests.cs"),
+            ["OnLowConfidence(fork-path-intermediate)"] = new(
+                "IntermediateConfidenceBehaviorTests.Saga_IntermediateForkPathLowConfidence_RoutesToHandler",
+                "Strategos.Generators.Behavioral.Tests/IntermediateConfidenceBehaviorTests.cs"),
+            ["RequireConfidence(nested-RepeatUntil-intermediate)"] = new(
+                "IntermediateConfidenceBehaviorTests.Saga_IntermediateLoopBodyLowConfidence_RoutesToHandler",
+                "Strategos.Generators.Behavioral.Tests/IntermediateConfidenceBehaviorTests.cs"),
+            ["OnLowConfidence(nested-RepeatUntil-intermediate)"] = new(
+                "IntermediateConfidenceBehaviorTests.Saga_IntermediateLoopBodyLowConfidence_RoutesToHandler",
+                "Strategos.Generators.Behavioral.Tests/IntermediateConfidenceBehaviorTests.cs"),
             ["Compensate"] = new(
                 "CompensationBehaviorTests.Saga_RetryExhaustedWithCompensate_RunsCompensationOnceAndTransitionsToFailed",
                 "Strategos.Generators.Behavioral.Tests/CompensationBehaviorTests.cs"),
@@ -123,53 +284,33 @@ public sealed class StepConfigParityTests
         };
 
     /// <summary>
-    /// The set of declared step-configuration member sub-paths intentionally NOT yet
-    /// lowered, each carrying its tracking issue. These keys are sub-paths of members that
-    /// ARE lowered for the linear/top-level case but whose fork-path / nested-loop variants
-    /// are deferred — they intentionally do NOT collide with the surface member names, so
-    /// the surface-coverage assertion is unaffected; they document the known deferrals and
-    /// are themselves validated to carry a tracking issue.
+    /// The set of declared step-configuration member sub-paths intentionally NOT yet lowered.
+    /// These keys are sub-paths of members that ARE lowered for the linear/top-level case but
+    /// whose construct-specific variants are deferred — they intentionally do NOT collide with
+    /// the surface member names, so the surface-coverage assertion is unaffected.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every entry carries a tracking issue AND the id of the compile-time diagnostic it
+    /// relies on to keep the deferral from being silent, together with the workflow source
+    /// that must trigger it. The guard runs that source through the generator and requires the
+    /// cited diagnostic to fire.
+    /// </para>
+    /// <para>
+    /// Checking only for a positive issue number is what let four provably-false entries stand:
+    /// each cited a declared-but-inert diagnostic as its safety net while the configuration it
+    /// described had in fact been lowered, and nothing ever asked whether the cited control
+    /// pointed at anything real.
+    /// </para>
+    /// <para>
+    /// The set is currently empty. That is a claim, not an omission: every member of the
+    /// declared surface lowers and names a real-host proof. An entry added here must satisfy
+    /// the checks above, whose ability to reject is pinned by
+    /// <see cref="StepConfigParity_DeferredEntryWhoseCitedDiagnosticDoesNotFire_IsRejected"/>.
+    /// </para>
+    /// </remarks>
     private static readonly IReadOnlyDictionary<string, DeferredEntry> Deferred =
-        new Dictionary<string, DeferredEntry>(StringComparer.Ordinal)
-        {
-            // Confidence config on an INTERMEDIATE (non-last) fork-path step IS threaded into
-            // the IR (so AGWF018 still fires on a bad threshold) but is not lowered into saga
-            // routing: only a fork path's LAST step lowers its gate into the path-completed
-            // handler (the moved (fork-path) entries above). An intermediate fork-path step
-            // runs through the generic completed handler with no gate — structurally
-            // diagnosable and still guarded by AGWF022 (DeclaredButInert / DeclaredButInertTests).
-            ["RequireConfidence(fork-path-intermediate)"] = new(
-                145,
-                "Confidence gating on an intermediate (non-last) fork-path step is deferred to "
-                + "v2.10.0 / DR-17; the config reaches the IR and is AGWF022-guarded "
-                + "(DeclaredButInertTests), so it is structurally diagnosable."),
-            ["OnLowConfidence(fork-path-intermediate)"] = new(
-                145,
-                "OnLowConfidence routing on an intermediate (non-last) fork-path step is deferred "
-                + "to v2.10.0 / DR-17; the config reaches the IR and is AGWF022-guarded "
-                + "(DeclaredButInertTests), so it is structurally diagnosable."),
-            // Loop-body / nested-RepeatUntil confidence on an INTERMEDIATE (non-last) loop-body
-            // step is threaded into the IR (task 009 promoted the loop body to configured
-            // StepModel records on LoopModel.BodySteps) but is not lowered into saga routing:
-            // only a loop body's LAST step lowers its gate into the loop completed handler (the
-            // moved (nested-RepeatUntil) entries above). An intermediate loop-body step is
-            // structurally diagnosable and guarded by the declared-but-inert diagnostic
-            // (DeclaredButInertTests) — no longer the silently-inert, undiagnosable case it was
-            // (#145 gap B).
-            ["RequireConfidence(nested-RepeatUntil-intermediate)"] = new(
-                145,
-                "Confidence gating on an intermediate (non-last) loop-body step is deferred to "
-                + "v2.10.0 / DR-17; the config reaches the IR (LoopModel.BodySteps) and is "
-                + "declared-but-inert-guarded (DeclaredButInertTests), so it is structurally "
-                + "diagnosable."),
-            ["OnLowConfidence(nested-RepeatUntil-intermediate)"] = new(
-                145,
-                "OnLowConfidence routing on an intermediate (non-last) loop-body step is deferred "
-                + "to v2.10.0 / DR-17; the config reaches the IR (LoopModel.BodySteps) and is "
-                + "declared-but-inert-guarded (DeclaredButInertTests), so it is structurally "
-                + "diagnosable."),
-        };
+        new Dictionary<string, DeferredEntry>(StringComparer.Ordinal);
 
     /// <summary>
     /// Asserts every member of the declared step-configuration surface (builder methods and
@@ -228,12 +369,26 @@ public sealed class StepConfigParityTests
                     + inspection.Detail);
         }
 
-        // Every Deferred entry must carry a tracking issue.
+        // Every Deferred entry must carry a tracking issue AND a diagnostic that actually
+        // fires on the shape it describes. A positive issue number alone is not a control:
+        // four entries carried one while citing a diagnostic aimed at a lowering that had
+        // already landed, and nothing ever ran the shape to check.
         foreach (var (member, entry) in Deferred)
         {
             await Assert.That(entry.TrackingIssue)
                 .IsGreaterThan(0)
                 .Because($"Deferred member '{member}' must carry a tracking issue number");
+
+            await Assert.That(entry.CitedDiagnosticId)
+                .IsNotEmpty()
+                .Because($"Deferred member '{member}' must name the diagnostic that surfaces the deferral");
+
+            await Assert.That(CitedDiagnosticFires(entry))
+                .IsTrue()
+                .Because(
+                    $"Deferred member '{member}' cites {entry.CitedDiagnosticId} as the control "
+                    + "that keeps the deferral from being silent, so that diagnostic must fire "
+                    + "when the generator is run over the inert shape the entry describes");
         }
     }
 
@@ -369,6 +524,41 @@ public sealed class StepConfigParityTests
     }
 
     /// <summary>
+    /// Negative guard for the DEFERRAL check: an entry whose cited diagnostic does not fire on
+    /// the shape it describes must be rejected.
+    /// </summary>
+    /// <remarks>
+    /// This is what keeps the deferral check honest while <see cref="Deferred"/> is empty. Two
+    /// synthetic entries cite the same diagnostic; they differ only in the workflow they claim
+    /// it fires on. The first names a genuinely inert shape and is accepted; the second names a
+    /// shape whose configuration lowers, and is rejected — which is exactly the mistake the
+    /// four flipped entries made.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepConfigParity_DeferredEntryWhoseCitedDiagnosticDoesNotFire_IsRejected()
+    {
+        var honest = new DeferredEntry(
+            TrackingIssue: 145,
+            CitedDiagnosticId: DeclaredButInertId,
+            InertReproSource: InertBranchCaseWorkflow,
+            Reason: "Confidence on a branch case's last step is not read by the path-end handler.");
+
+        await Assert.That(CitedDiagnosticFires(honest))
+            .IsTrue()
+            .Because("the cited diagnostic does fire on a genuinely inert shape, so the entry stands");
+
+        var unfounded = honest with { InertReproSource = LoweredTopLevelWorkflow };
+
+        await Assert.That(CitedDiagnosticFires(unfounded))
+            .IsFalse()
+            .Because(
+                "the cited diagnostic does not fire on a shape whose configuration lowers, so an "
+                + "entry claiming that shape is deferred must be rejected rather than accepted "
+                + "on the strength of its issue number");
+    }
+
+    /// <summary>
     /// A referenced proof file that is not on disk is reported as missing rather than being
     /// silently treated as containing the proof.
     /// </summary>
@@ -390,6 +580,17 @@ public sealed class StepConfigParityTests
             .IsFalse()
             .Because("a missing proof file must not be accepted as a running proof");
     }
+
+    /// <summary>
+    /// Runs a deferred entry's inert repro through the generator and reports whether the
+    /// diagnostic the entry cites actually fires on it.
+    /// </summary>
+    /// <param name="entry">The deferred entry to check.</param>
+    /// <returns><see langword="true"/> when the cited diagnostic fires; otherwise <see langword="false"/>.</returns>
+    private static bool CitedDiagnosticFires(DeferredEntry entry) =>
+        GeneratorTestHelper.RunGenerator(entry.InertReproSource)
+            .Diagnostics
+            .Any(d => string.Equals(d.Id, entry.CitedDiagnosticId, StringComparison.Ordinal));
 
     /// <summary>
     /// Resolves the synthetic proof fixture used by the guard's negative tests. It is stored
@@ -498,9 +699,16 @@ public sealed class StepConfigParityTests
     private sealed record LoweredProof(string BehavioralTest, string BehavioralTestFile);
 
     /// <summary>
-    /// A deferred-member entry: the tracking issue and a short reason.
+    /// A deferred-member entry: the tracking issue, the compile-time diagnostic the deferral
+    /// relies on to stay visible, the workflow source that must trigger it, and a short reason.
     /// </summary>
     /// <param name="TrackingIssue">The GitHub issue number tracking the deferral.</param>
+    /// <param name="CitedDiagnosticId">The diagnostic id that surfaces the un-lowered configuration.</param>
+    /// <param name="InertReproSource">A workflow whose generation must report <paramref name="CitedDiagnosticId"/>.</param>
     /// <param name="Reason">A short human-readable reason for the deferral.</param>
-    private sealed record DeferredEntry(int TrackingIssue, string Reason);
+    private sealed record DeferredEntry(
+        int TrackingIssue,
+        string CitedDiagnosticId,
+        string InertReproSource,
+        string Reason);
 }

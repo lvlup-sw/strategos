@@ -9,30 +9,30 @@ using Strategos.Generators.Tests.Fixtures;
 namespace Strategos.Generators.Tests.Diagnostics;
 
 /// <summary>
-/// #143, G-6 6.2 — AGWF022 "declared-but-inert" diagnostic. A step configuration
-/// member that is parsed into the <c>StepModel</c> IR but that no emitter consumes for
-/// the step's kind is silently dropped today. AGWF022 surfaces that drop at compile time
-/// so a deferred/unlowered configuration cannot masquerade as working.
+/// AGWF022 "declared-but-inert": a step configuration member that reaches the
+/// <c>StepModel</c> IR but that no emitter consumes for that step's kind, so it is silently
+/// dropped. The diagnostic surfaces the drop at compile time (INV-5, the earliest tier that
+/// can catch it) so an un-lowered configuration cannot masquerade as working.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The concrete inert case this guards (verified against the generated saga): confidence
-/// gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on an INTERMEDIATE
-/// (non-last) step of a <c>Fork</c> path. The fork-path parse threads the configure lambda
-/// into the IR — so an out-of-range threshold still surfaces AGWF018 — but the saga emitter
-/// only lowers confidence-gated routing for a fork path's LAST step (DR-4 / #145 gap A, the
-/// fork path-completed handler); an intermediate fork-path step runs through the generic
-/// completed handler with no gate. That variant is deferred to v2.10.0 / DR-17 (#134), so
-/// the configuration is inert: no <c>confidenceScore</c> gate and no <c>OnLowConfidence</c>
-/// routing reach the generated saga.
+/// The concrete inert case, verified against the generated saga: confidence gating
+/// (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on the LAST step of a
+/// non-terminal <c>Branch</c> case. The branch parse threads the configure lambda into the IR
+/// — so an out-of-range threshold still surfaces the threshold-range code — but a non-terminal
+/// case's last step is intercepted by the branch path-end handler, which routes straight to
+/// the case's rejoin target and never reads the step's confidence. Neither the
+/// <c>confidenceScore</c> comparison nor the <c>OnLowConfidence</c> routing reaches the saga.
 /// </para>
 /// <para>
-/// Confidence on a fork path's LAST step is NOT flagged: it is now lowered, proven
-/// behaviorally by <c>ForkPathConfidenceTests</c>.
+/// The diagnostic previously pointed at confidence on an INTERMEDIATE fork-path or loop-body
+/// step. Both were false positives: an intermediate path step falls through to the generic
+/// completed handler, which gates on the step's confidence with no position test, so those
+/// configurations DO lower. The negative tests below pin that by asserting the emitted gate,
+/// not merely the absent diagnostic (#145).
 /// </para>
 /// <para>
-/// AGWF022 is the next monotonic id past the live ceiling AGWF021 (INV-5: never reuse,
-/// never renumber).
+/// The id is retargeted, never renumbered or reused (INV-5).
 /// </para>
 /// </remarks>
 [Property("Category", "Integration")]
@@ -40,43 +40,154 @@ public sealed class DeclaredButInertTests
 {
     private const string DeclaredButInertId = "AGWF022";
 
+    private const string ConfidenceGate = "step => step"
+        + ".RequireConfidence(0.85)"
+        + ".OnLowConfidence(alt => alt.Then<HumanReview>())";
+
+    private const string LoweredRetryConfig = "step => step.WithRetry(2)";
+
     /// <summary>
-    /// Verifies that confidence gating declared on an INTERMEDIATE (non-last) fork-path
-    /// step — a configuration the generator still does not lower — fires AGWF022 at the
-    /// workflow attribute call site. Only a fork path's LAST step is lowered (DR-4 / #145
-    /// gap A); an intermediate one remains inert.
+    /// Confidence gating on the LAST step of a non-terminal branch case fires AGWF022.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task Generator_StepConfigFieldInertForStepKind_ReportsAgwf022()
+    public async Task DeclaredButInert_BranchCaseLastStepConfidence_ReportsAgwf022()
     {
-        var source = ForkWorkflowWithIntermediatePathConfig(
-            intermediateStepConfig: "step => step"
-                + ".RequireConfidence(0.85)"
-                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+        var source = BranchWorkflow(
+            lastCaseStepConfig: ConfidenceGate,
+            intermediateCaseStepConfig: LoweredRetryConfig);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
         var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
         await Assert.That(diagnostic).IsNotNull()
-            .Because("confidence gating on an intermediate fork-path step is inert and must surface as AGWF022");
+            .Because("confidence gating on a branch case's last step is inert and must surface as AGWF022");
         await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
-        await Assert.That(diagnostic.GetMessage()).Contains("ForkedAssess");
+        await Assert.That(diagnostic.GetMessage()).Contains("PriceRepair");
     }
 
     /// <summary>
-    /// Conformant-negative: confidence gating declared on a fork path's LAST step (which
-    /// IS lowered into the fork path-completed handler — DR-4 / #145 gap A) must NOT fire
-    /// AGWF022. This is the flip: before the lowering it fired; now it does not.
+    /// The claim AGWF022 makes about that shape is true: the generated saga carries no
+    /// confidence comparison at all for the branch case's last step.
+    /// </summary>
+    /// <remarks>
+    /// Without this the diagnostic is unfalsifiable — a diagnostic that fires proves only that
+    /// it fires, which is how the previous two emission sites survived while describing a
+    /// lowering that had in fact landed.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_BranchCaseLastStepConfidence_LowersNoConfidenceGate()
+    {
+        var source = BranchWorkflow(
+            lastCaseStepConfig: ConfidenceGate,
+            intermediateCaseStepConfig: LoweredRetryConfig);
+
+        var saga = GeneratorTestHelper.GetGeneratedSource(GeneratorTestHelper.RunGenerator(source), "Saga.g.cs");
+
+        await Assert.That(saga)
+            .DoesNotContain("confidenceScore")
+            .Because("the branch path-end handler never compares the completed event's confidence");
+    }
+
+    /// <summary>
+    /// Confidence gating on an INTERMEDIATE branch-case step does NOT fire — that step falls
+    /// through to the generic completed handler, which gates.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_IntermediateBranchCaseStep_DoesNotFire()
+    {
+        var source = BranchWorkflow(
+            lastCaseStepConfig: LoweredRetryConfig,
+            intermediateCaseStepConfig: ConfidenceGate);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("confidenceScore < 0.85")
+            .Because("an intermediate branch-case step's gate lowers into the generic completed handler");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("a configuration that lowers must not be reported as inert");
+    }
+
+    /// <summary>
+    /// A TERMINAL (<c>.Complete()</c>) case's last step does NOT fire: terminal cases are
+    /// excluded from the branch path-end dispatch, so that step also reaches the gating
+    /// generic completed handler.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_TerminalBranchCaseLastStep_DoesNotFire()
+    {
+        var source = TerminalBranchWorkflow(terminalCaseStepConfig: ConfidenceGate);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("confidenceScore < 0.85")
+            .Because("a terminal case's last step is not intercepted, so its gate lowers");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("a configuration that lowers must not be reported as inert");
+    }
+
+    /// <summary>
+    /// Confidence gating on an INTERMEDIATE (non-last) FORK-PATH step lowers into the generic
+    /// completed handler, so AGWF022 must not fire. This was one of the two false positives.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_IntermediateForkPathStep_DoesNotFire()
+    {
+        var source = ForkWorkflowWithIntermediatePathConfig(intermediateStepConfig: ConfidenceGate);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("confidenceScore < 0.85")
+            .Because("the intermediate fork-path step's gate reaches the generated saga");
+        await Assert.That(saga)
+            .Contains("StartHumanReviewCommand")
+            .Because("the OnLowConfidence handler chain is routed to from that gate");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("intermediate fork-path confidence lowers, so reporting it inert is a false positive");
+    }
+
+    /// <summary>
+    /// Confidence gating on an INTERMEDIATE (non-last) LOOP-BODY step lowers into the generic
+    /// completed handler, so AGWF022 must not fire. This was the other false positive.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_IntermediateLoopBodyStep_DoesNotFire()
+    {
+        var source = LoopWorkflowWithIntermediateBodyConfig(intermediateStepConfig: ConfidenceGate);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("confidenceScore < 0.85")
+            .Because("the intermediate loop-body step's gate reaches the generated saga");
+        await Assert.That(saga)
+            .Contains("StartHumanReviewCommand")
+            .Because("the OnLowConfidence handler chain is routed to from that gate");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("intermediate loop-body confidence lowers, so reporting it inert is a false positive");
+    }
+
+    /// <summary>
+    /// Conformant-negative: confidence gating on a fork path's LAST step is lowered into the
+    /// fork path-completed handler, so AGWF022 must not fire.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task Generator_ForkPathLastStepConfidenceLowered_DoesNotReportAgwf022()
     {
-        var source = ForkWorkflowWithPathConfig(
-            forkPathStepConfig: "step => step"
-                + ".RequireConfidence(0.85)"
-                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+        var source = ForkWorkflowWithPathConfig(forkPathStepConfig: ConfidenceGate);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
@@ -92,10 +203,7 @@ public sealed class DeclaredButInertTests
     [Test]
     public async Task Generator_StepConfigFieldLoweredForStepKind_DoesNotReportAgwf022()
     {
-        var source = TopLevelWorkflowWithStepConfig(
-            stepConfig: "step => step"
-                + ".RequireConfidence(0.85)"
-                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+        var source = TopLevelWorkflowWithStepConfig(stepConfig: ConfidenceGate);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
@@ -104,16 +212,33 @@ public sealed class DeclaredButInertTests
     }
 
     /// <summary>
-    /// Conformant-negative: a fork-path step that declares only LOWERED config (retry) and
-    /// no confidence gating must NOT fire AGWF022 (the diagnostic is scoped to the inert
-    /// config, not to all fork-path steps).
+    /// Conformant-negative: a branch-case last step that declares only LOWERED config (retry)
+    /// and no confidence gating must NOT fire AGWF022 — the diagnostic is scoped to the inert
+    /// config, not to every branch-case step.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_BranchCaseStepWithoutInertConfig_DoesNotReportAgwf022()
+    {
+        var source = BranchWorkflow(
+            lastCaseStepConfig: LoweredRetryConfig,
+            intermediateCaseStepConfig: LoweredRetryConfig);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("a branch-case step with only lowered (retry) config must not fire AGWF022");
+    }
+
+    /// <summary>
+    /// Conformant-negative: a fork-path step that declares only LOWERED config (retry) and no
+    /// confidence gating must NOT fire AGWF022.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task Generator_ForkPathStepWithoutInertConfig_DoesNotReportAgwf022()
     {
-        var source = ForkWorkflowWithPathConfig(
-            forkPathStepConfig: "step => step.WithRetry(2)");
+        var source = ForkWorkflowWithPathConfig(forkPathStepConfig: LoweredRetryConfig);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
@@ -122,45 +247,14 @@ public sealed class DeclaredButInertTests
     }
 
     /// <summary>
-    /// Verifies that confidence gating declared on an INTERMEDIATE (non-last) loop-body step —
-    /// a configuration the generator still does not lower for that position — fires AGWF022 at
-    /// the workflow attribute call site. Task 009 promoted the loop body to configured
-    /// <c>StepModel</c> records on <c>LoopModel.BodySteps</c>, so the config is now IN the IR
-    /// (previously it was dropped entirely and structurally undiagnosable — #145 gap B); this
-    /// diagnostic can now see it. Only a loop body's LAST step is lowered (DR-5 / #145 gap B).
-    /// </summary>
-    /// <returns>A task representing the asynchronous test.</returns>
-    [Test]
-    public async Task Generator_LoopBodyIntermediateStepConfig_ReportsAgwf022()
-    {
-        var source = LoopWorkflowWithIntermediateBodyConfig(
-            intermediateStepConfig: "step => step"
-                + ".RequireConfidence(0.85)"
-                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
-
-        var result = GeneratorTestHelper.RunGenerator(source);
-
-        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
-        await Assert.That(diagnostic).IsNotNull()
-            .Because("confidence gating on an intermediate loop-body step is inert and must surface as AGWF022");
-        await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
-        await Assert.That(diagnostic.GetMessage()).Contains("CritiqueStep");
-    }
-
-    /// <summary>
-    /// Conformant-negative: confidence gating declared on a loop body's LAST step (which IS
-    /// lowered into the loop completed handler — DR-5 / #145 gap B) must NOT fire AGWF022. This
-    /// is the flip that mirrors the fork path's last step: task 009 made the config visible in
-    /// the IR and this task lowers it, so the diagnostic must not fire.
+    /// Conformant-negative: confidence gating declared on a loop body's LAST step (lowered
+    /// into the loop completed handler) must NOT fire AGWF022.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task Generator_LoopBodyLastStepConfidenceLowered_DoesNotReportAgwf022()
     {
-        var source = LoopWorkflowWithLastBodyStepConfig(
-            lastStepConfig: "step => step"
-                + ".RequireConfidence(0.85)"
-                + ".OnLowConfidence(alt => alt.Then<HumanReview>())");
+        var source = LoopWorkflowWithLastBodyStepConfig(lastStepConfig: ConfidenceGate);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
@@ -171,6 +265,170 @@ public sealed class DeclaredButInertTests
     // =========================================================================
     // Source builder helpers
     // =========================================================================
+
+    /// <summary>
+    /// Builds a claim workflow whose first <c>Branch</c> case has TWO steps: an intermediate
+    /// <c>AssessDamage</c> and a terminating <c>PriceRepair</c>, each carrying the supplied
+    /// configure lambda. The case rejoins the main flow at <c>SettleClaim</c>, so it is
+    /// non-terminal and its last step is intercepted by the branch path-end handler.
+    /// </summary>
+    /// <param name="lastCaseStepConfig">The configure lambda for the case's LAST step.</param>
+    /// <param name="intermediateCaseStepConfig">The configure lambda for the case's INTERMEDIATE step.</param>
+    /// <returns>The workflow source text.</returns>
+    private static string BranchWorkflow(string lastCaseStepConfig, string intermediateCaseStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ClaimKind { Collision, Liability }
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public ClaimKind Kind { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessDamage : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public class PriceRepair : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public class AssessLiability : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("inert-branch-claim")]
+        public static partial class InertBranchClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("inert-branch-claim")
+                .StartWith<IntakeClaim>()
+                .Branch(state => state.Kind,
+                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path => path
+                        .Then<AssessDamage>({{intermediateCaseStepConfig}})
+                        .Then<PriceRepair>({{lastCaseStepConfig}})),
+                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// Builds the same claim workflow with the first case marked TERMINAL via
+    /// <c>Complete()</c>, so its last step is excluded from the branch path-end dispatch.
+    /// </summary>
+    /// <param name="terminalCaseStepConfig">The configure lambda for the terminal case's last step.</param>
+    /// <returns>The workflow source text.</returns>
+    private static string TerminalBranchWorkflow(string terminalCaseStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ClaimKind { Collision, Liability }
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public ClaimKind Kind { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class PriceRepair : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public class AssessLiability : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class HumanReview : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("terminal-branch-claim")]
+        public static partial class TerminalBranchClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("terminal-branch-claim")
+                .StartWith<IntakeClaim>()
+                .Branch(state => state.Kind,
+                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path =>
+                    {
+                        path.Then<PriceRepair>({{terminalCaseStepConfig}});
+                        path.Complete();
+                    }),
+                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
+                .Finally<SettleClaim>();
+        }
+        """;
 
     /// <summary>
     /// Builds a workflow whose <c>ForkedAssess</c> step lives on the first <c>Fork</c> path

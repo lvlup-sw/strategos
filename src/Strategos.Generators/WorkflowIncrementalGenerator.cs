@@ -886,7 +886,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, forkModels, loopModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, branchModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -995,15 +995,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
-    /// <param name="forkModels">The parsed fork models, used to detect declared-but-inert config on fork-path steps.</param>
-    /// <param name="loopModels">The parsed loop models, used to detect declared-but-inert config on intermediate loop-body steps.</param>
+    /// <param name="branchModels">The parsed branch models, used to detect declared-but-inert config on a branch case's last step.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
-        IReadOnlyList<ForkModel> forkModels,
-        IReadOnlyList<LoopModel> loopModels,
+        IReadOnlyList<BranchModel> branchModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -1067,64 +1065,63 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             }
         }
 
-        // DeclaredButInert (#143, G-6) — confidence gating on an INTERMEDIATE (non-last)
-        // fork-path step. Confidence on the LAST step of a fork path now lowers into the
-        // fork path-completed handler (DR-4 / #145 gap A), so it is NOT flagged. An
-        // intermediate fork-path step, however, still runs through the generic completed
-        // handler with no confidence gate: its configure lambda reaches the IR (so an
-        // out-of-range threshold still surfaces the ConfidenceThresholdOutOfRange code),
-        // but no confidence gate and no OnLowConfidence routing reach the generated saga.
-        // That variant remains deferred (v2.10.0 / DR-17, #134). Surface it so a deferred
-        // configuration cannot masquerade as working.
-        foreach (var fork in forkModels)
+        // DeclaredButInert (#145) — confidence gating on the LAST step of a non-terminal
+        // branch case. The configure lambda reaches the IR (so an out-of-range threshold still
+        // surfaces the ConfidenceThresholdOutOfRange code), but a non-terminal case's last step
+        // is intercepted by the branch path-end handler, which routes straight to the case's
+        // rejoin target and never reads the step's confidence — so neither the gate nor the
+        // OnLowConfidence routing reaches the generated saga.
+        //
+        // Scoped deliberately:
+        //   * An INTERMEDIATE branch-case step is NOT flagged. It falls through to the generic
+        //     completed handler, which gates on the step's confidence with no position test.
+        //   * A TERMINAL (.Complete()) case's last step is NOT flagged either — it is excluded
+        //     from the path-end dispatch table, so it also reaches the generic completed handler.
+        //   * Fork paths and loop bodies are NOT flagged at any position. Their intermediate
+        //     steps reach the same gating generic handler, and their last steps are lowered by
+        //     the fork path-completed and loop completed handlers respectively.
+        foreach (var branch in branchModels)
         {
-            foreach (var path in fork.Paths)
+            foreach (var branchCase in branch.Cases)
             {
-                for (var i = 0; i < path.Steps.Count; i++)
+                if (branchCase.IsTerminal || branchCase.StepNames.Count == 0)
                 {
-                    var isLastStepInPath = i == path.Steps.Count - 1;
-                    var forkStep = path.Steps[i];
-
-                    if (!isLastStepInPath && forkStep.Confidence is not null)
-                    {
-                        diagnostics.Add(Diagnostic.Create(
-                            WorkflowDiagnostics.DeclaredButInert,
-                            location,
-                            forkStep.EffectiveName,
-                            workflowName,
-                            "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate fork-path step"));
-                    }
+                    continue;
                 }
+
+                var lastStep = FindStepByPhaseName(stepModels, branchCase.LastStepName);
+                if (lastStep?.Confidence is null)
+                {
+                    continue;
+                }
+
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.DeclaredButInert,
+                    location,
+                    lastStep.EffectiveName,
+                    workflowName,
+                    "confidence gating (RequireConfidence/OnLowConfidence) on the last step of a branch case"));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds the parsed step model carrying the specified phase name.
+    /// </summary>
+    /// <param name="stepModels">The parsed step models to search.</param>
+    /// <param name="phaseName">The phase name to match.</param>
+    /// <returns>The matching step model, or null when the name is not in the step IR.</returns>
+    private static StepModel? FindStepByPhaseName(IReadOnlyList<StepModel> stepModels, string phaseName)
+    {
+        foreach (var step in stepModels)
+        {
+            if (string.Equals(step.PhaseName, phaseName, StringComparison.Ordinal))
+            {
+                return step;
             }
         }
 
-        // DeclaredButInert (#145 gap B) — confidence gating on an INTERMEDIATE (non-last)
-        // loop-body step. Confidence on the LAST step of a loop body now lowers into the loop
-        // completed handler (DR-5 / #145 gap B, mirroring the fork path-completed handler), so
-        // it is NOT flagged. An intermediate loop-body step's confidence lowering is deferred
-        // (v2.10.0 / DR-17, #145). Task 009 promoted the loop body to configured StepModel
-        // records on LoopModel.BodySteps, so — unlike before, when loop-body confidence was
-        // dropped from the IR entirely and was structurally undiagnosable — the config is now in
-        // the IR and this diagnostic can see it. Surface it so a deferred configuration cannot
-        // masquerade as working.
-        foreach (var loop in loopModels)
-        {
-            for (var i = 0; i < loop.BodySteps.Count; i++)
-            {
-                var isLastBodyStep = i == loop.BodySteps.Count - 1;
-                var bodyStep = loop.BodySteps[i];
-
-                if (!isLastBodyStep && bodyStep.Confidence is not null)
-                {
-                    diagnostics.Add(Diagnostic.Create(
-                        WorkflowDiagnostics.DeclaredButInert,
-                        location,
-                        bodyStep.EffectiveName,
-                        workflowName,
-                        "confidence gating (RequireConfidence/OnLowConfidence) on an intermediate loop-body step"));
-                }
-            }
-        }
+        return null;
     }
 
     private static Location GetAttributeLocation(GeneratorAttributeSyntaxContext context)
