@@ -105,6 +105,166 @@ public class TransitionGraphLoweringTests
         }
         """;
 
+    /// <summary>
+    /// An approval whose rejection chain and escalation chain each run two steps and each declare
+    /// their own completion, so both are appended to the step-name list after the workflow's
+    /// terminal and both must end in the completed phase rather than only in failure.
+    /// </summary>
+    private const string ApprovalWithTerminalChainsWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PayoutState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class AssessPayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ReleaseFunds : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ArchivePayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class RecordRefusal : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class NotifyBeneficiary : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class OpenDispute : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class AssignAdjudicator : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class PayoutOfficerApprover { }
+
+        [Workflow("review-payout")]
+        public static partial class ReviewPayoutWorkflow
+        {
+            public static WorkflowDefinition<PayoutState> Definition => Workflow<PayoutState>
+                .Create("review-payout")
+                .StartWith<AssessPayout>()
+                .AwaitApproval<PayoutOfficerApprover>(approval => approval
+                    .OnRejection(rejection => rejection
+                        .Then<RecordRefusal>()
+                        .Then<NotifyBeneficiary>()
+                        .Complete())
+                    .OnTimeout(escalation => escalation
+                        .Then<OpenDispute>()
+                        .Then<AssignAdjudicator>()
+                        .Complete()))
+                .Then<ReleaseFunds>()
+                .Finally<ArchivePayout>();
+        }
+        """;
+
+    /// <summary>
+    /// The same approval with a rejection chain that never declares its own completion, so the
+    /// chain rejoins the main flow instead of ending the workflow.
+    /// </summary>
+    private const string ApprovalWithResumingChainWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PayoutState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class AssessPayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ReleaseFunds : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ArchivePayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class RecordRefusal : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class NotifyBeneficiary : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class PayoutOfficerApprover { }
+
+        [Workflow("review-payout")]
+        public static partial class ReviewPayoutWorkflow
+        {
+            public static WorkflowDefinition<PayoutState> Definition => Workflow<PayoutState>
+                .Create("review-payout")
+                .StartWith<AssessPayout>()
+                .AwaitApproval<PayoutOfficerApprover>(approval => approval
+                    .OnRejection(rejection => rejection
+                        .Then<RecordRefusal>()
+                        .Then<NotifyBeneficiary>()))
+                .Then<ReleaseFunds>()
+                .Finally<ArchivePayout>();
+        }
+        """;
+
     // =============================================================================
     // A. Fork Graph Tests
     // =============================================================================
@@ -320,7 +480,66 @@ public class TransitionGraphLoweringTests
     }
 
     // =============================================================================
-    // D. Linear Workflow Regression
+    // D. Approval Graph Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a rejection or escalation chain which declared its own completion publishes
+    /// the edge to the completed phase from its last step, and chains within itself before that.
+    /// </summary>
+    /// <remarks>
+    /// A terminal approval path is not a terminal failure handler. A failure handler ends in
+    /// <c>Failed</c>, an edge every step already carries, so it claims no forward edge; an approval
+    /// path that declared its own completion ends in <c>Completed</c>, which nothing else supplies.
+    /// Publishing only the failure edge left the table forbidding the very transition the generated
+    /// saga performs at that step.
+    /// </remarks>
+    [Test]
+    public async Task ValidTransitions_TerminalApprovalPath_CompletesAtChainEnd()
+    {
+        // Arrange & Act
+        var source = EmitTransitions(ApprovalWithTerminalChainsWorkflow);
+
+        // Assert - each chain's last step completes the workflow
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.NotifyBeneficiary, [ReviewPayoutPhase.Completed, ReviewPayoutPhase.Failed]");
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.AssignAdjudicator, [ReviewPayoutPhase.Completed, ReviewPayoutPhase.Failed]");
+
+        // Assert - each chain chains within itself and never spills into its sibling
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.RecordRefusal, [ReviewPayoutPhase.NotifyBeneficiary, ReviewPayoutPhase.Failed]");
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.OpenDispute, [ReviewPayoutPhase.AssignAdjudicator, ReviewPayoutPhase.Failed]");
+        await Assert.That(source).DoesNotContain(
+            "ReviewPayoutPhase.NotifyBeneficiary, [ReviewPayoutPhase.OpenDispute");
+
+        // Assert - the main flow is untouched by the appended chains
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.AssessPayout, [ReviewPayoutPhase.ReleaseFunds, ReviewPayoutPhase.Failed]");
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.ArchivePayout, [ReviewPayoutPhase.Completed, ReviewPayoutPhase.Failed]");
+    }
+
+    /// <summary>
+    /// Verifies that a rejection chain which never declared its own completion rejoins the main
+    /// flow from its last step, at the step an approved decision resumes onto.
+    /// </summary>
+    [Test]
+    public async Task ValidTransitions_ResumingApprovalPath_RejoinsTheMainFlow()
+    {
+        // Arrange & Act
+        var source = EmitTransitions(ApprovalWithResumingChainWorkflow);
+
+        // Assert
+        await Assert.That(source).Contains(
+            "ReviewPayoutPhase.NotifyBeneficiary, [ReviewPayoutPhase.ReleaseFunds, ReviewPayoutPhase.Failed]");
+        await Assert.That(source).DoesNotContain(
+            "ReviewPayoutPhase.NotifyBeneficiary, [ReviewPayoutPhase.Completed");
+    }
+
+    // =============================================================================
+    // E. Linear Workflow Regression
     // =============================================================================
 
     /// <summary>

@@ -425,7 +425,13 @@ internal static class TransitionsEmitter
 
             if (isTerminal)
             {
-                MarkRouted(lastStepName);
+                // A rejection or escalation path that declared its own completion ends the
+                // workflow in Completed, not Failed. That is what separates it from a terminal
+                // failure handler, which ends in Failed — an edge every step already carries, so
+                // that one claims no forward edge. Omitting the edge here published a last step
+                // whose only successor was Failed while the saga set the completed phase, so the
+                // table forbade the transition the generated saga performs.
+                AddRouted(lastStepName, CompletedPhase);
                 return;
             }
 
