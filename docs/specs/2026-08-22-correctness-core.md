@@ -390,7 +390,9 @@ Remove the skip from the C#-authored fork twin and prove it equivalent to its im
 **Files:** `src/Strategos.Generators.Behavioral.Tests/RoundTripBehavioralTests.cs`
 **Tests:** `ForkJoinCSharpTwin_RunsIdentically_ToJsonImport` (existing, un-skipped)
 **Verification:** the twin passes with exact per-step counts **and** the ordering assertion from task 003; the skip attribute and its prose are removed together.
-**Dependencies:** 010, 003 · **Parallelizable:** No
+**Dependencies:** 010, 003, **#180** · **Parallelizable:** No
+
+> **BLOCKED at integration — and the blocker is not #155.** With the spine and fixtures branches integrated, the twin **passes in isolation (8.7s)** and alongside its sibling fork test (2/2). The C#-authoring ordering defect is fixed and proven on a real Wolverine + Marten host. It fails **only** in the four-test class run, deterministically (2 of 2 runs), on the **import** assertion at the 30s harness timeout — before the C# half is evaluated at all. That is shared-host interference, filed as **#180**. The twin's skip now names #180 and records the distinction. This task cannot close until #180 does; the fix it was written to verify is nonetheless done.
 
 ### Task 013: A build-time diagnostic for unreachable termination
 
