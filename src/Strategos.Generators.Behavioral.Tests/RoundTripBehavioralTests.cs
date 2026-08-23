@@ -105,23 +105,17 @@ public sealed class RoundTripBehavioralTests
     /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#155. The importable fork-join
     /// family requires proving a C# <c>.Fork(...).Join&lt;T&gt;().Finally&lt;TEnd&gt;()</c> twin lowers
     /// to a saga behaviorally identical to its exported-JSON import
-    /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>). The C# twin
-    /// (<c>AddRoundtripForkTwinWorkflow()</c>) compiles and registers, but does NOT run to completion
-    /// on the current generator: C#-authoring's <c>StepNames</c> extraction APPENDS the fork-path steps
-    /// AFTER the top-level terminal, so the terminal is not last and its completed handler chains back
-    /// to a fork-path step instead of calling <c>MarkCompleted()</c> (strategos#155). The JSON import
-    /// side is unaffected because the wire export lists the fork-path steps as top-level steps in
-    /// document order, so the terminal ends up last and terminates correctly.
+    /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>).
     /// </summary>
     /// <remarks>
-    /// This test lives in the suite (not just a code comment) so the equivalence claim is
-    /// machine-checked and will go GREEN automatically once strategos#155 lands the terminal-detection
-    /// fix — at which point the <see cref="SkipAttribute"/> is removed. Do NOT try to fix strategos#155
-    /// here; the maintainer decision is to ship the fork-join family with this machine-checked deferral.
+    /// Both authoring forms are checked against the same ordering oracle as well as exact per-step
+    /// counts. Counts alone are not sufficient: a saga that runs every step once but reaches its
+    /// terminal before the join satisfies every count assertion here, so the ordering oracle is what
+    /// makes this test able to fail on the property it exists to pin.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#155: fork-join terminal-detection ordering (C# .Fork().Join().Finally() twin does not complete)")]
+    [Skip("blocked on strategos#180: the JSON-import half times out in a full-class run. The C#-authoring ordering defect this test was written for is fixed — this test passes in isolation and alongside its sibling fork test; it fails only in the four-test class run, on the import assertion, before the C# half is reached.")]
     public async Task ForkJoinCSharpTwin_RunsIdentically_ToJsonImport()
     {
         this.host.Invocations.Reset();
