@@ -212,11 +212,21 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             nextStepName = successorWithinPath;
             isLastStep = false;
         }
+        else if (mainFlow.TryGetApprovalPathEndSuccessor(stepName, out var approvalResumeStepName))
+        {
+            // The last step of an approval's rejection or escalation chain. Unlike a fork path or
+            // a branch case, no dedicated path-end handler intercepts it — the approval component
+            // dispatches the chain's first step through the GENERIC start command, so the generic
+            // completed handler is the chain's only routing site. A chain that declared its own
+            // completion ends the workflow here; one that did not resumes the main flow where an
+            // approved decision would have.
+            nextStepName = approvalResumeStepName;
+            isLastStep = approvalResumeStepName is null;
+        }
         else
         {
-            // A path's last step, a failure-handler step or an approval rejection/escalation
-            // step. The construct that owns the step emits its completed handler, so there is
-            // no main-flow successor to resolve.
+            // A path's last step or a failure-handler step. The construct that owns the step emits
+            // its completed handler, so there is no main-flow successor to resolve.
             nextStepName = null;
             isLastStep = true;
         }

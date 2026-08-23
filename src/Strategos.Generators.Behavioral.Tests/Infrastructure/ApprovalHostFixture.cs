@@ -21,8 +21,9 @@ namespace Strategos.Generators.Behavioral.Tests.Infrastructure;
 /// <summary>
 /// Runtime host fixture for the C#-authored approval checkpoint. Stands up a real
 /// PostgreSQL container and a Wolverine + Marten host carrying the generated
-/// <c>AddCreditLimitReviewWorkflow()</c> registration, so an <c>AwaitApproval</c> can be
-/// driven end to end for the first time.
+/// <c>AddCreditLimitReviewWorkflow()</c> and <c>AddPurchaseRequisitionReviewWorkflow()</c>
+/// registrations, so an <c>AwaitApproval</c> can be driven end to end on both the approved
+/// and the rejected route.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,10 +33,16 @@ namespace Strategos.Generators.Behavioral.Tests.Infrastructure;
 /// and no saga is ever started.
 /// </para>
 /// <para>
-/// The approval decision itself is brokered by
-/// <see cref="CreditOfficerApprovalDecisionHandler"/>, registered here BY EXPLICIT TYPE
+/// Two workflows share the one host and the one container: the credit-limit review, whose
+/// broker approves, and the purchase-requisition review, whose broker refuses so the
+/// multi-step rejection chain is actually walked.
+/// </para>
+/// <para>
+/// The approval decisions themselves are brokered by
+/// <see cref="CreditOfficerApprovalDecisionHandler"/> and
+/// <see cref="PurchasingManagerApprovalDecisionHandler"/>, registered here BY EXPLICIT TYPE
 /// rather than by naming convention so nothing else in the assembly is drawn into
-/// handler discovery alongside it.
+/// handler discovery alongside them.
 /// </para>
 /// <para>
 /// Lifecycle is driven by TUnit via <see cref="IAsyncInitializer"/> /
@@ -80,11 +87,13 @@ public sealed class ApprovalHostFixture : IAsyncInitializer, IAsyncDisposable
                         .ApplyAllDatabaseChangesOnStartup();
 
                     opts.Services.AddCreditLimitReviewWorkflow();
+                    opts.Services.AddPurchaseRequisitionReviewWorkflow();
 
-                    // The broker that answers the saga's request-approval event. Registered
-                    // by explicit type so handler discovery pulls in this one class and
+                    // The brokers that answer each saga's request-approval event. Registered
+                    // by explicit type so handler discovery pulls in these two classes and
                     // nothing else from the test assembly.
                     opts.Discovery.IncludeType(typeof(CreditOfficerApprovalDecisionHandler));
+                    opts.Discovery.IncludeType(typeof(PurchasingManagerApprovalDecisionHandler));
 
                     opts.Services.AddSingleton(this.Invocations);
                     opts.Services.AddResourceSetupOnStartup();

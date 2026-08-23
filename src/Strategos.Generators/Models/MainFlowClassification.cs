@@ -39,18 +39,20 @@ internal sealed class MainFlowClassification
     private readonly WorkflowModel _model;
     private readonly HashSet<string> _offMainFlowStepNames;
     private readonly Dictionary<string, string> _successorWithinPath;
+    private readonly Dictionary<string, ApprovalPathEnd> _approvalPathEnds;
 
     private MainFlowClassification(WorkflowModel model)
     {
         _model = model;
         _offMainFlowStepNames = new HashSet<string>(StringComparer.Ordinal);
         _successorWithinPath = new Dictionary<string, string>(StringComparer.Ordinal);
+        _approvalPathEnds = new Dictionary<string, ApprovalPathEnd>(StringComparer.Ordinal);
 
         ClassifyForkPaths(model, _offMainFlowStepNames, _successorWithinPath);
         ClassifyBranchCases(model, _offMainFlowStepNames, _successorWithinPath);
         ClassifyLoopExitBranchCases(model, _offMainFlowStepNames, _successorWithinPath);
         ClassifyFailureHandlerSteps(model, _offMainFlowStepNames);
-        ClassifyApprovalSteps(model.ApprovalPoints, _offMainFlowStepNames);
+        ClassifyApprovalSteps(model.ApprovalPoints, _offMainFlowStepNames, _successorWithinPath, _approvalPathEnds);
         ClassifyConfidenceHandlerSteps(model, _offMainFlowStepNames);
     }
 
@@ -88,6 +90,38 @@ internal sealed class MainFlowClassification
     /// </returns>
     public bool TryGetSuccessorWithinPath(string stepName, out string successorStepName) =>
         _successorWithinPath.TryGetValue(stepName, out successorStepName!);
+
+    /// <summary>
+    /// Gets where an approval's rejection or escalation chain goes once its last step completes.
+    /// </summary>
+    /// <param name="stepName">The step phase name to resolve.</param>
+    /// <param name="successorStepName">
+    /// The main-flow step the chain resumes on, or null when the chain ends the workflow — either
+    /// because it declared its own completion or because the approval has no main-flow successor.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="stepName"/> is the last step of a rejection or
+    /// escalation chain; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <remarks>
+    /// Resolved on demand rather than during construction: the resume target is the next MAIN-FLOW
+    /// step after the approval's preceding step, and that is only answerable once every construct
+    /// has contributed to the off-main-flow set.
+    /// </remarks>
+    public bool TryGetApprovalPathEndSuccessor(string stepName, out string? successorStepName)
+    {
+        if (!_approvalPathEnds.TryGetValue(stepName, out var pathEnd))
+        {
+            successorStepName = null;
+            return false;
+        }
+
+        successorStepName = pathEnd.EndsWorkflow
+            ? null
+            : NextMainFlowStepNameAfter(pathEnd.ApprovalPrecedingStepName);
+
+        return true;
+    }
 
     /// <summary>
     /// Gets the next main-flow step after the entry at the specified index of the workflow's
@@ -262,11 +296,31 @@ internal sealed class MainFlowClassification
     /// Classifies every approval rejection and escalation step, including those of nested
     /// escalation approvals.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rejection or escalation chain is a path, so it carries in-path successors exactly as a
+    /// fork path or a branch case does. The approval component dispatches only the chain's FIRST
+    /// step, and it does so through the generic start command, which means the generic completed
+    /// handler is the live handler for every step of the chain — the one place a chain of more
+    /// than one step can advance. Without an in-path successor each step marks the saga completed,
+    /// so the chain truncates after its first step and the rest never run.
+    /// </para>
+    /// <para>
+    /// This is where approval chains differ from failure handlers, which are classified without
+    /// in-path successors just above. A failure handler mints its own command and event types and
+    /// chains them in its own component emitter, so the generic handlers over its step names are
+    /// inert and their adjacency is unobservable.
+    /// </para>
+    /// </remarks>
     /// <param name="approvals">The approval models to walk.</param>
     /// <param name="offMainFlow">The set being accumulated.</param>
+    /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="approvalPathEnds">The chain-end routing map being accumulated.</param>
     private static void ClassifyApprovalSteps(
         IReadOnlyList<ApprovalModel>? approvals,
-        HashSet<string> offMainFlow)
+        HashSet<string> offMainFlow,
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<string, ApprovalPathEnd> approvalPathEnds)
     {
         if (approvals is null)
         {
@@ -275,24 +329,62 @@ internal sealed class MainFlowClassification
 
         foreach (var approval in approvals)
         {
-            if (approval.RejectionSteps is not null)
-            {
-                foreach (var step in approval.RejectionSteps)
-                {
-                    offMainFlow.Add(step.StepName);
-                }
-            }
+            ClassifyApprovalPath(
+                approval.RejectionSteps,
+                approval.IsRejectionTerminal,
+                approval.PrecedingStepName,
+                offMainFlow,
+                successorWithinPath,
+                approvalPathEnds);
 
-            if (approval.EscalationSteps is not null)
-            {
-                foreach (var step in approval.EscalationSteps)
-                {
-                    offMainFlow.Add(step.StepName);
-                }
-            }
+            ClassifyApprovalPath(
+                approval.EscalationSteps,
+                approval.IsEscalationTerminal,
+                approval.PrecedingStepName,
+                offMainFlow,
+                successorWithinPath,
+                approvalPathEnds);
 
-            ClassifyApprovalSteps(approval.NestedEscalationApprovals, offMainFlow);
+            ClassifyApprovalSteps(
+                approval.NestedEscalationApprovals,
+                offMainFlow,
+                successorWithinPath,
+                approvalPathEnds);
         }
+    }
+
+    /// <summary>
+    /// Classifies one approval rejection or escalation chain and records where its last step goes.
+    /// </summary>
+    /// <param name="pathSteps">The ordered steps of the chain, or null when none are declared.</param>
+    /// <param name="endsWorkflow">Whether the chain declared that it ends the workflow.</param>
+    /// <param name="approvalPrecedingStepName">The step the approval checkpoint follows.</param>
+    /// <param name="offMainFlow">The set being accumulated.</param>
+    /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="approvalPathEnds">The chain-end routing map being accumulated.</param>
+    private static void ClassifyApprovalPath(
+        IReadOnlyList<StepModel>? pathSteps,
+        bool endsWorkflow,
+        string approvalPrecedingStepName,
+        HashSet<string> offMainFlow,
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<string, ApprovalPathEnd> approvalPathEnds)
+    {
+        if (pathSteps is null || pathSteps.Count == 0)
+        {
+            return;
+        }
+
+        var pathStepNames = new List<string>(pathSteps.Count);
+        foreach (var step in pathSteps)
+        {
+            pathStepNames.Add(step.StepName);
+        }
+
+        ClassifyPath(pathStepNames, offMainFlow, successorWithinPath);
+
+        approvalPathEnds[pathStepNames[pathStepNames.Count - 1]] =
+            new ApprovalPathEnd(endsWorkflow, approvalPrecedingStepName);
     }
 
     /// <summary>
@@ -340,4 +432,16 @@ internal sealed class MainFlowClassification
             }
         }
     }
+
+    /// <summary>
+    /// Where an approval's rejection or escalation chain goes once its last step completes.
+    /// </summary>
+    /// <param name="EndsWorkflow">
+    /// Whether the chain declared that it ends the workflow rather than resuming the main flow.
+    /// </param>
+    /// <param name="ApprovalPrecedingStepName">
+    /// The step the approval checkpoint follows; a resuming chain rejoins the main flow at the
+    /// next main-flow step after it, which is the same target an approved decision resumes onto.
+    /// </param>
+    private readonly record struct ApprovalPathEnd(bool EndsWorkflow, string ApprovalPrecedingStepName);
 }
