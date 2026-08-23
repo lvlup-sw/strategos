@@ -1,7 +1,7 @@
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
-/// MCP 2025-11-25 tool annotations. Booleans are hints to the client about
+/// MCP 2026-07-28 tool annotations. Booleans are hints to the client about
 /// the tool's behavior so the client can gate auto-approval, batching, and
 /// caching decisions.
 /// </summary>

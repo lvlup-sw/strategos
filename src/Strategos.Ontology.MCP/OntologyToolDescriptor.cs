@@ -4,7 +4,7 @@ namespace Strategos.Ontology.MCP;
 
 /// <summary>
 /// Describes an MCP tool exposed by the ontology layer. Aligned with the
-/// MCP 2025-11-25 tool descriptor shape (Title / OutputSchema / Annotations
+/// MCP 2026-07-28 tool descriptor shape (Title / OutputSchema / Annotations
 /// supplement the legacy Name+Description pair).
 /// </summary>
 public sealed record OntologyToolDescriptor(
