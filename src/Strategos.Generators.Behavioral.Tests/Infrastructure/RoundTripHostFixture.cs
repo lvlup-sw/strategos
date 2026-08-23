@@ -53,6 +53,16 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     public IServiceProvider Services => this.RequireHost().Services;
 
     /// <summary>
+    /// Gets the connection string of the fixture's Postgres container, so a test can read the raw
+    /// <c>mt_doc_*</c> row a saga was persisted as.
+    /// </summary>
+    /// <remarks>
+    /// Reading through Marten would deserialize the document and hide the stored representation,
+    /// which is exactly what a persistence-shape assertion has to see.
+    /// </remarks>
+    public string ConnectionString => this.postgres.ConnectionString;
+
+    /// <summary>
     /// Starts the Postgres container, then the Wolverine host with Marten-backed saga storage and the
     /// round-trip workflow registrations (config import + twin, fork import).
     /// </summary>
