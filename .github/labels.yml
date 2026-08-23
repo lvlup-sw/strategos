@@ -43,6 +43,10 @@
   color: "bfd4f2"
   description: "Infrastructure and utilities"
 
+- name: "scope:ontology"
+  color: "d4c5f9"
+  description: "Ontology / knowledge layer (Strategos.Ontology*)"
+
 # Status Labels
 - name: "status:triage"
   color: "ededed"
