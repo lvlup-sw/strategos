@@ -236,10 +236,19 @@ public class SagaEmissionContextTests
     }
 
     /// <summary>
-    /// Verifies that terminal branch cases are not included in path info.
+    /// Verifies that a workflow-ending branch case is included in path info even when a sibling
+    /// case gives the branch a convergence point.
     /// </summary>
+    /// <remarks>
+    /// This lookup is the only live route into the path-end handler when the workflow is authored in
+    /// C#. Excluding an ending case leaves its last step to the ordinary step handler, where
+    /// terminality is decided by position in the step list rather than by the case's declaration —
+    /// so the ending is right only by accident, and stops being right as soon as the list order
+    /// changes. The mixed shape is asserted because it is the one an exclusion filter keyed on
+    /// terminality would drop while a rejoining sibling keeps the branch-level flag true (#175).
+    /// </remarks>
     [Test]
-    public async Task Create_ModelWithTerminalBranch_ExcludesFromPathInfo()
+    public async Task Create_ModelWithTerminalBranch_IncludesInPathInfo()
     {
         // Arrange
         var terminalCase = BranchCaseModel.Create(
@@ -247,6 +256,11 @@ public class SagaEmissionContextTests
             branchPathPrefix: "Rejected",
             stepNames: ["Rejected_Handle"],
             isTerminal: true);
+        var rejoiningCase = BranchCaseModel.Create(
+            caseValueLiteral: "OrderStatus.Approved",
+            branchPathPrefix: "Approved",
+            stepNames: ["Approved_Process"],
+            isTerminal: false);
         var branch = BranchModel.Create(
             branchId: "Status",
             previousStepName: "Validate",
@@ -254,15 +268,18 @@ public class SagaEmissionContextTests
             discriminatorTypeName: "OrderStatus",
             isEnumDiscriminator: true,
             isMethodDiscriminator: false,
-            rejoinStepName: null,
-            cases: [terminalCase]);
+            rejoinStepName: "Finalize",
+            cases: [rejoiningCase, terminalCase]);
         var model = CreateMinimalModel(branches: [branch]);
 
         // Act
         var context = SagaEmissionContext.Create(model);
 
         // Assert
-        await Assert.That(context.BranchPathInfo.ContainsKey("Rejected_Handle")).IsFalse();
+        await Assert.That(context.BranchPathInfo.ContainsKey("Rejected_Handle")).IsTrue();
+        await Assert.That(context.BranchPathInfo["Rejected_Handle"].Case.IsTerminal).IsTrue();
+        await Assert.That(context.BranchPathInfo.ContainsKey("Approved_Process")).IsTrue();
+        await Assert.That(context.BranchPathInfo["Approved_Process"].Case.IsTerminal).IsFalse();
     }
 
     // ====================================================================

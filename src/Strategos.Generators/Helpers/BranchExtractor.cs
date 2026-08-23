@@ -41,10 +41,6 @@ internal static class BranchExtractor
             return [];
         }
 
-        // Get all step names in order for determining previous/rejoin steps
-        var stepInfos = StepExtractor.ExtractStepInfos(context);
-        var stepNames = stepInfos.Select(s => s.PhaseName).ToList();
-
         var branches = new List<BranchModel>();
         var branchIndex = 0;
 
@@ -52,7 +48,7 @@ internal static class BranchExtractor
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            if (TryParseBranch(branchInvocation, context.SemanticModel, context.WorkflowName ?? string.Empty, branchIndex, stepNames, out var branchModel, context.CancellationToken))
+            if (TryParseBranch(branchInvocation, context.SemanticModel, context.WorkflowName ?? string.Empty, branchIndex, out var branchModel, context.CancellationToken))
             {
                 branches.Add(branchModel);
                 branchIndex++;
@@ -182,7 +178,6 @@ internal static class BranchExtractor
         SemanticModel semanticModel,
         string workflowName,
         int branchIndex,
-        List<string> stepNames,
         out BranchModel branchModel,
         CancellationToken cancellationToken)
     {
@@ -212,7 +207,7 @@ internal static class BranchExtractor
         var previousStepName = FindPreviousStepName(invocation, semanticModel);
 
         // Find rejoin step (step after this branch in the chain)
-        var rejoinStepName = FindRejoinStepName(invocation, semanticModel, stepNames);
+        var rejoinStepName = FindRejoinStepName(invocation, semanticModel);
 
         // Determine the loop prefix for this branch (if inside a loop)
         // Branch case steps need the same prefix as the branch's previous/rejoin steps
@@ -465,8 +460,7 @@ internal static class BranchExtractor
 
     private static string? FindRejoinStepName(
         InvocationExpressionSyntax branchInvocation,
-        SemanticModel semanticModel,
-        List<string> stepNames)
+        SemanticModel semanticModel)
     {
         // Determine if this branch is inside a loop and get the loop prefix
         var loopPrefix = DetermineLoopPrefix(branchInvocation);

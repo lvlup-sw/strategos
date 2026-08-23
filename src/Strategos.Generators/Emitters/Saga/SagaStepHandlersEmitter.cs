@@ -124,14 +124,21 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                         }
 
                         var isLastStepInBranchCase = i == branchCase.StepNames.Count - 1;
+                        var endsWorkflowHere = branchCase.IsTerminal && isLastStepInBranchCase;
+
+                        // A case that declared .Complete() has no successor at its last step, so the
+                        // branch-level convergence point is not its next step (#175).
+                        var nextStepName = isLastStepInBranchCase
+                            ? (endsWorkflowHere ? null : branch.RejoinStepName)
+                            : branchCase.StepNames[i + 1];
 
                         // Emit StartStep handler
                         sb.AppendLine();
                         var branchHandlerContext = new HandlerContext(
                             StepIndex: i,
                             IsLastStep: false, // Not last in overall workflow
-                            IsTerminalStep: branchCase.IsTerminal && isLastStepInBranchCase,
-                            NextStepName: isLastStepInBranchCase ? branch.RejoinStepName : branchCase.StepNames[i + 1],
+                            IsTerminalStep: endsWorkflowHere,
+                            NextStepName: nextStepName,
                             StepModel: null,
                             LoopsAtStep: null,
                             BranchAtStep: null,
