@@ -43,6 +43,16 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     public WorkflowInvocationLog Invocations { get; } = new();
 
     /// <summary>
+    /// Gets the running host's service provider, so a test can assert that a workflow's generated
+    /// registration actually took effect without executing the workflow.
+    /// </summary>
+    /// <remarks>
+    /// A workflow that does not terminate cannot be proven registered by running it, so the step
+    /// types the generated <c>Add{Name}Workflow()</c> registers are resolved directly instead.
+    /// </remarks>
+    public IServiceProvider Services => this.RequireHost().Services;
+
+    /// <summary>
     /// Starts the Postgres container, then the Wolverine host with Marten-backed saga storage and the
     /// round-trip workflow registrations (config import + twin, fork import).
     /// </summary>
@@ -73,6 +83,15 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddRoundtripConfigImportWorkflow();
                 opts.Services.AddRoundtripConfigTwinWorkflow();
                 opts.Services.AddRoundtripOnFailureImportWorkflow();
+
+                // The two C#-authored Branch shapes, registered on THIS host rather than a second
+                // Postgres container: one whose cases both rejoin a declared terminal, and one
+                // mixing a rejoining case with a workflow-ending .Complete() case. Neither runs to
+                // completion on the current generator — the terminal cascades back into a branch
+                // path and the workflow cycles (#175) — so the behavioral proofs are skipped, but
+                // registering them here keeps the shapes compiled and resolvable.
+                opts.Services.AddRoundtripBranchWorkflow();
+                opts.Services.AddTerminalBranchWorkflow();
 
                 // A handled command that starts nothing, so the harness's own completion oracle
                 // can be exercised against a run that demonstrably did no work. Registered by
