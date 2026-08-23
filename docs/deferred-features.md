@@ -52,32 +52,40 @@ This document catalogs all features from the Strategos design specification that
 > - **Parity guard** (`StepConfigParityTests`, `Strategos.Generators.Tests/Parity/`): reflects
 >   the full `IStepConfiguration<TState>` surface + the `StepConfigurationDefinition` IR
 >   fields and fails the build if any member is not classified as either **Lowered** (with a
->   named behavioral compile-run-saga test) or **Deferred** (with a tracking issue). Adding a
+>   named behavioral compile-run-saga test that actually runs) or **Deferred**. Adding a
 >   new config member forces the author to point it at a behavioral proof or file a deferral.
+>   A deferral costs more than an issue number: the entry must also name the compile-time
+>   diagnostic it relies on to stay visible **and** the workflow source that triggers it, and
+>   the guard runs that source through the generator and requires the diagnostic to fire.
+>   Checking only for a positive issue number is what let four provably-false entries stand.
 > - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
 >   concern the generator does **not** lower for that step's kind, so it silently has no
->   effect. The guarded cases are **confidence gating (`RequireConfidence`/`OnLowConfidence`)
->   on an INTERMEDIATE (non-last) step of a `Fork` path OR a `RepeatUntil` loop body** — the
->   parse threads the configure lambda into the IR (so an out-of-range threshold still surfaces
->   the threshold-range code), but the saga emitter lowers confidence routing only for the
->   construct's LAST step (the fork path-completed handler, DR-4 / #145 gap A; the loop completed
->   handler, DR-5 / #145 gap B). The intermediate variant is **deferred to v2.10.0 / DR-17
->   (#145)**; until then the diagnostic prevents the inert configuration from masquerading as
->   working. (Surfacing 6.1's backfill also fixed two real top-level `ValidateState` lowering
->   gaps — configure-lambda validation was dropped for top-level/loop steps, and the predicate
->   parameter had to be named literally `state` to compile.)
+>   effect. The guarded case is **confidence gating (`RequireConfidence`/`OnLowConfidence`)
+>   on the LAST step of a non-terminal `Branch` case** — the parse threads the configure lambda
+>   into the IR (so an out-of-range threshold still surfaces the threshold-range code), but that
+>   step is intercepted by the branch path-end handler, which routes straight to the case's
+>   rejoin target and never reads the step's confidence. (Surfacing 6.1's backfill also fixed
+>   two real top-level `ValidateState` lowering gaps — configure-lambda validation was dropped
+>   for top-level/loop steps, and the predicate parameter had to be named literally `state` to
+>   compile.)
 >
->   **Scope boundary (updated — #145 gap B, loop-body confidence lowering).** A loop body's
->   **LAST step** now lowers its confidence gate into the generated **loop completed handler**
->   (DR-5, mirroring the fork path-completed handler): the handler compares the completed event's
->   confidence to the threshold BEFORE the loop-condition checks and, when below, routes to the
->   `OnLowConfidence` handler chain instead of continuing/exiting the loop. Proven behaviorally
->   (`NestedRepeatUntilConfidenceTests`, real host). Confidence on an **INTERMEDIATE (non-last)**
->   loop-body step remains **deferred to v2.10.0 / DR-17 (#145)** and is now **AGWF022-guarded**:
->   promoting the loop body to configured `StepModel` records on `LoopModel.BodySteps` (#145)
->   brought loop-body config into the IR, so the previously **structurally-undiagnosable** class
->   is eliminated — an intermediate loop-body confidence declaration now surfaces the
->   declared-but-inert warning instead of being silently dropped.
+>   **Scope boundary (corrected — #145).** Confidence gating on an **INTERMEDIATE (non-last)**
+>   step of a `Fork` path or a `RepeatUntil` loop body is **lowered**, and was lowered the whole
+>   time this document said otherwise. The claim came from reading the two path-end handlers,
+>   which do carry their own gates; an intermediate step never reaches them. It falls through to
+>   the **generic completed handler**, whose gate applies **no position test**, so a
+>   below-threshold result routes to the declared `OnLowConfidence` handler exactly as a
+>   top-level step's does. Proven on a real host by `IntermediateConfidenceBehaviorTests`
+>   (one fork-path-intermediate run, one loop-body-intermediate run), and the four
+>   corresponding parity entries moved `Deferred` → `Lowered` against those runs.
+>   AGWF022 was **retargeted, not retired** — its id is never reused — at the branch-case
+>   last-step shape above, which is genuinely inert.
+>
+>   A loop body's **LAST step** lowers its confidence gate into the generated **loop completed
+>   handler** (mirroring the fork path-completed handler): the handler compares the completed
+>   event's confidence to the threshold BEFORE the loop-condition checks and, when below, routes
+>   to the `OnLowConfidence` handler chain instead of continuing/exiting the loop. Proven
+>   behaviorally (`NestedRepeatUntilConfidenceTests`, real host).
 
 **Total Deferred Features:** 8
 **Deferral Categories:**
