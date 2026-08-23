@@ -225,7 +225,13 @@ Rejected for this slice. #163 ships inert (zero `op`/`interface`/`extern dec` in
 
 **Repo conventions binding every task:** the TUnit runner is `cd src && dotnet test <proj> -- --treenode-filter "/*/*/*/MethodName"` (a bare `--filter` does not work here) and assertions are `await`ed; a process-wide static asserted by a test needs `[NotInParallel]` plus a reset hook, not per-test reset alone; every new hand-written public/internal record joins the owning project's sealed-type guard (emitted `Generated/` records are auto-covered by `EmitterShapeTests`); public-surface changes update `PublicAPI.Unshipped.txt` in the same task (note `Strategos.Generators` has no such file, and generated saga code is not tracked there); new diagnostic ids are monotonic via `AgwfCatalog.tsp` regeneration, and hand-edits to `schemas/` or `Generated/` are CI-rejected.
 
-**Two conventions specific to this slice.** Tasks 002, 003, 007, 008, 012, 016, 017, 020 and 023 require a running Docker daemon — `PostgresFixture.InitializeAsync` calls `StartAsync()` unconditionally and *fails* rather than skipping, so verify the socket before dispatching them. And **`CHANGELOG.md` is owned exclusively by the integration step: no task edits it**, and task 032 writes the entry at the end. This repo's `weave` merge driver structurally mangles files two branches both edited, and four tracks would otherwise touch it.
+**Two conventions specific to this slice.** Tasks 002, 003, 007, 008, 012, 016, 017, 020 and 023 require a running Docker daemon — `PostgresFixture.InitializeAsync` calls `StartAsync()` unconditionally and *fails* rather than skipping, so verify the socket before dispatching them.
+> **Verified working on this machine 2026-08-22** with podman 4.9.3 standing in for Docker. `DOCKER_HOST` is unset by default and `/var/run/docker.sock` points at the *rootful* socket, which is not running — so Testcontainers needs the rootless socket named explicitly:
+> ```
+> export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
+> export TESTCONTAINERS_RYUK_DISABLED=true
+> ```
+> With those two set, `PostgresFixtureSmokeTests` passes in ~3.5s. Without them the whole behavioral suite fails in a way indistinguishable from a real regression, which is exactly the DR-5 hazard. And **`CHANGELOG.md` is owned exclusively by the integration step: no task edits it**, and task 032 writes the entry at the end. This repo's `weave` merge driver structurally mangles files two branches both edited, and four tracks would otherwise touch it.
 
 ### Traceability matrix (DR-N → tasks)
 
