@@ -17,18 +17,25 @@ namespace Strategos.Generators.Behavioral.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The proofs that exercise a REJOINING case are skipped pending #175. On the current generator such
-/// a workflow does not terminate: the declared terminal's completed handler cascades back into the
-/// branch-path step, which rejoins at the terminal, so the workflow laps indefinitely and the Marten
-/// saga document is never deleted. Measured, this is not a subtle stall — a single run recorded over
-/// 45,000 step invocations in 30 seconds and was still going. The runaway saga also outlives the test
-/// that started it, polluting the shared invocation log for the rest of the session, which is the
-/// second reason those proofs stay skipped until the fix lands.
+/// The proofs that exercise a REJOINING case were skipped while #175 was open. The workflow did not
+/// terminate: the declared terminal's completed handler cascaded back into the branch-path step,
+/// which rejoined at the terminal, so it lapped indefinitely and the Marten saga document was never
+/// deleted. Measured, that was not a subtle stall — a single run recorded over 45,000 step
+/// invocations in 30 seconds and was still going, and the runaway saga outlived the test that
+/// started it, polluting the shared invocation log for the rest of the session.
 /// </para>
 /// <para>
-/// The <c>.Complete()</c> case is NOT blocked and runs today, because a rejected order never enters
-/// the cycle. It completes at its own last step, which is the behavior the fix must preserve — so it
-/// is a live regression guard rather than a deferred proof.
+/// What closed that cycle was the off-main-flow classification, not the branch emitter: once a
+/// branch case's steps stop being main-flow successors, the declared terminal has no successor to
+/// chain into and marks the saga completed. These three proofs were therefore already green before
+/// the branch emitter learned to read the case, so they are coverage for the cascade, not evidence
+/// for the case-level decision. That evidence is
+/// <see cref="Saga_TerminalBranchCase_CompletesAtCaseEnd"/>.
+/// </para>
+/// <para>
+/// The <c>.Complete()</c> case was never blocked, because a rejected order never entered the cycle.
+/// It completes at its own last step, which is the behavior the fix had to preserve — so it is a
+/// live regression guard rather than a deferred proof.
 /// </para>
 /// <para>
 /// Every assertion below is stated as an exact per-step count for that reason. Absence of the saga
@@ -66,9 +73,9 @@ public sealed class BranchBehaviorTests
     /// generated registrations add are resolvable from the running host's container.
     /// </summary>
     /// <remarks>
-    /// This runs today. It proves the fixtures compile, lower to a saga, and register on the
-    /// EXISTING host rather than a second Postgres container — without executing a workflow that
-    /// would not terminate.
+    /// It proves the fixtures compile, lower to a saga, and register on the EXISTING host rather
+    /// than a second Postgres container, without executing a workflow at all — so a registration
+    /// break stays distinguishable from an execution break.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -101,13 +108,12 @@ public sealed class BranchBehaviorTests
     /// and its declared terminal EXACTLY once.
     /// </summary>
     /// <remarks>
-    /// The terminal's count is the assertion that fails against the live defect. Today the terminal
-    /// cascades back into a branch path that rejoins at the terminal, so it runs on every lap of an
-    /// unbounded cycle — many times, not once.
+    /// The terminal's count is the assertion that fails against the defect. When the terminal
+    /// cascaded back into a branch path that rejoins at the terminal, it ran on every lap of an
+    /// unbounded cycle — many times, not once, which no boolean on the run can express.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#175: a C#-authored Branch whose case rejoins does not terminate — the declared terminal cascades back into the branch path, which rejoins at the terminal, so the workflow laps forever and the saga document is never deleted. Un-skipping before the fix saturates the shared host: the runaway saga keeps cycling after the test ends and corrupts every later test's counts")]
     public async Task Saga_BranchWorkflow_CompletesWithTerminalRunningExactlyOnce()
     {
         this.host.Invocations.Reset();
@@ -147,7 +153,6 @@ public sealed class BranchBehaviorTests
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#175: a C#-authored Branch whose case rejoins does not terminate — the declared terminal cascades back into the branch path, which rejoins at the terminal, so the workflow laps forever and the saga document is never deleted. Un-skipping before the fix saturates the shared host: the runaway saga keeps cycling after the test ends and corrupts every later test's counts")]
     public async Task Saga_BranchWorkflow_RunsUntakenPathZeroTimes()
     {
         this.host.Invocations.Reset();
@@ -182,19 +187,19 @@ public sealed class BranchBehaviorTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the discriminating case, and it runs today. Because the sibling case rejoins, the
-    /// branch-level rejoin flag is true for this workflow, so an emitter that decides a path's
-    /// ending from that flag alone routes the rejecting case to the declared terminal too —
-    /// shipping an order that was rejected. Only a branch mixing both exits can catch that; a
-    /// branch whose cases all exit the same way passes either way.
+    /// This is the discriminating case. Because the sibling case rejoins, the branch-level rejoin
+    /// flag is true for this workflow, so an emitter that decides a path's ending from that flag
+    /// alone routes the rejecting case to the declared terminal too — shipping an order that was
+    /// rejected. Only a branch mixing both exits can catch that; a branch whose cases all exit the
+    /// same way passes either way.
     /// </para>
     /// <para>
-    /// It passes on the UNFIXED generator, but for a fragile reason worth stating: the terminal
-    /// case's last step is excluded from the branch-path dispatch table, so it falls through to the
-    /// ordinary step handler and is treated as terminal only because it happens to sit last in the
-    /// emitted step list. Nothing about the case's own declaration is consulted. A fix that starts
-    /// routing terminal cases through the branch-path handler must keep this green while reading
-    /// the case, not the branch.
+    /// It also passed on the UNFIXED generator, for a fragile reason worth stating: the terminal
+    /// case's last step was excluded from the branch-path dispatch table, so it fell through to the
+    /// ordinary step handler and was treated as terminal only because it happened to sit last in
+    /// the emitted step list. Nothing about the case's own declaration was consulted. Admitting
+    /// terminal cases to that table without also reading the case turns this red, which is what
+    /// makes it a live guard rather than a restatement of the fix.
     /// </para>
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
@@ -239,7 +244,6 @@ public sealed class BranchBehaviorTests
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#175: a C#-authored Branch whose case rejoins does not terminate — the declared terminal cascades back into the branch path, which rejoins at the terminal, so the workflow laps forever and the saga document is never deleted. Un-skipping before the fix saturates the shared host: the runaway saga keeps cycling after the test ends and corrupts every later test's counts")]
     public async Task Saga_TerminalBranchRejoiningCase_ReachesDeclaredTerminal()
     {
         this.host.Invocations.Reset();
