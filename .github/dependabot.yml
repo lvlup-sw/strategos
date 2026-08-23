@@ -1,0 +1,31 @@
+# =============================================================================
+# Dependabot — GitHub Actions version updates
+# =============================================================================
+# This repository consumes the org reusable workflows at a pinned tag
+# (lvlup-sw/.github/.github/workflows/*.yml@v1) instead of a moving branch. A
+# tag with nothing watching it goes stale silently, which is a worse steady
+# state than the branch it replaced — so Dependabot owns the bumps. It covers
+# both ordinary action refs and the reusable-workflow `uses:` refs in ci.yml.
+#
+# Renovate does not compete for these. The org preset this repo extends
+# (local>lvlup-sw/.github:renovate.json) sets its `github-actions` manager to
+# disabled, recording that Actions pins belong to Dependabot. Renovate keeps
+# the .NET package graph and lock-file maintenance.
+#
+# `directory` must be "/". GitHub reads that as "scan .github/workflows";
+# spelling the path out as "/.github/workflows" does not work.
+# =============================================================================
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    commit-message:
+      prefix: "ci"
+    # One grouped PR per run keeps action-bump noise low.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
