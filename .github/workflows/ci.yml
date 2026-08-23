@@ -8,7 +8,12 @@ on:
 
 jobs:
   build-test:
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@main
+    # Org reusable workflows are pinned to the v1 tag, which resolved to
+    # c10269573359bc91ff59fe5e9cb8090bbc6cb87a when this pin was set. A tag is
+    # movable, so the SHA is recorded here to make that visible; the workflows
+    # themselves SHA-pin their internal composite actions, so the action graph
+    # under this ref is fixed.
+    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@v1
     with:
       solution-path: 'src/strategos.sln'
       test-project-patterns: |
@@ -141,7 +146,8 @@ jobs:
   coverage-gate:
     needs: build-test
     if: github.event_name == 'pull_request'
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@main
+    # v1 -> c10269573359bc91ff59fe5e9cb8090bbc6cb87a at pin time.
+    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@v1
     permissions:
       pull-requests: write
     with:
@@ -150,7 +156,8 @@ jobs:
   update-baseline:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
+    # v1 -> c10269573359bc91ff59fe5e9cb8090bbc6cb87a at pin time.
+    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@v1
 
   quality-gates:
     # T-023 / DR-7, DR-10, DR-11 grep gates. Pure shell — no .NET needed,
