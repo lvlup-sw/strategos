@@ -678,8 +678,208 @@ public class StepExtractorContextTests
     }
 
     // =============================================================================
+    // G. Instance-Named Fork-Path Cardinality Oracle
+    // =============================================================================
+    //
+    // Fork-path steps reach the workflow's step-name list twice over: the step-info walker
+    // records them, and the generator appends each fork path's own step names past a dedupe
+    // set. The two must name the same thing or the append is not a no-op. Stripping the
+    // instance name from one side made the fork path's list TYPE-named while the walker's
+    // entry stayed INSTANCE-named, so the type name got past the dedupe and every
+    // instance-named fork-path step gained a twin: a second phase, a second start command
+    // and a second completed handler over the same event type — CS0111 in the consuming
+    // compilation — with the fork dispatching the twin's start command while the phase
+    // transition sat on the walker's.
+    //
+    // This oracle is at the generator tier because the twin does not exist at the parse
+    // tier: it is created by the append, not by either walker.
+
+    /// <summary>
+    /// A fork whose first path step is instance-named — the shape that grew a type-named twin.
+    /// </summary>
+    private const string InstanceNamedForkPathWorkflow = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessDamage : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class ReviewCoverage : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AggregateClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("named-fork-claim")]
+        public static partial class NamedForkClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("named-fork-claim")
+                .StartWith<IntakeClaim>()
+                .Fork(
+                    path => path.Then<AssessDamage>("PrimaryAssessment"),
+                    path => path.Then<ReviewCoverage>())
+                .Join<AggregateClaim>()
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// An instance-named fork-path step contributes ONE phase, not two: the step's instance
+    /// name, with no type-named twin alongside it.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepNames_InstanceNamedForkPathStep_HasNoTypeNamedTwin()
+    {
+        var result = GeneratorTestHelper.RunGenerator(InstanceNamedForkPathWorkflow);
+        var phase = GeneratorTestHelper.GetGeneratedSource(result, "Phase.g.cs");
+
+        await Assert.That(phase)
+            .Contains("    PrimaryAssessment,")
+            .Because("the fork-path step phases on the instance name the author gave it");
+
+        await Assert.That(phase)
+            .DoesNotContain("    AssessDamage,")
+            .Because(
+                "the step type name must not appear as a SECOND phase alongside the instance "
+                + "name — that twin is the phantom step this closes");
+
+        var authoredStepPhases = new[]
+        {
+            "    IntakeClaim,", "    PrimaryAssessment,", "    ReviewCoverage,",
+            "    AggregateClaim,", "    SettleClaim,",
+        };
+
+        await Assert.That(authoredStepPhases.Count(phase.Contains))
+            .IsEqualTo(5)
+            .Because("all five authored steps must still phase");
+
+        await Assert.That(CountOccurrences(phase, "step.</summary>"))
+            .IsEqualTo(5)
+            .Because("five authored steps yield exactly five step phases, not six");
+    }
+
+    /// <summary>
+    /// The fork dispatches the same start command the phase-transition handler is keyed on,
+    /// and the saga declares only one completed handler for the step's event.
+    /// </summary>
+    /// <remarks>
+    /// The twin made the saga declare two <c>Handle</c> overloads taking the same completed
+    /// event, which the consuming compilation rejects with CS0111 — so the compilation is
+    /// asserted directly rather than by counting text.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task InstanceNamedForkPathStep_DispatchTargetsTheHandlerKey_AndCompiles()
+    {
+        var result = GeneratorTestHelper.RunGenerator(InstanceNamedForkPathWorkflow);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("yield return new StartPrimaryAssessmentCommand(WorkflowId);")
+            .Because("the fork dispatch must target the instance-named start command");
+
+        await Assert.That(CountHandlerParameterLines(saga, "StartPrimaryAssessmentCommand command,"))
+            .IsEqualTo(1)
+            .Because("exactly one handler is keyed on the start command the fork dispatches");
+
+        await Assert.That(saga)
+            .DoesNotContain("StartAssessDamageCommand")
+            .Because("no type-named start command exists for an instance-named fork-path step");
+
+        await Assert.That(CountHandlerParameterLines(saga, "AssessDamageCompleted evt,"))
+            .IsEqualTo(1)
+            .Because(
+                "the twin gave the saga two Handle overloads over the same completed event; "
+                + "exactly one must remain");
+
+        var duplicateMembers = GeneratorTestHelper.GetCompilationDiagnostics(InstanceNamedForkPathWorkflow)
+            .Where(d => d.Id == "CS0111")
+            .Select(d => d.GetMessage())
+            .ToList();
+
+        await Assert.That(duplicateMembers)
+            .IsEmpty()
+            .Because(
+                "duplicate handler signatures are a compile error in the consuming project: "
+                + string.Join("; ", duplicateMembers));
+    }
+
+    // =============================================================================
     // Private Helpers
     // =============================================================================
+
+    /// <summary>
+    /// Counts declared handler parameters written on their own line, so a single-line
+    /// not-found handler over the same event type is not mistaken for a second overload.
+    /// </summary>
+    /// <param name="generatedSource">The generated source to search.</param>
+    /// <param name="parameterDeclaration">The parameter declaration, e.g. <c>FooCompleted evt,</c>.</param>
+    /// <returns>The number of handler parameter lines matching.</returns>
+    private static int CountHandlerParameterLines(string generatedSource, string parameterDeclaration) =>
+        generatedSource
+            .Split('\n')
+            .Count(line => string.Equals(line.Trim(), parameterDeclaration, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Counts non-overlapping occurrences of a substring.
+    /// </summary>
+    /// <param name="haystack">The text to search.</param>
+    /// <param name="needle">The substring to count.</param>
+    /// <returns>The number of occurrences.</returns>
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
+    }
 
     /// <summary>
     /// The ordered phase-name list the saga emitter walks — what the workflow model carries

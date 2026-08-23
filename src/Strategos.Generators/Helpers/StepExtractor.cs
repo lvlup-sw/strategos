@@ -259,13 +259,22 @@ internal static class StepExtractor
     /// <param name="stepModel">The resulting configured step model, if successful.</param>
     /// <returns>True if the step model was built; otherwise, false.</returns>
     /// <remarks>
+    /// <para>
     /// Threads any per-step <c>ValidateState</c> configuration declared via the
     /// <c>Then&lt;TStep&gt;(step =&gt; step.ValidateState(...))</c> configure-lambda overload into the
     /// <see cref="StepModel"/>, scoped to this invocation's own arguments, reusing the same
-    /// resolution as <see cref="ParseForkPathStepModels"/>. The instance name is intentionally
-    /// dropped: fork-path phase/command/event names key off the step <b>type</b> name (this matches
-    /// the pre-existing fork extraction behaviour, so emitted output is unchanged), while the new
-    /// configured-step shape preserves per-step configuration such as <c>ValidateState</c>.
+    /// resolution as <see cref="ParseForkPathStepModels"/>.
+    /// </para>
+    /// <para>
+    /// The instance name is <b>kept</b>, so a fork path's step models phase on the same name the
+    /// step-info walker records. Dropping it produced a type-named twin of every instance-named
+    /// fork-path step: the walker's entry was instance-named, so the type name got past the
+    /// caller's dedupe and the workflow gained a phantom phase, start command and completed
+    /// handler carrying no configured model. The saga then declared two <c>Handle</c> overloads
+    /// for the same completed event — CS0111 in the consuming compilation — and the fork
+    /// dispatched the type-named start command while the phase transition lived on the
+    /// instance-named one, so the path never ran (#145).
+    /// </para>
     /// </remarks>
     internal static bool TryBuildConfiguredForkPathStepModel(
         InvocationExpressionSyntax invocation,
@@ -274,18 +283,7 @@ internal static class StepExtractor
         out StepModel stepModel)
     {
         var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
-        if (!TryGetStepModel(invocation, semanticModel, loopPrefix, validationPredicate, validationErrorMessage, out stepModel))
-        {
-            return false;
-        }
-
-        // Fork-path steps phase/command/event on their type name, never the instance name.
-        if (stepModel.InstanceName is not null)
-        {
-            stepModel = stepModel with { InstanceName = null };
-        }
-
-        return true;
+        return TryGetStepModel(invocation, semanticModel, loopPrefix, validationPredicate, validationErrorMessage, out stepModel);
     }
 
     /// <summary>
