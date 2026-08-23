@@ -158,6 +158,50 @@ public class TransitionsEmitterUnitTests
     }
 
     // =============================================================================
+    // B2. Real-Graph Entry Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that each fork path's last step reaches the join rather than the entry that
+    /// happens to follow it in the step-name list.
+    /// </summary>
+    [Test]
+    public async Task Emit_ForkWorkflow_PathLastStepReachesJoin()
+    {
+        // Arrange
+        var model = CreateForkModel();
+
+        // Act
+        var source = TransitionsEmitter.Emit(model);
+
+        // Assert - both parallel paths converge on the join
+        await Assert.That(source).Contains("ParallelOrderPhase.ProcessPayment, [ParallelOrderPhase.SynthesizeResults, ParallelOrderPhase.Failed]");
+        await Assert.That(source).Contains("ParallelOrderPhase.ReserveInventory, [ParallelOrderPhase.SynthesizeResults, ParallelOrderPhase.Failed]");
+
+        // Assert - the fork's predecessor dispatches both paths at once
+        await Assert.That(source).Contains("ParallelOrderPhase.ValidateOrder, [ParallelOrderPhase.ProcessPayment, ParallelOrderPhase.ReserveInventory, ParallelOrderPhase.Failed]");
+    }
+
+    /// <summary>
+    /// Verifies that a branch case which ends the workflow completes at its own last step, and
+    /// that its non-terminal sibling still converges on the rejoin step.
+    /// </summary>
+    [Test]
+    public async Task Emit_TerminalBranchCase_CompletesInsteadOfChaining()
+    {
+        // Arrange
+        var model = CreateTerminalBranchModel();
+
+        // Act
+        var source = TransitionsEmitter.Emit(model);
+
+        // Assert
+        await Assert.That(source).Contains("ValidateOrderPhase.RejectOrder, [ValidateOrderPhase.Completed, ValidateOrderPhase.Failed]");
+        await Assert.That(source).Contains("ValidateOrderPhase.ProcessOrder, [ValidateOrderPhase.ShipOrder, ValidateOrderPhase.Failed]");
+        await Assert.That(source).DoesNotContain("ValidateOrderPhase.RejectOrder, [ValidateOrderPhase.ShipOrder");
+    }
+
+    // =============================================================================
     // C. Header and Namespace Tests
     // =============================================================================
 
@@ -236,5 +280,84 @@ public class TransitionsEmitterUnitTests
             Namespace: "TestNamespace",
             StepNames: ["ValidateOrder", "ProcessPayment", "SendConfirmation"],
             StateTypeName: "OrderState");
+    }
+
+    /// <summary>
+    /// Mirrors what the fork extractor produces for
+    /// <c>.StartWith&lt;ValidateOrder&gt;().Fork(ProcessPayment, ReserveInventory)
+    /// .Join&lt;SynthesizeResults&gt;().Finally&lt;SendConfirmation&gt;()</c>: both path steps and the
+    /// join step appear in the step-name list, so consecutive entries chain two parallel paths.
+    /// </summary>
+    private static WorkflowModel CreateForkModel()
+    {
+        var forks = new List<ForkModel>
+        {
+            new(
+                ForkId: "ParallelOrder-Fork0",
+                PreviousStepName: "ValidateOrder",
+                Paths:
+                [
+                    new(
+                        PathIndex: 0,
+                        Steps: [StepModel.Create("ProcessPayment", "TestNamespace.ProcessPayment")],
+                        HasFailureHandler: false,
+                        IsTerminalOnFailure: false),
+                    new(
+                        PathIndex: 1,
+                        Steps: [StepModel.Create("ReserveInventory", "TestNamespace.ReserveInventory")],
+                        HasFailureHandler: false,
+                        IsTerminalOnFailure: false),
+                ],
+                JoinStepName: "SynthesizeResults"),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "parallel-order",
+            PascalName: "ParallelOrder",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateOrder", "ProcessPayment", "ReserveInventory", "SynthesizeResults", "SendConfirmation"],
+            StateTypeName: "OrderState",
+            Forks: forks);
+    }
+
+    /// <summary>
+    /// Mirrors what the branch extractor produces for a two-case branch whose second case calls
+    /// <c>.Complete()</c>. Case step names are the bare step names — the branch path prefix is a
+    /// separate field on the case, never folded into the step name.
+    /// </summary>
+    private static WorkflowModel CreateTerminalBranchModel()
+    {
+        var branches = new List<BranchModel>
+        {
+            new(
+                BranchId: "validate-order-Branch0-IsValid",
+                PreviousStepName: "ValidateOrder",
+                DiscriminatorPropertyPath: "IsValid",
+                DiscriminatorTypeName: "bool",
+                IsEnumDiscriminator: false,
+                IsMethodDiscriminator: false,
+                Cases:
+                [
+                    new(
+                        CaseValueLiteral: "true",
+                        BranchPathPrefix: "IsValid_true",
+                        StepNames: ["ProcessOrder"],
+                        IsTerminal: false),
+                    new(
+                        CaseValueLiteral: "false",
+                        BranchPathPrefix: "IsValid_false",
+                        StepNames: ["RejectOrder"],
+                        IsTerminal: true),
+                ],
+                RejoinStepName: "ShipOrder"),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "validate-order",
+            PascalName: "ValidateOrder",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateOrder", "ProcessOrder", "RejectOrder", "ShipOrder"],
+            StateTypeName: "OrderState",
+            Branches: branches);
     }
 }
