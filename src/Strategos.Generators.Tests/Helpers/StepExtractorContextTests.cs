@@ -455,6 +455,229 @@ public class StepExtractorContextTests
     }
 
     // =============================================================================
+    // F. Repeated-Phase-Name Collapse Oracles
+    // =============================================================================
+    //
+    // A step run inside a branch case may also be run on the main flow — one phase, one
+    // command, one handler, so the deduped list carries the name once. WHICH occurrence
+    // survives is decided by first-occurrence order, and moving path steps from the tail of
+    // the list into their document position moves the path occurrence in front of the linear
+    // one for any workflow that declares the branch first. The surviving entry's execution
+    // context therefore stopped being a property of the workflow and became a property of
+    // where the author happened to put the branch.
+    //
+    // Two things are pinned here, separately, because they answer to different rules:
+    //   * POSITION is the first occurrence's, which is what keeps the phase-name list
+    //     index-aligned with the step-model list; and
+    //   * CONTEXT is Linear whenever any occurrence is Linear, because a step that runs on
+    //     the main flow is a main-flow step no matter what else also runs it.
+
+    /// <summary>
+    /// A workflow that runs <c>RecordDecision</c> inside a branch case AND on the main flow
+    /// after the branch rejoins, with the branch declared FIRST — so the branch-path
+    /// occurrence precedes the linear one in document order.
+    /// </summary>
+    private const string SharedStepDeclaredOnBranchCaseFirstWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ClaimKind { Collision, Liability }
+
+        public record SettlementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public ClaimKind Kind { get; init; }
+        }
+
+        public class ValidateClaim : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        public class AssessLiability : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        public class RecordDecision : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        public class CloseClaim : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        [Workflow("settle-claim")]
+        public static partial class SettleClaimWorkflow
+        {
+            public static WorkflowDefinition<SettlementState> Definition => Workflow<SettlementState>
+                .Create("settle-claim")
+                .StartWith<ValidateClaim>()
+                .Branch(state => state.Kind,
+                    BranchCase<SettlementState, ClaimKind>.When(ClaimKind.Collision, path => path.Then<RecordDecision>()),
+                    BranchCase<SettlementState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
+                .Then<RecordDecision>()
+                .Finally<CloseClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow that runs <c>NotifyAdjuster</c> on two exclusive branch cases and nowhere on
+    /// the main flow — the control for the context rule.
+    /// </summary>
+    private const string SharedStepOnTwoBranchCasesWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ClaimKind { Collision, Liability }
+
+        public record SettlementState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public ClaimKind Kind { get; init; }
+        }
+
+        public class ValidateClaim : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        public class NotifyAdjuster : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        public class CloseClaim : IWorkflowStep<SettlementState>
+        {
+            public Task<StepResult<SettlementState>> ExecuteAsync(
+                SettlementState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<SettlementState>.FromState(state));
+        }
+
+        [Workflow("settle-claim")]
+        public static partial class SettleClaimWorkflow
+        {
+            public static WorkflowDefinition<SettlementState> Definition => Workflow<SettlementState>
+                .Create("settle-claim")
+                .StartWith<ValidateClaim>()
+                .Branch(state => state.Kind,
+                    BranchCase<SettlementState, ClaimKind>.When(ClaimKind.Collision, path => path.Then<NotifyAdjuster>()),
+                    BranchCase<SettlementState, ClaimKind>.Otherwise(path => path.Then<NotifyAdjuster>()))
+                .Finally<CloseClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// Both occurrences of a shared name collapse to ONE entry, and that entry sits where the
+    /// first occurrence sat — the branch case's slot, not the later main-flow slot.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ExtractStepInfos_StepOnBranchCaseAndMainFlow_KeepsOneEntryAtFirstOccurrence()
+    {
+        var context = CreateContext(SharedStepDeclaredOnBranchCaseFirstWorkflow);
+
+        var rawOccurrences = StepExtractor.ExtractRawStepInfos(context)
+            .Count(s => s.PhaseName == "RecordDecision");
+        var deduped = StepExtractor.ExtractStepInfos(context);
+
+        await Assert.That(rawOccurrences)
+            .IsEqualTo(2)
+            .Because("the fixture must actually declare the name twice for the collapse to be exercised");
+
+        await Assert.That(deduped.Count(s => s.PhaseName == "RecordDecision"))
+            .IsEqualTo(1)
+            .Because("a repeated phase name gets one phase, one command and one handler");
+
+        await Assert.That(Describe(deduped.Select(s => s.PhaseName)))
+            .IsEqualTo(Describe(["ValidateClaim", "RecordDecision", "AssessLiability", "CloseClaim"]))
+            .Because("the surviving entry keeps the FIRST occurrence's position, which is inside the branch");
+
+        await Assert.That(Describe(deduped.Select(s => s.PhaseName)))
+            .IsEqualTo(Describe(StepModelPhaseNameList(context)))
+            .Because(
+                "first-occurrence position is what keeps the phase-name list index-aligned with "
+                + "the step-model list; collapsing to a different occurrence desynchronises them");
+    }
+
+    /// <summary>
+    /// The surviving entry reports <c>Linear</c> — the context of the main-flow occurrence —
+    /// even though the branch-path occurrence is the one that came first.
+    /// </summary>
+    /// <remarks>
+    /// This is the assertion the splice reorder put at risk. It must be decided by the rule
+    /// "any Linear occurrence wins", not by whichever occurrence document order happens to put
+    /// first: a step that runs on the main flow is a main-flow step regardless of a branch case
+    /// also running it, and declaring the branch earlier in the source does not change that.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ExtractStepInfos_StepOnBranchCaseAndMainFlow_SurvivingEntryReportsLinearContext()
+    {
+        var context = CreateContext(SharedStepDeclaredOnBranchCaseFirstWorkflow);
+
+        var deduped = StepExtractor.ExtractStepInfos(context);
+        var recordDecision = deduped.Single(s => s.PhaseName == "RecordDecision");
+
+        await Assert.That(recordDecision.Context)
+            .IsEqualTo(StepContext.Linear)
+            .Because(
+                "RecordDecision runs on the main flow after the branch rejoins, so it is a "
+                + "main-flow step even though the branch case that also runs it is declared first");
+
+        await Assert.That(deduped.Single(s => s.PhaseName == "AssessLiability").Context)
+            .IsEqualTo(StepContext.BranchPath)
+            .Because("a step that runs only inside a branch case is not promoted to the main flow");
+    }
+
+    /// <summary>
+    /// A name shared by two exclusive branch cases and run nowhere on the main flow stays
+    /// <c>BranchPath</c> — the collapse promotes a context, it does not overwrite one.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ExtractStepInfos_StepOnTwoBranchCasesOnly_SurvivingEntryStaysBranchPath()
+    {
+        var context = CreateContext(SharedStepOnTwoBranchCasesWorkflow);
+
+        var rawOccurrences = StepExtractor.ExtractRawStepInfos(context)
+            .Count(s => s.PhaseName == "NotifyAdjuster");
+        var deduped = StepExtractor.ExtractStepInfos(context);
+
+        await Assert.That(rawOccurrences)
+            .IsEqualTo(2)
+            .Because("the fixture must actually declare the name on both cases");
+
+        await Assert.That(deduped.Single(s => s.PhaseName == "NotifyAdjuster").Context)
+            .IsEqualTo(StepContext.BranchPath)
+            .Because("no occurrence is on the main flow, so there is no main-flow membership to preserve");
+    }
+
+    // =============================================================================
     // Private Helpers
     // =============================================================================
 
