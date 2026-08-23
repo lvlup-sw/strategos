@@ -34,6 +34,22 @@ namespace Strategos.Generators.Behavioral.Tests;
 [ClassDataSource<RoundTripHostFixture>(Shared = SharedType.PerClass)]
 public sealed class RoundTripBehavioralTests
 {
+    /// <summary>The fork-join step roles of the JSON import, for the ordering oracle.</summary>
+    private static readonly ForkStepNames ImportForkSteps = new(
+        PreFork: nameof(RtForkImportStart),
+        LeftPath: nameof(RtForkImportLeft),
+        RightPath: nameof(RtForkImportRight),
+        Join: nameof(RtForkImportJoin),
+        Terminal: nameof(RtForkImportEnd));
+
+    /// <summary>The fork-join step roles of the C#-authored twin, for the ordering oracle.</summary>
+    private static readonly ForkStepNames TwinForkSteps = new(
+        PreFork: nameof(RtForkTwinStart),
+        LeftPath: nameof(RtForkTwinLeft),
+        RightPath: nameof(RtForkTwinRight),
+        Join: nameof(RtForkTwinJoin),
+        Terminal: nameof(RtForkTwinEnd));
+
     private readonly RoundTripHostFixture host;
 
     /// <summary>Initializes a new instance of the <see cref="RoundTripBehavioralTests"/> class.</summary>
@@ -79,25 +95,10 @@ public sealed class RoundTripBehavioralTests
         // step precedes BOTH parallel paths, and the join is gated STRICTLY after both paths and before
         // the terminal. A join that fired before both paths, or a terminal that ran before the join,
         // fails here even though every count is still exactly one.
-        var order = this.host.Invocations.Invocations.ToList();
-        int FirstIndexOf(string step) => order.IndexOf(step);
+        var violation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, ImportForkSteps);
 
-        var start = FirstIndexOf(nameof(RtForkImportStart));
-        var left = FirstIndexOf(nameof(RtForkImportLeft));
-        var right = FirstIndexOf(nameof(RtForkImportRight));
-        var join = FirstIndexOf(nameof(RtForkImportJoin));
-        var end = FirstIndexOf(nameof(RtForkImportEnd));
-
-        await Assert.That(start).IsLessThan(left)
-            .Because("the pre-fork step must run before the left parallel path.");
-        await Assert.That(start).IsLessThan(right)
-            .Because("the pre-fork step must run before the right parallel path.");
-        await Assert.That(join).IsGreaterThan(left)
-            .Because("the join must run strictly after the left parallel path completes.");
-        await Assert.That(join).IsGreaterThan(right)
-            .Because("the join must run strictly after the right parallel path completes.");
-        await Assert.That(join).IsLessThan(end)
-            .Because("the join must run before the terminal step (the join gates the terminal).");
+        await Assert.That(violation).IsNull()
+            .Because("the imported fork must run pre-fork → both parallel paths → join → terminal.");
     }
 
     /// <summary>
@@ -156,6 +157,19 @@ public sealed class RoundTripBehavioralTests
 
         await Assert.That(this.host.Invocations.TotalCount).IsEqualTo(10)
             .Because("the imported fork-join workflow and its C# twin must run the identical number of steps.");
+
+        // Counts cannot see ordering. A fix that runs all five twin steps once but places the terminal
+        // BEFORE the join satisfies every assertion above — whichever step lands last calls
+        // MarkCompleted(), so the saga completes and its document is removed exactly as a correct run
+        // would. Equivalence to the import is a claim about the SHAPE of the run, so assert the shape:
+        // both authoring forms must obey pre-fork → both paths → join → terminal.
+        var importViolation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, ImportForkSteps);
+        var twinViolation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, TwinForkSteps);
+
+        await Assert.That(importViolation).IsNull()
+            .Because("the JSON import must run pre-fork → both parallel paths → join → terminal.");
+        await Assert.That(twinViolation).IsNull()
+            .Because("the C# twin must run the identical fork ordering, not merely the identical counts.");
     }
 
     /// <summary>
