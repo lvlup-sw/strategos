@@ -199,10 +199,12 @@ public sealed class StepConfigParityTests
                 string.Join(", ", doubleClassified));
 
         // Every Lowered entry must name a behavioral proof (not a shape/golden test) that
-        // actually EXISTS: the referenced file must be on disk AND the named test method must
-        // appear in it. A non-empty string alone is not a forcing function — a stale/typo'd
-        // reference would silently pass. (Grep-level check; we deliberately do NOT add a
-        // project reference to the behavioral suite, which would pull Testcontainers/Marten.)
+        // actually RUNS. A substring search over the proof file is not a forcing function:
+        // a suppressed test, a commented-out test and a name that only appears inside a
+        // <see cref> all contain the method name and all three prove nothing. The inspector
+        // parses the file and requires a real test-method declaration a default run
+        // executes. (Parse-level check; we deliberately do NOT add a project reference to
+        // the behavioral suite, which would pull Testcontainers/Marten.)
         var solutionRoot = FindSolutionRoot();
         foreach (var (member, proof) in Lowered)
         {
@@ -213,17 +215,17 @@ public sealed class StepConfigParityTests
                 .Contains("Behavioral.Tests")
                 .Because($"Lowered member '{member}' proof must live in the behavioral suite, not a shape test");
 
-            var proofPath = Path.Combine(solutionRoot, proof.BehavioralTestFile);
-            await Assert.That(File.Exists(proofPath))
-                .IsTrue()
-                .Because($"Lowered member '{member}' references behavioral proof file '{proof.BehavioralTestFile}', which must exist on disk at '{proofPath}'");
-
             // The reference is "ClassName.MethodName"; the method name is the last segment.
             var methodName = proof.BehavioralTest.Split('.').Last();
-            var fileText = File.ReadAllText(proofPath);
-            await Assert.That(fileText.Contains(methodName, StringComparison.Ordinal))
-                .IsTrue()
-                .Because($"Lowered member '{member}' references behavioral test method '{methodName}', which must appear in '{proof.BehavioralTestFile}'");
+            var proofPath = Path.Combine(solutionRoot, proof.BehavioralTestFile);
+            var inspection = BehavioralProofInspector.InspectFile(proofPath, methodName);
+
+            await Assert.That(inspection.Status)
+                .IsEqualTo(BehavioralProofStatus.Running)
+                .Because(
+                    $"Lowered member '{member}' names behavioral proof '{proof.BehavioralTest}' in "
+                    + $"'{proof.BehavioralTestFile}', which must be a test that actually runs — "
+                    + inspection.Detail);
         }
 
         // Every Deferred entry must carry a tracking issue.
@@ -277,6 +279,130 @@ public sealed class StepConfigParityTests
             .Contains("WithRetry")
             .Because("a member present in BOTH sets must be reported as double-classified");
     }
+
+    /// <summary>
+    /// Negative guard for the PROOF check: the guard must reject a named proof that does not
+    /// run. A suppressed test, a commented-out test, a name that only appears inside a
+    /// <c>&lt;see cref&gt;</c> and a plain helper that happens to share the name all satisfy
+    /// a substring search, and all four prove nothing — which is how provably-false parity
+    /// entries stood. Each case is exercised against a SYNTHETIC fixture file whose skip
+    /// state this repository owns, never against a real test in the behavioral suite: a live
+    /// test's skip is removed the moment the defect it is blocked on is fixed, which would
+    /// silently invert this assertion into a tautology.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepConfigParity_NamedProofThatDoesNotRun_IsRejected()
+    {
+        var fixturePath = SyntheticProofFixturePath();
+
+        // A real, running proof is the one and only accepted shape.
+        var running = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_ShipOrder_CompletesOnRealHost");
+        await Assert.That(running.Status)
+            .IsEqualTo(BehavioralProofStatus.Running)
+            .Because("a test method a default run executes is a real proof and must be accepted");
+        await Assert.That(running.IsRunningProof)
+            .IsTrue()
+            .Because("the accepted status must be the one the parity guard keys on");
+
+        // A skipped test: present in the file text, but it can never fail.
+        var skipped = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_RefundOrder_ReleasesPayment");
+        await Assert.That(skipped.Status)
+            .IsEqualTo(BehavioralProofStatus.Suppressed)
+            .Because("a skipped test never runs, so it cannot prove a lowering");
+
+        // An opt-in-only test is excluded from a default run for the same reason.
+        var explicitOnly = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_CancelOrder_RestocksInventory");
+        await Assert.That(explicitOnly.Status)
+            .IsEqualTo(BehavioralProofStatus.Suppressed)
+            .Because("an opt-in-only test is not executed by a default run, so it cannot prove a lowering");
+
+        // A class-level suppression suppresses every test the class declares.
+        var suppressedByClass = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_SettleOrder_PostsLedgerEntry");
+        await Assert.That(suppressedByClass.Status)
+            .IsEqualTo(BehavioralProofStatus.Suppressed)
+            .Because("a suppressed declaring class suppresses every test inside it");
+
+        // A name that exists only inside a doc-comment reference.
+        var docCommentOnly = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_ChargePayment_EmitsReceipt");
+        await Assert.That(docCommentOnly.Status)
+            .IsEqualTo(BehavioralProofStatus.ReferencedButNotDeclared)
+            .Because("a name that appears only in a <see cref> is a reference, not a proof");
+
+        // A commented-out test is likewise text without a declaration.
+        var commentedOut = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_ValidateOrder_RejectsUnknownSku");
+        await Assert.That(commentedOut.Status)
+            .IsEqualTo(BehavioralProofStatus.ReferencedButNotDeclared)
+            .Because("a commented-out test is text, not a declaration, and never runs");
+
+        // A declared method with no test attribute is not a test at all.
+        var notATest = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_ArchiveOrder_PurgesState");
+        await Assert.That(notATest.Status)
+            .IsEqualTo(BehavioralProofStatus.NotAnExecutableTest)
+            .Because("a declared method with no test attribute is never executed by a runner");
+
+        // A name that is not in the file at all — the stale/typo'd reference case.
+        var absent = BehavioralProofInspector.InspectFile(
+            fixturePath, "Saga_DispatchOrder_NotifiesCarrier");
+        await Assert.That(absent.Status)
+            .IsEqualTo(BehavioralProofStatus.Absent)
+            .Because("a proof name absent from the file it names is a stale reference");
+
+        // None of the rejected shapes may be reported as a running proof.
+        foreach (var rejected in new[]
+                 {
+                     skipped, explicitOnly, suppressedByClass, docCommentOnly,
+                     commentedOut, notATest, absent,
+                 })
+        {
+            await Assert.That(rejected.IsRunningProof)
+                .IsFalse()
+                .Because($"a non-running proof must not be accepted: {rejected.Detail}");
+        }
+    }
+
+    /// <summary>
+    /// A referenced proof file that is not on disk is reported as missing rather than being
+    /// silently treated as containing the proof.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepConfigParity_ProofFileNotOnDisk_IsRejected()
+    {
+        var missingPath = Path.Combine(
+            FindSolutionRoot(),
+            "Strategos.Generators.Behavioral.Tests",
+            "NoSuchProofFileTests.cs");
+
+        var inspection = BehavioralProofInspector.InspectFile(missingPath, "Saga_ShipOrder_CompletesOnRealHost");
+
+        await Assert.That(inspection.Status)
+            .IsEqualTo(BehavioralProofStatus.FileMissing)
+            .Because("a proof file that does not exist cannot contain a proof");
+        await Assert.That(inspection.IsRunningProof)
+            .IsFalse()
+            .Because("a missing proof file must not be accepted as a running proof");
+    }
+
+    /// <summary>
+    /// Resolves the synthetic proof fixture used by the guard's negative tests. It is stored
+    /// with a non-compiling extension so its deliberately skipped and commented-out methods
+    /// are never built into this project.
+    /// </summary>
+    /// <returns>The absolute path to the synthetic proof fixture file.</returns>
+    private static string SyntheticProofFixturePath() => Path.Combine(
+        FindSolutionRoot(),
+        "Strategos.Generators.Tests",
+        "Fixtures",
+        "ParityGuard",
+        "BehavioralProofFixture.cs.txt");
 
     /// <summary>
     /// Splits the supplied member names into the unclassified (in neither set) and

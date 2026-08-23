@@ -173,28 +173,42 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         string stepName,
         int index)
     {
-        // Confidence handler steps (DR-5) are appended to StepNames for full lowering but are NOT
-        // part of the main linear flow. They must not be a "next step" for the main flow. Compute
-        // main-flow adjacency by skipping over them so the preceding main-flow step (e.g. a Finally)
-        // keeps its terminal status instead of wrongly chaining into a handler step.
+        // Several lowering blocks append names to StepNames for full lowering (phase, worker
+        // handler, commands, events) even though the steps are reached through their own
+        // construct and never by main-flow chaining. Main-flow adjacency therefore comes from
+        // the shared classification, not from list position, so the preceding main-flow step
+        // (e.g. a Finally) keeps its terminal status instead of chaining into an appended step.
         var model = ctx.Model;
+        var mainFlow = ctx.MainFlow;
         var isConfidenceHandlerStep = model.IsConfidenceHandlerStep(stepName);
 
-        string? nextStepName = null;
-        if (!isConfidenceHandlerStep)
-        {
-            for (var j = index + 1; j < model.StepNames.Count; j++)
-            {
-                if (!model.IsConfidenceHandlerStep(model.StepNames[j]))
-                {
-                    nextStepName = model.StepNames[j];
-                    break;
-                }
-            }
-        }
+        string? nextStepName;
+        bool isLastStep;
 
-        // The step is "last in the main flow" when no later main-flow step exists.
-        var isLastStep = isConfidenceHandlerStep || nextStepName is null;
+        if (!mainFlow.IsOffMainFlow(stepName))
+        {
+            // On the main flow: chain to the next entry that is also on the main flow.
+            nextStepName = mainFlow.NextMainFlowStepNameAfterIndex(index);
+            isLastStep = nextStepName is null;
+        }
+        else if (mainFlow.TryGetSuccessorWithinPath(stepName, out var successorWithinPath))
+        {
+            // Inside a fork path or a branch case, and not its last step. Only a path's LAST
+            // step is intercepted by a dedicated path-end handler, so a step in the middle of a
+            // path arrives here — and its successor is the next step of its OWN path. Applying
+            // the main-flow skip set uniformly would instead hand it the next main-flow step,
+            // or nothing at all, which marks the saga completed in the middle of a path.
+            nextStepName = successorWithinPath;
+            isLastStep = false;
+        }
+        else
+        {
+            // A path's last step, a failure-handler step or an approval rejection/escalation
+            // step. The construct that owns the step emits its completed handler, so there is
+            // no main-flow successor to resolve.
+            nextStepName = null;
+            isLastStep = true;
+        }
 
         // Confidence handler CHAIN routing (G-4 / #139). A handler step is NOT unconditionally
         // terminal: it chains to the next step in its OnLowConfidence chain when one exists, and the

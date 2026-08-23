@@ -367,13 +367,20 @@ internal static class StepExtractor
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Fork"))
         {
-            // Process fork path steps with ForkPath context
-            ParseForkPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, steps, cancellationToken);
+            // Process fork path steps with ForkPath context. This walker runs BACKWARDS, so the
+            // path's document-ordered steps splice in at the front — the same direction every
+            // other construct here uses.
+            steps.InsertRange(
+                0,
+                ParseForkPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Branch"))
         {
-            // Process branch path steps with BranchPath context
-            ParseBranchPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, steps, cancellationToken);
+            // Process branch path steps with BranchPath context, spliced at the front for the
+            // same reason.
+            steps.InsertRange(
+                0,
+                ParseBranchPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Join"))
         {
@@ -530,13 +537,16 @@ internal static class StepExtractor
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Fork"))
             {
-                // Process fork path steps with ForkPath context
-                ParseForkPathStepsWithContext(inv, semanticModel, currentPrefix, steps, cancellationToken);
+                // Process fork path steps with ForkPath context. This walker runs FORWARDS
+                // through the loop body, so the path's document-ordered steps append.
+                steps.AddRange(
+                    ParseForkPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Branch"))
             {
-                // Process branch path steps with BranchPath context
-                ParseBranchPathStepsWithContext(inv, semanticModel, currentPrefix, steps, cancellationToken);
+                // Process branch path steps with BranchPath context, appended for the same reason.
+                steps.AddRange(
+                    ParseBranchPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Join"))
             {
@@ -599,15 +609,27 @@ internal static class StepExtractor
     }
 
     /// <summary>
-    /// Parses fork path steps with ForkPath context from a Fork invocation.
+    /// Parses fork path steps with ForkPath context from a Fork invocation, in document order.
     /// </summary>
-    private static void ParseForkPathStepsWithContext(
+    /// <remarks>
+    /// The steps are RETURNED rather than spliced into a caller-owned list, because the two
+    /// callers walk the fluent chain in opposite directions: the top-level walker runs backwards
+    /// and must splice at the front, while the loop-body walker runs forwards and must append.
+    /// A helper that appends serves only the forward caller, and silently puts a top-level
+    /// fork's path steps after the workflow's terminal.
+    /// </remarks>
+    /// <param name="forkInvocation">The Fork invocation expression.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="currentPrefix">The current loop prefix.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The path steps, in document order.</returns>
+    private static List<StepInfo> ParseForkPathStepsWithContext(
         InvocationExpressionSyntax forkInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
-        List<StepInfo> steps,
         CancellationToken cancellationToken)
     {
+        var steps = new List<StepInfo>();
         var arguments = forkInvocation.ArgumentList.Arguments;
 
         foreach (var arg in arguments)
@@ -641,18 +663,31 @@ internal static class StepExtractor
                 }
             }
         }
+
+        return steps;
     }
 
     /// <summary>
-    /// Parses branch path steps with BranchPath context from a Branch invocation.
+    /// Parses branch path steps with BranchPath context from a Branch invocation, in document
+    /// order.
     /// </summary>
-    private static void ParseBranchPathStepsWithContext(
+    /// <remarks>
+    /// The steps are RETURNED rather than spliced into a caller-owned list, for the same reason
+    /// as the fork path helper: the splice direction belongs to the caller, which knows which way
+    /// it is walking the chain.
+    /// </remarks>
+    /// <param name="branchInvocation">The Branch invocation expression.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="currentPrefix">The current loop prefix.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The case steps, in document order.</returns>
+    private static List<StepInfo> ParseBranchPathStepsWithContext(
         InvocationExpressionSyntax branchInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
-        List<StepInfo> steps,
         CancellationToken cancellationToken)
     {
+        var steps = new List<StepInfo>();
         var arguments = branchInvocation.ArgumentList.Arguments;
 
         // Skip first argument (discriminator), remaining are BranchCase.When()/Otherwise()
@@ -667,6 +702,8 @@ internal static class StepExtractor
 
             CollectStepsFromPathLambda(pathLambda, semanticModel, currentPrefix, StepContext.BranchPath, steps);
         }
+
+        return steps;
     }
 
     /// <summary>

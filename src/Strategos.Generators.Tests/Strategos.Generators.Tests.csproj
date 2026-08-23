@@ -20,6 +20,15 @@
     <Content Include="Import\ImportFixtures\*.workflow.json"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
+
+    <!-- The pre-change linear-workflow saga emit, captured before the off-main-flow
+         classification and step-list ordering work, plus its provenance note. Copied to the
+         output dir so LinearWorkflowOutputRegressionTests reads it at runtime. Read the
+         provenance note before touching the baseline: re-capturing it to make a failing
+         comparison pass destroys the only "before" the guard has. -->
+    <Content Include="Baselines\*.txt"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

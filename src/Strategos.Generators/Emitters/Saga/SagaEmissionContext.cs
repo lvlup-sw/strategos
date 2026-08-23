@@ -109,10 +109,33 @@ internal sealed class SagaEmissionContext
     /// </remarks>
     public IReadOnlyCollection<string> ForkPathSteps { get; }
 
+    /// <summary>
+    /// Gets the classification of which step-name entries lie on the workflow's main linear
+    /// flow and which are reached only through their own construct.
+    /// </summary>
+    /// <remarks>
+    /// This is the single source every successor scan consults. Carrying a private skip list
+    /// instead is what let the declared terminal chain into an appended step.
+    /// </remarks>
+    public MainFlowClassification MainFlow { get; }
+
+    /// <summary>
+    /// Gets the step names that are not on the workflow's main linear flow.
+    /// </summary>
+    /// <remarks>
+    /// The union of fork-path steps, branch-case steps (including the cases of a branch a loop
+    /// runs on exit), failure-handler steps, approval rejection and escalation steps, and
+    /// lowered low-confidence handler steps. A fork's JOIN step is NOT a member: it resumes the
+    /// main flow, so <see cref="ForkPathSteps"/> — which includes the join for worker-command
+    /// naming — is not usable as this set.
+    /// </remarks>
+    public IReadOnlyCollection<string> OffMainFlowSteps => MainFlow.OffMainFlowStepNames;
+
     private SagaEmissionContext(WorkflowModel model)
     {
         Model = model;
         SagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        MainFlow = MainFlowClassification.For(model);
         LoopsByLastStep = BuildLoopsByLastStep(model);
         BranchesByPreviousStep = BuildBranchesByPreviousStep(model);
         BranchPathInfo = BuildBranchPathInfo(model);

@@ -65,36 +65,15 @@ internal sealed class SagaApprovalComponentEmitter : ISagaComponentEmitter
         SagaEmissionContext ctx,
         ApprovalModel approval)
     {
-        // Find the index of the step that precedes this approval
-        var stepIndex = FindStepIndex(ctx.Model.StepNames, approval.PrecedingStepName);
-
-        // Check if this is the last step
-        var isLastStep = stepIndex == ctx.Model.StepNames.Count - 1;
-
-        // Get the next step name (if not last)
-        var nextStepName = isLastStep ? null : ctx.Model.StepNames[stepIndex + 1];
+        // An approved checkpoint resumes onto the next MAIN-FLOW step. Taking the entry at the
+        // next index instead resumes onto whatever happens to sit there — an appended fork-path,
+        // branch-case, failure-handler or handler-chain step — which bypasses that construct's
+        // own dispatch handler and leaves the workflow with no way forward. The skip set is the
+        // same shared classification the other successor scans consult.
+        var nextStepName = ctx.MainFlow.NextMainFlowStepNameAfter(approval.PrecedingStepName);
 
         return new ApprovalResumeContext(
-            IsLastStep: isLastStep,
+            IsLastStep: nextStepName is null,
             NextStepName: nextStepName);
-    }
-
-    /// <summary>
-    /// Finds the index of a step name in the step names list.
-    /// </summary>
-    /// <param name="stepNames">The list of step names.</param>
-    /// <param name="stepName">The step name to find.</param>
-    /// <returns>The index of the step, or -1 if not found.</returns>
-    private static int FindStepIndex(IReadOnlyList<string> stepNames, string stepName)
-    {
-        for (int i = 0; i < stepNames.Count; i++)
-        {
-            if (stepNames[i] == stepName)
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 }
