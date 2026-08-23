@@ -58,8 +58,15 @@ internal sealed class SagaEmissionContext
     public IReadOnlyDictionary<string, BranchModel> BranchesByPreviousStep { get; }
 
     /// <summary>
-    /// Gets the branch path info indexed by the last step of each non-terminal branch path.
+    /// Gets the branch path info indexed by the last step of each branch path, including the paths
+    /// of cases that end the workflow rather than rejoining.
     /// </summary>
+    /// <remarks>
+    /// This lookup is the only live route into <see cref="BranchHandlerEmitter.EmitPathEndHandler"/>
+    /// when the workflow is authored in C#, so a case excluded from it never has its ending decided
+    /// from its own declaration. Workflow-ending cases are therefore admitted, and the handler reads
+    /// <see cref="BranchCaseModel.IsTerminal"/> to tell an ending path from a rejoining one (#175).
+    /// </remarks>
     public IReadOnlyDictionary<string, (BranchModel Branch, BranchCaseModel Case)> BranchPathInfo { get; }
 
     /// <summary>
@@ -204,8 +211,11 @@ internal sealed class SagaEmissionContext
         {
             foreach (var branchCase in branch.Cases)
             {
-                // Only include non-terminal branch paths with steps
-                if (!branchCase.IsTerminal && branchCase.StepNames.Count > 0)
+                // Every case with steps is admitted, workflow-ending cases included. Excluding an
+                // ending case leaves its last step to the ordinary step handler, where terminality
+                // is decided by list position rather than by the case's own declaration; the
+                // path-end handler reads BranchCaseModel.IsTerminal instead.
+                if (branchCase.StepNames.Count > 0)
                 {
                     result[branchCase.LastStepName] = (branch, branchCase);
                 }

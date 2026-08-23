@@ -206,6 +206,13 @@ internal sealed class BranchHandlerEmitter
     /// <exception cref="ArgumentNullException">
     /// Thrown when any parameter is null.
     /// </exception>
+    /// <remarks>
+    /// Whether the path rejoins or ends the workflow is decided per CASE, not per branch. A case
+    /// that declared <c>.Complete()</c> completes the saga at its own last step even when a sibling
+    /// case rejoins — in that mixed shape the branch-level rejoin flag is true, so reading it alone
+    /// would send the ending case to the declared terminal (#175). The branch-level flag remains the
+    /// fallback for a case that did not declare an ending of its own.
+    /// </remarks>
     public void EmitPathEndHandler(
         StringBuilder sb,
         WorkflowModel model,
@@ -224,15 +231,22 @@ internal sealed class BranchHandlerEmitter
         var eventName = $"{stepName}Completed";
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
+        // The case's own declaration wins: a case that declared .Complete() ends the workflow here,
+        // whichever way its siblings exit. Only a case that made no such declaration falls back to
+        // the branch-level convergence point.
+        var routesToRejoin = !branchCase.IsTerminal && branch.HasRejoinPoint;
+
         // XML documentation
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {eventName} event - completes branch path and routes to rejoin.");
+        sb.AppendLine(routesToRejoin
+            ? $"    /// Handles the {eventName} event - completes branch path and routes to rejoin."
+            : $"    /// Handles the {eventName} event - completes branch path and completes the workflow.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
 
-        if (branch.HasRejoinPoint)
+        if (routesToRejoin)
         {
             var rejoinStepCommand = $"Start{branch.RejoinStepName}Command";
 
@@ -268,7 +282,8 @@ internal sealed class BranchHandlerEmitter
         }
         else
         {
-            // No rejoin - this branch path ends the workflow
+            // This branch path ends the workflow: either the case declared .Complete(), or the
+            // branch has no convergence point at all.
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
             sb.AppendLine("    public void Handle(");
             sb.AppendLine($"        {eventName} evt,");
