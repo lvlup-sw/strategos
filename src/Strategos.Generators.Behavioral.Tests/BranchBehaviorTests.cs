@@ -269,4 +269,152 @@ public sealed class BranchBehaviorTests
         await Assert.That(this.host.Invocations.CountFor(nameof(ShipApprovedOrder))).IsEqualTo(1)
             .Because("the rejoining case must still reach the declared terminal, exactly once.");
     }
+
+    /// <summary>
+    /// A below-threshold score on a REJOINING case's last step routes to the declared
+    /// low-confidence handler instead of to the branch's rejoin target.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The path-end handler is the only handler that sees this step's completed event, so it is the
+    /// only place the gate can be emitted. The escalation step's count is the discriminating
+    /// evidence: when the gate is dropped, the handler chain is still lowered into its own phase,
+    /// start command and worker handler, so nothing about the generated surface looks wrong — the
+    /// step just never runs, and the claim settles on an estimate nobody trusted.
+    /// </para>
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_BranchCaseLowConfidence_RoutesToHandler()
+    {
+        this.host.Invocations.Reset();
+
+        var outcome = await this.RunBranchCaseConfidenceAsync(ClaimRoute.Repair, assessmentConfidence: 0.10);
+
+        await Assert.That(outcome.Completed).IsTrue()
+            .Because($"the low-confidence handler chain terminates, so the saga must still complete: {outcome.Diagnostic}");
+        await Assert.That(outcome.DocumentRemoved).IsTrue()
+            .Because("a workflow diverted to its low-confidence handler must still have its Marten saga document deleted.");
+
+        await Assert.That(this.host.Invocations.CountFor(nameof(ScreenClaim))).IsEqualTo(1)
+            .Because("the pre-branch step runs once.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessRepairCost))).IsEqualTo(1)
+            .Because("the gated step itself runs exactly once — the gate reads its result, it does not re-run it.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(EscalateRepairEstimate))).IsEqualTo(1)
+            .Because("a score below the declared threshold must reach the declared handler, exactly once.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(SettleClaim))).IsEqualTo(0)
+            .Because("a diverted path must NOT rejoin the declared terminal — settling on a distrusted estimate is the whole defect.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessTotalLoss))).IsEqualTo(0)
+            .Because("the branch cases are exclusive: the unselected case must never run.");
+    }
+
+    /// <summary>
+    /// A below-threshold score on a WORKFLOW-ENDING case's last step routes to the declared
+    /// low-confidence handler instead of completing the saga at that step.
+    /// </summary>
+    /// <remarks>
+    /// This is the position the regression landed on: an ending case's last step used to be
+    /// excluded from the path-end dispatch and so fell through to the generic completed handler,
+    /// where its gate lowered. Admitting ending cases to that dispatch — which the termination fix
+    /// required — moved the step to a handler that had no confidence handling at all.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_TerminalBranchCaseLowConfidence_RoutesToHandler()
+    {
+        this.host.Invocations.Reset();
+
+        var outcome = await this.RunBranchCaseConfidenceAsync(ClaimRoute.TotalLoss, assessmentConfidence: 0.10);
+
+        await Assert.That(outcome.Completed).IsTrue()
+            .Because($"the low-confidence handler chain terminates, so the saga must still complete: {outcome.Diagnostic}");
+
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessTotalLoss))).IsEqualTo(1)
+            .Because("the gated step itself runs exactly once.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(EscalateTotalLoss))).IsEqualTo(1)
+            .Because("a score below the declared threshold must reach the declared handler, exactly once.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessRepairCost))).IsEqualTo(0)
+            .Because("the branch cases are exclusive: the unselected case must never run.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(SettleClaim))).IsEqualTo(0)
+            .Because("the ending case never reaches the declared terminal, gated or not.");
+    }
+
+    /// <summary>
+    /// An at-or-above-threshold score on a REJOINING case's last step takes the ordinary path: it
+    /// rejoins the declared terminal and the handler never runs.
+    /// </summary>
+    /// <remarks>
+    /// The complement that makes the gate discriminating. An emitter that cascaded to the handler
+    /// unconditionally would satisfy the below-threshold proofs on its own.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_BranchCaseSufficientConfidence_RejoinsDeclaredTerminal()
+    {
+        this.host.Invocations.Reset();
+
+        var outcome = await this.RunBranchCaseConfidenceAsync(ClaimRoute.Repair, assessmentConfidence: 0.95);
+
+        await Assert.That(outcome.Completed).IsTrue()
+            .Because($"an accepted estimate must settle and complete: {outcome.Diagnostic}");
+
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessRepairCost))).IsEqualTo(1)
+            .Because("the gated step runs once.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(EscalateRepairEstimate))).IsEqualTo(0)
+            .Because("an accepted score must not divert to the handler.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(SettleClaim))).IsEqualTo(1)
+            .Because("the rejoining case must still reach the declared terminal, exactly once.");
+    }
+
+    /// <summary>
+    /// An at-or-above-threshold score on a WORKFLOW-ENDING case's last step still ends the workflow
+    /// at that step, and never reaches the declared terminal.
+    /// </summary>
+    /// <remarks>
+    /// The gate must not cost the ending case its ending: emitting the comparison ahead of the
+    /// completion is what keeps both true at once.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_TerminalBranchCaseSufficientConfidence_CompletesAtCaseEnd()
+    {
+        this.host.Invocations.Reset();
+
+        var outcome = await this.RunBranchCaseConfidenceAsync(ClaimRoute.TotalLoss, assessmentConfidence: 0.95);
+
+        await Assert.That(outcome.Completed).IsTrue()
+            .Because($"a workflow-ending case must complete the saga at its own last step: {outcome.Diagnostic}");
+        await Assert.That(outcome.DocumentRemoved).IsTrue()
+            .Because("the completing case must have the Marten saga document deleted.");
+
+        await Assert.That(this.host.Invocations.CountFor(nameof(AssessTotalLoss))).IsEqualTo(1)
+            .Because("the gated step runs once and ends the workflow there.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(EscalateTotalLoss))).IsEqualTo(0)
+            .Because("an accepted score must not divert to the handler.");
+        await Assert.That(this.host.Invocations.CountFor(nameof(SettleClaim))).IsEqualTo(0)
+            .Because("an ending case must NEVER reach the declared terminal.");
+    }
+
+    /// <summary>
+    /// Starts the branch-case confidence workflow on the shared host and waits for its outcome.
+    /// </summary>
+    /// <param name="route">The route that selects the branch case.</param>
+    /// <param name="assessmentConfidence">The score the selected case's assessing step reports.</param>
+    /// <returns>The run's outcome.</returns>
+    private async Task<WorkflowRunOutcome> RunBranchCaseConfidenceAsync(
+        ClaimRoute route,
+        double assessmentConfidence)
+    {
+        var workflowId = Guid.NewGuid();
+        return await this.host.RunWorkflowWithOutcomeAsync<BranchCaseConfidenceSaga>(
+            workflowId,
+            new StartBranchCaseConfidenceCommand(
+                workflowId,
+                new BranchCaseConfidenceState
+                {
+                    WorkflowId = workflowId,
+                    Route = route,
+                    AssessmentConfidence = assessmentConfidence,
+                }));
+    }
 }

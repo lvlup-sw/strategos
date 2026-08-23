@@ -53,11 +53,12 @@ public sealed class StepConfigParityTests
     private const string DeclaredButInertId = "AGWF022";
 
     /// <summary>
-    /// A workflow whose first branch case's LAST step is confidence-gated — a genuinely inert
-    /// shape: that step is intercepted by the branch path-end handler, which routes to the
-    /// case's rejoin target without reading the step's confidence.
+    /// A workflow whose confidence-gated step is immediately followed by an approval checkpoint —
+    /// a genuinely inert shape: that step's completed handler becomes the approval-request
+    /// handler, so the threshold comparison is never emitted and the declared handler chain is
+    /// unreachable.
     /// </summary>
-    private const string InertBranchCaseWorkflow = """
+    private const string InertApprovalPrecedingStepWorkflow = """
         using System;
         using System.Threading;
         using System.Threading.Tasks;
@@ -69,62 +70,66 @@ public sealed class StepConfigParityTests
 
         namespace TestNamespace;
 
-        public enum ClaimKind { Collision, Liability }
-
-        public record ClaimState : IWorkflowState
+        public sealed record LoanState : IWorkflowState
         {
             public Guid WorkflowId { get; init; }
-            public ClaimKind Kind { get; init; }
         }
 
-        public class IntakeClaim : IWorkflowStep<ClaimState>
+        public sealed class ReceiveApplication : IWorkflowStep<LoanState>
         {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
         }
 
-        public class PriceRepair : IWorkflowStep<ClaimState>
+        public sealed class ScoreApplicant : IWorkflowStep<LoanState>
         {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.WithConfidence(state, 0.5));
         }
 
-        public class AssessLiability : IWorkflowStep<ClaimState>
+        public sealed class EscalateToUnderwriter : IWorkflowStep<LoanState>
         {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
         }
 
-        public class HumanReview : IWorkflowStep<ClaimState>
+        public sealed class NotifyApplicantDeclined : IWorkflowStep<LoanState>
         {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
         }
 
-        public class SettleClaim : IWorkflowStep<ClaimState>
+        public sealed class IssueLoan : IWorkflowStep<LoanState>
         {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
         }
 
-        [Workflow("parity-inert-branch-claim")]
-        public static partial class ParityInertBranchClaimWorkflow
+        public sealed class LoanOfficerApprover
         {
-            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
-                .Create("parity-inert-branch-claim")
-                .StartWith<IntakeClaim>()
-                .Branch(state => state.Kind,
-                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path => path
-                        .Then<PriceRepair>(step => step
-                            .RequireConfidence(0.85)
-                            .OnLowConfidence(alt => alt.Then<HumanReview>()))),
-                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
-                .Finally<SettleClaim>();
+        }
+
+        [Workflow("parity-inert-approval-loan")]
+        public static partial class ParityInertApprovalLoanWorkflow
+        {
+            public static WorkflowDefinition<LoanState> Definition => Workflow<LoanState>
+                .Create("parity-inert-approval-loan")
+                .StartWith<ReceiveApplication>()
+                .Then<ScoreApplicant>(step => step
+                    .RequireConfidence(0.85)
+                    .OnLowConfidence(alt => alt.Then<EscalateToUnderwriter>()))
+                .AwaitApproval<LoanOfficerApprover>(approval => approval
+                    .WithOption("approve", "Approve", "Grant the loan.", isDefault: true)
+                    .WithOption("decline", "Decline", "Refuse the loan.")
+                    .OnRejection(rejection => rejection
+                        .Then<NotifyApplicantDeclined>()
+                        .Complete()))
+                .Finally<IssueLoan>();
         }
         """;
 
@@ -541,8 +546,8 @@ public sealed class StepConfigParityTests
         var honest = new DeferredEntry(
             TrackingIssue: 145,
             CitedDiagnosticId: DeclaredButInertId,
-            InertReproSource: InertBranchCaseWorkflow,
-            Reason: "Confidence on a branch case's last step is not read by the path-end handler.");
+            InertReproSource: InertApprovalPrecedingStepWorkflow,
+            Reason: "Confidence on the step an approval follows is replaced by the approval-request handler.");
 
         await Assert.That(CitedDiagnosticFires(honest))
             .IsTrue()

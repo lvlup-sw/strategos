@@ -886,7 +886,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // suppress it by id; others (non-positive timeout, RequireConfidence without
         // OnLowConfidence, Compensate<T> non-step) are net-new. They do not gate code
         // generation — the builder runtime / C# generic constraint already enforce them.
-        ReportResilienceDiagnostics(stepModels, branchModels, validName, GetAttributeLocation(context), diagnostics);
+        ReportResilienceDiagnostics(stepModels, approvalModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
         var hasErrors = duplicateSteps.Count > 0
@@ -987,6 +987,18 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             StateHasPhaseProperty = stateHasPhaseProperty,
         };
 
+        // Termination reachability (#155). The model now carries both the declared terminal and
+        // every construct that contributes an appended step name, so whether the main flow ends
+        // where the author said it does is decidable right here — the earliest tier that can
+        // answer it, and the only one most contributors can run. The classification is passed in
+        // rather than read inside the guard so the counterfactual is testable.
+        TerminalReachabilityGuard.Report(
+            model,
+            MainFlowClassification.For(model).OffMainFlowStepNames,
+            FluentDslParser.ExtractDeclaredTerminalStepName(context.TargetNode, context.SemanticModel, ct),
+            GetAttributeLocation(context),
+            diagnostics);
+
         return new WorkflowGeneratorResult(model, diagnostics);
     }
 
@@ -995,13 +1007,13 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// models. Each reported diagnostic carries a stable, suppressible AGWF id.
     /// </summary>
     /// <param name="stepModels">The parsed step models whose resilience IR is validated.</param>
-    /// <param name="branchModels">The parsed branch models, used to detect declared-but-inert config on a branch case's last step.</param>
+    /// <param name="approvalModels">The parsed approval points, used to detect declared-but-inert config on the step an approval checkpoint follows.</param>
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
     private static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
-        IReadOnlyList<BranchModel> branchModels,
+        IReadOnlyList<ApprovalModel> approvalModels,
         string workflowName,
         Location location,
         List<Diagnostic> diagnostics)
@@ -1065,43 +1077,33 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             }
         }
 
-        // DeclaredButInert (#145) — confidence gating on the LAST step of a non-terminal
-        // branch case. The configure lambda reaches the IR (so an out-of-range threshold still
-        // surfaces the ConfidenceThresholdOutOfRange code), but a non-terminal case's last step
-        // is intercepted by the branch path-end handler, which routes straight to the case's
-        // rejoin target and never reads the step's confidence — so neither the gate nor the
-        // OnLowConfidence routing reaches the generated saga.
+        // DeclaredButInert (#145) — confidence gating declared on the step an approval
+        // checkpoint follows. The configure lambda reaches the IR (so an out-of-range threshold
+        // still surfaces the ConfidenceThresholdOutOfRange code) and the OnLowConfidence chain is
+        // even lowered into its own phase, start command and worker handler — but that step's
+        // completed handler becomes the approval-request handler, which asks for the decision and
+        // returns. The threshold comparison is never emitted, so the declared handler chain is
+        // unreachable and the score is silently ignored.
         //
-        // Scoped deliberately:
-        //   * An INTERMEDIATE branch-case step is NOT flagged. It falls through to the generic
-        //     completed handler, which gates on the step's confidence with no position test.
-        //   * A TERMINAL (.Complete()) case's last step is NOT flagged either — it is excluded
-        //     from the path-end dispatch table, so it also reaches the generic completed handler.
-        //   * Fork paths and loop bodies are NOT flagged at any position. Their intermediate
-        //     steps reach the same gating generic handler, and their last steps are lowered by
-        //     the fork path-completed and loop completed handlers respectively.
-        foreach (var branch in branchModels)
+        // Scoped deliberately: every other position where confidence can be declared now lowers.
+        // Intermediate path and loop-body steps reach the generic completed handler, whose gate
+        // applies no position test; a fork path's last step is gated by the fork path-completed
+        // handler, a loop body's last step by the loop completed handler, and a branch case's
+        // last step — either kind — by the branch path-end handler.
+        foreach (var approval in approvalModels)
         {
-            foreach (var branchCase in branch.Cases)
+            var precedingStep = FindStepByPhaseName(stepModels, approval.PrecedingStepName);
+            if (precedingStep?.Confidence is null)
             {
-                if (branchCase.IsTerminal || branchCase.StepNames.Count == 0)
-                {
-                    continue;
-                }
-
-                var lastStep = FindStepByPhaseName(stepModels, branchCase.LastStepName);
-                if (lastStep?.Confidence is null)
-                {
-                    continue;
-                }
-
-                diagnostics.Add(Diagnostic.Create(
-                    WorkflowDiagnostics.DeclaredButInert,
-                    location,
-                    lastStep.EffectiveName,
-                    workflowName,
-                    "confidence gating (RequireConfidence/OnLowConfidence) on the last step of a branch case"));
+                continue;
             }
+
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.DeclaredButInert,
+                location,
+                precedingStep.EffectiveName,
+                workflowName,
+                $"confidence gating (RequireConfidence/OnLowConfidence) on the step preceding approval point '{approval.ApprovalPointName}'"));
         }
     }
 

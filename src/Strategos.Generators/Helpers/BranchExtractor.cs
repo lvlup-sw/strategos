@@ -740,6 +740,25 @@ internal static class BranchExtractor
         };
     }
 
+    /// <summary>
+    /// Collects a branch case's own <c>Then&lt;T&gt;</c> steps and its <c>Complete()</c> declaration
+    /// from the case's path lambda, in source order.
+    /// </summary>
+    /// <param name="pathLambda">The case's path-builder lambda.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="stepNames">Receives the case's step names, in source order.</param>
+    /// <param name="isTerminal">Set when the case declares <c>Complete()</c>.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <remarks>
+    /// Only invocations written DIRECTLY in the case's lambda count. A raw descendant walk also
+    /// captures the <c>Then&lt;THandler&gt;</c> written inside a step's
+    /// <c>OnLowConfidence(alt =&gt; alt.Then&lt;THandler&gt;())</c> — and because that nested call
+    /// sorts ahead of the step that owns it, the handler became the case's FIRST step and the
+    /// branch's routing switch dispatched straight to it, skipping the case's own steps entirely.
+    /// It also put this list out of agreement with the step names the step extractor produces for
+    /// the same case, which is what the path-end lookup is keyed on. The step extractor already
+    /// stops at nested-lambda boundaries; this shares the same walker so both agree.
+    /// </remarks>
     private static void ParseBranchPathBody(
         LambdaExpressionSyntax pathLambda,
         SemanticModel semanticModel,
@@ -747,12 +766,7 @@ internal static class BranchExtractor
         ref bool isTerminal,
         CancellationToken cancellationToken)
     {
-        // Find all invocations in the path body, reversed for correct order
-        var allInvocations = pathLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Reverse()
-            .ToList();
+        var allInvocations = InvocationChainWalker.CollectInvocationsInLambda(pathLambda);
 
         foreach (var inv in allInvocations)
         {

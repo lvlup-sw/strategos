@@ -130,4 +130,8 @@ public enum AgwfCode
     /// <summary>AGWF034 — Imported fork trigger declares no required evidence fields.</summary>
     [JsonStringEnumMemberName("AGWF034")]
     ImportForkTriggerWithoutEvidence,
+
+    /// <summary>AGWF035 — Workflow termination is unreachable.</summary>
+    [JsonStringEnumMemberName("AGWF035")]
+    UnreachableTermination,
 }

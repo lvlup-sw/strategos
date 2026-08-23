@@ -154,8 +154,12 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                         sb.AppendLine();
                         if (isLastStepInBranchCase)
                         {
-                            // Last step in branch path - emit path end handler
-                            _branchEmitter.EmitPathEndHandler(sb, model, stepName, branch, branchCase);
+                            // Last step in branch path - emit path end handler. The path-end
+                            // handler intercepts this step, so it carries the step's own
+                            // confidence policy; nothing else would emit the gate.
+                            context.StepsByName.TryGetValue(stepName, out var lastStepModel);
+                            _branchEmitter.EmitPathEndHandler(
+                                sb, model, stepName, branch, branchCase, lastStepModel?.Confidence);
                         }
                         else
                         {
@@ -334,7 +338,13 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         }
         else if (context.BranchPathInfo.TryGetValue(stepName, out var pathInfo))
         {
-            _branchEmitter.EmitPathEndHandler(sb, model, stepName, pathInfo.Branch, pathInfo.Case);
+            _branchEmitter.EmitPathEndHandler(
+                sb,
+                model,
+                stepName,
+                pathInfo.Branch,
+                pathInfo.Case,
+                handlerContext.StepModel?.Confidence);
         }
         else if (handlerContext.ForkAtStep is not null)
         {

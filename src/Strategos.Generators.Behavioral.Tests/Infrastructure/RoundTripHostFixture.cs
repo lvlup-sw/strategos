@@ -94,14 +94,13 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
                 opts.Services.AddRoundtripConfigTwinWorkflow();
                 opts.Services.AddRoundtripOnFailureImportWorkflow();
 
-                // The two C#-authored Branch shapes, registered on THIS host rather than a second
-                // Postgres container: one whose cases both rejoin a declared terminal, and one
-                // mixing a rejoining case with a workflow-ending .Complete() case. Neither runs to
-                // completion on the current generator — the terminal cascades back into a branch
-                // path and the workflow cycles (#175) — so the behavioral proofs are skipped, but
-                // registering them here keeps the shapes compiled and resolvable.
+                // The C#-authored Branch shapes, registered on THIS host rather than a second
+                // Postgres container: one whose cases both rejoin a declared terminal, one mixing
+                // a rejoining case with a workflow-ending .Complete() case, and one carrying a
+                // confidence gate on the last step of each case kind.
                 opts.Services.AddRoundtripBranchWorkflow();
                 opts.Services.AddTerminalBranchWorkflow();
+                opts.Services.AddBranchCaseConfidenceWorkflow();
 
                 // A handled command that starts nothing, so the harness's own completion oracle
                 // can be exercised against a run that demonstrably did no work. Registered by
