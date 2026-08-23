@@ -4,9 +4,11 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Reflection;
+
 using Strategos.Generators.Diagnostics;
-using Strategos.Generators.Tests.Fixtures;
 using Strategos.Generators.Models;
+using Strategos.Generators.Tests.Fixtures;
 
 namespace Strategos.Generators.Tests.Diagnostics;
 
@@ -171,6 +173,81 @@ public sealed class TerminalReachabilityDiagnosticTests
 
         await Assert.That(diagnostics.Any(d => d.Id == UnreachableTerminationId)).IsFalse()
             .Because("the fork's paths are classified off the main flow, so the terminal has no successor");
+    }
+
+    /// <summary>
+    /// The counterfactual: reverting the off-main-flow classification, with document-ordered step
+    /// names left in place, produces the diagnostic — so the guard would have caught the shipped
+    /// defect rather than merely claiming it would.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One workflow, one model, two classifications. Before the classification existed, every later
+    /// step-name entry was a candidate successor, so a fork path step — reached only through the
+    /// fork's dispatch — became the successor of an ordinary main-flow step. Handing the guard an
+    /// empty classification reproduces exactly that and nothing else, which is what makes this a
+    /// test rather than an argument: a test cannot revert production code, but it can vary the one
+    /// input the reverted code would have changed.
+    /// </para>
+    /// <para>
+    /// The two arms must disagree. An assertion that only the empty arm fires proves the guard is
+    /// noisy; an assertion that only the classified arm is silent proves nothing at all.
+    /// </para>
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_ClassificationReverted_WouldHaveCaughtTheShippedBug()
+    {
+        var model = ForkWorkflowModel(extraUnclassifiedStepAfterTerminal: null);
+
+        var asShipped = Report(model, MainFlowClassification.For(model).OffMainFlowStepNames);
+        var asReverted = Report(model, offMainFlowStepNames: []);
+
+        await Assert.That(asShipped.Any(d => d.Id == UnreachableTerminationId)).IsFalse()
+            .Because("the classification the emitter chains by resolves no main-flow successor into a fork path");
+
+        var reported = asReverted.FirstOrDefault(d => d.Id == UnreachableTerminationId);
+        await Assert.That(reported).IsNotNull()
+            .Because("with the classification reverted, the defect is back — and the guard reports it at compile time");
+        await Assert.That(reported!.GetMessage()).Contains("AssessDamage")
+            .Because("the reverted successor is the fork path step, which is the step the shipped defect chained into");
+    }
+
+    /// <summary>
+    /// The diagnostic fires on none of the shipped workflow corpus.
+    /// </summary>
+    /// <remarks>
+    /// A guard is worth its cost only if it fires on the defect it exists for and stays silent
+    /// otherwise. This is the second half: every named workflow source in the fixture corpus, run
+    /// through the real generator, reports nothing. Enumerated by reflection so a source added to
+    /// the corpus is swept without anyone remembering to list it here.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_ExistingCorpus_NeverFires()
+    {
+        var sources = typeof(SourceTexts)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (Name: f.Name, Source: (string)f.GetRawConstantValue()!))
+            .ToList();
+
+        await Assert.That(sources.Count).IsGreaterThanOrEqualTo(30)
+            .Because("a sweep over an empty corpus passes vacuously; the fixture corpus has ~34 sources");
+
+        var offenders = new List<string>();
+        foreach (var (name, source) in sources)
+        {
+            var result = GeneratorTestHelper.RunGenerator(source);
+            if (result.Diagnostics.Any(d => d.Id == UnreachableTerminationId))
+            {
+                offenders.Add(name);
+            }
+        }
+
+        await Assert.That(offenders).IsEmpty()
+            .Because("the guard must not report a workflow that reaches its termination. Offenders: "
+                + string.Join(", ", offenders));
     }
 
     /// <summary>
