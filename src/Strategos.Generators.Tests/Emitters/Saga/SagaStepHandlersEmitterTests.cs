@@ -489,9 +489,241 @@ public class SagaStepHandlersEmitterTests
             .Because("the declared terminal still completes the saga");
     }
 
+    /// <summary>
+    /// A step in the middle of an approval's rejection or escalation chain chains to the next
+    /// step of its OWN chain, and the chain's last step completes the saga.
+    /// </summary>
+    /// <remarks>
+    /// A rejection chain is dispatched at its FIRST step only, through the generic start command,
+    /// so the generic completed handler is the chain's only routing site. That is what separates
+    /// it from a failure handler, whose own component mints dedicated command and event types and
+    /// chains them itself — leaving the generic handlers over its step names inert.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ApprovalRejectionChain_IntermediateStep_ChainsWithinItsOwnChain()
+    {
+        var result = GeneratorTestHelper.RunGenerator(MultiStepRejectionChainWorkflow);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "ReviewPayoutSaga.g.cs");
+
+        var recordRefusal = CompletedHandlerBodyFor(saga, "RecordRefusal");
+
+        await Assert.That(recordRefusal)
+            .Contains("StartNotifyBeneficiaryCommand")
+            .Because("NotifyBeneficiary is the next step of the same rejection chain");
+
+        await Assert.That(recordRefusal)
+            .DoesNotContain("MarkCompleted();")
+            .Because(
+                "completing the saga at the chain's first step deletes the document the rest of "
+                + "the chain needs, so every later step is stranded");
+
+        await Assert.That(CompletedHandlerBodyFor(saga, "NotifyBeneficiary"))
+            .Contains("MarkCompleted();")
+            .Because("the chain declared Complete(), so its last step ends the workflow");
+
+        var openDispute = CompletedHandlerBodyFor(saga, "OpenDispute");
+
+        await Assert.That(openDispute)
+            .Contains("StartAssignAdjudicatorCommand")
+            .Because("an escalation chain advances through its own steps for the same reason");
+
+        await Assert.That(CompletedHandlerBodyFor(saga, "AssignAdjudicator"))
+            .Contains("MarkCompleted();")
+            .Because("the escalation chain declared Complete() too");
+
+        await Assert.That(CompletedHandlerBodyFor(saga, "ArchivePayout"))
+            .Contains("MarkCompleted();")
+            .Because("the declared terminal still completes the saga");
+    }
+
+    /// <summary>
+    /// A rejection chain that did NOT declare its own completion resumes the main flow at the
+    /// step an approved decision would have resumed onto.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ApprovalRejectionChain_WithoutDeclaredCompletion_ResumesTheMainFlow()
+    {
+        var result = GeneratorTestHelper.RunGenerator(ResumingRejectionChainWorkflow);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "ReviewPayoutSaga.g.cs");
+
+        var notifyBeneficiary = CompletedHandlerBodyFor(saga, "NotifyBeneficiary");
+
+        await Assert.That(notifyBeneficiary)
+            .Contains("StartReleaseFundsCommand")
+            .Because(
+                "a chain that never declared Complete() rejoins the main flow at the step after "
+                + "the checkpoint, which is the same target the approval resume dispatches");
+
+        await Assert.That(notifyBeneficiary)
+            .DoesNotContain("MarkCompleted();")
+            .Because("a resuming chain does not end the workflow at its last step");
+    }
+
     // ====================================================================
     // Successor Resolution Helpers
     // ====================================================================
+
+    /// <summary>
+    /// An approval whose rejection chain AND escalation chain each run two steps, so each chain
+    /// has a step that is neither its first nor its last — the shape no approval fixture in the
+    /// corpus had, and the only shape that can tell a chain that advances from one that truncates.
+    /// </summary>
+    private const string MultiStepRejectionChainWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PayoutState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class AssessPayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ReleaseFunds : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ArchivePayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class RecordRefusal : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class NotifyBeneficiary : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class OpenDispute : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class AssignAdjudicator : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class PayoutOfficerApprover { }
+
+        [Workflow("review-payout")]
+        public static partial class ReviewPayoutWorkflow
+        {
+            public static WorkflowDefinition<PayoutState> Definition => Workflow<PayoutState>
+                .Create("review-payout")
+                .StartWith<AssessPayout>()
+                .AwaitApproval<PayoutOfficerApprover>(approval => approval
+                    .OnRejection(rejection => rejection
+                        .Then<RecordRefusal>()
+                        .Then<NotifyBeneficiary>()
+                        .Complete())
+                    .OnTimeout(escalation => escalation
+                        .Then<OpenDispute>()
+                        .Then<AssignAdjudicator>()
+                        .Complete()))
+                .Then<ReleaseFunds>()
+                .Finally<ArchivePayout>();
+        }
+        """;
+
+    /// <summary>
+    /// The same approval with a two-step rejection chain that never declares its own completion,
+    /// so the chain resumes the main flow instead of ending the workflow.
+    /// </summary>
+    private const string ResumingRejectionChainWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record PayoutState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class AssessPayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ReleaseFunds : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class ArchivePayout : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class RecordRefusal : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class NotifyBeneficiary : IWorkflowStep<PayoutState>
+        {
+            public Task<StepResult<PayoutState>> ExecuteAsync(
+                PayoutState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<PayoutState>.FromState(state));
+        }
+
+        public class PayoutOfficerApprover { }
+
+        [Workflow("review-payout")]
+        public static partial class ReviewPayoutWorkflow
+        {
+            public static WorkflowDefinition<PayoutState> Definition => Workflow<PayoutState>
+                .Create("review-payout")
+                .StartWith<AssessPayout>()
+                .AwaitApproval<PayoutOfficerApprover>(approval => approval
+                    .OnRejection(rejection => rejection
+                        .Then<RecordRefusal>()
+                        .Then<NotifyBeneficiary>()))
+                .Then<ReleaseFunds>()
+                .Finally<ArchivePayout>();
+        }
+        """;
 
     /// <summary>
     /// A fork whose first path runs two steps, so the path has a step that is neither its first

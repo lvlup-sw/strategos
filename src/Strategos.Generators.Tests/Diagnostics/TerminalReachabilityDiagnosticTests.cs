@@ -4,7 +4,10 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.IO;
 using System.Reflection;
+
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Models;
@@ -248,6 +251,128 @@ public sealed class TerminalReachabilityDiagnosticTests
         await Assert.That(offenders).IsEmpty()
             .Because("the guard must not report a workflow that reaches its termination. Offenders: "
                 + string.Join(", ", offenders));
+    }
+
+    /// <summary>
+    /// The guard is reached from the generator's own pipeline, and is handed the shared
+    /// classification the emitters chain by.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every arm above calls <see cref="TerminalReachabilityGuard.Report"/> directly, so all of
+    /// them stay green with the guard unwired from the generator — the code would still be
+    /// correct, still be tested, and still never run, while the docs and the diagnostic catalog
+    /// kept advertising the code. This is the arm that fails when the call site goes away.
+    /// </para>
+    /// <para>
+    /// It is a structural gate rather than a run of the generator over a workflow that trips the
+    /// guard, because no such workflow exists. The guard compares two derivations over the same
+    /// model — the emitters' off-main-flow classification against the model's own construct lists
+    /// — and today those derivations enumerate exactly the same constructs, so every appended step
+    /// name is in both sets and neither condition can hold. The guard exists for the lowering
+    /// block that has not been written yet: one that appends a step name for a phase, a worker
+    /// handler and commands without telling the classification which construct owns it. Until such
+    /// a block exists, "the diagnostic reached a consumer" is only assertable at the seam.
+    /// </para>
+    /// <para>
+    /// Silent is not the same as dead. Narrow the classification the pipeline hands the guard and
+    /// the shipped corpus reports through the real generator immediately — which is exactly what
+    /// <see cref="Diagnostic_ExistingCorpus_NeverFires"/> would catch. What that arm cannot catch,
+    /// and this one can, is the call itself going away.
+    /// </para>
+    /// <para>
+    /// Reading the source rather than the emitted diagnostics is deliberate: a commented-out call
+    /// is trivia and not an invocation node, so it cannot satisfy this. The second argument is
+    /// checked too — a call that hands the guard a private skip list instead of the shared
+    /// classification makes the comparison a tautology and reports nothing, which is
+    /// indistinguishable from no call at all.
+    /// </para>
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_GuardCallSite_IsReachedFromTheGeneratorPipeline()
+    {
+        var callSites = await GuardCallSitesAsync();
+
+        await Assert.That(callSites.Select(c => c.OwningType))
+            .Contains(nameof(WorkflowIncrementalGenerator))
+            .Because(
+                "the guard is only worth its cost if the generator runs it; unwired, every other "
+                + "arm of this class still passes and no consumer ever sees the code");
+
+        var pipelineCall = callSites.First(c => c.OwningType == nameof(WorkflowIncrementalGenerator));
+
+        await Assert.That(pipelineCall.ClassificationArgument)
+            .Contains(nameof(MainFlowClassification))
+            .Because(
+                "the guard must be handed the same classification the emitters chain by; a private "
+                + "skip list would agree with the model by construction and report nothing");
+    }
+
+    /// <summary>
+    /// Finds every invocation of <see cref="TerminalReachabilityGuard.Report"/> in the generator
+    /// project's own source, with the type that owns it and the classification it passes.
+    /// </summary>
+    /// <returns>The call sites.</returns>
+    private static async Task<List<(string OwningType, string ClassificationArgument)>> GuardCallSitesAsync()
+    {
+        var callSites = new List<(string OwningType, string ClassificationArgument)>();
+
+        foreach (var file in EnumerateGeneratorSources())
+        {
+            var tree = CSharpSyntaxTree.ParseText(await File.ReadAllTextAsync(file));
+            var root = await tree.GetRootAsync();
+
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (invocation.Expression is not MemberAccessExpressionSyntax member
+                    || member.Expression.ToString() != nameof(TerminalReachabilityGuard)
+                    || member.Name.Identifier.ValueText != nameof(TerminalReachabilityGuard.Report))
+                {
+                    continue;
+                }
+
+                var owner = invocation.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+                var arguments = invocation.ArgumentList.Arguments;
+
+                callSites.Add((
+                    owner?.Identifier.ValueText ?? string.Empty,
+                    arguments.Count > 1 ? arguments[1].ToString() : string.Empty));
+            }
+        }
+
+        return callSites;
+    }
+
+    /// <summary>
+    /// Enumerates the generator project's authored C# sources, excluding build output.
+    /// </summary>
+    /// <returns>The absolute file paths.</returns>
+    private static IEnumerable<string> EnumerateGeneratorSources()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null)
+        {
+            var generatorProject = Path.Combine(dir, "src", "Strategos.Generators");
+            if (Directory.Exists(generatorProject))
+            {
+                return Directory
+                    .EnumerateFiles(generatorProject, "*.cs", SearchOption.AllDirectories)
+                    .Where(f => !IsBuildOutput(f));
+            }
+
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+
+        throw new InvalidOperationException(
+            "Could not locate src/Strategos.Generators walking up from " + AppContext.BaseDirectory + ".");
+    }
+
+    private static bool IsBuildOutput(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        return normalized.Contains("/bin/", StringComparison.Ordinal)
+            || normalized.Contains("/obj/", StringComparison.Ordinal);
     }
 
     /// <summary>
