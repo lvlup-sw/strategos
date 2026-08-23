@@ -214,7 +214,9 @@ public sealed class StepConfigParityTests
             // Fork-path confidence lowering (DR-4 / #145 gap A): a fork path's LAST step
             // (the "fork handler") now lowers its confidence gate into the generated fork
             // path-completed handler, proven behaviorally on the real host. Intermediate
-            // (non-last) fork-path confidence stays deferred (see Deferred below).
+            // (non-last) fork-path confidence lowers too, through the generic completed handler,
+            // and is proven on the real host as well — an earlier note here recorded it as
+            // deferred, which was never true.
             ["RequireConfidence(fork-path)"] = new(
                 "ForkPathConfidenceTests.Saga_ForkPathLowConfidence_RoutesToOnLowConfidenceHandler",
                 "Strategos.Generators.Behavioral.Tests/ForkPathConfidenceTests.cs"),

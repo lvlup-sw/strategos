@@ -17,8 +17,12 @@ namespace Strategos.Generators.Diagnostics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The generator holds both the declared terminal and every computed successor, so the whole
-/// termination-reachability failure class is answerable before anything runs. Until this guard
+/// The generator holds both the declared terminal and every computed successor, so an
+/// OVER-reachable terminal — one that is not last on the main flow, or a main-flow step whose
+/// successor is construct-owned — is answerable before anything runs. The complementary fault,
+/// a terminal that is last but that nothing dispatches, is NOT decided here: it needs route
+/// analysis rather than position, because a branch whose cases all complete legitimately
+/// dispatches its declared terminal zero times. Until this guard
 /// existed the only thing that caught it was a container-backed saga run, which most contributors
 /// cannot execute; a defect the compiler can see should not need Postgres to surface.
 /// </para>

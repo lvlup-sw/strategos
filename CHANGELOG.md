@@ -83,8 +83,11 @@ manager, on the basis that Actions pins are owned by Dependabot — and no Depen
 published sibling *exclusive* cases chained to one another, and a terminal that transitioned into a
 path step. They now follow the constructs: a fork predecessor dispatches every path, each path's
 last step reaches the join, a branch discriminator dispatches every case, and a case's last step
-rejoins or completes. **This is emitted public API and its content changes for every fork and branch
-workflow.** Nothing in the generated saga consults it at runtime.
+rejoins or completes. **This is emitted public API, and its content changes for every fork and
+branch workflow — and for loop-only and `OnFailure`-only workflows too.** A loop now publishes its
+continue edge, which a forward linear chain could not express; a terminal `OnFailure` handler loses
+its fall-through edge, since it ends in `Failed` and never continues. Nothing in the generated saga
+consults the table at runtime.
 
 **The generated Mermaid diagram renders forks and loop-exit branches.** Fork paths previously fell
 through to the linear arm and loop-exit branch cases were drawn as a chain. Three step-keyed lookups

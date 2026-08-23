@@ -61,10 +61,13 @@ This document catalogs all features from the Strategos design specification that
 > - **`AGWF022` (declared-but-inert)**: a `warning` reported when a step declares a config
 >   concern the generator does **not** lower for that step's kind, so it silently has no
 >   effect. The guarded case is **confidence gating (`RequireConfidence`/`OnLowConfidence`)
->   on the LAST step of a non-terminal `Branch` case** — the parse threads the configure lambda
->   into the IR (so an out-of-range threshold still surfaces the threshold-range code), but that
->   step is intercepted by the branch path-end handler, which routes straight to the case's
->   rejoin target and never reads the step's confidence. (Surfacing 6.1's backfill also fixed
+>   on the step an `AwaitApproval` checkpoint follows** — the parse threads the configure lambda
+>   into the IR (so an out-of-range threshold still surfaces the threshold-range code), but the
+>   approval branch wins over the confidence branch when the completed handler is emitted, so no
+>   confidence comparison reaches the saga while the `OnLowConfidence` chain is fully lowered into
+>   its own phase, start command and worker handler.
+>   The branch-case last-step shape this entry named until 2.11.0 is **no longer inert**: the
+>   branch path-end handler now emits the same gate prologue the generic completed handler does. (Surfacing 6.1's backfill also fixed
 >   two real top-level `ValidateState` lowering gaps — configure-lambda validation was dropped
 >   for top-level/loop steps, and the predicate parameter had to be named literally `state` to
 >   compile.)
@@ -78,8 +81,11 @@ This document catalogs all features from the Strategos design specification that
 >   top-level step's does. Proven on a real host by `IntermediateConfidenceBehaviorTests`
 >   (one fork-path-intermediate run, one loop-body-intermediate run), and the four
 >   corresponding parity entries moved `Deferred` → `Lowered` against those runs.
->   AGWF022 was **retargeted, not retired** — its id is never reused — at the branch-case
->   last-step shape above, which is genuinely inert.
+>   AGWF022 was **retargeted, not retired** — its id is never reused — at the
+>   approval-preceding-step shape above, which is genuinely inert. It was aimed at the branch-case
+>   last step first; closing that gap in the path-end handler removed the trigger, so it moved
+>   again rather than being retired, because removing an `AgwfCode` member is a major contracts
+>   break and a real inert case remained.
 >
 >   A loop body's **LAST step** lowers its confidence gate into the generated **loop completed
 >   handler** (mirroring the fork path-completed handler): the handler compares the completed
