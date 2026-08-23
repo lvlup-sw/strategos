@@ -88,6 +88,12 @@ public sealed class FailureHandlerHostFixture : IAsyncInitializer, IAsyncDisposa
                     // ExecuteFailureHandler_..WorkerCommand (#140 Task 3.1).
                     opts.Services.AddFailureHandlerProofWorkflow();
 
+                    // The success-path twin, registered on THIS host rather than behind a
+                    // second Postgres container. A workflow only runs if some host fixture
+                    // calls its generated Add{Pascal}Workflow(); without this line the
+                    // order-fulfillment saga compiles but is never started by anything.
+                    opts.Services.AddOrderFulfillmentWorkflow();
+
                     opts.Services.AddSingleton(this.Invocations);
                     opts.Services.AddResourceSetupOnStartup();
                 })
@@ -173,6 +179,40 @@ public sealed class FailureHandlerHostFixture : IAsyncInitializer, IAsyncDisposa
 
         return false;
     }
+
+    /// <summary>
+    /// Runs a generated workflow saga on the success path and reports the full outcome:
+    /// whether it completed, whether its document was removed, and how many step
+    /// invocations the run produced.
+    /// </summary>
+    /// <typeparam name="TSaga">
+    /// The generated saga document type polled for terminal completion.
+    /// </typeparam>
+    /// <param name="workflowId">The workflow/saga identity to wait on.</param>
+    /// <param name="startCommand">The generated start command.</param>
+    /// <param name="terminalBudget">
+    /// Total budget to wait for the terminal phase. Defaults to 60 seconds, matching
+    /// <see cref="RunToTerminalAsync{TSaga}"/>.
+    /// </param>
+    /// <returns>The observed outcome of the run.</returns>
+    /// <remarks>
+    /// <see cref="RunToTerminalAsync{TSaga}"/> reports completion from document absence
+    /// alone, which cannot distinguish a saga that finished from one that was never
+    /// created. That is tolerable for the failure-path proof, whose separate
+    /// invocation-count assertions supply the missing evidence, but a terminal-completion
+    /// claim needs the evidence built in — so this overload requires it.
+    /// </remarks>
+    public Task<WorkflowRunOutcome> RunToTerminalWithOutcomeAsync<TSaga>(
+        Guid workflowId,
+        object startCommand,
+        TimeSpan? terminalBudget = null)
+        where TSaga : class =>
+        SagaCompletionProbe.RunAsync<TSaga>(
+            this.RequireHost(),
+            this.Invocations,
+            workflowId,
+            startCommand,
+            terminalBudget ?? TimeSpan.FromSeconds(60));
 
     /// <summary>
     /// Stops and disposes the host and the shared Postgres container.
