@@ -267,29 +267,27 @@ internal static class WorkflowDiagnostics
     /// </summary>
     /// <remarks>
     /// Reported when a step declares a configuration concern that the generator does not
-    /// lower for that step's kind, so the configuration silently has no effect. Two guarded
-    /// cases, both confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) on an
-    /// INTERMEDIATE (non-last) step of a construct whose LAST step IS lowered:
-    /// <list type="bullet">
-    ///   <item><description>
-    ///     an intermediate <b>fork-path</b> step — a fork path's last step lowers into the fork
-    ///     path-completed handler (DR-4 / #145 gap A), an intermediate one does not; and
-    ///   </description></item>
-    ///   <item><description>
-    ///     an intermediate <b>loop-body</b> step — a loop body's last step lowers into the loop
-    ///     completed handler (DR-5 / #145 gap B), an intermediate one does not.
-    ///   </description></item>
-    /// </list>
-    /// In both cases the configure lambda is threaded into the IR (so an out-of-range threshold
-    /// still surfaces <see cref="ConfidenceThresholdOutOfRange"/>), but the saga emitter's
-    /// lowering for the intermediate position is deferred (v2.10.0 / DR-17, #145). A warning
-    /// (not an error) so an author can suppress it by id while the deferral stands.
+    /// lower for that step's kind, so the configuration silently has no effect.
     /// <para>
-    /// Note: loop-body / nested-<c>RepeatUntil</c> confidence used to be a distinct, structurally
-    /// undiagnosable case — it was dropped from the IR entirely by step extraction, so an
-    /// IR-based diagnostic could not see it. Promoting the loop body to configured
-    /// <c>StepModel</c> records on <c>LoopModel.BodySteps</c> (#145) brought it into the IR, so
-    /// the intermediate loop-body case is now covered here.
+    /// The guarded case is confidence gating (<c>RequireConfidence</c>/<c>OnLowConfidence</c>)
+    /// declared on the step an <c>AwaitApproval</c> checkpoint follows. That step's completed
+    /// handler becomes the approval-request handler: it applies the reducer, moves the saga into
+    /// the waiting phase and asks for the decision. The threshold comparison is never emitted, so
+    /// the <c>OnLowConfidence</c> chain — which IS lowered into its own phase, start command and
+    /// worker handler — has nothing that can reach it, and the step's score is ignored.
+    /// </para>
+    /// <para>
+    /// The configure lambda is still threaded into the IR, so an out-of-range threshold on such a
+    /// step continues to surface <see cref="ConfidenceThresholdOutOfRange"/>. A warning rather
+    /// than an error, so an author can suppress it by id.
+    /// </para>
+    /// <para>
+    /// Every other position where confidence can be declared lowers, and none of them is reported
+    /// here: an intermediate path or loop-body step falls through to the generic completed
+    /// handler, whose gate applies no position test; a fork path's last step is gated by the fork
+    /// path-completed handler; a loop body's last step by the loop completed handler; and a branch
+    /// case's last step — rejoining or workflow-ending alike — by the branch path-end handler.
+    /// The id is retargeted as those gaps close, never renumbered or reused.
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor DeclaredButInert = new(

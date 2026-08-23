@@ -17,19 +17,22 @@ namespace Strategos.Generators.Tests.Diagnostics;
 /// <remarks>
 /// <para>
 /// The concrete inert case, verified against the generated saga: confidence gating
-/// (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on the LAST step of a
-/// non-terminal <c>Branch</c> case. The branch parse threads the configure lambda into the IR
-/// — so an out-of-range threshold still surfaces the threshold-range code — but a non-terminal
-/// case's last step is intercepted by the branch path-end handler, which routes straight to
-/// the case's rejoin target and never reads the step's confidence. Neither the
-/// <c>confidenceScore</c> comparison nor the <c>OnLowConfidence</c> routing reaches the saga.
+/// (<c>RequireConfidence</c>/<c>OnLowConfidence</c>) declared on the step an
+/// <c>AwaitApproval</c> checkpoint follows. The configure lambda reaches the IR — so an
+/// out-of-range threshold still surfaces the threshold-range code — and the handler chain is
+/// even lowered into its own phase, start command and worker handler. But that step's completed
+/// handler becomes the approval-request handler, which moves the saga into the waiting phase and
+/// asks for the decision, so the <c>confidenceScore</c> comparison is never emitted and the
+/// declared chain is unreachable.
 /// </para>
 /// <para>
-/// The diagnostic previously pointed at confidence on an INTERMEDIATE fork-path or loop-body
-/// step. Both were false positives: an intermediate path step falls through to the generic
-/// completed handler, which gates on the step's confidence with no position test, so those
-/// configurations DO lower. The negative tests below pin that by asserting the emitted gate,
-/// not merely the absent diagnostic (#145).
+/// Two earlier targets were retired as their gaps closed, and the negative tests below hold each
+/// closure down by asserting the emitted gate rather than merely the absent diagnostic (#145).
+/// An INTERMEDIATE fork-path or loop-body step was a false positive from the start: it falls
+/// through to the generic completed handler, which gates with no position test. A
+/// <c>Branch</c> case's LAST step was genuinely inert while the path-end handler had no
+/// confidence handling of its own; it has that handling now, for a rejoining and a
+/// workflow-ending case alike, so the gate lowers there too.
 /// </para>
 /// <para>
 /// The id is retargeted, never renumbered or reused (INV-5).
@@ -44,50 +47,69 @@ public sealed class DeclaredButInertTests
         + ".RequireConfidence(0.85)"
         + ".OnLowConfidence(alt => alt.Then<HumanReview>())";
 
+    private const string UnderwriterConfidenceGate = "step => step"
+        + ".RequireConfidence(0.85)"
+        + ".OnLowConfidence(alt => alt.Then<EscalateToUnderwriter>())";
+
     private const string LoweredRetryConfig = "step => step.WithRetry(2)";
 
     /// <summary>
-    /// Confidence gating on the LAST step of a non-terminal branch case fires AGWF022.
+    /// Confidence gating on the step an approval checkpoint follows fires AGWF022.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task DeclaredButInert_BranchCaseLastStepConfidence_ReportsAgwf022()
+    public async Task DeclaredButInert_ApprovalPrecedingStepConfidence_ReportsAgwf022()
     {
-        var source = BranchWorkflow(
-            lastCaseStepConfig: ConfidenceGate,
-            intermediateCaseStepConfig: LoweredRetryConfig);
+        var source = ApprovalWorkflow(precedingStepConfig: UnderwriterConfidenceGate);
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
         var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == DeclaredButInertId);
         await Assert.That(diagnostic).IsNotNull()
-            .Because("confidence gating on a branch case's last step is inert and must surface as AGWF022");
+            .Because("confidence gating on the step an approval follows is inert and must surface as AGWF022");
         await Assert.That(diagnostic!.Severity).IsEqualTo(DiagnosticSeverity.Warning);
-        await Assert.That(diagnostic.GetMessage()).Contains("PriceRepair");
+        await Assert.That(diagnostic.GetMessage()).Contains("ScoreApplicant");
     }
 
     /// <summary>
     /// The claim AGWF022 makes about that shape is true: the generated saga carries no
-    /// confidence comparison at all for the branch case's last step.
+    /// confidence comparison at all for the step the approval follows.
     /// </summary>
     /// <remarks>
     /// Without this the diagnostic is unfalsifiable — a diagnostic that fires proves only that
-    /// it fires, which is how the previous two emission sites survived while describing a
-    /// lowering that had in fact landed.
+    /// it fires, which is how earlier emission sites survived while describing a lowering that
+    /// had in fact landed.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task DeclaredButInert_BranchCaseLastStepConfidence_LowersNoConfidenceGate()
+    public async Task DeclaredButInert_ApprovalPrecedingStepConfidence_LowersNoConfidenceGate()
     {
-        var source = BranchWorkflow(
-            lastCaseStepConfig: ConfidenceGate,
-            intermediateCaseStepConfig: LoweredRetryConfig);
+        var source = ApprovalWorkflow(precedingStepConfig: UnderwriterConfidenceGate);
 
         var saga = GeneratorTestHelper.GetGeneratedSource(GeneratorTestHelper.RunGenerator(source), "Saga.g.cs");
 
         await Assert.That(saga)
             .DoesNotContain("confidenceScore")
-            .Because("the branch path-end handler never compares the completed event's confidence");
+            .Because("the approval-request handler replaces the gated completed handler outright");
+        await Assert.That(saga)
+            .Contains("StartEscalateToUnderwriterCommand")
+            .Because("the handler chain IS lowered — that is what makes the drop invisible without the diagnostic");
+    }
+
+    /// <summary>
+    /// An approval whose preceding step declares only LOWERED config (retry) must NOT fire —
+    /// the diagnostic is scoped to the inert config, not to every approval checkpoint.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_ApprovalPrecedingStepWithoutInertConfig_DoesNotReportAgwf022()
+    {
+        var source = ApprovalWorkflow(precedingStepConfig: LoweredRetryConfig);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("a step with only lowered (retry) config must not fire AGWF022");
     }
 
     /// <summary>
@@ -113,24 +135,125 @@ public sealed class DeclaredButInertTests
     }
 
     /// <summary>
-    /// A TERMINAL (<c>.Complete()</c>) case's last step does NOT fire: terminal cases are
-    /// excluded from the branch path-end dispatch, so that step also reaches the gating
-    /// generic completed handler.
+    /// A TERMINAL (<c>.Complete()</c>) case's last step does NOT fire: the branch path-end
+    /// handler that intercepts it emits the confidence gate itself.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
     public async Task DeclaredButInert_TerminalBranchCaseLastStep_DoesNotFire()
     {
-        var source = TerminalBranchWorkflow(terminalCaseStepConfig: ConfidenceGate);
+        var source = MixedBranchWorkflow(
+            rejoiningCaseStepConfig: LoweredRetryConfig,
+            endingCaseStepConfig: ConfidenceGate);
 
         var result = GeneratorTestHelper.RunGenerator(source);
         var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
 
         await Assert.That(saga)
             .Contains("confidenceScore < 0.85")
-            .Because("a terminal case's last step is not intercepted, so its gate lowers");
+            .Because("the path-end handler gates a workflow-ending case's last step");
         await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
             .Because("a configuration that lowers must not be reported as inert");
+    }
+
+    /// <summary>
+    /// A REJOINING case's last step does NOT fire either — the position AGWF022 used to report,
+    /// which the path-end handler now gates.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DeclaredButInert_RejoiningBranchCaseLastStep_DoesNotFire()
+    {
+        var source = MixedBranchWorkflow(
+            rejoiningCaseStepConfig: ConfidenceGate,
+            endingCaseStepConfig: LoweredRetryConfig);
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("confidenceScore < 0.85")
+            .Because("the path-end handler gates a rejoining case's last step");
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DeclaredButInertId)).IsFalse()
+            .Because("a configuration that lowers must not be reported as inert");
+    }
+
+    /// <summary>
+    /// The gate for a workflow-ending case's last step lands INSIDE that case's path-end
+    /// handler, ahead of the completion, and routes below-threshold results to the declared
+    /// handler instead of completing the saga.
+    /// </summary>
+    /// <remarks>
+    /// Asserting only that the saga contains a gate somewhere would pass on a gate emitted for
+    /// any other step, so both proofs delimit the handler first.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task BranchCase_TerminalLastStepConfidence_LowersIntoPathEndHandler()
+    {
+        var handler = BranchCaseHandlerFor(
+            MixedBranchWorkflow(
+                rejoiningCaseStepConfig: LoweredRetryConfig,
+                endingCaseStepConfig: ConfidenceGate),
+            "AssessLiabilityCompleted");
+
+        await Assert.That(handler).Contains("if (evt.Confidence is double confidenceScore && confidenceScore < 0.85)")
+            .Because("the ending case's last step declared a threshold, and this handler is the only one that sees its event");
+        await Assert.That(handler).Contains("yield return new StartHumanReviewCommand(WorkflowId);")
+            .Because("a below-threshold score must reach the declared handler chain");
+        await Assert.That(handler.IndexOf("confidenceScore < 0.85", StringComparison.Ordinal))
+            .IsLessThan(handler.IndexOf("MarkCompleted();", StringComparison.Ordinal))
+            .Because("a gate evaluated after the saga is marked completed would never route anything");
+    }
+
+    /// <summary>
+    /// The same gate lands inside a REJOINING case's path-end handler, ahead of the rejoin.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task BranchCase_RejoiningLastStepConfidence_LowersIntoPathEndHandler()
+    {
+        var handler = BranchCaseHandlerFor(
+            MixedBranchWorkflow(
+                rejoiningCaseStepConfig: ConfidenceGate,
+                endingCaseStepConfig: LoweredRetryConfig),
+            "AssessDamageCompleted");
+
+        await Assert.That(handler).Contains("if (evt.Confidence is double confidenceScore && confidenceScore < 0.85)")
+            .Because("the rejoining case's last step declared a threshold, and this handler is the only one that sees its event");
+        await Assert.That(handler).Contains("yield return new StartHumanReviewCommand(WorkflowId);")
+            .Because("a below-threshold score must reach the declared handler chain");
+        await Assert.That(handler.IndexOf("confidenceScore < 0.85", StringComparison.Ordinal))
+            .IsLessThan(handler.IndexOf("StartSettleClaimCommand", StringComparison.Ordinal))
+            .Because("a gate evaluated after the rejoin command is emitted would never divert the path");
+    }
+
+    /// <summary>
+    /// The branch's routing switch dispatches each case to the case's OWN first step.
+    /// </summary>
+    /// <remarks>
+    /// A raw descendant walk of the case lambda also collected the <c>Then&lt;THandler&gt;</c>
+    /// written inside <c>OnLowConfidence</c>, and that nested call sorted ahead of the step
+    /// owning it — so the branch dispatched straight to the handler and the case's own steps
+    /// never ran. Every gate proof above would still pass under that defect, because the gate is
+    /// emitted into a handler nothing reaches.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task BranchRouting_CaseWithConfidenceGatedStep_DispatchesToTheCaseStep()
+    {
+        var source = MixedBranchWorkflow(
+            rejoiningCaseStepConfig: ConfidenceGate,
+            endingCaseStepConfig: LoweredRetryConfig);
+
+        var saga = GeneratorTestHelper.GetGeneratedSource(GeneratorTestHelper.RunGenerator(source), "Saga.g.cs");
+
+        await Assert.That(saga)
+            .Contains("ClaimKind.Collision => new StartAssessDamageCommand(WorkflowId),")
+            .Because("the case's first step is the step it declared, not the handler named inside its OnLowConfidence lambda");
+        await Assert.That(saga)
+            .DoesNotContain("=> new StartHumanReviewCommand(WorkflowId),")
+            .Because("the low-confidence handler is reached from the gate, never from the branch's routing switch");
     }
 
     /// <summary>
@@ -353,12 +476,22 @@ public sealed class DeclaredButInertTests
         """;
 
     /// <summary>
-    /// Builds the same claim workflow with the first case marked TERMINAL via
-    /// <c>Complete()</c>, so its last step is excluded from the branch path-end dispatch.
+    /// Builds a claim workflow whose branch mixes a REJOINING case (<c>AssessDamage</c>, falling
+    /// through to <c>SettleClaim</c>) with a WORKFLOW-ENDING case (<c>AssessLiability</c>,
+    /// declaring <c>Complete()</c>), ahead of a declared terminal. Each case's single step carries
+    /// the supplied configure lambda.
     /// </summary>
-    /// <param name="terminalCaseStepConfig">The configure lambda for the terminal case's last step.</param>
+    /// <remarks>
+    /// The mixed shape is the discriminating one: the rejoining case gives the branch a
+    /// convergence point, so a path-end handler that reads only the branch-level flag would treat
+    /// both cases alike. The discriminator is an enum, not a <c>bool</c> (#179).
+    /// </remarks>
+    /// <param name="rejoiningCaseStepConfig">The configure lambda for the rejoining case's step.</param>
+    /// <param name="endingCaseStepConfig">The configure lambda for the workflow-ending case's step.</param>
     /// <returns>The workflow source text.</returns>
-    private static string TerminalBranchWorkflow(string terminalCaseStepConfig) => $$"""
+    private static string MixedBranchWorkflow(
+        string rejoiningCaseStepConfig,
+        string endingCaseStepConfig) => $$"""
         using System;
         using System.Threading;
         using System.Threading.Tasks;
@@ -372,63 +505,172 @@ public sealed class DeclaredButInertTests
 
         public enum ClaimKind { Collision, Liability }
 
-        public record ClaimState : IWorkflowState
+        public sealed record ClaimState : IWorkflowState
         {
             public Guid WorkflowId { get; init; }
             public ClaimKind Kind { get; init; }
         }
 
-        public class IntakeClaim : IWorkflowStep<ClaimState>
+        public sealed class IntakeClaim : IWorkflowStep<ClaimState>
         {
             public Task<StepResult<ClaimState>> ExecuteAsync(
                 ClaimState state, StepContext context, CancellationToken ct)
                 => Task.FromResult(StepResult<ClaimState>.FromState(state));
         }
 
-        public class PriceRepair : IWorkflowStep<ClaimState>
+        public sealed class AssessDamage : IWorkflowStep<ClaimState>
         {
             public Task<StepResult<ClaimState>> ExecuteAsync(
                 ClaimState state, StepContext context, CancellationToken ct)
                 => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
         }
 
-        public class AssessLiability : IWorkflowStep<ClaimState>
+        public sealed class AssessLiability : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.WithConfidence(state, 0.5));
+        }
+
+        public sealed class HumanReview : IWorkflowStep<ClaimState>
         {
             public Task<StepResult<ClaimState>> ExecuteAsync(
                 ClaimState state, StepContext context, CancellationToken ct)
                 => Task.FromResult(StepResult<ClaimState>.FromState(state));
         }
 
-        public class HumanReview : IWorkflowStep<ClaimState>
+        public sealed class SettleClaim : IWorkflowStep<ClaimState>
         {
             public Task<StepResult<ClaimState>> ExecuteAsync(
                 ClaimState state, StepContext context, CancellationToken ct)
                 => Task.FromResult(StepResult<ClaimState>.FromState(state));
         }
 
-        public class SettleClaim : IWorkflowStep<ClaimState>
-        {
-            public Task<StepResult<ClaimState>> ExecuteAsync(
-                ClaimState state, StepContext context, CancellationToken ct)
-                => Task.FromResult(StepResult<ClaimState>.FromState(state));
-        }
-
-        [Workflow("terminal-branch-claim")]
-        public static partial class TerminalBranchClaimWorkflow
+        [Workflow("mixed-branch-claim")]
+        public static partial class MixedBranchClaimWorkflow
         {
             public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
-                .Create("terminal-branch-claim")
+                .Create("mixed-branch-claim")
                 .StartWith<IntakeClaim>()
                 .Branch(state => state.Kind,
-                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path =>
-                    {
-                        path.Then<PriceRepair>({{terminalCaseStepConfig}});
-                        path.Complete();
-                    }),
-                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path.Then<AssessLiability>()))
+                    BranchCase<ClaimState, ClaimKind>.When(ClaimKind.Collision, path => path
+                        .Then<AssessDamage>({{rejoiningCaseStepConfig}})),
+                    BranchCase<ClaimState, ClaimKind>.Otherwise(path => path
+                        .Then<AssessLiability>({{endingCaseStepConfig}})
+                        .Complete()))
                 .Finally<SettleClaim>();
         }
         """;
+
+    /// <summary>
+    /// Builds a loan workflow whose <c>ScoreApplicant</c> step carries the supplied configure
+    /// lambda and is immediately followed by an <c>AwaitApproval</c> checkpoint.
+    /// </summary>
+    /// <param name="precedingStepConfig">The configure lambda for the step the approval follows.</param>
+    /// <returns>The workflow source text.</returns>
+    private static string ApprovalWorkflow(string precedingStepConfig) => $$"""
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public sealed record LoanState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public sealed class ReceiveApplication : IWorkflowStep<LoanState>
+        {
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
+        }
+
+        public sealed class ScoreApplicant : IWorkflowStep<LoanState>
+        {
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.WithConfidence(state, 0.5));
+        }
+
+        public sealed class EscalateToUnderwriter : IWorkflowStep<LoanState>
+        {
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
+        }
+
+        public sealed class NotifyApplicantDeclined : IWorkflowStep<LoanState>
+        {
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
+        }
+
+        public sealed class IssueLoan : IWorkflowStep<LoanState>
+        {
+            public Task<StepResult<LoanState>> ExecuteAsync(
+                LoanState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoanState>.FromState(state));
+        }
+
+        public sealed class LoanOfficerApprover
+        {
+        }
+
+        [Workflow("loan-approval")]
+        public static partial class LoanApprovalWorkflow
+        {
+            public static WorkflowDefinition<LoanState> Definition => Workflow<LoanState>
+                .Create("loan-approval")
+                .StartWith<ReceiveApplication>()
+                .Then<ScoreApplicant>({{precedingStepConfig}})
+                .AwaitApproval<LoanOfficerApprover>(approval => approval
+                    .WithOption("approve", "Approve", "Grant the loan.", isDefault: true)
+                    .WithOption("decline", "Decline", "Refuse the loan.")
+                    .OnRejection(rejection => rejection
+                        .Then<NotifyApplicantDeclined>()
+                        .Complete()))
+                .Finally<IssueLoan>();
+        }
+        """;
+
+    /// <summary>
+    /// Extracts the single completed-event handler method for the named event from the saga the
+    /// supplied source generates, signature through closing brace.
+    /// </summary>
+    /// <param name="source">The workflow source text to run the generator over.</param>
+    /// <param name="eventName">The completed-event type name the handler accepts.</param>
+    /// <returns>The handler method's source text.</returns>
+    private static string BranchCaseHandlerFor(string source, string eventName)
+    {
+        var saga = GeneratorTestHelper.GetGeneratedSource(
+            GeneratorTestHelper.RunGenerator(source), "Saga.g.cs");
+
+        var parameter = $"{eventName} evt,";
+        var parameterIndex = saga.IndexOf(parameter, StringComparison.Ordinal);
+        if (parameterIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"The emitted saga has no handler accepting '{eventName}'. Emitted source:{Environment.NewLine}{saga}");
+        }
+
+        var start = saga.LastIndexOf("    public ", parameterIndex, StringComparison.Ordinal);
+        var end = saga.IndexOf($"{Environment.NewLine}    }}", parameterIndex, StringComparison.Ordinal);
+        if (start < 0 || end < 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not delimit the handler for '{eventName}'. Emitted source:{Environment.NewLine}{saga}");
+        }
+
+        return saga.Substring(start, end - start);
+    }
 
     /// <summary>
     /// Builds a workflow whose <c>ForkedAssess</c> step lives on the first <c>Fork</c> path
