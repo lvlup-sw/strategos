@@ -53,6 +53,15 @@ for *n* authored steps. The phantom entry produced a second phase, command and h
 `CS0111` duplicate-member error in the consuming compilation — and it was the name the fork
 dispatch targeted.
 
+**Approval rejection and escalation chains route correctly (#155).** A multi-step
+`OnRejection` or `OnTimeout` chain never ran past its first step in any released version — and it
+was wrong in two different ways. The step list was scanned positionally, so a rejection chain fell
+through into the *escalation* chain when both were declared. Classifying the chains as off-main-flow
+fixed that and introduced the opposite fault: no in-path successor was recorded, so the first step
+completed the saga. Chains now carry in-path successors the way fork paths and branch cases do, and
+a chain's last step either completes (when it declared `Complete()`) or resumes onto the same
+main-flow step the approval itself resumes onto.
+
 **An approval no longer resumes onto an appended step.** The approval-resume scan indexed the step
 list positionally with no filter, so an approved checkpoint could resume onto a fork-path,
 branch-case, failure-handler or handler-chain step, bypassing that construct's own dispatch. It
@@ -135,6 +144,10 @@ one the issue did not name.
 - **#182** — an `AwaitApproval` immediately before a `Fork` resumes onto the join, so the fork never
   dispatches and the saga hangs. Both the old and new resume scans get this shape wrong.
 - **#183** — the phase-name persistence guarantee above is System.Text.Json-only.
+- **#186** — an `AwaitApproval` that is *last* on the main flow never starts its rejection chain: the
+  saga sets the phase and dispatches nothing, so it parks forever. Independent of the chain-routing
+  fix above — that one routes a chain once it has started. Every rejection fixture in the repository
+  puts the checkpoint mid-flow, which is why the shape was invisible.
 - **#184** — a loop-exit `Branch` whose cases rejoin never dispatches the declared `Finally` step.
   Pre-existing and made *less* wrong by this release (the sibling case no longer runs), but the
   declared step is still skipped. `AGWF035` cannot see it: the terminal is last, it simply has no
