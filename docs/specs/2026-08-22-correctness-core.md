@@ -611,6 +611,19 @@ There are two package listing files and the issue names the unpublished one; the
 **Verification:** the entry records the consumer-visible change to the generated transition table and phase enum ordering, the two fixed termination defects with their issue numbers, and whichever way task 022 settled the diagnostic. Prose checks scan root, source and docs markdown, so run them over the change.
 **Dependencies:** 012, 013, 017, 018, 021, 024, 031 · **Parallelizable:** No
 
+### Task 034: The branch path-end handler gates on confidence
+
+**Found at integration, wave 3 — a cross-lane regression neither lane could see alone.** `BranchHandlerEmitter` has **zero** confidence handling; `StepCompletedHandlerEmitter` has twenty-one. Before task 015, a terminal branch case's last step avoided the path-end handler (it was excluded from the lookup) and so fell through to the generic handler, where its confidence gate lowered correctly. Task 015 removes that exclusion — necessarily, to fix #175 — and the gate silently stops lowering.
+
+A **rejoining** case's last step has *always* gone through the path-end handler, so confidence gating there has always been inert. That is precisely what task 022's retargeted diagnostic reports. The right move is to remove the inertness rather than diagnose more of it: teach the path-end handler the same confidence-gate prologue the generic handler emits, for both terminal and rejoining cases. The diagnostic then has no trigger left in this family, which is the outcome to want — a declared control with no trigger is only a defect when the underlying gap survives.
+
+**Risk Tier:** high · **Boundary Touching:** true · **Test Layer:** integration
+**Implements:** DR-4, DR-6
+**Files:** `src/Strategos.Generators/Emitters/Saga/BranchHandlerEmitter.cs`, `src/Strategos.Generators.Tests/Diagnostics/DeclaredButInertTests.cs`, `src/Strategos.Generators.Behavioral.Tests/BranchBehaviorTests.cs`
+**Tests:** `BranchCase_TerminalLastStepConfidence_LowersIntoPathEndHandler`, `BranchCase_RejoiningLastStepConfidence_LowersIntoPathEndHandler`, `Saga_BranchCaseLowConfidence_RoutesToHandler`
+**Verification:** a confidence gate on a branch case's last step lowers for **both** case kinds, proven by the emitted gate and by a real-host run where a below-threshold score routes to the declared handler. `DeclaredButInert_TerminalBranchCaseLastStep_DoesNotFire` — currently red on the integration branch — goes green. Task 022's retargeted diagnostic loses its trigger; retire or re-aim it, and say which. Do not resolve this by widening the diagnostic to cover terminal cases: that accepts a capability regression and reports it, rather than removing it.
+**Dependencies:** 015, 022 · **Parallelizable:** No
+
 ### Parallelization
 
 | Group | Tasks | Notes |
@@ -620,7 +633,7 @@ There are two package listing files and the issue names the unpublished one; the
 | Wave 3 | 006 → 010 | Serial. The spine: classify, then order. |
 | Wave 4 | 007, 008, 009, 018, 019, 020 | Fan out once 010 lands. |
 | Wave 5 | 011, 022 → 023, 012, 013, 015 | Serial within the `StepExtractor.cs` group: 011 and 022 both edit it, and 022 must follow 010 before its duplicate oracle is evaluable. 012 closes fork; 013 the guard; 015 branch. |
-| Wave 6 | 014, 017, 021, 024, 031 | Closing proofs, the re-assertion pass, and the pin's update bot. |
+| Wave 6 | 013, 014, 034, 021, 024, 031 | Closing proofs, the re-assertion pass, and the pin's update bot. |
 | Post-merge | 026 | DR-8's only honest proof: issue-triggered workflows run from the default branch. |
 | Wave 7 | 032 | The release note, written once, after everything it describes has landed. |
 
