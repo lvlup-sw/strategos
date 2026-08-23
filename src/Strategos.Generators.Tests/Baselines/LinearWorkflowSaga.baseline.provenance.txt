@@ -1,0 +1,62 @@
+Provenance for LinearWorkflowSaga.baseline.txt
+==============================================
+
+WHAT IT IS
+  The complete non-event-sourced (SagaDocument) saga emit for a linear workflow —
+  no fork, no branch, no loop, no failure handler, no approval point, no
+  confidence gate — captured from the generator BEFORE any off-main-flow
+  classification or step-list reordering work was applied.
+
+  It is the "before" half of the linear-workflow output-equality guard. The
+  classification and reordering work must be INERT for a workflow that has no
+  off-main-flow steps, and this file is what makes that claim falsifiable
+  instead of assertable. Writing the expectation after the change instead would
+  embed post-change output and be green by construction.
+
+HOW IT WAS CAPTURED
+  Fixture      : SourceTexts.LinearWorkflow
+                 (StartWith<ValidateOrder> -> Then<ProcessPayment>
+                  -> Finally<SendConfirmation>, persistence mode SagaDocument)
+  Emit         : hint name "ProcessOrderSaga.g.cs" from
+                 GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow)
+  Verified     : two runs in the same process produced byte-identical output
+                 before the file was written.
+
+COMMIT PROVENANCE
+  Captured at commit          : 92e3e676a0f8a8cc6ea08f994fb740b885743471
+                                (branch feat/v2110-oracles)
+  Slice integration tip then  : bc93ac3a37d7840fc0aa00df7d8f9ac31e2874b7
+  Generator source last moved : 38854c0eff662f4aa083c07f4b7b0de06da3d8b2
+                                ("feat: strategy-compiler contract layer (v2.10.0)", 2026-07-08)
+  Capture date                : 2026-08-22
+
+  The capture commit contains only test-side changes; nothing under
+  src/Strategos.Generators/ had moved since 38854c0, which is the commit the
+  CONTENT of this baseline is actually a function of.
+
+THE ONE NORMALIZATION
+  The emitted [GeneratedCode("LevelUp.Strategos", "<version>")] argument is
+  resolved from the generator assembly's MinVer-stamped informational version
+  (Helpers/GeneratorMetadata.cs), so it changes with every commit's height even
+  when no generator source changes at all. A literally byte-identical baseline
+  would therefore fail on the next commit for a reason that has nothing to do
+  with the emit.
+
+  That single token — and nothing else — is stored here as the placeholder
+  {generator-version}, and the comparison applies the identical substitution to
+  the regenerated output before comparing. Line endings are normalized to LF on
+  both sides. Every other byte is compared exactly.
+
+RE-CAPTURING
+  Do NOT re-capture this file to make a failing comparison pass. A baseline
+  captured after any of the off-main-flow classification or step-list ordering
+  work has landed is worthless: it records the very output it is supposed to be
+  independent of.
+
+  A difference against this baseline means one of two things, and only reading
+  the diff tells you which:
+    (a) the change leaked into linear-workflow output, which the requirement
+        forbids — fix the change, not the baseline; or
+    (b) linear output changed deliberately for an unrelated, stated reason — in
+        which case re-capture, and replace this whole file with the new
+        provenance and the reason.
