@@ -837,6 +837,18 @@ internal static class WireToModelBridge
         IReadOnlyList<StepModel> baseStepModels,
         IReadOnlyList<ForkModel> forkModels)
     {
+        // Map the wire step id a fork originates from to its ForkModel (same order as the wire fork
+        // points), so a fork's path steps can be woven in right after the step that precedes it.
+        var forksByFromStepId = new Dictionary<string, ForkModel>(StringComparer.Ordinal);
+        for (var i = 0; i < forkModels.Count && i < definition.ForkPoints.Count; i++)
+        {
+            var fromId = definition.ForkPoints[i].FromStepId;
+            if (!string.IsNullOrEmpty(fromId))
+            {
+                forksByFromStepId[fromId!] = forkModels[i];
+            }
+        }
+
         var stepNames = new List<string>(baseStepModels.Count);
         var existing = new HashSet<string>(StringComparer.Ordinal);
 
@@ -848,15 +860,27 @@ internal static class WireToModelBridge
             }
         }
 
-        // The top-level linear steps (including the join step, itself a top-level step) come first,
-        // in document order — the C#-authoring path's ExtractStepInfos yields exactly this order.
-        foreach (var step in baseStepModels)
+        for (var i = 0; i < baseStepModels.Count; i++)
         {
-            AddName(step.PhaseName);
+            AddName(baseStepModels[i].PhaseName);
+
+            var stepId = definition.Steps[i].StepId;
+            if (!string.IsNullOrEmpty(stepId) && forksByFromStepId.TryGetValue(stepId!, out var fork))
+            {
+                foreach (var path in fork.Paths)
+                {
+                    foreach (var step in path.Steps)
+                    {
+                        AddName(step.PhaseName);
+                    }
+                }
+            }
         }
 
-        // Each fork's parallel path steps are then appended, in fork then path then step order,
-        // mirroring the C#-authoring post-processing (fork path steps live off the top-level chain).
+        // An export that already lists its path steps as top-level steps has had them added in
+        // document position above, so this sweep is a dedupe no-op. It remains as the catch-all
+        // for a fork whose originating step id does not resolve, so no path step is ever dropped
+        // from the lowering.
         foreach (var fork in forkModels)
         {
             foreach (var path in fork.Paths)

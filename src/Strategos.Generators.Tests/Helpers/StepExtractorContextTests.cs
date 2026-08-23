@@ -369,12 +369,6 @@ public class StepExtractorContextTests
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("Red until the splice direction moves to the caller. A top-level fork's path steps "
-        + "are appended after the terminal, so the phase-name list is observed as "
-        + "[ValidateOrder, SynthesizeResults, SendConfirmation, ProcessPayment, ReserveInventory] "
-        + "against a document order of "
-        + "[ValidateOrder, ProcessPayment, ReserveInventory, SynthesizeResults, SendConfirmation]. "
-        + "Do NOT satisfy this by rewriting the expectation to match today's output.")]
     public async Task StepNames_ForkWorkflow_MatchesDocumentOrder()
     {
         var context = CreateContext(SourceTexts.WorkflowWithFork);
@@ -401,12 +395,6 @@ public class StepExtractorContextTests
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("Red until the splice direction moves to the caller. A top-level branch's case steps "
-        + "are appended after the terminal, so the phase-name list is observed as "
-        + "[ValidateClaim, CompleteClaim, ProcessAutoClaim, ProcessHomeClaim, ProcessLifeClaim] "
-        + "against a document order of "
-        + "[ValidateClaim, ProcessAutoClaim, ProcessHomeClaim, ProcessLifeClaim, CompleteClaim]. "
-        + "Do NOT satisfy this by rewriting the expectation to match today's output.")]
     public async Task StepNames_BranchWorkflow_MatchesDocumentOrder()
     {
         var context = CreateContext(SourceTexts.WorkflowWithEnumBranch);
