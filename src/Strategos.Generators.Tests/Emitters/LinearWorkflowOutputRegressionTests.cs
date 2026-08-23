@@ -55,6 +55,12 @@ public sealed class LinearWorkflowOutputRegressionTests
     private const string VersionPlaceholder = "{generator-version}";
 
     /// <summary>
+    /// The tool-name argument of the emitted <c>[GeneratedCode(…)]</c> attribute. It sits
+    /// beside the exempt version argument and is NOT exempt.
+    /// </summary>
+    private const string ToolName = "LevelUp.Strategos";
+
+    /// <summary>
     /// Matches the emitted <c>[GeneratedCode("LevelUp.Strategos", "…")]</c> version argument.
     /// It is resolved from the generator assembly's MinVer-stamped informational version, so
     /// it moves with every commit's height even when no generator source changes. It is the
@@ -154,6 +160,81 @@ public sealed class LinearWorkflowOutputRegressionTests
         await Assert.That(Normalize(restamped))
             .IsEqualTo(expected)
             .Because("the tool-version argument is the only token the comparison normalizes away");
+    }
+
+    /// <summary>
+    /// The comparison is sensitive to what the GENERATOR produced, not merely to text the
+    /// test controls: a workflow that differs from the fixture by one step name does not
+    /// match the baseline.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    /// <remarks>
+    /// The other sensitivity check mutates the baseline string and compares it to itself,
+    /// which cannot tell a guard that reads real generator output from one that has quietly
+    /// stopped doing so — a wrong hint name, an emit that collapsed to nothing, or a
+    /// comparison short-circuited on the expected side would all still pass it. Driving the
+    /// difference in through the generator's own input closes that.
+    /// </remarks>
+    [Test]
+    public async Task LinearWorkflowSaga_AlteredWorkflowSource_DoesNotMatchBaseline()
+    {
+        var baselinePath = Path.Combine(AppContext.BaseDirectory, BaselineRelativePath);
+        var expected = Normalize(File.ReadAllText(baselinePath));
+
+        // One step renamed, the workflow name left alone so the emit still lands under the
+        // same hint name. Everything the step contributes — its phase, commands, events and
+        // handlers — moves with it.
+        var altered = SourceTexts.LinearWorkflow.Replace(
+            "ProcessPayment",
+            "AuthorizePayment",
+            StringComparison.Ordinal);
+
+        var generated = GeneratorTestHelper.GetGeneratedSource(
+            GeneratorTestHelper.RunGenerator(altered),
+            SagaHintName);
+
+        await Assert.That(generated)
+            .IsNotEmpty()
+            .Because($"the altered fixture must still emit a saga under hint name '{SagaHintName}'");
+
+        await Assert.That(Normalize(generated))
+            .IsNotEqualTo(expected)
+            .Because(
+                "a workflow that differs from the baseline fixture must not compare equal to "
+                + "the baseline; if it does, the comparison is not reading generator output");
+    }
+
+    /// <summary>
+    /// The declared exemption is exactly one argument wide. A difference in the tool NAME —
+    /// the argument sitting next to the exempt one, inside the same attribute — is still
+    /// compared.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    /// <remarks>
+    /// The exemption exists only because the version argument is MinVer-stamped from commit
+    /// height and moves without any generator change. Its neighbour has no such excuse. The
+    /// failure mode this guards is a normalization pattern widened until it swallows the
+    /// whole attribute: the version placeholder would still round-trip, so the other
+    /// sensitivity check would stay green while the attribute stopped being compared at all.
+    /// </remarks>
+    [Test]
+    public async Task LinearWorkflowSaga_NormalizationExemption_CoversOnlyTheVersionArgument()
+    {
+        var baselinePath = Path.Combine(AppContext.BaseDirectory, BaselineRelativePath);
+        var baseline = File.ReadAllText(baselinePath);
+
+        await Assert.That(baseline)
+            .Contains(ToolName)
+            .Because("the baseline must carry the tool-name argument for this claim to mean anything");
+
+        var toolRenamed = baseline.Replace(ToolName, "Other.Toolchain", StringComparison.Ordinal);
+
+        await Assert.That(Normalize(toolRenamed))
+            .IsNotEqualTo(Normalize(baseline))
+            .Because(
+                "only the version argument is normalized away; a normalization wide enough to "
+                + "also swallow the tool name would make these compare equal and would stop "
+                + "comparing the attribute altogether");
     }
 
     /// <summary>

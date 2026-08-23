@@ -176,3 +176,166 @@ public static partial class FailureHandlerProofWorkflowDefinition
         .OnFailure(flow => flow.Then<NotifyFailure>().Complete())
         .Finally<FailureHandlerNeverReachedStep>();
 }
+
+// =============================================================================
+// The SUCCESS-PATH twin of the fixture above.
+//
+// The proof above deliberately never reaches its terminal: its middle step always
+// throws, so the saga routes into the OnFailure chain and the terminal step's
+// invocation count STAYING AT ZERO is the assertion. That leaves the opposite case
+// unproven — a workflow that declares an OnFailure chain, never fails, and must
+// therefore run straight through its terminal to completion.
+//
+// It is not the same code path. A workflow-level OnFailure lowers its handler steps
+// as extra entries appended to the workflow's step-name list AFTER the declared
+// terminal, so the terminal is no longer the last entry. A successor scan that reads
+// "last" off list position hands the terminal the appended handler step as its
+// successor: on the success path the terminal cascades into the failure handler and
+// the saga never completes. Only a run that actually reaches the terminal can observe
+// that, which is what this fixture is for.
+//
+// Every type below is new rather than shared with the fixture above: two [Workflow]
+// definitions in one compilation may not name the same step CLR type, because the
+// generated per-step handler classes would collide (CS0101).
+// =============================================================================
+
+/// <summary>
+/// Immutable state for the success-path order-fulfillment fixture.
+/// </summary>
+/// <remarks>
+/// Carries a per-step counter so the folded state is observable independently of the
+/// invocation log, plus a flag the refund handler sets — which must stay
+/// <see langword="false"/> on a run where nothing fails.
+/// </remarks>
+[WorkflowState]
+public sealed record OrderFulfillmentState : IWorkflowState
+{
+    /// <summary>
+    /// Gets the unique identifier for this workflow instance.
+    /// </summary>
+    public Guid WorkflowId { get; init; }
+
+    /// <summary>
+    /// Gets the number of steps that have folded their result into state.
+    /// </summary>
+    public int StepCount { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the charge was refunded by the failure handler.
+    /// </summary>
+    public bool ChargeRefunded { get; init; }
+}
+
+/// <summary>
+/// Entry step of the success-path fixture. Deterministic: it never throws.
+/// </summary>
+/// <param name="log">The shared invocation log injected by the host.</param>
+public sealed class ReserveInventory(WorkflowInvocationLog log) : IWorkflowStep<OrderFulfillmentState>
+{
+    private readonly WorkflowInvocationLog log = log;
+
+    /// <inheritdoc />
+    public Task<StepResult<OrderFulfillmentState>> ExecuteAsync(
+        OrderFulfillmentState state,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        this.log.Record(nameof(ReserveInventory));
+
+        var updated = state with { StepCount = state.StepCount + 1 };
+        return Task.FromResult(StepResult<OrderFulfillmentState>.FromState(updated));
+    }
+}
+
+/// <summary>
+/// The middle step. It is the step the workflow-level <c>OnFailure</c> chain guards,
+/// and — unlike its counterpart in the fixture above — it succeeds on every
+/// invocation, so the run stays on the main flow all the way to the terminal.
+/// </summary>
+/// <param name="log">The shared invocation log injected by the host.</param>
+public sealed class ChargeCustomer(WorkflowInvocationLog log) : IWorkflowStep<OrderFulfillmentState>
+{
+    private readonly WorkflowInvocationLog log = log;
+
+    /// <inheritdoc />
+    public Task<StepResult<OrderFulfillmentState>> ExecuteAsync(
+        OrderFulfillmentState state,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        this.log.Record(nameof(ChargeCustomer));
+
+        var updated = state with { StepCount = state.StepCount + 1 };
+        return Task.FromResult(StepResult<OrderFulfillmentState>.FromState(updated));
+    }
+}
+
+/// <summary>
+/// The workflow-level <c>OnFailure</c> handler step. Nothing in this fixture ever
+/// fails, so its invocation count staying at zero is the observable proof that the
+/// terminal completed the saga instead of cascading into the appended handler chain.
+/// </summary>
+/// <param name="log">The shared invocation log injected by the host.</param>
+public sealed class RefundCharge(WorkflowInvocationLog log) : IWorkflowStep<OrderFulfillmentState>
+{
+    private readonly WorkflowInvocationLog log = log;
+
+    /// <inheritdoc />
+    public Task<StepResult<OrderFulfillmentState>> ExecuteAsync(
+        OrderFulfillmentState state,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        this.log.Record(nameof(RefundCharge));
+
+        var updated = state with { ChargeRefunded = true };
+        return Task.FromResult(StepResult<OrderFulfillmentState>.FromState(updated));
+    }
+}
+
+/// <summary>
+/// The declared terminal step. Reaching it exactly once, and having the saga document
+/// removed afterwards, is what this fixture exists to demonstrate.
+/// </summary>
+/// <param name="log">The shared invocation log injected by the host.</param>
+public sealed class ConfirmShipment(WorkflowInvocationLog log) : IWorkflowStep<OrderFulfillmentState>
+{
+    private readonly WorkflowInvocationLog log = log;
+
+    /// <inheritdoc />
+    public Task<StepResult<OrderFulfillmentState>> ExecuteAsync(
+        OrderFulfillmentState state,
+        StepContext context,
+        CancellationToken cancellationToken)
+    {
+        this.log.Record(nameof(ConfirmShipment));
+
+        var updated = state with { StepCount = state.StepCount + 1 };
+        return Task.FromResult(StepResult<OrderFulfillmentState>.FromState(updated));
+    }
+}
+
+/// <summary>
+/// The success-path order-fulfillment workflow definition: a linear main flow guarded
+/// by a workflow-level <c>OnFailure</c> chain that is never triggered.
+/// </summary>
+/// <remarks>
+/// The <see cref="WorkflowAttribute"/> drives the source generator to emit the saga,
+/// the per-step worker handlers, the failure-handler trigger/start/worker commands for
+/// <see cref="RefundCharge"/>, and the <c>AddOrderFulfillmentWorkflow()</c> DI
+/// extension the host fixture registers.
+/// </remarks>
+[Workflow("order-fulfillment")]
+public static partial class OrderFulfillmentWorkflowDefinition
+{
+    /// <summary>
+    /// Gets the fluent workflow definition: reserve, charge, confirm — with a refund
+    /// handler declared for the failure that never happens.
+    /// </summary>
+    public static WorkflowDefinition<OrderFulfillmentState> Definition => Workflow<OrderFulfillmentState>
+        .Create("order-fulfillment")
+        .StartWith<ReserveInventory>()
+        .Then<ChargeCustomer>()
+        .OnFailure(flow => flow.Then<RefundCharge>().Complete())
+        .Finally<ConfirmShipment>();
+}
