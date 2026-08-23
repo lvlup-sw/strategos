@@ -1,0 +1,102 @@
+// -----------------------------------------------------------------------
+// <copyright file="BehavioralProofFixture.cs.txt" company="Levelup Software">
+// Copyright (c) Levelup Software. All rights reserved.
+// </copyright>
+// -----------------------------------------------------------------------
+//
+// A SYNTHETIC stand-in for a behavioral proof file, read as text by the parity guard's
+// negative tests. The `.cs.txt` extension keeps it out of the project's compile glob, so
+// nothing declared below is ever built or run.
+//
+// It exists so the guard's rejection of a non-running proof can be tested against a fixture
+// whose skip state is owned by this file and nothing else. Pointing that assertion at a real
+// skipped test in the behavioral suite would invert silently the day someone un-skips it.
+//
+// Every trap the old three-part substring check accepted is represented here exactly once.
+
+namespace Strategos.Generators.Behavioral.Tests;
+
+/// <summary>
+/// Order-fulfilment proofs, one per outcome the guard has to distinguish.
+/// </summary>
+public sealed class OrderFulfilmentProofFixture
+{
+    /// <summary>
+    /// A real proof: a test method a default run executes. The guard must ACCEPT this one.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_ShipOrder_CompletesOnRealHost()
+    {
+        await Assert.That(true).IsTrue();
+    }
+
+    /// <summary>
+    /// A skipped proof. Its name is in the file text, so a substring check accepts it; the
+    /// guard must REJECT it, because a test that never runs can never fail.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Skip("synthetic fixture: this proof deliberately never runs")]
+    public async Task Saga_RefundOrder_ReleasesPayment()
+    {
+        await Assert.That(true).IsTrue();
+    }
+
+    /// <summary>
+    /// An opt-in-only proof. Excluded from a default run for the same reason a skipped one
+    /// is, so the guard must REJECT it too.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Explicit]
+    public async Task Saga_CancelOrder_RestocksInventory()
+    {
+        await Assert.That(true).IsTrue();
+    }
+
+    /// <summary>
+    /// A running proof whose doc comment mentions a proof that does not exist here:
+    /// <see cref="Saga_ChargePayment_EmitsReceipt"/>. A substring check accepts that name;
+    /// the guard must REJECT it.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_ReserveInventory_HoldsStock()
+    {
+        await Assert.That(true).IsTrue();
+    }
+
+    // A commented-out proof. Saga_ValidateOrder_RejectsUnknownSku is present in the file
+    // text but has no declaration, so a substring check accepts it and the guard must not.
+    // [Test]
+    // public async Task Saga_ValidateOrder_RejectsUnknownSku()
+    // {
+    //     await Assert.That(true).IsTrue();
+    // }
+
+    /// <summary>
+    /// A plain helper named like a proof. It is declared, but carries no test attribute, so
+    /// no runner ever executes it and the guard must REJECT it.
+    /// </summary>
+    /// <returns>Always <see langword="true"/>.</returns>
+    public static bool Saga_ArchiveOrder_PurgesState() => true;
+}
+
+/// <summary>
+/// A whole proof class kept out of a default run. Every test it declares is suppressed by
+/// the class-level attribute, even though none of them carries one itself.
+/// </summary>
+[Skip("synthetic fixture: the whole class deliberately never runs")]
+public sealed class OrderSettlementProofFixture
+{
+    /// <summary>
+    /// A test with no attribute of its own, suppressed by its declaring class.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_SettleOrder_PostsLedgerEntry()
+    {
+        await Assert.That(true).IsTrue();
+    }
+}
