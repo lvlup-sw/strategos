@@ -135,6 +135,10 @@ one the issue did not name.
 - **#182** — an `AwaitApproval` immediately before a `Fork` resumes onto the join, so the fork never
   dispatches and the saga hangs. Both the old and new resume scans get this shape wrong.
 - **#183** — the phase-name persistence guarantee above is System.Text.Json-only.
+- **#184** — a loop-exit `Branch` whose cases rejoin never dispatches the declared `Finally` step.
+  Pre-existing and made *less* wrong by this release (the sibling case no longer runs), but the
+  declared step is still skipped. `AGWF035` cannot see it: the terminal is last, it simply has no
+  incoming edge, and deciding that needs route analysis rather than position.
 
 ## [2.10.0] - 2026-08-07
 
