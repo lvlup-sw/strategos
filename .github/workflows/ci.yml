@@ -76,7 +76,10 @@ jobs:
   pack-verify:
     name: Pack (verify)
     needs: build-test
-    runs-on: self-hosted
+    # Named explicitly: every runner in this org registers with `blacksmith-*`
+    # labels and no bare `self-hosted` label, so the generic label matches
+    # nothing and the job queues until it expires.
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -146,6 +149,10 @@ jobs:
       pull-requests: write
     with:
       coverage-threshold: 80
+      # The reusable defaults `runner` to the generic self-hosted label, which
+      # matches no runner registered in this org. This is a REQUIRED check, so
+      # taking that default queues it forever and nothing can merge.
+      runner: blacksmith-4vcpu-ubuntu-2204
 
   update-baseline:
     needs: build-test
