@@ -11,8 +11,8 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
 /// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 29
-/// members carrying <em>symbolic</em> names (the contract Exarchos round-trips
-/// against by name; INV-5), each serializing to its <c>AGWF0xx</c> wire string
+/// members carrying <em>symbolic</em> names (the wire identity every consumer
+/// binds against by name, never by ordinal; INV-5), each serializing to its <c>AGWF0xx</c> wire string
 /// via the <c>[JsonStringEnumMemberName]</c> path.
 /// </summary>
 [Property("Category", "Diagnostics")]

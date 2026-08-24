@@ -156,9 +156,10 @@ public static class AgwfCatalogEmitter
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// AGWF workflow source-generator diagnostic codes (#52). Single canonical");
-        sb.AppendLine("/// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member names are");
-        sb.AppendLine("/// the stable contract Exarchos&apos;s TypeScript enum round-trips against by");
-        sb.AppendLine("/// name (not ordinal — INV-5); each maps to its <c>AGWF0xx</c> wire value.");
+        sb.AppendLine("/// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member NAMES are");
+        sb.AppendLine("/// the wire identity — <see cref=\"JsonStringEnumConverter\"/> plus a per-member");
+        sb.AppendLine("/// <c>JsonStringEnumMemberName</c> make every consumer bind by name, never by");
+        sb.AppendLine("/// ordinal (INV-5); each maps to its <c>AGWF0xx</c> wire value.");
         sb.AppendLine("/// </summary>");
         sb.Append("[JsonConverter(typeof(JsonStringEnumConverter<AgwfCode>))]").AppendLine();
         sb.AppendLine("public enum AgwfCode");

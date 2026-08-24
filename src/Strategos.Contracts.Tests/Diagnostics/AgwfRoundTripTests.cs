@@ -9,11 +9,12 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
-/// T8 — the cross-product round-trip-by-NAME contract (exarchos T6 mirrors this).
+/// T8 — the round-trip-by-NAME contract. (A polyglot mirror of this enum was planned
+/// for exarchos as T6 and has not landed; the by-name property below is what any such
+/// mirror would have to satisfy, and it is asserted here regardless.)
 /// Every <c>agwf-catalog.json</c> entry's <c>id</c> maps to an <c>AgwfCode</c>
 /// enum member <strong>by member name</strong> (NOT ordinal — the INV-5
 /// condition), and the enum member's wire value maps back to that <c>id</c>.
-/// This is the exact relation Exarchos's generated TypeScript enum must satisfy.
 /// </summary>
 [Property("Category", "Diagnostics")]
 public sealed class AgwfRoundTripTests

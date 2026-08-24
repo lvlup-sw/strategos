@@ -12,9 +12,10 @@ namespace Strategos.Contracts.Generated;
 
 /// <summary>
 /// AGWF workflow source-generator diagnostic codes (#52). Single canonical
-/// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member names are
-/// the stable contract Exarchos&apos;s TypeScript enum round-trips against by
-/// name (not ordinal — INV-5); each maps to its <c>AGWF0xx</c> wire value.
+/// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member NAMES are
+/// the wire identity — <see cref="JsonStringEnumConverter"/> plus a per-member
+/// <c>JsonStringEnumMemberName</c> make every consumer bind by name, never by
+/// ordinal (INV-5); each maps to its <c>AGWF0xx</c> wire value.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<AgwfCode>))]
 public enum AgwfCode

@@ -12,8 +12,9 @@ namespace LevelUp.Strategos.Contracts;
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
  * Ground truth = exactly **29 defined codes** with gaps preserved as gaps
- * (INV-5: never renumber). Member names are the contract Exarchos's TypeScript
- * enum round-trips against *by name* (not ordinal).
+ * (INV-5: never renumber). Member NAMES are the wire identity: the enum
+ * round-trips by name and never by ordinal, so a member may be added but never
+ * renamed or reordered without a major bump.
  *
  * Representation = **R-lit** (DR-1): each entry is a literal-typed model whose
  * fields emit as JSON Schema `const`, read by `AgwfCatalogEmitter`. Adding a
