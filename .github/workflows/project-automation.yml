@@ -104,7 +104,7 @@ jobs:
             console.log('Label sync complete');
 
   # ============================================================
-  # AUTO-TRIAGE: Label new issues based on content
+  # AUTO-TRIAGE: Label new issues from the title, one label per axis
   # ============================================================
   auto-triage:
     if: github.event_name == 'issues' && github.event.action == 'opened'
@@ -112,40 +112,48 @@ jobs:
     permissions:
       issues: write
     steps:
-      - name: Auto-label based on title/body
+      - name: Auto-label based on title
         uses: actions/github-script@v7
         with:
           script: |
             const issue = context.payload.issue;
-            const text = `${issue.title} ${issue.body}`.toLowerCase();
+
+            // An author who labeled the issue has already triaged it.
+            if (issue.labels && issue.labels.length > 0) {
+              console.log('Issue already labeled by author; skipping auto-triage.');
+              return;
+            }
+
+            // The body is where prose lives; the title is where the subject lives.
+            const text = issue.title.toLowerCase();
             const labels = ['status:triage'];
 
-            // Type detection
-            if (text.match(/bug|error|fail|broken|crash|issue/)) {
+            // Every pattern below groups its alternatives, because `\b` binds
+            // tighter than `|`: /\bci|telemetry/ reads as (\bci)|(telemetry),
+            // so only the first alternative carries a boundary and "circular"
+            // matches. Alternatives that are meant to match a prefix or a
+            // plural spell that out rather than relying on a bare `\b`.
+
+            // Type: at most one.
+            if (/\b(?:bug|regression|broken|crash|fails?|throws?)\b/.test(text)) {
               labels.push('type:bug');
-            } else if (text.match(/feature|add|implement|support|enhance/)) {
+            } else if (/\b(?:add|support|implement|introduce)\b/.test(text)) {
               labels.push('type:feature');
-            } else if (text.match(/doc|readme|typo|clarif/)) {
+            } else if (/\b(?:docs?|readme|typo|changelog)\b/.test(text)) {
               labels.push('type:docs');
-            } else if (text.match(/\?|how|what|why|question/)) {
-              labels.push('type:question');
             }
 
-            // Scope detection for strategos
-            if (text.match(/workflow|step|state|execution/)) {
-              labels.push('scope:workflow');
-            }
-            if (text.match(/agent|orchestrat|subagent/)) {
-              labels.push('scope:agents');
-            }
-            if (text.match(/rag|embedding|vector|knowledge/)) {
-              labels.push('scope:rag');
-            }
-            if (text.match(/infrastructure|logging|telemetry|config/)) {
-              labels.push('scope:infrastructure');
-            }
-            if (text.match(/generator|source.gen|codegen/)) {
-              labels.push('scope:generators');
+            // Scope: at most one, first match wins, on the title only.
+            const scopes = [
+              [/\b(?:ontolog\w*|descriptors?|analyzers?|aont\d*)\b/, 'scope:ontology'],
+              [/\b(?:generators?|codegen\w*|source.gen\w*)\b/,       'scope:generators'],
+              [/\b(?:agents?|orchestrat\w*|subagents?)\b/,           'scope:agents'],
+              [/\b(?:rag|embeddings?|vectors?)\b/,                   'scope:rag'],
+              [/\b(?:workflows?|sagas?|steps?)\b/,                   'scope:workflow'],
+              [/\b(?:ci|telemetry|logging|packaging)\b/,             'scope:infrastructure'],
+            ];
+            for (const [re, label] of scopes) {
+              if (re.test(text)) { labels.push(label); break; }
             }
 
             await github.rest.issues.addLabels({

@@ -6,4 +6,4 @@ This package is separate from `LevelUp.Strategos.Agents` by design: the core age
 
 ## Status
 
-Preview — tracks the 2025-11-25 MCP specification.
+Preview — tracks the 2026-07-28 MCP specification.
