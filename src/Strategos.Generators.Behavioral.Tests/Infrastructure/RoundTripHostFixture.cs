@@ -161,7 +161,7 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     /// <param name="startCommand">The generated start command that kicks off the saga.</param>
     /// <param name="timeout">Optional per-phase wait budget (defaults to 30 seconds).</param>
     /// <returns>The observed outcome of the run.</returns>
-    public async Task<WorkflowRunOutcome> RunWorkflowWithOutcomeAsync<TSaga>(
+    public Task<WorkflowRunOutcome> RunWorkflowWithOutcomeAsync<TSaga>(
         Guid workflowId,
         object startCommand,
         TimeSpan? timeout = null)
@@ -169,87 +169,15 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(startCommand, nameof(startCommand));
 
-        var runtime = this.RequireHost();
-        var budget = timeout ?? TimeSpan.FromSeconds(30);
-
-        // Baselined rather than read absolutely, so a test that runs two workflows in one body
-        // attributes each one's invocations to the call that produced them.
-        var invocationsBefore = this.Invocations.TotalCount;
-
-        try
-        {
-            await runtime
-                .TrackActivity()
-                .Timeout(budget)
-                .PublishMessageAndWaitAsync(startCommand);
-        }
-        catch (TimeoutException)
-        {
-            // The tracked session may settle before the saga has routed to its terminal phase; the
-            // saga-absence poll below is authoritative.
-        }
-
-        var store = runtime.Services.GetRequiredService<IDocumentStore>();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var documentRemoved = false;
-
-        while (true)
-        {
-            await using (var query = store.QuerySession())
-            {
-                documentRemoved = await query.LoadAsync<TSaga>(workflowId) is null;
-            }
-
-            var stepInvocations = this.Invocations.TotalCount - invocationsBefore;
-
-            if (documentRemoved && stepInvocations > 0)
-            {
-                return new WorkflowRunOutcome(
-                    Completed: true,
-                    DocumentRemoved: true,
-                    StepInvocations: stepInvocations,
-                    Diagnostic: $"the saga for {workflowId} ran {stepInvocations} step invocation(s) "
-                        + "and its document was removed, so it reached its terminal phase.");
-            }
-
-            if (stopwatch.Elapsed >= budget)
-            {
-                return new WorkflowRunOutcome(
-                    Completed: false,
-                    DocumentRemoved: documentRemoved,
-                    StepInvocations: stepInvocations,
-                    Diagnostic: DescribeIncompleteRun(workflowId, documentRemoved, stepInvocations, budget));
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
-        }
-    }
-
-    /// <summary>
-    /// Explains why a run did not count as completed, separating "never ran at all" from "ran
-    /// but never terminated" — two failures with the same old boolean and very different causes.
-    /// </summary>
-    /// <param name="workflowId">The workflow/saga identity that was waited on.</param>
-    /// <param name="documentRemoved">Whether the saga document was absent at the final poll.</param>
-    /// <param name="stepInvocations">Step invocations recorded while the call was in flight.</param>
-    /// <param name="budget">The per-phase wait budget.</param>
-    /// <returns>The diagnostic message.</returns>
-    private static string DescribeIncompleteRun(
-        Guid workflowId,
-        bool documentRemoved,
-        int stepInvocations,
-        TimeSpan budget)
-    {
-        if (stepInvocations == 0)
-        {
-            return $"no step of the saga for {workflowId} ever ran within {budget}. Its document was "
-                + $"{(documentRemoved ? "never present" : "present but no step executed")}, so the run "
-                + "produced no work at all — an unrouted, unhandled or misdirected start command looks "
-                + "exactly like this. Document absence on its own is NOT evidence of completion.";
-        }
-
-        return $"the saga for {workflowId} ran {stepInvocations} step invocation(s) but its document was "
-            + $"still present after {budget}, so it never reached its terminal phase.";
+        // One implementation of the completion oracle, shared with ApprovalHostFixture and
+        // FailureHandlerHostFixture. It previously lived here as a second copy; a correction to
+        // the acceptance predicate would have had to land in both, and only this one was pinned.
+        return SagaCompletionProbe.RunAsync<TSaga>(
+            this.RequireHost(),
+            this.Invocations,
+            workflowId,
+            startCommand,
+            timeout ?? TimeSpan.FromSeconds(30));
     }
 
     /// <summary>Stops and disposes the host and the shared Postgres container.</summary>

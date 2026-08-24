@@ -50,6 +50,13 @@ internal static class SagaCompletionProbe
     /// <param name="startCommand">The generated start command that kicks off the saga.</param>
     /// <param name="budget">The per-phase wait budget.</param>
     /// <returns>The observed outcome of the run.</returns>
+    /// <remarks>
+    /// The wait runs in two phases, each bounded by <paramref name="budget"/>: first the
+    /// tracked-activity <c>Timeout(budget)</c> wait, then — on <see cref="TimeoutException"/> — an
+    /// authoritative saga-absence poll for up to a further budget. On the failure path (the saga
+    /// never routes to its terminal phase) the total wait is therefore up to ~2× the budget, not
+    /// one budget. Callers sizing a suite-wide timeout need that figure, not the nominal one.
+    /// </remarks>
     public static async Task<WorkflowRunOutcome> RunAsync<TSaga>(
         IHost host,
         WorkflowInvocationLog invocations,
