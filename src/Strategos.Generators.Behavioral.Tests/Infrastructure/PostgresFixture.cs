@@ -269,6 +269,11 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// <returns>
     /// The socket path, or <see langword="null"/> when <c>DOCKER_HOST</c> is unset or names a
     /// transport that cannot be probed on disk (for example <c>tcp://</c> or <c>npipe://</c>).
+    /// A <c>unix://</c> URI with an EMPTY path returns that empty string rather than
+    /// <see langword="null"/>: it is a probeable unix endpoint that names no socket, so it must
+    /// reach the probe and fail it. Collapsing it to <see langword="null"/> would route it down
+    /// the unprobeable-transport arm, where a non-empty <c>DOCKER_HOST</c> alone is taken as a
+    /// resolved endpoint — and the diagnostic would then blame a healthy daemon.
     /// </returns>
     private static string? TryGetUnixSocketPath(string? dockerHost)
     {
@@ -280,8 +285,9 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
             return null;
         }
 
-        var path = dockerHost[UnixScheme.Length..];
-        return string.IsNullOrEmpty(path) ? null : path;
+        // Deliberately NOT collapsed to null when empty: File.Exists("") is false (documented
+        // for zero-length paths), so `unix://` correctly probes as a missing socket.
+        return dockerHost[UnixScheme.Length..];
     }
 
     /// <summary>

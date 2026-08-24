@@ -121,6 +121,41 @@ public sealed class ContainerRuntimeDiagnosticTests
     }
 
     /// <summary>
+    /// An explicit <c>DOCKER_HOST=unix://</c> — scheme present, socket path empty — names no
+    /// endpoint at all, and it suppresses the fixture's own podman discovery. The diagnostic
+    /// must report it unresolved even when a healthy podman socket is sitting on disk, because
+    /// the opposite reading sends the reader to debug a daemon that is fine.
+    /// </summary>
+    /// <remarks>
+    /// This shape is not contrived: <c>export DOCKER_HOST=unix://$PODMAN_SOCK</c> with
+    /// <c>PODMAN_SOCK</c> unset produces exactly it, and that is the same expansion the
+    /// remediation block in this very diagnostic tells the reader to run.
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ContainerRuntimeDiagnostic_EmptyUnixDockerHost_ReportsItUnresolved()
+    {
+        var message = PostgresFixture.DescribeContainerRuntimeFailure(
+            new InvalidOperationException("Docker is either not running or misconfigured"),
+            dockerHost: "unix://",
+            podmanSocketPath: "/run/user/4242/podman/podman.sock",
+            // The podman socket is healthy and present. The override is what is broken.
+            socketExists: path => path == "/run/user/4242/podman/podman.sock");
+
+        await Assert.That(message)
+            .Contains("NO container-runtime endpoint was resolved")
+            .Because("an empty unix:// path names no socket, so nothing was listening");
+
+        await Assert.That(message)
+            .DoesNotContain("A container-runtime endpoint was resolved")
+            .Because("claiming a resolved endpoint here blames the daemon for an override fault");
+
+        await Assert.That(message)
+            .Contains("DOCKER_HOST socket     : MISSING on disk")
+            .Because("the empty path must reach the on-disk probe and fail it, not bypass it");
+    }
+
+    /// <summary>
     /// A non-unix <c>DOCKER_HOST</c> cannot be probed on disk, so the diagnostic must not
     /// invent a verdict about it.
     /// </summary>
