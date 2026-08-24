@@ -380,6 +380,25 @@ public class GeneratorIntegrationTests
         await Assert.That(diagramSource).Contains("BranchBy");
     }
 
+    /// <summary>
+    /// Verifies that the generator produces a Mermaid diagram with fork and join states for fork
+    /// workflows, rather than drawing the parallel paths as a sequence.
+    /// </summary>
+    [Test]
+    public async Task Generator_WorkflowWithFork_GeneratesParallelDiagram()
+    {
+        // Arrange & Act
+        var result = GeneratorTestHelper.RunGenerator(SourceTexts.WorkflowWithFork);
+        var diagramTree = result.GeneratedTrees.FirstOrDefault(t =>
+            t.FilePath.Contains("Diagram", StringComparison.OrdinalIgnoreCase));
+        var diagramSource = diagramTree?.GetText().ToString() ?? string.Empty;
+
+        // Assert
+        await Assert.That(diagramSource).Contains("<<fork>>");
+        await Assert.That(diagramSource).Contains("<<join>>");
+        await Assert.That(diagramSource).DoesNotContain("ProcessPayment --> ReserveInventory");
+    }
+
     // =============================================================================
     // H. All Artifacts Generation Test
     // =============================================================================

@@ -130,6 +130,41 @@ internal static class ParserTestHelper
     }
 
     /// <summary>
+    /// Compiles the provided source and returns the workflow-attributed type declaration together
+    /// with its semantic model, so a caller can drive several parser entry points over one parse.
+    /// </summary>
+    /// <param name="source">The source code containing a workflow definition.</param>
+    /// <returns>The workflow type declaration and its semantic model.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the source carries no workflow-attributed type.
+    /// </exception>
+    public static (TypeDeclarationSyntax WorkflowClass, SemanticModel SemanticModel) CompileWorkflow(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source, nameof(source));
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var references = GetMetadataReferences();
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees: [syntaxTree],
+            references: references,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+        var workflowClass = syntaxTree.GetRoot()
+            .DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault(t => t.AttributeLists
+                .SelectMany(al => al.Attributes)
+                .Any(a => a.Name.ToString().Contains("Workflow", StringComparison.Ordinal)));
+
+        return workflowClass is null
+            ? throw new InvalidOperationException("No workflow-attributed type declaration found in source.")
+            : (workflowClass, semanticModel);
+    }
+
+    /// <summary>
     /// Creates a FluentDslParseContext from the provided source code.
     /// </summary>
     /// <param name="source">The source code containing a workflow definition.</param>

@@ -78,15 +78,18 @@ internal static class EventsEmitter
         {
             foreach (var fork in model.Forks)
             {
-                // Generate events for fork path steps
+                // Generate events for fork path steps. Keyed on the step TYPE, like every other
+                // entry in this set: a worker publishes its type's completed event, so keying on
+                // the phase name would emit a second event record — under the loop prefix, or
+                // under an instance name — that nothing ever publishes or handles.
                 foreach (var path in fork.Paths)
                 {
-                    foreach (var stepName in path.StepNames)
+                    foreach (var step in path.Steps)
                     {
-                        if (emittedStepEvents.Add(stepName))
+                        if (emittedStepEvents.Add(step.StepName))
                         {
                             sb.AppendLine();
-                            EmitStepCompletedEvent(sb, model, stepName);
+                            EmitStepCompletedEvent(sb, model, step.StepName);
                         }
                     }
                 }

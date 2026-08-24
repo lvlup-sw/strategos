@@ -5,6 +5,154 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - Unreleased
+
+**Correctness core.** A C#-authored workflow using `Fork` or `Branch` never terminated. The defect
+was live in every published version, including 2.10.0, with no DSL-level workaround. Fixing it
+required treating it as a *class* rather than two bugs: five generator blocks append steps to the
+model's step list that are not on the main flow, and of the three scans that resolve a step's
+successor, two skipped only confidence handlers and the third had no filter at all. The fix
+classifies off-main-flow steps once, routes every scan through that classification, restores
+document order to the step list, and adds a build-time diagnostic so the class cannot silently
+reopen. `Strategos.Contracts` bumps **0.4.0 → 0.5.0** (additive minor — one new `AgwfCode` member).
+
+> **Upgrading:** this release changes emitted public API and the order of a generated enum's
+> members. Read *Changed* below before upgrading — one item is a data-migration risk for a
+> specific serializer configuration.
+
+### Fixed
+
+**Fork workflows now terminate (#155).** A C#-authored `.Fork(...).Join<T>().Finally<T>()` saga
+stalled: fork-path steps were appended after the declared terminal, so the terminal's completed
+handler chained back into a path step that gated on a join readiness which never arrived. The
+machine-checked equivalence test between the C#-authored twin and its imported-JSON sibling has
+been carrying a deferral marker since 2.10.0; the underlying defect is now fixed and the twin
+passes on a real Wolverine + Marten host. (The test itself remains quarantined on an unrelated
+shared-host timeout — see *Known issues*.)
+
+**Branch workflows now terminate (#175).** Worse than the fork case and previously unfiled: the
+terminal cascaded back into a branch-path step which rejoined at the terminal, an unbounded cycle
+that re-ran the terminal on every lap and never deleted the saga document. `grep -c MarkCompleted`
+over such a saga returned zero. There was no behavioral coverage for `Branch` anywhere in the
+repository; there now is, asserting exact per-step counts, since a document-absence check cannot
+distinguish completion from an externally-killed cycle.
+
+**Confidence gating on a branch case's last step now lowers (#145).** `RequireConfidence` /
+`OnLowConfidence` declared on the last step of a branch case was silently inert — the branch
+path-end handler had no confidence handling at all, so the declaration compiled and did nothing.
+
+**An `OnLowConfidence` chain inside a branch case is no longer mistaken for a case step (#145).**
+The branch parser walked all descendant `Then<>` calls, so a handler declared inside a step's
+`OnLowConfidence` lambda was collected as a branch-case step — and because it sorted ahead of the
+step that owned it, the routing switch dispatched straight to the handler, skipping the case's own
+steps. The equivalent guard already existed on the fork path.
+
+**Instance-named fork-path steps no longer emit a duplicate (#145).** One of the two fork parse
+paths stripped the instance name while the other kept it, so the step list carried *n+1* entries
+for *n* authored steps. The phantom entry produced a second phase, command and handler — a
+`CS0111` duplicate-member error in the consuming compilation — and it was the name the fork
+dispatch targeted.
+
+**Approval rejection and escalation chains route correctly (#155).** A multi-step
+`OnRejection` or `OnTimeout` chain never ran past its first step in any released version — and it
+was wrong in two different ways. The step list was scanned positionally, so a rejection chain fell
+through into the *escalation* chain when both were declared. Classifying the chains as off-main-flow
+fixed that and introduced the opposite fault: no in-path successor was recorded, so the first step
+completed the saga. Chains now carry in-path successors the way fork paths and branch cases do, and
+a chain's last step either completes (when it declared `Complete()`) or resumes onto the same
+main-flow step the approval itself resumes onto.
+
+**An approval no longer resumes onto an appended step.** The approval-resume scan indexed the step
+list positionally with no filter, so an approved checkpoint could resume onto a fork-path,
+branch-case, failure-handler or handler-chain step, bypassing that construct's own dispatch. It
+also resumed onto the *first* step in the list when its gated step was absent.
+
+### Added
+
+**`AGWF035` — unreachable termination (error).** The generator holds both the declared terminal and
+every computed successor at emission time, so this whole failure class is decidable before anything
+runs. `AGWF035` reports a workflow whose declared `Finally<T>` step is not the last main-flow step.
+Until now the only thing that could catch it was a container-backed behavioral run, which is the
+wrong tier for a compile-time-decidable fault. The guard is proven against the shipped defect: with
+the classification suppressed it fires and names the exact step the broken saga chained into.
+
+**Real-host coverage for `AwaitApproval` and for the `OnFailure` success path.** `AwaitApproval` had
+no behavioral coverage at all. `OnFailure` had coverage of its failure path only — its fixture's
+terminal is deliberately named for being unreached — so the success-path terminal-completion case
+was untested.
+
+**`.github/dependabot.yml` (#133).** The organisation's Renovate preset disables the `github-actions`
+manager, on the basis that Actions pins are owned by Dependabot — and no Dependabot config existed.
+17 workflow references, including the newly pinned reusable workflows, now have an update path.
+
+### Changed
+
+**The generated transition table describes the real graph (#155).** `ValidTransitions` and
+`IsValidTransition` were built as a flat linear chain over the step list, so a branch workflow
+published sibling *exclusive* cases chained to one another, and a terminal that transitioned into a
+path step. They now follow the constructs: a fork predecessor dispatches every path, each path's
+last step reaches the join, a branch discriminator dispatches every case, and a case's last step
+rejoins or completes. **This is emitted public API, and its content changes for every fork and
+branch workflow — and for loop-only and `OnFailure`-only workflows too.** A loop now publishes its
+continue edge, which a forward linear chain could not express; a terminal `OnFailure` handler loses
+its fall-through edge, since it ends in `Failed` and never continues. Nothing in the generated saga
+consults the table at runtime.
+
+**The generated Mermaid diagram renders forks and loop-exit branches.** Fork paths previously fell
+through to the linear arm and loop-exit branch cases were drawn as a chain. Three step-keyed lookups
+also threw on a duplicate key, so a nested or sibling loop whose body boundaries collided was a
+generator crash rather than a wrong picture.
+
+**The generated `Phase` enum's member order changes for fork and branch workflows.** This follows
+from restoring document order to the step list. Under a System.Text.Json-serializing Marten store
+the phase persists by *name*, so a reorder is not a migration — proven here against raw `mt_doc_*`
+JSONB. **Under a Newtonsoft-serializing store it persists by ordinal, and a reorder silently loads
+the wrong phase for every saga written before the upgrade** (#183). Strategos does not configure a
+consumer's `StoreOptions` and cannot detect this. If your store uses Newtonsoft, treat this release
+as a data migration.
+
+**`AGWF022` is re-aimed.** It previously reported two cases that were not in fact inert — intermediate
+fork-path and loop-body confidence gating has been lowering correctly all along, so the diagnostic
+and the four parity entries citing it were false positives. It now reports confidence gating on the
+step an `AwaitApproval` checkpoint follows, which is genuinely dropped: the approval handler replaces
+the completed handler, so no confidence comparison is emitted while the handler chain is fully lowered.
+
+**The declared-versus-lowered parity guard checks what it claims.** It matched a proof by substring,
+so a skipped test, a commented-out test, or a name appearing only in a doc comment all satisfied it —
+which is how four provably-false entries stood. It now parses the named proof and requires a test a
+default run executes, and a deferred entry must additionally supply a workflow source that makes its
+cited diagnostic actually fire.
+
+**Auto-triage applies one scope label (#174).** It keyword-matched title *and* body and unioned every
+match, so nearly every issue carried nearly every label. Now: at most one `scope:` label, first match
+wins, title only.
+
+**Organisation CI reusables are pinned (#133).** Three jobs consumed them from a moving branch.
+
+**Documentation (#166).** The MCP protocol pin moves to `2026-07-28`; the annotation record's shape is
+identical across revisions, so this is a documentation change with no code impact. Both package
+listings now carry all fourteen shipped packages — nine were missing, and one page was the published
+one the issue did not name.
+
+### Known issues
+
+- **#180** — the fork JSON-import saga times out in a full-class behavioral run, which keeps the
+  fork-twin equivalence test quarantined. The C#-authoring defect it was written for is fixed; the
+  test passes in isolation and alongside its sibling. The blocker is shared-host interference.
+- **#179** — a `Branch` on a `bool` discriminator emits an unreachable switch arm and the generated
+  saga does not compile (`CS8510`). Use an enum discriminator.
+- **#182** — an `AwaitApproval` immediately before a `Fork` resumes onto the join, so the fork never
+  dispatches and the saga hangs. Both the old and new resume scans get this shape wrong.
+- **#183** — the phase-name persistence guarantee above is System.Text.Json-only.
+- **#186** — an `AwaitApproval` that is *last* on the main flow never starts its rejection chain: the
+  saga sets the phase and dispatches nothing, so it parks forever. Independent of the chain-routing
+  fix above — that one routes a chain once it has started. Every rejection fixture in the repository
+  puts the checkpoint mid-flow, which is why the shape was invisible.
+- **#184** — a loop-exit `Branch` whose cases rejoin never dispatches the declared `Finally` step.
+  Pre-existing and made *less* wrong by this release (the sibling case no longer runs), but the
+  declared step is still skipped. `AGWF035` cannot see it: the terminal is last, it simply has no
+  incoming edge, and deciding that needs route analysis rather than position.
+
 ## [2.10.0] - 2026-08-07
 
 The **strategy-compiler contract layer** (roadmap #153): the shared `Strategos.Contracts`

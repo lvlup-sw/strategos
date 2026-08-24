@@ -64,10 +64,14 @@ internal sealed class ForkJoinHandlerEmitter
         ThrowHelper.ThrowIfNull(fork, nameof(fork));
         ThrowHelper.ThrowIfNull(path, nameof(path));
 
-        // Worker handlers generate unprefixed events (e.g., ValidateThesisStepCompleted) because they
-        // are generated per step TYPE, not per phase. Extract the base step name from the prefixed
-        // phase name (e.g., "TargetLoop_ValidateThesisStep" -> "ValidateThesisStep").
-        var baseStepName = ExtractBaseStepName(stepName);
+        // Worker handlers generate unprefixed events (e.g., ValidateThesisStepCompleted) because
+        // they are generated per step TYPE, not per phase. Read the type off the path's last step
+        // model: a phase name carries a loop prefix and, for an instance-named step, the instance
+        // name rather than the type, and neither names an event any worker publishes. Fall back to
+        // stripping the loop prefix off the phase name when the path carries no step models.
+        var baseStepName = path.Steps.Count > 0
+            ? path.Steps[path.Steps.Count - 1].StepName
+            : ExtractBaseStepName(stepName);
         var eventName = $"{baseStepName}Completed";
         var sanitizedId = fork.ForkId.Replace("-", "_");
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);

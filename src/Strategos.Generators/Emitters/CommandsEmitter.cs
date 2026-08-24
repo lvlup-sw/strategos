@@ -124,15 +124,18 @@ internal static class CommandsEmitter
         {
             foreach (var fork in model.Forks)
             {
-                // Generate worker commands for fork path steps
+                // Generate worker commands for fork path steps. Keyed on the step TYPE, like every
+                // other entry in this set: worker handlers are generated per type, so keying on
+                // the phase name would emit a second worker command — under the loop prefix, or
+                // under an instance name — that no handler accepts.
                 foreach (var path in fork.Paths)
                 {
-                    foreach (var stepName in path.StepNames)
+                    foreach (var step in path.Steps)
                     {
-                        if (emittedWorkerCommands.Add(stepName))
+                        if (emittedWorkerCommands.Add(step.StepName))
                         {
                             sb.AppendLine();
-                            EmitExecuteWorkerCommand(sb, model, stepName);
+                            EmitExecuteWorkerCommand(sb, model, step.StepName);
                         }
                     }
                 }

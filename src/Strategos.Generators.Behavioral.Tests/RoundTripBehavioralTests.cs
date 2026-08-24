@@ -34,6 +34,22 @@ namespace Strategos.Generators.Behavioral.Tests;
 [ClassDataSource<RoundTripHostFixture>(Shared = SharedType.PerClass)]
 public sealed class RoundTripBehavioralTests
 {
+    /// <summary>The fork-join step roles of the JSON import, for the ordering oracle.</summary>
+    private static readonly ForkStepNames ImportForkSteps = new(
+        PreFork: nameof(RtForkImportStart),
+        LeftPath: nameof(RtForkImportLeft),
+        RightPath: nameof(RtForkImportRight),
+        Join: nameof(RtForkImportJoin),
+        Terminal: nameof(RtForkImportEnd));
+
+    /// <summary>The fork-join step roles of the C#-authored twin, for the ordering oracle.</summary>
+    private static readonly ForkStepNames TwinForkSteps = new(
+        PreFork: nameof(RtForkTwinStart),
+        LeftPath: nameof(RtForkTwinLeft),
+        RightPath: nameof(RtForkTwinRight),
+        Join: nameof(RtForkTwinJoin),
+        Terminal: nameof(RtForkTwinEnd));
+
     private readonly RoundTripHostFixture host;
 
     /// <summary>Initializes a new instance of the <see cref="RoundTripBehavioralTests"/> class.</summary>
@@ -79,48 +95,33 @@ public sealed class RoundTripBehavioralTests
         // step precedes BOTH parallel paths, and the join is gated STRICTLY after both paths and before
         // the terminal. A join that fired before both paths, or a terminal that ran before the join,
         // fails here even though every count is still exactly one.
-        var order = this.host.Invocations.Invocations.ToList();
-        int FirstIndexOf(string step) => order.IndexOf(step);
+        var violation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, ImportForkSteps);
 
-        var start = FirstIndexOf(nameof(RtForkImportStart));
-        var left = FirstIndexOf(nameof(RtForkImportLeft));
-        var right = FirstIndexOf(nameof(RtForkImportRight));
-        var join = FirstIndexOf(nameof(RtForkImportJoin));
-        var end = FirstIndexOf(nameof(RtForkImportEnd));
-
-        await Assert.That(start).IsLessThan(left)
-            .Because("the pre-fork step must run before the left parallel path.");
-        await Assert.That(start).IsLessThan(right)
-            .Because("the pre-fork step must run before the right parallel path.");
-        await Assert.That(join).IsGreaterThan(left)
-            .Because("the join must run strictly after the left parallel path completes.");
-        await Assert.That(join).IsGreaterThan(right)
-            .Because("the join must run strictly after the right parallel path completes.");
-        await Assert.That(join).IsLessThan(end)
-            .Because("the join must run before the terminal step (the join gates the terminal).");
+        await Assert.That(violation).IsNull()
+            .Because("the imported fork must run pre-fork → both parallel paths → join → terminal.");
     }
 
     /// <summary>
-    /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#155. The importable fork-join
+    /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#180. The importable fork-join
     /// family requires proving a C# <c>.Fork(...).Join&lt;T&gt;().Finally&lt;TEnd&gt;()</c> twin lowers
     /// to a saga behaviorally identical to its exported-JSON import
-    /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>). The C# twin
-    /// (<c>AddRoundtripForkTwinWorkflow()</c>) compiles and registers, but does NOT run to completion
-    /// on the current generator: C#-authoring's <c>StepNames</c> extraction APPENDS the fork-path steps
-    /// AFTER the top-level terminal, so the terminal is not last and its completed handler chains back
-    /// to a fork-path step instead of calling <c>MarkCompleted()</c> (strategos#155). The JSON import
-    /// side is unaffected because the wire export lists the fork-path steps as top-level steps in
-    /// document order, so the terminal ends up last and terminates correctly.
+    /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>).
+    /// <para>
+    /// strategos#155 — the C#-authoring terminal-detection defect this test was originally written
+    /// for — is FIXED in this slice, and the C# half now passes. The remaining blocker is
+    /// strategos#180, shared-host interference in the full-class run. Cite #180, not #155, when
+    /// deciding whether this can be un-skipped.
+    /// </para>
     /// </summary>
     /// <remarks>
-    /// This test lives in the suite (not just a code comment) so the equivalence claim is
-    /// machine-checked and will go GREEN automatically once strategos#155 lands the terminal-detection
-    /// fix — at which point the <see cref="SkipAttribute"/> is removed. Do NOT try to fix strategos#155
-    /// here; the maintainer decision is to ship the fork-join family with this machine-checked deferral.
+    /// Both authoring forms are checked against the same ordering oracle as well as exact per-step
+    /// counts. Counts alone are not sufficient: a saga that runs every step once but reaches its
+    /// terminal before the join satisfies every count assertion here, so the ordering oracle is what
+    /// makes this test able to fail on the property it exists to pin.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#155: fork-join terminal-detection ordering (C# .Fork().Join().Finally() twin does not complete)")]
+    [Skip("blocked on strategos#180: the JSON-import half times out in a full-class run. The C#-authoring ordering defect this test was written for is fixed — this test passes in isolation and alongside its sibling fork test; it fails only in the four-test class run, on the import assertion, before the C# half is reached.")]
     public async Task ForkJoinCSharpTwin_RunsIdentically_ToJsonImport()
     {
         this.host.Invocations.Reset();
@@ -138,7 +139,7 @@ public sealed class RoundTripBehavioralTests
         await Assert.That(importCompleted).IsTrue()
             .Because("the JSON-imported fork-join saga must run to completion on a real host.");
         await Assert.That(twinCompleted).IsTrue()
-            .Because("the C# fork-join twin must run to completion on a real host (blocked by strategos#155).");
+            .Because("the C# fork-join twin must run to completion on a real host (skipped for strategos#180).");
 
         // Each authoring form runs its five fork steps exactly once — the behavioral equivalence
         // (INV-1) of a JSON-imported fork and its C#-authored twin.
@@ -156,6 +157,19 @@ public sealed class RoundTripBehavioralTests
 
         await Assert.That(this.host.Invocations.TotalCount).IsEqualTo(10)
             .Because("the imported fork-join workflow and its C# twin must run the identical number of steps.");
+
+        // Counts cannot see ordering. A fix that runs all five twin steps once but places the terminal
+        // BEFORE the join satisfies every assertion above — whichever step lands last calls
+        // MarkCompleted(), so the saga completes and its document is removed exactly as a correct run
+        // would. Equivalence to the import is a claim about the SHAPE of the run, so assert the shape:
+        // both authoring forms must obey pre-fork → both paths → join → terminal.
+        var importViolation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, ImportForkSteps);
+        var twinViolation = ForkOrderingOracle.FindViolation(this.host.Invocations.Invocations, TwinForkSteps);
+
+        await Assert.That(importViolation).IsNull()
+            .Because("the JSON import must run pre-fork → both parallel paths → join → terminal.");
+        await Assert.That(twinViolation).IsNull()
+            .Because("the C# twin must run the identical fork ordering, not merely the identical counts.");
     }
 
     /// <summary>

@@ -78,6 +78,14 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// configuring the Docker provider for rootless podman and building (but
     /// not yet starting) the PostgreSQL container.
     /// </summary>
+    /// <remarks>
+    /// The builder validates the container-runtime endpoint at <c>Build()</c>, so an
+    /// unreachable daemon fails HERE, in the constructor, before anything is started. That is
+    /// why the diagnostic wraps the build as well as the start: fixture construction is the
+    /// site the failure actually surfaces from, and TUnit reports it as "failed to expand data
+    /// source" for every test in the suite at once — the shape most easily mistaken for a
+    /// regression in the code under test.
+    /// </remarks>
     public PostgresFixture()
     {
         ConfigurePodmanProvider();
@@ -89,9 +97,10 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
         // Testcontainers' own remove-on-dispose races it ("no such container",
         // HTTP 500) — a noisy teardown error. A cleanly stopped (Exited)
         // container is the harmless, standard Ryuk-disabled tradeoff.
-        this.container = new PostgreSqlBuilder("postgres:16-alpine")
-            .WithCleanUp(true)
-            .Build();
+        this.container = BuildWithRuntimeDiagnostics(() =>
+            new PostgreSqlBuilder("postgres:16-alpine")
+                .WithCleanUp(true)
+                .Build());
     }
 
     /// <summary>
@@ -103,8 +112,183 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// <summary>
     /// Starts the single shared PostgreSQL container.
     /// </summary>
+    /// <remarks>
+    /// A container-start failure is rethrown as a
+    /// <see cref="ContainerRuntimeUnavailableException"/> carrying a diagnostic that names
+    /// the container runtime. Without that, a developer with no reachable daemon sees the
+    /// whole behavioral suite red at fixture initialization, which reads exactly like a real
+    /// regression in the code under test.
+    /// </remarks>
     /// <returns>A task that completes when the container is ready.</returns>
-    public Task InitializeAsync() => this.container.StartAsync();
+    public Task InitializeAsync() =>
+        StartWithRuntimeDiagnosticsAsync(() => this.container.StartAsync());
+
+    /// <summary>
+    /// Runs a container start and converts any failure into a
+    /// <see cref="ContainerRuntimeUnavailableException"/> whose message describes the
+    /// container runtime rather than the workflow under test.
+    /// </summary>
+    /// <param name="startContainer">The container-start operation.</param>
+    /// <returns>A task that completes when the container is ready.</returns>
+    internal static async Task StartWithRuntimeDiagnosticsAsync(Func<Task> startContainer)
+    {
+        ArgumentNullException.ThrowIfNull(startContainer);
+
+        try
+        {
+            await startContainer().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not ContainerRuntimeUnavailableException)
+        {
+            throw new ContainerRuntimeUnavailableException(DescribeContainerRuntimeFailure(ex), ex);
+        }
+    }
+
+    /// <summary>
+    /// Runs a container build and converts any failure into a
+    /// <see cref="ContainerRuntimeUnavailableException"/>. The builder validates the runtime
+    /// endpoint, so this — not the start — is where an unreachable daemon is first seen.
+    /// </summary>
+    /// <typeparam name="TContainer">The container type being built.</typeparam>
+    /// <param name="buildContainer">The container-build operation.</param>
+    /// <returns>The built container.</returns>
+    internal static TContainer BuildWithRuntimeDiagnostics<TContainer>(Func<TContainer> buildContainer)
+    {
+        ArgumentNullException.ThrowIfNull(buildContainer);
+
+        try
+        {
+            return buildContainer();
+        }
+        catch (Exception ex) when (ex is not ContainerRuntimeUnavailableException)
+        {
+            throw new ContainerRuntimeUnavailableException(DescribeContainerRuntimeFailure(ex), ex);
+        }
+    }
+
+    /// <summary>
+    /// Builds the container-runtime diagnostic for the CURRENT environment.
+    /// </summary>
+    /// <param name="failure">The underlying container build or start failure.</param>
+    /// <returns>The diagnostic message.</returns>
+    internal static string DescribeContainerRuntimeFailure(Exception failure) =>
+        DescribeContainerRuntimeFailure(
+            failure,
+            Environment.GetEnvironmentVariable("DOCKER_HOST"),
+            DefaultPodmanSocketPath,
+            File.Exists);
+
+    /// <summary>
+    /// Builds the container-runtime diagnostic from an explicitly supplied environment, so
+    /// the message can be asserted without a container runtime being present either way.
+    /// </summary>
+    /// <param name="failure">The underlying container build or start failure.</param>
+    /// <param name="dockerHost">The resolved <c>DOCKER_HOST</c>, or <see langword="null"/> when unset.</param>
+    /// <param name="podmanSocketPath">The rootless podman socket path the fixture probes.</param>
+    /// <param name="socketExists">Probe for whether a socket path exists on disk.</param>
+    /// <returns>The diagnostic message.</returns>
+    internal static string DescribeContainerRuntimeFailure(
+        Exception failure,
+        string? dockerHost,
+        string podmanSocketPath,
+        Func<string, bool> socketExists)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        ArgumentNullException.ThrowIfNull(socketExists);
+
+        var podmanSocketPresent = socketExists(podmanSocketPath);
+        var dockerHostSocketPath = TryGetUnixSocketPath(dockerHost);
+        var dockerHostSocketPresent = dockerHostSocketPath is null
+            ? (bool?)null
+            : socketExists(dockerHostSocketPath);
+
+        // A configured DOCKER_HOST is not the same as a reachable one — an explicit override
+        // pointing at a socket that is not there is the most confusing case of all, because
+        // the variable being set makes the environment LOOK configured. Probing the disk is
+        // not a handshake: an endpoint that is not on disk certainly cannot serve, while one
+        // that is may still fail for its own reasons, and a non-unix endpoint cannot be probed
+        // at all. The message says which of the three it is rather than guessing.
+        var endpointReachable = dockerHostSocketPresent
+            ?? (!string.IsNullOrEmpty(dockerHost) || podmanSocketPresent);
+
+        var lines = new List<string>
+        {
+            "The behavioral-test container runtime could not provide the PostgreSQL container.",
+            string.Empty,
+            "This is an ENVIRONMENT fault, not a regression in the code under test. Every test in",
+            "this suite depends on the same container, so all of them fail together for this one",
+            "reason; do not read a whole-suite red here as a break in the generator or the saga.",
+            string.Empty,
+            "  Container runtime endpoint",
+            $"    DOCKER_HOST            : {(string.IsNullOrEmpty(dockerHost) ? "(not set)" : dockerHost)}",
+        };
+
+        if (dockerHostSocketPath is not null)
+        {
+            lines.Add(
+                $"    DOCKER_HOST socket     : {(dockerHostSocketPresent!.Value ? "present on disk" : "MISSING on disk")}");
+        }
+
+        lines.Add($"    Probed podman socket   : {podmanSocketPath}");
+        lines.Add($"    Socket present on disk : {(podmanSocketPresent ? "yes" : "no")}");
+        lines.Add(string.Empty);
+
+        if (dockerHostSocketPresent == false)
+        {
+            lines.Add("NO container-runtime endpoint was resolved: DOCKER_HOST is set but names a socket that");
+            lines.Add("is not on disk, so nothing was listening. An explicit DOCKER_HOST always wins over the");
+            lines.Add("fixture's own podman discovery, so this override is what was used — correct or unset it.");
+        }
+        else if (endpointReachable)
+        {
+            lines.Add("A container-runtime endpoint was resolved, so the failure below is the runtime's own");
+            lines.Add("(the daemon may be stopped, out of resources, or unable to pull postgres:16-alpine).");
+        }
+        else
+        {
+            lines.Add("NO container-runtime endpoint was resolved: DOCKER_HOST is unset and no rootless podman");
+            lines.Add("socket is present at the probed path, so nothing was listening to start a container.");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("On a rootless podman host the socket must be named explicitly — the default");
+        lines.Add("/var/run/docker.sock points at the ROOTFUL socket, which is typically not running:");
+        lines.Add(string.Empty);
+        lines.Add("    export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock");
+        lines.Add("    export TESTCONTAINERS_RYUK_DISABLED=true");
+        lines.Add(string.Empty);
+        lines.Add($"Underlying failure: {failure.GetType().FullName}: {failure.Message}");
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>
+    /// Extracts the on-disk socket path from a <c>unix://</c> <c>DOCKER_HOST</c> URI.
+    /// </summary>
+    /// <param name="dockerHost">The <c>DOCKER_HOST</c> value, or <see langword="null"/> when unset.</param>
+    /// <returns>
+    /// The socket path, or <see langword="null"/> when <c>DOCKER_HOST</c> is unset or names a
+    /// transport that cannot be probed on disk (for example <c>tcp://</c> or <c>npipe://</c>).
+    /// A <c>unix://</c> URI with an EMPTY path returns that empty string rather than
+    /// <see langword="null"/>: it is a probeable unix endpoint that names no socket, so it must
+    /// reach the probe and fail it. Collapsing it to <see langword="null"/> would route it down
+    /// the unprobeable-transport arm, where a non-empty <c>DOCKER_HOST</c> alone is taken as a
+    /// resolved endpoint — and the diagnostic would then blame a healthy daemon.
+    /// </returns>
+    private static string? TryGetUnixSocketPath(string? dockerHost)
+    {
+        const string UnixScheme = "unix://";
+
+        if (string.IsNullOrEmpty(dockerHost)
+            || !dockerHost.StartsWith(UnixScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        // Deliberately NOT collapsed to null when empty: File.Exists("") is false (documented
+        // for zero-length paths), so `unix://` correctly probes as a missing socket.
+        return dockerHost[UnixScheme.Length..];
+    }
 
     /// <summary>
     /// Stops and disposes the shared container.
