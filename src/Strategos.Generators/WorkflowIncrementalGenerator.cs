@@ -1090,6 +1090,19 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // applies no position test; a fork path's last step is gated by the fork path-completed
         // handler, a loop body's last step by the loop completed handler, and a branch case's
         // last step — either kind — by the branch path-end handler.
+        //
+        // Top-level only, by construction — do NOT recurse into NestedEscalationApprovals here,
+        // even though the neighbouring approval walks (CountApprovalSteps, AddApprovalSteps,
+        // MainFlowClassification.ClassifyApprovalSteps) all do. Three independent reasons:
+        //   1. A nested approval's PrecedingStepName is the literal placeholder "Escalation"
+        //      (ApprovalExtractor.cs:352), not a step name, so the lookup below would search for
+        //      a phase no construct ever creates and report nothing.
+        //   2. The displacement this diagnostic reports only happens to a step whose completed
+        //      handler is replaced by an approval-request handler, which is true only for
+        //      approvals in model.ApprovalPoints. A nested approval is entered from the parent's
+        //      timeout cascade instead.
+        //   3. The input cannot be authored: IApprovalEscalationBuilder<TState>.Then<TStep>() has
+        //      no configure overload, so no escalation-chain step can carry RequireConfidence.
         foreach (var approval in approvalModels)
         {
             var precedingStep = FindStepByPhaseName(stepModels, approval.PrecedingStepName);
