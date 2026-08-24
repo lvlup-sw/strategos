@@ -85,7 +85,8 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
 
                 // The config family in both authoring forms (twin-equivalence), the fork import
                 // (runtime proof) plus its C# twin (DR-15 twin equivalence — registered so the SKIPPED
-                // ForkJoinCSharpTwin_RunsIdentically_ToJsonImport goes green once strategos#155 lands),
+                // ForkJoinCSharpTwin_RunsIdentically_ToJsonImport goes green once strategos#180 lands;
+                // strategos#155, the defect it was written for, is already fixed),
                 // and the onFailure import (bucket-(a) compile + runtime proof) — all lowered through
                 // the SAME saga emitters (INV-1).
                 opts.Services.AddRoundtripForkImportWorkflow();

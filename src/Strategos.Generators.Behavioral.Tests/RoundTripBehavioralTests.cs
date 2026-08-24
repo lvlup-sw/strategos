@@ -102,10 +102,16 @@ public sealed class RoundTripBehavioralTests
     }
 
     /// <summary>
-    /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#155. The importable fork-join
+    /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#180. The importable fork-join
     /// family requires proving a C# <c>.Fork(...).Join&lt;T&gt;().Finally&lt;TEnd&gt;()</c> twin lowers
     /// to a saga behaviorally identical to its exported-JSON import
     /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>).
+    /// <para>
+    /// strategos#155 — the C#-authoring terminal-detection defect this test was originally written
+    /// for — is FIXED in this slice, and the C# half now passes. The remaining blocker is
+    /// strategos#180, shared-host interference in the full-class run. Cite #180, not #155, when
+    /// deciding whether this can be un-skipped.
+    /// </para>
     /// </summary>
     /// <remarks>
     /// Both authoring forms are checked against the same ordering oracle as well as exact per-step
@@ -133,7 +139,7 @@ public sealed class RoundTripBehavioralTests
         await Assert.That(importCompleted).IsTrue()
             .Because("the JSON-imported fork-join saga must run to completion on a real host.");
         await Assert.That(twinCompleted).IsTrue()
-            .Because("the C# fork-join twin must run to completion on a real host (blocked by strategos#155).");
+            .Because("the C# fork-join twin must run to completion on a real host (skipped for strategos#180).");
 
         // Each authoring form runs its five fork steps exactly once — the behavioral equivalence
         // (INV-1) of a JSON-imported fork and its C#-authored twin.
