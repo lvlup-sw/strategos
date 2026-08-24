@@ -109,6 +109,10 @@ internal static class StepExtractor
     /// <param name="context">The parse context containing pre-computed lookups.</param>
     /// <returns>A list of step information in the order they appear in the workflow.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="context"/> is null.</exception>
+    /// <remarks>
+    /// Repeated phase names collapse to a single entry under the rule documented on
+    /// <see cref="CollapseRepeatedPhaseNames"/>.
+    /// </remarks>
     public static IReadOnlyList<StepInfo> ExtractStepInfos(FluentDslParseContext context)
     {
         ThrowHelper.ThrowIfNull(context, nameof(context));
@@ -122,8 +126,52 @@ internal static class StepExtractor
         var steps = new List<StepInfo>();
         WalkInvocationChainWithLoopsAndContext(context.FinallyInvocation, steps, context.SemanticModel, currentLoopPrefix: null, StepContext.Linear, context.CancellationToken);
 
-        // Deduplicate by PhaseName - same step may appear in multiple branch paths
-        return steps.GroupBy(s => s.PhaseName).Select(g => g.First()).ToList();
+        return CollapseRepeatedPhaseNames(steps);
+    }
+
+    /// <summary>
+    /// Collapses repeated phase names to one entry each, keeping the first occurrence's position
+    /// and identity while preserving main-flow membership in the surviving entry's context.
+    /// </summary>
+    /// <param name="steps">The document-ordered steps collected from the fluent chain.</param>
+    /// <returns>One entry per distinct phase name, in first-occurrence order.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same phase name legitimately occurs more than once: exclusive branch cases may each
+    /// run it, and a step run on a path may also be run on the main flow. It gets one phase, one
+    /// command and one handler, so the list carries it once.
+    /// </para>
+    /// <para>
+    /// <b>Position</b> is the first occurrence's. Both step representations — this one and
+    /// <see cref="ExtractStepModels"/> — walk the same chain in document order and collapse the
+    /// same way, so first-occurrence order is what keeps them index-aligned. Any other choice
+    /// here desynchronises the phase-name list the saga emitter walks from the step-model list
+    /// every other consumer reads.
+    /// </para>
+    /// <para>
+    /// <b>Context</b> is not the first occurrence's when the occurrences disagree. A name that
+    /// appears anywhere on the main flow is a main-flow step, whatever else also runs it, so
+    /// <see cref="StepContext.Linear"/> survives a collision with a path context. Taking the
+    /// first occurrence's context instead would make main-flow membership a function of where
+    /// the construct happens to sit in the source: the same workflow with its branch declared
+    /// before rather than after the step reports a path context for a step that is on the main
+    /// flow, which is the opposite of what the name means.
+    /// </para>
+    /// </remarks>
+    private static List<StepInfo> CollapseRepeatedPhaseNames(List<StepInfo> steps)
+    {
+        return steps
+            .GroupBy(s => s.PhaseName, StringComparer.Ordinal)
+            .Select(occurrences =>
+            {
+                var survivor = occurrences.First();
+
+                return survivor.Context != StepContext.Linear
+                    && occurrences.Any(s => s.Context == StepContext.Linear)
+                        ? survivor with { Context = StepContext.Linear }
+                        : survivor;
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -180,8 +228,10 @@ internal static class StepExtractor
         var steps = new List<StepModel>();
         WalkInvocationChainForStepModels(context.FinallyInvocation, steps, context.SemanticModel, currentLoopPrefix: null, context.CancellationToken);
 
-        // Deduplicate by PhaseName - same step may appear in multiple branch paths
-        return steps.GroupBy(s => s.PhaseName).Select(g => g.First()).ToList();
+        // Collapse repeated phase names to the FIRST occurrence, matching the position rule
+        // CollapseRepeatedPhaseNames applies to the phase-name representation. The two lists are
+        // asserted to agree as an ordered sequence, so both must collapse the same way.
+        return steps.GroupBy(s => s.PhaseName, StringComparer.Ordinal).Select(g => g.First()).ToList();
     }
 
     /// <summary>
@@ -209,13 +259,22 @@ internal static class StepExtractor
     /// <param name="stepModel">The resulting configured step model, if successful.</param>
     /// <returns>True if the step model was built; otherwise, false.</returns>
     /// <remarks>
+    /// <para>
     /// Threads any per-step <c>ValidateState</c> configuration declared via the
     /// <c>Then&lt;TStep&gt;(step =&gt; step.ValidateState(...))</c> configure-lambda overload into the
     /// <see cref="StepModel"/>, scoped to this invocation's own arguments, reusing the same
-    /// resolution as <see cref="ParseForkPathStepModels"/>. The instance name is intentionally
-    /// dropped: fork-path phase/command/event names key off the step <b>type</b> name (this matches
-    /// the pre-existing fork extraction behaviour, so emitted output is unchanged), while the new
-    /// configured-step shape preserves per-step configuration such as <c>ValidateState</c>.
+    /// resolution as <see cref="ParseForkPathStepModels"/>.
+    /// </para>
+    /// <para>
+    /// The instance name is <b>kept</b>, so a fork path's step models phase on the same name the
+    /// step-info walker records. Dropping it produced a type-named twin of every instance-named
+    /// fork-path step: the walker's entry was instance-named, so the type name got past the
+    /// caller's dedupe and the workflow gained a phantom phase, start command and completed
+    /// handler carrying no configured model. The saga then declared two <c>Handle</c> overloads
+    /// for the same completed event — CS0111 in the consuming compilation — and the fork
+    /// dispatched the type-named start command while the phase transition lived on the
+    /// instance-named one, so the path never ran (#145).
+    /// </para>
     /// </remarks>
     internal static bool TryBuildConfiguredForkPathStepModel(
         InvocationExpressionSyntax invocation,
@@ -224,18 +283,7 @@ internal static class StepExtractor
         out StepModel stepModel)
     {
         var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(invocation);
-        if (!TryGetStepModel(invocation, semanticModel, loopPrefix, validationPredicate, validationErrorMessage, out stepModel))
-        {
-            return false;
-        }
-
-        // Fork-path steps phase/command/event on their type name, never the instance name.
-        if (stepModel.InstanceName is not null)
-        {
-            stepModel = stepModel with { InstanceName = null };
-        }
-
-        return true;
+        return TryGetStepModel(invocation, semanticModel, loopPrefix, validationPredicate, validationErrorMessage, out stepModel);
     }
 
     /// <summary>
@@ -367,13 +415,20 @@ internal static class StepExtractor
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Fork"))
         {
-            // Process fork path steps with ForkPath context
-            ParseForkPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, steps, cancellationToken);
+            // Process fork path steps with ForkPath context. This walker runs BACKWARDS, so the
+            // path's document-ordered steps splice in at the front — the same direction every
+            // other construct here uses.
+            steps.InsertRange(
+                0,
+                ParseForkPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Branch"))
         {
-            // Process branch path steps with BranchPath context
-            ParseBranchPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, steps, cancellationToken);
+            // Process branch path steps with BranchPath context, spliced at the front for the
+            // same reason.
+            steps.InsertRange(
+                0,
+                ParseBranchPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Join"))
         {
@@ -530,13 +585,16 @@ internal static class StepExtractor
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Fork"))
             {
-                // Process fork path steps with ForkPath context
-                ParseForkPathStepsWithContext(inv, semanticModel, currentPrefix, steps, cancellationToken);
+                // Process fork path steps with ForkPath context. This walker runs FORWARDS
+                // through the loop body, so the path's document-ordered steps append.
+                steps.AddRange(
+                    ParseForkPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Branch"))
             {
-                // Process branch path steps with BranchPath context
-                ParseBranchPathStepsWithContext(inv, semanticModel, currentPrefix, steps, cancellationToken);
+                // Process branch path steps with BranchPath context, appended for the same reason.
+                steps.AddRange(
+                    ParseBranchPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Join"))
             {
@@ -599,15 +657,27 @@ internal static class StepExtractor
     }
 
     /// <summary>
-    /// Parses fork path steps with ForkPath context from a Fork invocation.
+    /// Parses fork path steps with ForkPath context from a Fork invocation, in document order.
     /// </summary>
-    private static void ParseForkPathStepsWithContext(
+    /// <remarks>
+    /// The steps are RETURNED rather than spliced into a caller-owned list, because the two
+    /// callers walk the fluent chain in opposite directions: the top-level walker runs backwards
+    /// and must splice at the front, while the loop-body walker runs forwards and must append.
+    /// A helper that appends serves only the forward caller, and silently puts a top-level
+    /// fork's path steps after the workflow's terminal.
+    /// </remarks>
+    /// <param name="forkInvocation">The Fork invocation expression.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="currentPrefix">The current loop prefix.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The path steps, in document order.</returns>
+    private static List<StepInfo> ParseForkPathStepsWithContext(
         InvocationExpressionSyntax forkInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
-        List<StepInfo> steps,
         CancellationToken cancellationToken)
     {
+        var steps = new List<StepInfo>();
         var arguments = forkInvocation.ArgumentList.Arguments;
 
         foreach (var arg in arguments)
@@ -641,18 +711,31 @@ internal static class StepExtractor
                 }
             }
         }
+
+        return steps;
     }
 
     /// <summary>
-    /// Parses branch path steps with BranchPath context from a Branch invocation.
+    /// Parses branch path steps with BranchPath context from a Branch invocation, in document
+    /// order.
     /// </summary>
-    private static void ParseBranchPathStepsWithContext(
+    /// <remarks>
+    /// The steps are RETURNED rather than spliced into a caller-owned list, for the same reason
+    /// as the fork path helper: the splice direction belongs to the caller, which knows which way
+    /// it is walking the chain.
+    /// </remarks>
+    /// <param name="branchInvocation">The Branch invocation expression.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="currentPrefix">The current loop prefix.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The case steps, in document order.</returns>
+    private static List<StepInfo> ParseBranchPathStepsWithContext(
         InvocationExpressionSyntax branchInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
-        List<StepInfo> steps,
         CancellationToken cancellationToken)
     {
+        var steps = new List<StepInfo>();
         var arguments = branchInvocation.ArgumentList.Arguments;
 
         // Skip first argument (discriminator), remaining are BranchCase.When()/Otherwise()
@@ -667,6 +750,8 @@ internal static class StepExtractor
 
             CollectStepsFromPathLambda(pathLambda, semanticModel, currentPrefix, StepContext.BranchPath, steps);
         }
+
+        return steps;
     }
 
     /// <summary>

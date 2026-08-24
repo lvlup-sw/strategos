@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -203,15 +204,34 @@ internal sealed class BranchHandlerEmitter
     /// <param name="stepName">The name of the last step in the branch path.</param>
     /// <param name="branch">The branch model.</param>
     /// <param name="branchCase">The specific branch case.</param>
+    /// <param name="confidence">
+    /// The confidence policy declared on this last step, or null when the step declares none.
+    /// </param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when any parameter is null.
+    /// Thrown when any parameter other than <paramref name="confidence"/> is null.
     /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Whether the path rejoins or ends the workflow is decided per CASE, not per branch. A case
+    /// that declared <c>.Complete()</c> completes the saga at its own last step even when a sibling
+    /// case rejoins — in that mixed shape the branch-level rejoin flag is true, so reading it alone
+    /// would send the ending case to the declared terminal (#175). The branch-level flag remains the
+    /// fallback for a case that did not declare an ending of its own.
+    /// </para>
+    /// <para>
+    /// A last step that declared <c>.RequireConfidence(t).OnLowConfidence(alt =&gt; ...)</c> is
+    /// gated here, for BOTH case kinds. This handler intercepts the step, so a gate the generic
+    /// completed handler would otherwise emit has nowhere else to land: without the prologue below
+    /// the declared threshold and its handler chain never reach the saga at all.
+    /// </para>
+    /// </remarks>
     public void EmitPathEndHandler(
         StringBuilder sb,
         WorkflowModel model,
         string stepName,
         BranchModel branch,
-        BranchCaseModel branchCase)
+        BranchCaseModel branchCase,
+        ConfidenceModel? confidence = null)
     {
         ThrowHelper.ThrowIfNull(sb, nameof(sb));
         ThrowHelper.ThrowIfNull(model, nameof(model));
@@ -224,15 +244,27 @@ internal sealed class BranchHandlerEmitter
         var eventName = $"{stepName}Completed";
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
+        // The case's own declaration wins: a case that declared .Complete() ends the workflow here,
+        // whichever way its siblings exit. Only a case that made no such declaration falls back to
+        // the branch-level convergence point.
+        var routesToRejoin = !branchCase.IsTerminal && branch.HasRejoinPoint;
+
         // XML documentation
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {eventName} event - completes branch path and routes to rejoin.");
+        sb.AppendLine(routesToRejoin
+            ? $"    /// Handles the {eventName} event - completes branch path and routes to rejoin."
+            : $"    /// Handles the {eventName} event - completes branch path and completes the workflow.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"evt\">The {stepName} completed event.</param>");
         StateApplicationHelper.EmitSessionParameterDoc(sb, model);
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
 
-        if (branch.HasRejoinPoint)
+        if (confidence?.OnLowConfidenceHandlerStep is not null)
+        {
+            EmitConfidenceGatedPathEndHandler(
+                sb, model, eventName, branch, branchCase, routesToRejoin, confidence);
+        }
+        else if (routesToRejoin)
         {
             var rejoinStepCommand = $"Start{branch.RejoinStepName}Command";
 
@@ -268,7 +300,8 @@ internal sealed class BranchHandlerEmitter
         }
         else
         {
-            // No rejoin - this branch path ends the workflow
+            // This branch path ends the workflow: either the case declared .Complete(), or the
+            // branch has no convergence point at all.
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
             sb.AppendLine("    public void Handle(");
             sb.AppendLine($"        {eventName} evt,");
@@ -298,6 +331,123 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine("        MarkCompleted();");
             sb.AppendLine("    }");
         }
+    }
+
+    /// <summary>
+    /// Emits a branch path-end handler whose last step declared a confidence policy: the
+    /// completed event's score is compared to the threshold before the path's ending is applied.
+    /// Below the threshold the saga cascades the low-confidence handler chain's start command
+    /// (INV-1) and neither rejoins nor completes; at or above it (or when the result carried no
+    /// score) the path ends exactly as it would without the gate.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="eventName">The completed-event type name this handler accepts.</param>
+    /// <param name="branch">The branch model.</param>
+    /// <param name="branchCase">The specific branch case.</param>
+    /// <param name="routesToRejoin">
+    /// True when the path ends by rejoining the branch's convergence point; false when it ends
+    /// the workflow.
+    /// </param>
+    /// <param name="confidence">The last step's confidence policy.</param>
+    /// <remarks>
+    /// The gated shape returns <c>IEnumerable&lt;object&gt;</c> because the below-threshold route
+    /// and the ordinary ending are different messages. Unconfigured paths keep their original
+    /// concrete return types, so output for a branch with no confidence policy is unchanged.
+    /// </remarks>
+    private static void EmitConfidenceGatedPathEndHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string eventName,
+        BranchModel branch,
+        BranchCaseModel branchCase,
+        bool routesToRejoin,
+        ConfidenceModel confidence)
+    {
+        var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var handlerStepName = confidence.OnLowConfidenceHandlerStep!.StepName;
+        var lowConfidenceCommand = $"Start{handlerStepName}Command";
+        var thresholdLiteral = confidence.Threshold.ToString("R", CultureInfo.InvariantCulture);
+
+        // The gated step's own name, for the audit event. Derived from the completed event name so
+        // it holds even when the branch case carries no resolved step model.
+        var gatedStepName = eventName.EndsWith("Completed", StringComparison.Ordinal)
+            ? eventName.Substring(0, eventName.Length - "Completed".Length)
+            : eventName;
+
+        sb.AppendLine("    /// <returns>The low-confidence handler start command when below the");
+        sb.AppendLine("    /// confidence threshold; otherwise the path's ordinary ending.</returns>");
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+
+        if (!string.IsNullOrEmpty(model.StateTypeName))
+        {
+            StateApplicationHelper.EmitStateApplication(sb, model);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the branch-case");
+        sb.AppendLine("        // step's result confidence is present and below the configured threshold.");
+        sb.AppendLine($"        if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.{handlerStepName};");
+        sb.AppendLine();
+        sb.AppendLine("            logger.LogWarning(");
+        sb.AppendLine("                \"Branch-case step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
+        sb.AppendLine("                confidenceScore,");
+        sb.AppendLine($"                {thresholdLiteral},");
+        sb.AppendLine("                WorkflowId,");
+        sb.AppendLine($"                nameof({lowConfidenceCommand}));");
+
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine("            session.Events.Append(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine("                    WorkflowId,");
+            sb.AppendLine($"                    \"{gatedStepName}\",");
+            sb.AppendLine("                    confidenceScore,");
+            sb.AppendLine($"                    {thresholdLiteral},");
+            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+
+        if (routesToRejoin)
+        {
+            sb.AppendLine("        logger.LogDebug(");
+            sb.AppendLine("            \"Branch path {BranchPath} completed for workflow {WorkflowId}, rejoining at {RejoinStep}\",");
+            sb.AppendLine($"            \"{branchCase.BranchPathPrefix}\",");
+            sb.AppendLine("            WorkflowId,");
+            sb.AppendLine($"            \"{branch.RejoinStepName}\");");
+            sb.AppendLine();
+            sb.AppendLine($"        yield return new Start{branch.RejoinStepName}Command(WorkflowId);");
+        }
+        else
+        {
+            sb.AppendLine("        logger.LogInformation(");
+            sb.AppendLine("            \"Branch path {BranchPath} completed workflow {WorkflowId}\",");
+            sb.AppendLine($"            \"{branchCase.BranchPathPrefix}\",");
+            sb.AppendLine("            WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
+            sb.AppendLine("        MarkCompleted();");
+            sb.AppendLine("        yield break;");
+        }
+
+        sb.AppendLine("    }");
     }
 
     /// <summary>

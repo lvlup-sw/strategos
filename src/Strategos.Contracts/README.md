@@ -174,7 +174,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.4.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.5.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -184,9 +184,9 @@ silently overwrites a bare `<Version>` otherwise), driven by the single
 **Version history:** 0.2.0 debuted events + workflow IR (no 0.1.0); 0.3.0 added
 the semantic-merge-queue surface (`MergeGateDecision` / `JourneyResult` /
 `WorkflowRef` / `WorkflowCatalog`, the `_meta.degraded` response envelope) and
-the AGWF catalog; 0.4.0 adds the strategy-compiler contract layer (the
+the AGWF catalog; 0.4.0 added the strategy-compiler contract layer (the
 `GateClass` gate taxonomy, the fork/compensation edge, and the licensed-abstention
-union) — each an additive minor. The package embeds all three schema
+union); 0.5.0 adds the terminal-reachability AGWF id — each an additive minor. The package embeds all three schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under
 `contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`

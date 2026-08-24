@@ -298,9 +298,30 @@ public class MermaidEmitterUnitTests
         // Act
         var source = MermaidEmitter.Emit(model);
 
-        // Assert
-        await Assert.That(source).Contains("BranchByStatus --> Auto_ProcessStep : Auto");
-        await Assert.That(source).Contains("BranchByStatus --> Manual_ProcessStep : Manual");
+        // Assert - each arm enters its case's FIRST step, labelled with the case's path prefix
+        await Assert.That(source).Contains("BranchByStatus --> ScoreClaim : Status_ClaimStatus_Auto");
+        await Assert.That(source).Contains("BranchByStatus --> AssignAdjuster : Status_ClaimStatus_Manual");
+    }
+
+    /// <summary>
+    /// Verifies that a multi-step case chains within itself and does not spill into the sibling
+    /// case that follows it in the step-name list.
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithBranch_ChainsWithinCaseNotAcrossCases()
+    {
+        // Arrange
+        var model = CreateModelWithBranch();
+
+        // Act
+        var source = MermaidEmitter.Emit(model);
+
+        // Assert - the interior of each case
+        await Assert.That(source).Contains("ScoreClaim --> SettleClaim");
+        await Assert.That(source).Contains("AssignAdjuster --> ReviewClaim");
+
+        // Assert - no edge from one case into the next
+        await Assert.That(source).DoesNotContain("SettleClaim --> AssignAdjuster");
     }
 
     /// <summary>
@@ -315,9 +336,9 @@ public class MermaidEmitterUnitTests
         // Act
         var source = MermaidEmitter.Emit(model);
 
-        // Assert
-        await Assert.That(source).Contains("Auto_CompleteStep --> CompleteClaim");
-        await Assert.That(source).Contains("Manual_CompleteStep --> CompleteClaim");
+        // Assert - each case rejoins from its own LAST step
+        await Assert.That(source).Contains("SettleClaim --> CompleteClaim");
+        await Assert.That(source).Contains("ReviewClaim --> CompleteClaim");
     }
 
     /// <summary>
@@ -333,7 +354,103 @@ public class MermaidEmitterUnitTests
         var source = MermaidEmitter.Emit(model);
 
         // Assert
-        await Assert.That(source).Contains("Archive_Step --> [*]");
+        await Assert.That(source).Contains("ArchiveRecord --> [*]");
+        await Assert.That(source).DoesNotContain("ArchiveRecord --> FinalizeRecord");
+    }
+
+    // =============================================================================
+    // F2. Fork Diagram Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a fork renders as a fork state fanning out to every path and a join state
+    /// the paths converge on, rather than as a sequence of steps.
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithFork_RendersPathsInParallel()
+    {
+        // Arrange
+        var model = CreateModelWithFork();
+
+        // Act
+        var source = MermaidEmitter.Emit(model);
+
+        // Assert - fan out
+        await Assert.That(source).Contains("ValidateOrder --> Fork_ParallelOrder_Fork0");
+        await Assert.That(source).Contains("state Fork_ParallelOrder_Fork0 <<fork>>");
+        await Assert.That(source).Contains("Fork_ParallelOrder_Fork0 --> ProcessPayment");
+        await Assert.That(source).Contains("Fork_ParallelOrder_Fork0 --> ReserveInventory");
+
+        // Assert - fan in
+        await Assert.That(source).Contains("state Join_ParallelOrder_Fork0 <<join>>");
+        await Assert.That(source).Contains("ProcessPayment --> Join_ParallelOrder_Fork0");
+        await Assert.That(source).Contains("ReserveInventory --> Join_ParallelOrder_Fork0");
+        await Assert.That(source).Contains("Join_ParallelOrder_Fork0 --> SynthesizeResults");
+    }
+
+    /// <summary>
+    /// Verifies that fork paths are not drawn as a chain: no path runs into the next one, and the
+    /// fork's predecessor does not enter a single path directly.
+    /// </summary>
+    [Test]
+    public async Task Emit_WorkflowWithFork_DoesNotChainSiblingPaths()
+    {
+        // Arrange
+        var model = CreateModelWithFork();
+
+        // Act
+        var source = MermaidEmitter.Emit(model);
+
+        // Assert
+        await Assert.That(source).DoesNotContain("ProcessPayment --> ReserveInventory");
+        await Assert.That(source).DoesNotContain("ValidateOrder --> ProcessPayment");
+        await Assert.That(source).DoesNotContain("ReserveInventory --> SynthesizeResults");
+    }
+
+    // =============================================================================
+    // F3. Colliding Loop Boundary Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a nested loop shape whose outer and inner bodies begin and end on the same
+    /// step emits a diagram rather than failing the generator on a duplicate lookup key.
+    /// </summary>
+    [Test]
+    public async Task Emit_NestedLoopsSharingBodyBoundaries_EmitsDiagram()
+    {
+        // Arrange
+        var model = CreateModelWithCollidingNestedLoops();
+
+        // Act
+        var source = MermaidEmitter.Emit(model);
+
+        // Assert - both loops are described, neither is dropped
+        await Assert.That(source).Contains("note right of Outer_Inner_InspectStep : Loop: Outer (max 5)");
+        await Assert.That(source).Contains("note right of Outer_Inner_InspectStep : Loop: Inner (max 3)");
+        await Assert.That(source).Contains("Outer_Inner_InspectStep --> Outer_Inner_InspectStep : continue");
+        await Assert.That(source).Contains("Outer_Inner_InspectStep --> PublishStep : exit");
+    }
+
+    /// <summary>
+    /// Verifies that two sibling loops ending on the same body step both contribute their own
+    /// continue and exit edges instead of one silently displacing the other.
+    /// </summary>
+    [Test]
+    public async Task Emit_SiblingLoopsSharingLastBodyStep_EmitsBothLoops()
+    {
+        // Arrange
+        var model = CreateModelWithSiblingLoopsSharingLastBodyStep();
+
+        // Act
+        var source = MermaidEmitter.Emit(model);
+
+        // Assert - each loop continues back to its own first body step
+        await Assert.That(source).Contains("Shared_ReviewStep --> Draft_ComposeStep : continue");
+        await Assert.That(source).Contains("Shared_ReviewStep --> Polish_TightenStep : continue");
+
+        // Assert - each loop exits to its own continuation step
+        await Assert.That(source).Contains("Shared_ReviewStep --> PublishStep : exit");
+        await Assert.That(source).Contains("Shared_ReviewStep --> ArchiveStep : exit");
     }
 
     // =============================================================================
@@ -409,26 +526,32 @@ public class MermaidEmitterUnitTests
             Loops: loops);
     }
 
+    /// <summary>
+    /// Mirrors what the branch extractor produces: a case's step names are the bare step type
+    /// names, and the branch path prefix is a separate field of the form
+    /// <c>{discriminatorPath}_{caseValue}</c>. A fixture that folds the prefix into the step names
+    /// asserts against a shape the extractor never emits.
+    /// </summary>
     private static WorkflowModel CreateModelWithBranch()
     {
         var cases = new List<BranchCaseModel>
         {
             new(
-                CaseValueLiteral: "Status.Auto",
-                BranchPathPrefix: "Auto",
-                StepNames: ["Auto_ProcessStep", "Auto_CompleteStep"],
+                CaseValueLiteral: "ClaimStatus.Auto",
+                BranchPathPrefix: "Status_ClaimStatus_Auto",
+                StepNames: ["ScoreClaim", "SettleClaim"],
                 IsTerminal: false),
             new(
-                CaseValueLiteral: "Status.Manual",
-                BranchPathPrefix: "Manual",
-                StepNames: ["Manual_ProcessStep", "Manual_CompleteStep"],
+                CaseValueLiteral: "ClaimStatus.Manual",
+                BranchPathPrefix: "Status_ClaimStatus_Manual",
+                StepNames: ["AssignAdjuster", "ReviewClaim"],
                 IsTerminal: false),
         };
 
         var branches = new List<BranchModel>
         {
             new(
-                BranchId: "process-claim-Status",
+                BranchId: "process-claim-Branch0-Status",
                 PreviousStepName: "ValidateClaim",
                 DiscriminatorPropertyPath: "Status",
                 DiscriminatorTypeName: "ClaimStatus",
@@ -442,31 +565,35 @@ public class MermaidEmitterUnitTests
             WorkflowName: "process-claim",
             PascalName: "ProcessClaim",
             Namespace: "TestNamespace",
-            StepNames: ["ValidateClaim", "Auto_ProcessStep", "Auto_CompleteStep", "Manual_ProcessStep", "Manual_CompleteStep", "CompleteClaim"],
+            StepNames: ["ValidateClaim", "ScoreClaim", "SettleClaim", "AssignAdjuster", "ReviewClaim", "CompleteClaim"],
             StateTypeName: "ClaimState",
             Branches: branches);
     }
 
+    /// <summary>
+    /// A two-case branch whose second case ends the workflow. Case step names are bare, matching
+    /// the branch extractor.
+    /// </summary>
     private static WorkflowModel CreateModelWithTerminalBranch()
     {
         var cases = new List<BranchCaseModel>
         {
             new(
-                CaseValueLiteral: "Status.Active",
-                BranchPathPrefix: "Active",
-                StepNames: ["Active_ProcessStep"],
+                CaseValueLiteral: "RecordStatus.Active",
+                BranchPathPrefix: "Status_RecordStatus_Active",
+                StepNames: ["ProcessRecord"],
                 IsTerminal: false),
             new(
-                CaseValueLiteral: "Status.Archived",
-                BranchPathPrefix: "Archive",
-                StepNames: ["Archive_Step"],
+                CaseValueLiteral: "RecordStatus.Archived",
+                BranchPathPrefix: "Status_RecordStatus_Archived",
+                StepNames: ["ArchiveRecord"],
                 IsTerminal: true),
         };
 
         var branches = new List<BranchModel>
         {
             new(
-                BranchId: "process-record-Status",
+                BranchId: "process-record-Branch0-Status",
                 PreviousStepName: "ValidateRecord",
                 DiscriminatorPropertyPath: "Status",
                 DiscriminatorTypeName: "RecordStatus",
@@ -480,8 +607,130 @@ public class MermaidEmitterUnitTests
             WorkflowName: "process-record",
             PascalName: "ProcessRecord",
             Namespace: "TestNamespace",
-            StepNames: ["ValidateRecord", "Active_ProcessStep", "Archive_Step", "FinalizeRecord"],
+            StepNames: ["ValidateRecord", "ProcessRecord", "ArchiveRecord", "FinalizeRecord"],
             StateTypeName: "RecordState",
             Branches: branches);
+    }
+
+    /// <summary>
+    /// Mirrors what the fork extractor produces: both path steps and the join step are entries of
+    /// the step-name list, so consecutive entries chain two paths that run in parallel.
+    /// </summary>
+    private static WorkflowModel CreateModelWithFork()
+    {
+        var forks = new List<ForkModel>
+        {
+            new(
+                ForkId: "ParallelOrder-Fork0",
+                PreviousStepName: "ValidateOrder",
+                Paths:
+                [
+                    new(
+                        PathIndex: 0,
+                        Steps: [StepModel.Create("ProcessPayment", "TestNamespace.ProcessPayment")],
+                        HasFailureHandler: false,
+                        IsTerminalOnFailure: false),
+                    new(
+                        PathIndex: 1,
+                        Steps: [StepModel.Create("ReserveInventory", "TestNamespace.ReserveInventory")],
+                        HasFailureHandler: false,
+                        IsTerminalOnFailure: false),
+                ],
+                JoinStepName: "SynthesizeResults"),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "parallel-order",
+            PascalName: "ParallelOrder",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateOrder", "ProcessPayment", "ReserveInventory", "SynthesizeResults", "SendConfirmation"],
+            StateTypeName: "OrderState",
+            Forks: forks);
+    }
+
+    /// <summary>
+    /// A nested loop whose body is exactly the inner loop's body, so the outer and inner loops
+    /// share BOTH their first and their last body step.
+    /// </summary>
+    private static WorkflowModel CreateModelWithCollidingNestedLoops()
+    {
+        var sharedBody = new List<StepModel>
+        {
+            StepModel.Create("Outer_Inner_InspectStep", "TestNamespace.InspectStep"),
+        };
+
+        var loops = new List<LoopModel>
+        {
+            new(
+                LoopName: "Outer",
+                ConditionId: "nested-audit-Outer",
+                MaxIterations: 5,
+                BodySteps: sharedBody,
+                ContinuationStepName: "PublishStep",
+                ParentLoopName: null),
+            new(
+                LoopName: "Inner",
+                ConditionId: "nested-audit-Inner",
+                MaxIterations: 3,
+                BodySteps: sharedBody,
+                ContinuationStepName: "PublishStep",
+                ParentLoopName: "Outer"),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "nested-audit",
+            PascalName: "NestedAudit",
+            Namespace: "TestNamespace",
+            StepNames: ["StartStep", "Outer_Inner_InspectStep", "PublishStep"],
+            StateTypeName: "AuditState",
+            Loops: loops);
+    }
+
+    /// <summary>
+    /// Two sibling loops that end on the same body step but begin on different ones, so only the
+    /// last-body-step lookup collides.
+    /// </summary>
+    private static WorkflowModel CreateModelWithSiblingLoopsSharingLastBodyStep()
+    {
+        var loops = new List<LoopModel>
+        {
+            new(
+                LoopName: "Draft",
+                ConditionId: "authoring-Draft",
+                MaxIterations: 5,
+                BodySteps:
+                [
+                    StepModel.Create("Draft_ComposeStep", "TestNamespace.ComposeStep"),
+                    StepModel.Create("Shared_ReviewStep", "TestNamespace.ReviewStep"),
+                ],
+                ContinuationStepName: "PublishStep",
+                ParentLoopName: null),
+            new(
+                LoopName: "Polish",
+                ConditionId: "authoring-Polish",
+                MaxIterations: 3,
+                BodySteps:
+                [
+                    StepModel.Create("Polish_TightenStep", "TestNamespace.TightenStep"),
+                    StepModel.Create("Shared_ReviewStep", "TestNamespace.ReviewStep"),
+                ],
+                ContinuationStepName: "ArchiveStep",
+                ParentLoopName: null),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "authoring",
+            PascalName: "Authoring",
+            Namespace: "TestNamespace",
+            StepNames:
+            [
+                "Draft_ComposeStep",
+                "Polish_TightenStep",
+                "Shared_ReviewStep",
+                "PublishStep",
+                "ArchiveStep",
+            ],
+            StateTypeName: "AuthoringState",
+            Loops: loops);
     }
 }

@@ -308,39 +308,20 @@ internal sealed record WorkflowModel(
     }
 
     /// <summary>
-    /// Gets the next MAIN-flow step phase name after the given step phase name, skipping over any
-    /// lowered <c>OnLowConfidence</c> handler steps (which are appended to <see cref="StepNames"/>
-    /// but are not part of the linear flow). Returns null when no later main-flow step exists.
+    /// Gets the next MAIN-flow step phase name after the given step phase name, skipping every
+    /// entry of <see cref="StepNames"/> that is off the main linear flow. Returns null when no
+    /// later main-flow step exists.
     /// </summary>
+    /// <remarks>
+    /// The skip set is derived by <see cref="MainFlowClassification"/> — the single source every
+    /// successor scan consults. Filtering here on one contributing construct (as this scan once
+    /// did, for lowered low-confidence handler steps alone) leaves every other appended step
+    /// looking like a main-flow successor.
+    /// </remarks>
     /// <param name="phaseName">The phase name to search after.</param>
     /// <returns>The next main-flow step phase name, or null if the given step is last in the main flow.</returns>
-    private string? NextMainFlowStepName(string phaseName)
-    {
-        var index = -1;
-        for (var i = 0; i < StepNames.Count; i++)
-        {
-            if (string.Equals(StepNames[i], phaseName, StringComparison.Ordinal))
-            {
-                index = i;
-                break;
-            }
-        }
-
-        if (index < 0)
-        {
-            return null;
-        }
-
-        for (var j = index + 1; j < StepNames.Count; j++)
-        {
-            if (!IsConfidenceHandlerStep(StepNames[j]))
-            {
-                return StepNames[j];
-            }
-        }
-
-        return null;
-    }
+    private string? NextMainFlowStepName(string phaseName) =>
+        MainFlowClassification.For(this).NextMainFlowStepNameAfter(phaseName);
 
     /// <summary>
     /// Gets a value indicating whether any step in this workflow has validation guards.
