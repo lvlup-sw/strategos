@@ -325,6 +325,7 @@ Strategos.Ontology.Descriptors.DerivationSourceKind.External = 1 -> Strategos.On
 Strategos.Ontology.Descriptors.DerivationSourceKind.Local = 0 -> Strategos.Ontology.Descriptors.DerivationSourceKind
 Strategos.Ontology.Descriptors.DescriptorSource
 Strategos.Ontology.Descriptors.DescriptorSource.HandAuthored = 0 -> Strategos.Ontology.Descriptors.DescriptorSource
+Strategos.Ontology.Descriptors.DescriptorSource.HandAuthoredContract = 2 -> Strategos.Ontology.Descriptors.DescriptorSource
 Strategos.Ontology.Descriptors.DescriptorSource.Ingested = 1 -> Strategos.Ontology.Descriptors.DescriptorSource
 Strategos.Ontology.Descriptors.DomainDescriptor
 Strategos.Ontology.Descriptors.DomainDescriptor.DomainDescriptor(string! DomainName) -> void

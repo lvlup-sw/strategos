@@ -21,11 +21,16 @@ namespace Strategos.Ontology.Merge;
 /// <item><description><see cref="ObjectTypeDescriptor.AssociationEndpoints"/> (DR-4): hand wins; fall back to ingested when hand's is empty.</description></item>
 /// </list>
 /// <para>
-/// Intent-only fields are always taken from hand:
+/// Intent-only fields are always taken from hand
+/// (<see cref="DescriptorSource.HandAuthored"/> or
+/// <see cref="DescriptorSource.HandAuthoredContract"/>):
 /// <see cref="ObjectTypeDescriptor.Actions"/>,
 /// <see cref="ObjectTypeDescriptor.Events"/>,
-/// <see cref="ObjectTypeDescriptor.Lifecycle"/>. A mechanical ingester
-/// contributing to any of these is reported as AONT205 upstream.
+/// <see cref="ObjectTypeDescriptor.Lifecycle"/>,
+/// <see cref="ObjectTypeDescriptor.InterfaceActionMappings"/>,
+/// <see cref="ObjectTypeDescriptor.ExternalLinkExtensionPoints"/>. A
+/// mechanical ingester contributing to any of these is reported as
+/// AONT205 upstream.
 /// </para>
 /// <para>
 /// Per-name union for <see cref="ObjectTypeDescriptor.Properties"/> and

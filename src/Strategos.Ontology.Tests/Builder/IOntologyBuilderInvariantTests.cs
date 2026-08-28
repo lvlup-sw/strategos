@@ -11,12 +11,13 @@ namespace Strategos.Ontology.Tests.Builder;
 /// <summary>
 /// DR-6 + DR-10 (Task 16): the AONT205 invariant fires at delta-apply
 /// time when a mechanical ingester contributes to one of the intent-only
-/// fields (<c>Actions</c>, <c>Events</c>, <c>Lifecycle</c>).
+/// fields (<c>Actions</c>, <c>Events</c>, <c>Lifecycle</c>,
+/// <c>InterfaceActionMappings</c>, <c>ExternalLinkExtensionPoints</c>).
 /// <see cref="OntologyBuilder.ApplyDelta"/> aborts with an
 /// <see cref="OntologyCompositionException"/> whose
 /// <see cref="OntologyCompositionException.Diagnostics"/> contains
 /// the offending diagnostic, identifying the violated field. Hand-authored
-/// descriptors are unaffected.
+/// and contract-authored descriptors are unaffected.
 /// </summary>
 public class IOntologyBuilderInvariantTests
 {
@@ -188,6 +189,120 @@ public class IOntologyBuilderInvariantTests
 
         await Assert.That(caught).IsNull();
         await Assert.That(((OntologyBuilder)builder).ObjectTypes.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ApplyDelta_AddHandAuthoredContractDescriptorWithActions_DoesNotThrow()
+    {
+        IOntologyBuilder builder = new OntologyBuilder("Trading");
+
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "Position",
+            DomainName = "Trading",
+            SymbolKey = "contract://trading/Position",
+            Source = DescriptorSource.HandAuthoredContract,
+            Actions = new List<ActionDescriptor>
+            {
+                new("Trade", "Contract-authored trade"),
+            },
+        };
+
+        var delta = new OntologyDelta.AddObjectType(descriptor)
+        {
+            SourceId = SourceId,
+            Timestamp = Timestamp,
+        };
+
+        Exception? caught = null;
+        try
+        {
+            builder.ApplyDelta(delta);
+        }
+        catch (Exception ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNull();
+        await Assert.That(((OntologyBuilder)builder).ObjectTypes.Count).IsEqualTo(1);
+        await Assert.That(((OntologyBuilder)builder).ObjectTypes[0].Actions[0].Name).IsEqualTo("Trade");
+    }
+
+    [Test]
+    public async Task ApplyDelta_AddIngestedDescriptorWithInterfaceActionMappings_ThrowsAONT205()
+    {
+        IOntologyBuilder builder = new OntologyBuilder("Trading");
+
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "Position",
+            DomainName = "Trading",
+            SymbolKey = "scip-typescript ./pos.ts#Position",
+            Source = DescriptorSource.Ingested,
+            SourceId = SourceId,
+            InterfaceActionMappings = new List<InterfaceActionMapping>
+            {
+                new() { InterfaceActionName = "Search", ConcreteActionName = "SearchPositions" },
+            },
+        };
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            builder.ApplyDelta(new OntologyDelta.AddObjectType(descriptor)
+            {
+                SourceId = SourceId,
+                Timestamp = Timestamp,
+            });
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        var aont205 = caught!.Diagnostics.FirstOrDefault(d => d.Id == "AONT205");
+        await Assert.That(aont205).IsNotNull();
+        await Assert.That(aont205!.Message).Contains("InterfaceActionMappings");
+    }
+
+    [Test]
+    public async Task ApplyDelta_AddIngestedDescriptorWithExternalLinkExtensionPoints_ThrowsAONT205()
+    {
+        IOntologyBuilder builder = new OntologyBuilder("Trading");
+
+        var descriptor = new ObjectTypeDescriptor
+        {
+            Name = "Position",
+            DomainName = "Trading",
+            SymbolKey = "scip-typescript ./pos.ts#Position",
+            Source = DescriptorSource.Ingested,
+            SourceId = SourceId,
+            ExternalLinkExtensionPoints = new List<ExternalLinkExtensionPoint>
+            {
+                new() { Name = "KnowledgeLinks" },
+            },
+        };
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            builder.ApplyDelta(new OntologyDelta.AddObjectType(descriptor)
+            {
+                SourceId = SourceId,
+                Timestamp = Timestamp,
+            });
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        var aont205 = caught!.Diagnostics.FirstOrDefault(d => d.Id == "AONT205");
+        await Assert.That(aont205).IsNotNull();
+        await Assert.That(aont205!.Message).Contains("ExternalLinkExtensionPoints");
     }
 
     [Test]

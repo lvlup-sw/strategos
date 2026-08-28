@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Diagnostics;
+using Strategos.Ontology.Internal;
 using Strategos.Ontology.Merge;
 
 namespace Strategos.Ontology.Builder;
@@ -131,12 +132,18 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     /// (surfaces AONT040 downstream)" semantics (add path) and "replace
     /// at index" semantics (update path).
     /// </summary>
+    /// <remarks>
+    /// Both <see cref="DescriptorSource.HandAuthored"/> and
+    /// <see cref="DescriptorSource.HandAuthoredContract"/> are the hand
+    /// side of the lattice. Mechanical <see cref="DescriptorSource.Ingested"/>
+    /// is the other side. AONT205 still applies only to ingested intent.
+    /// </remarks>
     private static bool TryCrossProvenanceMerge(
         ObjectTypeDescriptor existing,
         ObjectTypeDescriptor incoming,
         out ObjectTypeDescriptor merged)
     {
-        if (existing.Source == DescriptorSource.HandAuthored
+        if (IsHandSide(existing.Source)
             && incoming.Source == DescriptorSource.Ingested)
         {
             merged = MergeTwo.Merge(hand: existing, ingested: incoming);
@@ -144,7 +151,7 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         }
 
         if (existing.Source == DescriptorSource.Ingested
-            && incoming.Source == DescriptorSource.HandAuthored)
+            && IsHandSide(incoming.Source))
         {
             merged = MergeTwo.Merge(hand: incoming, ingested: existing);
             return true;
@@ -153,6 +160,9 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
         merged = existing;
         return false;
     }
+
+    private static bool IsHandSide(DescriptorSource source) =>
+        source is DescriptorSource.HandAuthored or DescriptorSource.HandAuthoredContract;
 
     /// <summary>
     /// DR-1 identity invariant boundary check. The same invariant is
@@ -232,33 +242,19 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     /// DR-6 + DR-10 (Task 16): AONT205 invariant — a mechanical ingester
     /// (descriptor with <see cref="DescriptorSource.Ingested"/>) cannot
     /// contribute to the intent-only fields <see cref="ObjectTypeDescriptor.Actions"/>,
-    /// <see cref="ObjectTypeDescriptor.Events"/>, or
-    /// <see cref="ObjectTypeDescriptor.Lifecycle"/>. Hand-authored
-    /// descriptors pass through unchanged. On violation, throws
+    /// <see cref="ObjectTypeDescriptor.Events"/>,
+    /// <see cref="ObjectTypeDescriptor.Lifecycle"/>,
+    /// <see cref="ObjectTypeDescriptor.InterfaceActionMappings"/>, or
+    /// <see cref="ObjectTypeDescriptor.ExternalLinkExtensionPoints"/>.
+    /// <see cref="DescriptorSource.HandAuthored"/> and
+    /// <see cref="DescriptorSource.HandAuthoredContract"/> descriptors
+    /// pass through unchanged. On violation, throws
     /// <see cref="OntologyCompositionException"/> with an AONT205
     /// diagnostic naming the offending field, the domain, and the type.
     /// </summary>
     private static void ValidateIngestedIntentInvariant(ObjectTypeDescriptor descriptor)
     {
-        if (descriptor.Source != DescriptorSource.Ingested)
-        {
-            return;
-        }
-
-        string? offendingField = null;
-        if (descriptor.Actions.Count > 0)
-        {
-            offendingField = "Actions";
-        }
-        else if (descriptor.Events.Count > 0)
-        {
-            offendingField = "Events";
-        }
-        else if (descriptor.Lifecycle is not null)
-        {
-            offendingField = "Lifecycle";
-        }
-
+        var offendingField = IngestedIntentInvariant.FindOffendingField(descriptor);
         if (offendingField is null)
         {
             return;
@@ -270,7 +266,8 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
                 $"AONT205: ingested descriptor '{descriptor.DomainName}.{descriptor.Name}' "
                 + $"contributes to intent-only field '{offendingField}'. "
                 + $"Mechanical ingesters (Source = Ingested, SourceId = '{descriptor.SourceId ?? "<unknown>"}') "
-                + $"must leave Actions, Events, and Lifecycle empty — those are hand-authored intent.",
+                + "must leave Actions, Events, Lifecycle, InterfaceActionMappings, and "
+                + "ExternalLinkExtensionPoints empty — those are hand-authored or contract-authored intent.",
             Severity: OntologyDiagnosticSeverity.Error,
             DomainName: descriptor.DomainName,
             TypeName: descriptor.Name,
