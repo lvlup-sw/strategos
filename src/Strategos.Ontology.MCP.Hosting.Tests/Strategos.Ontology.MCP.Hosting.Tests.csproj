@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" VersionOverride="10.0.10" />
+    <PackageReference Include="ModelContextProtocol" VersionOverride="2.2.0" />
     <PackageReference Include="TUnit" />
     <PackageReference Include="NSubstitute" />
     <!-- Task 022 (DR-16 parity half, event side): validate the hosting-mapped
