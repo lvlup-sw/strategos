@@ -7,6 +7,7 @@
 using System.Collections.Generic;
 using System.Text;
 
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
@@ -51,12 +52,18 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
         var context = SagaEmissionContext.Create(model);
+        var naming = ForkPathCompletedNaming.For(model);
         var emittedSharedBranchTypes = new HashSet<string>(StringComparer.Ordinal);
 
         for (int i = 0; i < model.StepNames.Count; i++)
         {
             var stepName = model.StepNames[i];
-            var handlerContext = BuildHandlerContext(context, stepName, i);
+            if (HasPathQualifiedPhase(naming, stepName))
+            {
+                continue;
+            }
+
+            var handlerContext = BuildHandlerContext(context, stepName, i, naming);
 
             sb.AppendLine();
             _startEmitter.EmitHandler(sb, model, stepName, handlerContext);
@@ -78,6 +85,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             sb.AppendLine();
             EmitCompletedHandler(sb, model, stepName, handlerContext, context);
         }
+
+        EmitPathQualifiedForkHandlers(sb, model, context, naming);
 
         // Emit fork-related handlers
         if (model.HasForks)
@@ -253,7 +262,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     private static HandlerContext BuildHandlerContext(
         SagaEmissionContext ctx,
         string stepName,
-        int index)
+        int index,
+        ForkPathCompletedNaming naming)
     {
         // Several lowering blocks append names to StepNames for full lowering (phase, worker
         // handler, commands, events) even though the steps are reached through their own
@@ -337,16 +347,45 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         ctx.ForksByPreviousStep.TryGetValue(stepName, out var forkAtStep);
         ctx.ForksByJoinStep.TryGetValue(stepName, out var joinForkAtStep);
 
-        // Check if this step ends a fork path. Key by routing key, not the
-        // last-write-wins string ForkPathInfo map.
+        // Occupy the fork path by PathRoutingKey.ForFork, not the last-write-wins
+        // string ForkPathInfo map. Colliding unnamed PhaseNames are emitted in
+        // EmitPathQualifiedForkHandlers instead of this main loop.
         (ForkModel Fork, ForkPathModel Path)? forkPathEnding = null;
-        foreach (var entry in ctx.ForkPathsByRoutingKey)
+        (ForkModel Fork, ForkPathModel Path)? forkPathOccupancy = null;
+        PathRoutingKey? forkPathKey = null;
+        if (ctx.Model.HasForks)
         {
-            if (string.Equals(entry.Key.PhaseName, stepName, StringComparison.Ordinal))
+            foreach (var fork in ctx.Model.Forks!)
             {
-                forkPathEnding = entry.Value;
-                break;
+                foreach (var path in fork.Paths)
+                {
+                    var onThisPath = false;
+                    foreach (var pathStep in path.Steps)
+                    {
+                        if (string.Equals(pathStep.PhaseName, stepName, StringComparison.Ordinal))
+                        {
+                            onThisPath = true;
+                            forkPathKey ??= PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, pathStep.PhaseName);
+                            forkPathOccupancy ??= (fork, path);
+                            break;
+                        }
+                    }
+
+                    if (onThisPath && string.Equals(path.LastStepName, stepName, StringComparison.Ordinal))
+                    {
+                        forkPathEnding ??= (fork, path);
+                    }
+                }
             }
+        }
+
+        if (!isConfidenceHandlerStep
+            && forkPathKey is { } occupiedKey
+            && forkPathOccupancy is { } occupancy
+            && ctx.MainFlow.TryGetSuccessorWithinPath(occupiedKey, out var keyedSuccessor))
+        {
+            nextStepName = ResolveForkStartStem(naming, occupancy.Fork, occupancy.Path, keyedSuccessor);
+            isLastStep = false;
         }
 
         // Check if this step is part of a fork path (needs full step name for worker command)
@@ -381,7 +420,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             ForkAtStep: forkAtStep,
             ForkPathEnding: forkPathEnding,
             JoinForkAtStep: joinForkAtStep,
-            IsForkPathStep: isForkPathStep);
+            IsForkPathStep: isForkPathStep,
+            ForkPathKey: forkPathKey);
     }
 
     /// <summary>
@@ -574,6 +614,131 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
 
     private static string ToPhaseName(string? loopPrefix, string effectiveName) =>
         string.IsNullOrEmpty(loopPrefix) ? effectiveName : $"{loopPrefix}_{effectiveName}";
+
+    /// <summary>
+    /// Emits start and completed handlers for unnamed same-type fork paths whose
+    /// completed CLR type is <c>{PathId}_{PhaseName}Completed</c>.
+    /// </summary>
+    private void EmitPathQualifiedForkHandlers(
+        StringBuilder sb,
+        WorkflowModel model,
+        SagaEmissionContext context,
+        ForkPathCompletedNaming naming)
+    {
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            if (!instance.IsPathQualified)
+            {
+                continue;
+            }
+
+            if (!TryGetForkPath(model, instance.Key, out var fork, out var path))
+            {
+                continue;
+            }
+
+            var isLastOnPath = string.Equals(path.LastStepName, instance.Key.PhaseName, StringComparison.Ordinal);
+            string? nextStartStem = null;
+            var isLastStep = true;
+            if (context.MainFlow.TryGetSuccessorWithinPath(instance.Key, out var successorPhase))
+            {
+                isLastStep = false;
+                nextStartStem = ResolveForkStartStem(naming, fork, path, successorPhase);
+            }
+
+            var handlerContext = new HandlerContext(
+                StepIndex: 0,
+                IsLastStep: isLastStep,
+                IsTerminalStep: instance.Step.IsTerminal,
+                NextStepName: nextStartStem,
+                StepModel: instance.Step,
+                LoopsAtStep: null,
+                BranchAtStep: null,
+                ApprovalAtStep: null,
+                ForkAtStep: null,
+                ForkPathEnding: isLastOnPath ? (fork, path) : null,
+                JoinForkAtStep: null,
+                IsForkPathStep: true,
+                ForkPathKey: instance.Key);
+
+            sb.AppendLine();
+            _startEmitter.EmitHandler(sb, model, instance.Step.PhaseName, handlerContext, instance.Stem);
+
+            sb.AppendLine();
+            if (isLastOnPath)
+            {
+                _forkJoinEmitter.EmitPathCompletedHandler(sb, model, instance.Step.PhaseName, fork, path);
+            }
+            else
+            {
+                _completedEmitter.EmitHandler(sb, model, instance.Step.PhaseName, handlerContext);
+            }
+        }
+    }
+
+    private static bool HasPathQualifiedPhase(ForkPathCompletedNaming naming, string phaseName)
+    {
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            if (instance.IsPathQualified
+                && string.Equals(instance.Key.PhaseName, phaseName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetForkPath(
+        WorkflowModel model,
+        PathRoutingKey key,
+        out ForkModel fork,
+        out ForkPathModel path)
+    {
+        if (model.HasForks)
+        {
+            foreach (var candidate in model.Forks!)
+            {
+                if (!string.Equals(candidate.ForkId, key.ConstructId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var candidatePath in candidate.Paths)
+                {
+                    if (string.Equals($"Path{candidatePath.PathIndex}", key.PathId, StringComparison.Ordinal))
+                    {
+                        fork = candidate;
+                        path = candidatePath;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        fork = null!;
+        path = null!;
+        return false;
+    }
+
+    private static string ResolveForkStartStem(
+        ForkPathCompletedNaming naming,
+        ForkModel fork,
+        ForkPathModel path,
+        string phaseName)
+    {
+        foreach (var step in path.Steps)
+        {
+            if (string.Equals(step.PhaseName, phaseName, StringComparison.Ordinal))
+            {
+                var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, step.PhaseName);
+                return naming.StartCommandStem(key, step.StepName);
+            }
+        }
+
+        return phaseName;
+    }
 
     /// <summary>
     /// Extracts the base step name from a phase name that may include loop prefixes.

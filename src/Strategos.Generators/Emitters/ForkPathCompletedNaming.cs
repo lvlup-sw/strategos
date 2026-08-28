@@ -147,6 +147,19 @@ internal sealed class ForkPathCompletedNaming
         _stemsByKey.TryGetValue(key, out var stem) ? stem : stepType;
 
     /// <summary>
+    /// Stem for <c>Start{stem}Command</c> on a fork-path instance.
+    /// </summary>
+    /// <param name="key">The routing key for this path instance.</param>
+    /// <param name="stepType">The step's CLR type name.</param>
+    /// <returns>
+    /// <see cref="PathRoutingKey.PhaseName"/> when the type is unique on fork paths;
+    /// otherwise the same stem as <see cref="StemFor"/> (phase name, or
+    /// <c>{PathId}_{PhaseName}</c> when phase names collide).
+    /// </returns>
+    public string StartCommandStem(PathRoutingKey key, string stepType) =>
+        IsSharedType(stepType) ? StemFor(key, stepType) : key.PhaseName;
+
+    /// <summary>
     /// Returns whether <paramref name="phaseName"/> is a shared-type fork-path instance.
     /// </summary>
     /// <param name="phaseName">The step's phase name.</param>

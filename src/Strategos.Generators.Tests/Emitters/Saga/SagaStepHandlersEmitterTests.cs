@@ -8,6 +8,7 @@ using System.Text;
 
 using Strategos.Generators.Emitters.Saga;
 using Strategos.Generators.Models;
+using Strategos.Generators.Tests.Emitters;
 using Strategos.Generators.Tests.Fixtures;
 
 using TUnit.Core;
@@ -101,6 +102,47 @@ public class SagaStepHandlersEmitterTests
         await Assert.That(output).Contains("AnalyzeCompleted");
         await Assert.That(output).Contains("ProcessCompleted");
         await Assert.That(output).Contains("CompleteCompleted");
+    }
+
+    /// <summary>
+    /// Unnamed same-type fork paths bind path-qualified Handles and dispatch the
+    /// matching worker command so Wolverine does not see CS0111.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedPhaseNameForkPaths_EmitsPathQualifiedHandles()
+    {
+        var emitter = new SagaStepHandlersEmitter();
+        var sb = new StringBuilder();
+
+        emitter.Emit(sb, ForkPathMessageFixtures.SharedPhaseName());
+        var output = sb.ToString();
+
+        await Assert.That(CountHandlerParameterLines(output, "Path0_AnalyzeStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(output, "Path1_AnalyzeStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(output, "AnalyzeStepCompleted evt,")).IsEqualTo(0);
+        await Assert.That(output).Contains("StartPath0_AnalyzeStepCommand");
+        await Assert.That(output).Contains("ExecutePath0_AnalyzeStepWorkerCommand");
+        await Assert.That(output).Contains("yield return new StartPath0_AnalyzeStepCommand(WorkflowId);");
+        await Assert.That(output).Contains("yield return new StartPath1_AnalyzeStepCommand(WorkflowId);");
+    }
+
+    /// <summary>
+    /// Instance-named shared-type fork paths dispatch <c>Execute{PhaseName}WorkerCommand</c>.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeInstanceNamed_DispatchesPhaseNamedWorkerCommands()
+    {
+        var emitter = new SagaStepHandlersEmitter();
+        var sb = new StringBuilder();
+
+        emitter.Emit(sb, ForkPathMessageFixtures.SharedTypeInstanceNamed());
+        var output = sb.ToString();
+
+        await Assert.That(output).Contains("TechnicalCompleted evt,");
+        await Assert.That(output).Contains("FundamentalCompleted evt,");
+        await Assert.That(output).Contains("ExecuteTechnicalWorkerCommand");
+        await Assert.That(output).Contains("ExecuteFundamentalWorkerCommand");
+        await Assert.That(output).DoesNotContain("ExecuteAnalyzeStepWorkerCommand");
     }
 
     /// <summary>
@@ -973,6 +1015,11 @@ public class SagaStepHandlersEmitterTests
             Forks: [CreateFulfilmentFork()],
             ConfidenceHandlerStepNames: ["ReviewAllocation"]);
     }
+
+    private static int CountHandlerParameterLines(string generatedSource, string parameterDeclaration) =>
+        generatedSource
+            .Split('\n')
+            .Count(line => string.Equals(line.Trim(), parameterDeclaration, StringComparison.Ordinal));
 
     /// <summary>
     /// A fork over two single-step paths joining at <c>ConfirmAllocation</c>.

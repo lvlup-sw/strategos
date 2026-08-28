@@ -89,4 +89,21 @@ public class ForkPathCompletedNamingTests
         await Assert.That(naming.IsQualifiedPhase("TechnicalIntake")).IsTrue();
         await Assert.That(naming.IsQualifiedPhase("TechReport")).IsTrue();
     }
+
+    /// <summary>
+    /// Unique-type paths keep <c>Start{PhaseName}Command</c>; colliding unnamed
+    /// same-type paths use the path-qualified stem.
+    /// </summary>
+    [Test]
+    public async Task StartCommandStem_SharedPhaseName_UsesPathId()
+    {
+        var colliding = ForkPathCompletedNaming.For(ForkPathMessageFixtures.SharedPhaseName());
+        var unique = ForkPathCompletedNaming.For(ForkPathMessageFixtures.UniqueTypes());
+
+        var path0 = PathRoutingKey.ForFork("analysis", 0, "AnalyzeStep");
+        var unique0 = PathRoutingKey.ForFork("analysis", 0, "TechnicalAnalyzeStep");
+
+        await Assert.That(colliding.StartCommandStem(path0, "AnalyzeStep")).IsEqualTo("Path0_AnalyzeStep");
+        await Assert.That(unique.StartCommandStem(unique0, "TechnicalAnalyzeStep")).IsEqualTo("TechnicalAnalyzeStep");
+    }
 }

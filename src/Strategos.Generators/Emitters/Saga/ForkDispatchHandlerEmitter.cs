@@ -6,6 +6,7 @@
 
 using System.Text;
 
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
@@ -106,14 +107,18 @@ internal sealed class ForkDispatchHandlerEmitter
 
         sb.AppendLine();
 
-        // Yield start commands for all paths
+        // Yield start commands for all paths. Shared-type unnamed collisions use
+        // Start{PathId}_{PhaseName}Command from ForkPathCompletedNaming.StartCommandStem.
+        var naming = ForkPathCompletedNaming.For(model);
         sb.AppendLine("        // Dispatch parallel path start commands");
         foreach (var path in fork.Paths)
         {
-            if (path.StepNames.Count > 0)
+            if (path.Steps.Count > 0)
             {
-                var firstStepName = path.StepNames[0];
-                sb.AppendLine($"        yield return new Start{firstStepName}Command(WorkflowId);");
+                var first = path.Steps[0];
+                var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, first.PhaseName);
+                var startStem = naming.StartCommandStem(key, first.StepName);
+                sb.AppendLine($"        yield return new Start{startStem}Command(WorkflowId);");
             }
         }
 

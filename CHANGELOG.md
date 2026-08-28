@@ -202,6 +202,45 @@ method stays so existing `Object<T>` authoring still compiles; there is no fluen
 name `ObjectTypeFromDescriptor` / `ApplyDelta` as the CLR-free authoring seam and record that a
 SymbolKey-only interface fan-out is not expressible.
 
+**Option B — identity-carrying exclusive paths (`feat/185-option-b`).** Routing maps key by
+`PathRoutingKey` (phase name plus construct/path identity), not bare CLR type. Fork-path
+instances that share a type publish a path-qualified completed event — `{PhaseName}Completed`,
+or `{PathId}_{PhaseName}Completed` when unnamed paths collide — and saga `Handle` plus worker
+dispatch bind the same `ForkPathCompletedNaming.For(model)` stem, so parallel completions are
+distinct CLR types instead of CS0111. Branch completions stay one `Handle({StepType}Completed)`
+that routes by the live case. `AGWF036` is no longer emitted; the catalog member stays as
+history. Compose `feat/185-t1a-identity-keys` + `feat/185-t1b-path-qualified-events` +
+`feat/185-t1c-saga-gate`.
+
+**`AGWF038` — duplicate diagnostic-fork compensation seed (`feat/156-3-diagnostic-fork-count-seed`).**
+`DiagnosticForkCount` is keyed by the sanitized compensation-seed moniker, not a call-site
+index, so reordering `AllowDiagnosticFork` does not rename persisted saga properties. Two
+edges that share a seed fail closed on C# extract and JSON import rather than sharing a
+counter. 2.10.0 positional `DiagnosticForkCount_{i}` is a breaking saga-property rename in
+2.11.0 with no dual-read shim. `Strategos.Contracts` bumps **0.7.0 → 0.8.0**.
+
+**`sampleSize: 0` stays legal (`docs/156-samplesize-keep-0`).** Tightening `@minValue(0)` to
+`1` would be a constraint-narrow on just-shipped 0.7.0. A present `reliability` block with
+`sampleSize: 0` means “measured, zero observations,” which is distinct from omitting the block.
+
+**NuGet OIDC publish (`ci/147-nuget-oidc-publish`).** `publish.yml` and
+`publish-contracts.yml` take the short-lived key from `NuGet/login@v1`
+(`vars.NUGET_USER`) instead of `secrets.NUGET_API_KEY`. Trusted Publishing policies and the
+`NUGET_USER` variable must exist before the next `v*` / `contracts-v*` tag.
+
+**Supply-chain workflows (`ci/147-supply-chain-workflows`).** CodeQL, dependency-review, and
+TruffleHog land as new workflow files. Existing `ci.yml` org-reusable pins are untouched.
+
+**`sln` → `slnx` and pointer `CLAUDE.md` (`chore/147-slnx-claude-md`).** `src/strategos.slnx`
+and `tests/basileus-smoke/Basileus.Smoke.slnx` replace the XML solutions; `SOLUTION_PATH` in
+publish and CI follows. `CLAUDE.md` defers to `AGENTS.md`.
+`LvlupTreatWarningsAsErrors` is not in this wave.
+
+**Merge note — `publish.yml`.** T4 (`ci/147-nuget-oidc-publish`) and T6
+(`chore/147-slnx-claude-md`) both edit `.github/workflows/publish.yml`. The weave must keep
+both: OIDC `NuGet/login@v1` + `steps.login.outputs.NUGET_API_KEY`, and
+`SOLUTION_PATH: 'src/strategos.slnx'`.
+
 ## [2.10.0] - 2026-08-07
 
 The **strategy-compiler contract layer** (roadmap #153): the shared `Strategos.Contracts`

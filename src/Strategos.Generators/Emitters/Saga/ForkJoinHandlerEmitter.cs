@@ -65,12 +65,13 @@ internal sealed class ForkJoinHandlerEmitter
         ThrowHelper.ThrowIfNull(path, nameof(path));
 
         // Unique-type path ends stay {StepType}Completed. Shared-type fork instances
-        // bind {PhaseName}Completed so each path has its own Handle overload.
+        // bind ForkPathCompletedNaming.StemFor, path-qualified when PhaseName collides.
         var lastStep = path.Steps.Count > 0 ? path.Steps[path.Steps.Count - 1] : null;
         var baseStepName = lastStep?.StepName ?? ExtractBaseStepName(stepName);
         var phaseName = lastStep?.PhaseName ?? stepName;
+        var forkKey = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, phaseName);
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
-            model, phaseName, baseStepName, isForkPathStep: true);
+            model, phaseName, baseStepName, isForkPathStep: true, forkKey);
         var sanitizedId = fork.ForkId.Replace("-", "_");
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 

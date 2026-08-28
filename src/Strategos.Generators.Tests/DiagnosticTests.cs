@@ -737,6 +737,8 @@ public class DiagnosticTests
         await Assert.That(CountHandlerParameterLines(saga, "TechnicalCompleted evt,")).IsEqualTo(1);
         await Assert.That(CountHandlerParameterLines(saga, "FundamentalCompleted evt,")).IsEqualTo(1);
         await Assert.That(CountHandlerParameterLines(saga, "AnalyzeStepCompleted evt,")).IsEqualTo(0);
+        await Assert.That(saga).Contains("ExecuteTechnicalWorkerCommand");
+        await Assert.That(saga).Contains("ExecuteFundamentalWorkerCommand");
         await Assert.That(saga).Contains("Path0Status");
         await Assert.That(saga).Contains("Path1Status");
         await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();

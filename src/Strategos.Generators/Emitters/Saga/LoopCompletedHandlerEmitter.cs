@@ -58,7 +58,7 @@ internal sealed class LoopCompletedHandlerEmitter
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
-            model, stepName, baseStepName, context.IsForkPathStep);
+            model, stepName, baseStepName, context.IsForkPathStep, context.ForkPathKey);
         var loops = context.LoopsAtStep!;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var innermostLoop = loops[0];

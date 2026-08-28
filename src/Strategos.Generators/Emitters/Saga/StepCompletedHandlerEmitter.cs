@@ -56,12 +56,12 @@ internal sealed class StepCompletedHandlerEmitter
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
         // Completed event: unique-type and linear steps stay {StepType}Completed.
-        // Fork-path instances that share a type bind {PhaseName}Completed so two
-        // parallel path-ends do not emit CS0111 on the same saga.
+        // Shared-type fork instances bind ForkPathCompletedNaming.StemFor so colliding
+        // unnamed paths get {PathId}_{PhaseName}Completed rather than CS0111.
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
-            model, stepName, baseStepName, context.IsForkPathStep);
+            model, stepName, baseStepName, context.IsForkPathStep, context.ForkPathKey);
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
