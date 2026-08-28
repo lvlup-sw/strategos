@@ -1294,8 +1294,9 @@ public static class SourceTexts
         """;
 
     /// <summary>
-    /// A workflow with fork paths using the same step type with different instance names.
-    /// This tests that the generator uses EffectiveName for phases.
+    /// A workflow that reuses one step type on the main flow under distinct instance names.
+    /// Exclusive-path reuse of a type under instance names is rejected (path-end type collision);
+    /// linear instance names remain valid and still key phases by EffectiveName.
     /// </summary>
     public const string WorkflowWithInstanceNames = """
         using Strategos.Abstractions;
@@ -1345,10 +1346,9 @@ public static class SourceTexts
             public static WorkflowDefinition<AnalysisState> Definition => Workflow<AnalysisState>
                 .Create("multi-analysis")
                 .StartWith<PrepareDataStep>()
-                .Fork(
-                    path => path.Then<AnalyzeStep>("Technical"),
-                    path => path.Then<AnalyzeStep>("Fundamental"))
-                .Join<SynthesizeStep>()
+                .Then<AnalyzeStep>("Technical")
+                .Then<SynthesizeStep>()
+                .Then<AnalyzeStep>("Fundamental")
                 .Finally<CompleteStep>();
         }
         """;

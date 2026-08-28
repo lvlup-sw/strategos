@@ -25,7 +25,8 @@ namespace Strategos.Generators.Helpers;
 /// <c>ForkPath</c>: Inside Fork paths (parallel execution) - duplicates NOT allowed
 /// </description></item>
 /// <item><description>
-/// <c>BranchPath</c>: Inside Branch paths (exclusive execution) - duplicates ALLOWED
+/// <c>BranchPath</c>: Inside Branch paths (exclusive execution) - duplicate EffectiveNames
+/// are NOT allowed (routing maps still key by name)
 /// </description></item>
 /// </list>
 /// </remarks>
@@ -45,7 +46,7 @@ internal enum StepContext
 
     /// <summary>
     /// Step is inside a Branch path (exclusive execution).
-    /// Duplicates across branch paths ARE allowed - only one path executes.
+    /// Duplicate EffectiveNames across branch paths are NOT allowed — routing maps key by name.
     /// </summary>
     BranchPath,
 }
@@ -189,7 +190,7 @@ internal static class StepExtractor
     /// <list type="bullet">
     /// <item><description>Duplicates in Linear context: ERROR</description></item>
     /// <item><description>Duplicates in ForkPath context: ERROR</description></item>
-    /// <item><description>Duplicates in BranchPath context: OK (exclusive execution)</description></item>
+    /// <item><description>Duplicates in BranchPath context: ERROR (routing maps key by name)</description></item>
     /// </list>
     /// </remarks>
     public static IReadOnlyList<StepInfo> ExtractRawStepInfos(FluentDslParseContext context)
