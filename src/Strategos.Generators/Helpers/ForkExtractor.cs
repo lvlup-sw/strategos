@@ -242,9 +242,9 @@ internal static class ForkExtractor
         {
             if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
             {
-                if (StepExtractor.TryGetStepName(previousInvocation, semanticModel, out var stepName))
+                if (StepExtractor.TryGetRoutingPhaseName(previousInvocation, semanticModel, loopPrefix: null, out var phaseName))
                 {
-                    return stepName;
+                    return phaseName;
                 }
 
                 // Recurse backwards if the previous call isn't a step

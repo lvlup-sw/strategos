@@ -436,10 +436,10 @@ internal static class BranchExtractor
         {
             if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
             {
-                if (StepExtractor.TryGetStepName(previousInvocation, semanticModel, out var stepName))
+                if (StepExtractor.TryGetRoutingPhaseName(previousInvocation, semanticModel, loopPrefix, out var phaseName))
                 {
-                    // Apply loop prefix to match the prefixed step names used in saga handlers
-                    return ApplyPrefix(stepName, loopPrefix);
+                    // Phase name includes instance name and loop prefix so it matches the step list
+                    return phaseName;
                 }
 
                 // If the previous call is also a Branch, don't recurse - this branch follows another branch
@@ -480,9 +480,9 @@ internal static class BranchExtractor
             }
 
             // If it's a step, we found the rejoin point
-            if (StepExtractor.TryGetStepName(nextInvocation, semanticModel, out var stepName))
+            if (StepExtractor.TryGetRoutingPhaseName(nextInvocation, semanticModel, loopPrefix, out var phaseName))
             {
-                return ApplyPrefix(stepName, loopPrefix);
+                return phaseName;
             }
 
             // If it's another branch, continue walking from that branch
@@ -758,6 +758,8 @@ internal static class BranchExtractor
     /// It also put this list out of agreement with the step names the step extractor produces for
     /// the same case, which is what the path-end lookup is keyed on. The step extractor already
     /// stops at nested-lambda boundaries; this shares the same walker so both agree.
+    /// Instance names from <c>Then&lt;T&gt;("Instance")</c> are kept so routing maps key by
+    /// phase name (effective name), not bare type.
     /// </remarks>
     private static void ParseBranchPathBody(
         LambdaExpressionSyntax pathLambda,
@@ -774,9 +776,11 @@ internal static class BranchExtractor
 
             if (SyntaxHelper.IsMethodCall(inv, "Then"))
             {
-                if (StepExtractor.TryGetStepName(inv, semanticModel, out var stepName))
+                // Keep InstanceName ?? StepName. Loop prefix stays on BranchModel.LoopPrefix
+                // because BranchHandlerEmitter prefixes FirstStepName at emit time.
+                if (StepExtractor.TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
                 {
-                    stepNames.Add(stepName);
+                    stepNames.Add(instanceName ?? stepName);
                 }
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Complete"))

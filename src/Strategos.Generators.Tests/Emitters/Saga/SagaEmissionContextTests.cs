@@ -723,6 +723,192 @@ public class SagaEmissionContextTests
     }
 
     // ====================================================================
+    // Section H: Identity-carrying routing keys
+    // ====================================================================
+
+    /// <summary>
+    /// Two fork paths that end on instance-named steps of the same type each occupy
+    /// <see cref="SagaEmissionContext.ForkPathInfo"/> under their phase name.
+    /// </summary>
+    [Test]
+    public async Task Create_ForkPathsWithInstanceNames_KeysPathInfoByPhaseName()
+    {
+        var fork = ForkModel.Create(
+            forkId: "analysis",
+            previousStepName: "Prepare",
+            paths:
+            [
+                ForkPathModel.Create(
+                    pathIndex: 0,
+                    steps: [StepModel.Create("AnalyzeStep", "TestNamespace.AnalyzeStep", instanceName: "TechnicalAnalysis")],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+                ForkPathModel.Create(
+                    pathIndex: 1,
+                    steps: [StepModel.Create("AnalyzeStep", "TestNamespace.AnalyzeStep", instanceName: "FundamentalAnalysis")],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+            ],
+            joinStepName: "Synthesize");
+
+        var context = SagaEmissionContext.Create(CreateMinimalModel(forks: [fork]));
+
+        await Assert.That(context.ForkPathInfo.ContainsKey("TechnicalAnalysis")).IsTrue();
+        await Assert.That(context.ForkPathInfo["TechnicalAnalysis"].Path.PathIndex).IsEqualTo(0);
+        await Assert.That(context.ForkPathInfo.ContainsKey("FundamentalAnalysis")).IsTrue();
+        await Assert.That(context.ForkPathInfo["FundamentalAnalysis"].Path.PathIndex).IsEqualTo(1);
+        await Assert.That(context.ForkPathInfo.ContainsKey("AnalyzeStep")).IsFalse();
+    }
+
+    /// <summary>
+    /// Two fork paths that share a bare type still last-write-win in
+    /// <see cref="SagaEmissionContext.ForkPathInfo"/>, but each has its own
+    /// <see cref="SagaEmissionContext.ForkPathsByRoutingKey"/> entry.
+    /// </summary>
+    [Test]
+    public async Task Create_ForkPathsSharingType_RoutingKeyMapKeepsBothEnds()
+    {
+        var fork = ForkModel.Create(
+            forkId: "analysis",
+            previousStepName: "Prepare",
+            paths:
+            [
+                ForkPathModel.Create(
+                    pathIndex: 0,
+                    steps: [StepModel.Create("AnalyzeStep", "TestNamespace.AnalyzeStep")],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+                ForkPathModel.Create(
+                    pathIndex: 1,
+                    steps: [StepModel.Create("AnalyzeStep", "TestNamespace.AnalyzeStep")],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+            ],
+            joinStepName: "Synthesize");
+
+        var context = SagaEmissionContext.Create(CreateMinimalModel(forks: [fork]));
+
+        await Assert.That(context.ForkPathInfo.Count).IsEqualTo(1);
+        await Assert.That(context.ForkPathInfo["AnalyzeStep"].Path.PathIndex).IsEqualTo(1);
+
+        var path0 = PathRoutingKey.ForFork("analysis", 0, "AnalyzeStep");
+        var path1 = PathRoutingKey.ForFork("analysis", 1, "AnalyzeStep");
+        await Assert.That(context.ForkPathsByRoutingKey.ContainsKey(path0)).IsTrue();
+        await Assert.That(context.ForkPathsByRoutingKey.ContainsKey(path1)).IsTrue();
+        await Assert.That(context.ForkPathsByRoutingKey[path0].Path.PathIndex).IsEqualTo(0);
+        await Assert.That(context.ForkPathsByRoutingKey[path1].Path.PathIndex).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// Branch cases with instance names occupy <see cref="SagaEmissionContext.BranchPathInfo"/>
+    /// under the effective name, not the bare type.
+    /// </summary>
+    [Test]
+    public async Task Create_BranchCasesWithInstanceNames_KeysPathInfoByEffectiveName()
+    {
+        var branch = BranchModel.Create(
+            branchId: "claim-type",
+            previousStepName: "Intake",
+            discriminatorPropertyPath: "Type",
+            discriminatorTypeName: "ClaimType",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            cases:
+            [
+                BranchCaseModel.Create("ClaimType.Auto", "Auto", ["AutoClaim"], isTerminal: false),
+                BranchCaseModel.Create("ClaimType.Home", "Home", ["HomeClaim"], isTerminal: false),
+            ],
+            rejoinStepName: "CloseClaim");
+
+        var context = SagaEmissionContext.Create(CreateMinimalModel(branches: [branch]));
+
+        await Assert.That(context.BranchPathInfo.ContainsKey("AutoClaim")).IsTrue();
+        await Assert.That(context.BranchPathInfo.ContainsKey("HomeClaim")).IsTrue();
+        await Assert.That(context.BranchPathInfo.ContainsKey("ProcessClaim")).IsFalse();
+
+        var autoKey = PathRoutingKey.ForBranch("claim-type", "Auto", "AutoClaim");
+        var homeKey = PathRoutingKey.ForBranch("claim-type", "Home", "HomeClaim");
+        await Assert.That(context.BranchPathsByRoutingKey.ContainsKey(autoKey)).IsTrue();
+        await Assert.That(context.BranchPathsByRoutingKey.ContainsKey(homeKey)).IsTrue();
+    }
+
+    /// <summary>
+    /// A branch inside a loop keys path info by the loop-prefixed phase name so it matches
+    /// the step list, while the case itself still stores the unprefixed effective name.
+    /// </summary>
+    [Test]
+    public async Task Create_BranchInsideLoop_KeysPathInfoByPrefixedPhaseName()
+    {
+        var branch = BranchModel.Create(
+            branchId: "loop-branch",
+            previousStepName: "TargetLoop_SelectTarget",
+            discriminatorPropertyPath: "Kind",
+            discriminatorTypeName: "TargetKind",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            cases:
+            [
+                BranchCaseModel.Create("TargetKind.News", "News", ["NewsPath"], isTerminal: false),
+            ],
+            rejoinStepName: "TargetLoop_Aggregate",
+            loopPrefix: "TargetLoop");
+
+        var context = SagaEmissionContext.Create(CreateMinimalModel(branches: [branch]));
+
+        await Assert.That(context.BranchPathInfo.ContainsKey("TargetLoop_NewsPath")).IsTrue();
+        await Assert.That(context.BranchPathInfo.ContainsKey("NewsPath")).IsFalse();
+        await Assert.That(context.BranchPathInfo["TargetLoop_NewsPath"].Case.LastStepName)
+            .IsEqualTo("NewsPath");
+
+        var key = PathRoutingKey.ForBranch("loop-branch", "News", "TargetLoop_NewsPath");
+        await Assert.That(context.BranchPathsByRoutingKey.ContainsKey(key)).IsTrue();
+    }
+
+    /// <summary>
+    /// Two fork paths that share a mid-path type keep distinct in-path successors when
+    /// looked up by <see cref="PathRoutingKey"/>.
+    /// </summary>
+    [Test]
+    public async Task SuccessorWithinPath_SharedTypeOnTwoForkPaths_RoutingKeySelectsOwnSuccessor()
+    {
+        var fork = ForkModel.Create(
+            forkId: "fulfilment",
+            previousStepName: "ValidateOrder",
+            paths:
+            [
+                ForkPathModel.Create(
+                    pathIndex: 0,
+                    steps:
+                    [
+                        StepModel.Create("ChargePayment", "TestNamespace.ChargePayment"),
+                        StepModel.Create("CapturePayment", "TestNamespace.CapturePayment"),
+                    ],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+                ForkPathModel.Create(
+                    pathIndex: 1,
+                    steps:
+                    [
+                        StepModel.Create("ChargePayment", "TestNamespace.ChargePayment"),
+                        StepModel.Create("ReserveInventory", "TestNamespace.ReserveInventory"),
+                    ],
+                    hasFailureHandler: false,
+                    isTerminalOnFailure: false),
+            ],
+            joinStepName: "ConfirmAllocation");
+
+        var context = SagaEmissionContext.Create(CreateMinimalModel(forks: [fork]));
+
+        var path0 = PathRoutingKey.ForFork("fulfilment", 0, "ChargePayment");
+        var path1 = PathRoutingKey.ForFork("fulfilment", 1, "ChargePayment");
+
+        await Assert.That(context.MainFlow.TryGetSuccessorWithinPath(path0, out var successor0)).IsTrue();
+        await Assert.That(successor0).IsEqualTo("CapturePayment");
+        await Assert.That(context.MainFlow.TryGetSuccessorWithinPath(path1, out var successor1)).IsTrue();
+        await Assert.That(successor1).IsEqualTo("ReserveInventory");
+    }
+
+    // ====================================================================
     // Helper Methods
     // ====================================================================
 

@@ -322,6 +322,99 @@ public class BranchExtractorTests
     }
 
     // =============================================================================
+    // D. Instance Name Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that a branch case keeps the instance name from <c>Then&lt;T&gt;("Instance")</c>
+    /// instead of storing the bare type.
+    /// </summary>
+    [Test]
+    public async Task Extract_BranchCaseWithInstanceName_StoresEffectiveName()
+    {
+        const string code = @"
+            public enum ClaimType { Auto, Home }
+            public class State { public ClaimType Type { get; set; } }
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .Branch(
+                            state => state.Type,
+                            BranchCase<State, ClaimType>.When(ClaimType.Auto, path => path.Then<ProcessClaim>(""AutoClaim"")),
+                            BranchCase<State, ClaimType>.When(ClaimType.Home, path => path.Then<ProcessClaim>(""HomeClaim"")))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "ClaimWorkflow");
+
+        var result = BranchExtractor.Extract(context);
+
+        await Assert.That(result[0].Cases[0].StepNames[0]).IsEqualTo("AutoClaim");
+        await Assert.That(result[0].Cases[0].LastStepName).IsEqualTo("AutoClaim");
+        await Assert.That(result[0].Cases[1].StepNames[0]).IsEqualTo("HomeClaim");
+        await Assert.That(result[0].Cases[1].LastStepName).IsEqualTo("HomeClaim");
+    }
+
+    /// <summary>
+    /// Verifies that a branch following an instance-named step keys PreviousStepName by
+    /// effective name, not bare type.
+    /// </summary>
+    [Test]
+    public async Task Extract_BranchAfterInstanceNamedStep_PreviousStepNameIsEffectiveName()
+    {
+        const string code = @"
+            public class State { public bool Cond { get; set; } }
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .Then<ValidateStep>(""PreCheck"")
+                        .Branch(
+                            state => state.Cond,
+                            BranchCase<State, bool>.When(true, path => path.Then<Step1>()))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "TestWorkflow");
+
+        var result = BranchExtractor.Extract(context);
+
+        await Assert.That(result[0].PreviousStepName).IsEqualTo("PreCheck");
+    }
+
+    /// <summary>
+    /// Verifies that a branch rejoining an instance-named step keys RejoinStepName by
+    /// effective name, not bare type.
+    /// </summary>
+    [Test]
+    public async Task Extract_BranchRejoiningInstanceNamedStep_RejoinStepNameIsEffectiveName()
+    {
+        const string code = @"
+            public class State { public bool Cond { get; set; } }
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .Then<ValidateStep>()
+                        .Branch(
+                            state => state.Cond,
+                            BranchCase<State, bool>.When(true, path => path.Then<Step1>()))
+                        .Then<FinalizeStep>(""CloseOut"")
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "TestWorkflow");
+
+        var result = BranchExtractor.Extract(context);
+
+        await Assert.That(result[0].RejoinStepName).IsEqualTo("CloseOut");
+    }
+
+    // =============================================================================
     // Private Helpers
     // =============================================================================
 

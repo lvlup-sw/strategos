@@ -573,6 +573,100 @@ public class ForkExtractorTests
     }
 
     // =============================================================================
+    // J. Instance Name Tests
+    // =============================================================================
+
+    /// <summary>
+    /// Verifies that fork path steps keep instance names so phase names differ for the
+    /// same type on two paths.
+    /// </summary>
+    [Test]
+    public async Task Extract_ForkPathsWithInstanceNames_StoresEffectivePhaseNames()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .Fork(
+                            path => path.Then<AnalyzeStep>(""TechnicalAnalysis""),
+                            path => path.Then<AnalyzeStep>(""FundamentalAnalysis""))
+                        .Join<Synthesize>()
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "OrderWorkflow");
+
+        var result = ForkExtractor.Extract(context);
+
+        await Assert.That(result[0].Paths[0].StepNames[0]).IsEqualTo("TechnicalAnalysis");
+        await Assert.That(result[0].Paths[0].LastStepName).IsEqualTo("TechnicalAnalysis");
+        await Assert.That(result[0].Paths[1].StepNames[0]).IsEqualTo("FundamentalAnalysis");
+        await Assert.That(result[0].Paths[1].LastStepName).IsEqualTo("FundamentalAnalysis");
+    }
+
+    /// <summary>
+    /// Verifies that a fork following an instance-named step keys PreviousStepName by
+    /// effective name, not bare type.
+    /// </summary>
+    [Test]
+    public async Task Extract_ForkAfterInstanceNamedStep_PreviousStepNameIsEffectiveName()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .Then<Validate>(""Intake"")
+                        .Fork(
+                            path => path.Then<ProcessPayment>(),
+                            path => path.Then<ReserveInventory>())
+                        .Join<Synthesize>()
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "OrderWorkflow");
+
+        var result = ForkExtractor.Extract(context);
+
+        await Assert.That(result[0].PreviousStepName).IsEqualTo("Intake");
+    }
+
+    /// <summary>
+    /// Verifies that instance names inside a loop are loop-prefixed in the phase name.
+    /// </summary>
+    [Test]
+    public async Task Extract_ForkInsideLoopWithInstanceNames_PrefixesEffectiveNames()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .RepeatUntil(
+                            state => state.Done,
+                            ""TargetLoop"",
+                            loop => loop
+                                .Then<SelectTarget>()
+                                .Fork(
+                                    path => path.Then<AnalyzeStep>(""NewsPath""),
+                                    path => path.Then<AnalyzeStep>(""TechPath""))
+                                .Join<AggregateVotes>())
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "PortfolioManager");
+
+        var result = ForkExtractor.Extract(context);
+
+        await Assert.That(result[0].Paths[0].StepNames[0]).IsEqualTo("TargetLoop_NewsPath");
+        await Assert.That(result[0].Paths[1].StepNames[0]).IsEqualTo("TargetLoop_TechPath");
+    }
+
+    // =============================================================================
     // Private Helpers
     // =============================================================================
 

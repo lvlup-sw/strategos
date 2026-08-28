@@ -386,6 +386,38 @@ internal static class StepExtractor
     }
 
     /// <summary>
+    /// Tries to get the routing phase name from an invocation — <c>InstanceName ?? StepName</c>,
+    /// loop-prefixed when <paramref name="loopPrefix"/> is set.
+    /// </summary>
+    /// <param name="invocation">The invocation expression to check.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="loopPrefix">The loop prefix, or null when the step is not inside a loop.</param>
+    /// <param name="phaseName">The routing phase name, if successful.</param>
+    /// <returns>True if the phase name was extracted; otherwise, false.</returns>
+    /// <remarks>
+    /// Branch and fork extractors use this so previous/rejoin/path-end identity matches
+    /// the step list. Path-body step lists that emitters later prefix themselves (branch
+    /// cases) should call <see cref="TryGetStepNameAndInstanceName"/> and store the
+    /// effective name only.
+    /// </remarks>
+    internal static bool TryGetRoutingPhaseName(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        string? loopPrefix,
+        out string phaseName)
+    {
+        if (!TryGetStepNameAndInstanceName(invocation, semanticModel, out var stepName, out var instanceName))
+        {
+            phaseName = string.Empty;
+            return false;
+        }
+
+        var effectiveName = instanceName ?? stepName;
+        phaseName = loopPrefix is null ? effectiveName : $"{loopPrefix}_{effectiveName}";
+        return true;
+    }
+
+    /// <summary>
     /// Walks the invocation chain collecting steps with their execution context.
     /// </summary>
     /// <param name="invocation">The invocation to process.</param>
