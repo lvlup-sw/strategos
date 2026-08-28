@@ -13,9 +13,10 @@ namespace Strategos.Generators.Behavioral.Tests;
 /// Task 019 (#100), DR-15 — the round-trip real-host proofs. For the config (retry) importable
 /// family a hand-authored <c>[Workflow]</c> C# source twin and its exported-JSON counterpart lower
 /// through the SAME saga emitters (INV-1) and run to IDENTICAL behavior on a REAL Wolverine + Marten
-/// host; for the fork-join family the JSON import is run end-to-end as a real-host runtime proof. The
-/// corpus itself is runtime builder invocations (not parseable literal source), so these hand-authored
-/// twins are the honest behavioral baseline the JSON imports are compared against.
+/// host; for the fork-join family both the JSON import and its C# twin run end-to-end as a real-host
+/// twin-equivalence proof. The corpus itself is runtime builder invocations (not parseable literal
+/// source), so these hand-authored twins are the honest behavioral baseline the JSON imports are
+/// compared against.
 /// </summary>
 /// <remarks>
 /// Requires a reachable Docker daemon for the Postgres container (see <see cref="RoundTripHostFixture"/>).
@@ -23,11 +24,9 @@ namespace Strategos.Generators.Behavioral.Tests;
 /// required semantic check is the BUILD compiling the imported sagas (the <c>Behavioral.Tests</c> build
 /// references the generated <c>AddRoundtrip*ImportWorkflow()</c> extensions), not the runtime execution.
 /// The linear family is already proven behaviorally (twin-equivalence) by <c>JsonWorkflowImportHostTests</c>
-/// (task 017); this suite adds the config (retry) family twin-equivalence and the fork-join import runtime
-/// proof. A C#-authored fork twin is intentionally NOT compared here — a <c>Fork→Join→Finally</c> C#
-/// workflow is blocked by a pre-existing fork terminal-detection bug (see <c>RoundTripForkWorkflow</c>);
-/// the fork import's structural equivalence is covered by <c>RoundTripEquivalenceTests</c> +
-/// <c>RoundTripIrFidelityTests</c>.
+/// (task 017); this suite adds the config (retry) family twin-equivalence and the fork-join twin
+/// equivalence. Each test recycles the Wolverine host on the shared Postgres container so a prior
+/// family's leftover inbox/outbox work cannot starve the next saga (strategos#180).
 /// </remarks>
 [Property("Category", "Integration")]
 [NotInParallel]
@@ -60,6 +59,38 @@ public sealed class RoundTripBehavioralTests
     }
 
     /// <summary>
+    /// Recycles the Wolverine host before each test so config/onFailure leftovers cannot starve
+    /// the fork import (strategos#180). The Postgres container is reused.
+    /// </summary>
+    /// <returns>A task that completes when the replacement host is running.</returns>
+    [Before(Test)]
+    public Task RecycleHostBeforeEachTest() => this.host.RecycleHostAsync();
+
+    /// <summary>
+    /// Recycle replaces the invocation log and the host while keeping the same Postgres
+    /// container, so a leftover name from a prior family cannot be observed after the call.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task RecycleHost_ReplacesInvocationLog_KeepingTheSamePostgresContainer()
+    {
+        this.host.Invocations.Record("LeftoverFromPriorFamily");
+        var connectionBefore = this.host.ConnectionString;
+        var servicesBefore = this.host.Services;
+
+        await this.host.RecycleHostAsync();
+
+        await Assert.That(this.host.Invocations.TotalCount).IsEqualTo(0)
+            .Because("recycle must replace the invocation log so a prior family's leftover writer is not observed.");
+        await Assert.That(this.host.Invocations.CountFor("LeftoverFromPriorFamily")).IsEqualTo(0)
+            .Because("a name recorded on the previous log must not survive recycle.");
+        await Assert.That(this.host.ConnectionString).IsEqualTo(connectionBefore)
+            .Because("recycle must reuse the same Postgres container, not start a second one.");
+        await Assert.That(ReferenceEquals(this.host.Services, servicesBefore)).IsFalse()
+            .Because("recycle must start a replacement Wolverine host, not keep the polluted one.");
+    }
+
+    /// <summary>
     /// The fork-join JSON import runs its five steps (pre-fork → {left ‖ right} → join → terminal) to
     /// completion on a real host, each exactly once — proving the bridged fork workflow lowered
     /// through the SAME fork execution machinery (INV-1) as a C#-authored fork and runs correctly
@@ -69,15 +100,15 @@ public sealed class RoundTripBehavioralTests
     [Test]
     public async Task ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost()
     {
-        this.host.Invocations.Reset();
-
         var importId = Guid.NewGuid();
-        var importCompleted = await this.host.RunWorkflowAsync<RoundtripForkImportSaga>(
+        var importOutcome = await this.host.RunWorkflowWithOutcomeAsync<RoundtripForkImportSaga>(
             importId,
             new StartRoundtripForkImportCommand(importId, new RoundTripForkState { WorkflowId = importId }));
 
-        await Assert.That(importCompleted).IsTrue()
-            .Because("the JSON-imported fork-join saga must run to completion on a real host.");
+        await Assert.That(importOutcome.Completed).IsTrue()
+            .Because(
+                "the JSON-imported fork-join saga must run to completion on a real host. "
+                + importOutcome.Diagnostic);
 
         // The JSON import ran the fork shape: pre-fork, both parallel paths, the join, the terminal —
         // each exactly once (the fork-path steps are dispatched in parallel and gated at the join).
@@ -102,44 +133,42 @@ public sealed class RoundTripBehavioralTests
     }
 
     /// <summary>
-    /// DR-15 fork-join twin equivalence — DEFERRED, pending strategos#180. The importable fork-join
-    /// family requires proving a C# <c>.Fork(...).Join&lt;T&gt;().Finally&lt;TEnd&gt;()</c> twin lowers
-    /// to a saga behaviorally identical to its exported-JSON import
+    /// DR-15 fork-join twin equivalence. The importable fork-join family proves a C#
+    /// <c>.Fork(...).Join&lt;T&gt;().Finally&lt;TEnd&gt;()</c> twin lowers to a saga behaviorally
+    /// identical to its exported-JSON import
     /// (<see cref="ForkJoinJsonImport_RunsAllStepsOnce_OnRealHost"/>).
-    /// <para>
-    /// strategos#155 — the C#-authoring terminal-detection defect this test was originally written
-    /// for — is FIXED in this slice, and the C# half now passes. The remaining blocker is
-    /// strategos#180, shared-host interference in the full-class run. Cite #180, not #155, when
-    /// deciding whether this can be un-skipped.
-    /// </para>
     /// </summary>
     /// <remarks>
     /// Both authoring forms are checked against the same ordering oracle as well as exact per-step
     /// counts. Counts alone are not sufficient: a saga that runs every step once but reaches its
     /// terminal before the join satisfies every count assertion here, so the ordering oracle is what
-    /// makes this test able to fail on the property it exists to pin.
+    /// makes this test able to fail on the property it exists to pin. Host recycle before the class's
+    /// tests (strategos#180) is what makes the import half deterministic in the four-test run;
+    /// strategos#155 — the C#-authoring terminal-detection defect this test was originally written
+    /// for — is already fixed.
     /// </remarks>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Skip("blocked on strategos#180: the JSON-import half times out in a full-class run. The C#-authoring ordering defect this test was written for is fixed — this test passes in isolation and alongside its sibling fork test; it fails only in the four-test class run, on the import assertion, before the C# half is reached.")]
     public async Task ForkJoinCSharpTwin_RunsIdentically_ToJsonImport()
     {
-        this.host.Invocations.Reset();
-
         var importId = Guid.NewGuid();
-        var importCompleted = await this.host.RunWorkflowAsync<RoundtripForkImportSaga>(
+        var importOutcome = await this.host.RunWorkflowWithOutcomeAsync<RoundtripForkImportSaga>(
             importId,
             new StartRoundtripForkImportCommand(importId, new RoundTripForkState { WorkflowId = importId }));
 
         var twinId = Guid.NewGuid();
-        var twinCompleted = await this.host.RunWorkflowAsync<RoundtripForkTwinSaga>(
+        var twinOutcome = await this.host.RunWorkflowWithOutcomeAsync<RoundtripForkTwinSaga>(
             twinId,
             new StartRoundtripForkTwinCommand(twinId, new RoundTripForkState { WorkflowId = twinId }));
 
-        await Assert.That(importCompleted).IsTrue()
-            .Because("the JSON-imported fork-join saga must run to completion on a real host.");
-        await Assert.That(twinCompleted).IsTrue()
-            .Because("the C# fork-join twin must run to completion on a real host (skipped for strategos#180).");
+        await Assert.That(importOutcome.Completed).IsTrue()
+            .Because(
+                "the JSON-imported fork-join saga must run to completion on a real host. "
+                + importOutcome.Diagnostic);
+        await Assert.That(twinOutcome.Completed).IsTrue()
+            .Because(
+                "the C# fork-join twin must run to completion on a real host. "
+                + twinOutcome.Diagnostic);
 
         // Each authoring form runs its five fork steps exactly once — the behavioral equivalence
         // (INV-1) of a JSON-imported fork and its C#-authored twin.
@@ -184,8 +213,6 @@ public sealed class RoundTripBehavioralTests
     [Test]
     public async Task ConfigRetryJsonImport_RunsIdentically_ToCSharpTwin()
     {
-        this.host.Invocations.Reset();
-
         var importId = Guid.NewGuid();
         var importCompleted = await this.host.RunWorkflowAsync<RoundtripConfigImportSaga>(
             importId,
@@ -233,8 +260,6 @@ public sealed class RoundTripBehavioralTests
     [Test]
     public async Task OnFailureJsonImport_RunsToCompletion_OnRealHost()
     {
-        this.host.Invocations.Reset();
-
         var importId = Guid.NewGuid();
         var importCompleted = await this.host.RunWorkflowAsync<RoundtripOnFailureImportSaga>(
             importId,
