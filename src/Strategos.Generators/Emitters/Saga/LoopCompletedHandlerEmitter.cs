@@ -300,15 +300,61 @@ internal sealed class LoopCompletedHandlerEmitter
             }
         }
 
-        // Add default if no otherwise case
+        // Add default if no otherwise case. A bool discriminator with both true and
+        // false is already exhaustive — a leftover `_ =>` is CS8510 (#179).
         var hasOtherwise = branch.Cases.Any(c => c.CaseValueLiteral == "_" || c.CaseValueLiteral == "default");
-        if (!hasOtherwise)
+        if (!hasOtherwise && !IsExhaustiveBoolDiscriminator(branch))
         {
             sb.AppendLine($"{indent}    _ => throw new InvalidOperationException($\"Unhandled branch value: {{{discriminatorAccess}}}\"),");
         }
 
         sb.AppendLine($"{indent}}};");
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the discriminator is <see cref="bool"/> and both
+    /// <see langword="true"/> and <see langword="false"/> arms are present, so a discarded
+    /// default arm would be unreachable (CS8510).
+    /// </summary>
+    /// <param name="branch">The branch whose discriminator and cases to inspect.</param>
+    /// <returns>
+    /// <see langword="true"/> when the default arm must be omitted; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
+    private static bool IsExhaustiveBoolDiscriminator(BranchModel branch)
+    {
+        if (!IsBoolDiscriminatorType(branch.DiscriminatorTypeName))
+        {
+            return false;
+        }
+
+        var hasTrue = false;
+        var hasFalse = false;
+        foreach (var branchCase in branch.Cases)
+        {
+            if (branchCase.CaseValueLiteral == "true")
+            {
+                hasTrue = true;
+            }
+            else if (branchCase.CaseValueLiteral == "false")
+            {
+                hasFalse = true;
+            }
+        }
+
+        return hasTrue && hasFalse;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="typeName"/> names the
+    /// <see cref="bool"/> discriminator type stored on <see cref="BranchModel"/>.
+    /// </summary>
+    /// <param name="typeName">The discriminator type name from the branch model.</param>
+    /// <returns>
+    /// <see langword="true"/> for <c>bool</c>, <c>Boolean</c>, or <c>System.Boolean</c>.
+    /// </returns>
+    private static bool IsBoolDiscriminatorType(string typeName)
+        => typeName is "bool" or "Boolean" or "System.Boolean";
 
     private static void EmitOuterLoopCheckInline(
         StringBuilder sb,
