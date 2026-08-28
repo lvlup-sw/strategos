@@ -14,7 +14,8 @@ model's step list that are not on the main flow, and of the three scans that res
 successor, two skipped only confidence handlers and the third had no filter at all. The fix
 classifies off-main-flow steps once, routes every scan through that classification, restores
 document order to the step list, and adds a build-time diagnostic so the class cannot silently
-reopen. `Strategos.Contracts` bumps **0.4.0 → 0.6.0** (additive minors — `AGWF035`, then `AGWF036`).
+reopen. `Strategos.Contracts` bumps **0.4.0 → 0.7.0** (additive minors — `AGWF035`, then `AGWF036`,
+then `AGWF037`).
 
 > **Upgrading:** this release changes emitted public API and the order of a generated enum's
 > members. Read *Changed* below before upgrading — one item is a data-migration risk for a
@@ -174,7 +175,10 @@ was not last on the main flow, or a main-flow step whose successor was construct
 blind to a rejoin construct whose last step never dispatched the terminal. The under-reach arm
 fires on that shape, and stays silent when every exclusive path already `Complete()`s alongside a
 `Finally<T>` — those routes terminate without ever starting the terminal. The guard and the
-emitted `ValidTransitions` table now share one `PhaseGraph` so they cannot drift.
+emitted `ValidTransitions` table both call `PhaseGraph.Build` on the same model so the
+successor algorithm cannot drift. The AGWF035 remediation names both arms — a main-flow
+step that chains off-flow, or a rejoin last step that never dispatches the terminal —
+instead of the over-reach-only “chains to / runs past” sentence.
 
 **`AGWF037` — duplicate permitted fork trigger (error).** Two `PermitTrigger` declarations on one
 diagnostic-fork edge that name the same closed trigger fail closed before `CS0152`. First-wins

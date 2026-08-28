@@ -135,6 +135,14 @@ public class PackagingTests
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
                 && e.EndsWith("InvariantEntry.json", StringComparison.Ordinal))
                 .Because("the diagnostics (invariant) family schema must be embedded.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("AgwfEntryDuplicatePermittedForkTrigger.json", StringComparison.Ordinal))
+                .Because("the AGWF037 entry schema must be embedded so Exarchos can derive the new code.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith("contentFiles/any/any/diagnostics/", StringComparison.Ordinal)
+                && e.EndsWith("agwf-catalog.json", StringComparison.Ordinal))
+                .Because("the AGWF catalog must ship under diagnostics/ for Exarchos extract.");
 
             // The #53 builder fixtures embedded under contentFiles/.../fixtures/.
             var fixtureEntries = entries

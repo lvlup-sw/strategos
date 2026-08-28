@@ -62,8 +62,9 @@ Mechanical ingesters are forbidden from constructing `Add`/`Update` deltas whose
 
 Provenance is carried on `ObjectTypeDescriptor.Source` (and on each `PropertyDescriptor`/`LinkDescriptor`) as a `DescriptorSource` enum:
 
-- `HandAuthored` — declared via the `DomainOntology` builder DSL.
-- `Ingested` — emitted by an `IOntologySource` implementation; `SourceId` is also set.
+- `HandAuthored` (`0`) — declared via the `DomainOntology` builder DSL.
+- `Ingested` (`1`) — emitted by an `IOntologySource` implementation; `SourceId` is also set. `AONT205` rejects intent-only fields (`Actions`, `Events`, `Lifecycle`, `InterfaceActionMappings`, `ExternalLinkExtensionPoints`) on this value only.
+- `HandAuthoredContract` (`2`) — TypeSpec / JSON contract-authored descriptors. Appended so `Ingested` does not move. Treated as hand-side for `AONT205`; merge keeps the hand action set and restamps object `Source` to `HandAuthored`.
 
 When an `Add`/`Update` delta lands at a `(DomainName, Name)` slot already occupied by the opposite provenance, the builder folds the two descriptors through `MergeTwo.Merge`. Same-provenance collisions surface as `AONT040` duplicates downstream. Field-level provenance lets the freeze-time analyzers (`AONT201`–`AONT208`) compare hand-declared and ingested contributions independently.
 

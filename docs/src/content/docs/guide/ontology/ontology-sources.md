@@ -39,8 +39,9 @@ Every delta carries `SourceId` and `Timestamp`, both required init properties. T
 
 Each descriptor carries a `DescriptorSource` enum on its `Source` property:
 
-- `DescriptorSource.HandAuthored` — produced by `DomainOntology.Define()`.
-- `DescriptorSource.Ingested` — produced by a source.
+- `DescriptorSource.HandAuthored` (`0`) — produced by `DomainOntology.Define()`.
+- `DescriptorSource.Ingested` (`1`) — produced by a source. `AONT205` rejects intent-only fields on this value only.
+- `DescriptorSource.HandAuthoredContract` (`2`) — TypeSpec / JSON contract-authored descriptors. Appended so `Ingested` does not move. Merge keeps the hand action set and restamps object `Source` to `HandAuthored`.
 
 When a hand-authored descriptor and an ingested descriptor land on the same `(DomainName, Name)`, the builder folds them through `MergeTwo.Merge` so neither side silently overwrites the other. Same-provenance collisions still surface as `AONT040` duplicates downstream. The merge keeps a pre-merge snapshot of the ingested side so AONT200-series graph-freeze diagnostics can diff the hand-authored property set against the ingested one without losing provenance.
 

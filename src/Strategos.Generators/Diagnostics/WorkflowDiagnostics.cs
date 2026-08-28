@@ -561,11 +561,11 @@ internal static class WorkflowDiagnostics
     public static readonly DiagnosticDescriptor UnreachableTermination = new(
         id: AgwfCodes.UnreachableTermination,
         title: "Workflow termination is unreachable",
-        messageFormat: "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing.",
+        messageFormat: "Workflow '{1}' has an unreachable-termination pair '{0}' / '{2}'. Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A main-flow step whose successor is a step reached only through its own construct sends the saga past its declared termination. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
+        description: "Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
 
     /// <summary>
     /// Exclusive paths collide on a step type under distinct instance names (#189, #190, #191).

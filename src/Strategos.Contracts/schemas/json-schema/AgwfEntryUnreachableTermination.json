@@ -17,7 +17,7 @@
         },
         "remediation": {
             "type": "string",
-            "const": "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing."
+            "const": "Workflow '{1}' has an unreachable-termination pair '{0}' / '{2}'. Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal."
         },
         "since": {
             "type": "string",
