@@ -14,7 +14,7 @@ from the generated `AgwfCode` enum; this table is generated from the same source
 | --- | --- | --- | --- | --- |
 | AGWF001 | error | Empty workflow name | Workflow name cannot be empty or whitespace | 0.2.0 |
 | AGWF002 | warning | No workflow steps found | Could not find any steps in workflow '{0}'. Ensure the workflow uses StartWith<T>(), Then<T>(), and Finally<T>() methods. | 0.2.0 |
-| AGWF003 | error | Duplicate step name | Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique. | 0.2.0 |
+| AGWF003 | error | Duplicate step name | Step '{0}' appears multiple times in workflow '{1}'. Each EffectiveName (the instance name, or the step type when none is given) must be unique. | 0.2.0 |
 | AGWF004 | error | Invalid namespace | Workflow '{0}' must be declared in a namespace. Global namespace is not supported. | 0.2.0 |
 | AGWF009 | error | Missing StartWith | Workflow '{0}' must begin with StartWith<T>(). Found '{1}' instead. | 0.2.0 |
 | AGWF010 | warning | Missing Finally | Workflow '{0}' does not end with Finally<T>(). Consider adding a Finally step to mark workflow completion. | 0.2.0 |
@@ -41,4 +41,4 @@ from the generated `AgwfCode` enum; this table is generated from the same source
 | AGWF033 | error | Imported gate declaration carries reliability | Workflow import file '{0}' declares a reliability block at {1} (gate '{2}'). Gate reliability enters a definition only from measured telemetry, never from authored JSON, so the workflow is rejected and no saga is generated. Remove the reliability block. | 2.10.0 |
 | AGWF034 | error | Imported fork trigger declares no required evidence fields | Workflow import file '{0}' declares a diagnostic-fork permitted trigger at {1} (trigger '{2}') with no required evidence fields. A permitted fork trigger must declare at least one required evidence field (wire @minItems(1)) so the DR-8 no-unjustified-fork guard has an evidence floor to enforce; the workflow is rejected and no saga is generated. Add the evidence field(s) the trigger requires. | 2.10.0 |
 | AGWF035 | error | Workflow termination is unreachable | Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing. | 2.11.0 |
-| AGWF036 | error | Path-end type collision | Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types. | 2.12.0 |
+| AGWF036 | error | Path-end type collision | Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types. | 2.11.0 |

@@ -88,9 +88,13 @@ internal sealed class SagaApprovalComponentEmitter : ISagaComponentEmitter
         // ApprovalModel.PrecedingStepName. The join-step lookup is the one that names the
         // defect: the resume target is the join, and that is exactly when dispatch must change.
         var nextStepName = ctx.MainFlow.NextMainFlowStepNameAfter(approval.PrecedingStepName);
+        ctx.ForksByPreviousStep.TryGetValue(approval.PrecedingStepName, out var forkAtCheckpoint);
+        ctx.BranchesByPreviousStep.TryGetValue(approval.PrecedingStepName, out var branchAtCheckpoint);
 
         return new ApprovalResumeContext(
             IsLastStep: nextStepName is null,
-            NextStepName: nextStepName);
+            NextStepName: nextStepName,
+            ForkAtCheckpoint: forkAtCheckpoint,
+            BranchAtCheckpoint: branchAtCheckpoint);
     }
 }

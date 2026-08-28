@@ -80,7 +80,7 @@ model AgwfEntryDuplicateStepName {
   id: "AGWF003";
   severity: "error";
   summary: "Duplicate step name";
-  remediation: "Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique.";
+  remediation: "Step '{0}' appears multiple times in workflow '{1}'. Each EffectiveName (the instance name, or the step type when none is given) must be unique.";
   since: "0.2.0";
 }
 
@@ -351,5 +351,5 @@ model AgwfEntryPathEndTypeCollision {
   severity: "error";
   summary: "Path-end type collision";
   remediation: "Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types.";
-  since: "2.12.0";
+  since: "2.11.0";
 }

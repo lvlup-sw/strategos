@@ -21,7 +21,7 @@
         },
         "since": {
             "type": "string",
-            "const": "2.12.0"
+            "const": "2.11.0"
         }
     },
     "required": [

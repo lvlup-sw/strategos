@@ -1264,6 +1264,13 @@ public static class SourceTexts
                 => Task.FromResult(StepResult<LoopBranchState>.FromState(state));
         }
 
+        public class CloseLoopStep : IWorkflowStep<LoopBranchState>
+        {
+            public Task<StepResult<LoopBranchState>> ExecuteAsync(
+                LoopBranchState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoopBranchState>.FromState(state));
+        }
+
         [Workflow("loop-then-branch")]
         public static partial class LoopThenBranchWorkflow
         {
@@ -1289,7 +1296,7 @@ public static class SourceTexts
                         path => path.Then<EscalateStep>().Complete()),
                     BranchCase<LoopBranchState, WorkflowOutcome>.Otherwise(
                         path => path.Then<FailedStep>().Complete()))
-                .Finally<CompleteStep>();
+                .Finally<CloseLoopStep>();
         }
         """;
 

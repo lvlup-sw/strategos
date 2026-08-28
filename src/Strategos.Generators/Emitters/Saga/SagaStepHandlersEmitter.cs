@@ -387,15 +387,22 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     {
         // Priority order:
         // 1. Loop end - step is the last step in a loop body
-        // 2. Branch point - step precedes a branch
-        // 3. Branch path end - step is the last step in a branch path
-        // 4. Fork point - step precedes a fork
-        // 5. Fork path end - step is the last step in a fork path
-        // 6. Standard - normal step completion
+        // 2. Approval checkpoint - park until a decision (#182). ForkExtractor and
+        //    BranchExtractor walk through AwaitApproval, so ForkAtStep / BranchAtStep
+        //    share the gated step's name. Dispatch after resume, not here.
+        // 3. Branch point - step precedes a branch
+        // 4. Branch path end - step is the last step in a branch path
+        // 5. Fork point - step precedes a fork
+        // 6. Fork path end - step is the last step in a fork path
+        // 7. Standard - normal step completion
 
         if (handlerContext.LoopsAtStep is { Count: > 0 })
         {
             _loopCompletedEmitter.EmitHandler(sb, model, stepName, handlerContext);
+        }
+        else if (handlerContext.ApprovalAtStep is not null)
+        {
+            _completedEmitter.EmitHandler(sb, model, stepName, handlerContext);
         }
         else if (handlerContext.BranchAtStep is not null)
         {

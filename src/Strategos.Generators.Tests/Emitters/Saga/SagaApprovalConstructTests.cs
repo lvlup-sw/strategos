@@ -153,6 +153,60 @@ public sealed class SagaApprovalConstructTests
     }
 
     /// <summary>
+    /// The gated step's completed handler parks for approval instead of starting the fork.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_ApprovalImmediatelyBeforeFork_CompletedHandlerParksForApproval()
+    {
+        var result = GeneratorTestHelper.RunGenerator(ApprovalBeforeForkWorkflow);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "LoanOriginationSaga.g.cs");
+        var completed = HandlerBodyFor(saga, "ReceiveLoanApplicationCompleted evt");
+
+        await Assert.That(completed)
+            .Contains("RequestUnderwriterApprovalEvent")
+            .Because("the gated step must yield the checkpoint, not skip it");
+
+        await Assert.That(completed)
+            .DoesNotContain("StartScoreCreditCommand")
+            .Because("fork dispatch belongs on resume after the decision, not on the gated completed handler");
+    }
+
+    /// <summary>
+    /// An approval immediately before a branch parks, then resume routes the branch
+    /// instead of <c>Start{Rejoin}</c>.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Generator_ApprovalImmediatelyBeforeBranch_ResumeRoutesBranch()
+    {
+        var result = GeneratorTestHelper.RunGenerator(ApprovalBeforeBranchWorkflow);
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "IncidentTriageSaga.g.cs");
+        var resume = ResumeHandlerBodyFor(saga, "DutyOfficer");
+        var completed = HandlerBodyFor(saga, "AssessIncidentCompleted evt");
+
+        await Assert.That(saga)
+            .IsNotEmpty()
+            .Because("the fixture must compile far enough to emit a saga");
+
+        await Assert.That(completed)
+            .Contains("RequestDutyOfficerApprovalEvent")
+            .Because("the gated step must park; BranchAtStep must not win over the checkpoint");
+
+        await Assert.That(resume)
+            .Contains("StartPageOnCallCommand")
+            .Because("approved resume must dispatch the true arm");
+
+        await Assert.That(resume)
+            .Contains("StartFileTicketCommand")
+            .Because("approved resume must dispatch the false arm");
+
+        await Assert.That(resume)
+            .DoesNotContain("StartCloseIncidentCommand")
+            .Because("Start{Rejoin} skips the branch the way Start{Join} skipped the fork");
+    }
+
+    /// <summary>
     /// A last-on-flow approval with a two-step rejection chain emits the chain's first
     /// start command from the resume handler.
     /// </summary>
@@ -202,8 +256,10 @@ public sealed class SagaApprovalConstructTests
     }
 
     private static string ResumeHandlerBodyFor(string source, string approvalPointName)
+        => HandlerBodyFor(source, $"Resume{approvalPointName}ApprovalCommand cmd");
+
+    private static string HandlerBodyFor(string source, string marker)
     {
-        var marker = $"Resume{approvalPointName}ApprovalCommand cmd";
         var start = source.IndexOf(marker, StringComparison.Ordinal);
         if (start < 0)
         {
@@ -361,6 +417,71 @@ public sealed class SagaApprovalConstructTests
                     path => path.Then<VerifyIncome>())
                 .Join<MergeAssessment>()
                 .Finally<IssueLoan>();
+        }
+        """;
+
+    private const string ApprovalBeforeBranchWorkflow = """
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public sealed record IncidentState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+            public bool IsCrisis { get; init; }
+        }
+
+        public sealed class AssessIncident : IWorkflowStep<IncidentState>
+        {
+            public Task<StepResult<IncidentState>> ExecuteAsync(
+                IncidentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<IncidentState>.FromState(state));
+        }
+
+        public sealed class PageOnCall : IWorkflowStep<IncidentState>
+        {
+            public Task<StepResult<IncidentState>> ExecuteAsync(
+                IncidentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<IncidentState>.FromState(state));
+        }
+
+        public sealed class FileTicket : IWorkflowStep<IncidentState>
+        {
+            public Task<StepResult<IncidentState>> ExecuteAsync(
+                IncidentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<IncidentState>.FromState(state));
+        }
+
+        public sealed class CloseIncident : IWorkflowStep<IncidentState>
+        {
+            public Task<StepResult<IncidentState>> ExecuteAsync(
+                IncidentState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<IncidentState>.FromState(state));
+        }
+
+        public sealed class DutyOfficerApprover
+        {
+        }
+
+        [Workflow("incident-triage")]
+        public static partial class IncidentTriageWorkflow
+        {
+            public static WorkflowDefinition<IncidentState> Definition => Workflow<IncidentState>
+                .Create("incident-triage")
+                .StartWith<AssessIncident>()
+                .AwaitApproval<DutyOfficerApprover>(approval => approval
+                    .WithContext("A duty officer must release the incident before routing.")
+                    .WithOption("release", "Release", "Release the incident.", isDefault: true))
+                .Branch(state => state.IsCrisis,
+                    BranchCase<IncidentState, bool>.When(
+                        true, path => path.Then<PageOnCall>()),
+                    BranchCase<IncidentState, bool>.When(
+                        false, path => path.Then<FileTicket>()))
+                .Finally<CloseIncident>();
         }
         """;
 

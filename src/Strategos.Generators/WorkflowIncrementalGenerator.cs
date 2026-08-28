@@ -174,48 +174,24 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Finds step types that end (or occupy) more than one exclusive path under distinct
-    /// instance names. Fork path-ends of the same fork that share <c>StepName</c> but differ
-    /// in <c>EffectiveName</c> would emit duplicate <c>Handle({Type}Completed)</c> overloads.
+    /// Finds step types that occupy more than one exclusive path under distinct instance names.
+    /// Fork path steps (interiors and last steps) of the same fork that share <c>StepName</c> but
+    /// differ in <c>EffectiveName</c> would emit duplicate <c>Handle({Type}Completed)</c> overloads.
     /// Branch cases that share a type under distinct instance names collide because
     /// <c>BranchExtractor</c> records bare type names into <c>StepNames</c>.
     /// </summary>
     /// <param name="rawSteps">The raw extracted steps, including branch-path context.</param>
-    /// <param name="forkModels">The extracted fork models whose path-end steps are inspected.</param>
+    /// <param name="forkModels">The extracted fork models whose path steps are inspected.</param>
     /// <returns>Distinct colliding step type names, ordered for stable diagnostics.</returns>
     private static List<string> FindPathEndTypeCollisions(
         IReadOnlyList<StepInfo> rawSteps,
         IReadOnlyList<ForkModel> forkModels)
     {
-        var collisions = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var fork in forkModels)
-        {
-            var lastSteps = fork.Paths
-                .Where(p => p.Steps.Count > 0)
-                .Select(p => p.Steps[p.Steps.Count - 1])
-                .ToList();
-
-            foreach (var group in lastSteps.GroupBy(s => s.StepName, StringComparer.Ordinal))
-            {
-                if (group.Select(s => s.EffectiveName).Distinct(StringComparer.Ordinal).Count() > 1)
-                {
-                    collisions.Add(group.Key);
-                }
-            }
-        }
-
-        foreach (var group in rawSteps
-            .Where(s => s.Context == Helpers.StepContext.BranchPath)
-            .GroupBy(s => s.StepName, StringComparer.Ordinal))
-        {
-            if (group.Select(s => s.EffectiveName).Distinct(StringComparer.Ordinal).Count() > 1)
-            {
-                collisions.Add(group.Key);
-            }
-        }
-
-        return collisions.OrderBy(n => n, StringComparer.Ordinal).ToList();
+        return PathEndTypeCollisionFinder.Find(
+            forkModels,
+            rawSteps
+                .Where(static s => s.Context == StepContext.BranchPath)
+                .Select(static s => (s.StepName, s.EffectiveName)));
     }
 
     /// <summary>

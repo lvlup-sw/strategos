@@ -49,11 +49,9 @@ public sealed class ApprovalBeforeForkBehaviorTests
                 "an approval immediately before a fork must still reach both paths, the join, "
                 + $"and the terminal — {outcome.Diagnostic}");
 
-        // ForkExtractor walks through AwaitApproval, so ForkModel.PreviousStepName is
-        // the gated step. That step's completed handler is the fork dispatch (ForkAtStep
-        // wins over ApprovalAtStep in SagaStepHandlersEmitter, which this stream does
-        // not own). The resume-handler rewrite is still the #182 emission contract;
-        // this host proof is the acceptance: the shape completes instead of hanging.
+        await Assert.That(this.host.Invocations.CountFor(UnderwriterApprovalDecisionHandler.ApprovalRequested))
+            .IsEqualTo(1)
+            .Because("the gated step must park at the checkpoint; skipping it starts the fork without a decision");
 
         await Assert.That(this.host.Invocations.CountFor(nameof(ScoreCredit)))
             .IsEqualTo(1)

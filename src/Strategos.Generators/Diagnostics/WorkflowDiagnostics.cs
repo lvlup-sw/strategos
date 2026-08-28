@@ -60,16 +60,16 @@ internal static class WorkflowDiagnostics
     /// Duplicate step name.
     /// </summary>
     /// <remarks>
-    /// Reported when the same step type appears multiple times in a workflow.
+    /// Reported when the same EffectiveName appears multiple times in a workflow.
     /// </remarks>
     public static readonly DiagnosticDescriptor DuplicateStepName = new(
         id: AgwfCodes.DuplicateStepName,
         title: "Duplicate step name",
-        messageFormat: "Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique.",
+        messageFormat: "Step '{0}' appears multiple times in workflow '{1}'. Each EffectiveName (the instance name, or the step type when none is given) must be unique.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Each step type in a workflow should be unique to prevent ambiguous phase transitions.");
+        description: "Each EffectiveName in a workflow must be unique to prevent last-write-win routing. The same step type under distinct instance names is a type collision, not a duplicate name.");
 
     /// <summary>
     /// Invalid namespace.
@@ -570,11 +570,11 @@ internal static class WorkflowDiagnostics
     /// <remarks>
     /// <para>
     /// Fork already rejects duplicate <c>EffectiveName</c>s (<see cref="DuplicateStepName"/>). Two
-    /// fork paths of the same fork whose last steps share <c>StepName</c> (type) but differ in
-    /// <c>InstanceName</c> compile past that check and emit duplicate
-    /// <c>Handle({Type}Completed)</c> overloads (CS0111). Branch cases that share a step type
-    /// under distinct instance names have the same problem: the extractor records bare type names
-    /// into <c>StepNames</c>, so instance names do not disambiguate the successor map.
+    /// exclusive-path steps of the same fork that share <c>StepName</c> (type) but differ in
+    /// <c>InstanceName</c> — interiors as well as last steps — compile past that check and emit
+    /// duplicate <c>Handle({Type}Completed)</c> overloads (CS0111). Branch cases that share a step
+    /// type under distinct instance names have the same problem: the extractor records bare type
+    /// names into <c>StepNames</c>, so instance names do not disambiguate the successor map.
     /// </para>
     /// <para>
     /// An error that blocks generation: a CS0111 in generated code is worse than a diagnostic.
@@ -588,5 +588,5 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Exclusive paths that share a step type under distinct instance names cannot be lowered: path-end handlers and successor maps key by step type, so instance names do not disambiguate and the emitter would produce duplicate Handle overloads.");
+        description: "Exclusive paths that share a step type under distinct instance names cannot be lowered: completed handlers and successor maps key by step type, so instance names do not disambiguate and the emitter would produce duplicate Handle overloads.");
 }

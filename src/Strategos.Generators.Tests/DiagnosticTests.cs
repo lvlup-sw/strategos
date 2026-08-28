@@ -733,6 +733,97 @@ public class DiagnosticTests
     }
 
     /// <summary>
+    /// #190 interiors — two instance-named fork-path steps of the same type that are
+    /// not path-ends still report AGWF036. Completed handlers key by type for every
+    /// exclusive-path step, not only last steps.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_InstanceNamedForkInteriors_ReportsAGWF036()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public record InstanceState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+            }
+
+            public class PrepareStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class AnalyzeStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class ScoreStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class RiskStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class SynthesizeStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class CompleteStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            [Workflow("instance-interior-test")]
+            public static partial class InstanceInteriorTestWorkflow
+            {
+                public static WorkflowDefinition<InstanceState> Definition => Workflow<InstanceState>
+                    .Create("instance-interior-test")
+                    .StartWith<PrepareStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Technical").Then<ScoreStep>(),
+                        path => path.Then<AnalyzeStep>("Fundamental").Then<RiskStep>())
+                    .Join<SynthesizeStep>()
+                    .Finally<CompleteStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
+    }
+
+    /// <summary>
     /// Branch cases that share a step type under distinct instance names report AGWF036:
     /// BranchExtractor records bare type names, so instance names would not disambiguate.
     /// </summary>

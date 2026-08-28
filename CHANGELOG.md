@@ -66,11 +66,11 @@ main-flow step the approval itself resumes onto.
 main flow publishes the rejection chain's first start command instead of setting the phase and
 parking.
 
-**Approval-before-fork resume dispatches the fork (#182).** When the next main-flow step is a join,
-resume starts the fork's paths rather than `Start{Join}`, so the saga no longer hangs on the join.
-Leftover: `ForkExtractor.PreviousStepName` walks through `AwaitApproval`, so `SagaStepHandlersEmitter`
-can still skip the checkpoint when ordering preceding-step fork dispatch versus the checkpoint.
-That emitter was out of scope for this wave.
+**Approval-before-fork parks at the checkpoint (#182).** When the next main-flow step is a join,
+resume starts the fork's paths rather than `Start{Join}`. The gated step's completed handler now
+yields the approval request instead of dispatching the fork, so the human is asked and resume is
+the single dispatch owner. The same owner rule applies when `AwaitApproval` immediately precedes
+`Branch`.
 
 **Bool exclusive branches compile (#179).** A `When(true)+When(false)` switch is already exhaustive;
 the leftover `_ =>` arm is omitted so the generated saga no longer hits `CS8510`. Enum branches still
@@ -98,9 +98,10 @@ no behavioral coverage at all. `OnFailure` had coverage of its failure path only
 terminal is deliberately named for being unreached — so the success-path terminal-completion case
 was untested.
 
-**`AGWF036` — path-end type collision (error).** Instance-named fork path-ends and branch cases that
-share a step type fail closed before `CS0111`. Routing maps key by type, so instance names do not
-disambiguate. `Strategos.Contracts` bumps **0.5.0 → 0.6.0** for the new catalog member.
+**`AGWF036` — path-end type collision (error).** Instance-named exclusive-path steps — fork interiors
+and last steps, and branch cases — that share a step type fail closed before `CS0111`. Routing maps
+key by type, so instance names do not disambiguate. The same gate runs on JSON import, not only on
+C# `[Workflow]` types. `Strategos.Contracts` bumps **0.5.0 → 0.6.0** for the new catalog member.
 
 **Design-invariant catalog is tracked under `.agents/` (#178).** `.claude/` is gitignored, so the
 catalog every design audit cites was untracked.

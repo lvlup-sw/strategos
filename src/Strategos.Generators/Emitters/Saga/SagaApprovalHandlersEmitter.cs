@@ -60,13 +60,25 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"cmd\">The approval resume command.</param>");
 
-        // A join is on the main flow, so NextStepName can be the join even though the
-        // construct that must run first is the fork. Dispatch the fork's paths, not
-        // Start{Join} — that hangs the saga with every path still Pending (#182).
+        // AwaitApproval is not a step. ForkExtractor / BranchExtractor walk through it, so
+        // the gated step is also ForkAtStep / BranchAtStep. Resume must dispatch that
+        // construct — Start{Join} or Start{Rejoin} hangs the saga (#182).
+        if (context.ForkAtCheckpoint is not null)
+        {
+            EmitForkDispatchResumeHandler(sb, model, approval, commandName, context.ForkAtCheckpoint);
+            return;
+        }
+
         var forkAtJoin = FindForkJoinedAt(model, context.NextStepName);
         if (forkAtJoin is not null)
         {
             EmitForkDispatchResumeHandler(sb, model, approval, commandName, forkAtJoin);
+            return;
+        }
+
+        if (context.BranchAtCheckpoint is not null)
+        {
+            EmitBranchDispatchResumeHandler(sb, model, approval, commandName, context.BranchAtCheckpoint);
             return;
         }
 
@@ -217,6 +229,49 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
         EmitRejectionHandling(sb, model, approval, isVoidHandler: false, returnAsEnumerable: true);
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
+        sb.AppendLine("                // Stay in approval phase, await another response");
+        sb.AppendLine("                return null;");
+        sb.AppendLine();
+        sb.AppendLine("            default:");
+        sb.AppendLine("                return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits a resume handler that routes through the branch that follows the
+    /// checkpoint, instead of publishing <c>Start{Rejoin}</c>.
+    /// </summary>
+    private static void EmitBranchDispatchResumeHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        string commandName,
+        BranchModel branch)
+    {
+        sb.AppendLine("    /// <returns>The start command for the selected branch path, or null if deferred.</returns>");
+        sb.AppendLine("    public object? Handle(");
+        sb.AppendLine($"        {commandName} cmd)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        sb.AppendLine("        PendingApprovalRequestId = null;");
+        sb.AppendLine();
+        sb.AppendLine("        switch (cmd.Decision)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Approved:");
+        sb.AppendLine("                if (!string.IsNullOrEmpty(cmd.Instructions))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    ApprovalInstructions = cmd.Instructions;");
+        sb.AppendLine("                }");
+        sb.AppendLine();
+        sb.Append("                return ");
+        BranchHandlerEmitter.EmitSwitchExpression(sb, branch, "                ");
+        sb.AppendLine(";");
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
+        EmitRejectionHandling(sb, model, approval, isVoidHandler: false);
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
         sb.AppendLine("                // Stay in approval phase, await another response");
