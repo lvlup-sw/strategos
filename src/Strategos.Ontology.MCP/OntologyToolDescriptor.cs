@@ -35,4 +35,10 @@ public sealed record OntologyToolDescriptor(
     /// Populated only for the ontology_action tool descriptor.
     /// </summary>
     public IReadOnlyList<ActionConstraintSummary> ConstraintSummaries { get; init; } = [];
+
+    /// <summary>
+    /// Optional MCP <c>Tool.icons</c> (2026-07-28). Null when the descriptor
+    /// source supplies none — never a placeholder icon.
+    /// </summary>
+    public IReadOnlyList<ToolIcon>? Icons { get; init; }
 }

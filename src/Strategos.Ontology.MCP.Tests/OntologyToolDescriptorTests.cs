@@ -16,6 +16,39 @@ public class OntologyToolDescriptorTests
         await Assert.That(descriptor.Annotations).IsEqualTo(
             new ToolAnnotations(false, false, false, false));
         await Assert.That(descriptor.ConstraintSummaries).HasCount().EqualTo(0);
+        await Assert.That(descriptor.Icons).IsNull();
+    }
+
+    [Test]
+    public async Task OntologyToolDescriptor_WithIcons_StoresValue()
+    {
+        var icon = new ToolIcon("https://example.test/icon.png")
+        {
+            MimeType = "image/png",
+            Sizes = ["48x48"],
+            Theme = "light",
+        };
+        var descriptor = new OntologyToolDescriptor("name", "desc");
+
+        var updated = descriptor with { Icons = [icon] };
+
+        await Assert.That(updated.Icons).IsNotNull();
+        await Assert.That(updated.Icons!).HasCount().EqualTo(1);
+        await Assert.That(updated.Icons[0].Source).IsEqualTo("https://example.test/icon.png");
+        await Assert.That(updated.Icons[0].MimeType).IsEqualTo("image/png");
+        await Assert.That(updated.Icons[0].Sizes).IsEquivalentTo(["48x48"]);
+        await Assert.That(updated.Icons[0].Theme).IsEqualTo("light");
+    }
+
+    [Test]
+    public async Task OntologyToolDescriptor_WithoutIcons_DoesNotInventPlaceholder()
+    {
+        var descriptor = new OntologyToolDescriptor("name", "desc")
+        {
+            Title = "Display Title",
+        };
+
+        await Assert.That(descriptor.Icons).IsNull();
     }
 
     [Test]

@@ -123,6 +123,8 @@ Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.get -> System.
 Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.init -> void
 Strategos.Ontology.MCP.OntologyToolDescriptor.Description.get -> string!
 Strategos.Ontology.MCP.OntologyToolDescriptor.Description.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.Icons.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ToolIcon!>?
+Strategos.Ontology.MCP.OntologyToolDescriptor.Icons.init -> void
 Strategos.Ontology.MCP.OntologyToolDescriptor.Name.get -> string!
 Strategos.Ontology.MCP.OntologyToolDescriptor.Name.init -> void
 Strategos.Ontology.MCP.OntologyToolDescriptor.OntologyToolDescriptor(string! Name, string! Description) -> void
@@ -189,6 +191,16 @@ Strategos.Ontology.MCP.ToolAnnotations.OpenWorldHint.init -> void
 Strategos.Ontology.MCP.ToolAnnotations.ReadOnlyHint.get -> bool
 Strategos.Ontology.MCP.ToolAnnotations.ReadOnlyHint.init -> void
 Strategos.Ontology.MCP.ToolAnnotations.ToolAnnotations(bool ReadOnlyHint, bool DestructiveHint, bool IdempotentHint, bool OpenWorldHint) -> void
+Strategos.Ontology.MCP.ToolIcon
+Strategos.Ontology.MCP.ToolIcon.MimeType.get -> string?
+Strategos.Ontology.MCP.ToolIcon.MimeType.init -> void
+Strategos.Ontology.MCP.ToolIcon.Sizes.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Strategos.Ontology.MCP.ToolIcon.Sizes.init -> void
+Strategos.Ontology.MCP.ToolIcon.Source.get -> string!
+Strategos.Ontology.MCP.ToolIcon.Source.init -> void
+Strategos.Ontology.MCP.ToolIcon.Theme.get -> string?
+Strategos.Ontology.MCP.ToolIcon.Theme.init -> void
+Strategos.Ontology.MCP.ToolIcon.ToolIcon(string! Source) -> void
 Strategos.Ontology.MCP.TraversalDirection
 Strategos.Ontology.MCP.TraversalDirection.ToDestination = 0 -> Strategos.Ontology.MCP.TraversalDirection
 Strategos.Ontology.MCP.TraversalDirection.ToSource = 1 -> Strategos.Ontology.MCP.TraversalDirection

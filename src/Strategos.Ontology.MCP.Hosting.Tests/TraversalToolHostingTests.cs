@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -94,6 +95,23 @@ public sealed class TraversalToolHostingTests
         return (client, [client, server, serverTransport, sp]);
     }
 
+    private static async Task AssertResultTypeComplete(CallToolResult result)
+    {
+        // 2026-07-28: servers MUST emit resultType. Absent field is the
+        // pre-2026-07-28 shape. Round-trip through the SDK serializer so the
+        // wire form (not just the in-memory default) carries "complete".
+        await Assert.That(result.ResultType)
+            .IsEqualTo(OntologyServerToolFactory.CompletedResultType);
+
+        var json = JsonSerializer.Serialize(result, McpJsonUtilities.DefaultOptions);
+        await Assert.That(json).Contains("\"resultType\":\"complete\"");
+
+        var roundTripped = JsonSerializer.Deserialize<CallToolResult>(json, McpJsonUtilities.DefaultOptions);
+        await Assert.That(roundTripped).IsNotNull();
+        await Assert.That(roundTripped!.ResultType)
+            .IsEqualTo(OntologyServerToolFactory.CompletedResultType);
+    }
+
     [Test]
     public async Task TraversalTool_InstanceToAssociationToFarEndpoint_Succeeds()
     {
@@ -113,6 +131,7 @@ public sealed class TraversalToolHostingTests
                 });
 
             await Assert.That(result.IsError ?? false).IsFalse();
+            await AssertResultTypeComplete(result);
             var structured = result.StructuredContent!.Value;
             // _meta is present (INV-3).
             await Assert.That(structured.TryGetProperty("_meta", out _)).IsTrue();
@@ -151,6 +170,7 @@ public sealed class TraversalToolHostingTests
                 });
 
             await Assert.That(result.IsError ?? false).IsTrue();
+            await AssertResultTypeComplete(result);
             var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
             await Assert.That(text).Contains("link");
         }
@@ -185,6 +205,7 @@ public sealed class TraversalToolHostingTests
                 });
 
             await Assert.That(result.IsError ?? false).IsTrue();
+            await AssertResultTypeComplete(result);
             var text = string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
             await Assert.That(text).Contains("direction");
         }
@@ -218,6 +239,7 @@ public sealed class TraversalToolHostingTests
                 });
 
             await Assert.That(result.IsError ?? false).IsFalse();
+            await AssertResultTypeComplete(result);
 
             // A resource_link content block is present.
             var resourceLinks = result.Content.OfType<ResourceLinkBlock>().ToList();

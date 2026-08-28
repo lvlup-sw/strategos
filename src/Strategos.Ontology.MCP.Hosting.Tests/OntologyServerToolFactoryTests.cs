@@ -55,7 +55,40 @@ public sealed class OntologyServerToolFactoryTests
 
             await Assert.That(protocolTool.Title).IsEqualTo(descriptor.Title);
             await Assert.That(protocolTool.Description).IsEqualTo(descriptor.Description);
+
+            // Discovery supplies no icons — do not invent a placeholder (INV-3 / #177).
+            await Assert.That(descriptor.Icons).IsNull();
+            await Assert.That(protocolTool.Icons).IsNull();
         }
+    }
+
+    [Test]
+    public async Task CreateServerTool_WithIcons_MapsOntoProtocolTool()
+    {
+        var graph = TestOntologyGraphFactory.CreateTradingGraph();
+        var icon = new Strategos.Ontology.MCP.ToolIcon("https://example.test/ontology.png")
+        {
+            MimeType = "image/png",
+            Sizes = ["48x48"],
+            Theme = "dark",
+        };
+        var descriptor = new Strategos.Ontology.MCP.OntologyToolDescriptor(
+            "ontology_explore",
+            "explore")
+        {
+            Title = "Explore Ontology Schema",
+            Icons = [icon],
+        };
+
+        var tool = OntologyServerToolFactory.CreateServerTool(graph, descriptor);
+        var icons = tool.ProtocolTool.Icons;
+
+        await Assert.That(icons).IsNotNull();
+        await Assert.That(icons!).HasCount().EqualTo(1);
+        await Assert.That(icons[0].Source).IsEqualTo(icon.Source);
+        await Assert.That(icons[0].MimeType).IsEqualTo(icon.MimeType);
+        await Assert.That(icons[0].Theme).IsEqualTo(icon.Theme);
+        await Assert.That(icons[0].Sizes).IsEquivalentTo(icon.Sizes!);
     }
 
     [Test]
