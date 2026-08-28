@@ -124,13 +124,26 @@ Expected: empty.
 
 ## INV-5: Three-tiered validation, stable diagnostic IDs
 
-### Check 5.1: Duplicate diagnostic IDs
+### Check 5.1: Duplicate diagnostic IDs in the authoritative catalog
 
-A duplicate ID is a contract violation — consumers suppress by ID.
+A duplicate ID is a contract violation — consumers suppress by ID. AGWF identities live in the generated catalog; AONT identities are still authored constants.
 
 ```bash
 grep -rhoE '"(AGWF|AONT)[0-9]{3,}"' \
-  src/Strategos.Generators/Diagnostics/ src/Strategos.Ontology.Generators/Diagnostics/ \
+  src/Strategos.Contracts/Generated/AgwfCodes.g.cs \
+  src/Strategos.Ontology.Generators/Diagnostics/OntologyDiagnosticIds.cs \
+  | sort | uniq -d
+```
+
+Expected: empty.
+
+### Check 5.1b: Hand-authored AGWF literals in production diagnostics
+
+Workflow descriptors must consume `AgwfCodes.*`, not quote `AGWF0xx`. This scan is the production-literal gate; it is not the catalog inventory.
+
+```bash
+grep -rhoE '"(AGWF)[0-9]{3,}"' \
+  src/Strategos.Generators/Diagnostics/ \
   --include='*.cs' \
   | sort | uniq -d
 ```
@@ -141,8 +154,8 @@ Expected: empty.
 
 ```bash
 grep -rhoE '"(AGWF|AONT)[0-9]{3,}"' \
-  src/Strategos.Generators/Diagnostics/ src/Strategos.Ontology.Generators/Diagnostics/ \
-  --include='*.cs' \
+  src/Strategos.Contracts/Generated/AgwfCodes.g.cs \
+  src/Strategos.Ontology.Generators/Diagnostics/OntologyDiagnosticIds.cs \
   | sort -u
 ```
 
@@ -206,7 +219,7 @@ grep -rlE ':\s*IWorkflowState\b' src/Strategos/ samples/ --include='*.cs' \
   | xargs grep -nE '\b(List|Dictionary|HashSet)<'
 ```
 
-Hits should use `IReadOnlyList<T>`, `ImmutableList<T>`, `ImmutableDictionary<K,V>`, etc., instead.
+Hits should use `ImmutableList<T>`, `ImmutableDictionary<K,V>`, or another truly immutable type. `IReadOnlyList<T>` is a view, not a substitute — only accept it when the backing collection is frozen after construction.
 
 ## INV-8: Polyglot identity (`ClrType` OR `SymbolKey`)
 

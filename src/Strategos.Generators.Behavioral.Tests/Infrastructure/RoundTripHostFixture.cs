@@ -170,6 +170,7 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
         // One implementation of the completion oracle, shared with ApprovalHostFixture and
         // FailureHandlerHostFixture. It previously lived here as a second copy; a correction to
         // the acceptance predicate would have had to land in both, and only this one was pinned.
+        var invocationCountBefore = this.Invocations.TotalCount;
         var outcome = await SagaCompletionProbe.RunAsync<TSaga>(
             this.RequireHost(),
             this.Invocations,
@@ -177,7 +178,7 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
             startCommand,
             timeout ?? TimeSpan.FromSeconds(30));
 
-        return AnnotateSharedHostInterference(outcome);
+        return this.AnnotateSharedHostInterference(outcome, invocationCountBefore);
     }
 
     /// <summary>Stops and disposes the host and the shared Postgres container.</summary>
@@ -193,16 +194,24 @@ public sealed class RoundTripHostFixture : IAsyncInitializer, IAsyncDisposable
     /// reports what the PerClass log actually recorded instead of an opaque false (strategos#180).
     /// </summary>
     /// <param name="outcome">The oracle's observed outcome.</param>
+    /// <param name="invocationCountBefore">
+    /// The invocation-log length before this run started, so a failed twin does
+    /// not report a prior family's steps as recorded "while this run was in flight."
+    /// </param>
     /// <returns>The same outcome, with an interference clause on the failure diagnostic.</returns>
-    private WorkflowRunOutcome AnnotateSharedHostInterference(WorkflowRunOutcome outcome)
+    private WorkflowRunOutcome AnnotateSharedHostInterference(
+        WorkflowRunOutcome outcome,
+        int invocationCountBefore)
     {
         if (outcome.Completed)
         {
             return outcome;
         }
 
-        var recorded = this.Invocations.Invocations;
-        if (recorded.Count == 0)
+        var recorded = this.Invocations.Invocations
+            .Skip(invocationCountBefore)
+            .ToArray();
+        if (recorded.Length == 0)
         {
             return outcome with
             {

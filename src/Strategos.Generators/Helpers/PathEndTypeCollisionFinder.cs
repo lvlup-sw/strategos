@@ -34,12 +34,15 @@ internal static class PathEndTypeCollisionFinder
 
         var collisions = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var fork in forkModels)
-        {
-            CollectCollidingTypes(
-                fork.Paths.SelectMany(static p => p.Steps).Select(static s => (s.StepName, s.EffectiveName)),
-                collisions);
-        }
+        // Exclusive-path completed handlers live on one saga type, so two forks
+        // that share a step type under distinct instance names collide the same
+        // way a single fork does. Group every fork-path step together first.
+        CollectCollidingTypes(
+            forkModels
+                .SelectMany(static fork => fork.Paths)
+                .SelectMany(static path => path.Steps)
+                .Select(static step => (step.StepName, step.EffectiveName)),
+            collisions);
 
         CollectCollidingTypes(branchPathSteps, collisions);
 

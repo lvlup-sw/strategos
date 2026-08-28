@@ -9,7 +9,7 @@ Any hand-rolled durability primitive — a custom saga store, a bespoke event lo
 - Does the proposal introduce runtime state that lives outside Marten document storage or the Marten event store?
 - Does it add a `: Saga`-implementing class anywhere except `Strategos.Generators/Emitters/SagaEmitter.cs`'s emitted output?
 - Does a non-generator project under `src/Strategos*/` take a direct `PackageReference` on `Wolverine.*` or `Marten.*`?
-- If a new `PersistenceMode` is added (in addition to `InMemory` / `EventSourced`), does it still target Wolverine + Marten primitives via the existing emitter, or does it spin up a parallel runtime?
+- If a new `PersistenceMode` is added (in addition to `SagaDocument` / `EventSourced`), does it still target Wolverine + Marten primitives via the existing emitter, or does it spin up a parallel runtime?
 
 ## Repo-grounded checks
 
@@ -54,4 +54,4 @@ This bypasses Marten entirely — no event log, no replay, no audit trail. The d
 
 **Fix:**
 
-Add a new `PersistenceMode` enum value, route it through `SagaEmitter` to emit a `: Saga` with the appropriate Marten attributes. The new mode joins `InMemory` / `EventSourced` as a *generator concern*, not a runtime replacement.
+Add a new `PersistenceMode` enum value, route it through `SagaEmitter` to emit a `: Saga` with the appropriate Marten attributes. The new mode joins `SagaDocument` / `EventSourced` as a *generator concern*, not a runtime replacement.

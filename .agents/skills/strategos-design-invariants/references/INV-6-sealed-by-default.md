@@ -14,11 +14,11 @@ Extension is expressed through composition — interfaces, fluent extension meth
 
 ## Repo-grounded checks
 
-- `~40` `public sealed record` / `internal sealed class` / `public sealed class` declarations in `src/Strategos/{Builders,Definitions}/`
+- `~40` `public sealed record` / `internal sealed class` / `public sealed class` declarations in `src/Strategos/{Builders,Definitions,Steps}/` and `src/Strategos.Ontology/Descriptors/`
 - Exactly `1` `public abstract record` in scope (audited and intentional)
 - `src/Strategos/Builders/Workflow.cs:25` — entry point is `static class Workflow<TState>`, not extendable
 - `src/Strategos/Steps/StepResult.cs:26` — `public sealed record StepResult<TState>`
-- `src/Strategos.Ontology.MCP/OntologyStubGenerator.cs:11` — `public sealed class`
+- `src/Strategos.Ontology/Descriptors/` — descriptor types in the sealed-by-default scan (not `OntologyStubGenerator`, which is MCP hosting)
 
 ## Cross-cutting overlap
 

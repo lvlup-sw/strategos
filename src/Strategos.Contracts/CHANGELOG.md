@@ -38,6 +38,13 @@ enforced by the T30 structural diff in CI).
   `Fork` path, deferred to v2.10.0 / DR-17, #134). Additive (a new enum member + a new
   catalog entry), so it is a minor, non-breaking change (#143, G-6).
 
+### Changed
+
+- **AGWF003 remediation const:** the catalog string now names `EffectiveName` (the
+  instance name, or the step type when none is given) so it matches
+  `docs/diagnostics/agwf.md`. Downstream consumers that validate the previous
+  literal see a changed value, not an addition.
+
 ## [0.2.0] - 2026-05-24
 
 First published release of the cross-product schema substrate. **Must not

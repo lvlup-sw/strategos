@@ -189,6 +189,10 @@ public sealed class ApprovalHostFixture : IAsyncInitializer, IAsyncDisposable
         var budget = timeout ?? TimeSpan.FromSeconds(30);
         var store = this.RequireHost().Services.GetRequiredService<IDocumentStore>();
         var stopwatch = Stopwatch.StartNew();
+        var property = typeof(TSaga).GetProperty("PendingApprovalRequestId")
+            ?? throw new InvalidOperationException(
+                $"{typeof(TSaga).Name} has no PendingApprovalRequestId property; "
+                + "the generated approval surface changed.");
 
         while (true)
         {
@@ -197,9 +201,7 @@ public sealed class ApprovalHostFixture : IAsyncInitializer, IAsyncDisposable
                 var saga = await query.LoadAsync<TSaga>(workflowId);
                 if (saga is not null)
                 {
-                    var pending = saga.GetType()
-                        .GetProperty("PendingApprovalRequestId")
-                        ?.GetValue(saga) as string;
+                    var pending = property.GetValue(saga) as string;
 
                     if (!string.IsNullOrEmpty(pending))
                     {

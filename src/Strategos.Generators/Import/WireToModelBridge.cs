@@ -270,14 +270,31 @@ internal static class WireToModelBridge
             .ToList();
 
         // Round-tripped JSON lists fork-path steps in both steps[] and forkPoints.paths.
-        // Counting both lists would report every fork-path EffectiveName as a duplicate.
-        var forkPathKeys = new HashSet<string>(
-            forkPathSteps.Select(static s => s.PhaseName),
-            StringComparer.Ordinal);
-        var identitySteps = baseStepModels
-            .Where(s => !forkPathKeys.Contains(s.PhaseName))
-            .Concat(forkPathSteps)
-            .ToList();
+        // Consume one matching base entry per fork-path representation so the echo
+        // is not a duplicate name, but an extra top-level step with the same phase+type still is.
+        var remainingForkPathCopies = new Dictionary<(string Phase, string Type), int>();
+        foreach (var step in forkPathSteps)
+        {
+            var key = (step.PhaseName, step.StepName);
+            remainingForkPathCopies[key] = remainingForkPathCopies.TryGetValue(key, out var copies)
+                ? copies + 1
+                : 1;
+        }
+
+        var identitySteps = new List<StepModel>(baseStepModels.Count + forkPathSteps.Count);
+        foreach (var step in baseStepModels)
+        {
+            var key = (step.PhaseName, step.StepName);
+            if (remainingForkPathCopies.TryGetValue(key, out var remaining) && remaining > 0)
+            {
+                remainingForkPathCopies[key] = remaining - 1;
+                continue;
+            }
+
+            identitySteps.Add(step);
+        }
+
+        identitySteps.AddRange(forkPathSteps);
 
         var duplicateNames = identitySteps
             .GroupBy(static s => s.EffectiveName, StringComparer.Ordinal)

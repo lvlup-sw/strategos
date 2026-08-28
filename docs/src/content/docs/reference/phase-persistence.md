@@ -12,9 +12,9 @@ Every workflow definition compiles to a `Phase` enum that the generated saga sto
 | Serializer | Stored representation | Member reorder |
 |------------|----------------------|----------------|
 | System.Text.Json (Marten default) | Member **name** (`"ShipApprovedOrder"`) | Safe. Existing documents still load as the same phase. |
-| Newtonsoft.Json (`UseNewtonsoftJson()`) | Member **ordinal** (`4`) | **Unsafe.** Existing documents silently load as whichever member now occupies that position. |
+| Newtonsoft.Json (`UseNewtonsoftJson()`) | Member **ordinal** (`4`) by default | **Unsafe** unless the store opted into name storage. Existing ordinal documents silently load as whichever member now occupies that position. |
 
-Under System.Text.Json the generator also emits `[JsonConverter(typeof(JsonStringEnumConverter))]` on the phase enum. Newtonsoft does not honor that attribute, so a Newtonsoft store writes the integer position.
+Under System.Text.Json the generator also emits `[JsonConverter(typeof(JsonStringEnumConverter))]` on the phase enum. Newtonsoft does not honor that attribute. A Newtonsoft store therefore writes the integer position **by default**. A store that configured Marten's `EnumStorage.AsString` (or added a Newtonsoft `StringEnumConverter`) writes names instead and is not the ordinal case.
 
 ## When this becomes a migration
 
@@ -38,7 +38,7 @@ select jsonb_typeof(data->'Phase') as json_type,
 - `json_type = 'string'` — stored by name. A reorder is not a migration.
 - `json_type = 'number'` — stored by ordinal. Plan a rewrite before you upgrade.
 
-A store that called `opts.UseNewtonsoftJson()` (or otherwise installed Newtonsoft as Marten's serializer) is the ordinal case.
+A store that called `opts.UseNewtonsoftJson()` (or otherwise installed Newtonsoft as Marten's serializer) **and left enum storage at the default** is the ordinal case. Name storage under Newtonsoft is an explicit `EnumStorage.AsString` / `StringEnumConverter` opt-in, not the default.
 
 ## What Strategos does not do
 

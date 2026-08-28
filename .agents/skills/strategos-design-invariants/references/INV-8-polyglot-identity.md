@@ -5,7 +5,7 @@ Ontology descriptors carry identity through one of two paths:
 1. **`ClrType`** — for in-process CLR ingestion (most common today; reflection-based).
 2. **`SymbolKey`** — a SCIP-style moniker for cross-language ingestion (Python, TypeScript, etc.), contributed via `IOntologySource`.
 
-The schema requires exactly one of the two to be non-null (enforced by `ObjectTypeDescriptor`). Builder and graph code must never *unconditionally* assume `ClrType` is present. `descriptor.ClrType.GetMethods()`, `clrType!.Name`, or `typeof(...)` reflection on a descriptor's CLR side silently break the polyglot path the moment an `IOntologySource` supplies a `SymbolKey`-only descriptor.
+The schema requires at least one of the two to be non-null (enforced by `ObjectTypeDescriptor`). Both may be set; `SymbolKey` wins at merge. Builder and graph code must never *unconditionally* assume `ClrType` is present. `descriptor.ClrType.GetMethods()`, `clrType!.Name`, or `typeof(...)` reflection on a descriptor's CLR side silently break the polyglot path the moment an `IOntologySource` supplies a `SymbolKey`-only descriptor.
 
 ## Acceptance questions
 
@@ -17,7 +17,7 @@ The schema requires exactly one of the two to be non-null (enforced by `ObjectTy
 
 ## Repo-grounded checks
 
-- `src/Strategos.Ontology/Descriptors/ObjectTypeDescriptor.cs:10-14, 69-80` — "DR-1 (polyglot descriptor schema): identity is no longer CLR-only"; enforces `ClrType ?? SymbolKey != null`
+- `src/Strategos.Ontology/Descriptors/ObjectTypeDescriptor.cs:10-14, 69-80` — "DR-1 (polyglot descriptor schema): identity is no longer CLR-only"; enforces at least one of `ClrType` or `SymbolKey` (both may be set; `SymbolKey` wins at merge)
 - `src/Strategos.Ontology/Sources/IOntologySource.cs:1-40` — extension point for non-CLR sources contributing `OntologyDelta`
 - `src/Strategos.Ontology/Builder/IOntologyBuilder.cs:41,54` — `ObjectTypeFromDescriptor`, `ApplyDelta` are the polyglot entry points
 - `src/Strategos.Ontology.MCP/OntologyStubGenerator.cs:6-25` — runtime emits Python `.pyi` stubs from the same graph

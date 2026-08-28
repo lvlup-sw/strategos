@@ -136,6 +136,38 @@ public sealed class ImportIdentityGateTests
         }
         """;
 
+    private const string IndependentTopLevelSameNameJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "import-identity-top-level-dup",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "PrepareStep", "isTerminal": false, "stepType": "PrepareStep" },
+            { "kind": "skill", "stepId": "s-independent", "stepName": "AnalyzeStep", "isTerminal": false, "stepType": "AnalyzeStep" },
+            { "kind": "skill", "stepId": "s-echo", "stepName": "AnalyzeStep", "isTerminal": false, "stepType": "AnalyzeStep" },
+            { "kind": "skill", "stepId": "s2", "stepName": "SynthesizeStep", "isTerminal": false, "stepType": "SynthesizeStep" },
+            { "kind": "skill", "stepId": "s3", "stepName": "CompleteStep", "isTerminal": true, "stepType": "CompleteStep" }
+          ],
+          "transitions": [],
+          "branchPoints": [],
+          "loops": [],
+          "forkPoints": [
+            {
+              "forkPointId": "import-identity-top-level-dup-Fork0",
+              "fromStepId": "s1",
+              "joinStepId": "s2",
+              "paths": [
+                { "pathId": "p0", "pathIndex": 0, "steps": [ { "kind": "skill", "stepId": "fp0", "stepName": "AnalyzeStep", "isTerminal": false, "stepType": "AnalyzeStep" } ] },
+                { "pathId": "p1", "pathIndex": 1, "steps": [ { "kind": "skill", "stepId": "fp1", "stepName": "ScoreStep", "isTerminal": false, "stepType": "ScoreStep" } ] }
+              ]
+            }
+          ],
+          "failureHandlers": [],
+          "approvalPoints": [],
+          "entryStepId": "s1",
+          "terminalStepId": "s3"
+        }
+        """;
+
     /// <summary>
     /// The JSON twin of the C# #190 path-end fixture reports AGWF036 and emits no saga.
     /// </summary>
@@ -158,8 +190,26 @@ public sealed class ImportIdentityGateTests
         await AssertRejected(result, "AGWF036", "AnalyzeStep");
     }
 
+    /// <summary>
+    /// An independent top-level step that shares a fork-path EffectiveName still
+    /// reports AGWF003. Consuming the round-trip echo must not drop the extra copy.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_IndependentTopLevelSameNameAsForkPath_ReportsAGWF003()
+    {
+        var result = RunGenerator(StepTypes, ("identity-top-level-dup.workflow.json", IndependentTopLevelSameNameJson));
+        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+    }
+
     private static async Task AssertRejected(GeneratorDriverRunResult result, string expectedId, string collidingType)
     {
+        if (!string.Equals(expectedId, "AGWF003", StringComparison.Ordinal))
+        {
+            await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull()
+                .Because("distinct instanceName values must survive import, so the collision is by type, not by name.");
+        }
+
         var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == expectedId);
         await Assert.That(diagnostic).IsNotNull()
             .Because($"the colliding import must surface {expectedId} before emission.");

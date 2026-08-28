@@ -419,7 +419,7 @@ public class DiagnosticTests
     /// Exclusive paths still key routing maps by name, so a shared EffectiveName last-write-wins.
     /// </summary>
     [Test]
-    public async Task Diagnostic_DuplicateInBranchPaths_NoDiagnostic()
+    public async Task Diagnostic_DuplicateInBranchPaths_ReportsAGWF003()
     {
         // Arrange - Same step (ValidateStep) appears in both branch paths
         var source = """
@@ -806,6 +806,108 @@ public class DiagnosticTests
                         path => path.Then<AnalyzeStep>("Technical").Then<ScoreStep>(),
                         path => path.Then<AnalyzeStep>("Fundamental").Then<RiskStep>())
                     .Join<SynthesizeStep>()
+                    .Finally<CompleteStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
+    }
+
+    /// <summary>
+    /// Two sequential forks that reuse a step type under distinct instance names
+    /// report AGWF036. Completed handlers live on one saga, so the collision is
+    /// cross-fork, not per-fork.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_InstanceNamedAnalyzeStepAcrossForks_ReportsAGWF036()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public record CrossForkState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+            }
+
+            public class PrepareStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class AnalyzeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class ScoreStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class RiskStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class SynthesizeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class CompleteStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            [Workflow("cross-fork-instance")]
+            public static partial class CrossForkInstanceWorkflow
+            {
+                public static WorkflowDefinition<CrossForkState> Definition => Workflow<CrossForkState>
+                    .Create("cross-fork-instance")
+                    .StartWith<PrepareStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Technical"),
+                        path => path.Then<ScoreStep>())
+                    .Join<SynthesizeStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Fundamental"),
+                        path => path.Then<RiskStep>())
+                    .Join<FinalizeStep>()
                     .Finally<CompleteStep>();
             }
             """;

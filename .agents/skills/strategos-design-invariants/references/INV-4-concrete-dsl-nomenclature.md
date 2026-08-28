@@ -15,7 +15,7 @@ The ontology DSL is a *different* surface. `Object`, `Property`, `Link`, `HasOne
 
 - `src/Strategos/Abstractions/IWorkflowBuilder.cs:30-320` — full DSL surface (`StartWith`, `Then`, `Finally`, `Branch`, `Fork`, `Join`, `RepeatUntil`, `AwaitApproval`, `OnFailure`)
 - `src/Strategos/Builders/Workflow.cs:25-42` — static entry `Workflow<TState>.Create(name)`
-- `grep -rin '\b(graph|node|edge|vertex)\b' src/Strategos/{Builders,Abstractions,Definitions}/` returns zero non-comment hits
+- `grep -rinE '\b(graph|node|edge|vertex)\b' src/Strategos/{Builders,Abstractions,Definitions}/ --include='*.cs' | grep -vE '^[^:]+:[0-9]+:\s*(//|\*)'` returns zero non-comment hits
 - `src/Strategos.Generators/Emitters/MermaidEmitter.cs` exists for internal diagram output — internal, not DSL
 
 ## Cross-cutting overlap

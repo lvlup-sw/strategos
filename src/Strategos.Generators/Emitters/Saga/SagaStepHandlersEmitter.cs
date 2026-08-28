@@ -174,8 +174,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             {
                 var stepName = branchCase.StepNames[i];
 
-                // Skip if already handled in main step loop
-                if (processedStepNames.Contains(stepName))
+                // Skip if already handled in main step loop or an earlier case
+                if (!processedStepNames.Add(stepName))
                 {
                     continue;
                 }

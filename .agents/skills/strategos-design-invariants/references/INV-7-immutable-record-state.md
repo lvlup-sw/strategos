@@ -12,7 +12,7 @@ This is load-bearing for event-sourcing correctness:
 - Does the proposal introduce an `IWorkflowState`-implementing type with `{ get; set; }` properties?
 - Does any step's `ExecuteAsync` write through a reference held by the input state, mutate a referenced collection, or modify a property?
 - If state needs to evolve, is the change expressed as `state with { Prop = newValue }` (returning a new record)?
-- For collections inside state: are they `IReadOnlyList<T>` / `ImmutableList<T>` / `ImmutableDictionary<K,V>`, rather than `List<T>` / `Dictionary<K,V>`?
+- For collections inside state: are they `ImmutableList<T>` / `ImmutableDictionary<K,V>` (or another truly immutable type), rather than `List<T>` / `Dictionary<K,V>`? `IReadOnlyList<T>` is a read-only view, not an immutable collection — the backing store can still mutate.
 - Are non-primitive value types nested inside state also immutable all the way down?
 
 ## Repo-grounded checks
