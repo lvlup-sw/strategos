@@ -1,4 +1,6 @@
+using System.Reflection;
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests.Builder;
 
@@ -57,5 +59,19 @@ public class IActionBuilderTests
         var result = substitute.BoundToTool("tool", "method");
 
         await Assert.That(result).IsEqualTo(substitute);
+    }
+
+    [Test]
+    public async Task Requires_IsObsolete_PointingAtActionDescriptorPreconditions()
+    {
+        var method = typeof(IActionBuilder<>)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(m => m.Name == nameof(IActionBuilder<object>.Requires));
+
+        var obsolete = method.GetCustomAttribute<ObsoleteAttribute>();
+
+        await Assert.That(obsolete).IsNotNull();
+        await Assert.That(obsolete!.Message).Contains(nameof(ActionDescriptor.Preconditions));
+        await Assert.That(obsolete.Message).Contains("no fluent successor", StringComparison.OrdinalIgnoreCase);
     }
 }

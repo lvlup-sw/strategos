@@ -1254,7 +1254,7 @@ The core `Strategos.Ontology` package includes text chunking (`ITextChunker`, `S
 | Action | `obj.Action("name")` | Operation on an Object Type, bound to a workflow or MCP tool |
 | Interface | `builder.Interface<T>()` | Polymorphic shape for cross-domain queries (backed by C# interfaces) |
 | Cross-Domain Link | `builder.CrossDomainLink("name")` | Relationship between Object Types in different domain assemblies |
-| Precondition | `.Requires(p => p.Status == Active)` | Expression predicate that must hold for an action to be valid; `ConstraintStrength` (`Hard` \| `Soft`) controls blocking vs. advisory behavior |
+| Precondition | `ActionDescriptor.Preconditions` | Descriptor-first predicates that must hold for an action to be valid; `ConstraintStrength` (`Hard` \| `Soft`) controls blocking vs. advisory behavior. Fluent `.Requires(...)` is obsolete and has no fluent successor. |
 | Postcondition | `.Modifies(p => p.Qty)`, `.CreatesLinked<T>()`, `.EmitsEvent<T>()` | Declarative effect: what an action changes upon successful execution |
 | Lifecycle | `obj.Lifecycle(p => p.Status, ...)` | State machine binding a property to states, transitions, and triggers |
 | Derivation Chain | `.Computed().DerivedFrom(p => p.X, p => p.Y)` | Dependency graph for computed properties (staleness tracking) |
@@ -1283,6 +1283,10 @@ The analyzer validates inverse link symmetry at freeze time: (1) the inverse lin
 #### 4.14.5 Action Preconditions & Postconditions
 
 Actions currently declare `Accepts<T>()`, `Returns<T>()`, and `BoundTo*()`, but nothing about **when** the action is valid or **what it changes**. An agent considering `ExecuteTrade` on a `Position` has no ontology metadata to determine that the position must be Active, or that executing a trade will modify `Quantity` and create a linked `TradeOrder`. Preconditions and postconditions serve two audiences: (1) the agent, which reads them as planning constraints during the ThinkStep, and (2) the `IActionDispatcher`, which can optionally enforce preconditions at dispatch time.
+
+:::caution[`.Requires(...)` is obsolete]
+Declare preconditions on `ActionDescriptor.Preconditions`. There is no fluent successor. The listing below is the historical CLR-generic surface; new descriptor-first authoring sets `Preconditions` on the `ActionDescriptor` directly (via `ObjectTypeFromDescriptor` / `ApplyDelta` for CLR-free types).
+:::
 
 **DSL methods on `IActionBuilder`:**
 

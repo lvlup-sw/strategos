@@ -6,6 +6,8 @@ sidebar:
 
 `Strategos.Ontology` is a type-safe semantic graph for domain modelling: Object Types, Properties, Links, Actions, Events, Lifecycles, and Interfaces declared in C# and validated at compile time by Roslyn source generators. Agents and dispatchers query the composed graph at runtime through `IOntologyQuery`. This section documents the public API surface for each package — for task-oriented walkthroughs see the [Ontology guide](/guide/ontology/).
 
+The fluent `Object<T>` / `Interface<T>` surface stays CLR-generic. `ObjectTypeFromDescriptor` / `ApplyDelta` is the first-class CLR-free path. A SymbolKey-only interface fan-out is not expressible — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/#clr-free-and-polymorphic-cannot-combine). Action preconditions are declared on `ActionDescriptor.Preconditions`; fluent `.Requires(...)` is obsolete and has no fluent successor.
+
 ## Package map
 
 | Package | Contains | Use when |

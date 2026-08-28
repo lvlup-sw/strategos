@@ -74,6 +74,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         return BoundToTool(typeof(TTool).Name, methodName);
     }
 
+    [Obsolete("Use ActionDescriptor.Preconditions to declare action preconditions. There is no fluent successor.")]
     public IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate)
     {
         var expressionString = predicate.Body.ToString();
