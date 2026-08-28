@@ -283,6 +283,11 @@ internal static class FluentDslParser
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
     /// <param name="semanticModel">The semantic model for type resolution.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="diagnostics">
+    /// Optional sink for the duplicate-permitted-fork-trigger diagnostic when one edge
+    /// permits the same trigger twice.
+    /// </param>
+    /// <param name="workflowName">The workflow name threaded into the duplicate-trigger diagnostic (optional).</param>
     /// <returns>
     /// A list of diagnostic-fork models in the order they appear in the workflow. Empty when the
     /// workflow declares no <c>AllowDiagnosticFork(...)</c> edge.
@@ -294,13 +299,15 @@ internal static class FluentDslParser
     public static IReadOnlyList<DiagnosticForkModel> ExtractDiagnosticForkModels(
         SyntaxNode typeDeclaration,
         SemanticModel semanticModel,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ICollection<Diagnostic>? diagnostics = null,
+        string? workflowName = null)
     {
         ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
         ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
 
-        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
-        return DiagnosticForkExtractor.Extract(context);
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, workflowName, cancellationToken);
+        return DiagnosticForkExtractor.Extract(context, diagnostics);
     }
 
     /// <summary>

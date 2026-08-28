@@ -122,11 +122,51 @@ internal sealed record DiagnosticForkModel(
                 nameof(permittedTriggers));
         }
 
+        var duplicates = FindDuplicateTriggerNames(permittedTriggers.Select(static t => t.TriggerName));
+        if (duplicates.Count > 0)
+        {
+            throw new ArgumentException(
+                "A diagnostic fork must declare each trigger at most once. Duplicate: "
+                    + duplicates[0] + ".",
+                nameof(permittedTriggers));
+        }
+
         return new DiagnosticForkModel(
             AnchorStepMonikers: [.. anchorStepMonikers],
             PermittedTriggers: [.. permittedTriggers],
             CompensationSeedMoniker: compensationSeedMoniker,
             MaxForks: maxForks);
+    }
+
+    /// <summary>
+    /// Returns each trigger name that appears more than once, in first-seen order.
+    /// Empty names are ignored. Used by the C# extractor and the JSON-import bridge
+    /// so a duplicate <c>PermitTrigger</c> is rejected rather than first-wins-deduped (#156.2).
+    /// </summary>
+    /// <param name="triggerNames">The trigger names declared on one edge.</param>
+    /// <returns>The duplicated names, or an empty list when every name is unique.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="triggerNames"/> is null.</exception>
+    public static IReadOnlyList<string> FindDuplicateTriggerNames(IEnumerable<string> triggerNames)
+    {
+        ThrowHelper.ThrowIfNull(triggerNames, nameof(triggerNames));
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var duplicates = new List<string>();
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in triggerNames)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            if (!seen.Add(name) && reported.Add(name))
+            {
+                duplicates.Add(name);
+            }
+        }
+
+        return duplicates;
     }
 }
 

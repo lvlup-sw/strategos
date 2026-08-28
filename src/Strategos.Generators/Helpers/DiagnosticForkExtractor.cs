@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
@@ -42,12 +43,20 @@ internal static class DiagnosticForkExtractor
     /// Extracts diagnostic-fork models from the workflow DSL.
     /// </summary>
     /// <param name="context">The parse context containing pre-computed lookups.</param>
+    /// <param name="diagnostics">
+    /// Optional sink for the duplicate-permitted-fork-trigger diagnostic when one edge
+    /// permits the same trigger twice. The edge is rejected (no model) rather than
+    /// first-wins-deduped — two same-trigger declarations can carry different evidence
+    /// schemas (#156.2).
+    /// </param>
     /// <returns>
     /// A list of diagnostic-fork models in the order they appear in the workflow. Empty when the
-    /// workflow declares no <c>AllowDiagnosticFork(...)</c> edge.
+    /// workflow declares no <c>AllowDiagnosticFork(...)</c> edge, or when every edge is rejected.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="context"/> is null.</exception>
-    public static IReadOnlyList<DiagnosticForkModel> Extract(FluentDslParseContext context)
+    public static IReadOnlyList<DiagnosticForkModel> Extract(
+        FluentDslParseContext context,
+        ICollection<Diagnostic>? diagnostics = null)
     {
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
@@ -70,7 +79,7 @@ internal static class DiagnosticForkExtractor
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            if (TryParseDiagnosticFork(invocation, context.SemanticModel, context.CancellationToken, out var model))
+            if (TryParseDiagnosticFork(invocation, context, diagnostics, out var model))
             {
                 forks.Add(model);
             }
@@ -81,8 +90,8 @@ internal static class DiagnosticForkExtractor
 
     private static bool TryParseDiagnosticFork(
         InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken,
+        FluentDslParseContext context,
+        ICollection<Diagnostic>? diagnostics,
         out DiagnosticForkModel model)
     {
         model = default!;
@@ -92,6 +101,9 @@ internal static class DiagnosticForkExtractor
         {
             return false;
         }
+
+        var semanticModel = context.SemanticModel;
+        var cancellationToken = context.CancellationToken;
 
         // Walk the staged chain in logical (source) order. DescendantNodes yields the fluent
         // chain outermost-first (MaxForks, then WithCompensationSeed, ... , Anchor innermost);
@@ -104,6 +116,8 @@ internal static class DiagnosticForkExtractor
 
         var anchors = new List<string>();
         var triggers = new List<PermittedForkTriggerModel>();
+        var seenTriggerNames = new HashSet<string>(StringComparer.Ordinal);
+        var hasDuplicateTrigger = false;
         string? compensationSeed = null;
         int? maxForks = null;
 
@@ -125,6 +139,17 @@ internal static class DiagnosticForkExtractor
             {
                 if (TryParsePermitTrigger(inv, semanticModel, out var trigger))
                 {
+                    if (!seenTriggerNames.Add(trigger.TriggerName))
+                    {
+                        hasDuplicateTrigger = true;
+                        diagnostics?.Add(Diagnostic.Create(
+                            WorkflowDiagnostics.DuplicatePermittedForkTrigger,
+                            inv.GetLocation(),
+                            context.WorkflowName ?? "(unnamed)",
+                            "AllowDiagnosticFork",
+                            trigger.TriggerName));
+                    }
+
                     triggers.Add(trigger);
                 }
             }
@@ -144,6 +169,14 @@ internal static class DiagnosticForkExtractor
                     maxForks = bound;
                 }
             }
+        }
+
+        // Reject the whole edge when a trigger is permitted twice — do not first-wins-dedup
+        // and do not call Create (which would throw). Two same-trigger declarations can
+        // carry different evidence schemas (#156.2).
+        if (hasDuplicateTrigger)
+        {
+            return false;
         }
 
         // The staged builder guarantees these floors at authoring time; a chain missing any of

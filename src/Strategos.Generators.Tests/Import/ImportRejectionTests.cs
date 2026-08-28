@@ -33,6 +33,7 @@ public sealed class ImportRejectionTests
     private const string DanglingGateIdCode = "AGWF032";
     private const string ReliabilityGateCode = "AGWF033";
     private const string ForkTriggerEvidenceCode = "AGWF034";
+    private const string DuplicatePermittedForkTriggerCode = "AGWF037";
 
     /// <summary>
     /// Real step types so a NON-rejected import can resolve its monikers and lower a saga — the
@@ -258,6 +259,62 @@ public sealed class ImportRejectionTests
         }
         """;
 
+    // Two permittedTriggers entries naming the same closed trigger on one edge, with
+    // DIFFERENT evidence schemas — the #156.2 case. First-wins dedup would silently
+    // drop one schema; AGWF037 must reject the workflow instead.
+    private const string ForkDuplicateTriggerJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-duplicate-trigger",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [ { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false } ],
+          "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "diagnosticForks": [
+            {
+              "anchorStepIds": [ "RejectStepA" ],
+              "permittedTriggers": [
+                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] },
+                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "otherStampId" ] }
+              ],
+              "maxForks": 2,
+              "compensationSeed": "RejectStepB"
+            }
+          ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // Negative control: two DISTINCT triggers on one edge stay clean — no AGWF037.
+    private const string ForkDistinctTriggersJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-distinct-triggers-ok",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [ { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false } ],
+          "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "diagnosticForks": [
+            {
+              "anchorStepIds": [ "RejectStepA" ],
+              "permittedTriggers": [
+                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] },
+                { "trigger": "GateContradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
+              ],
+              "maxForks": 2,
+              "compensationSeed": "RejectStepB"
+            }
+          ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
     // Negative control: a well-declared gate (resolvable gateId, no reliability) — DR-3 tolerated.
     private const string WellDeclaredGateJson = """
         {
@@ -372,6 +429,41 @@ public sealed class ImportRejectionTests
         await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
             .IsTrue()
             .Because("a fork import whose trigger declares its evidence floor must still lower a saga.");
+    }
+
+    /// <summary>
+    /// JSON-import twin: two permittedTriggers entries naming the same closed trigger
+    /// (different evidence schemas) fire AGWF037 and emit no saga (#156.2).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkDuplicateTrigger_IsRejected_WithAgwf037AndNoSaga()
+    {
+        var result = RunGenerator(StepTypes, ("reject-fork-duplicate-trigger.workflow.json", ForkDuplicateTriggerJson));
+        await AssertRejected(
+            result,
+            DuplicatePermittedForkTriggerCode,
+            "$.diagnosticForks[0].permittedTriggers[1]",
+            "RatificationFailure");
+    }
+
+    /// <summary>
+    /// Negative control: two DISTINCT triggers on one imported edge stay clean — no AGWF037 —
+    /// and still lower a saga.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkDistinctTriggers_IsNotRejected_AndLowersSaga()
+    {
+        var result = RunGenerator(StepTypes, ("reject-fork-distinct-triggers-ok.workflow.json", ForkDistinctTriggersJson));
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == DuplicatePermittedForkTriggerCode))
+            .IsFalse()
+            .Because("distinct permitted triggers on one imported edge must stay silent.");
+
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("a fork import with distinct permitted triggers must still lower a saga.");
     }
 
     /// <summary>

@@ -104,5 +104,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF036 — Path-end type collision.</summary>
         public const string PathEndTypeCollision = "AGWF036";
+
+        /// <summary>AGWF037 — Duplicate permitted fork trigger.</summary>
+        public const string DuplicatePermittedForkTrigger = "AGWF037";
     }
 }

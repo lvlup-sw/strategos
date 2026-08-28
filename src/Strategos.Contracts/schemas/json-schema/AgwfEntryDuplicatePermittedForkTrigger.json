@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryDuplicatePermittedForkTrigger.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF037"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Duplicate permitted fork trigger"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.11.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF037 — Duplicate permitted fork trigger (#156.2)."
+}

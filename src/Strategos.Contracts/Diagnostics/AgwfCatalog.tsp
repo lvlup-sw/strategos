@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **30 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **31 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.
@@ -52,6 +52,7 @@ enum AgwfCode {
   ImportForkTriggerWithoutEvidence: "AGWF034",
   UnreachableTermination: "AGWF035",
   PathEndTypeCollision: "AGWF036",
+  DuplicatePermittedForkTrigger: "AGWF037",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -351,5 +352,15 @@ model AgwfEntryPathEndTypeCollision {
   severity: "error";
   summary: "Path-end type collision";
   remediation: "Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types.";
+  since: "2.11.0";
+}
+
+/** AGWF037 — Duplicate permitted fork trigger (#156.2). */
+@jsonSchema
+model AgwfEntryDuplicatePermittedForkTrigger {
+  id: "AGWF037";
+  severity: "error";
+  summary: "Duplicate permitted fork trigger";
+  remediation: "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.";
   since: "2.11.0";
 }

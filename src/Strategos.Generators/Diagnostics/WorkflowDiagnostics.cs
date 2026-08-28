@@ -592,4 +592,28 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Exclusive paths that share a step type under distinct instance names cannot be lowered: completed handlers and successor maps key by step type, so instance names do not disambiguate and the emitter would produce duplicate Handle overloads.");
+
+    /// <summary>
+    /// Two <c>PermitTrigger</c> declarations on one diagnostic-fork edge name the same trigger (#156.2).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a C# <c>AllowDiagnosticFork</c> chain or an imported
+    /// <c>*.workflow.json</c> permits the same closed trigger more than once on one edge.
+    /// The runtime builder already refuses a second <c>PermitTrigger</c> for the same
+    /// <c>ForkTrigger</c>; the generator previously accepted the pair and the emitter's
+    /// per-trigger switch then failed closed as CS0152. Two same-trigger declarations can
+    /// carry different evidence schemas, so first-wins dedup would silently drop one
+    /// schema. Reject the whole workflow (no saga) with this dedicated id instead.
+    /// Argument 0 is the workflow name (C#) or import file path (JSON); argument 1 is the
+    /// edge position (<c>AllowDiagnosticFork</c> or the JSON path); argument 2 is the
+    /// duplicated trigger name.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicatePermittedForkTrigger = new(
+        id: AgwfCodes.DuplicatePermittedForkTrigger,
+        title: "Duplicate permitted fork trigger",
+        messageFormat: "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A diagnostic-fork edge may permit each closed trigger at most once. Two same-trigger declarations can carry different evidence schemas, so the pair is rejected rather than silently deduplicated.");
 }

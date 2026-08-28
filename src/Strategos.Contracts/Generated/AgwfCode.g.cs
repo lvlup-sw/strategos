@@ -139,4 +139,8 @@ public enum AgwfCode
     /// <summary>AGWF036 — Path-end type collision.</summary>
     [JsonStringEnumMemberName("AGWF036")]
     PathEndTypeCollision,
+
+    /// <summary>AGWF037 — Duplicate permitted fork trigger.</summary>
+    [JsonStringEnumMemberName("AGWF037")]
+    DuplicatePermittedForkTrigger,
 }
