@@ -494,7 +494,9 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         var diagnosticForkModels = FluentDslParser.ExtractDiagnosticForkModels(
             context.TargetNode,
             context.SemanticModel,
-            ct);
+            ct,
+            diagnostics,
+            validName);
 
         // Extract failure handler models for saga handler generation
         var failureHandlerModels = FluentDslParser.ExtractFailureHandlerModels(
@@ -925,11 +927,15 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         ReportResilienceDiagnostics(stepModels, approvalModels, validName, GetAttributeLocation(context), diagnostics);
 
         // Return null model (no code generation) when there are errors
+        var hasDuplicatePermittedForkTrigger = diagnostics.Exists(
+            static d => d.Id == WorkflowDiagnostics.DuplicatePermittedForkTrigger.Id);
+
         var hasErrors = duplicateSteps.Count > 0
             || pathEndTypeCollisions.Count > 0
             || (!hasStartWith && firstMethodName is not null)
             || hasForkWithoutJoin
-            || emptyLoops.Count > 0;
+            || emptyLoops.Count > 0
+            || hasDuplicatePermittedForkTrigger;
         if (hasErrors)
         {
             return new WorkflowGeneratorResult(null, diagnostics);

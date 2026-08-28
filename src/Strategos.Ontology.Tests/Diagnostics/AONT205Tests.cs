@@ -87,4 +87,140 @@ public class AONT205GraphFreezeTests
             }
         }
     }
+
+    [Test]
+    public async Task Build_IngestedInterfaceActionMappings_AONT205Error()
+    {
+        var graphBuilder = new OntologyGraphBuilder()
+            .AddDomain<DefectiveIngestedMappingOntology>();
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            graphBuilder.Build();
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        var aont205 = caught!.Diagnostics.FirstOrDefault(d => d.Id == "AONT205");
+        await Assert.That(aont205).IsNotNull();
+        await Assert.That(aont205!.Message).Contains("InterfaceActionMappings");
+    }
+
+    [Test]
+    public async Task Build_IngestedExternalLinkExtensionPoints_AONT205Error()
+    {
+        var graphBuilder = new OntologyGraphBuilder()
+            .AddDomain<DefectiveIngestedExtensionOntology>();
+
+        OntologyCompositionException? caught = null;
+        try
+        {
+            graphBuilder.Build();
+        }
+        catch (OntologyCompositionException ex)
+        {
+            caught = ex;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        var aont205 = caught!.Diagnostics.FirstOrDefault(d => d.Id == "AONT205");
+        await Assert.That(aont205).IsNotNull();
+        await Assert.That(aont205!.Message).Contains("ExternalLinkExtensionPoints");
+    }
+
+    [Test]
+    public async Task Build_HandAuthoredContractWithActions_DoesNotFireAONT205()
+    {
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<ContractAuthoredIntentOntology>()
+            .Build();
+
+        var position = graph.ObjectTypes.Single(ot => ot.Name == "ContractPosition");
+        await Assert.That(position.Source).IsEqualTo(DescriptorSource.HandAuthoredContract);
+        await Assert.That(position.Actions.Count).IsEqualTo(1);
+        await Assert.That(position.Actions[0].Name).IsEqualTo("Trade");
+    }
+
+    private sealed class DefectiveIngestedMappingOntology : DomainOntology
+    {
+        public override string DomainName => "Trading";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            var defect = new ObjectTypeDescriptor
+            {
+                Name = "DefectiveMapping",
+                DomainName = "Trading",
+                SymbolKey = "scip-typescript ./defect.ts#DefectiveMapping",
+                LanguageId = "typescript",
+                Source = DescriptorSource.Ingested,
+                SourceId = "marten-typescript-defect",
+                InterfaceActionMappings = new List<InterfaceActionMapping>
+                {
+                    new() { InterfaceActionName = "Search", ConcreteActionName = "SearchPositions" },
+                },
+            };
+
+            if (builder is OntologyBuilder concrete)
+            {
+                concrete.ObjectTypeFromDescriptor(defect);
+            }
+        }
+    }
+
+    private sealed class DefectiveIngestedExtensionOntology : DomainOntology
+    {
+        public override string DomainName => "Trading";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            var defect = new ObjectTypeDescriptor
+            {
+                Name = "DefectiveExtension",
+                DomainName = "Trading",
+                SymbolKey = "scip-typescript ./defect.ts#DefectiveExtension",
+                LanguageId = "typescript",
+                Source = DescriptorSource.Ingested,
+                SourceId = "marten-typescript-defect",
+                ExternalLinkExtensionPoints = new List<ExternalLinkExtensionPoint>
+                {
+                    new() { Name = "KnowledgeLinks" },
+                },
+            };
+
+            if (builder is OntologyBuilder concrete)
+            {
+                concrete.ObjectTypeFromDescriptor(defect);
+            }
+        }
+    }
+
+    private sealed class ContractAuthoredIntentOntology : DomainOntology
+    {
+        public override string DomainName => "Trading";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            var contract = new ObjectTypeDescriptor
+            {
+                Name = "ContractPosition",
+                DomainName = "Trading",
+                SymbolKey = "contract://trading/ContractPosition",
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions = new List<ActionDescriptor>
+                {
+                    new("Trade", "Contract-authored trade"),
+                },
+            };
+
+            if (builder is OntologyBuilder concrete)
+            {
+                concrete.ObjectTypeFromDescriptor(contract);
+            }
+        }
+    }
 }

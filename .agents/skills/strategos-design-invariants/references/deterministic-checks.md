@@ -99,13 +99,38 @@ Expected: empty.
 
 ```bash
 grep -rn '2024-11-05\|2025-03-26\|2025-06-18\|2025-11-25' \
-  src/Strategos.Ontology.MCP/ src/Strategos.Agents.Mcp/ \
+  src/Strategos.Ontology.MCP/ src/Strategos.Ontology.MCP.Hosting/ \
+  src/Strategos.Agents.Mcp/ \
   --include='*.cs' --include='*.md'
 ```
 
 Expected: zero hits. (Modern code targets `2026-07-28` only.) The scope covers
 `src/Strategos.Agents.Mcp/` and `*.md` because the package README carries a
-protocol pin and ships to the registry.
+protocol pin and ships to the registry. Hosting is included so a pre-2026-07-28
+response shape cannot be reintroduced on the SDK-bound `CallToolResult` bridge.
+
+### Check 3.4: `CallToolResult` constructions omit `resultType`
+
+Absent `resultType` is the pre-2026-07-28 response shape. Every
+`new CallToolResult` (or `new()` inferred as one) in Hosting must assign
+`ResultType`.
+
+```bash
+# Files that construct CallToolResult must mention ResultType:
+grep -L 'ResultType' $(grep -rlE 'new CallToolResult|CallToolResult' \
+  src/Strategos.Ontology.MCP.Hosting/ --include='*.cs')
+```
+
+Expected: empty.
+
+### Check 3.5: Tool descriptor missing optional `Icons`
+
+```bash
+grep -L 'Icons' src/Strategos.Ontology.MCP/OntologyToolDescriptor.cs
+```
+
+Expected: empty. The property is optional and must stay null when unset —
+do not flag a missing placeholder icon as a gap.
 
 ## INV-4: Concrete workflow DSL nomenclature
 

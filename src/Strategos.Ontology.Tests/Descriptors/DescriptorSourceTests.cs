@@ -25,4 +25,10 @@ public class DescriptorSourceTests
     {
         await Assert.That((int)DescriptorSource.Ingested).IsEqualTo(1);
     }
+
+    [Test]
+    public async Task DescriptorSource_HandAuthoredContract_HasValueTwo()
+    {
+        await Assert.That((int)DescriptorSource.HandAuthoredContract).IsEqualTo(2);
+    }
 }

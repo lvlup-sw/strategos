@@ -544,10 +544,13 @@ internal static class WorkflowDiagnostics
     /// </para>
     /// <para>
     /// The whole class is decidable at emission — the generator holds both the declared terminal
-    /// and each computed successor — so this reports it there. Two conditions: the declared
-    /// terminal has a main-flow successor at all, or a main-flow step's computed successor is a
-    /// step owned by a construct. Argument 0 is the step whose successor is wrong; argument 1 is
-    /// the workflow name; argument 2 is the successor it resolved to.
+    /// and each computed successor — so this reports it there. Over-reach: the declared terminal
+    /// has a main-flow successor at all, or a main-flow step's computed successor is a step
+    /// owned by a construct. Under-reach: a rejoin construct's last step does not dispatch the
+    /// declared terminal. Argument 0 is the declared terminal (under-reach) or the step whose
+    /// successor is wrong (over-reach); argument 1 is the workflow name; argument 2 is the other
+    /// step of the broken pair — the successor it resolved to, or the last step that should have
+    /// dispatched the terminal.
     /// </para>
     /// <para>
     /// An error, not a warning: a workflow that cannot reach its termination does not run. Until
@@ -558,11 +561,11 @@ internal static class WorkflowDiagnostics
     public static readonly DiagnosticDescriptor UnreachableTermination = new(
         id: AgwfCodes.UnreachableTermination,
         title: "Workflow termination is unreachable",
-        messageFormat: "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing.",
+        messageFormat: "Workflow '{1}' has an unreachable-termination pair '{0}' / '{2}'. Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A main-flow step whose successor is a step reached only through its own construct sends the saga past its declared termination. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
+        description: "Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
 
     /// <summary>
     /// Exclusive paths collide on a step type under distinct instance names (#189, #190, #191).
@@ -589,4 +592,28 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Exclusive paths that share a step type under distinct instance names cannot be lowered: completed handlers and successor maps key by step type, so instance names do not disambiguate and the emitter would produce duplicate Handle overloads.");
+
+    /// <summary>
+    /// Two <c>PermitTrigger</c> declarations on one diagnostic-fork edge name the same trigger (#156.2).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a C# <c>AllowDiagnosticFork</c> chain or an imported
+    /// <c>*.workflow.json</c> permits the same closed trigger more than once on one edge.
+    /// The runtime builder already refuses a second <c>PermitTrigger</c> for the same
+    /// <c>ForkTrigger</c>; the generator previously accepted the pair and the emitter's
+    /// per-trigger switch then failed closed as CS0152. Two same-trigger declarations can
+    /// carry different evidence schemas, so first-wins dedup would silently drop one
+    /// schema. Reject the whole workflow (no saga) with this dedicated id instead.
+    /// Argument 0 is the workflow name (C#) or import file path (JSON); argument 1 is the
+    /// edge position (<c>AllowDiagnosticFork</c> or the JSON path); argument 2 is the
+    /// duplicated trigger name.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicatePermittedForkTrigger = new(
+        id: AgwfCodes.DuplicatePermittedForkTrigger,
+        title: "Duplicate permitted fork trigger",
+        messageFormat: "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A diagnostic-fork edge may permit each closed trigger at most once. Two same-trigger declarations can carry different evidence schemas, so the pair is rejected rather than silently deduplicated.");
 }

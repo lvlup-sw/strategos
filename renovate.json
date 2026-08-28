@@ -2,6 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>lvlup-sw/.github:renovate.json",
-    "local>lvlup-sw/lvlup-claude:renovate-config/presets/dotnet.json"
+    "local>lvlup-sw/lvlup-claude:tools/renovate-config/presets/dotnet.json"
   ]
 }

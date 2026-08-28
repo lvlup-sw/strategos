@@ -103,6 +103,37 @@ public class DiagnosticForkModelTests
     }
 
     /// <summary>
+    /// Two same-trigger declarations on one edge are rejected at the IR floor — not
+    /// first-wins-deduped — because they can carry different evidence schemas (#156.2).
+    /// </summary>
+    [Test]
+    public async Task Create_WithDuplicateTrigger_ThrowsArgumentException()
+    {
+        await Assert.That(() => DiagnosticForkModel.Create(
+            anchorStepMonikers: ["Anchor"],
+            permittedTriggers:
+            [
+                Trigger("RatificationFailure", "stampId"),
+                Trigger("RatificationFailure", "otherStampId"),
+            ],
+            compensationSeedMoniker: "Seed",
+            maxForks: 1))
+            .Throws<ArgumentException>();
+    }
+
+    /// <summary>
+    /// Distinct trigger names on one edge stay unique; only a repeated name is reported.
+    /// </summary>
+    [Test]
+    public async Task FindDuplicateTriggerNames_ReportsOnlyRepeatedNames()
+    {
+        var duplicates = DiagnosticForkModel.FindDuplicateTriggerNames(
+            ["RatificationFailure", "GateContradiction", "RatificationFailure"]);
+
+        await Assert.That(duplicates).IsEquivalentTo(new[] { "RatificationFailure" });
+    }
+
+    /// <summary>
     /// Verifies that Create throws when the compensation seed is whitespace.
     /// </summary>
     [Test]

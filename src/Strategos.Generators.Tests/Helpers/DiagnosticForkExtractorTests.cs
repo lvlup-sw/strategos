@@ -173,6 +173,75 @@ public class DiagnosticForkExtractorTests
     }
 
     // =============================================================================
+    // C2. Duplicate permitted trigger (#156.2 / AGWF037)
+    // =============================================================================
+
+    /// <summary>
+    /// Two <c>PermitTrigger(ForkTrigger.X)</c> calls on one edge are rejected — no model,
+    /// and AGWF037 is reported. The twins carry different evidence schemas so first-wins
+    /// dedup would silently drop one schema.
+    /// </summary>
+    [Test]
+    public async Task Extract_DuplicatePermitTrigger_RejectsEdgeAndReportsAgwf037()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""RatifyDeployment"")
+                            .PermitTrigger(ForkTrigger.RatificationFailure, ""stampId"")
+                            .PermitTrigger(ForkTrigger.RatificationFailure, ""otherStampId"")
+                            .WithCompensationSeed(""Rollback"")
+                            .MaxForks(2))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "DuplicateTriggerWorkflow");
+        var diagnostics = new List<Diagnostic>();
+
+        var result = DiagnosticForkExtractor.Extract(context, diagnostics);
+
+        await Assert.That(result).IsEmpty();
+        await Assert.That(diagnostics.Count(d => d.Id == "AGWF037")).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("RatificationFailure");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("DuplicateTriggerWorkflow");
+    }
+
+    /// <summary>
+    /// Distinct triggers on one edge stay clean: a model is produced and AGWF037 is silent.
+    /// </summary>
+    [Test]
+    public async Task Extract_DistinctPermitTriggers_YieldsModelWithoutAgwf037()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""RatifyDeployment"")
+                            .PermitTrigger(ForkTrigger.RatificationFailure, ""stampId"")
+                            .PermitTrigger(ForkTrigger.GateContradiction, ""leftGateId"", ""rightGateId"")
+                            .WithCompensationSeed(""Rollback"")
+                            .MaxForks(2))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "DistinctTriggerWorkflow");
+        var diagnostics = new List<Diagnostic>();
+
+        var result = DiagnosticForkExtractor.Extract(context, diagnostics);
+
+        await Assert.That(result.Count).IsEqualTo(1);
+        await Assert.That(result[0].PermittedTriggerCount).IsEqualTo(2);
+        await Assert.That(diagnostics.Any(d => d.Id == "AGWF037")).IsFalse();
+    }
+
+    // =============================================================================
     // D. Facade parity — FluentDslParser delegates to the extractor
     // =============================================================================
 

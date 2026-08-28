@@ -48,9 +48,18 @@ public static class OntologyServerToolFactory
     internal const string ConstraintSummariesMetaKey = "constraintSummaries";
 
     /// <summary>
+    /// MCP 2026-07-28 <c>resultType</c> for a finished <c>tools/call</c>. The
+    /// installed 1.3.0 SDK has no <c>CallToolResult.ResultType</c>; Hosting
+    /// pins 2.2.0+ which exposes the protocol field. Always <c>complete</c> here
+    /// (final content, including <c>isError: true</c>); <c>input_required</c> is
+    /// MRTR and is not emitted.
+    /// </summary>
+    internal const string CompletedResultType = "complete";
+
+    /// <summary>
     /// Discovers the four ontology tools from <paramref name="graph"/> and adapts each into a
     /// provider-bound <see cref="McpServerTool"/>, preserving the descriptor's output schema,
-    /// annotations, title, and (for the action tool) its constraint summaries.
+    /// annotations, title, icons, and (for the action tool) its constraint summaries.
     /// </summary>
     /// <param name="graph">The ontology graph to derive tools from.</param>
     /// <returns>One provider-bound <see cref="McpServerTool"/> per discovered ontology tool.</returns>
@@ -101,7 +110,7 @@ public static class OntologyServerToolFactory
         return new OntologyAnswerComposer(new LoggingOntologyAuditSink(logger));
     }
 
-    private static McpServerTool CreateServerTool(OntologyGraph graph, OntologyToolDescriptor descriptor)
+    internal static McpServerTool CreateServerTool(OntologyGraph graph, OntologyToolDescriptor descriptor)
     {
         var handler = BuildHandler(graph, descriptor.Name);
 
@@ -118,6 +127,7 @@ public static class OntologyServerToolFactory
         };
 
         ApplyAnnotations(options, descriptor.Annotations);
+        ApplyIcons(options, descriptor.Icons);
 
         return McpServerTool.Create(handler, options);
     }
@@ -233,6 +243,23 @@ public static class OntologyServerToolFactory
         options.Destructive = annotations.DestructiveHint;
         options.Idempotent = annotations.IdempotentHint;
         options.OpenWorld = annotations.OpenWorldHint;
+    }
+
+    // Null Icons stay unset — do not invent a placeholder icon (INV-3 / #177).
+    private static void ApplyIcons(McpServerToolCreateOptions options, IReadOnlyList<ToolIcon>? icons)
+    {
+        if (icons is null)
+        {
+            return;
+        }
+
+        options.Icons = icons.Select(icon => new Icon
+        {
+            Source = icon.Source,
+            MimeType = icon.MimeType,
+            Sizes = icon.Sizes?.ToList(),
+            Theme = icon.Theme,
+        }).ToList();
     }
 
     private static JsonObject? BuildMeta(OntologyToolDescriptor descriptor)
@@ -356,6 +383,7 @@ public static class OntologyServerToolFactory
         var structured = JsonSerializer.SerializeToElement(result);
         var callResult = new CallToolResult
         {
+            ResultType = CompletedResultType,
             StructuredContent = structured,
             Meta = TraversalProvenanceMeta(result),
         };
@@ -381,6 +409,7 @@ public static class OntologyServerToolFactory
 
     private static CallToolResult ErrorResult(ResponseMeta meta, string message) => new()
     {
+        ResultType = CompletedResultType,
         IsError = true,
         Content = { new TextContentBlock { Text = message } },
         Meta = new JsonObject { [TraversalProvenanceMetaKey] = new JsonObject { ["ontologyVersion"] = meta.OntologyVersion } },

@@ -15,6 +15,13 @@ enforced by the T30 structural diff in CI).
 
 ### Added
 
+- **Diagnostics family — `AGWF037` (`DuplicatePermittedForkTrigger`, severity `error`):** a new
+  AGWF code for two `PermitTrigger` declarations on one diagnostic-fork edge that name the
+  same closed trigger. First-wins dedup would silently drop one evidence schema; the generator
+  rejects the edge on C# extract and on JSON import. Additive (a new enum member + a new
+  catalog entry), so it is a minor, non-breaking change; the package moves 0.6.0 → 0.7.0.
+  **Consumers upgrade first:** the emitted `AgwfCode` converter throws on a member it does not
+  know, so a consumer pinned to 0.6.0 cannot deserialize a payload carrying `AGWF037` (#156.2).
 - **Diagnostics family — `AGWF036` (`PathEndTypeCollision`, severity `error`):** a new
   AGWF code for exclusive paths (fork path-ends, or branch cases) that share a step
   **type** under distinct instance names. Routing maps key by step type, so instance

@@ -122,6 +122,27 @@ builder.ObjectType<TradeOrder>();
 
 The diagnostic stops the build before a descriptor that would throw at composition time can ship. If you want a `SymbolKey`-only descriptor, the analyzer message names both fix options.
 
+## CLR-free path vs fluent CLR-generic surface
+
+`ObjectTypeFromDescriptor` and `ApplyDelta` are the **first-class CLR-free path**. They accept a fully specified `ObjectTypeDescriptor` (identity by `SymbolKey`, `ClrType` left null) and are the seams `IOntologySource` uses to drain ingested types into the graph.
+
+The fluent `Object<T>` / `Interface<T>` surface stays **CLR-generic**. Those overloads take a type parameter and populate `ClrType` from it. They are not a CLR-free authoring path, and there is no `Object(symbolKey)` fluent twin that also declares a polymorphic interface.
+
+## CLR-free and polymorphic cannot combine
+
+This is the CLR-free ⊕ polymorphic limit: you can have a CLR-free (SymbolKey-only) graph, or a polymorphic (interface-typed) fan-out, but not both on the same link. `RationaleCorpusParityTests` states the expressibility bound directly:
+
+> a SymbolKey-ONLY interface fan-out is NOT expressible
+
+An `InterfaceDescriptor` carries a CLR `Type`. A CLR-free descriptor has `ClrType == null`, so it cannot also be a polymorphic interface target. The parity corpus therefore splits into two dimensions that together cover the edge surface:
+
+| Dimension | Identity | Shape | What it proves |
+|---|---|---|---|
+| A — polyglot | `SymbolKey` only (`ClrType == null`) | Monomorphic links | The CLR-free path (INV-8: identity by descriptor name / SymbolKey, never `typeof`) |
+| B — polymorphic | CLR interface-typed (`Interface<T>`) | Per-descriptor junction fan-out | Relate routes to per-implementor tables; traverse `UNION ALL`-reads them |
+
+A `SymbolKey`-only polymorphic interface is not a missing API to invent on the fluent surface — it is a type-system limit. Author CLR-free types through `ObjectTypeFromDescriptor` / `ApplyDelta` and keep them monomorphic; author polymorphic fan-out through `Interface<T>` and accept the CLR type.
+
 ## Where to go next
 
 - [Getting Started](/strategos/guide/ontology/) — the hand-authored DSL.

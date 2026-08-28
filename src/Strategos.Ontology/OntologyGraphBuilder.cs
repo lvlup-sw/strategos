@@ -8,6 +8,7 @@ using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Diagnostics;
 using Strategos.Ontology.Extensions;
+using Strategos.Ontology.Internal;
 
 namespace Strategos.Ontology;
 
@@ -477,29 +478,13 @@ public sealed class OntologyGraphBuilder
         // common case at delta-apply, but a stress scenario where two
         // ingested sources race intent fields could land a defective
         // descriptor in the merged graph. Any descriptor with
-        // Source = Ingested that carries non-empty Actions/Events or a
-        // Lifecycle survives this check as an aggregated error.
+        // Source = Ingested that carries non-empty Actions/Events,
+        // Lifecycle, InterfaceActionMappings, or ExternalLinkExtensionPoints
+        // survives this check as an aggregated error. HandAuthored and
+        // HandAuthoredContract are exempt.
         foreach (var descriptor in allObjectTypes)
         {
-            if (descriptor.Source != DescriptorSource.Ingested)
-            {
-                continue;
-            }
-
-            string? offending = null;
-            if (descriptor.Actions.Count > 0)
-            {
-                offending = "Actions";
-            }
-            else if (descriptor.Events.Count > 0)
-            {
-                offending = "Events";
-            }
-            else if (descriptor.Lifecycle is not null)
-            {
-                offending = "Lifecycle";
-            }
-
+            var offending = IngestedIntentInvariant.FindOffendingField(descriptor);
             if (offending is null)
             {
                 continue;
@@ -510,7 +495,9 @@ public sealed class OntologyGraphBuilder
                 Message:
                     $"AONT205: ingested descriptor '{descriptor.DomainName}.{descriptor.Name}' "
                     + $"contributes to intent-only field '{offending}'. Mechanical ingesters must "
-                    + "leave Actions, Events, and Lifecycle empty — those are hand-authored intent.",
+                    + "leave Actions, Events, Lifecycle, InterfaceActionMappings, and "
+                    + "ExternalLinkExtensionPoints empty — those are hand-authored or "
+                    + "contract-authored intent.",
                 Severity: OntologyDiagnosticSeverity.Error,
                 DomainName: descriptor.DomainName,
                 TypeName: descriptor.Name,

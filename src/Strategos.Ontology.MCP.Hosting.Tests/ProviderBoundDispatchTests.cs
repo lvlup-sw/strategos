@@ -127,6 +127,8 @@ public sealed class ProviderBoundDispatchTests
 
             // Assert — structured content carries the two seeded rows plus the INV-3 _meta envelope.
             await Assert.That(result.IsError ?? false).IsFalse();
+            await Assert.That(result.ResultType)
+                .IsEqualTo(OntologyServerToolFactory.CompletedResultType);
             await Assert.That(result.StructuredContent.HasValue).IsTrue();
 
             var structured = result.StructuredContent!.Value;
