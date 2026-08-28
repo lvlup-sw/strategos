@@ -24,6 +24,12 @@ public sealed record ActionDescriptor(
     /// </summary>
     public bool IsReadOnly { get; init; }
 
+    /// <summary>
+    /// Descriptor-first preconditions for this action. This is the
+    /// first-class authoring field; the fluent
+    /// <c>IActionBuilder&lt;T&gt;.Requires(...)</c> methods are obsolete
+    /// and have no fluent successor.
+    /// </summary>
     public IReadOnlyList<ActionPrecondition> Preconditions { get; init; } = [];
 
     public IReadOnlyList<ActionPostcondition> Postconditions { get; init; } = [];

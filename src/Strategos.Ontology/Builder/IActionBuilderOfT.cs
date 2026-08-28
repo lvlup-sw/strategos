@@ -26,6 +26,17 @@ public interface IActionBuilder<T> : IActionBuilder
 
     IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector);
 
+    /// <summary>
+    /// Declares a hard property-predicate precondition on the action.
+    /// </summary>
+    /// <param name="predicate">Expression evaluated against the object instance.</param>
+    /// <returns>The same generic builder instance for fluent chaining.</returns>
+    /// <remarks>
+    /// Prefer <see cref="Strategos.Ontology.Descriptors.ActionDescriptor.Preconditions"/>.
+    /// There is no fluent successor; this method remains only so existing
+    /// CLR-generic <c>Object&lt;T&gt;</c> authoring still compiles.
+    /// </remarks>
+    [Obsolete("Use ActionDescriptor.Preconditions to declare action preconditions. There is no fluent successor.")]
     IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate);
 
     IActionBuilder<T> RequiresSoft(Expression<Func<T, bool>> predicate);
