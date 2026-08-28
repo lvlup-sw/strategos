@@ -167,6 +167,37 @@ one the issue did not name.
 fail the build instead of last-write-win routing. This is a **breaking diagnostic** for workflows
 that compiled with that shape.
 
+### Residue (#185)
+
+**`AGWF035` now decides route under-reach.** The guard already reported a declared `Finally<T>` that
+was not last on the main flow, or a main-flow step whose successor was construct-owned. It was
+blind to a rejoin construct whose last step never dispatched the terminal. The under-reach arm
+fires on that shape, and stays silent when every exclusive path already `Complete()`s alongside a
+`Finally<T>` — those routes terminate without ever starting the terminal. The guard and the
+emitted `ValidTransitions` table now share one `PhaseGraph` so they cannot drift.
+
+**`AGWF037` — duplicate permitted fork trigger (error).** Two `PermitTrigger` declarations on one
+diagnostic-fork edge that name the same closed trigger fail closed before `CS0152`. First-wins
+dedup would silently drop one evidence schema. The same gate runs on C# `AllowDiagnosticFork` and
+on JSON import. `Strategos.Contracts` bumps **0.6.0 → 0.7.0**.
+
+**Renovate resolves the organisation's dotnet preset (#181).** The second `extends` entry 404'd
+because the preset lives under `tools/`, not at the repo-root path Renovate was resolving.
+
+**MCP `CallToolResult.resultType` and optional `Icons` (#176, #177).** The 1.3.0 MCP SDK has no
+`ResultType`; Hosting pins 2.2.0 so every constructed `CallToolResult` can set the 2026-07-28
+complete discriminator. `OntologyToolDescriptor.Icons` stays null when unset. INV-3 now denies the
+pre-2026-07-28 response shape instead of flagging the icon gap.
+
+**`DescriptorSource.HandAuthoredContract`.** Appended as `2` without moving `HandAuthored = 0` or
+`Ingested = 1`. AONT205 retargets to mechanical ingestion, so TypeSpec / JSON contract-authored
+actions survive graph merge.
+
+**`IActionBuilder<T>.Requires` is obsolete (#115).** Prefer `ActionDescriptor.Preconditions`. The
+method stays so existing `Object<T>` authoring still compiles; there is no fluent successor. Docs
+name `ObjectTypeFromDescriptor` / `ApplyDelta` as the CLR-free authoring seam and record that a
+SymbolKey-only interface fan-out is not expressible.
+
 ## [2.10.0] - 2026-08-07
 
 The **strategy-compiler contract layer** (roadmap #153): the shared `Strategos.Contracts`
