@@ -119,7 +119,7 @@ public static class AgwfCatalogEmitter
 
     /// <summary>
     /// Resolves <c>docs/diagnostics/agwf.md</c> at the repo root by walking up
-    /// from the output directory to the directory containing <c>src/strategos.sln</c>.
+    /// from the output directory to the directory containing <c>src/strategos.slnx</c>.
     /// Returns <see langword="null"/> when no repo root is found (e.g. the emitter
     /// is running against a throwaway output dir outside the repository).
     /// </summary>
@@ -128,7 +128,7 @@ public static class AgwfCatalogEmitter
         var dir = Path.GetFullPath(outputDir);
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.sln")))
+            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
             {
                 return Path.Combine(dir, "docs", "diagnostics", "agwf.md");
             }

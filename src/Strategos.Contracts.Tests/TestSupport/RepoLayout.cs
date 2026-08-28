@@ -9,11 +9,11 @@ namespace Strategos.Contracts.Tests;
 /// <summary>
 /// Resolves well-known paths in the Strategos repository layout relative to the
 /// running test assembly. Walks up from the build output directory to the repo
-/// root (the directory containing <c>src/strategos.sln</c>).
+/// root (the directory containing <c>src/strategos.slnx</c>).
 /// </summary>
 internal static class RepoLayout
 {
-    /// <summary>Gets the repository root (the directory containing <c>src/strategos.sln</c>).</summary>
+    /// <summary>Gets the repository root (the directory containing <c>src/strategos.slnx</c>).</summary>
     public static string RepoRoot { get; } = FindRepoRoot();
 
     /// <summary>Gets the absolute path to <c>src/Strategos.Contracts</c>.</summary>
@@ -36,7 +36,7 @@ internal static class RepoLayout
         var dir = AppContext.BaseDirectory;
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.sln")))
+            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
             {
                 return dir;
             }
@@ -45,7 +45,7 @@ internal static class RepoLayout
         }
 
         throw new InvalidOperationException(
-            "Could not locate repo root (no src/strategos.sln found walking up from "
+            "Could not locate repo root (no src/strategos.slnx found walking up from "
             + AppContext.BaseDirectory + ").");
     }
 }

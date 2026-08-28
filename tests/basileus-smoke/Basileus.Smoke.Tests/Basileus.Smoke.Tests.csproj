@@ -7,11 +7,11 @@
     LevelUp.Strategos.Agents at the version about to ship to basileus.
     Restored from a sibling local-feed/ directory populated by
     scripts/pack-to-local-feed.sh. Lives outside src/ to avoid being
-    swept into CI's main build-test job (which restores src/strategos.sln
+    swept into CI's main build-test job (which restores src/strategos.slnx
     BEFORE we have packed the local feed — chicken-and-egg).
 
-    Layout: standalone Basileus.Smoke.sln in this directory (separate
-    from src/strategos.sln). Justification documented in
+    Layout: standalone Basileus.Smoke.slnx in this directory (separate
+    from src/strategos.slnx). Justification documented in
     BasileusConsumedSurfaceTests.cs file header.
   -->
   <PropertyGroup>

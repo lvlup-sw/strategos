@@ -97,14 +97,14 @@ public sealed class RoundTripConfigExportEquivalenceTests
 
     /// <summary>
     /// Resolves the on-disk <c>roundtrip-config.workflow.json</c> import fixture by walking up from the
-    /// test assembly to the repo root (the directory holding <c>src/strategos.sln</c>).
+    /// test assembly to the repo root (the directory holding <c>src/strategos.slnx</c>).
     /// </summary>
     private static string LocateConfigImportFixture()
     {
         var dir = AppContext.BaseDirectory;
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.sln")))
+            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
             {
                 return Path.Combine(
                     dir, "src", "Strategos.Generators.Behavioral.Tests", "Workflows", "roundtrip-config.workflow.json");
@@ -114,6 +114,6 @@ public sealed class RoundTripConfigExportEquivalenceTests
         }
 
         throw new InvalidOperationException(
-            "Could not locate repo root (no src/strategos.sln) from " + AppContext.BaseDirectory);
+            "Could not locate repo root (no src/strategos.slnx) from " + AppContext.BaseDirectory);
     }
 }
