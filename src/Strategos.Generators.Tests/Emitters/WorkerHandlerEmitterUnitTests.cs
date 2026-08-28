@@ -555,6 +555,44 @@ public class WorkerHandlerEmitterUnitTests
         await Assert.That(source).DoesNotContain("ExecutePath0_");
     }
 
+    /// <summary>
+    /// Wolverine builds one <c>HandlerChain</c> per message type and invokes the handler
+    /// type's static <c>Configure</c> for EACH of them, so a handler class with a Handle
+    /// overload per path-qualified command needs an error policy per command. A single
+    /// <c>CompensatingAction&lt;T&gt;</c> pinned to one command silently no-ops on every
+    /// sibling chain (its runtime <c>is T</c> cast fails), and the failure-handler trigger
+    /// is never published for those paths.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_SharedPhaseNameForkPathEnds_ConfiguresEveryQualifiedCommand()
+    {
+        var source = WorkerHandlerEmitter.Emit(ForkPathMessageFixtures.SharedPhaseNameWithCompensation());
+
+        // One Configure, dispatching on the chain's own message type ...
+        await Assert.That(CountOccurrences(source, "public static void Configure(HandlerChain chain)")).IsEqualTo(1);
+        await Assert.That(source).Contains("if (chain.MessageType == typeof(ExecutePath0_AnalyzeStepWorkerCommand))");
+        await Assert.That(source).Contains("if (chain.MessageType == typeof(ExecutePath1_AnalyzeStepWorkerCommand))");
+
+        // ... with the compensating action typed to the command that chain actually carries.
+        await Assert.That(source).Contains(".CompensatingAction<ExecutePath0_AnalyzeStepWorkerCommand>(");
+        await Assert.That(source).Contains(".CompensatingAction<ExecutePath1_AnalyzeStepWorkerCommand>(");
+    }
+
+    /// <summary>
+    /// A handler class with a single command type keeps the undispatched policy shape —
+    /// the per-message-type guard is only introduced where there is something to dispatch.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_SingleCommandStep_ConfigureHasNoMessageTypeDispatch()
+    {
+        var source = WorkerHandlerEmitter.Emit(CreateOnFailureModel());
+
+        await Assert.That(source).Contains("public static void Configure(HandlerChain chain)");
+        await Assert.That(source).DoesNotContain("chain.MessageType == typeof(");
+    }
+
     // =============================================================================
     // Helper Methods
     // =============================================================================

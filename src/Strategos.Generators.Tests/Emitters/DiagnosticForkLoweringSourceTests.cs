@@ -299,9 +299,16 @@ public class DiagnosticForkLoweringSourceTests
         var result = GeneratorTestHelper.RunGenerator(EventSourcedForkWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "RatifyDeploySaga.g.cs");
 
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_StampStep >= 2)");
+        // The bound is checked against the folded tally: the seed-keyed 2.11.0 counter
+        // MAX the 2.10.0 positional one, so an upgraded in-flight saga does not restart
+        // its allowance at zero. Only the seed-keyed property is written forward.
+        await Assert.That(sagaSource).Contains(
+            "var edge0Admitted = DiagnosticForkCount_StampStep > DiagnosticForkCount_0 "
+            + "? DiagnosticForkCount_StampStep : DiagnosticForkCount_0;");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 2)");
         await Assert.That(sagaSource).Contains("Phase = RatifyDeployPhase.ForkBlocked;");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep++;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_0 =");
     }
 
     /// <summary>
@@ -362,7 +369,7 @@ public class DiagnosticForkLoweringSourceTests
 
         // The control-flow guards lower in document mode too.
         await Assert.That(sagaSource).Contains("ForkRatifyDeployCommand cmd,");
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_StampStep >= 2)");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 2)");
 
         // But the audit stream event record is event-sourced-only ...
         await Assert.That(eventsSource).DoesNotContain("WorkflowForked");
@@ -389,11 +396,18 @@ public class DiagnosticForkLoweringSourceTests
         await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_StampStep");
         await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_CompleteStep");
 
-        // Each edge's bound check is against its OWN seed-keyed counter.
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_StampStep >= 5)");
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_CompleteStep >= 1)");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep++;");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_CompleteStep++;");
+        // Each edge's bound check folds its OWN pair (seed-keyed 2.11.0 counter MAX the
+        // 2.10.0 positional one for the SAME edge index) — never the other edge's.
+        await Assert.That(sagaSource).Contains(
+            "var edge0Admitted = DiagnosticForkCount_StampStep > DiagnosticForkCount_0 "
+            + "? DiagnosticForkCount_StampStep : DiagnosticForkCount_0;");
+        await Assert.That(sagaSource).Contains(
+            "var edge1Admitted = DiagnosticForkCount_CompleteStep > DiagnosticForkCount_1 "
+            + "? DiagnosticForkCount_CompleteStep : DiagnosticForkCount_1;");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 5)");
+        await Assert.That(sagaSource).Contains("if (edge1Admitted >= 1)");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_CompleteStep = edge1Admitted + 1;");
 
         // No shared workflow-scoped counter survives to be starved.
         await Assert.That(sagaSource).DoesNotContain("if (DiagnosticForkCount >=");
@@ -413,8 +427,15 @@ public class DiagnosticForkLoweringSourceTests
 
         await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_StampStep");
         await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_CompleteStep");
-        await Assert.That(sagaSource).DoesNotContain("public int DiagnosticForkCount_0");
-        await Assert.That(sagaSource).DoesNotContain("public int DiagnosticForkCount_1");
+
+        // The positional properties survive ONLY as the 2.10.0 read shim, and this fixture
+        // is the reordered one: edge 0 is now the CompleteStep seed. The tally the saga
+        // WRITES stays keyed by seed, so reordering does not move a live counter — the
+        // positional name is never assigned.
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_CompleteStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge1Admitted + 1;");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_0 =");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_1 =");
     }
 
     /// <summary>
@@ -715,8 +736,10 @@ public class DiagnosticForkLoweringSourceTests
 
     /// <summary>
     /// A fork workflow whose anchor moniker (<c>Rat"ify</c>) and compensation seed
-    /// (<c>Stamp-Step</c>) carry an embedded double-quote — the M5 codegen-safety fixture
-    /// proving the emitted literals are escaped so the generated saga still compiles.
+    /// (<c>Stamp-Step</c>) are both hostile literals: the anchor carries an embedded
+    /// double-quote (escaped into the emitted string literals) and the seed carries a
+    /// hyphen (canonicalised into the <c>DiagnosticForkCount_</c> identifier suffix) —
+    /// the M5 codegen-safety fixture proving the generated saga still compiles.
     /// </summary>
     private const string HostileLiteralForkWorkflow = """"
         using System;

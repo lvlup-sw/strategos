@@ -13,7 +13,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 2147483647,
-            "description": "Number of observations the measurement was computed over."
+            "description": "Number of observations the measurement was computed over. Zero is valid:\nthe block is present (stamped) but no observations have been recorded yet.\nOmitting the reliability block on GateDeclaration is the \"never stamped\"\nstate; do not treat `sampleSize: 0` as equivalent to absence.\nKeep `@minValue(0)` (#156.1)."
         },
         "asOf": {
             "type": "string",
@@ -31,5 +31,5 @@
         "asOf",
         "source"
     ],
-    "description": "Measured-reliability telemetry for a gate (#150, DR-2).\n\nThis block is NEVER hand-authored: it is populated only from measured gate\ntelemetry, so `source` — the PROVENANCE of the measurement — is REQUIRED. A\nreliability block that omits `source` is rejected at the schema boundary\n(there is no anonymous, unattributable reliability number). The authoring\nchannel (the builder DSL / import) surfaces no reliability field at all, so\nnothing on the write path can smuggle a value in; reliability is stamped only\nfrom telemetry."
+    "description": "Measured-reliability telemetry for a gate (#150, DR-2).\n\nThis block is NEVER hand-authored: it is populated only from measured gate\ntelemetry, so `source` — the PROVENANCE of the measurement — is REQUIRED. A\nreliability block that omits `source` is rejected at the schema boundary\n(there is no anonymous, unattributable reliability number). The authoring\nchannel (the builder DSL / import) surfaces no reliability field at all, so\nnothing on the write path can smuggle a value in; reliability is stamped only\nfrom telemetry.\n\nPresence of this block is the \"stamped from telemetry\" state. That is\ndistinct from GateDeclaration omitting `reliability` (never stamped). A\nstamped block MAY report `sampleSize: 0` — measured, zero observations —\nso `@minValue(0)` is the correct floor (#156.1). Tightening to\n`@minValue(1)` would collapse those two states and is a constraint-narrow\non the shipped 0.7.0 contract; do not re-open it."
 }

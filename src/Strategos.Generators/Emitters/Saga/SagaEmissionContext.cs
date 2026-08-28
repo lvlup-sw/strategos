@@ -293,8 +293,15 @@ internal sealed class SagaEmissionContext
     /// <param name="loopPrefix">The branch's loop prefix, or null when not inside a loop.</param>
     /// <param name="effectiveName">The case step's effective name (instance or type).</param>
     /// <returns>The phase name used as the string-map key.</returns>
-    private static string ToPhaseName(string? loopPrefix, string effectiveName) =>
-        string.IsNullOrEmpty(loopPrefix) ? effectiveName : $"{loopPrefix}_{effectiveName}";
+    private static string ToPhaseName(string? loopPrefix, string effectiveName)
+    {
+        if (string.IsNullOrEmpty(loopPrefix))
+        {
+            return effectiveName;
+        }
+
+        return $"{loopPrefix}_{effectiveName}";
+    }
 
     private static IReadOnlyDictionary<string, StepModel> BuildStepsByName(WorkflowModel model)
     {

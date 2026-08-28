@@ -18,8 +18,9 @@ namespace Strategos.Contracts.Generated;
 /// `class` is the single typed gate identity (DR-1, GateClass) both runtimes
 /// consume; it is non-optional. `reliability` is optional because it is stamped
 /// from telemetry after the fact — a freshly-declared gate carries none, and no
-/// authoring channel may supply it. When present, its `source` provenance is
-/// mandatory (see GateReliability).
+/// authoring channel may supply it. Presence of the block is not the same as
+/// `sampleSize ≥ 1`: a stamped block may report zero observations (see
+/// GateReliability). When present, its `source` provenance is mandatory.
 /// </summary>
 public sealed record GateDeclaration
 {
@@ -36,7 +37,9 @@ public sealed record GateDeclaration
     public string Id { get; init; } = default!;
 
     /// <summary>
-    /// Measured-reliability telemetry — present ONLY when measured; never hand-authored.
+    /// Measured-reliability telemetry — present ONLY when stamped from telemetry;
+    /// never hand-authored. A present block with `sampleSize: 0` is &quot;measured,
+    /// zero observations,&quot; not &quot;unmeasured.&quot;
     /// </summary>
     [JsonPropertyName("reliability")]
     public GateReliability? Reliability { get; init; }

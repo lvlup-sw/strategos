@@ -157,17 +157,36 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
         // pool. Two edges that sanitize to the same key are rejected (duplicate-seed diagnostic) rather
         // than sharing a counter.
         //
-        // 2.10.0 emitted positional DiagnosticForkCount_{i}. 2.11.0 renames the persisted
-        // saga property to DiagnosticForkCount_{seed}. That is a breaking Marten document
-        // field rename; there is no dual-read shim for the positional name.
+        // 2.10.0 emitted positional DiagnosticForkCount_{i}. 2.11.0 keys the same tally by
+        // seed. Marten stores the saga as a document and drops JSON members the regenerated
+        // type no longer declares, so a rename ALONE would reset an in-flight saga's tally
+        // to 0 and admit another MaxForks forks past a bound the workflow had already
+        // reached. The legacy positional property is therefore emitted alongside as a
+        // migration shim, and the guard folds it forward (max of the two).
         if (model.HasDiagnosticForks)
         {
-            foreach (var fork in model.DiagnosticForks!)
+            var forks = model.DiagnosticForks!;
+            for (var i = 0; i < forks.Count; i++)
             {
+                var fork = forks[i];
                 sb.AppendLine("    /// <summary>");
                 sb.AppendLine($"    /// Gets or sets the number of diagnostic forks admitted by the edge seeded at {fork.CompensationSeedMoniker}.");
                 sb.AppendLine("    /// </summary>");
                 sb.AppendLine($"    public int {fork.CountPropertyName} {{ get; set; }}");
+                sb.AppendLine();
+
+                var legacyName = DiagnosticForkModel.LegacyPositionalCountPropertyName(forks, i);
+                if (legacyName is null)
+                {
+                    continue;
+                }
+
+                sb.AppendLine("    /// <summary>");
+                sb.AppendLine($"    /// Gets or sets the 2.10.0 positional tally for diagnostic-fork edge {i}, retained so");
+                sb.AppendLine($"    /// a saga persisted before the seed-keyed rename still counts against its bound.");
+                sb.AppendLine($"    /// Read-only in effect: the guard folds it into {fork.CountPropertyName} and writes only the latter.");
+                sb.AppendLine("    /// </summary>");
+                sb.AppendLine($"    public int {legacyName} {{ get; set; }}");
                 sb.AppendLine();
             }
         }

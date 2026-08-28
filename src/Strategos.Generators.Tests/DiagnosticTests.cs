@@ -1531,6 +1531,261 @@ public class DiagnosticTests
         await Assert.That(agwf014!.GetMessage()).Contains("process");
     }
 
+    /// <summary>
+    /// A branch alias shared by two cases of ONE branch is legal only when both cases use
+    /// the same step TYPE. Extraction groups step models by phase name and keeps the first,
+    /// so two different types under one alias collapse to one artifact and the second case
+    /// routes into the first case's handler — a duplicate name routing cannot disambiguate.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_BranchAliasWithDifferentStepTypes_ReportsDuplicateStepName()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+
+            public record AliasState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+            }
+
+            public class StartStep : IWorkflowStep<AliasState>
+            {
+                public Task<StepResult<AliasState>> ExecuteAsync(
+                    AliasState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<AliasState>.FromState(state));
+            }
+
+            public class ManualReviewStep : IWorkflowStep<AliasState>
+            {
+                public Task<StepResult<AliasState>> ExecuteAsync(
+                    AliasState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<AliasState>.FromState(state));
+            }
+
+            public class AutoReviewStep : IWorkflowStep<AliasState>
+            {
+                public Task<StepResult<AliasState>> ExecuteAsync(
+                    AliasState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<AliasState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<AliasState>
+            {
+                public Task<StepResult<AliasState>> ExecuteAsync(
+                    AliasState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<AliasState>.FromState(state));
+            }
+
+            [Workflow("alias-types")]
+            public static partial class AliasTypesWorkflow
+            {
+                public static WorkflowDefinition<AliasState> Definition => Workflow<AliasState>
+                    .Create("alias-types")
+                    .StartWith<StartStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<AliasState, Priority>.When(Priority.High, high => high.Then<ManualReviewStep>("Review")),
+                        BranchCase<AliasState, Priority>.When(Priority.Low, low => low.Then<AutoReviewStep>("Review")))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var duplicate = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(duplicate).IsNotNull();
+        await Assert.That(duplicate!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(duplicate.GetMessage()).Contains("Review");
+        await Assert.That(HasSaga(result)).IsFalse();
+    }
+
+    /// <summary>
+    /// Exclusivity is a property of ONE branch's cases, not of branches: two branch points
+    /// execute in sequence. A name shared across two branches therefore cannot be resolved
+    /// by the shared live-case handler, which re-reads a single branch's discriminator and
+    /// has no branch-path identity in saga state to select on.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_BranchAliasAcrossTwoBranches_ReportsDuplicateStepName()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+            public enum Region { East, West }
+
+            public record TwoBranchState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+                public Region Region { get; init; }
+            }
+
+            public class StartStep : IWorkflowStep<TwoBranchState>
+            {
+                public Task<StepResult<TwoBranchState>> ExecuteAsync(
+                    TwoBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<TwoBranchState>.FromState(state));
+            }
+
+            public class ReviewStep : IWorkflowStep<TwoBranchState>
+            {
+                public Task<StepResult<TwoBranchState>> ExecuteAsync(
+                    TwoBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<TwoBranchState>.FromState(state));
+            }
+
+            public class OtherStep : IWorkflowStep<TwoBranchState>
+            {
+                public Task<StepResult<TwoBranchState>> ExecuteAsync(
+                    TwoBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<TwoBranchState>.FromState(state));
+            }
+
+            public class MiddleStep : IWorkflowStep<TwoBranchState>
+            {
+                public Task<StepResult<TwoBranchState>> ExecuteAsync(
+                    TwoBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<TwoBranchState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<TwoBranchState>
+            {
+                public Task<StepResult<TwoBranchState>> ExecuteAsync(
+                    TwoBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<TwoBranchState>.FromState(state));
+            }
+
+            [Workflow("two-branch")]
+            public static partial class TwoBranchWorkflow
+            {
+                public static WorkflowDefinition<TwoBranchState> Definition => Workflow<TwoBranchState>
+                    .Create("two-branch")
+                    .StartWith<StartStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<TwoBranchState, Priority>.When(Priority.High, high => high.Then<ReviewStep>()),
+                        BranchCase<TwoBranchState, Priority>.When(Priority.Low, low => low.Then<OtherStep>()))
+                    .Then<MiddleStep>()
+                    .Branch(s => s.Region,
+                        BranchCase<TwoBranchState, Region>.When(Region.East, east => east.Then<ReviewStep>()),
+                        BranchCase<TwoBranchState, Region>.When(Region.West, west => west.Then<OtherStep>()))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var duplicate = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(duplicate).IsNotNull();
+        await Assert.That(duplicate!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(HasSaga(result)).IsFalse();
+    }
+
+    /// <summary>
+    /// The shared live-case completed handler stands in for the per-step completed handler,
+    /// so it must reproduce the DR-5 confidence gate: a repeated branch step configured with
+    /// <c>RequireConfidence(t).OnLowConfidence(...)</c> routes to its low-confidence handler
+    /// instead of continuing its branch.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Diagnostic_SharedBranchStepWithConfidence_GatesBeforeRouting()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+
+            public record GatedBranchState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+            }
+
+            public class StartStep : IWorkflowStep<GatedBranchState>
+            {
+                public Task<StepResult<GatedBranchState>> ExecuteAsync(
+                    GatedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<GatedBranchState>.FromState(state));
+            }
+
+            public class ScoreStep : IWorkflowStep<GatedBranchState>
+            {
+                public Task<StepResult<GatedBranchState>> ExecuteAsync(
+                    GatedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<GatedBranchState>.FromState(state));
+            }
+
+            public class EscalateStep : IWorkflowStep<GatedBranchState>
+            {
+                public Task<StepResult<GatedBranchState>> ExecuteAsync(
+                    GatedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<GatedBranchState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<GatedBranchState>
+            {
+                public Task<StepResult<GatedBranchState>> ExecuteAsync(
+                    GatedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<GatedBranchState>.FromState(state));
+            }
+
+            [Workflow("gated-branch")]
+            public static partial class GatedBranchWorkflow
+            {
+                public static WorkflowDefinition<GatedBranchState> Definition => Workflow<GatedBranchState>
+                    .Create("gated-branch")
+                    .StartWith<StartStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<GatedBranchState, Priority>.When(
+                            Priority.High,
+                            high => high.Then<ScoreStep>(step => step
+                                .RequireConfidence(0.8)
+                                .OnLowConfidence(alt => alt.Then<EscalateStep>()))),
+                        BranchCase<GatedBranchState, Priority>.When(
+                            Priority.Low,
+                            low => low.Then<ScoreStep>()))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+
+        var saga = GetSaga(result);
+
+        // One shared handler for the repeated step ...
+        await Assert.That(CountHandlerParameterLines(saga, "ScoreStepCompleted evt,")).IsEqualTo(1);
+
+        // ... and it gates on confidence before issuing the branch's successor command.
+        await Assert.That(saga).Contains("evt.Confidence is double confidenceScore && confidenceScore < 0.8");
+        await Assert.That(saga).Contains("yield return new StartEscalateStepCommand(WorkflowId);");
+    }
+
     private static bool HasSaga(GeneratorDriverRunResult result)
         => result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal));
 

@@ -13,7 +13,7 @@ namespace Strategos.Generators.Tests.Emitters;
 /// Unit tests for <see cref="ForkPathCompletedNaming"/>.
 /// </summary>
 [Property("Category", "Unit")]
-public class ForkPathCompletedNamingTests
+public sealed class ForkPathCompletedNamingTests
 {
     /// <summary>
     /// Instance-named fork path-ends that share a type use the phase name as the

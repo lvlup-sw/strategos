@@ -216,16 +216,20 @@ history. Compose `feat/185-t1a-identity-keys` + `feat/185-t1b-path-qualified-eve
 `DiagnosticForkCount` is keyed by the sanitized compensation-seed moniker, not a call-site
 index, so reordering `AllowDiagnosticFork` does not rename persisted saga properties. Two
 edges that share a seed fail closed on C# extract and JSON import rather than sharing a
-counter. 2.10.0 positional `DiagnosticForkCount_{i}` is a breaking saga-property rename in
-2.11.0 with no dual-read shim. `Strategos.Contracts` bumps **0.7.0 → 0.8.0**.
+counter — canonicalisation maps every character C# rejects in an identifier, not only `-`,
+so a seed such as `"rollback seed"` cannot emit a saga that fails to compile. The 2.10.0
+positional `DiagnosticForkCount_{i}` property is retained alongside as a read-only migration
+shim: the `maxForks` guard folds it forward (`max` of the two) and writes only the seed-keyed
+property, so a saga persisted before the rename keeps the forks it already admitted counted
+against its bound. `Strategos.Contracts` bumps **0.7.0 → 0.8.0**.
 
 **`sampleSize: 0` stays legal (`docs/156-samplesize-keep-0`).** Tightening `@minValue(0)` to
 `1` would be a constraint-narrow on just-shipped 0.7.0. A present `reliability` block with
 `sampleSize: 0` means “measured, zero observations,” which is distinct from omitting the block.
 
 **NuGet OIDC publish (`ci/147-nuget-oidc-publish`).** `publish.yml` and
-`publish-contracts.yml` take the short-lived key from `NuGet/login@v1`
-(`vars.NUGET_USER`) instead of `secrets.NUGET_API_KEY`. Trusted Publishing policies and the
+`publish-contracts.yml` take the short-lived key from `NuGet/login` — SHA-pinned, since it is
+the step that mints the push credential — (`vars.NUGET_USER`) instead of `secrets.NUGET_API_KEY`. Trusted Publishing policies and the
 `NUGET_USER` variable must exist before the next `v*` / `contracts-v*` tag.
 
 **Supply-chain workflows (`ci/147-supply-chain-workflows`).** CodeQL, dependency-review, and
@@ -238,7 +242,7 @@ publish and CI follows. `CLAUDE.md` defers to `AGENTS.md`.
 
 **Merge note — `publish.yml`.** T4 (`ci/147-nuget-oidc-publish`) and T6
 (`chore/147-slnx-claude-md`) both edit `.github/workflows/publish.yml`. The weave must keep
-both: OIDC `NuGet/login@v1` + `steps.login.outputs.NUGET_API_KEY`, and
+both: OIDC `NuGet/login` + `steps.login.outputs.NUGET_API_KEY`, and
 `SOLUTION_PATH: 'src/strategos.slnx'`.
 
 ## [2.10.0] - 2026-08-07

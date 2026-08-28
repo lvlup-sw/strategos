@@ -21,6 +21,13 @@ namespace Strategos.Contracts.Generated;
 /// channel (the builder DSL / import) surfaces no reliability field at all, so
 /// nothing on the write path can smuggle a value in; reliability is stamped only
 /// from telemetry.
+/// 
+/// Presence of this block is the &quot;stamped from telemetry&quot; state. That is
+/// distinct from GateDeclaration omitting `reliability` (never stamped). A
+/// stamped block MAY report `sampleSize: 0` — measured, zero observations —
+/// so `@minValue(0)` is the correct floor (#156.1). Tightening to
+/// `@minValue(1)` would collapse those two states and is a constraint-narrow
+/// on the shipped 0.7.0 contract; do not re-open it.
 /// </summary>
 public sealed record GateReliability
 {
@@ -31,7 +38,11 @@ public sealed record GateReliability
     public double Fpr { get; init; }
 
     /// <summary>
-    /// Number of observations the measurement was computed over.
+    /// Number of observations the measurement was computed over. Zero is valid:
+    /// the block is present (stamped) but no observations have been recorded yet.
+    /// Omitting the reliability block on GateDeclaration is the &quot;never stamped&quot;
+    /// state; do not treat `sampleSize: 0` as equivalent to absence.
+    /// Keep `@minValue(0)` (#156.1).
     /// </summary>
     [JsonPropertyName("sampleSize")]
     public int SampleSize { get; init; }

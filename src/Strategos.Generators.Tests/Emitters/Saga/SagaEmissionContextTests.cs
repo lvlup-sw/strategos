@@ -15,7 +15,7 @@ namespace Strategos.Generators.Tests.Emitters.Saga;
 /// Unit tests for <see cref="SagaEmissionContext"/>.
 /// </summary>
 [Property("Category", "Unit")]
-public class SagaEmissionContextTests
+public sealed class SagaEmissionContextTests
 {
     // ====================================================================
     // Section A: Guard Clause Tests

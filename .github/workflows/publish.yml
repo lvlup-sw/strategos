@@ -67,7 +67,10 @@ jobs:
 
       - name: NuGet login (OIDC)
         id: login
-        uses: NuGet/login@v1
+        # SHA-pinned: this step mints the NuGet push credential from the OIDC
+        # token, so a moved tag would swap the code that handles it. Renovate
+        # tracks the trailing version comment.
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: ${{ vars.NUGET_USER }}
 

@@ -533,7 +533,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                     }
 
                     occurrences.Add(new BranchCaseStepOccurrence(
-                        branch, branchCase, phaseName, successor));
+                        branch, branchCase, phaseName, successor, stepModel));
                 }
             }
         }

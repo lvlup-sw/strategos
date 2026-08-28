@@ -164,6 +164,66 @@ public class DiagnosticForkModelTests
     }
 
     /// <summary>
+    /// The seed is authored DSL text, so it may carry ANY character. Every character C#
+    /// rejects in an identifier is canonicalised, not just '-': the emitter writes
+    /// <see cref="DiagnosticForkModel.CountPropertyName"/> as a property name and as an
+    /// expression identifier, so a partial sanitizer emits a saga that will not compile.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task SanitizeCompensationSeedMoniker_CanonicalisesEveryIdentifierInvalidCharacter()
+    {
+        await Assert.That(DiagnosticForkModel.SanitizeCompensationSeedMoniker("rollback seed"))
+            .IsEqualTo("rollback_seed");
+        await Assert.That(DiagnosticForkModel.SanitizeCompensationSeedMoniker("rollback.stamp/v2"))
+            .IsEqualTo("rollback_stamp_v2");
+        await Assert.That(DiagnosticForkModel.SanitizeCompensationSeedMoniker("Rat\"ify"))
+            .IsEqualTo("Rat_ify");
+
+        // Digits and underscores are valid identifier PART characters and survive; the
+        // token is only ever a suffix of DiagnosticForkCount_, so a leading digit is fine.
+        await Assert.That(DiagnosticForkModel.SanitizeCompensationSeedMoniker("2nd_seed"))
+            .IsEqualTo("2nd_seed");
+    }
+
+    /// <summary>
+    /// Canonicalisation is many-to-one by design, and the duplicate finder keys on the same
+    /// canonical value — so two seeds that would land on ONE saga counter are reported
+    /// rather than silently merged.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task FindDuplicateCompensationSeeds_ReportsNonHyphenCanonicalCollisions()
+    {
+        var duplicates = DiagnosticForkModel.FindDuplicateCompensationSeeds(
+            ["foo bar", "foo.bar"]);
+
+        await Assert.That(duplicates).IsEquivalentTo(new[] { "foo.bar" });
+    }
+
+    /// <summary>
+    /// The 2.10.0 positional counter name is retained per edge index so an upgraded saga
+    /// keeps its tally, and is suppressed when a seed already canonicalises onto it (which
+    /// would emit a duplicate member).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task LegacyPositionalCountPropertyName_IsSuppressedOnCollisionWithASeedKey()
+    {
+        var seeded = DiagnosticForkModel.Create(
+            ["Anchor"], [Trigger("RatificationFailure", "e")], "RollbackOne", 1);
+        var collides = DiagnosticForkModel.Create(
+            ["Anchor"], [Trigger("RatificationFailure", "e")], "0", 1);
+
+        await Assert.That(DiagnosticForkModel.LegacyPositionalCountPropertyName([seeded], 0))
+            .IsEqualTo("DiagnosticForkCount_0");
+        await Assert.That(DiagnosticForkModel.LegacyPositionalCountPropertyName([seeded, collides], 0))
+            .IsNull();
+        await Assert.That(DiagnosticForkModel.LegacyPositionalCountPropertyName([seeded, collides], 1))
+            .IsEqualTo("DiagnosticForkCount_1");
+    }
+
+    /// <summary>
     /// Verifies that Create throws when the compensation seed is whitespace.
     /// </summary>
     [Test]

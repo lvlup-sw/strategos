@@ -433,11 +433,26 @@ internal static class WorkerHandlerEmitter
         if ((step is not null && (step.Retry is not null || step.Compensation is not null))
             || publishOnFailureTrigger)
         {
-            var configureCommand = naming.HasUnqualifiedUse(stepName, model) || qualified.Count == 0
-                ? workerCommandName
-                : $"Execute{qualified[0].Stem}WorkerCommand";
+            // One handler class can carry a Handle overload per path-qualified command
+            // (T1b), i.e. Wolverine builds one HandlerChain per command type over the SAME
+            // handler type and calls this Configure once for EACH of them. A single
+            // CompensatingAction<T> hard-coded to one of those commands therefore only
+            // matches on its own chain — every sibling chain's `is T` cast fails at
+            // runtime and the failure-handler trigger is never published. So the policy is
+            // emitted PER command type, selected by the chain's own MessageType.
+            var configureCommands = new List<string>();
+            if (naming.HasUnqualifiedUse(stepName, model) || qualified.Count == 0)
+            {
+                configureCommands.Add(workerCommandName);
+            }
+
+            foreach (var instance in qualified)
+            {
+                configureCommands.Add($"Execute{instance.Stem}WorkerCommand");
+            }
+
             sb.AppendLine();
-            EmitConfigureMethod(sb, model, step, stepName, configureCommand, publishOnFailureTrigger);
+            EmitConfigureMethod(sb, model, step, stepName, configureCommands, publishOnFailureTrigger);
         }
 
         sb.AppendLine("}");
@@ -474,7 +489,7 @@ internal static class WorkerHandlerEmitter
         WorkflowModel model,
         StepModel? step,
         string stepName,
-        string workerCommandName,
+        IReadOnlyList<string> workerCommandNames,
         bool publishOnFailureTrigger)
     {
         var retry = step?.Retry;
@@ -494,9 +509,54 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("    public static void Configure(HandlerChain chain)");
         sb.AppendLine("    {");
 
+        // Single command type: the chain can only be this one, so no dispatch is needed
+        // and the emitted shape is byte-identical to the pre-T1b baseline.
+        if (workerCommandNames.Count == 1)
+        {
+            EmitErrorPolicy(sb, model, stepName, workerCommandNames[0], retry, compensation, publishesTrigger, "        ");
+            sb.AppendLine("    }");
+            return;
+        }
+
+        // Path-qualified overloads: Wolverine calls Configure once per HandlerChain, one
+        // chain per command type. Apply each command's own policy to its own chain so the
+        // CompensatingAction<T> cast matches the message the chain actually carries.
+        for (var i = 0; i < workerCommandNames.Count; i++)
+        {
+            var commandName = workerCommandNames[i];
+            sb.AppendLine($"        if (chain.MessageType == typeof({commandName}))");
+            sb.AppendLine("        {");
+            EmitErrorPolicy(sb, model, stepName, commandName, retry, compensation, publishesTrigger, "            ");
+            sb.AppendLine("            return;");
+            sb.AppendLine("        }");
+            if (i < workerCommandNames.Count - 1)
+            {
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits the <c>chain.OnAnyException()</c> error-policy statement for ONE worker
+    /// command type: the retry prefix lowered from <see cref="RetryModel"/>, followed
+    /// when required by the <c>CompensatingAction&lt;{command}&gt;</c> that publishes the
+    /// failure-handler trigger.
+    /// </summary>
+    private static void EmitErrorPolicy(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        string workerCommandName,
+        RetryModel? retry,
+        CompensationModel? compensation,
+        bool publishesTrigger,
+        string indent)
+    {
         // Open the error chain. The retry prefix (if any) is emitted WITHOUT a
         // terminating ';' so a compensating action can be chained after it.
-        sb.Append("        chain.OnAnyException()");
+        sb.Append($"{indent}chain.OnAnyException()");
 
         if (retry is not null)
         {
@@ -505,19 +565,19 @@ internal static class WorkerHandlerEmitter
                 // A configured delay lowers to a per-attempt cooldown schedule.
                 var cooldowns = BuildCooldownSchedule(retry, initialDelay);
                 sb.AppendLine();
-                sb.Append($"            .RetryWithCooldown({cooldowns})");
+                sb.Append($"{indent}    .RetryWithCooldown({cooldowns})");
 
                 if (retry.UseJitter)
                 {
                     sb.AppendLine();
-                    sb.Append("            .WithExponentialJitter()");
+                    sb.Append($"{indent}    .WithExponentialJitter()");
                 }
             }
             else
             {
                 // No delay configured: a simple fixed retry count.
                 sb.AppendLine();
-                sb.Append($"            .RetryTimes({retry.MaxAttempts})");
+                sb.Append($"{indent}    .RetryTimes({retry.MaxAttempts})");
             }
         }
 
@@ -531,20 +591,20 @@ internal static class WorkerHandlerEmitter
             if (retry is not null)
             {
                 sb.AppendLine();
-                sb.Append("            .Then");
+                sb.Append($"{indent}    .Then");
             }
 
             var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
 
             sb.AppendLine();
-            sb.AppendLine($"            .CompensatingAction<{workerCommandName}>(");
-            sb.AppendLine($"                (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
-            sb.AppendLine("                    cmd.WorkflowId,");
-            sb.AppendLine($"                    \"{stepName}\",");
-            sb.AppendLine("                    ex.Message,");
-            sb.AppendLine("                    ex.GetType().Name,");
-            sb.AppendLine("                    ex.StackTrace)),");
-            sb.Append("                InvokeResult.Stop)");
+            sb.AppendLine($"{indent}    .CompensatingAction<{workerCommandName}>(");
+            sb.AppendLine($"{indent}        (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
+            sb.AppendLine($"{indent}            cmd.WorkflowId,");
+            sb.AppendLine($"{indent}            \"{stepName}\",");
+            sb.AppendLine($"{indent}            ex.Message,");
+            sb.AppendLine($"{indent}            ex.GetType().Name,");
+            sb.AppendLine($"{indent}            ex.StackTrace)),");
+            sb.Append($"{indent}        InvokeResult.Stop)");
 
             if (compensation is not null)
             {
@@ -563,8 +623,6 @@ internal static class WorkerHandlerEmitter
             // Retry-only chain: terminate the statement.
             sb.AppendLine(";");
         }
-
-        sb.AppendLine("    }");
     }
 
     /// <summary>

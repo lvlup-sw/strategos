@@ -12,7 +12,7 @@ namespace Strategos.Generators.Tests.Models;
 /// Unit tests for <see cref="PathRoutingKey"/>.
 /// </summary>
 [Property("Category", "Unit")]
-public class PathRoutingKeyTests
+public sealed class PathRoutingKeyTests
 {
     /// <summary>
     /// Fork keys encode construct, fork id, <c>Path{n}</c>, and phase name.

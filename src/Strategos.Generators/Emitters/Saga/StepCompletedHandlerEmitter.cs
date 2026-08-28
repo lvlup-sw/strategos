@@ -401,7 +401,15 @@ internal sealed class StepCompletedHandlerEmitter
     /// </summary>
     /// <param name="model">The workflow model.</param>
     /// <returns>The command name to start the failure handler step.</returns>
-    private static string GetFailedStepCommandName(WorkflowModel model)
+    /// <summary>
+    /// Resolves the start command for the workflow-level failure handler chain — the
+    /// route a completed handler takes when the reducer drives the saga into the
+    /// <c>Failed</c> phase. Shared with <see cref="BranchHandlerEmitter"/> so the branch
+    /// live-case handler emits the same guard rather than a divergent copy.
+    /// </summary>
+    /// <param name="model">The workflow model.</param>
+    /// <returns>The failure-handler start-command type name.</returns>
+    internal static string GetFailedStepCommandName(WorkflowModel model)
     {
         // Find the workflow-scoped failure handler's first step
         var workflowFailureHandler = model.FailureHandlers?

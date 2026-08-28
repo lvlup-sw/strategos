@@ -41,6 +41,21 @@ namespace Strategos.Generators.Emitters;
 /// </remarks>
 internal sealed class ForkPathCompletedNaming
 {
+    /// <summary>
+    /// Single-entry memo for one emission pass. <see cref="For"/> is called once per
+    /// emitted handler — directly and through
+    /// <c>PathEndTypeCollisionFinder.CompletedEventName</c> — and each build re-walks
+    /// every fork path, so the uncached cost is quadratic in step count for a
+    /// fork-bearing workflow and is re-paid on every keystroke in the IDE.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by REFERENCE identity on the model the emitters thread unchanged, so a
+    /// different model simply misses and rebuilds — the memo can never return a table
+    /// derived from other input. Reference assignment is atomic and the field is
+    /// volatile, so a racing pass at worst rebuilds.
+    /// </remarks>
+    private static volatile NamingMemo? memo;
+
     private readonly Dictionary<PathRoutingKey, string> _stemsByKey;
     private readonly HashSet<string> _qualifiedPhaseNames;
     private readonly HashSet<string> _sharedTypes;
@@ -74,6 +89,19 @@ internal sealed class ForkPathCompletedNaming
     {
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
+        var cached = memo;
+        if (cached is not null && ReferenceEquals(cached.Model, model))
+        {
+            return cached.Naming;
+        }
+
+        var built = Build(model);
+        memo = new NamingMemo(model, built);
+        return built;
+    }
+
+    private static ForkPathCompletedNaming Build(WorkflowModel model)
+    {
         var forkPathsByRoutingKey = SagaEmissionContext.Create(model).ForkPathsByRoutingKey;
         var phaseNameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var key in forkPathsByRoutingKey.Keys)
@@ -224,6 +252,15 @@ internal sealed class ForkPathCompletedNaming
         return [.. _qualifiedInstances.Where(i => string.Equals(i.Step.StepName, stepType, StringComparison.Ordinal))];
     }
 }
+
+/// <summary>
+/// One memoised naming table together with the model it was built from. A single
+/// reference-typed holder keeps the pair indivisible: two separate static fields could
+/// tear against each other and pair a model with another model's table.
+/// </summary>
+/// <param name="Model">The model the table was built from, compared by reference.</param>
+/// <param name="Naming">The naming table built from <paramref name="Model"/>.</param>
+internal sealed record NamingMemo(WorkflowModel Model, ForkPathCompletedNaming Naming);
 
 /// <summary>
 /// A fork-path step instance that publishes a path-qualified completed event.

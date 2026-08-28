@@ -806,11 +806,29 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             ct);
 
         // Use EffectiveName (= InstanceName ?? StepName). Same type with different instance
-        // names is not a duplicate-name error. A BranchPath-only group is not either:
-        // those cases are exclusive and the saga Handle routes by live case.
+        // names is not a duplicate-name error. A BranchPath-only group is not either —
+        // but ONLY under the two conditions the shared live-case handler actually relies on:
+        //
+        //  1. Every occurrence resolves to the SAME step TYPE. ExtractStepModels groups by
+        //     phase name and keeps the first StepModel, so `.Then<ManualReview>("Review")`
+        //     and `.Then<AutoReview>("Review")` collapse to one Review artifact and the
+        //     second case routes into the first case's handler.
+        //  2. Every occurrence lives in the SAME branch. Exclusivity is a property of one
+        //     branch's cases, not of branches: two branch points execute in sequence, so a
+        //     name shared across them is not exclusive. The shared handler resolves the live
+        //     case by re-reading that branch's discriminator, and the saga records no
+        //     branch-path identity that could say which branch it is currently in.
+        //
+        // Either condition failing is a genuine duplicate name that routing cannot
+        // disambiguate, so it is reported as WorkflowDiagnostics.DuplicateStepName at the
+        // analyzer tier (INV-5: the earliest tier that can catch it).
+        var branchIdsByStepName = BuildBranchIdsByStepName(branchModels, loopModels);
         var duplicateSteps = rawSteps
             .GroupBy(s => s.EffectiveName)
-            .Where(g => g.Count() > 1 && g.Any(s => s.Context != StepContext.BranchPath))
+            .Where(g => g.Count() > 1
+                && (g.Any(s => s.Context != StepContext.BranchPath)
+                    || g.Select(s => s.StepName).Distinct(StringComparer.Ordinal).Count() > 1
+                    || SpansMultipleBranches(branchIdsByStepName, g.Key)))
             .Select(g => g.Key)
             .ToList();
 
@@ -1148,6 +1166,77 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
         return null;
     }
+
+    /// <summary>
+    /// Maps each branch-case step name to the ids of the branches that declare it, across
+    /// the workflow's own branches and the loop-exit branches that live on
+    /// <see cref="LoopModel.BranchOnExit"/> (deliberately absent from the workflow
+    /// collection, and emitted by the same shared live-case handler).
+    /// </summary>
+    /// <param name="branchModels">The workflow's branch models.</param>
+    /// <param name="loopModels">The workflow's loop models, whose exit branches also count.</param>
+    /// <returns>Step name to the set of declaring branch ids.</returns>
+    private static Dictionary<string, HashSet<string>> BuildBranchIdsByStepName(
+        IReadOnlyList<BranchModel>? branchModels,
+        IReadOnlyList<LoopModel>? loopModels)
+    {
+        var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        void Record(BranchModel? branch)
+        {
+            if (branch is null)
+            {
+                return;
+            }
+
+            foreach (var branchCase in branch.Cases)
+            {
+                foreach (var stepName in branchCase.StepNames)
+                {
+                    if (!map.TryGetValue(stepName, out var ids))
+                    {
+                        ids = new HashSet<string>(StringComparer.Ordinal);
+                        map[stepName] = ids;
+                    }
+
+                    ids.Add(branch.BranchId);
+                }
+            }
+
+            Record(branch.NextConsecutiveBranch);
+        }
+
+        if (branchModels is not null)
+        {
+            foreach (var branch in branchModels)
+            {
+                Record(branch);
+            }
+        }
+
+        if (loopModels is not null)
+        {
+            foreach (var loop in loopModels)
+            {
+                Record(loop.BranchOnExit);
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Returns whether a branch-case step name is declared by more than one branch, which
+    /// the shared live-case completed handler cannot route: it resolves the live case from
+    /// ONE branch's discriminator, and the saga carries no branch-path identity.
+    /// </summary>
+    /// <param name="branchIdsByStepName">The step-name to branch-id map.</param>
+    /// <param name="stepName">The candidate shared branch-case step name.</param>
+    /// <returns><see langword="true"/> when two or more branches declare the name.</returns>
+    private static bool SpansMultipleBranches(
+        Dictionary<string, HashSet<string>> branchIdsByStepName,
+        string stepName)
+        => branchIdsByStepName.TryGetValue(stepName, out var ids) && ids.Count > 1;
 
     private static Location GetAttributeLocation(GeneratorAttributeSyntaxContext context)
     {
