@@ -62,6 +62,12 @@ public sealed class TradingOntology : DomainOntology
 
 The expression-tree DSL is validated by the source generator. Diagnostics in the AONT001–AONT099 range catch missing keys, broken inverse links, unreachable lifecycle states, and similar errors before your code runs.
 
+:::caution[`.Requires(...)` is obsolete]
+Declare action preconditions on `ActionDescriptor.Preconditions`. There is no fluent successor — do not invent a replacement builder method. `.Requires(...)` still compiles so existing `Object<T>` authoring keeps working, and it is the only way the CLR-generic fluent surface writes preconditions today.
+:::
+
+`Object<T>` / `Interface<T>` stay CLR-generic. The first-class CLR-free path is `ObjectTypeFromDescriptor` / `ApplyDelta` — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/).
+
 ## 2. Register the domain
 
 Call `services.AddOntology(...)` once during DI setup. The extension method instantiates each registered `DomainOntology`, drives its `Define` callback through an internal `OntologyGraphBuilder`, freezes the graph, and registers `IOntologyQuery` along with whichever provider/dispatcher you select.
@@ -114,7 +120,7 @@ public sealed class TradingService
 }
 ```
 
-`GetValidActions` filters declared actions by their `.Requires(...)` predicates against the supplied property dictionary. `GetActionConstraintReport` returns the same set with per-constraint pass/fail detail when you need a structured failure reason. `TracePostconditions` walks `.Modifies(...)`, `.CreatesLinked<T>(...)`, and `.EmitsEvent<T>(...)` declarations so an agent can plan against the effects of an action before invoking it.
+`GetValidActions` filters declared actions by their `ActionDescriptor.Preconditions` (historically populated by `.Requires(...)`) against the supplied property dictionary. `GetActionConstraintReport` returns the same set with per-constraint pass/fail detail when you need a structured failure reason. `TracePostconditions` walks `.Modifies(...)`, `.CreatesLinked<T>(...)`, and `.EmitsEvent<T>(...)` declarations so an agent can plan against the effects of an action before invoking it.
 
 To materialize the objects themselves, call `_query.GetObjectSet<T>("Position")`. The returned `ObjectSet<T>` is a composable expression tree — `Where`, `TraverseLink`, `SimilarTo`, `Include`, then `ExecuteAsync(ct)`. See [Similarity Search](/strategos/guide/ontology/similarity-search/) for the embedding-aware path.
 

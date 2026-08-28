@@ -73,14 +73,16 @@ The fluent runtime DSL passed to `DomainOntology.Define(IOntologyBuilder builder
 
 | Member | Signature | Purpose |
 |---|---|---|
-| `Object<T>` | `void Object<T>(Action<IObjectTypeBuilder<T>> configure) where T : class` | Registers `T` with its default descriptor name (`typeof(T).Name`). |
+| `Object<T>` | `void Object<T>(Action<IObjectTypeBuilder<T>> configure) where T : class` | Registers `T` with its default descriptor name (`typeof(T).Name`). CLR-generic; not a CLR-free authoring path. |
 | `Object<T>` (named) | `void Object<T>(string? name, Action<IObjectTypeBuilder<T>> configure) where T : class` | Registers `T` with an explicit descriptor name. Allows the same CLR type under multiple logical names; `name` must match `^[a-zA-Z_][a-zA-Z0-9_]*$`. |
-| `Interface<T>` | `void Interface<T>(string name, Action<IInterfaceBuilder<T>> configure) where T : class` | Registers a polymorphic interface backed by the C# interface `T`. |
+| `Interface<T>` | `void Interface<T>(string name, Action<IInterfaceBuilder<T>> configure) where T : class` | Registers a polymorphic interface backed by the C# interface `T`. Stays CLR-generic — an interface descriptor carries a CLR type. |
 | `CrossDomainLink` | `ICrossDomainLinkBuilder CrossDomainLink(string name)` | Declares a relationship between types in different domain assemblies. |
-| `ObjectTypeFromDescriptor` | `void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)` | Registers a fully-specified descriptor directly, bypassing the expression-tree DSL. Mechanism by which `IOntologySource` contributions reach the graph — ingested types may only be known by `SymbolKey` with no loaded CLR type. |
-| `ApplyDelta` | `void ApplyDelta(OntologyDelta delta)` | Applies a delta to the current builder state. Dispatches by variant; `AddObjectType` routes to `ObjectTypeFromDescriptor`. Unknown variants throw `NotSupportedException`. |
+| `ObjectTypeFromDescriptor` | `void ObjectTypeFromDescriptor(ObjectTypeDescriptor descriptor)` | **First-class CLR-free path.** Registers a fully-specified descriptor directly, bypassing the expression-tree DSL. Mechanism by which `IOntologySource` contributions reach the graph — ingested types may only be known by `SymbolKey` with no loaded CLR type. |
+| `ApplyDelta` | `void ApplyDelta(OntologyDelta delta)` | **First-class CLR-free path.** Applies a delta to the current builder state. Dispatches by variant; `AddObjectType` routes to `ObjectTypeFromDescriptor`. Unknown variants throw `NotSupportedException`. |
 
-Most consumers only call `Object`, `Interface`, and `CrossDomainLink` — `ObjectTypeFromDescriptor` and `ApplyDelta` are the seams the source-drain uses internally, exposed publicly so test wiring can replicate the drain.
+`ObjectTypeFromDescriptor` and `ApplyDelta` are the first-class CLR-free authoring seams, not internal-only leftovers. The fluent `Object<T>` / `Interface<T>` surface stays CLR-generic. A SymbolKey-only interface fan-out is **not expressible** (`RationaleCorpusParityTests`: "a SymbolKey-ONLY interface fan-out is NOT expressible") — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/#clr-free-and-polymorphic-cannot-combine).
+
+Most consumers still call `Object`, `Interface`, and `CrossDomainLink` for hand-authored CLR types. Use `ObjectTypeFromDescriptor` / `ApplyDelta` when the type has no loaded CLR type.
 
 ## Related
 
