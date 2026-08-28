@@ -15,6 +15,13 @@ namespace LevelUp.Strategos.Contracts;
  * channel (the builder DSL / import) surfaces no reliability field at all, so
  * nothing on the write path can smuggle a value in; reliability is stamped only
  * from telemetry.
+ *
+ * Presence of this block is the "stamped from telemetry" state. That is
+ * distinct from GateDeclaration omitting `reliability` (never stamped). A
+ * stamped block MAY report `sampleSize: 0` — measured, zero observations —
+ * so `@minValue(0)` is the correct floor (#156.1). Tightening to
+ * `@minValue(1)` would collapse those two states and is a constraint-narrow
+ * on the shipped 0.7.0 contract; do not re-open it.
  */
 @jsonSchema
 model GateReliability {
@@ -23,7 +30,13 @@ model GateReliability {
   @maxValue(1)
   fpr: float32;
 
-  /** Number of observations the measurement was computed over. */
+  /**
+   * Number of observations the measurement was computed over. Zero is valid:
+   * the block is present (stamped) but no observations have been recorded yet.
+   * Omitting the reliability block on GateDeclaration is the "never stamped"
+   * state; do not treat `sampleSize: 0` as equivalent to absence.
+   * Keep `@minValue(0)` (#156.1).
+   */
   @minValue(0)
   sampleSize: int32;
 
@@ -45,8 +58,9 @@ model GateReliability {
  * `class` is the single typed gate identity (DR-1, GateClass) both runtimes
  * consume; it is non-optional. `reliability` is optional because it is stamped
  * from telemetry after the fact — a freshly-declared gate carries none, and no
- * authoring channel may supply it. When present, its `source` provenance is
- * mandatory (see GateReliability).
+ * authoring channel may supply it. Presence of the block is not the same as
+ * `sampleSize ≥ 1`: a stamped block may report zero observations (see
+ * GateReliability). When present, its `source` provenance is mandatory.
  */
 @jsonSchema
 model GateDeclaration {
@@ -56,6 +70,10 @@ model GateDeclaration {
   /** Stable identifier for this gate declaration. */
   id: string;
 
-  /** Measured-reliability telemetry — present ONLY when measured; never hand-authored. */
+  /**
+   * Measured-reliability telemetry — present ONLY when stamped from telemetry;
+   * never hand-authored. A present block with `sampleSize: 0` is "measured,
+   * zero observations," not "unmeasured."
+   */
   reliability?: GateReliability;
 }
