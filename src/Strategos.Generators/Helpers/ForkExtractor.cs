@@ -260,7 +260,12 @@ internal static class ForkExtractor
         IReadOnlyList<InvocationExpressionSyntax> allInvocations,
         SemanticModel semanticModel)
     {
-        // Find the Join call that chains off this Fork
+        // Sequential forks each have their own Join. Every later Join is chained after an earlier
+        // Fork, so taking the first match in walk order binds both forks to the last Join and
+        // crashes saga emission (duplicate BuildForksByJoinStep key). Pick the nearest Join.
+        InvocationExpressionSyntax? nearestJoin = null;
+        var nearestDistance = int.MaxValue;
+
         foreach (var inv in allInvocations)
         {
             if (!SyntaxHelper.IsMethodCall(inv, "Join"))
@@ -268,32 +273,34 @@ internal static class ForkExtractor
                 continue;
             }
 
-            // Check if this Join's receiver is our Fork
-            if (inv.Expression is MemberAccessExpressionSyntax memberAccess)
+            if (!TryGetChainDistance(forkInvocation, inv, out var distance) || distance >= nearestDistance)
             {
-                if (memberAccess.Expression == forkInvocation ||
-                    IsChainedAfter(forkInvocation, inv))
-                {
-                    // Extract step name from Join<TStep>()
-                    if (inv.Expression is MemberAccessExpressionSyntax joinMemberAccess &&
-                        joinMemberAccess.Name is GenericNameSyntax genericName)
-                    {
-                        var typeArg = genericName.TypeArgumentList.Arguments.FirstOrDefault();
-                        if (typeArg is not null)
-                        {
-                            return typeArg.ToString();
-                        }
-                    }
-                }
+                continue;
+            }
+
+            nearestDistance = distance;
+            nearestJoin = inv;
+        }
+
+        if (nearestJoin?.Expression is MemberAccessExpressionSyntax joinMemberAccess &&
+            joinMemberAccess.Name is GenericNameSyntax genericName)
+        {
+            var typeArg = genericName.TypeArgumentList.Arguments.FirstOrDefault();
+            if (typeArg is not null)
+            {
+                return typeArg.ToString();
             }
         }
 
         return null;
     }
 
-    private static bool IsChainedAfter(InvocationExpressionSyntax forkInvocation, InvocationExpressionSyntax joinInvocation)
+    private static bool TryGetChainDistance(
+        InvocationExpressionSyntax forkInvocation,
+        InvocationExpressionSyntax joinInvocation,
+        out int distance)
     {
-        // Check if joinInvocation appears after forkInvocation in the chain
+        distance = 0;
         var current = joinInvocation.Expression;
 
         while (current is MemberAccessExpressionSyntax memberAccess)
@@ -303,6 +310,7 @@ internal static class ForkExtractor
                 return true;
             }
 
+            distance++;
             current = memberAccess.Expression switch
             {
                 InvocationExpressionSyntax inv => inv.Expression,

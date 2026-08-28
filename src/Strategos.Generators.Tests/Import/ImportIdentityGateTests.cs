@@ -12,9 +12,9 @@ using Microsoft.CodeAnalysis.Text;
 namespace Strategos.Generators.Tests.Import;
 
 /// <summary>
-/// JSON import must apply the same AGWF003 / AGWF036 identity gates as C#
-/// <c>[Workflow]</c> before <c>EmitWorkflowSources</c>. Sharing emitters is not
-/// sharing the gate: a colliding fork twin would otherwise lower to CS0111.
+/// JSON import must apply the same AGWF003 identity gate as C# <c>[Workflow]</c>
+/// before <c>EmitWorkflowSources</c>. Path-qualified fork Handles compose with T1b
+/// events; the import twin of #190 must emit a saga, not reject with a historical code.
 /// </summary>
 [Property("Category", "WorkflowIr")]
 public sealed class ImportIdentityGateTests
@@ -169,25 +169,28 @@ public sealed class ImportIdentityGateTests
         """;
 
     /// <summary>
-    /// The JSON twin of the C# #190 path-end fixture reports AGWF036 and emits no saga.
+    /// The JSON twin of the C# #190 path-end fixture emits a saga with path-qualified Handles.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task JsonImport_InstanceNamedForkPathEnds_ReportsAGWF036()
+    public async Task JsonImport_InstanceNamedForkPathEnds_EmitsQualifiedHandles()
     {
         var result = RunGenerator(StepTypes, ("identity-path-end.workflow.json", CollidingPathEndJson));
-        await AssertRejected(result, "AGWF036", "AnalyzeStep");
+        await AssertQualifiedForkSaga(result, "TechnicalCompleted evt,", "FundamentalCompleted evt,");
     }
 
     /// <summary>
-    /// The JSON twin of the C# fork-interior fixture reports AGWF036 and emits no saga.
+    /// The JSON twin of the C# fork-interior fixture emits a saga that chains each path's successor.
     /// </summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task JsonImport_InstanceNamedForkInteriors_ReportsAGWF036()
+    public async Task JsonImport_InstanceNamedForkInteriors_EmitsQualifiedHandles()
     {
         var result = RunGenerator(StepTypes, ("identity-interior.workflow.json", CollidingInteriorJson));
-        await AssertRejected(result, "AGWF036", "AnalyzeStep");
+        await AssertQualifiedForkSaga(result, "TechnicalCompleted evt,", "FundamentalCompleted evt,");
+        var saga = GetSaga(result);
+        await Assert.That(saga).Contains("StartScoreStepCommand");
+        await Assert.That(saga).Contains("StartRiskStepCommand");
     }
 
     /// <summary>
@@ -201,6 +204,31 @@ public sealed class ImportIdentityGateTests
         var result = RunGenerator(StepTypes, ("identity-top-level-dup.workflow.json", IndependentTopLevelSameNameJson));
         await AssertRejected(result, "AGWF003", "AnalyzeStep");
     }
+
+    private static async Task AssertQualifiedForkSaga(
+        GeneratorDriverRunResult result,
+        string firstHandleParameter,
+        string secondHandleParameter)
+    {
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        var saga = GetSaga(result);
+        await Assert.That(saga).IsNotEmpty();
+        await Assert.That(CountHandlerParameterLines(saga, firstHandleParameter)).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, secondHandleParameter)).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, "AnalyzeStepCompleted evt,")).IsEqualTo(0);
+    }
+
+    private static string GetSaga(GeneratorDriverRunResult result)
+        => result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal))
+            ?.GetText()
+            .ToString() ?? string.Empty;
+
+    private static int CountHandlerParameterLines(string generatedSource, string parameterDeclaration) =>
+        generatedSource
+            .Split('\n')
+            .Count(line => string.Equals(line.Trim(), parameterDeclaration, StringComparison.Ordinal));
 
     private static async Task AssertRejected(GeneratorDriverRunResult result, string expectedId, string collidingType)
     {

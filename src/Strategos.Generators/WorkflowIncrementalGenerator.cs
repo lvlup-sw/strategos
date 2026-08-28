@@ -174,27 +174,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Finds step types that occupy more than one exclusive path under distinct instance names.
-    /// Fork path steps (interiors and last steps) of the same fork that share <c>StepName</c> but
-    /// differ in <c>EffectiveName</c> would emit duplicate <c>Handle({Type}Completed)</c> overloads.
-    /// Branch cases that share a type under distinct instance names collide because
-    /// <c>BranchExtractor</c> records bare type names into <c>StepNames</c>.
-    /// </summary>
-    /// <param name="rawSteps">The raw extracted steps, including branch-path context.</param>
-    /// <param name="forkModels">The extracted fork models whose path steps are inspected.</param>
-    /// <returns>Distinct colliding step type names, ordered for stable diagnostics.</returns>
-    private static List<string> FindPathEndTypeCollisions(
-        IReadOnlyList<StepInfo> rawSteps,
-        IReadOnlyList<ForkModel> forkModels)
-    {
-        return PathEndTypeCollisionFinder.Find(
-            forkModels,
-            rawSteps
-                .Where(static s => s.Context == StepContext.BranchPath)
-                .Select(static s => (s.StepName, s.EffectiveName)));
-    }
-
-    /// <summary>
     /// Bridges one parsed workflow-definition import file to the generator IR (task 017). A
     /// well-formed document declaring the supported schema version is lowered through
     /// <see cref="WireToModelBridge"/> (which resolves step monikers against
@@ -815,22 +794,23 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 validName));
         }
 
-        // Context-aware duplicate step detection
-        // Use raw steps (no deduplication) with execution context to detect problematic duplicates:
-        // - Duplicates in Linear context: ERROR (same step twice in main flow)
-        // - Duplicates in ForkPath context: ERROR (same step in parallel paths causes routing issues)
-        // - Duplicates in BranchPath context: ERROR (same EffectiveName; exclusive paths still
-        //   key routing maps by name, so a shared name last-write-wins)
+        // Context-aware duplicate step detection.
+        // Use raw steps (no deduplication) with execution context:
+        // - Duplicates in Linear context: ERROR
+        // - Duplicates in ForkPath context: ERROR (parallel paths share one saga)
+        // - Duplicates in BranchPath context only: allowed — exclusive cases route
+        //   the shared completed handler by the live case (Option B).
         var rawSteps = FluentDslParser.ExtractRawStepInfos(
             context.TargetNode,
             context.SemanticModel,
             ct);
 
         // Use EffectiveName (= InstanceName ?? StepName). Same type with different instance
-        // names is not a duplicate-name error, but a path-end type collision is reported below.
+        // names is not a duplicate-name error. A BranchPath-only group is not either:
+        // those cases are exclusive and the saga Handle routes by live case.
         var duplicateSteps = rawSteps
             .GroupBy(s => s.EffectiveName)
-            .Where(g => g.Count() > 1)
+            .Where(g => g.Count() > 1 && g.Any(s => s.Context != StepContext.BranchPath))
             .Select(g => g.Key)
             .ToList();
 
@@ -841,21 +821,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 WorkflowDiagnostics.DuplicateStepName,
                 location,
                 duplicate,
-                validName));
-        }
-
-        // Path-end type collision: same step TYPE on exclusive paths under distinct instance
-        // names. Duplicate-name detection cannot see this (EffectiveNames differ) but the emitter keys
-        // Handle({Type}Completed) and branch successor maps by type, so the shape is CS0111
-        // or last-write-wins. Do not rewrite those maps — reject the shape.
-        var pathEndTypeCollisions = FindPathEndTypeCollisions(rawSteps, forkModels);
-        foreach (var collidingType in pathEndTypeCollisions)
-        {
-            var location = GetAttributeLocation(context);
-            diagnostics.Add(Diagnostic.Create(
-                WorkflowDiagnostics.PathEndTypeCollision,
-                location,
-                collidingType,
                 validName));
         }
 
@@ -931,7 +896,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             static d => d.Id == WorkflowDiagnostics.DuplicatePermittedForkTrigger.Id);
 
         var hasErrors = duplicateSteps.Count > 0
-            || pathEndTypeCollisions.Count > 0
             || (!hasStartWith && firstMethodName is not null)
             || hasForkWithoutJoin
             || emptyLoops.Count > 0

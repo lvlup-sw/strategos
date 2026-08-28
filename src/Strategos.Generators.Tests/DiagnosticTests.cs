@@ -415,11 +415,11 @@ public class DiagnosticTests
     }
 
     /// <summary>
-    /// Verifies that duplicate steps in branch paths report AGWF003 and do not emit a saga.
-    /// Exclusive paths still key routing maps by name, so a shared EffectiveName last-write-wins.
+    /// Verifies that the same EffectiveName on two exclusive branch cases emits one
+    /// completed Handle that routes both cases (Option B).
     /// </summary>
     [Test]
-    public async Task Diagnostic_DuplicateInBranchPaths_ReportsAGWF003()
+    public async Task Diagnostic_DuplicateInBranchPaths_EmitsLiveCaseHandle()
     {
         // Arrange - Same step (ValidateStep) appears in both branch paths
         var source = """
@@ -476,20 +476,20 @@ public class DiagnosticTests
         // Act
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        // Assert - Same EffectiveName in two cases of the same branch is AGWF003
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNotNull();
-        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf003.GetMessage()).Contains("ValidateStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "ValidateStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(saga).Contains("StartFinalizeStepCommand");
     }
 
     /// <summary>
-    /// #189 — a shared non-last name in two branch cases with different successors is AGWF003.
-    /// ClassifyPath / BuildBranchPathInfo stay keyed by type; the shape is rejected instead.
+    /// #189 — a shared non-last name in two branch cases with different successors emits
+    /// one Handle that routes each case to its own successor.
     /// </summary>
     [Test]
-    public async Task Diagnostic_SharedInteriorBranchStep_ReportsAGWF003()
+    public async Task Diagnostic_SharedInteriorBranchStep_RoutesByLiveCase()
     {
         var source = """
             using Strategos.Abstractions;
@@ -558,18 +558,23 @@ public class DiagnosticTests
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNotNull();
-        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf003.GetMessage()).Contains("NormalizeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "NormalizeStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(saga).Contains("StartFastTrackStepCommand");
+        await Assert.That(saga).Contains("StartSlowTrackStepCommand");
+        await Assert.That(saga).Contains("Priority.High");
+        await Assert.That(saga).Contains("Priority.Low");
     }
 
     /// <summary>
-    /// #191 — a shared last-step name across branch cases of mixed terminality is AGWF003.
+    /// #191 — a shared last-step name across branch cases of mixed terminality emits
+    /// one Handle that completes one case and rejoins the other.
     /// </summary>
     [Test]
-    public async Task Diagnostic_SharedLastStepNameMixedTerminality_ReportsAGWF003()
+    public async Task Diagnostic_SharedLastStepNameMixedTerminality_RoutesByLiveCase()
     {
         var source = """
             using Strategos.Abstractions;
@@ -638,27 +643,31 @@ public class DiagnosticTests
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNotNull();
-        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf003.GetMessage()).Contains("NormalizeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "NormalizeStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(saga).Contains("MarkCompleted()");
+        await Assert.That(saga).Contains("StartFinalizeStepCommand");
+        await Assert.That(saga).Contains("Priority.High");
+        await Assert.That(saga).Contains("Priority.Low");
     }
 
     // =============================================================================
-    // E2. Instance Name Tests (AGWF003 with InstanceName; AGWF036 path-end type)
+    // E2. Instance Name Tests (AGWF003 with InstanceName; Option B Handle routing)
     // =============================================================================
     // EffectiveName = InstanceName ?? StepName
     // - Different instance names → no AGWF003
     // - Same instance names → still report AGWF003
-    // - Same type, distinct instance names at fork path-ends or across branch cases → AGWF036
+    // - Same type, distinct instance names at fork path-ends → path-qualified Handle
 
     /// <summary>
-    /// #190 — two instance-named fork paths ending in the same step type report AGWF036,
-    /// block generation, and do not produce CS0111 duplicate Handle overloads.
+    /// #190 — two instance-named fork paths ending in the same step type emit distinct
+    /// Handle({PhaseName}Completed) overloads and do not produce CS0111.
     /// </summary>
     [Test]
-    public async Task Diagnostic_InstanceNamedForkPathEnds_ReportsAGWF036()
+    public async Task Diagnostic_InstanceNamedForkPathEnds_EmitsQualifiedHandles()
     {
         // Arrange - Same step type (AnalyzeStep) but different instance names at path end
         var source = """
@@ -721,24 +730,25 @@ public class DiagnosticTests
         var result = GeneratorTestHelper.RunGenerator(source);
         var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
 
-        // Assert - Distinct instance names are not AGWF003; the type collision is AGWF036
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNull();
-        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
-        await Assert.That(agwf036).IsNotNull();
-        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "TechnicalCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, "FundamentalCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, "AnalyzeStepCompleted evt,")).IsEqualTo(0);
+        await Assert.That(saga).Contains("Path0Status");
+        await Assert.That(saga).Contains("Path1Status");
         await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
     }
 
     /// <summary>
     /// #190 interiors — two instance-named fork-path steps of the same type that are
-    /// not path-ends still report AGWF036. Completed handlers key by type for every
-    /// exclusive-path step, not only last steps.
+    /// not path-ends emit distinct Handle({PhaseName}Completed) overloads that chain
+    /// to each path's own successor.
     /// </summary>
     [Test]
-    public async Task Diagnostic_InstanceNamedForkInteriors_ReportsAGWF036()
+    public async Task Diagnostic_InstanceNamedForkInteriors_EmitsQualifiedHandles()
     {
         var source = """
             using Strategos.Abstractions;
@@ -813,23 +823,24 @@ public class DiagnosticTests
         var result = GeneratorTestHelper.RunGenerator(source);
         var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
 
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNull();
-        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
-        await Assert.That(agwf036).IsNotNull();
-        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "TechnicalCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, "FundamentalCompleted evt,")).IsEqualTo(1);
+        await Assert.That(saga).Contains("StartScoreStepCommand");
+        await Assert.That(saga).Contains("StartRiskStepCommand");
         await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
     }
 
     /// <summary>
     /// Two sequential forks that reuse a step type under distinct instance names
-    /// report AGWF036. Completed handlers live on one saga, so the collision is
-    /// cross-fork, not per-fork.
+    /// emit path-qualified Handles. Completed handlers live on one saga, so
+    /// qualification is cross-fork, not per-fork.
     /// </summary>
     [Test]
-    public async Task Diagnostic_InstanceNamedAnalyzeStepAcrossForks_ReportsAGWF036()
+    public async Task Diagnostic_InstanceNamedAnalyzeStepAcrossForks_EmitsQualifiedHandles()
     {
         var source = """
             using Strategos.Abstractions;
@@ -915,22 +926,21 @@ public class DiagnosticTests
         var result = GeneratorTestHelper.RunGenerator(source);
         var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
 
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNull();
-        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
-        await Assert.That(agwf036).IsNotNull();
-        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "TechnicalCompleted evt,")).IsEqualTo(1);
+        await Assert.That(CountHandlerParameterLines(saga, "FundamentalCompleted evt,")).IsEqualTo(1);
         await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
     }
 
     /// <summary>
-    /// Branch cases that share a step type under distinct instance names report AGWF036:
-    /// BranchExtractor records bare type names, so instance names would not disambiguate.
+    /// Branch cases that share a step type under distinct instance names emit one
+    /// Handle({StepType}Completed) that routes by the live case's phase.
     /// </summary>
     [Test]
-    public async Task Diagnostic_InstanceNamedBranchCases_ReportsAGWF036()
+    public async Task Diagnostic_InstanceNamedBranchCases_RoutesByLivePhase()
     {
         var source = """
             using Strategos.Abstractions;
@@ -985,13 +995,14 @@ public class DiagnosticTests
 
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNull();
-        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
-        await Assert.That(agwf036).IsNotNull();
-        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(agwf036.GetMessage()).Contains("NormalizeStep");
-        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
+        await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
+        await Assert.That(HasSaga(result)).IsTrue();
+        var saga = GetSaga(result);
+        await Assert.That(CountHandlerParameterLines(saga, "NormalizeStepCompleted evt,")).IsEqualTo(1);
+        await Assert.That(saga).Contains("HighNorm");
+        await Assert.That(saga).Contains("LowNorm");
+        await Assert.That(saga).Contains("StartFinalizeStepCommand");
     }
 
     /// <summary>
@@ -1520,4 +1531,15 @@ public class DiagnosticTests
 
     private static bool HasSaga(GeneratorDriverRunResult result)
         => result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal));
+
+    private static string GetSaga(GeneratorDriverRunResult result)
+        => result.GeneratedTrees
+            .First(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal))
+            .GetText()
+            .ToString();
+
+    private static int CountHandlerParameterLines(string generatedSource, string parameterDeclaration) =>
+        generatedSource
+            .Split('\n')
+            .Count(line => string.Equals(line.Trim(), parameterDeclaration, StringComparison.Ordinal));
 }
