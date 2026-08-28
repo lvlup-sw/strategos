@@ -135,4 +135,8 @@ public enum AgwfCode
     /// <summary>AGWF035 — Workflow termination is unreachable.</summary>
     [JsonStringEnumMemberName("AGWF035")]
     UnreachableTermination,
+
+    /// <summary>AGWF036 — Path-end type collision.</summary>
+    [JsonStringEnumMemberName("AGWF036")]
+    PathEndTypeCollision,
 }

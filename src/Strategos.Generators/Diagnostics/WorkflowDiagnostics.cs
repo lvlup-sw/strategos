@@ -563,4 +563,30 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A main-flow step whose successor is a step reached only through its own construct sends the saga past its declared termination. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
+
+    /// <summary>
+    /// Exclusive paths collide on a step type under distinct instance names (#189, #190, #191).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Fork already rejects duplicate <c>EffectiveName</c>s (<see cref="DuplicateStepName"/>). Two
+    /// fork paths of the same fork whose last steps share <c>StepName</c> (type) but differ in
+    /// <c>InstanceName</c> compile past that check and emit duplicate
+    /// <c>Handle({Type}Completed)</c> overloads (CS0111). Branch cases that share a step type
+    /// under distinct instance names have the same problem: the extractor records bare type names
+    /// into <c>StepNames</c>, so instance names do not disambiguate the successor map.
+    /// </para>
+    /// <para>
+    /// An error that blocks generation: a CS0111 in generated code is worse than a diagnostic.
+    /// Authors who need the same step type on exclusive paths must use distinct types.
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PathEndTypeCollision = new(
+        id: AgwfCodes.PathEndTypeCollision,
+        title: "Path-end type collision",
+        messageFormat: "Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Exclusive paths that share a step type under distinct instance names cannot be lowered: path-end handlers and successor maps key by step type, so instance names do not disambiguate and the emitter would produce duplicate Handle overloads.");
 }
