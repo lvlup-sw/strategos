@@ -501,6 +501,61 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     // =============================================================================
+    // N. Path-qualified fork worker handles (T1b / Option B)
+    // =============================================================================
+
+    /// <summary>
+    /// Shared-type fork path-ends keep one handler class per type with Handle
+    /// overloads that return the phase-named completed events.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkPathEnds_HandleOverloadsReturnPhaseNamedEvents()
+    {
+        var source = WorkerHandlerEmitter.Emit(ForkPathMessageFixtures.SharedTypeInstanceNamed());
+
+        await Assert.That(CountOccurrences(source, "public sealed partial class AnalyzeStepHandler")).IsEqualTo(1);
+        await Assert.That(source).Contains("public async Task<TechnicalCompleted> Handle(");
+        await Assert.That(source).Contains("ExecuteTechnicalWorkerCommand command");
+        await Assert.That(source).Contains("return new TechnicalCompleted(");
+        await Assert.That(source).Contains("public async Task<FundamentalCompleted> Handle(");
+        await Assert.That(source).Contains("ExecuteFundamentalWorkerCommand command");
+        await Assert.That(source).Contains("return new FundamentalCompleted(");
+        await Assert.That(source).DoesNotContain("Task<AnalyzeStepCompleted> Handle");
+        await Assert.That(source).DoesNotContain("TechnicalHandler");
+        await Assert.That(source).DoesNotContain("FundamentalHandler(");
+    }
+
+    /// <summary>
+    /// Colliding phase names bind Handle to path-qualified command and event types.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedPhaseNameForkPathEnds_HandleOverloadsUsePathQualifiedTypes()
+    {
+        var source = WorkerHandlerEmitter.Emit(ForkPathMessageFixtures.SharedPhaseName());
+
+        await Assert.That(source).Contains("public async Task<Path0_AnalyzeStepCompleted> Handle(");
+        await Assert.That(source).Contains("ExecutePath0_AnalyzeStepWorkerCommand command");
+        await Assert.That(source).Contains("return new Path0_AnalyzeStepCompleted(");
+        await Assert.That(source).Contains("public async Task<Path1_AnalyzeStepCompleted> Handle(");
+        await Assert.That(source).Contains("ExecutePath1_AnalyzeStepWorkerCommand command");
+        await Assert.That(source).DoesNotContain("Task<AnalyzeStepCompleted> Handle");
+    }
+
+    /// <summary>
+    /// Unique-type fork paths keep the type-level Handle signature.
+    /// </summary>
+    [Test]
+    public async Task Emit_UniqueTypeForkPaths_KeepsTypeLevelHandle()
+    {
+        var source = WorkerHandlerEmitter.Emit(ForkPathMessageFixtures.UniqueTypes());
+
+        await Assert.That(source).Contains("public async Task<TechnicalAnalyzeStepCompleted> Handle(");
+        await Assert.That(source).Contains("ExecuteTechnicalAnalyzeStepWorkerCommand command");
+        await Assert.That(source).Contains("public async Task<FundamentalAnalyzeStepCompleted> Handle(");
+        await Assert.That(source).DoesNotContain("ExecutePath0_");
+    }
+
+    // =============================================================================
     // Helper Methods
     // =============================================================================
 

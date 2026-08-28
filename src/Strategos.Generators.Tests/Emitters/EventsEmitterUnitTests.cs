@@ -707,6 +707,68 @@ public class EventsEmitterUnitTests
     }
 
     // =============================================================================
+    // G. Path-qualified fork completed events (T1b / Option B)
+    // =============================================================================
+
+    /// <summary>
+    /// Fork-path instances that share a type publish <c>{PhaseName}Completed</c>,
+    /// matching <c>Start{PhaseName}Command</c>. The type-level event is omitted.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkPathEnds_EmitsPhaseNamedCompletedEvents()
+    {
+        var source = EventsEmitter.Emit(ForkPathMessageFixtures.SharedTypeInstanceNamed());
+
+        await Assert.That(source).Contains("public sealed partial record TechnicalCompleted");
+        await Assert.That(source).Contains("public sealed partial record FundamentalCompleted");
+        await Assert.That(source).Contains("public sealed partial record PrepareStepCompleted");
+        await Assert.That(source).Contains("public sealed partial record SynthesizeStepCompleted");
+        await Assert.That(source).DoesNotContain("public sealed partial record AnalyzeStepCompleted");
+    }
+
+    /// <summary>
+    /// When two path-ends share a phase name, completed events are path-qualified.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedPhaseNameForkPathEnds_EmitsPathQualifiedCompletedEvents()
+    {
+        var source = EventsEmitter.Emit(ForkPathMessageFixtures.SharedPhaseName());
+
+        await Assert.That(source).Contains("public sealed partial record Path0_AnalyzeStepCompleted");
+        await Assert.That(source).Contains("public sealed partial record Path1_AnalyzeStepCompleted");
+        await Assert.That(source).DoesNotContain("public sealed partial record AnalyzeStepCompleted");
+    }
+
+    /// <summary>
+    /// Unique-type fork paths keep <c>{StepType}Completed</c>.
+    /// </summary>
+    [Test]
+    public async Task Emit_UniqueTypeForkPaths_KeepsStepTypeCompletedEvents()
+    {
+        var source = EventsEmitter.Emit(ForkPathMessageFixtures.UniqueTypes());
+
+        await Assert.That(source).Contains("public sealed partial record TechnicalAnalyzeStepCompleted");
+        await Assert.That(source).Contains("public sealed partial record FundamentalAnalyzeStepCompleted");
+        await Assert.That(source).DoesNotContain("public sealed partial record Path0_");
+    }
+
+    /// <summary>
+    /// Shared-type interiors also publish phase-named completed events.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkInteriors_EmitsPhaseNamedCompletedEvents()
+    {
+        var source = EventsEmitter.Emit(ForkPathMessageFixtures.SharedTypeInteriors());
+
+        await Assert.That(source).Contains("public sealed partial record TechnicalIntakeCompleted");
+        await Assert.That(source).Contains("public sealed partial record FundamentalIntakeCompleted");
+        await Assert.That(source).Contains("public sealed partial record TechReportCompleted");
+        await Assert.That(source).Contains("public sealed partial record FundReportCompleted");
+        await Assert.That(source).DoesNotContain("public sealed partial record AnalyzeStepCompleted");
+        await Assert.That(source).DoesNotContain("public sealed partial record ReportStepCompleted");
+    }
+
+    // =============================================================================
     // Helper Methods
     // =============================================================================
 

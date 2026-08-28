@@ -32,6 +32,7 @@ internal static class WorkerHandlerEmitter
     {
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
+        var naming = ForkPathCompletedNaming.For(model);
         var sb = new StringBuilder();
 
         // File header
@@ -90,6 +91,15 @@ internal static class WorkerHandlerEmitter
             }
         }
 
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            var ns = GetNamespaceFromTypeName(instance.Step.StepTypeName);
+            if (!string.IsNullOrEmpty(ns) && !usings.Contains(ns))
+            {
+                usings.Add(ns);
+            }
+        }
+
         FileHeaderHelper.AppendUsings(sb, usings.ToArray());
 
         // Namespace
@@ -105,7 +115,7 @@ internal static class WorkerHandlerEmitter
             {
                 if (emittedStepNames.Add(step.StepName))
                 {
-                    EmitHandlerClass(sb, model, step);
+                    EmitHandlerClass(sb, model, step, naming);
                     sb.AppendLine();
                 }
             }
@@ -117,7 +127,7 @@ internal static class WorkerHandlerEmitter
             {
                 if (emittedStepNames.Add(stepName))
                 {
-                    EmitHandlerClassFromName(sb, model, stepName);
+                    EmitHandlerClassFromName(sb, model, stepName, naming);
                     sb.AppendLine();
                 }
             }
@@ -135,11 +145,23 @@ internal static class WorkerHandlerEmitter
                     {
                         if (emittedStepNames.Add(stepName))
                         {
-                            EmitHandlerClassFromName(sb, model, stepName);
+                            EmitHandlerClassFromName(sb, model, stepName, naming);
                             sb.AppendLine();
                         }
                     }
                 }
+            }
+        }
+
+        // Shared-type fork path steps may exist only on Forks when a unit-test
+        // model omits them from Steps. Emit the type handler so the qualified
+        // worker commands have a receiver.
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            if (emittedStepNames.Add(instance.Step.StepName))
+            {
+                EmitHandlerClass(sb, model, instance.Step, naming);
+                sb.AppendLine();
             }
         }
 
@@ -257,14 +279,22 @@ internal static class WorkerHandlerEmitter
         return lastDot > 0 ? typeName.Substring(0, lastDot) : string.Empty;
     }
 
-    private static void EmitHandlerClass(StringBuilder sb, WorkflowModel model, StepModel step)
+    private static void EmitHandlerClass(
+        StringBuilder sb,
+        WorkflowModel model,
+        StepModel step,
+        ForkPathCompletedNaming naming)
     {
-        EmitHandlerClassCore(sb, model, step.StepName, step);
+        EmitHandlerClassCore(sb, model, step.StepName, step, naming);
     }
 
-    private static void EmitHandlerClassFromName(StringBuilder sb, WorkflowModel model, string stepName)
+    private static void EmitHandlerClassFromName(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        ForkPathCompletedNaming naming)
     {
-        EmitHandlerClassCore(sb, model, stepName, step: null);
+        EmitHandlerClassCore(sb, model, stepName, step: null, naming);
     }
 
     /// <summary>
@@ -292,8 +322,20 @@ internal static class WorkerHandlerEmitter
         return set;
     }
 
-    private static void EmitHandlerClassCore(StringBuilder sb, WorkflowModel model, string stepName, StepModel? step)
+    private static void EmitHandlerClassCore(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        StepModel? step,
+        ForkPathCompletedNaming naming)
     {
+        var qualified = naming.InstancesForType(stepName);
+        var hasUnqualified = naming.HasUnqualifiedUse(stepName, model);
+        if (!hasUnqualified && qualified.Count == 0)
+        {
+            hasUnqualified = true;
+        }
+
         var workerCommandName = $"Execute{stepName}WorkerCommand";
         var completedEventName = $"{stepName}Completed";
         var handlerClassName = $"{stepName}Handler";
@@ -344,8 +386,31 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine($"    private readonly ILogger<{handlerClassName}> _logger = logger;");
         sb.AppendLine();
 
-        // Handle method
-        EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
+        // Handle methods: unique-type / linear keep Execute{StepType}WorkerCommand →
+        // {StepType}Completed. Shared-type fork instances add one overload per
+        // path-qualified stem so T1c can bind Handle by CLR type.
+        if (hasUnqualified)
+        {
+            EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
+        }
+
+        foreach (var instance in qualified)
+        {
+            if (hasUnqualified)
+            {
+                sb.AppendLine();
+            }
+
+            EmitHandleMethod(
+                sb,
+                model,
+                stepName,
+                $"Execute{instance.Stem}WorkerCommand",
+                $"{instance.Stem}Completed",
+                stateType,
+                hasContext);
+            hasUnqualified = true; // subsequent overloads need a blank line
+        }
 
         // A main-flow step routes into the workflow-level OnFailure chain when it
         // fails (#140 Task 3.1): its error chain must publish the
@@ -368,8 +433,11 @@ internal static class WorkerHandlerEmitter
         if ((step is not null && (step.Retry is not null || step.Compensation is not null))
             || publishOnFailureTrigger)
         {
+            var configureCommand = naming.HasUnqualifiedUse(stepName, model) || qualified.Count == 0
+                ? workerCommandName
+                : $"Execute{qualified[0].Stem}WorkerCommand";
             sb.AppendLine();
-            EmitConfigureMethod(sb, model, step, stepName, workerCommandName, publishOnFailureTrigger);
+            EmitConfigureMethod(sb, model, step, stepName, configureCommand, publishOnFailureTrigger);
         }
 
         sb.AppendLine("}");
