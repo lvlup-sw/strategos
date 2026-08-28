@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 30,
+  "count": 31,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -240,6 +240,14 @@
       "severity": "error",
       "summary": "Path-end type collision",
       "remediation": "Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types.",
+      "since": "2.11.0"
+    },
+    {
+      "name": "DuplicatePermittedForkTrigger",
+      "id": "AGWF037",
+      "severity": "error",
+      "summary": "Duplicate permitted fork trigger",
+      "remediation": "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.",
       "since": "2.11.0"
     }
   ]

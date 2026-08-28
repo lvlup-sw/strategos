@@ -25,7 +25,8 @@
        slots, and the import-diagnostic AGWF ids); 0.5.0 adds the
        terminal-reachability AGWF id; 0.6.0 adds the path-end type-collision
        AGWF id and updates the AGWF003 remediation const (one added code, one
-       changed catalog string — minor bump, not solely additive).
+       changed catalog string — minor bump, not solely additive); 0.7.0 adds
+       the duplicate-permitted-fork-trigger AGWF id.
        MinVer silently overwrites a bare
        <Version>, so per repo convention (cf. Strategos.Agents smoke-pin) we
        also set <MinVerSkip>true</MinVerSkip> + <PackageVersion>. The
@@ -33,7 +34,7 @@
        release pipeline bump in one place; the `contracts-v<version>` publish
        workflow fails closed if the tag disagrees with it. -->
   <PropertyGroup>
-    <ContractsVersion>0.6.0</ContractsVersion>
+    <ContractsVersion>0.7.0</ContractsVersion>
     <MinVerSkip>true</MinVerSkip>
     <Version>$(ContractsVersion)</Version>
     <PackageVersion>$(ContractsVersion)</PackageVersion>
