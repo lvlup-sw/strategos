@@ -143,4 +143,8 @@ public enum AgwfCode
     /// <summary>AGWF037 — Duplicate permitted fork trigger.</summary>
     [JsonStringEnumMemberName("AGWF037")]
     DuplicatePermittedForkTrigger,
+
+    /// <summary>AGWF038 — Duplicate diagnostic-fork compensation seed.</summary>
+    [JsonStringEnumMemberName("AGWF038")]
+    DuplicateCompensationSeed,
 }

@@ -73,7 +73,7 @@ public sealed class DiagnosticForkLoweringTests
         // exception would ALSO leave the count at 0, so the phase distinguishes refusal.
         var saga = await this.host.LoadSagaAsync<DiagnosticForkProofSaga>(workflowId);
         await Assert.That(saga).IsNotNull();
-        await Assert.That(saga!.DiagnosticForkCount_0).IsEqualTo(0);
+        await Assert.That(saga!.DiagnosticForkCount_DfStampStep).IsEqualTo(0);
         await Assert.That(saga.Phase).IsEqualTo(DiagnosticForkProofPhase.DfAnchorStep);
     }
 
@@ -104,7 +104,7 @@ public sealed class DiagnosticForkLoweringTests
         // Positive discriminator: still parked at the anchor phase (a refused fork, not a crash).
         var saga = await this.host.LoadSagaAsync<DiagnosticForkProofSaga>(workflowId);
         await Assert.That(saga).IsNotNull();
-        await Assert.That(saga!.DiagnosticForkCount_0).IsEqualTo(0);
+        await Assert.That(saga!.DiagnosticForkCount_DfStampStep).IsEqualTo(0);
         await Assert.That(saga.Phase).IsEqualTo(DiagnosticForkProofPhase.DfAnchorStep);
     }
 
@@ -187,7 +187,7 @@ public sealed class DiagnosticForkLoweringTests
 
         var refusedSaga = await this.host.LoadSagaAsync<DiagnosticForkProofSaga>(refusedId);
         await Assert.That(refusedSaga).IsNotNull();
-        await Assert.That(refusedSaga!.DiagnosticForkCount_0).IsEqualTo(0);
+        await Assert.That(refusedSaga!.DiagnosticForkCount_DfStampStep).IsEqualTo(0);
         await Assert.That(refusedSaga.Phase).IsEqualTo(DiagnosticForkProofPhase.DfAnchorStep);
     }
 
@@ -244,7 +244,7 @@ public sealed class DiagnosticForkLoweringTests
             WorkflowId = workflowId,
             Phase = DiagnosticForkProofPhase.DfAnchorStep,
             State = new DiagnosticForkState { Id = workflowId, WorkflowId = workflowId },
-            DiagnosticForkCount_0 = diagnosticForkCount,
+            DiagnosticForkCount_DfStampStep = diagnosticForkCount,
             StartedAt = DateTimeOffset.UtcNow,
         });
 }

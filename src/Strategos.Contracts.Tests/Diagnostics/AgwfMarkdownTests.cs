@@ -23,7 +23,7 @@ public sealed class AgwfMarkdownTests
         "AGWF022", "AGWF023", "AGWF024", "AGWF025", "AGWF026",
         "AGWF027", "AGWF028", "AGWF029", "AGWF030", "AGWF031",
         "AGWF032", "AGWF033", "AGWF034", "AGWF035", "AGWF036",
-        "AGWF037",
+        "AGWF037", "AGWF038",
     ];
 
     /// <summary>

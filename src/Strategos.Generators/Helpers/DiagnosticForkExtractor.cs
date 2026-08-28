@@ -44,10 +44,11 @@ internal static class DiagnosticForkExtractor
     /// </summary>
     /// <param name="context">The parse context containing pre-computed lookups.</param>
     /// <param name="diagnostics">
-    /// Optional sink for the duplicate-permitted-fork-trigger diagnostic when one edge
-    /// permits the same trigger twice. The edge is rejected (no model) rather than
-    /// first-wins-deduped — two same-trigger declarations can carry different evidence
-    /// schemas (#156.2).
+    /// Optional sink for extract-time rejections: a duplicate permitted trigger on one
+    /// edge (#156.2) or two edges that share a sanitized compensation-seed
+    /// moniker (#156.3). Colliding edges are rejected (no model) rather than
+    /// first-wins-deduped or merged onto a shared <c>DiagnosticForkCount_{seed}</c>
+    /// counter.
     /// </param>
     /// <returns>
     /// A list of diagnostic-fork models in the order they appear in the workflow. Empty when the
@@ -74,6 +75,7 @@ internal static class DiagnosticForkExtractor
         }
 
         var forks = new List<DiagnosticForkModel>();
+        var parsedInvocations = new List<InvocationExpressionSyntax>();
 
         foreach (var invocation in forkInvocations)
         {
@@ -82,7 +84,53 @@ internal static class DiagnosticForkExtractor
             if (TryParseDiagnosticFork(invocation, context, diagnostics, out var model))
             {
                 forks.Add(model);
+                parsedInvocations.Add(invocation);
             }
+        }
+
+        // Two edges that sanitize to the same DiagnosticForkCount_{seed} key (#156.3).
+        // Reject rather than share a counter: the later edge's seed is reported, and
+        // none of the colliding models are returned so the generator cannot lower a
+        // shared tally (and WorkflowIncrementalGenerator gates the whole saga).
+        var collidingSeeds = DiagnosticForkModel.FindDuplicateCompensationSeeds(
+            forks.Select(static f => f.CompensationSeedMoniker));
+        if (collidingSeeds.Count > 0)
+        {
+            var reported = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < forks.Count; i++)
+            {
+                var seed = forks[i].CompensationSeedMoniker;
+                var key = DiagnosticForkModel.SanitizeCompensationSeedMoniker(seed);
+                if (collidingSeeds.Any(d =>
+                        string.Equals(
+                            DiagnosticForkModel.SanitizeCompensationSeedMoniker(d),
+                            key,
+                            StringComparison.Ordinal))
+                    && reported.Add(key))
+                {
+                    // Report on the later colliding edge (first-seen key is the original).
+                    var laterIndex = -1;
+                    for (var j = 0; j < forks.Count; j++)
+                    {
+                        if (string.Equals(
+                            DiagnosticForkModel.SanitizeCompensationSeedMoniker(forks[j].CompensationSeedMoniker),
+                            key,
+                            StringComparison.Ordinal))
+                        {
+                            laterIndex = j;
+                        }
+                    }
+
+                    diagnostics?.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.DuplicateCompensationSeed,
+                        parsedInvocations[laterIndex].GetLocation(),
+                        context.WorkflowName ?? "(unnamed)",
+                        "AllowDiagnosticFork",
+                        forks[laterIndex].CompensationSeedMoniker));
+                }
+            }
+
+            return [];
         }
 
         return forks;

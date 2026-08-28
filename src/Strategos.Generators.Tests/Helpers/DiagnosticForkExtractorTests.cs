@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using Strategos.Generators.Helpers;
+using Strategos.Generators.Models;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -239,6 +240,83 @@ public class DiagnosticForkExtractorTests
         await Assert.That(result.Count).IsEqualTo(1);
         await Assert.That(result[0].PermittedTriggerCount).IsEqualTo(2);
         await Assert.That(diagnostics.Any(d => d.Id == "AGWF037")).IsFalse();
+    }
+
+    // =============================================================================
+    // C3. Duplicate compensation seed (#156.3 / AGWF038)
+    // =============================================================================
+
+    /// <summary>
+    /// Two edges that share a compensation seed are rejected — no models, and
+    /// AGWF038 is reported. They must not share a <c>DiagnosticForkCount_{seed}</c>.
+    /// </summary>
+    [Test]
+    public async Task Extract_DuplicateCompensationSeed_RejectsEdgesAndReportsAgwf038()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""AnchorOne"")
+                            .PermitTrigger(ForkTrigger.RatificationFailure, ""evOne"")
+                            .WithCompensationSeed(""Rollback"")
+                            .MaxForks(1))
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""AnchorTwo"")
+                            .PermitTrigger(ForkTrigger.GateContradiction, ""evTwo"")
+                            .WithCompensationSeed(""Rollback"")
+                            .MaxForks(5))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "DuplicateSeedWorkflow");
+        var diagnostics = new List<Diagnostic>();
+
+        var result = DiagnosticForkExtractor.Extract(context, diagnostics);
+
+        await Assert.That(result).IsEmpty();
+        await Assert.That(diagnostics.Count(d => d.Id == "AGWF038")).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Rollback");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("DuplicateSeedWorkflow");
+    }
+
+    /// <summary>
+    /// Two edges with distinct seeds stay clean: both models are produced and AGWF038 is silent.
+    /// </summary>
+    [Test]
+    public async Task Extract_DistinctCompensationSeeds_YieldsModelsWithoutAgwf038()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    builder.StartWith<Init>()
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""AnchorOne"")
+                            .PermitTrigger(ForkTrigger.RatificationFailure, ""evOne"")
+                            .WithCompensationSeed(""RollbackOne"")
+                            .MaxForks(1))
+                        .AllowDiagnosticFork(fork => fork
+                            .Anchor(""AnchorTwo"")
+                            .PermitTrigger(ForkTrigger.GateContradiction, ""evTwo"")
+                            .WithCompensationSeed(""RollbackTwo"")
+                            .MaxForks(5))
+                        .Finally<Complete>();
+                }
+            }";
+        var context = CreateContext(code, "DistinctSeedWorkflow");
+        var diagnostics = new List<Diagnostic>();
+
+        var result = DiagnosticForkExtractor.Extract(context, diagnostics);
+
+        await Assert.That(result.Count).IsEqualTo(2);
+        await Assert.That(result[0].CountPropertyName).IsEqualTo("DiagnosticForkCount_RollbackOne");
+        await Assert.That(result[1].CountPropertyName).IsEqualTo("DiagnosticForkCount_RollbackTwo");
+        await Assert.That(diagnostics.Any(d => d.Id == "AGWF038")).IsFalse();
     }
 
     // =============================================================================

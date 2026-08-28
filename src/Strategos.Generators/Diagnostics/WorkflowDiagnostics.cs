@@ -616,4 +616,26 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A diagnostic-fork edge may permit each closed trigger at most once. Two same-trigger declarations can carry different evidence schemas, so the pair is rejected rather than silently deduplicated.");
+
+    /// <summary>
+    /// Two diagnostic-fork edges share a sanitized compensation-seed moniker (#156.3).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a C# <c>AllowDiagnosticFork</c> chain or an imported
+    /// <c>*.workflow.json</c> declares two edges whose compensation seeds sanitize to
+    /// the same <c>DiagnosticForkCount_{seed}</c> key (the same '-' → '_' sanitizer
+    /// used for <c>Fork_{id}_Path{n}State</c>). Sharing a counter would let one
+    /// edge's <c>maxForks</c> bound starve the other; reject the workflow (no saga)
+    /// instead. Argument 0 is the workflow name (C#) or import file path (JSON);
+    /// argument 1 is the edge position (<c>AllowDiagnosticFork</c> or the JSON path);
+    /// argument 2 is the colliding compensation seed.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicateCompensationSeed = new(
+        id: AgwfCodes.DuplicateCompensationSeed,
+        title: "Duplicate diagnostic-fork compensation seed",
+        messageFormat: "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Two diagnostic-fork edges that sanitize to the same compensation-seed key cannot share a DiagnosticForkCount saga property; the pair is rejected rather than merged onto one counter.");
 }

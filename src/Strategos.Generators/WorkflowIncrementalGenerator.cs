@@ -929,13 +929,16 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // Return null model (no code generation) when there are errors
         var hasDuplicatePermittedForkTrigger = diagnostics.Exists(
             static d => d.Id == WorkflowDiagnostics.DuplicatePermittedForkTrigger.Id);
+        var hasDuplicateCompensationSeed = diagnostics.Exists(
+            static d => d.Id == WorkflowDiagnostics.DuplicateCompensationSeed.Id);
 
         var hasErrors = duplicateSteps.Count > 0
             || pathEndTypeCollisions.Count > 0
             || (!hasStartWith && firstMethodName is not null)
             || hasForkWithoutJoin
             || emptyLoops.Count > 0
-            || hasDuplicatePermittedForkTrigger;
+            || hasDuplicatePermittedForkTrigger
+            || hasDuplicateCompensationSeed;
         if (hasErrors)
         {
             return new WorkflowGeneratorResult(null, diagnostics);

@@ -55,10 +55,14 @@ namespace Strategos.Generators.Emitters.Saga;
 /// <c>Trigger{Pascal}FailureHandlerCommand</c>.
 /// </para>
 /// <para>
-/// The fork count is PER EDGE (a <c>DiagnosticForkCount_{index}</c> saga property per
-/// declared fork edge): each edge enforces its declared <c>maxForks</c> bound against its
-/// OWN tally, so a high-bound edge cannot exhaust a shared pool and starve a low-bound
-/// edge (L3).
+/// The fork count is PER EDGE, keyed by the sanitized compensation-seed moniker
+/// (a <c>DiagnosticForkCount_{seed}</c> saga property per declared fork edge; same
+/// '-' → '_' sanitizer as <c>Fork_{id}_Path{n}State</c>). Each edge enforces its
+/// declared <c>maxForks</c> bound against its OWN tally, so a high-bound edge cannot
+/// exhaust a shared pool and starve a low-bound edge (L3). Two edges that share a
+/// seed are rejected (duplicate-compensation-seed diagnostic) rather than sharing a counter. 2.10.0 used
+/// positional <c>DiagnosticForkCount_{i}</c>; 2.11.0 is a breaking saga-property
+/// rename with no dual-read shim.
 /// </para>
 /// </remarks>
 internal sealed class DiagnosticForkHandlerEmitter
@@ -182,7 +186,7 @@ internal sealed class DiagnosticForkHandlerEmitter
     {
         var permittedVar = $"edge{edgeIndex}Permitted";
         var evidenceVar = $"edge{edgeIndex}EvidencePresent";
-        var countVar = $"DiagnosticForkCount_{edgeIndex}";
+        var countVar = fork.CountPropertyName;
 
         // Every moniker below is authored in user DSL string literals (anchors, evidence
         // field names, the compensation seed), so it may contain a double-quote or a

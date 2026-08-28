@@ -69,26 +69,26 @@ public class PackagingTests
     }
 
     /// <summary>
-    /// T32 — the 0.7.0 release package. Packs the project and asserts:
-    /// the version is 0.7.0; all three schema families (events / workflow /
+    /// T32 — the 0.8.0 release package. Packs the project and asserts:
+    /// the version is 0.8.0; all three schema families (events / workflow /
     /// diagnostics) are embedded under <c>contentFiles/any/any/schemas/</c>; the
     /// #53 builder fixtures are embedded under
     /// <c>contentFiles/any/any/fixtures/</c> (so Exarchos can extract them); and
     /// the compiled contracts assembly ships under <c>lib/</c>.
-    /// (0.7.0 adds the duplicate-permitted-fork-trigger diagnostic id over 0.6.0's
+    /// (0.8.0 adds the duplicate-compensation-seed diagnostic id over 0.7.0's
     /// path-end type-collision id;
     /// see <see cref="Packaging_SmqSchemas_EmbeddedAsContent"/> for content.)
     /// </summary>
     [Test]
     [Property("Category", "Pack")]
-    public async Task Package_Version_Is_0_7_0_WithEventsIrAndDiagnosticsContent()
+    public async Task Package_Version_Is_0_8_0_WithEventsIrAndDiagnosticsContent()
     {
         // The fixtures are content (T32): ensure they exist on disk first — the
         // #53 export writes them under artifacts/builder-fixtures/.
         await EnsureFixturesExportedAsync();
 
         var projectDir = RepoLayout.ContractsProjectDir;
-        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-070-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-080-").FullName;
 
         try
         {
@@ -102,21 +102,21 @@ public class PackagingTests
                 .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
             await Assert.That(nupkg).IsNotNull();
 
-            // Version 0.7.0 — read from the file name (the canonical packed version).
+            // Version 0.8.0 — read from the file name (the canonical packed version).
             var fileName = Path.GetFileName(nupkg!);
-            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.7.0.nupkg")
-                .Because($"the package must version at exactly 0.7.0; got {fileName}");
+            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.8.0.nupkg")
+                .Because($"the package must version at exactly 0.8.0; got {fileName}");
 
             using var archive = ZipFile.OpenRead(nupkg!);
 
-            // The .nuspec also pins 0.7.0.
+            // The .nuspec also pins 0.8.0.
             var nuspec = archive.Entries.First(e =>
                 e.FullName.EndsWith(".nuspec", StringComparison.Ordinal));
             using (var reader = new StreamReader(nuspec.Open()))
             {
                 var nuspecXml = await reader.ReadToEndAsync();
-                await Assert.That(nuspecXml).Contains("<version>0.7.0</version>")
-                    .Because("the .nuspec must declare version 0.7.0.");
+                await Assert.That(nuspecXml).Contains("<version>0.8.0</version>")
+                    .Because("the .nuspec must declare version 0.8.0.");
             }
 
             string[] entries = [.. archive.Entries.Select(e => e.FullName)];
@@ -139,6 +139,10 @@ public class PackagingTests
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
                 && e.EndsWith("AgwfEntryDuplicatePermittedForkTrigger.json", StringComparison.Ordinal))
                 .Because("the AGWF037 entry schema must be embedded so Exarchos can derive the new code.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("AgwfEntryDuplicateCompensationSeed.json", StringComparison.Ordinal))
+                .Because("the AGWF038 entry schema must be embedded so Exarchos can derive the new code.");
             await Assert.That(entries).Contains(e =>
                 e.StartsWith("contentFiles/any/any/diagnostics/", StringComparison.Ordinal)
                 && e.EndsWith("agwf-catalog.json", StringComparison.Ordinal))
