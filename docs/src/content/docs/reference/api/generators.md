@@ -48,6 +48,10 @@ public enum ProcessOrderPhase
 | `Completed` | Terminal state after successful completion |
 | `Failed` | Terminal state after failure |
 
+### Persistence
+
+The saga document stores `Phase` as a **name** under System.Text.Json and as an **ordinal** under Newtonsoft. A member reorder (for example the document-order restore in 2.11.0) is safe only for the name representation. See [Phase Enum Persistence](/reference/phase-persistence).
+
 ---
 
 ## Commands

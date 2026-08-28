@@ -25,6 +25,7 @@ The Reference section provides detailed, factual documentation for looking up sp
 | [Diagnostics](/reference/diagnostics) | AONT ontology diagnostics and AGWF/AGSR workflow analyzer codes |
 | [Ontology](/reference/ontology) | `IOntologyQuery`, `IObjectSetProvider`, `IEmbeddingProvider`, dispatcher, sources, graph versioning, Npgsql |
 | [Configuration](/reference/configuration) | Wolverine, Marten, and PostgreSQL integration setup |
+| [Phase Enum Persistence](/reference/phase-persistence) | Name vs ordinal storage of the generated `Phase` enum; Newtonsoft is a data-migration risk |
 
 ### API Reference
 
