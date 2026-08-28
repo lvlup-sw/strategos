@@ -17,7 +17,7 @@
         },
         "remediation": {
             "type": "string",
-            "const": "Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique."
+            "const": "Step '{0}' appears multiple times in workflow '{1}'. Each EffectiveName (the instance name, or the step type when none is given) must be unique."
         },
         "since": {
             "type": "string",

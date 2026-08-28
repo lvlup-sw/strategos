@@ -154,6 +154,10 @@ services.AddWolverineWithMarten(opts =>
 });
 ```
 
+### Serializer and the generated Phase enum
+
+Marten's default System.Text.Json serializer persists the generated `Phase` enum by **name**. A Newtonsoft-serializing store (`UseNewtonsoftJson()`) persists it by **ordinal**, so a member reorder silently remaps every existing saga. Strategos does not configure `StoreOptions`. If your store uses Newtonsoft, read [Phase Enum Persistence](/reference/phase-persistence) before upgrading.
+
 ---
 
 ## Microsoft.Extensions.AI

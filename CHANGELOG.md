@@ -14,7 +14,7 @@ model's step list that are not on the main flow, and of the three scans that res
 successor, two skipped only confidence handlers and the third had no filter at all. The fix
 classifies off-main-flow steps once, routes every scan through that classification, restores
 document order to the step list, and adds a build-time diagnostic so the class cannot silently
-reopen. `Strategos.Contracts` bumps **0.4.0 → 0.5.0** (additive minor — one new `AgwfCode` member).
+reopen. `Strategos.Contracts` bumps **0.4.0 → 0.6.0** (additive minors — `AGWF035`, then `AGWF036`).
 
 > **Upgrading:** this release changes emitted public API and the order of a generated enum's
 > members. Read *Changed* below before upgrading — one item is a data-migration risk for a
@@ -27,8 +27,8 @@ stalled: fork-path steps were appended after the declared terminal, so the termi
 handler chained back into a path step that gated on a join readiness which never arrived. The
 machine-checked equivalence test between the C#-authored twin and its imported-JSON sibling has
 been carrying a deferral marker since 2.10.0; the underlying defect is now fixed and the twin
-passes on a real Wolverine + Marten host. (The test itself remains quarantined on an unrelated
-shared-host timeout — see *Known issues*.)
+passes on a real Wolverine + Marten host. The class recycles the host between families so the
+JSON-import half is no longer starved by leftover inbox work (#180).
 
 **Branch workflows now terminate (#175).** Worse than the fork case and previously unfiled: the
 terminal cascaded back into a branch-path step which rejoined at the terminal, an unbounded cycle
@@ -62,6 +62,23 @@ completed the saga. Chains now carry in-path successors the way fork paths and b
 a chain's last step either completes (when it declared `Complete()`) or resumes onto the same
 main-flow step the approval itself resumes onto.
 
+**Last-on-flow approval rejection now dispatches (#186).** An `AwaitApproval` that is last on the
+main flow publishes the rejection chain's first start command instead of setting the phase and
+parking.
+
+**Approval-before-fork parks at the checkpoint (#182).** When the next main-flow step is a join,
+resume starts the fork's paths rather than `Start{Join}`. The gated step's completed handler now
+yields the approval request instead of dispatching the fork, so the human is asked and resume is
+the single dispatch owner. The same owner rule applies when `AwaitApproval` immediately precedes
+`Branch`.
+
+**Bool exclusive branches compile (#179).** A `When(true)+When(false)` switch is already exhaustive;
+the leftover `_ =>` arm is omitted so the generated saga no longer hits `CS8510`. Enum branches still
+emit the discard arm unless `Otherwise` is declared.
+
+**Loop-exit `Finally` now runs (#184).** Rejoining loop-exit branch cases publish `Start{Finally}`.
+The cases live on `LoopModel.BranchOnExit` and were absent from the dedicated branch-handler loop.
+
 **An approval no longer resumes onto an appended step.** The approval-resume scan indexed the step
 list positionally with no filter, so an approved checkpoint could resume onto a fork-path,
 branch-case, failure-handler or handler-chain step, bypassing that construct's own dispatch. It
@@ -80,6 +97,18 @@ the classification suppressed it fires and names the exact step the broken saga 
 no behavioral coverage at all. `OnFailure` had coverage of its failure path only — its fixture's
 terminal is deliberately named for being unreached — so the success-path terminal-completion case
 was untested.
+
+**`AGWF036` — path-end type collision (error).** Instance-named exclusive-path steps — fork interiors
+and last steps, and branch cases — that share a step type fail closed before `CS0111`. Routing maps
+key by type, so instance names do not disambiguate. The same gate runs on JSON import, not only on
+C# `[Workflow]` types. `Strategos.Contracts` bumps **0.5.0 → 0.6.0** for the new catalog member.
+
+**Design-invariant catalog is tracked under `.agents/` (#178).** `.claude/` is gitignored, so the
+catalog every design audit cites was untracked.
+
+**Newtonsoft phase-ordinal persistence is documented (#183).** Name-based System.Text.Json storage
+is not a migration; ordinal Newtonsoft storage is. That fact now lives on a durable reference page
+(`docs/src/content/docs/reference/phase-persistence.md`) rather than only in dated CHANGELOG text.
 
 **`.github/dependabot.yml` (#133).** The organisation's Renovate preset disables the `github-actions`
 manager, on the basis that Actions pins are owned by Dependabot — and no Dependabot config existed.
@@ -134,24 +163,9 @@ identical across revisions, so this is a documentation change with no code impac
 listings now carry all fourteen shipped packages — nine were missing, and one page was the published
 one the issue did not name.
 
-### Known issues
-
-- **#180** — the fork JSON-import saga times out in a full-class behavioral run, which keeps the
-  fork-twin equivalence test quarantined. The C#-authoring defect it was written for is fixed; the
-  test passes in isolation and alongside its sibling. The blocker is shared-host interference.
-- **#179** — a `Branch` on a `bool` discriminator emits an unreachable switch arm and the generated
-  saga does not compile (`CS8510`). Use an enum discriminator.
-- **#182** — an `AwaitApproval` immediately before a `Fork` resumes onto the join, so the fork never
-  dispatches and the saga hangs. Both the old and new resume scans get this shape wrong.
-- **#183** — the phase-name persistence guarantee above is System.Text.Json-only.
-- **#186** — an `AwaitApproval` that is *last* on the main flow never starts its rejection chain: the
-  saga sets the phase and dispatches nothing, so it parks forever. Independent of the chain-routing
-  fix above — that one routes a chain once it has started. Every rejection fixture in the repository
-  puts the checkpoint mid-flow, which is why the shape was invisible.
-- **#184** — a loop-exit `Branch` whose cases rejoin never dispatches the declared `Finally` step.
-  Pre-existing and made *less* wrong by this release (the sibling case no longer runs), but the
-  declared step is still skipped. `AGWF035` cannot see it: the terminal is last, it simply has no
-  incoming edge, and deciding that needs route analysis rather than position.
+**`AGWF003` now reports duplicate names on `BranchPath`.** Exclusive cases that share a step name
+fail the build instead of last-write-win routing. This is a **breaking diagnostic** for workflows
+that compiled with that shape.
 
 ## [2.10.0] - 2026-08-07
 

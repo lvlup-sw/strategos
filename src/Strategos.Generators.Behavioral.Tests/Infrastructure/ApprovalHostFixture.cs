@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
+
 using JasperFx.Resources;
 
 using Marten;
@@ -15,6 +17,7 @@ using Strategos.Generators.Behavioral.Tests.Workflows;
 
 using Wolverine;
 using Wolverine.Marten;
+using Wolverine.Tracking;
 
 namespace Strategos.Generators.Behavioral.Tests.Infrastructure;
 
@@ -22,8 +25,9 @@ namespace Strategos.Generators.Behavioral.Tests.Infrastructure;
 /// Runtime host fixture for the C#-authored approval checkpoint. Stands up a real
 /// PostgreSQL container and a Wolverine + Marten host carrying the generated
 /// <c>AddCreditLimitReviewWorkflow()</c> and <c>AddPurchaseRequisitionReviewWorkflow()</c>
-/// registrations, so an <c>AwaitApproval</c> can be driven end to end on both the approved
-/// and the rejected route.
+/// registrations, so an <c>AwaitApproval</c> can be driven end to end on the approved
+/// route, the mid-flow and last-on-flow rejected routes, approval-before-fork, and
+/// an injected OnTimeout.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -88,12 +92,18 @@ public sealed class ApprovalHostFixture : IAsyncInitializer, IAsyncDisposable
 
                     opts.Services.AddCreditLimitReviewWorkflow();
                     opts.Services.AddPurchaseRequisitionReviewWorkflow();
+                    opts.Services.AddExpenseReportReviewWorkflow();
+                    opts.Services.AddLoanOriginationWorkflow();
+                    opts.Services.AddWireTransferReviewWorkflow();
 
                     // The brokers that answer each saga's request-approval event. Registered
-                    // by explicit type so handler discovery pulls in these two classes and
+                    // by explicit type so handler discovery pulls in these classes and
                     // nothing else from the test assembly.
                     opts.Discovery.IncludeType(typeof(CreditOfficerApprovalDecisionHandler));
                     opts.Discovery.IncludeType(typeof(PurchasingManagerApprovalDecisionHandler));
+                    opts.Discovery.IncludeType(typeof(FinanceControllerApprovalDecisionHandler));
+                    opts.Discovery.IncludeType(typeof(UnderwriterApprovalDecisionHandler));
+                    opts.Discovery.IncludeType(typeof(ComplianceOfficerApprovalDecisionHandler));
 
                     opts.Services.AddSingleton(this.Invocations);
                     opts.Services.AddResourceSetupOnStartup();
@@ -136,6 +146,137 @@ public sealed class ApprovalHostFixture : IAsyncInitializer, IAsyncDisposable
             workflowId,
             startCommand,
             timeout ?? TimeSpan.FromSeconds(30));
+
+    /// <summary>
+    /// Publishes a command and waits for the tracked cascade to settle. Does not
+    /// require the saga to complete — used to park at a checkpoint and then
+    /// inject a timeout command without sleeping the wall-clock.
+    /// </summary>
+    /// <param name="command">The command or event to publish.</param>
+    /// <param name="timeout">The tracked-activity budget. Defaults to 30 seconds.</param>
+    /// <returns>A task that completes when the cascade settles or the budget elapses.</returns>
+    public async Task PublishAndWaitAsync(object command, TimeSpan? timeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        try
+        {
+            await this.RequireHost()
+                .TrackActivity()
+                .Timeout(timeout ?? TimeSpan.FromSeconds(30))
+                .PublishMessageAndWaitAsync(command);
+        }
+        catch (TimeoutException)
+        {
+            // A parked approval settles the cascade without completing the saga.
+        }
+    }
+
+    /// <summary>
+    /// Reads the saga's pending approval request id after the checkpoint has
+    /// parked, so a timeout command can be injected with the id the handler
+    /// will accept.
+    /// </summary>
+    /// <typeparam name="TSaga">The generated saga document type.</typeparam>
+    /// <param name="workflowId">The workflow/saga identity to load.</param>
+    /// <param name="timeout">The poll budget. Defaults to 30 seconds.</param>
+    /// <returns>The pending approval request id.</returns>
+    public async Task<string> WaitForPendingApprovalRequestIdAsync<TSaga>(
+        Guid workflowId,
+        TimeSpan? timeout = null)
+        where TSaga : class
+    {
+        var budget = timeout ?? TimeSpan.FromSeconds(30);
+        var store = this.RequireHost().Services.GetRequiredService<IDocumentStore>();
+        var stopwatch = Stopwatch.StartNew();
+        var property = typeof(TSaga).GetProperty("PendingApprovalRequestId")
+            ?? throw new InvalidOperationException(
+                $"{typeof(TSaga).Name} has no PendingApprovalRequestId property; "
+                + "the generated approval surface changed.");
+
+        while (true)
+        {
+            await using (var query = store.QuerySession())
+            {
+                var saga = await query.LoadAsync<TSaga>(workflowId);
+                if (saga is not null)
+                {
+                    var pending = property.GetValue(saga) as string;
+
+                    if (!string.IsNullOrEmpty(pending))
+                    {
+                        return pending;
+                    }
+                }
+            }
+
+            if (stopwatch.Elapsed >= budget)
+            {
+                throw new TimeoutException(
+                    $"the saga for {workflowId} never recorded a pending approval request id "
+                    + $"within {budget}.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// Polls the saga document until it is removed and the invocation log has
+    /// grown since <paramref name="invocationsBefore"/>, or the budget elapses.
+    /// </summary>
+    /// <typeparam name="TSaga">The generated saga document type.</typeparam>
+    /// <param name="workflowId">The workflow/saga identity to wait on.</param>
+    /// <param name="invocationsBefore">
+    /// The invocation-log length before the run under observation started.
+    /// </param>
+    /// <param name="timeout">The poll budget. Defaults to 30 seconds.</param>
+    /// <returns>The observed outcome of the wait.</returns>
+    public async Task<WorkflowRunOutcome> WaitForCompletionAsync<TSaga>(
+        Guid workflowId,
+        int invocationsBefore,
+        TimeSpan? timeout = null)
+        where TSaga : class
+    {
+        var budget = timeout ?? TimeSpan.FromSeconds(30);
+        var store = this.RequireHost().Services.GetRequiredService<IDocumentStore>();
+        var stopwatch = Stopwatch.StartNew();
+
+        while (true)
+        {
+            bool documentRemoved;
+            await using (var query = store.QuerySession())
+            {
+                documentRemoved = await query.LoadAsync<TSaga>(workflowId) is null;
+            }
+
+            var stepInvocations = this.Invocations.TotalCount - invocationsBefore;
+
+            if (documentRemoved && stepInvocations > 0)
+            {
+                return new WorkflowRunOutcome(
+                    Completed: true,
+                    DocumentRemoved: true,
+                    StepInvocations: stepInvocations,
+                    Diagnostic: $"the saga for {workflowId} ran {stepInvocations} step invocation(s) "
+                        + "and its document was removed, so it reached its terminal phase.");
+            }
+
+            if (stopwatch.Elapsed >= budget)
+            {
+                return new WorkflowRunOutcome(
+                    Completed: false,
+                    DocumentRemoved: documentRemoved,
+                    StepInvocations: stepInvocations,
+                    Diagnostic: documentRemoved && stepInvocations == 0
+                        ? $"no step of the saga for {workflowId} ever ran within {budget}."
+                        : $"the saga for {workflowId} ran {stepInvocations} step invocation(s) but "
+                          + $"its document was still present after {budget}.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        }
+    }
 
     /// <summary>
     /// Stops and disposes the host and the shared Postgres container.

@@ -15,6 +15,15 @@ enforced by the T30 structural diff in CI).
 
 ### Added
 
+- **Diagnostics family — `AGWF036` (`PathEndTypeCollision`, severity `error`):** a new
+  AGWF code for exclusive paths (fork path-ends, or branch cases) that share a step
+  **type** under distinct instance names. Routing maps key by step type, so instance
+  names do not disambiguate and the emitter would otherwise produce duplicate
+  `Handle({Type}Completed)` overloads (CS0111). Additive (a new enum member + a new
+  catalog entry), so it is a minor, non-breaking change; the package moves 0.5.0 →
+  0.6.0. **Consumers upgrade first:** the emitted `AgwfCode` converter throws on a
+  member it does not know, so a consumer pinned to 0.5.0 cannot deserialize a payload
+  carrying `AGWF036` (#189, #190, #191).
 - **Diagnostics family — `AGWF035` (`UnreachableTermination`, severity `error`):** a new
   AGWF code for a workflow whose main flow chains into a step that is reached only
   through its own construct — a fork path, a branch case, a failure or approval handler,
@@ -28,6 +37,13 @@ enforced by the T30 structural diff in CI).
   step's kind, so it is silently inert (first guarded case: confidence gating on a
   `Fork` path, deferred to v2.10.0 / DR-17, #134). Additive (a new enum member + a new
   catalog entry), so it is a minor, non-breaking change (#143, G-6).
+
+### Changed
+
+- **AGWF003 remediation const:** the catalog string now names `EffectiveName` (the
+  instance name, or the step type when none is given) so it matches
+  `docs/diagnostics/agwf.md`. Downstream consumers that validate the previous
+  literal see a changed value, not an addition.
 
 ## [0.2.0] - 2026-05-24
 

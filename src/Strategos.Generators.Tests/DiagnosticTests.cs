@@ -174,10 +174,10 @@ public class DiagnosticTests
     // =============================================================================
     // E. Duplicate Step Name Tests (AGWF003)
     // =============================================================================
-    // AGWF003 is now implemented using context-aware duplicate detection:
+    // AGWF003 is implemented using EffectiveName (= InstanceName ?? StepName) in every context:
     // - Linear flow duplicates: ERROR (same step twice in main flow)
     // - Fork path duplicates: ERROR (same step in parallel paths)
-    // - Branch path duplicates: OK (same step in exclusive paths - only one executes)
+    // - Branch path duplicates: ERROR (exclusive paths still key routing maps by name)
 
     /// <summary>
     /// Verifies that an error diagnostic is reported when the same step
@@ -259,9 +259,11 @@ public class DiagnosticTests
             .Where(d => d.Id.StartsWith("AGWF", StringComparison.Ordinal))
             .ToList();
 
-        // Assert - Should not have AGWF003 error
+        // Assert - Should not have AGWF003 or AGWF036
         var agwf003 = generatorDiagnostics.FirstOrDefault(d => d.Id == "AGWF003");
         await Assert.That(agwf003).IsNull();
+        var agwf036 = generatorDiagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNull();
     }
 
     /// <summary>
@@ -413,15 +415,13 @@ public class DiagnosticTests
     }
 
     /// <summary>
-    /// Verifies that duplicate steps in branch paths do NOT report AGWF003.
-    /// Branch paths are mutually exclusive (only one executes at runtime),
-    /// so the same step type in different branches is safe and should be allowed.
+    /// Verifies that duplicate steps in branch paths report AGWF003 and do not emit a saga.
+    /// Exclusive paths still key routing maps by name, so a shared EffectiveName last-write-wins.
     /// </summary>
     [Test]
-    public async Task Diagnostic_DuplicateInBranchPaths_NoDiagnostic()
+    public async Task Diagnostic_DuplicateInBranchPaths_ReportsAGWF003()
     {
         // Arrange - Same step (ValidateStep) appears in both branch paths
-        // This is OK because only ONE branch path executes at runtime
         var source = """
             using Strategos.Abstractions;
             using Strategos.Attributes;
@@ -467,36 +467,200 @@ public class DiagnosticTests
                     .Create("branch-duplicate")
                     .StartWith<StartStep>()
                     .Branch(s => s.Priority,
-                        (Priority.High, high => high.Then<ValidateStep>()),
-                        (Priority.Low, low => low.Then<ValidateStep>()))  // Same step - OK in branches
-                    .Rejoin<FinalizeStep>();
+                        BranchCase<BranchDuplicateState, Priority>.When(Priority.High, high => high.Then<ValidateStep>()),
+                        BranchCase<BranchDuplicateState, Priority>.When(Priority.Low, low => low.Then<ValidateStep>()))
+                    .Finally<FinalizeStep>();
             }
             """;
 
         // Act
         var result = GeneratorTestHelper.RunGenerator(source);
 
-        // Assert - Should NOT report AGWF003 - branch path duplicates are allowed
+        // Assert - Same EffectiveName in two cases of the same branch is AGWF003
         var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
-        await Assert.That(agwf003).IsNull();
+        await Assert.That(agwf003).IsNotNull();
+        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf003.GetMessage()).Contains("ValidateStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+    }
+
+    /// <summary>
+    /// #189 — a shared non-last name in two branch cases with different successors is AGWF003.
+    /// ClassifyPath / BuildBranchPathInfo stay keyed by type; the shape is rejected instead.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_SharedInteriorBranchStep_ReportsAGWF003()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+
+            public record SharedInteriorState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+            }
+
+            public class IntakeStep : IWorkflowStep<SharedInteriorState>
+            {
+                public Task<StepResult<SharedInteriorState>> ExecuteAsync(
+                    SharedInteriorState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedInteriorState>.FromState(state));
+            }
+
+            public class NormalizeStep : IWorkflowStep<SharedInteriorState>
+            {
+                public Task<StepResult<SharedInteriorState>> ExecuteAsync(
+                    SharedInteriorState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedInteriorState>.FromState(state));
+            }
+
+            public class FastTrackStep : IWorkflowStep<SharedInteriorState>
+            {
+                public Task<StepResult<SharedInteriorState>> ExecuteAsync(
+                    SharedInteriorState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedInteriorState>.FromState(state));
+            }
+
+            public class SlowTrackStep : IWorkflowStep<SharedInteriorState>
+            {
+                public Task<StepResult<SharedInteriorState>> ExecuteAsync(
+                    SharedInteriorState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedInteriorState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<SharedInteriorState>
+            {
+                public Task<StepResult<SharedInteriorState>> ExecuteAsync(
+                    SharedInteriorState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedInteriorState>.FromState(state));
+            }
+
+            [Workflow("shared-interior")]
+            public static partial class SharedInteriorWorkflow
+            {
+                public static WorkflowDefinition<SharedInteriorState> Definition => Workflow<SharedInteriorState>
+                    .Create("shared-interior")
+                    .StartWith<IntakeStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<SharedInteriorState, Priority>.When(Priority.High, high => high.Then<NormalizeStep>().Then<FastTrackStep>()),
+                        BranchCase<SharedInteriorState, Priority>.When(Priority.Low, low => low.Then<NormalizeStep>().Then<SlowTrackStep>()))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNotNull();
+        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf003.GetMessage()).Contains("NormalizeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+    }
+
+    /// <summary>
+    /// #191 — a shared last-step name across branch cases of mixed terminality is AGWF003.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_SharedLastStepNameMixedTerminality_ReportsAGWF003()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+
+            public record SharedLastState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+            }
+
+            public class IntakeStep : IWorkflowStep<SharedLastState>
+            {
+                public Task<StepResult<SharedLastState>> ExecuteAsync(
+                    SharedLastState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedLastState>.FromState(state));
+            }
+
+            public class FastTrackStep : IWorkflowStep<SharedLastState>
+            {
+                public Task<StepResult<SharedLastState>> ExecuteAsync(
+                    SharedLastState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedLastState>.FromState(state));
+            }
+
+            public class SlowTrackStep : IWorkflowStep<SharedLastState>
+            {
+                public Task<StepResult<SharedLastState>> ExecuteAsync(
+                    SharedLastState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedLastState>.FromState(state));
+            }
+
+            public class NormalizeStep : IWorkflowStep<SharedLastState>
+            {
+                public Task<StepResult<SharedLastState>> ExecuteAsync(
+                    SharedLastState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedLastState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<SharedLastState>
+            {
+                public Task<StepResult<SharedLastState>> ExecuteAsync(
+                    SharedLastState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<SharedLastState>.FromState(state));
+            }
+
+            [Workflow("shared-last")]
+            public static partial class SharedLastWorkflow
+            {
+                public static WorkflowDefinition<SharedLastState> Definition => Workflow<SharedLastState>
+                    .Create("shared-last")
+                    .StartWith<IntakeStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<SharedLastState, Priority>.When(Priority.High, high => high.Then<FastTrackStep>().Then<NormalizeStep>().Complete()),
+                        BranchCase<SharedLastState, Priority>.When(Priority.Low, low => low.Then<SlowTrackStep>().Then<NormalizeStep>()))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNotNull();
+        await Assert.That(agwf003!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf003.GetMessage()).Contains("NormalizeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
     }
 
     // =============================================================================
-    // E2. Instance Name Bypass Tests (AGWF003 with InstanceName)
+    // E2. Instance Name Tests (AGWF003 with InstanceName; AGWF036 path-end type)
     // =============================================================================
-    // Instance names enable same step type to be reused with distinct identities.
     // EffectiveName = InstanceName ?? StepName
-    // - Different instance names → no duplicate error
+    // - Different instance names → no AGWF003
     // - Same instance names → still report AGWF003
+    // - Same type, distinct instance names at fork path-ends or across branch cases → AGWF036
 
     /// <summary>
-    /// Verifies that same step type with different instance names does NOT report AGWF003.
-    /// This enables legitimate step reuse in fork paths.
+    /// #190 — two instance-named fork paths ending in the same step type report AGWF036,
+    /// block generation, and do not produce CS0111 duplicate Handle overloads.
     /// </summary>
     [Test]
-    public async Task Diagnostic_InstanceNamedSteps_NoDuplicate()
+    public async Task Diagnostic_InstanceNamedForkPathEnds_ReportsAGWF036()
     {
-        // Arrange - Same step type (AnalyzeStep) but different instance names
+        // Arrange - Same step type (AnalyzeStep) but different instance names at path end
         var source = """
             using Strategos.Abstractions;
             using Strategos.Attributes;
@@ -555,10 +719,279 @@ public class DiagnosticTests
 
         // Act
         var result = GeneratorTestHelper.RunGenerator(source);
+        var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
 
-        // Assert - Should NOT report AGWF003 - different instance names
+        // Assert - Distinct instance names are not AGWF003; the type collision is AGWF036
         var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
         await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
+    }
+
+    /// <summary>
+    /// #190 interiors — two instance-named fork-path steps of the same type that are
+    /// not path-ends still report AGWF036. Completed handlers key by type for every
+    /// exclusive-path step, not only last steps.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_InstanceNamedForkInteriors_ReportsAGWF036()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public record InstanceState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+            }
+
+            public class PrepareStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class AnalyzeStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class ScoreStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class RiskStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class SynthesizeStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            public class CompleteStep : IWorkflowStep<InstanceState>
+            {
+                public Task<StepResult<InstanceState>> ExecuteAsync(
+                    InstanceState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<InstanceState>.FromState(state));
+            }
+
+            [Workflow("instance-interior-test")]
+            public static partial class InstanceInteriorTestWorkflow
+            {
+                public static WorkflowDefinition<InstanceState> Definition => Workflow<InstanceState>
+                    .Create("instance-interior-test")
+                    .StartWith<PrepareStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Technical").Then<ScoreStep>(),
+                        path => path.Then<AnalyzeStep>("Fundamental").Then<RiskStep>())
+                    .Join<SynthesizeStep>()
+                    .Finally<CompleteStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
+    }
+
+    /// <summary>
+    /// Two sequential forks that reuse a step type under distinct instance names
+    /// report AGWF036. Completed handlers live on one saga, so the collision is
+    /// cross-fork, not per-fork.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_InstanceNamedAnalyzeStepAcrossForks_ReportsAGWF036()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public record CrossForkState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+            }
+
+            public class PrepareStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class AnalyzeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class ScoreStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class RiskStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class SynthesizeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            public class CompleteStep : IWorkflowStep<CrossForkState>
+            {
+                public Task<StepResult<CrossForkState>> ExecuteAsync(
+                    CrossForkState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<CrossForkState>.FromState(state));
+            }
+
+            [Workflow("cross-fork-instance")]
+            public static partial class CrossForkInstanceWorkflow
+            {
+                public static WorkflowDefinition<CrossForkState> Definition => Workflow<CrossForkState>
+                    .Create("cross-fork-instance")
+                    .StartWith<PrepareStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Technical"),
+                        path => path.Then<ScoreStep>())
+                    .Join<SynthesizeStep>()
+                    .Fork(
+                        path => path.Then<AnalyzeStep>("Fundamental"),
+                        path => path.Then<RiskStep>())
+                    .Join<FinalizeStep>()
+                    .Finally<CompleteStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+        var compilationDiagnostics = GeneratorTestHelper.GetCompilationDiagnostics(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("AnalyzeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
+        await Assert.That(compilationDiagnostics.Any(d => d.Id == "CS0111")).IsFalse();
+    }
+
+    /// <summary>
+    /// Branch cases that share a step type under distinct instance names report AGWF036:
+    /// BranchExtractor records bare type names, so instance names would not disambiguate.
+    /// </summary>
+    [Test]
+    public async Task Diagnostic_InstanceNamedBranchCases_ReportsAGWF036()
+    {
+        var source = """
+            using Strategos.Abstractions;
+            using Strategos.Attributes;
+            using Strategos.Builders;
+            using Strategos.Definitions;
+            using Strategos.Steps;
+
+            namespace TestNamespace;
+
+            public enum Priority { High, Low }
+
+            public record NamedBranchState : IWorkflowState
+            {
+                public Guid WorkflowId { get; init; }
+                public Priority Priority { get; init; }
+            }
+
+            public class IntakeStep : IWorkflowStep<NamedBranchState>
+            {
+                public Task<StepResult<NamedBranchState>> ExecuteAsync(
+                    NamedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<NamedBranchState>.FromState(state));
+            }
+
+            public class NormalizeStep : IWorkflowStep<NamedBranchState>
+            {
+                public Task<StepResult<NamedBranchState>> ExecuteAsync(
+                    NamedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<NamedBranchState>.FromState(state));
+            }
+
+            public class FinalizeStep : IWorkflowStep<NamedBranchState>
+            {
+                public Task<StepResult<NamedBranchState>> ExecuteAsync(
+                    NamedBranchState state, StepContext context, CancellationToken ct)
+                    => Task.FromResult(StepResult<NamedBranchState>.FromState(state));
+            }
+
+            [Workflow("named-branch")]
+            public static partial class NamedBranchWorkflow
+            {
+                public static WorkflowDefinition<NamedBranchState> Definition => Workflow<NamedBranchState>
+                    .Create("named-branch")
+                    .StartWith<IntakeStep>()
+                    .Branch(s => s.Priority,
+                        BranchCase<NamedBranchState, Priority>.When(Priority.High, high => high.Then<NormalizeStep>("HighNorm")),
+                        BranchCase<NamedBranchState, Priority>.When(Priority.Low, low => low.Then<NormalizeStep>("LowNorm")))
+                    .Finally<FinalizeStep>();
+            }
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source);
+
+        var agwf003 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003");
+        await Assert.That(agwf003).IsNull();
+        var agwf036 = result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036");
+        await Assert.That(agwf036).IsNotNull();
+        await Assert.That(agwf036!.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(agwf036.GetMessage()).Contains("NormalizeStep");
+        await Assert.That(HasSaga(result)).IsFalse();
     }
 
     /// <summary>
@@ -1084,4 +1517,7 @@ public class DiagnosticTests
         await Assert.That(agwf014).IsNotNull();
         await Assert.That(agwf014!.GetMessage()).Contains("process");
     }
+
+    private static bool HasSaga(GeneratorDriverRunResult result)
+        => result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal));
 }

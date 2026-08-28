@@ -300,9 +300,10 @@ internal sealed class LoopCompletedHandlerEmitter
             }
         }
 
-        // Add default if no otherwise case
+        // Add default if no otherwise case. A bool discriminator with both true and
+        // false is already exhaustive — a leftover `_ =>` is CS8510 (#179).
         var hasOtherwise = branch.Cases.Any(c => c.CaseValueLiteral == "_" || c.CaseValueLiteral == "default");
-        if (!hasOtherwise)
+        if (!hasOtherwise && !BoolDiscriminator.IsExhaustive(branch))
         {
             sb.AppendLine($"{indent}    _ => throw new InvalidOperationException($\"Unhandled branch value: {{{discriminatorAccess}}}\"),");
         }

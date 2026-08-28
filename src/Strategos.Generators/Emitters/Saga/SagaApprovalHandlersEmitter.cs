@@ -20,10 +20,11 @@ namespace Strategos.Generators.Emitters.Saga;
 /// The behavior differs based on the approval result:
 /// <list type="bullet">
 ///   <item><description>
-///     Approved: Proceeds to the next step (or completes if final step)
+///     Approved: Proceeds to the next step, or dispatches a following fork, or completes
+///     if the approval is last on the main flow
 ///   </description></item>
 ///   <item><description>
-///     Rejected: Transitions to Failed phase and completes the saga
+///     Rejected: Transitions to the rejection chain's first step, or to Failed
 ///   </description></item>
 /// </list>
 /// </para>
@@ -59,13 +60,38 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"cmd\">The approval resume command.</param>");
 
-        if (context.IsLastStep)
+        // AwaitApproval is not a step. ForkExtractor / BranchExtractor walk through it, so
+        // the gated step is also ForkAtStep / BranchAtStep. Resume must dispatch that
+        // construct — Start{Join} or Start{Rejoin} hangs the saga (#182).
+        if (context.ForkAtCheckpoint is not null)
+        {
+            EmitForkDispatchResumeHandler(sb, model, approval, commandName, context.ForkAtCheckpoint);
+            return;
+        }
+
+        var forkAtJoin = FindForkJoinedAt(model, context.NextStepName);
+        if (forkAtJoin is not null)
+        {
+            EmitForkDispatchResumeHandler(sb, model, approval, commandName, forkAtJoin);
+            return;
+        }
+
+        if (context.BranchAtCheckpoint is not null)
+        {
+            EmitBranchDispatchResumeHandler(sb, model, approval, commandName, context.BranchAtCheckpoint);
+            return;
+        }
+
+        // Last on the main flow with no rejection chain: void handler, complete or fail.
+        // Last on the main flow WITH a rejection chain cannot stay void — nothing else
+        // publishes Start{FirstRejection}Command, so the chain never starts (#186).
+        if (context.IsLastStep && !approval.HasRejection)
         {
             EmitFinalStepResumeHandler(sb, model, approval, commandName);
         }
         else
         {
-            EmitNonFinalStepResumeHandler(sb, model, approval, commandName, context.NextStepName!);
+            EmitNonFinalStepResumeHandler(sb, model, approval, commandName, context.NextStepName);
         }
     }
 
@@ -110,10 +136,11 @@ internal sealed class SagaApprovalHandlersEmitter
         WorkflowModel model,
         ApprovalModel approval,
         string commandName,
-        string nextStepName)
+        string? nextStepName)
     {
-        // Non-final step - returns nullable object to allow multiple command types
-        sb.AppendLine($"    /// <returns>The command to start the next step, or null if deferred.</returns>");
+        // Returns nullable object to allow a next-step command, a rejection-chain
+        // start command, or null when the last main-flow step is approved (or deferred).
+        sb.AppendLine($"    /// <returns>The command to start the next step, or null if deferred or completed.</returns>");
         sb.AppendLine($"    public object? Handle(");
         sb.AppendLine($"        {commandName} cmd)");
         sb.AppendLine("    {");
@@ -128,7 +155,17 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("                    ApprovalInstructions = cmd.Instructions;");
         sb.AppendLine("                }");
         sb.AppendLine();
-        sb.AppendLine($"                return new Start{nextStepName}Command(WorkflowId);");
+        if (string.IsNullOrEmpty(nextStepName))
+        {
+            sb.AppendLine($"                Phase = {model.PhaseEnumName}.Completed;");
+            sb.AppendLine("                MarkCompleted();");
+            sb.AppendLine("                return null;");
+        }
+        else
+        {
+            sb.AppendLine($"                return new Start{nextStepName}Command(WorkflowId);");
+        }
+
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
         EmitRejectionHandling(sb, model, approval, isVoidHandler: false);
@@ -141,6 +178,133 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("                return null;");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits a resume handler that dispatches every path of the fork whose join is the
+    /// next main-flow step, instead of publishing <c>Start{Join}</c>.
+    /// </summary>
+    private static void EmitForkDispatchResumeHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        string commandName,
+        ForkModel fork)
+    {
+        var sanitizedId = fork.ForkId.Replace("-", "_");
+
+        sb.AppendLine("    /// <returns>The start commands for every fork path, or null if deferred.</returns>");
+        sb.AppendLine("    public IEnumerable<object>? Handle(");
+        sb.AppendLine($"        {commandName} cmd)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        sb.AppendLine("        PendingApprovalRequestId = null;");
+        sb.AppendLine();
+        sb.AppendLine("        switch (cmd.Decision)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Approved:");
+        sb.AppendLine("                if (!string.IsNullOrEmpty(cmd.Instructions))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    ApprovalInstructions = cmd.Instructions;");
+        sb.AppendLine("                }");
+        sb.AppendLine();
+        sb.AppendLine($"                Phase = {model.PhaseEnumName}.Forking_{sanitizedId};");
+        foreach (var path in fork.Paths)
+        {
+            sb.AppendLine($"                Fork_{sanitizedId}_Path{path.PathIndex}Status = Strategos.Definitions.ForkPathStatus.InProgress;");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("                return new object[]");
+        sb.AppendLine("                {");
+        foreach (var path in fork.Paths)
+        {
+            if (path.StepNames.Count > 0)
+            {
+                sb.AppendLine($"                    new Start{path.StepNames[0]}Command(WorkflowId),");
+            }
+        }
+
+        sb.AppendLine("                };");
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
+        EmitRejectionHandling(sb, model, approval, isVoidHandler: false, returnAsEnumerable: true);
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
+        sb.AppendLine("                // Stay in approval phase, await another response");
+        sb.AppendLine("                return null;");
+        sb.AppendLine();
+        sb.AppendLine("            default:");
+        sb.AppendLine("                return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits a resume handler that routes through the branch that follows the
+    /// checkpoint, instead of publishing <c>Start{Rejoin}</c>.
+    /// </summary>
+    private static void EmitBranchDispatchResumeHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        string commandName,
+        BranchModel branch)
+    {
+        sb.AppendLine("    /// <returns>The start command for the selected branch path, or null if deferred.</returns>");
+        sb.AppendLine("    public object? Handle(");
+        sb.AppendLine($"        {commandName} cmd)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        sb.AppendLine("        PendingApprovalRequestId = null;");
+        sb.AppendLine();
+        sb.AppendLine("        switch (cmd.Decision)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Approved:");
+        sb.AppendLine("                if (!string.IsNullOrEmpty(cmd.Instructions))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    ApprovalInstructions = cmd.Instructions;");
+        sb.AppendLine("                }");
+        sb.AppendLine();
+        sb.Append("                return ");
+        BranchHandlerEmitter.EmitSwitchExpression(sb, branch, "                ");
+        sb.AppendLine(";");
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
+        EmitRejectionHandling(sb, model, approval, isVoidHandler: false);
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
+        sb.AppendLine("                // Stay in approval phase, await another response");
+        sb.AppendLine("                return null;");
+        sb.AppendLine();
+        sb.AppendLine("            default:");
+        sb.AppendLine("                return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Finds the fork that joins at <paramref name="stepName"/>, if any.
+    /// </summary>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="stepName">The candidate join step name.</param>
+    /// <returns>The fork, or <see langword="null"/> when the name is not a join.</returns>
+    private static ForkModel? FindForkJoinedAt(WorkflowModel model, string? stepName)
+    {
+        if (string.IsNullOrEmpty(stepName) || !model.HasForks)
+        {
+            return null;
+        }
+
+        foreach (var fork in model.Forks!)
+        {
+            if (string.Equals(fork.JoinStepName, stepName, StringComparison.Ordinal))
+            {
+                return fork;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -258,16 +422,17 @@ internal sealed class SagaApprovalHandlersEmitter
         StringBuilder sb,
         WorkflowModel model,
         ApprovalModel approval,
-        bool isVoidHandler)
+        bool isVoidHandler,
+        bool returnAsEnumerable = false)
     {
         // Check if approval has rejection steps
         if (approval.HasRejection)
         {
             var firstRejectionStep = approval.RejectionSteps![0].StepName;
             sb.AppendLine($"                Phase = {model.PhaseEnumName}.{firstRejectionStep};");
-            if (isVoidHandler)
+            if (returnAsEnumerable)
             {
-                sb.AppendLine($"                // Note: Execute rejection step in subsequent handler");
+                sb.AppendLine($"                return new object[] {{ new Start{firstRejectionStep}Command(WorkflowId) }};");
             }
             else
             {

@@ -101,5 +101,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF035 — Workflow termination is unreachable.</summary>
         public const string UnreachableTermination = "AGWF035";
+
+        /// <summary>AGWF036 — Path-end type collision.</summary>
+        public const string PathEndTypeCollision = "AGWF036";
     }
 }

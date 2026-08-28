@@ -137,7 +137,7 @@ internal sealed class BranchHandlerEmitter
     /// </code>
     /// </para>
     /// </remarks>
-    private static void EmitSwitchExpression(StringBuilder sb, BranchModel branch, string baseIndent)
+    internal static void EmitSwitchExpression(StringBuilder sb, BranchModel branch, string baseIndent)
     {
         // Method discriminators are called with State as argument; property discriminators are accessed on State
         var discriminatorAccess = branch.IsMethodDiscriminator
@@ -168,9 +168,10 @@ internal sealed class BranchHandlerEmitter
             }
         }
 
-        // Add default if no otherwise case
+        // Add default if no otherwise case. A bool discriminator with both true and
+        // false is already exhaustive — a leftover `_ =>` is CS8510 (#179).
         var hasOtherwise = branch.Cases.Any(c => c.CaseValueLiteral == "_" || c.CaseValueLiteral == "default");
-        if (!hasOtherwise)
+        if (!hasOtherwise && !BoolDiscriminator.IsExhaustive(branch))
         {
             // Priority: consecutive branch → rejoin → throw
             if (branch.HasNextConsecutiveBranch)

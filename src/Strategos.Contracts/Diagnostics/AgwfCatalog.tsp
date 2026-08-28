@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **29 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **30 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.
@@ -51,6 +51,7 @@ enum AgwfCode {
   ImportReliabilityBearingGate: "AGWF033",
   ImportForkTriggerWithoutEvidence: "AGWF034",
   UnreachableTermination: "AGWF035",
+  PathEndTypeCollision: "AGWF036",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -79,7 +80,7 @@ model AgwfEntryDuplicateStepName {
   id: "AGWF003";
   severity: "error";
   summary: "Duplicate step name";
-  remediation: "Step '{0}' appears multiple times in workflow '{1}'. Each step type should be unique.";
+  remediation: "Step '{0}' appears multiple times in workflow '{1}'. Each EffectiveName (the instance name, or the step type when none is given) must be unique.";
   since: "0.2.0";
 }
 
@@ -340,5 +341,15 @@ model AgwfEntryUnreachableTermination {
   severity: "error";
   summary: "Workflow termination is unreachable";
   remediation: "Step '{0}' in workflow '{1}' chains to '{2}', which is not on the workflow's main flow. A step reached only through its own construct — a fork path, a branch case, a failure or approval handler, or a low-confidence handler chain — is never a main-flow successor, so the saga runs past its declared termination instead of completing.";
+  since: "2.11.0";
+}
+
+/** AGWF036 — Path-end type collision (#190). */
+@jsonSchema
+model AgwfEntryPathEndTypeCollision {
+  id: "AGWF036";
+  severity: "error";
+  summary: "Path-end type collision";
+  remediation: "Step type '{0}' is used on more than one exclusive path in workflow '{1}' under distinct instance names. Routing maps key by step type, so instance names do not disambiguate; use distinct step types.";
   since: "2.11.0";
 }

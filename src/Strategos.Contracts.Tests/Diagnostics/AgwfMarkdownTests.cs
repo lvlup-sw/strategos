@@ -9,7 +9,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// <summary>
 /// T5 — the generated <c>docs/diagnostics/agwf.md</c> reference page. After
 /// codegen, the page carries a Markdown table with the columns
-/// id/severity/summary/remediation/since and exactly 29 data rows, one per
+/// id/severity/summary/remediation/since and exactly 30 data rows, one per
 /// ground-truth code, sorted by ID.
 /// </summary>
 [Property("Category", "Diagnostics")]
@@ -22,7 +22,7 @@ public sealed class AgwfMarkdownTests
         "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
         "AGWF022", "AGWF023", "AGWF024", "AGWF025", "AGWF026",
         "AGWF027", "AGWF028", "AGWF029", "AGWF030", "AGWF031",
-        "AGWF032", "AGWF033", "AGWF034", "AGWF035",
+        "AGWF032", "AGWF033", "AGWF034", "AGWF035", "AGWF036",
     ];
 
     /// <summary>

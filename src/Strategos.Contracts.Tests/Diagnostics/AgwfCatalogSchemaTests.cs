@@ -12,9 +12,9 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// T2 — the AGWF catalog TypeSpec source emits, after <c>tsp compile</c>, one
 /// JSON Schema per ground-truth diagnostic code carrying machine-readable
 /// <c>const</c> metadata (R-lit representation; DR-1). Asserts the catalog
-/// enumerates exactly the 29 defined codes — <c>AGWF001, 002, 003, 004, 009,
+/// enumerates exactly the 30 defined codes — <c>AGWF001, 002, 003, 004, 009,
 /// 010, 012, 014, 015, 016, 017, 018, 019, 020, 021, 022, 023, 024, 025, 026,
-/// 027, 028, 029, 030, 031, 032, 033, 034, 035</c> — with
+/// 027, 028, 029, 030, 031, 032, 033, 034, 035, 036</c> — with
 /// gaps preserved as gaps (INV-5: no renumber), each carrying <c>id</c>/<c>severity</c>/
 /// <c>summary</c>/<c>remediation</c>/<c>since</c>.
 /// </summary>
@@ -22,7 +22,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 [NotInParallel("tsp-compile")]
 public sealed class AgwfCatalogSchemaTests
 {
-    /// <summary>The 29 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
+    /// <summary>The 30 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
     private static readonly string[] GroundTruthCodes =
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
@@ -30,7 +30,7 @@ public sealed class AgwfCatalogSchemaTests
         "AGWF017", "AGWF018", "AGWF019", "AGWF020", "AGWF021",
         "AGWF022", "AGWF023", "AGWF024", "AGWF025", "AGWF026",
         "AGWF027", "AGWF028", "AGWF029", "AGWF030", "AGWF031",
-        "AGWF032", "AGWF033", "AGWF034", "AGWF035",
+        "AGWF032", "AGWF033", "AGWF034", "AGWF035", "AGWF036",
     ];
 
     /// <summary>

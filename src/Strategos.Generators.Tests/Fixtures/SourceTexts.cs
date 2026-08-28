@@ -1264,6 +1264,13 @@ public static class SourceTexts
                 => Task.FromResult(StepResult<LoopBranchState>.FromState(state));
         }
 
+        public class CloseLoopStep : IWorkflowStep<LoopBranchState>
+        {
+            public Task<StepResult<LoopBranchState>> ExecuteAsync(
+                LoopBranchState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<LoopBranchState>.FromState(state));
+        }
+
         [Workflow("loop-then-branch")]
         public static partial class LoopThenBranchWorkflow
         {
@@ -1289,13 +1296,14 @@ public static class SourceTexts
                         path => path.Then<EscalateStep>().Complete()),
                     BranchCase<LoopBranchState, WorkflowOutcome>.Otherwise(
                         path => path.Then<FailedStep>().Complete()))
-                .Finally<CompleteStep>();
+                .Finally<CloseLoopStep>();
         }
         """;
 
     /// <summary>
-    /// A workflow with fork paths using the same step type with different instance names.
-    /// This tests that the generator uses EffectiveName for phases.
+    /// A workflow that reuses one step type on the main flow under distinct instance names.
+    /// Exclusive-path reuse of a type under instance names is rejected (path-end type collision);
+    /// linear instance names remain valid and still key phases by EffectiveName.
     /// </summary>
     public const string WorkflowWithInstanceNames = """
         using Strategos.Abstractions;
@@ -1345,10 +1353,9 @@ public static class SourceTexts
             public static WorkflowDefinition<AnalysisState> Definition => Workflow<AnalysisState>
                 .Create("multi-analysis")
                 .StartWith<PrepareDataStep>()
-                .Fork(
-                    path => path.Then<AnalyzeStep>("Technical"),
-                    path => path.Then<AnalyzeStep>("Fundamental"))
-                .Join<SynthesizeStep>()
+                .Then<AnalyzeStep>("Technical")
+                .Then<SynthesizeStep>()
+                .Then<AnalyzeStep>("Fundamental")
                 .Finally<CompleteStep>();
         }
         """;

@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Linq;
+
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
@@ -189,6 +191,16 @@ internal static class WireToModelBridge
             return new BridgeResult(null, diagnostics);
         }
 
+        // Same EffectiveName / type-collision gates the C# [Workflow] root runs in
+        // TransformToResult. Sharing EmitWorkflowSources is not sharing the gate: a JSON
+        // fork twin of the #190 shape would otherwise lower to CS0111.
+        var identityDiagnostics = CollectIdentityDiagnostics(baseStepModels, forkModels, workflowName!);
+        if (identityDiagnostics.Count > 0)
+        {
+            diagnostics.AddRange(identityDiagnostics);
+            return new BridgeResult(null, diagnostics);
+        }
+
         // Context-free approval points → ApprovalModel (DR-14: a context-bearing approval is a
         // rejected carrier handled by task 018; here only the bare, context-free arm is mapped).
         var approvalModels = MapApprovals(definition, compilation, jsonFilePath, stepIdToName, diagnostics);
@@ -240,6 +252,75 @@ internal static class WireToModelBridge
         };
 
         return new BridgeResult(model, diagnostics);
+    }
+
+    /// <summary>
+    /// Applies the C# identity gates (duplicate EffectiveName, exclusive-path
+    /// type collision) to the mapped import IR so a JSON twin cannot emit a colliding saga.
+    /// </summary>
+    private static List<Diagnostic> CollectIdentityDiagnostics(
+        IReadOnlyList<StepModel> baseStepModels,
+        IReadOnlyList<ForkModel> forkModels,
+        string workflowName)
+    {
+        var diagnostics = new List<Diagnostic>();
+
+        var forkPathSteps = forkModels
+            .SelectMany(static f => f.Paths.SelectMany(static p => p.Steps))
+            .ToList();
+
+        // Round-tripped JSON lists fork-path steps in both steps[] and forkPoints.paths.
+        // Consume one matching base entry per fork-path representation so the echo
+        // is not a duplicate name, but an extra top-level step with the same phase+type still is.
+        var remainingForkPathCopies = new Dictionary<(string Phase, string Type), int>();
+        foreach (var step in forkPathSteps)
+        {
+            var key = (step.PhaseName, step.StepName);
+            remainingForkPathCopies[key] = remainingForkPathCopies.TryGetValue(key, out var copies)
+                ? copies + 1
+                : 1;
+        }
+
+        var identitySteps = new List<StepModel>(baseStepModels.Count + forkPathSteps.Count);
+        foreach (var step in baseStepModels)
+        {
+            var key = (step.PhaseName, step.StepName);
+            if (remainingForkPathCopies.TryGetValue(key, out var remaining) && remaining > 0)
+            {
+                remainingForkPathCopies[key] = remaining - 1;
+                continue;
+            }
+
+            identitySteps.Add(step);
+        }
+
+        identitySteps.AddRange(forkPathSteps);
+
+        var duplicateNames = identitySteps
+            .GroupBy(static s => s.EffectiveName, StringComparer.Ordinal)
+            .Where(static g => g.Count() > 1)
+            .Select(static g => g.Key)
+            .ToList();
+
+        foreach (var duplicate in duplicateNames)
+        {
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.DuplicateStepName,
+                Location.None,
+                duplicate,
+                workflowName));
+        }
+
+        foreach (var collidingType in PathEndTypeCollisionFinder.Find(forkModels, []))
+        {
+            diagnostics.Add(Diagnostic.Create(
+                WorkflowDiagnostics.PathEndTypeCollision,
+                Location.None,
+                collidingType,
+                workflowName));
+        }
+
+        return diagnostics;
     }
 
     /// <summary>
