@@ -334,9 +334,11 @@ internal static class WireToModelBridge
     /// validation predicate, and a context-bearing approval (a <c>hasContext</c> marker, escalation,
     /// or rejection handler). Rejected semantic violations: a gate step whose <c>gateId</c>
     /// back-reference names an id absent from <c>gates[]</c> (DR-3), a gate declaration carrying
-    /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry), and a
+    /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry), a
     /// diagnostic-fork permitted trigger declaring no <c>requiredEvidenceFields</c> (DR-8 — the wire
-    /// <c>@minItems(1)</c> evidence floor; an empty list would lower an always-true occurrence guard).
+    /// <c>@minItems(1)</c> evidence floor; an empty list would lower an always-true occurrence guard),
+    /// and a diagnostic-fork edge that permits the same trigger twice (#156.2 — two same-trigger
+    /// declarations can carry different evidence schemas; reject, do not first-wins-dedup).
     /// </remarks>
     private static List<Diagnostic> CollectImportRejections(
         WorkflowDefinitionV1 definition,
@@ -452,6 +454,41 @@ internal static class WireToModelBridge
                         $"$.diagnosticForks[{i}].permittedTriggers[{j}]",
                         DescribeId(permittedTriggers[j].Trigger)));
                 }
+            }
+
+            // Two PermitTrigger declarations of the same closed trigger on one edge (#156.2).
+            // Reject rather than first-wins-dedup: the twins can carry different evidence
+            // schemas, and MapDiagnosticForks → DiagnosticForkModel.Create would otherwise
+            // throw (CS8785) or the emitter's per-trigger switch would fail closed as CS0152.
+            var triggerNames = new string[permittedTriggers.Count];
+            for (var j = 0; j < permittedTriggers.Count; j++)
+            {
+                triggerNames[j] = permittedTriggers[j].Trigger ?? string.Empty;
+            }
+
+            foreach (var duplicate in DiagnosticForkModel.FindDuplicateTriggerNames(triggerNames))
+            {
+                var secondIndex = -1;
+                for (var j = 0; j < triggerNames.Length; j++)
+                {
+                    if (string.Equals(triggerNames[j], duplicate, StringComparison.Ordinal))
+                    {
+                        if (secondIndex >= 0)
+                        {
+                            secondIndex = j;
+                            break;
+                        }
+
+                        secondIndex = j;
+                    }
+                }
+
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.DuplicatePermittedForkTrigger,
+                    Location.None,
+                    jsonFilePath,
+                    $"$.diagnosticForks[{i}].permittedTriggers[{secondIndex}]",
+                    DescribeId(duplicate)));
             }
         }
 
