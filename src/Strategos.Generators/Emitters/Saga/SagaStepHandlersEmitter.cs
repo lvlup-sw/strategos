@@ -7,6 +7,8 @@
 using System.Collections.Generic;
 using System.Text;
 
+using Strategos.Generators.Emitters;
+using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
@@ -50,20 +52,41 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
         var context = SagaEmissionContext.Create(model);
+        var naming = ForkPathCompletedNaming.For(model);
+        var emittedSharedBranchTypes = new HashSet<string>(StringComparer.Ordinal);
 
         for (int i = 0; i < model.StepNames.Count; i++)
         {
             var stepName = model.StepNames[i];
-            var handlerContext = BuildHandlerContext(context, stepName, i);
+            if (HasPathQualifiedPhase(naming, stepName))
+            {
+                continue;
+            }
 
-            // Emit StartStep handler
+            var handlerContext = BuildHandlerContext(context, stepName, i, naming);
+
             sb.AppendLine();
             _startEmitter.EmitHandler(sb, model, stepName, handlerContext);
 
-            // Emit appropriate Completed handler based on context
+            var stepTypeName = handlerContext.StepModel?.StepName ?? ExtractBaseStepName(stepName);
+            var occurrences = CollectBranchOccurrences(context, stepTypeName);
+            if (occurrences.Count > 1)
+            {
+                if (emittedSharedBranchTypes.Add(stepTypeName))
+                {
+                    sb.AppendLine();
+                    _branchEmitter.EmitLiveCaseCompletedHandler(
+                        sb, model, $"{stepTypeName}Completed", occurrences);
+                }
+
+                continue;
+            }
+
             sb.AppendLine();
             EmitCompletedHandler(sb, model, stepName, handlerContext, context);
         }
+
+        EmitPathQualifiedForkHandlers(sb, model, context, naming);
 
         // Emit fork-related handlers
         if (model.HasForks)
@@ -87,7 +110,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
 
         // Emit handlers for branch case steps
         // These steps execute conditionally based on discriminator
-        EmitDedicatedBranchCaseHandlers(sb, model, context);
+        EmitDedicatedBranchCaseHandlers(sb, model, context, emittedSharedBranchTypes);
     }
 
     /// <summary>
@@ -97,6 +120,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
     /// <param name="model">The workflow model.</param>
     /// <param name="context">The saga emission context.</param>
+    /// <param name="emittedSharedBranchTypes">Step types that already have a live-case completed handler.</param>
     /// <remarks>
     /// Loop-exit branches live on <see cref="LoopModel.BranchOnExit"/> and are deliberately
     /// absent from <see cref="WorkflowModel.Branches"/>. Walking only the workflow collection
@@ -106,38 +130,24 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     private void EmitDedicatedBranchCaseHandlers(
         StringBuilder sb,
         WorkflowModel model,
-        SagaEmissionContext context)
+        SagaEmissionContext context,
+        HashSet<string> emittedSharedBranchTypes)
     {
         if (!model.HasBranches && !HasLoopExitBranch(model))
         {
             return;
         }
 
-        // Track underlying step names (not phase names) from main step loop
-        // Phase names may have loop prefixes (e.g., TargetLoop_VerifyVetoWithResearchStep)
-        // but event handlers use underlying step names (e.g., VerifyVetoWithResearchStep)
-        // This prevents duplicate Handle(VerifyVetoWithResearchStepCompleted) methods
-        var processedStepNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var phaseName in model.StepNames)
-        {
-            if (context.StepsByName.TryGetValue(phaseName, out var stepModel))
-            {
-                processedStepNames.Add(stepModel.StepName);
-            }
-            else
-            {
-                // Fallback: extract base step name from phase name (handles loop prefixes)
-                // e.g., "TargetLoop_VerifyVetoStep" → "VerifyVetoStep"
-                var baseStepName = ExtractBaseStepName(phaseName);
-                processedStepNames.Add(baseStepName);
-            }
-        }
+        // Track phase names already handled in the main step loop so instance-named
+        // cases still get their own Start{PhaseName}Command handler, while a shared
+        // completed Handle({StepType}Completed) is not emitted twice.
+        var processedPhaseNames = new HashSet<string>(model.StepNames, StringComparer.Ordinal);
 
         if (model.HasBranches)
         {
             foreach (var branch in model.Branches!)
             {
-                EmitHandlersForBranchCases(sb, model, context, branch, processedStepNames);
+                EmitHandlersForBranchCases(sb, model, context, branch, processedPhaseNames, emittedSharedBranchTypes);
             }
         }
 
@@ -147,7 +157,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             {
                 if (loop.BranchOnExit is not null)
                 {
-                    EmitHandlersForBranchCases(sb, model, context, loop.BranchOnExit, processedStepNames);
+                    EmitHandlersForBranchCases(sb, model, context, loop.BranchOnExit, processedPhaseNames, emittedSharedBranchTypes);
                 }
             }
         }
@@ -160,22 +170,24 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     /// <param name="model">The workflow model.</param>
     /// <param name="context">The saga emission context.</param>
     /// <param name="branch">The branch whose cases should be emitted.</param>
-    /// <param name="processedStepNames">Step names already handled in the main step loop.</param>
+    /// <param name="processedPhaseNames">Phase names already handled in the main step loop.</param>
+    /// <param name="emittedSharedBranchTypes">Step types that already have a live-case completed handler.</param>
     private void EmitHandlersForBranchCases(
         StringBuilder sb,
         WorkflowModel model,
         SagaEmissionContext context,
         BranchModel branch,
-        HashSet<string> processedStepNames)
+        HashSet<string> processedPhaseNames,
+        HashSet<string> emittedSharedBranchTypes)
     {
         foreach (var branchCase in branch.Cases)
         {
             for (var i = 0; i < branchCase.StepNames.Count; i++)
             {
                 var stepName = branchCase.StepNames[i];
+                var phaseName = ToPhaseName(branch.LoopPrefix, stepName);
 
-                // Skip if already handled in main step loop or an earlier case
-                if (!processedStepNames.Add(stepName))
+                if (!processedPhaseNames.Add(phaseName))
                 {
                     continue;
                 }
@@ -183,20 +195,20 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                 var isLastStepInBranchCase = i == branchCase.StepNames.Count - 1;
                 var endsWorkflowHere = branchCase.IsTerminal && isLastStepInBranchCase;
 
-                // A case that declared .Complete() has no successor at its last step, so the
-                // branch-level convergence point is not its next step (#175).
                 var nextStepName = isLastStepInBranchCase
                     ? (endsWorkflowHere ? null : branch.RejoinStepName)
-                    : branchCase.StepNames[i + 1];
+                    : ToPhaseName(branch.LoopPrefix, branchCase.StepNames[i + 1]);
 
-                // Emit StartStep handler
+                context.StepsByName.TryGetValue(phaseName, out var stepModel);
+                var stepTypeName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
+
                 sb.AppendLine();
                 var branchHandlerContext = new HandlerContext(
                     StepIndex: i,
-                    IsLastStep: false, // Not last in overall workflow
+                    IsLastStep: false,
                     IsTerminalStep: endsWorkflowHere,
                     NextStepName: nextStepName,
-                    StepModel: null,
+                    StepModel: stepModel,
                     LoopsAtStep: null,
                     BranchAtStep: null,
                     ApprovalAtStep: null,
@@ -205,23 +217,36 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                     JoinForkAtStep: null,
                     IsForkPathStep: false);
 
-                _startEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
+                _startEmitter.EmitHandler(sb, model, phaseName, branchHandlerContext);
 
-                // Emit Completed handler
+                var occurrences = CollectBranchOccurrences(context, stepTypeName);
+                if (occurrences.Count > 1)
+                {
+                    if (emittedSharedBranchTypes.Add(stepTypeName))
+                    {
+                        sb.AppendLine();
+                        _branchEmitter.EmitLiveCaseCompletedHandler(
+                            sb, model, $"{stepTypeName}Completed", occurrences);
+                    }
+
+                    continue;
+                }
+
                 sb.AppendLine();
                 if (isLastStepInBranchCase)
                 {
-                    // Last step in branch path - emit path end handler. The path-end
-                    // handler intercepts this step, so it carries the step's own
-                    // confidence policy; nothing else would emit the gate.
-                    context.StepsByName.TryGetValue(stepName, out var lastStepModel);
                     _branchEmitter.EmitPathEndHandler(
-                        sb, model, stepName, branch, branchCase, lastStepModel?.Confidence);
+                        sb,
+                        model,
+                        phaseName,
+                        branch,
+                        branchCase,
+                        stepModel?.Confidence,
+                        stepTypeName);
                 }
                 else
                 {
-                    // Intermediate step - emit standard handler chaining to next step
-                    _completedEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
+                    _completedEmitter.EmitHandler(sb, model, phaseName, branchHandlerContext);
                 }
             }
         }
@@ -237,7 +262,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
     private static HandlerContext BuildHandlerContext(
         SagaEmissionContext ctx,
         string stepName,
-        int index)
+        int index,
+        ForkPathCompletedNaming naming)
     {
         // Several lowering blocks append names to StepNames for full lowering (phase, worker
         // handler, commands, events) even though the steps are reached through their own
@@ -257,13 +283,10 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             nextStepName = mainFlow.NextMainFlowStepNameAfterIndex(index);
             isLastStep = nextStepName is null;
         }
-        else if (mainFlow.TryGetSuccessorWithinPath(stepName, out var successorWithinPath))
+        else if (TryGetKeyedSuccessor(ctx, stepName, out var successorWithinPath))
         {
-            // Inside a fork path or a branch case, and not its last step. Only a path's LAST
-            // step is intercepted by a dedicated path-end handler, so a step in the middle of a
-            // path arrives here — and its successor is the next step of its OWN path. Applying
-            // the main-flow skip set uniformly would instead hand it the next main-flow step,
-            // or nothing at all, which marks the saga completed in the middle of a path.
+            // Inside a fork path or a branch case, and not its last step. Look up by
+            // PathRoutingKey so two paths that share a phase name keep their own successor.
             nextStepName = successorWithinPath;
             isLastStep = false;
         }
@@ -324,11 +347,45 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         ctx.ForksByPreviousStep.TryGetValue(stepName, out var forkAtStep);
         ctx.ForksByJoinStep.TryGetValue(stepName, out var joinForkAtStep);
 
-        // Check if this step ends a fork path
+        // Occupy the fork path by PathRoutingKey.ForFork, not the last-write-wins
+        // string ForkPathInfo map. Colliding unnamed PhaseNames are emitted in
+        // EmitPathQualifiedForkHandlers instead of this main loop.
         (ForkModel Fork, ForkPathModel Path)? forkPathEnding = null;
-        if (ctx.ForkPathInfo.TryGetValue(stepName, out var pathInfo))
+        (ForkModel Fork, ForkPathModel Path)? forkPathOccupancy = null;
+        PathRoutingKey? forkPathKey = null;
+        if (ctx.Model.HasForks)
         {
-            forkPathEnding = pathInfo;
+            foreach (var fork in ctx.Model.Forks!)
+            {
+                foreach (var path in fork.Paths)
+                {
+                    var onThisPath = false;
+                    foreach (var pathStep in path.Steps)
+                    {
+                        if (string.Equals(pathStep.PhaseName, stepName, StringComparison.Ordinal))
+                        {
+                            onThisPath = true;
+                            forkPathKey ??= PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, pathStep.PhaseName);
+                            forkPathOccupancy ??= (fork, path);
+                            break;
+                        }
+                    }
+
+                    if (onThisPath && string.Equals(path.LastStepName, stepName, StringComparison.Ordinal))
+                    {
+                        forkPathEnding ??= (fork, path);
+                    }
+                }
+            }
+        }
+
+        if (!isConfidenceHandlerStep
+            && forkPathKey is { } occupiedKey
+            && forkPathOccupancy is { } occupancy
+            && ctx.MainFlow.TryGetSuccessorWithinPath(occupiedKey, out var keyedSuccessor))
+        {
+            nextStepName = ResolveForkStartStem(naming, occupancy.Fork, occupancy.Path, keyedSuccessor);
+            isLastStep = false;
         }
 
         // Check if this step is part of a fork path (needs full step name for worker command)
@@ -339,10 +396,16 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         // Also check if this step is the last step in a branch path that ends with .Complete().
         var isTerminalStep = stepModel?.IsTerminal ?? IsTerminalStepName(stepName);
 
-        // Check if this step is the last step in a branch path that ends with Complete()
-        if (!isTerminalStep && ctx.BranchPathInfo.TryGetValue(stepName, out var branchPathInfo))
+        if (!isTerminalStep)
         {
-            isTerminalStep = branchPathInfo.Case.IsTerminal;
+            foreach (var entry in ctx.BranchPathsByRoutingKey)
+            {
+                if (string.Equals(entry.Key.PhaseName, stepName, StringComparison.Ordinal))
+                {
+                    isTerminalStep = entry.Value.Case.IsTerminal;
+                    break;
+                }
+            }
         }
 
         return new HandlerContext(
@@ -357,7 +420,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
             ForkAtStep: forkAtStep,
             ForkPathEnding: forkPathEnding,
             JoinForkAtStep: joinForkAtStep,
-            IsForkPathStep: isForkPathStep);
+            IsForkPathStep: isForkPathStep,
+            ForkPathKey: forkPathKey);
     }
 
     /// <summary>
@@ -408,7 +472,7 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         {
             _branchEmitter.EmitRoutingHandler(sb, model, stepName, handlerContext.BranchAtStep);
         }
-        else if (context.BranchPathInfo.TryGetValue(stepName, out var pathInfo))
+        else if (TryGetBranchPathEnd(context, stepName, out var pathInfo))
         {
             _branchEmitter.EmitPathEndHandler(
                 sb,
@@ -416,7 +480,8 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
                 stepName,
                 pathInfo.Branch,
                 pathInfo.Case,
-                handlerContext.StepModel?.Confidence);
+                handlerContext.StepModel?.Confidence,
+                handlerContext.StepModel?.StepName);
         }
         else if (handlerContext.ForkAtStep is not null)
         {
@@ -431,6 +496,248 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         {
             _completedEmitter.EmitHandler(sb, model, stepName, handlerContext);
         }
+    }
+
+    /// <summary>
+    /// Collects every branch-case occupancy of a step type so a shared completed
+    /// handler can route by the live case.
+    /// </summary>
+    private static List<BranchCaseStepOccurrence> CollectBranchOccurrences(
+        SagaEmissionContext context,
+        string stepTypeName)
+    {
+        var occurrences = new List<BranchCaseStepOccurrence>();
+        foreach (var branch in EnumerateBranches(context.Model))
+        {
+            foreach (var branchCase in branch.Cases)
+            {
+                for (var i = 0; i < branchCase.StepNames.Count; i++)
+                {
+                    var phaseName = ToPhaseName(branch.LoopPrefix, branchCase.StepNames[i]);
+                    context.StepsByName.TryGetValue(phaseName, out var stepModel);
+                    var typeName = stepModel?.StepName ?? ExtractBaseStepName(branchCase.StepNames[i]);
+                    if (!string.Equals(typeName, stepTypeName, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var isLast = i == branchCase.StepNames.Count - 1;
+                    string? successor = null;
+                    if (!isLast)
+                    {
+                        successor = ToPhaseName(branch.LoopPrefix, branchCase.StepNames[i + 1]);
+                    }
+                    else if (!branchCase.IsTerminal && branch.HasRejoinPoint)
+                    {
+                        successor = branch.RejoinStepName;
+                    }
+
+                    occurrences.Add(new BranchCaseStepOccurrence(
+                        branch, branchCase, phaseName, successor, stepModel));
+                }
+            }
+        }
+
+        return occurrences;
+    }
+
+    private static IEnumerable<BranchModel> EnumerateBranches(WorkflowModel model)
+    {
+        if (model.HasBranches)
+        {
+            foreach (var branch in model.Branches!)
+            {
+                yield return branch;
+            }
+        }
+
+        if (!model.HasLoops)
+        {
+            yield break;
+        }
+
+        foreach (var loop in model.Loops!)
+        {
+            if (loop.BranchOnExit is not null)
+            {
+                yield return loop.BranchOnExit;
+            }
+        }
+    }
+
+    private static bool TryGetKeyedSuccessor(
+        SagaEmissionContext ctx,
+        string stepName,
+        out string successorStepName)
+    {
+        foreach (var entry in ctx.ForkPathsByRoutingKey)
+        {
+            var key = PathRoutingKey.ForFork(entry.Value.Fork.ForkId, entry.Value.Path.PathIndex, stepName);
+            if (ctx.MainFlow.TryGetSuccessorWithinPath(key, out successorStepName))
+            {
+                return true;
+            }
+        }
+
+        foreach (var entry in ctx.BranchPathsByRoutingKey)
+        {
+            var key = PathRoutingKey.ForBranch(
+                entry.Value.Branch.BranchId,
+                entry.Value.Case.BranchPathPrefix,
+                stepName);
+            if (ctx.MainFlow.TryGetSuccessorWithinPath(key, out successorStepName))
+            {
+                return true;
+            }
+        }
+
+        return ctx.MainFlow.TryGetSuccessorWithinPath(stepName, out successorStepName);
+    }
+
+    private static bool TryGetBranchPathEnd(
+        SagaEmissionContext context,
+        string stepName,
+        out (BranchModel Branch, BranchCaseModel Case) pathInfo)
+    {
+        foreach (var entry in context.BranchPathsByRoutingKey)
+        {
+            if (string.Equals(entry.Key.PhaseName, stepName, StringComparison.Ordinal))
+            {
+                pathInfo = entry.Value;
+                return true;
+            }
+        }
+
+        pathInfo = default;
+        return false;
+    }
+
+    private static string ToPhaseName(string? loopPrefix, string effectiveName) =>
+        string.IsNullOrEmpty(loopPrefix) ? effectiveName : $"{loopPrefix}_{effectiveName}";
+
+    /// <summary>
+    /// Emits start and completed handlers for unnamed same-type fork paths whose
+    /// completed CLR type is <c>{PathId}_{PhaseName}Completed</c>.
+    /// </summary>
+    private void EmitPathQualifiedForkHandlers(
+        StringBuilder sb,
+        WorkflowModel model,
+        SagaEmissionContext context,
+        ForkPathCompletedNaming naming)
+    {
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            if (!instance.IsPathQualified)
+            {
+                continue;
+            }
+
+            if (!TryGetForkPath(model, instance.Key, out var fork, out var path))
+            {
+                continue;
+            }
+
+            var isLastOnPath = string.Equals(path.LastStepName, instance.Key.PhaseName, StringComparison.Ordinal);
+            string? nextStartStem = null;
+            var isLastStep = true;
+            if (context.MainFlow.TryGetSuccessorWithinPath(instance.Key, out var successorPhase))
+            {
+                isLastStep = false;
+                nextStartStem = ResolveForkStartStem(naming, fork, path, successorPhase);
+            }
+
+            var handlerContext = new HandlerContext(
+                StepIndex: 0,
+                IsLastStep: isLastStep,
+                IsTerminalStep: instance.Step.IsTerminal,
+                NextStepName: nextStartStem,
+                StepModel: instance.Step,
+                LoopsAtStep: null,
+                BranchAtStep: null,
+                ApprovalAtStep: null,
+                ForkAtStep: null,
+                ForkPathEnding: isLastOnPath ? (fork, path) : null,
+                JoinForkAtStep: null,
+                IsForkPathStep: true,
+                ForkPathKey: instance.Key);
+
+            sb.AppendLine();
+            _startEmitter.EmitHandler(sb, model, instance.Step.PhaseName, handlerContext, instance.Stem);
+
+            sb.AppendLine();
+            if (isLastOnPath)
+            {
+                _forkJoinEmitter.EmitPathCompletedHandler(sb, model, instance.Step.PhaseName, fork, path);
+            }
+            else
+            {
+                _completedEmitter.EmitHandler(sb, model, instance.Step.PhaseName, handlerContext);
+            }
+        }
+    }
+
+    private static bool HasPathQualifiedPhase(ForkPathCompletedNaming naming, string phaseName)
+    {
+        foreach (var instance in naming.QualifiedInstances)
+        {
+            if (instance.IsPathQualified
+                && string.Equals(instance.Key.PhaseName, phaseName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetForkPath(
+        WorkflowModel model,
+        PathRoutingKey key,
+        out ForkModel fork,
+        out ForkPathModel path)
+    {
+        if (model.HasForks)
+        {
+            foreach (var candidate in model.Forks!)
+            {
+                if (!string.Equals(candidate.ForkId, key.ConstructId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var candidatePath in candidate.Paths)
+                {
+                    if (string.Equals($"Path{candidatePath.PathIndex}", key.PathId, StringComparison.Ordinal))
+                    {
+                        fork = candidate;
+                        path = candidatePath;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        fork = null!;
+        path = null!;
+        return false;
+    }
+
+    private static string ResolveForkStartStem(
+        ForkPathCompletedNaming naming,
+        ForkModel fork,
+        ForkPathModel path,
+        string phaseName)
+    {
+        foreach (var step in path.Steps)
+        {
+            if (string.Equals(step.PhaseName, phaseName, StringComparison.Ordinal))
+            {
+                var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, step.PhaseName);
+                return naming.StartCommandStem(key, step.StepName);
+            }
+        }
+
+        return phaseName;
     }
 
     /// <summary>

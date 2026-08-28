@@ -8,7 +8,7 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_QUALITY: 'preview'
-  SOLUTION_PATH: 'src/strategos.sln'
+  SOLUTION_PATH: 'src/strategos.slnx'
 
 # Required for trusted publishing (OIDC)
 permissions:
@@ -65,12 +65,21 @@ jobs:
       - name: List packages
         run: ls -la ./packages/
 
+      - name: NuGet login (OIDC)
+        id: login
+        # SHA-pinned: this step mints the NuGet push credential from the OIDC
+        # token, so a moved tag would swap the code that handles it. Renovate
+        # tracks the trailing version comment.
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push to NuGet
         run: |
           for package in ./packages/*.nupkg; do
             echo "Pushing $package..."
             dotnet nuget push "$package" \
-              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
@@ -81,7 +90,7 @@ jobs:
             if [ -f "$package" ]; then
               echo "Pushing symbols $package..."
               dotnet nuget push "$package" \
-                --api-key ${{ secrets.NUGET_API_KEY }} \
+                --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
                 --source https://api.nuget.org/v3/index.json \
                 --skip-duplicate
             fi
@@ -126,5 +135,5 @@ jobs:
               --alternate-package "$new" \
               --message "Renamed to $new. See https://github.com/lvlup-sw/strategos for migration guide." \
               --source https://api.nuget.org/v3/index.json \
-              --api-key ${{ secrets.NUGET_API_KEY }} || true
+              --api-key ${{ steps.login.outputs.NUGET_API_KEY }} || true
           done

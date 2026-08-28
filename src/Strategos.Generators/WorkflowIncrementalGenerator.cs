@@ -174,27 +174,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Finds step types that occupy more than one exclusive path under distinct instance names.
-    /// Fork path steps (interiors and last steps) of the same fork that share <c>StepName</c> but
-    /// differ in <c>EffectiveName</c> would emit duplicate <c>Handle({Type}Completed)</c> overloads.
-    /// Branch cases that share a type under distinct instance names collide because
-    /// <c>BranchExtractor</c> records bare type names into <c>StepNames</c>.
-    /// </summary>
-    /// <param name="rawSteps">The raw extracted steps, including branch-path context.</param>
-    /// <param name="forkModels">The extracted fork models whose path steps are inspected.</param>
-    /// <returns>Distinct colliding step type names, ordered for stable diagnostics.</returns>
-    private static List<string> FindPathEndTypeCollisions(
-        IReadOnlyList<StepInfo> rawSteps,
-        IReadOnlyList<ForkModel> forkModels)
-    {
-        return PathEndTypeCollisionFinder.Find(
-            forkModels,
-            rawSteps
-                .Where(static s => s.Context == StepContext.BranchPath)
-                .Select(static s => (s.StepName, s.EffectiveName)));
-    }
-
-    /// <summary>
     /// Bridges one parsed workflow-definition import file to the generator IR (task 017). A
     /// well-formed document declaring the supported schema version is lowered through
     /// <see cref="WireToModelBridge"/> (which resolves step monikers against
@@ -815,22 +794,41 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 validName));
         }
 
-        // Context-aware duplicate step detection
-        // Use raw steps (no deduplication) with execution context to detect problematic duplicates:
-        // - Duplicates in Linear context: ERROR (same step twice in main flow)
-        // - Duplicates in ForkPath context: ERROR (same step in parallel paths causes routing issues)
-        // - Duplicates in BranchPath context: ERROR (same EffectiveName; exclusive paths still
-        //   key routing maps by name, so a shared name last-write-wins)
+        // Context-aware duplicate step detection.
+        // Use raw steps (no deduplication) with execution context:
+        // - Duplicates in Linear context: ERROR
+        // - Duplicates in ForkPath context: ERROR (parallel paths share one saga)
+        // - Duplicates in BranchPath context only: allowed — exclusive cases route
+        //   the shared completed handler by the live case (Option B).
         var rawSteps = FluentDslParser.ExtractRawStepInfos(
             context.TargetNode,
             context.SemanticModel,
             ct);
 
         // Use EffectiveName (= InstanceName ?? StepName). Same type with different instance
-        // names is not a duplicate-name error, but a path-end type collision is reported below.
+        // names is not a duplicate-name error. A BranchPath-only group is not either —
+        // but ONLY under the two conditions the shared live-case handler actually relies on:
+        //
+        //  1. Every occurrence resolves to the SAME step TYPE. ExtractStepModels groups by
+        //     phase name and keeps the first StepModel, so `.Then<ManualReview>("Review")`
+        //     and `.Then<AutoReview>("Review")` collapse to one Review artifact and the
+        //     second case routes into the first case's handler.
+        //  2. Every occurrence lives in the SAME branch. Exclusivity is a property of one
+        //     branch's cases, not of branches: two branch points execute in sequence, so a
+        //     name shared across them is not exclusive. The shared handler resolves the live
+        //     case by re-reading that branch's discriminator, and the saga records no
+        //     branch-path identity that could say which branch it is currently in.
+        //
+        // Either condition failing is a genuine duplicate name that routing cannot
+        // disambiguate, so it is reported as WorkflowDiagnostics.DuplicateStepName at the
+        // analyzer tier (INV-5: the earliest tier that can catch it).
+        var branchIdsByStepName = BuildBranchIdsByStepName(branchModels, loopModels);
         var duplicateSteps = rawSteps
             .GroupBy(s => s.EffectiveName)
-            .Where(g => g.Count() > 1)
+            .Where(g => g.Count() > 1
+                && (g.Any(s => s.Context != StepContext.BranchPath)
+                    || g.Select(s => s.StepName).Distinct(StringComparer.Ordinal).Count() > 1
+                    || SpansMultipleBranches(branchIdsByStepName, g.Key)))
             .Select(g => g.Key)
             .ToList();
 
@@ -841,21 +839,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 WorkflowDiagnostics.DuplicateStepName,
                 location,
                 duplicate,
-                validName));
-        }
-
-        // Path-end type collision: same step TYPE on exclusive paths under distinct instance
-        // names. Duplicate-name detection cannot see this (EffectiveNames differ) but the emitter keys
-        // Handle({Type}Completed) and branch successor maps by type, so the shape is CS0111
-        // or last-write-wins. Do not rewrite those maps — reject the shape.
-        var pathEndTypeCollisions = FindPathEndTypeCollisions(rawSteps, forkModels);
-        foreach (var collidingType in pathEndTypeCollisions)
-        {
-            var location = GetAttributeLocation(context);
-            diagnostics.Add(Diagnostic.Create(
-                WorkflowDiagnostics.PathEndTypeCollision,
-                location,
-                collidingType,
                 validName));
         }
 
@@ -929,13 +912,15 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // Return null model (no code generation) when there are errors
         var hasDuplicatePermittedForkTrigger = diagnostics.Exists(
             static d => d.Id == WorkflowDiagnostics.DuplicatePermittedForkTrigger.Id);
+        var hasDuplicateCompensationSeed = diagnostics.Exists(
+            static d => d.Id == WorkflowDiagnostics.DuplicateCompensationSeed.Id);
 
         var hasErrors = duplicateSteps.Count > 0
-            || pathEndTypeCollisions.Count > 0
             || (!hasStartWith && firstMethodName is not null)
             || hasForkWithoutJoin
             || emptyLoops.Count > 0
-            || hasDuplicatePermittedForkTrigger;
+            || hasDuplicatePermittedForkTrigger
+            || hasDuplicateCompensationSeed;
         if (hasErrors)
         {
             return new WorkflowGeneratorResult(null, diagnostics);
@@ -1181,6 +1166,77 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
         return null;
     }
+
+    /// <summary>
+    /// Maps each branch-case step name to the ids of the branches that declare it, across
+    /// the workflow's own branches and the loop-exit branches that live on
+    /// <see cref="LoopModel.BranchOnExit"/> (deliberately absent from the workflow
+    /// collection, and emitted by the same shared live-case handler).
+    /// </summary>
+    /// <param name="branchModels">The workflow's branch models.</param>
+    /// <param name="loopModels">The workflow's loop models, whose exit branches also count.</param>
+    /// <returns>Step name to the set of declaring branch ids.</returns>
+    private static Dictionary<string, HashSet<string>> BuildBranchIdsByStepName(
+        IReadOnlyList<BranchModel>? branchModels,
+        IReadOnlyList<LoopModel>? loopModels)
+    {
+        var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        void Record(BranchModel? branch)
+        {
+            if (branch is null)
+            {
+                return;
+            }
+
+            foreach (var branchCase in branch.Cases)
+            {
+                foreach (var stepName in branchCase.StepNames)
+                {
+                    if (!map.TryGetValue(stepName, out var ids))
+                    {
+                        ids = new HashSet<string>(StringComparer.Ordinal);
+                        map[stepName] = ids;
+                    }
+
+                    ids.Add(branch.BranchId);
+                }
+            }
+
+            Record(branch.NextConsecutiveBranch);
+        }
+
+        if (branchModels is not null)
+        {
+            foreach (var branch in branchModels)
+            {
+                Record(branch);
+            }
+        }
+
+        if (loopModels is not null)
+        {
+            foreach (var loop in loopModels)
+            {
+                Record(loop.BranchOnExit);
+            }
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Returns whether a branch-case step name is declared by more than one branch, which
+    /// the shared live-case completed handler cannot route: it resolves the live case from
+    /// ONE branch's discriminator, and the saga carries no branch-path identity.
+    /// </summary>
+    /// <param name="branchIdsByStepName">The step-name to branch-id map.</param>
+    /// <param name="stepName">The candidate shared branch-case step name.</param>
+    /// <returns><see langword="true"/> when two or more branches declare the name.</returns>
+    private static bool SpansMultipleBranches(
+        Dictionary<string, HashSet<string>> branchIdsByStepName,
+        string stepName)
+        => branchIdsByStepName.TryGetValue(stepName, out var ids) && ids.Count > 1;
 
     private static Location GetAttributeLocation(GeneratorAttributeSyntaxContext context)
     {

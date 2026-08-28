@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 31,
+  "count": 32,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -248,6 +248,14 @@
       "severity": "error",
       "summary": "Duplicate permitted fork trigger",
       "remediation": "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.",
+      "since": "2.11.0"
+    },
+    {
+      "name": "DuplicateCompensationSeed",
+      "id": "AGWF038",
+      "severity": "error",
+      "summary": "Duplicate diagnostic-fork compensation seed",
+      "remediation": "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.",
       "since": "2.11.0"
     }
   ]

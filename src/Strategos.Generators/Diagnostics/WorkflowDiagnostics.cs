@@ -568,20 +568,16 @@ internal static class WorkflowDiagnostics
         description: "Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
 
     /// <summary>
-    /// Exclusive paths collide on a step type under distinct instance names (#189, #190, #191).
+    /// Historical catalog member for exclusive-path type collision (#189, #190, #191).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Fork already rejects duplicate <c>EffectiveName</c>s (<see cref="DuplicateStepName"/>). Two
-    /// exclusive-path steps of the same fork that share <c>StepName</c> (type) but differ in
-    /// <c>InstanceName</c> — interiors as well as last steps — compile past that check and emit
-    /// duplicate <c>Handle({Type}Completed)</c> overloads (CS0111). Branch cases that share a step
-    /// type under distinct instance names have the same problem: the extractor records bare type
-    /// names into <c>StepNames</c>, so instance names do not disambiguate the successor map.
-    /// </para>
-    /// <para>
-    /// An error that blocks generation: a CS0111 in generated code is worse than a diagnostic.
-    /// Authors who need the same step type on exclusive paths must use distinct types.
+    /// Kept so the catalog identity shipped in 0.7.0 remains stable. The generator no longer
+    /// reports this descriptor: fork path instances that share a type bind
+    /// <c>Handle({PhaseName}Completed)</c> (the same phase string <c>Start{PhaseName}Command</c>
+    /// already uses), and branch completions keep one <c>Handle({StepType}Completed)</c> that
+    /// routes by the live case. Same <c>EffectiveName</c> on two fork or linear steps is still
+    /// <see cref="DuplicateStepName"/>.
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor PathEndTypeCollision = new(
@@ -616,4 +612,26 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A diagnostic-fork edge may permit each closed trigger at most once. Two same-trigger declarations can carry different evidence schemas, so the pair is rejected rather than silently deduplicated.");
+
+    /// <summary>
+    /// Two diagnostic-fork edges share a sanitized compensation-seed moniker (#156.3).
+    /// </summary>
+    /// <remarks>
+    /// Reported when a C# <c>AllowDiagnosticFork</c> chain or an imported
+    /// <c>*.workflow.json</c> declares two edges whose compensation seeds sanitize to
+    /// the same <c>DiagnosticForkCount_{seed}</c> key (the same '-' → '_' sanitizer
+    /// used for <c>Fork_{id}_Path{n}State</c>). Sharing a counter would let one
+    /// edge's <c>maxForks</c> bound starve the other; reject the workflow (no saga)
+    /// instead. Argument 0 is the workflow name (C#) or import file path (JSON);
+    /// argument 1 is the edge position (<c>AllowDiagnosticFork</c> or the JSON path);
+    /// argument 2 is the colliding compensation seed.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicateCompensationSeed = new(
+        id: AgwfCodes.DuplicateCompensationSeed,
+        title: "Duplicate diagnostic-fork compensation seed",
+        messageFormat: "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Two diagnostic-fork edges that sanitize to the same compensation-seed key cannot share a DiagnosticForkCount saga property; the pair is rejected rather than merged onto one counter.");
 }

@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
-/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 31
+/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 32
 /// members carrying <em>symbolic</em> names (the wire identity every consumer
 /// binds against by name, never by ordinal; INV-5), each serializing to its <c>AGWF0xx</c> wire string
 /// via the <c>[JsonStringEnumMemberName]</c> path.
@@ -52,6 +52,7 @@ public sealed class AgwfCodeEnumTests
         ("UnreachableTermination", "AGWF035"),
         ("PathEndTypeCollision", "AGWF036"),
         ("DuplicatePermittedForkTrigger", "AGWF037"),
+        ("DuplicateCompensationSeed", "AGWF038"),
     ];
 
     /// <summary>
@@ -72,7 +73,7 @@ public sealed class AgwfCodeEnumTests
 
         var members = Enum.GetNames(enumType!);
         await Assert.That(members.Length).IsEqualTo(Expected.Length)
-            .Because("AgwfCode must have exactly 31 members.");
+            .Because("AgwfCode must have exactly 32 members.");
 
         var options = Strategos.Contracts.ContractsJson.Options;
         foreach (var (name, wire) in Expected)

@@ -55,15 +55,13 @@ internal sealed class StepCompletedHandlerEmitter
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
-        // Determine event name:
-        // Worker handlers generate unprefixed events (e.g., ValidateThesisStepCompleted) because they
-        // are generated per step TYPE, not per phase. Fork path steps use the same handlers, so they
-        // receive the same unprefixed events.
-        // When stepModel is available, use its StepName directly.
-        // When stepModel is null (semantic resolution failed), extract base step name from phase name.
+        // Completed event: unique-type and linear steps stay {StepType}Completed.
+        // Shared-type fork instances bind ForkPathCompletedNaming.StemFor so colliding
+        // unnamed paths get {PathId}_{PhaseName}Completed rather than CS0111.
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
-        var eventName = $"{baseStepName}Completed";
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, baseStepName, context.IsForkPathStep, context.ForkPathKey);
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -403,7 +401,15 @@ internal sealed class StepCompletedHandlerEmitter
     /// </summary>
     /// <param name="model">The workflow model.</param>
     /// <returns>The command name to start the failure handler step.</returns>
-    private static string GetFailedStepCommandName(WorkflowModel model)
+    /// <summary>
+    /// Resolves the start command for the workflow-level failure handler chain — the
+    /// route a completed handler takes when the reducer drives the saga into the
+    /// <c>Failed</c> phase. Shared with <see cref="BranchHandlerEmitter"/> so the branch
+    /// live-case handler emits the same guard rather than a divergent copy.
+    /// </summary>
+    /// <param name="model">The workflow model.</param>
+    /// <returns>The failure-handler start-command type name.</returns>
+    internal static string GetFailedStepCommandName(WorkflowModel model)
     {
         // Find the workflow-scoped failure handler's first step
         var workflowFailureHandler = model.FailureHandlers?

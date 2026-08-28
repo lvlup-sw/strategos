@@ -7,6 +7,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
@@ -43,6 +44,10 @@ internal sealed class StepStartHandlerEmitter
     /// <param name="model">The workflow model.</param>
     /// <param name="stepName">The name of the step.</param>
     /// <param name="context">The handler context with step information.</param>
+    /// <param name="messageStem">
+    /// Optional path-qualified command stem (<c>{PathId}_{PhaseName}</c>) when
+    /// unnamed same-type fork paths would otherwise share <c>Start{PhaseName}Command</c>.
+    /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when any parameter is null.
     /// </exception>
@@ -50,24 +55,28 @@ internal sealed class StepStartHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string stepName,
-        HandlerContext context)
+        HandlerContext context,
+        string? messageStem = null)
     {
         ThrowHelper.ThrowIfNull(sb, nameof(sb));
         ThrowHelper.ThrowIfNull(model, nameof(model));
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
-        var commandName = $"Start{stepName}Command";
+        var commandStem = messageStem ?? stepName;
+        var commandName = $"Start{commandStem}Command";
         var stepModel = context.StepModel;
 
-        // Determine worker command name:
-        // Worker handlers are generated per step TYPE, not per phase, so we always use the unprefixed
-        // step type name. This ensures fork path steps (e.g., TargetLoop_ValidateThesisStep) route to
-        // the same handler as regular steps (ValidateThesisStep) since the step implementation is shared.
-        // When stepModel is available, use its StepName directly.
-        // When stepModel is null (semantic resolution failed), extract base step name from phase name.
+        // Unique-type and linear steps dispatch Execute{StepType}WorkerCommand.
+        // Shared-type fork instances dispatch Execute{stem}WorkerCommand so the
+        // worker Handle that returns {stem}Completed is the one Wolverine binds.
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var workerCommandName = $"Execute{baseStepName}WorkerCommand";
+        if (context.ForkPathKey is { } forkKey)
+        {
+            var naming = ForkPathCompletedNaming.For(model);
+            workerCommandName = $"Execute{naming.StemFor(forkKey, baseStepName)}WorkerCommand";
+        }
 
         // XML documentation
         sb.AppendLine("    /// <summary>");

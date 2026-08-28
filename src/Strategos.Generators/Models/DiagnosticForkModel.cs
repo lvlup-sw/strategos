@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Microsoft.CodeAnalysis.CSharp;
+
 using Strategos.Generators.Polyfills;
 
 namespace Strategos.Generators.Models;
@@ -136,6 +138,120 @@ internal sealed record DiagnosticForkModel(
             PermittedTriggers: [.. permittedTriggers],
             CompensationSeedMoniker: compensationSeedMoniker,
             MaxForks: maxForks);
+    }
+
+    /// <summary>
+    /// Canonicalises a compensation-seed moniker into a C# identifier suffix, the same
+    /// way fork-path saga properties sanitize <c>ForkId</c> for
+    /// <c>Fork_{id}_Path{n}State</c>. The seed is authored DSL text (or free-form JSON
+    /// on the import path), so it may carry ANY character; every character that C# does
+    /// not accept in an identifier — '-', ' ', '.', '/', '"' and the rest — is mapped to
+    /// '_'. The resulting token is the suffix of <see cref="CountPropertyName"/>, which
+    /// the saga emitter writes as a property name and as an expression identifier, so a
+    /// partial sanitizer produces a saga that does not compile.
+    /// </summary>
+    /// <remarks>
+    /// The mapping is deliberately many-to-one: <c>"foo-bar"</c>, <c>"foo bar"</c> and
+    /// <c>"foo_bar"</c> all canonicalise to <c>foo_bar</c>. That is not a silent merge —
+    /// <see cref="FindDuplicateCompensationSeeds"/> keys on this same canonical value, so
+    /// two edges that would land on one counter are reported as a duplicate compensation
+    /// seed rather than sharing a tally.
+    /// </remarks>
+    /// <param name="compensationSeedMoniker">The authored compensation-seed moniker.</param>
+    /// <returns>The identifier-safe moniker used as the <c>DiagnosticForkCount_</c> suffix.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="compensationSeedMoniker"/> is null.</exception>
+    public static string SanitizeCompensationSeedMoniker(string compensationSeedMoniker)
+    {
+        ThrowHelper.ThrowIfNull(compensationSeedMoniker, nameof(compensationSeedMoniker));
+
+        var buffer = new System.Text.StringBuilder(compensationSeedMoniker.Length);
+        foreach (var c in compensationSeedMoniker)
+        {
+            buffer.Append(SyntaxFacts.IsIdentifierPartCharacter(c) ? c : '_');
+        }
+
+        return buffer.ToString();
+    }
+
+    /// <summary>
+    /// Gets the per-edge saga counter property name, keyed by the canonicalised
+    /// compensation-seed moniker (<c>DiagnosticForkCount_{seed}</c>). 2.10.0 keyed the
+    /// same tally positionally as <c>DiagnosticForkCount_{i}</c>; 2.11.0 renames the
+    /// persisted Marten field, so an in-flight saga written by 2.10.0 carries only the
+    /// positional one. See <see cref="LegacyPositionalCountPropertyName"/> for the
+    /// fold-forward shim that keeps the <c>maxForks</c> bound honest across that upgrade.
+    /// </summary>
+    public string CountPropertyName =>
+        "DiagnosticForkCount_" + SanitizeCompensationSeedMoniker(CompensationSeedMoniker);
+
+    /// <summary>
+    /// Returns the 2.10.0 positional counter name (<c>DiagnosticForkCount_{i}</c>) that the
+    /// saga must keep reading so an upgrade does not silently reset an edge's admitted-fork
+    /// tally to <c>0</c> and admit another <c>MaxForks</c> forks. Marten deserialises the
+    /// stored document into the regenerated saga type and drops members it no longer knows,
+    /// so without this property the pre-upgrade count is simply lost.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="null"/> when the positional name is already the seed-keyed
+    /// name of some edge (a seed of <c>"0"</c> canonicalises to <c>DiagnosticForkCount_0</c>).
+    /// Emitting both would be a duplicate member; the seed-keyed property wins and the
+    /// legacy value for that index is not recoverable — an accepted, bounded loss over a
+    /// saga type that would not compile.
+    /// </remarks>
+    /// <param name="forks">Every diagnostic-fork edge on the workflow, in declaration order.</param>
+    /// <param name="edgeIndex">The zero-based declaration index of this edge — the 2.10.0 key.</param>
+    /// <returns>The legacy positional property name, or null when it collides.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="forks"/> is null.</exception>
+    public static string? LegacyPositionalCountPropertyName(
+        IReadOnlyList<DiagnosticForkModel> forks,
+        int edgeIndex)
+    {
+        ThrowHelper.ThrowIfNull(forks, nameof(forks));
+
+        var legacyName = "DiagnosticForkCount_" + edgeIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var fork in forks)
+        {
+            if (string.Equals(fork.CountPropertyName, legacyName, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        return legacyName;
+    }
+
+    /// <summary>
+    /// Returns each compensation seed whose sanitized moniker appears more than
+    /// once, in first-seen-collision order. Empty seeds are ignored. Used by the
+    /// C# extractor and the JSON-import bridge so two edges that would share a
+    /// <c>DiagnosticForkCount_{seed}</c> property are rejected rather than
+    /// merged onto one counter (#156.3).
+    /// </summary>
+    /// <param name="compensationSeeds">The compensation-seed monikers declared across edges.</param>
+    /// <returns>The colliding seeds (the later original of each sanitized-key clash), or empty.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="compensationSeeds"/> is null.</exception>
+    public static IReadOnlyList<string> FindDuplicateCompensationSeeds(IEnumerable<string> compensationSeeds)
+    {
+        ThrowHelper.ThrowIfNull(compensationSeeds, nameof(compensationSeeds));
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var duplicates = new List<string>();
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var seed in compensationSeeds)
+        {
+            if (string.IsNullOrEmpty(seed))
+            {
+                continue;
+            }
+
+            var key = SanitizeCompensationSeedMoniker(seed);
+            if (!seen.Add(key) && reported.Add(key))
+            {
+                duplicates.Add(seed);
+            }
+        }
+
+        return duplicates;
     }
 
     /// <summary>

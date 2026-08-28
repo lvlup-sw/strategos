@@ -36,6 +36,11 @@ namespace Strategos.Generators.Emitters.Saga;
 /// <param name="ForkPathEnding">Fork and path info if this step ends a fork path, or null if not in a path.</param>
 /// <param name="JoinForkAtStep">Fork if this is the join step, or null if not a join step.</param>
 /// <param name="IsForkPathStep">Whether this step is part of a fork path (used for fork-specific handler logic, not for command/event naming).</param>
+/// <param name="ForkPathKey">
+/// Routing key for this fork-path instance, or null when the step is not on a fork path.
+/// Looked up with <see cref="PathRoutingKey.ForFork"/> so saga Handles bind
+/// the same stem as <c>ForkPathCompletedNaming.For(model)</c>.
+/// </param>
 internal sealed record HandlerContext(
     int StepIndex,
     bool IsLastStep,
@@ -48,4 +53,5 @@ internal sealed record HandlerContext(
     ForkModel? ForkAtStep,
     (ForkModel Fork, ForkPathModel Path)? ForkPathEnding,
     ForkModel? JoinForkAtStep,
-    bool IsForkPathStep);
+    bool IsForkPathStep,
+    PathRoutingKey? ForkPathKey = null);

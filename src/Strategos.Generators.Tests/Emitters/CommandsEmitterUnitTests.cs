@@ -560,6 +560,55 @@ public class CommandsEmitterUnitTests
     }
 
     // =============================================================================
+    // G. Path-qualified fork worker commands (T1b / Option B)
+    // =============================================================================
+
+    /// <summary>
+    /// Shared-type fork path-ends emit <c>Execute{PhaseName}WorkerCommand</c> and
+    /// keep <c>Start{PhaseName}Command</c>. The type-level worker command is omitted.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkPathEnds_EmitsPhaseNamedWorkerCommands()
+    {
+        var source = CommandsEmitter.Emit(ForkPathMessageFixtures.SharedTypeInstanceNamed());
+
+        await Assert.That(source).Contains("public sealed partial record ExecuteTechnicalWorkerCommand");
+        await Assert.That(source).Contains("public sealed partial record ExecuteFundamentalWorkerCommand");
+        await Assert.That(source).Contains("public sealed partial record StartTechnicalCommand");
+        await Assert.That(source).Contains("public sealed partial record StartFundamentalCommand");
+        await Assert.That(source).Contains("public sealed partial record ExecutePrepareStepWorkerCommand");
+        await Assert.That(source).DoesNotContain("public sealed partial record ExecuteAnalyzeStepWorkerCommand");
+    }
+
+    /// <summary>
+    /// Colliding phase names emit path-qualified start and worker commands.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedPhaseNameForkPathEnds_EmitsPathQualifiedCommands()
+    {
+        var source = CommandsEmitter.Emit(ForkPathMessageFixtures.SharedPhaseName());
+
+        await Assert.That(source).Contains("public sealed partial record ExecutePath0_AnalyzeStepWorkerCommand");
+        await Assert.That(source).Contains("public sealed partial record ExecutePath1_AnalyzeStepWorkerCommand");
+        await Assert.That(source).Contains("public sealed partial record StartPath0_AnalyzeStepCommand");
+        await Assert.That(source).Contains("public sealed partial record StartPath1_AnalyzeStepCommand");
+        await Assert.That(source).DoesNotContain("public sealed partial record ExecuteAnalyzeStepWorkerCommand");
+    }
+
+    /// <summary>
+    /// Unique-type fork paths keep <c>Execute{StepType}WorkerCommand</c>.
+    /// </summary>
+    [Test]
+    public async Task Emit_UniqueTypeForkPaths_KeepsStepTypeWorkerCommands()
+    {
+        var source = CommandsEmitter.Emit(ForkPathMessageFixtures.UniqueTypes());
+
+        await Assert.That(source).Contains("public sealed partial record ExecuteTechnicalAnalyzeStepWorkerCommand");
+        await Assert.That(source).Contains("public sealed partial record ExecuteFundamentalAnalyzeStepWorkerCommand");
+        await Assert.That(source).DoesNotContain("ExecutePath0_");
+    }
+
+    // =============================================================================
     // Helper Methods
     // =============================================================================
 

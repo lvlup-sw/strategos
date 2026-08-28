@@ -15,6 +15,28 @@ using Strategos.Generators.Polyfills;
 namespace Strategos.Generators.Emitters.Saga;
 
 /// <summary>
+/// One occupancy of a step type on a branch case, used to emit a shared completed handler.
+/// </summary>
+/// <param name="Branch">The branch that owns the case.</param>
+/// <param name="Case">The case that contains the step.</param>
+/// <param name="PhaseName">The step's phase name on this case.</param>
+/// <param name="SuccessorPhaseName">
+/// The next phase to start, or null when this occupancy ends the workflow.
+/// </param>
+/// <param name="Step">
+/// The step model resolved for <paramref name="PhaseName"/>, or null when the phase has
+/// none. The shared live-case handler stands in for the per-occurrence completed handler
+/// <see cref="StepCompletedHandlerEmitter"/> would otherwise emit, so it needs the same
+/// step configuration — the confidence gate above all — to reproduce its guards.
+/// </param>
+internal sealed record BranchCaseStepOccurrence(
+    BranchModel Branch,
+    BranchCaseModel Case,
+    string PhaseName,
+    string? SuccessorPhaseName,
+    StepModel? Step = null);
+
+/// <summary>
 /// Emits handler methods for branch routing and path completion in a Wolverine saga.
 /// </summary>
 /// <remarks>
@@ -55,9 +77,10 @@ internal sealed class BranchHandlerEmitter
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(branch, nameof(branch));
 
-        // Use unprefixed step type name for completed event (workers return per-type events)
+        // Branch routing stays on {StepType}Completed — one Handle, live-case successor.
         var baseStepName = ExtractBaseStepName(stepName);
-        var eventName = $"{baseStepName}Completed";
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, baseStepName, isForkPathStep: false);
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
         // Method discriminators are called with State as argument; property discriminators are accessed on State
@@ -232,7 +255,8 @@ internal sealed class BranchHandlerEmitter
         string stepName,
         BranchModel branch,
         BranchCaseModel branchCase,
-        ConfidenceModel? confidence = null)
+        ConfidenceModel? confidence = null,
+        string? stepTypeName = null)
     {
         ThrowHelper.ThrowIfNull(sb, nameof(sb));
         ThrowHelper.ThrowIfNull(model, nameof(model));
@@ -240,9 +264,10 @@ internal sealed class BranchHandlerEmitter
         ThrowHelper.ThrowIfNull(branch, nameof(branch));
         ThrowHelper.ThrowIfNull(branchCase, nameof(branchCase));
 
-        // Branch path step names include the branch prefix (e.g., "Approved_Complete")
-        // and should be used as-is for the event name - don't strip the prefix
-        var eventName = $"{stepName}Completed";
+        // One Handle({StepType}Completed) per type. Instance names disambiguate via
+        // saga Phase (the live case), not a second completed CLR type.
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, stepTypeName ?? stepName, isForkPathStep: false);
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
         // The case's own declaration wins: a case that declared .Complete() ends the workflow here,
@@ -449,6 +474,260 @@ internal sealed class BranchHandlerEmitter
         }
 
         sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// Emits one <c>Handle({StepType}Completed)</c> that routes by the live branch case.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="eventName">The completed-event type name this handler accepts.</param>
+    /// <param name="occurrences">Every case that contains this step type.</param>
+    /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
+    /// <remarks>
+    /// Distinct phase names (instance-named cases) switch on saga <c>Phase</c>. Shared
+    /// phase names re-evaluate the branch discriminator, which is the live-case state
+    /// already persisted on the saga.
+    /// </remarks>
+    public void EmitLiveCaseCompletedHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string eventName,
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences)
+    {
+        ThrowHelper.ThrowIfNull(sb, nameof(sb));
+        ThrowHelper.ThrowIfNull(model, nameof(model));
+        ThrowHelper.ThrowIfNull(eventName, nameof(eventName));
+        ThrowHelper.ThrowIfNull(occurrences, nameof(occurrences));
+
+        var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var distinctPhases = occurrences.Select(static o => o.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .Count() == occurrences.Count;
+
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Handles the {eventName} event - routes by the live branch case.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine($"    /// <param name=\"evt\">The completed event.</param>");
+        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
+        sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
+        sb.AppendLine("    /// <returns>The next-step command, or empty when the live case ends the workflow.</returns>");
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+
+        if (!string.IsNullOrEmpty(model.StateTypeName))
+        {
+            StateApplicationHelper.EmitStateApplication(sb, model);
+            sb.AppendLine();
+        }
+
+        // Failure-phase sync + route, mirroring StepCompletedHandlerEmitter: a branch-case
+        // step can drive the saga into Failed through its reducer, and the live-case route
+        // must not bypass failure-handler dispatch. The routing key is captured FIRST —
+        // the sync overwrites Phase from the reduced state, which is the very value the
+        // phase arms below select on.
+        var syncsPhaseFromState = model.HasFailureHandlers
+            && model.StateHasPhaseProperty
+            && !string.IsNullOrEmpty(model.StateTypeName)
+            && !model.StateTypeName!.EndsWith("WorkflowState", StringComparison.Ordinal);
+
+        var routingKey = "Phase";
+        if (syncsPhaseFromState)
+        {
+            routingKey = "liveCasePhase";
+            sb.AppendLine($"        var {routingKey} = Phase;");
+            sb.AppendLine("        Phase = State.Phase;");
+            sb.AppendLine();
+        }
+
+        if (model.HasFailureHandlers)
+        {
+            var failedStepCommand = StepCompletedHandlerEmitter.GetFailedStepCommandName(model);
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            logger.LogWarning(");
+            sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
+            sb.AppendLine("                WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
+        if (distinctPhases)
+        {
+            EmitPhaseLiveCaseArms(sb, model, occurrences, routingKey);
+        }
+        else
+        {
+            EmitDiscriminatorLiveCaseArms(sb, model, occurrences);
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitPhaseLiveCaseArms(
+        StringBuilder sb,
+        WorkflowModel model,
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences,
+        string routingKey)
+    {
+        for (var i = 0; i < occurrences.Count; i++)
+        {
+            var keyword = i == 0 ? "if" : "else if";
+            var occurrence = occurrences[i];
+            sb.AppendLine($"        {keyword} ({routingKey} == {model.PhaseEnumName}.{occurrence.PhaseName})");
+            sb.AppendLine("        {");
+            EmitLiveCaseArmBody(sb, model, occurrence, "            ");
+            sb.AppendLine("        }");
+        }
+
+        sb.AppendLine("        else");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            throw new InvalidOperationException($\"Unhandled live branch case: {{{routingKey}}}\");");
+        sb.AppendLine("        }");
+    }
+
+    private static void EmitDiscriminatorLiveCaseArms(
+        StringBuilder sb,
+        WorkflowModel model,
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences)
+    {
+        var branch = occurrences[0].Branch;
+        var discriminatorAccess = branch.IsMethodDiscriminator
+            ? $"{branch.DiscriminatorPropertyPath}(State)"
+            : $"State.{branch.DiscriminatorPropertyPath}";
+
+        for (var i = 0; i < occurrences.Count; i++)
+        {
+            var occurrence = occurrences[i];
+            var literal = occurrence.Case.CaseValueLiteral;
+            var keyword = i == 0 ? "if" : "else if";
+            if (literal == "_" || literal == "default")
+            {
+                sb.AppendLine("        else");
+            }
+            else
+            {
+                sb.AppendLine($"        {keyword} ({discriminatorAccess} == {literal})");
+            }
+
+            sb.AppendLine("        {");
+            EmitLiveCaseArmBody(sb, model, occurrence, "            ");
+            sb.AppendLine("        }");
+        }
+
+        var hasOtherwise = occurrences.Any(static o =>
+            o.Case.CaseValueLiteral == "_" || o.Case.CaseValueLiteral == "default");
+        if (!hasOtherwise && !BoolDiscriminator.IsExhaustive(occurrences[0].Branch))
+        {
+            sb.AppendLine("        else");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            throw new InvalidOperationException($\"Unhandled live branch case: {{{discriminatorAccess}}}\");");
+            sb.AppendLine("        }");
+        }
+    }
+
+    /// <summary>
+    /// Emits the DR-5 confidence gate for one live branch-case occurrence, before the arm
+    /// issues its successor command. A repeated branch step configured with
+    /// <c>RequireConfidence(t).OnLowConfidence(...)</c> gets the same route here that
+    /// <see cref="StepCompletedHandlerEmitter"/> emits for a non-shared step: below the
+    /// threshold the saga cascades the low-confidence handler's start command instead of
+    /// continuing the branch. No-op for an occurrence with no confidence policy, so an
+    /// ungated shared handler keeps its previous shape.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="occurrence">The live branch-case occurrence this arm routes.</param>
+    /// <param name="indent">The arm-body indentation.</param>
+    private static void EmitLiveCaseConfidenceGate(
+        StringBuilder sb,
+        WorkflowModel model,
+        BranchCaseStepOccurrence occurrence,
+        string indent)
+    {
+        var confidence = occurrence.Step?.Confidence;
+        if (confidence?.OnLowConfidenceHandlerStep is null)
+        {
+            return;
+        }
+
+        var handlerStepName = confidence.OnLowConfidenceHandlerStep.StepName;
+        var lowConfidenceCommand = $"Start{handlerStepName}Command";
+        var thresholdLiteral = confidence.Threshold.ToString("R", CultureInfo.InvariantCulture);
+
+        sb.AppendLine($"{indent}// Confidence gate (DR-5): route to the low-confidence handler when this");
+        sb.AppendLine($"{indent}// live branch case's result confidence is below the configured threshold.");
+        sb.AppendLine($"{indent}if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine($"{indent}    Phase = {model.PhaseEnumName}.{handlerStepName};");
+        sb.AppendLine();
+        sb.AppendLine($"{indent}    logger.LogWarning(");
+        sb.AppendLine($"{indent}        \"Branch-case step confidence {{Confidence}} below threshold {{Threshold}} for workflow {{WorkflowId}}, routing to {{Handler}}\",");
+        sb.AppendLine($"{indent}        confidenceScore,");
+        sb.AppendLine($"{indent}        {thresholdLiteral},");
+        sb.AppendLine($"{indent}        WorkflowId,");
+        sb.AppendLine($"{indent}        nameof({lowConfidenceCommand}));");
+
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"{indent}    session.Events.Append(");
+            sb.AppendLine($"{indent}        WorkflowId,");
+            sb.AppendLine($"{indent}        new {model.PascalName}LowConfidenceRouted(");
+            sb.AppendLine($"{indent}            WorkflowId,");
+            sb.AppendLine($"{indent}            \"{occurrence.PhaseName}\",");
+            sb.AppendLine($"{indent}            confidenceScore,");
+            sb.AppendLine($"{indent}            {thresholdLiteral},");
+            sb.AppendLine($"{indent}            DateTimeOffset.UtcNow));");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"{indent}    yield return new {lowConfidenceCommand}(WorkflowId);");
+        sb.AppendLine($"{indent}    yield break;");
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+    }
+
+    private static void EmitLiveCaseArmBody(
+        StringBuilder sb,
+        WorkflowModel model,
+        BranchCaseStepOccurrence occurrence,
+        string indent)
+    {
+        EmitLiveCaseConfidenceGate(sb, model, occurrence, indent);
+
+        if (occurrence.SuccessorPhaseName is not null)
+        {
+            var command = $"Start{occurrence.SuccessorPhaseName}Command";
+            sb.AppendLine($"{indent}logger.LogDebug(");
+            sb.AppendLine($"{indent}    \"Live branch case {{BranchPath}} chaining to {{NextStep}} for workflow {{WorkflowId}}\",");
+            sb.AppendLine($"{indent}    \"{occurrence.Case.BranchPathPrefix}\",");
+            sb.AppendLine($"{indent}    nameof({command}),");
+            sb.AppendLine($"{indent}    WorkflowId);");
+            sb.AppendLine();
+            sb.AppendLine($"{indent}yield return new {command}(WorkflowId);");
+            sb.AppendLine($"{indent}yield break;");
+            return;
+        }
+
+        sb.AppendLine($"{indent}logger.LogInformation(");
+        sb.AppendLine($"{indent}    \"Live branch case {{BranchPath}} completed workflow {{WorkflowId}}\",");
+        sb.AppendLine($"{indent}    \"{occurrence.Case.BranchPathPrefix}\",");
+        sb.AppendLine($"{indent}    WorkflowId);");
+        sb.AppendLine();
+        sb.AppendLine($"{indent}Phase = {model.PhaseEnumName}.Completed;");
+        sb.AppendLine($"{indent}MarkCompleted();");
+        sb.AppendLine($"{indent}yield break;");
     }
 
     /// <summary>

@@ -33,7 +33,8 @@
         "AGWF034",
         "AGWF035",
         "AGWF036",
-        "AGWF037"
+        "AGWF037",
+        "AGWF038"
     ],
-    "description": "AGWF — the workflow source-generator diagnostic codes. **Single canonical\nsource** (#52): the codes and their metadata live here in TypeSpec; the\nRoslyn analyzer (`WorkflowDiagnostics`) sources its `id` strings from the\ngenerated `AgwfCode` C# enum, and the codegen pipeline emits the canonical\n`agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.\n\nGround truth = exactly **31 defined codes** with gaps preserved as gaps\n(INV-5: never renumber). Member NAMES are the wire identity: the enum\nround-trips by name and never by ordinal, so a member may be added but never\nrenamed or reordered without a major bump.\n\nRepresentation = **R-lit** (DR-1): each entry is a literal-typed model whose\nfields emit as JSON Schema `const`, read by `AgwfCatalogEmitter`. Adding a\ncode is a minor bump; renaming/removing one is a major bump."
+    "description": "AGWF — the workflow source-generator diagnostic codes. **Single canonical\nsource** (#52): the codes and their metadata live here in TypeSpec; the\nRoslyn analyzer (`WorkflowDiagnostics`) sources its `id` strings from the\ngenerated `AgwfCode` C# enum, and the codegen pipeline emits the canonical\n`agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.\n\nGround truth = exactly **32 defined codes** with gaps preserved as gaps\n(INV-5: never renumber). Member NAMES are the wire identity: the enum\nround-trips by name and never by ordinal, so a member may be added but never\nrenamed or reordered without a major bump.\n\nRepresentation = **R-lit** (DR-1): each entry is a literal-typed model whose\nfields emit as JSON Schema `const`, read by `AgwfCatalogEmitter`. Adding a\ncode is a minor bump; renaming/removing one is a major bump."
 }

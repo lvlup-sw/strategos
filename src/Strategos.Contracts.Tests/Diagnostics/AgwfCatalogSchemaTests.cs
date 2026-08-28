@@ -22,7 +22,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 [NotInParallel("tsp-compile")]
 public sealed class AgwfCatalogSchemaTests
 {
-    /// <summary>The 31 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
+    /// <summary>The 32 ground-truth AGWF codes (INV-5: gaps stay gaps, no renumber).</summary>
     private static readonly string[] GroundTruthCodes =
     [
         "AGWF001", "AGWF002", "AGWF003", "AGWF004", "AGWF009",
@@ -31,7 +31,7 @@ public sealed class AgwfCatalogSchemaTests
         "AGWF022", "AGWF023", "AGWF024", "AGWF025", "AGWF026",
         "AGWF027", "AGWF028", "AGWF029", "AGWF030", "AGWF031",
         "AGWF032", "AGWF033", "AGWF034", "AGWF035", "AGWF036",
-        "AGWF037",
+        "AGWF037", "AGWF038",
     ];
 
     /// <summary>

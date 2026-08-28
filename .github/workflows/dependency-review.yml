@@ -1,0 +1,38 @@
+# Dependency Review — fail PRs that introduce vulnerable dependencies (#147).
+#
+# Thin CALLER of the org reusable
+# (lvlup-sw/.github/.github/workflows/dependency-review.yml). The action SHA
+# pin and review logic live there. This file owns only the pull_request trigger
+# (the action diffs the PR's base..head dependency graph) and the call-site
+# inputs.
+#
+# License allow/deny lists are intentionally unset — the reusable defers that
+# to later org governance. fail-on-severity: high matches the reusable default.
+#
+# This repository is public, so dependency review is available without a GHAS
+# gate (unlike the private hierophant caller).
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency Review
+    # The reusable declares pull-requests: write for its optional PR-comment
+    # feature, so the caller must grant at least that (a called workflow cannot
+    # request more than the caller). comment-summary-in-pr defaults to never,
+    # so the scope is unused but required by the ceiling.
+    permissions:
+      contents: read
+      pull-requests: write
+    # Org reusable workflows are pinned to the v1 tag, which resolved to
+    # c10269573359bc91ff59fe5e9cb8090bbc6cb87a when this pin was set.
+    uses: lvlup-sw/.github/.github/workflows/dependency-review.yml@v1
+    with:
+      fail-on-severity: high

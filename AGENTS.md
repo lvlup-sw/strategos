@@ -51,11 +51,11 @@ packages/                       # NuGet package output
 - **Authentication**: Not applicable (library, not service)
 - **Secrets Management**: No secrets stored in repository
 - **External APIs**: Library consumers configure LLM providers via Microsoft.Extensions.AI
-- **NuGet Publishing**: Uses GitHub Actions with NuGet API key (repository secret)
+- **NuGet Publishing**: GitHub Actions trusted publishing (OIDC via `NuGet/login@v1`); short-lived nuget.org keys. Username is repo var `NUGET_USER`.
 
 ## Known Tech Debt
 
-- None acknowledged
+- Two nuget.org Trusted Publishing policies (`publish.yml`, `publish-contracts.yml`) and repo var `NUGET_USER` must exist before the next `v*` / `contracts-v*` tag. Delete the `NUGET_API_KEY` Actions secret only after a green tag.
 
 ## Scan Preferences
 

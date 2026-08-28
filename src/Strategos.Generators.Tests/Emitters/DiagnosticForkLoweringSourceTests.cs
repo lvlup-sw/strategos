@@ -220,7 +220,7 @@ public class DiagnosticForkLoweringSourceTests
         await Assert.That(sagaSource).Contains("cmd.Anchor == \"RatifyStep\"");
 
         // Per-edge fork tally (edge 0) + the blocked/human-escalation terminal.
-        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_0");
+        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_StampStep");
         await Assert.That(phaseSource).Contains("ForkBlocked,");
     }
 
@@ -299,9 +299,16 @@ public class DiagnosticForkLoweringSourceTests
         var result = GeneratorTestHelper.RunGenerator(EventSourcedForkWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "RatifyDeploySaga.g.cs");
 
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_0 >= 2)");
+        // The bound is checked against the folded tally: the seed-keyed 2.11.0 counter
+        // MAX the 2.10.0 positional one, so an upgraded in-flight saga does not restart
+        // its allowance at zero. Only the seed-keyed property is written forward.
+        await Assert.That(sagaSource).Contains(
+            "var edge0Admitted = DiagnosticForkCount_StampStep > DiagnosticForkCount_0 "
+            + "? DiagnosticForkCount_StampStep : DiagnosticForkCount_0;");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 2)");
         await Assert.That(sagaSource).Contains("Phase = RatifyDeployPhase.ForkBlocked;");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_0++;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_0 =");
     }
 
     /// <summary>
@@ -362,7 +369,7 @@ public class DiagnosticForkLoweringSourceTests
 
         // The control-flow guards lower in document mode too.
         await Assert.That(sagaSource).Contains("ForkRatifyDeployCommand cmd,");
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_0 >= 2)");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 2)");
 
         // But the audit stream event record is event-sourced-only ...
         await Assert.That(eventsSource).DoesNotContain("WorkflowForked");
@@ -385,19 +392,67 @@ public class DiagnosticForkLoweringSourceTests
         var result = GeneratorTestHelper.RunGenerator(MultiEdgeForkWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "RatifyDeploySaga.g.cs");
 
-        // Two independent per-edge counters are declared.
-        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_0");
-        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_1");
+        // Two independent seed-keyed counters are declared.
+        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_StampStep");
+        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_CompleteStep");
 
-        // Each edge's bound check is against its OWN counter (edge 0 bound 5, edge 1 bound 1).
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_0 >= 5)");
-        await Assert.That(sagaSource).Contains("if (DiagnosticForkCount_1 >= 1)");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_0++;");
-        await Assert.That(sagaSource).Contains("DiagnosticForkCount_1++;");
+        // Each edge's bound check folds its OWN pair (seed-keyed 2.11.0 counter MAX the
+        // 2.10.0 positional one for the SAME edge index) — never the other edge's.
+        await Assert.That(sagaSource).Contains(
+            "var edge0Admitted = DiagnosticForkCount_StampStep > DiagnosticForkCount_0 "
+            + "? DiagnosticForkCount_StampStep : DiagnosticForkCount_0;");
+        await Assert.That(sagaSource).Contains(
+            "var edge1Admitted = DiagnosticForkCount_CompleteStep > DiagnosticForkCount_1 "
+            + "? DiagnosticForkCount_CompleteStep : DiagnosticForkCount_1;");
+        await Assert.That(sagaSource).Contains("if (edge0Admitted >= 5)");
+        await Assert.That(sagaSource).Contains("if (edge1Admitted >= 1)");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_CompleteStep = edge1Admitted + 1;");
 
         // No shared workflow-scoped counter survives to be starved.
         await Assert.That(sagaSource).DoesNotContain("if (DiagnosticForkCount >=");
         await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount++;");
+    }
+
+    /// <summary>
+    /// Reordering <c>AllowDiagnosticFork</c> calls must not rename the seed-keyed
+    /// counters (#156.3): property names follow the compensation seed, not declaration index.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DiagnosticForkLowering_ReorderedEdges_KeepSeedKeyedPropertyNames()
+    {
+        var result = GeneratorTestHelper.RunGenerator(ReorderedMultiEdgeForkWorkflow);
+        var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "RatifyDeploySaga.g.cs");
+
+        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_StampStep");
+        await Assert.That(sagaSource).Contains("public int DiagnosticForkCount_CompleteStep");
+
+        // The positional properties survive ONLY as the 2.10.0 read shim, and this fixture
+        // is the reordered one: edge 0 is now the CompleteStep seed. The tally the saga
+        // WRITES stays keyed by seed, so reordering does not move a live counter — the
+        // positional name is never assigned.
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_CompleteStep = edge0Admitted + 1;");
+        await Assert.That(sagaSource).Contains("DiagnosticForkCount_StampStep = edge1Admitted + 1;");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_0 =");
+        await Assert.That(sagaSource).DoesNotContain("DiagnosticForkCount_1 =");
+    }
+
+    /// <summary>
+    /// Two edges that share a compensation seed fire AGWF038 and emit no saga —
+    /// they must not share a <c>DiagnosticForkCount_{seed}</c> counter (#156.3).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task DiagnosticForkLowering_DuplicateCompensationSeed_FiresAgwf038AndEmitsNoSaga()
+    {
+        var result = GeneratorTestHelper.RunGenerator(DuplicateSeedForkWorkflow);
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == "AGWF038")).IsTrue()
+            .Because("two edges that share a compensation seed must fire AGWF038.");
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsFalse()
+            .Because("a workflow rejected by AGWF038 must not emit a saga.");
     }
 
     /// <summary>
@@ -415,7 +470,7 @@ public class DiagnosticForkLoweringSourceTests
 
         // The double-quote in the anchor/seed is escaped in the emitted literal.
         await Assert.That(sagaSource).Contains("cmd.Anchor == \"Rat\\\"ify\"");
-        await Assert.That(sagaSource).Contains("\"Stamp\\\"Step\"");
+        await Assert.That(sagaSource).Contains("\"Stamp-Step\"");
 
         // The unescaped forms (a raw interpolation) must NOT appear.
         await Assert.That(sagaSource).DoesNotContain("cmd.Anchor == \"Rat\"ify\"");
@@ -516,6 +571,163 @@ public class DiagnosticForkLoweringSourceTests
                 .AllowDiagnosticFork(fork => fork
                     .Anchor("StampStep")
                     .PermitTrigger(ForkTrigger.GateContradiction, "leftGateId", "rightGateId")
+                    .WithCompensationSeed("CompleteStep")
+                    .MaxForks(1))
+                .Finally<CompleteStep>();
+        }
+        """;
+
+    /// <summary>
+    /// The multi-edge fixture with the two <c>AllowDiagnosticFork</c> calls swapped.
+    /// Seed-keyed counters must stay put regardless of declaration order.
+    /// </summary>
+    private const string ReorderedMultiEdgeForkWorkflow = """
+        using System;
+        using System.Collections.Generic;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ForkTrigger
+        {
+            RatificationFailure,
+            GateContradiction,
+            OperatorExplicit,
+        }
+
+        [WorkflowState]
+        public record RatifyState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class RatifyStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class StampStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class RollbackStampStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class CompleteStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        [Workflow("ratify-deploy", Persistence = PersistenceMode.EventSourced)]
+        public static partial class RatifyDeployWorkflow
+        {
+            public static WorkflowDefinition<RatifyState> Definition => Workflow<RatifyState>
+                .Create("ratify-deploy")
+                .StartWith<RatifyStep>()
+                .Then<StampStep>(step => step.Compensate<RollbackStampStep>())
+                .AllowDiagnosticFork(fork => fork
+                    .Anchor("StampStep")
+                    .PermitTrigger(ForkTrigger.GateContradiction, "leftGateId", "rightGateId")
+                    .WithCompensationSeed("CompleteStep")
+                    .MaxForks(1))
+                .AllowDiagnosticFork(fork => fork
+                    .Anchor("RatifyStep")
+                    .PermitTrigger(ForkTrigger.RatificationFailure, "provisionalStampEventId", "taints")
+                    .WithCompensationSeed("StampStep")
+                    .MaxForks(5))
+                .Finally<CompleteStep>();
+        }
+        """;
+
+    /// <summary>
+    /// Two edges that share the same compensation seed — the #156.3 AGWF038 case.
+    /// </summary>
+    private const string DuplicateSeedForkWorkflow = """
+        using System;
+        using System.Collections.Generic;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public enum ForkTrigger
+        {
+            RatificationFailure,
+            GateContradiction,
+            OperatorExplicit,
+        }
+
+        [WorkflowState]
+        public record RatifyState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class RatifyStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class StampStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class RollbackStampStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        public class CompleteStep : IWorkflowStep<RatifyState>
+        {
+            public Task<StepResult<RatifyState>> ExecuteAsync(
+                RatifyState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<RatifyState>.FromState(state));
+        }
+
+        [Workflow("duplicate-fork-seed")]
+        public static partial class DuplicateForkSeedWorkflow
+        {
+            public static WorkflowDefinition<RatifyState> Definition => Workflow<RatifyState>
+                .Create("duplicate-fork-seed")
+                .StartWith<RatifyStep>()
+                .Then<StampStep>(step => step.Compensate<RollbackStampStep>())
+                .AllowDiagnosticFork(fork => fork
+                    .Anchor("RatifyStep")
+                    .PermitTrigger(ForkTrigger.RatificationFailure, "provisionalStampEventId", "taints")
+                    .WithCompensationSeed("StampStep")
+                    .MaxForks(5))
+                .AllowDiagnosticFork(fork => fork
+                    .Anchor("StampStep")
+                    .PermitTrigger(ForkTrigger.GateContradiction, "leftGateId", "rightGateId")
                     .WithCompensationSeed("StampStep")
                     .MaxForks(1))
                 .Finally<CompleteStep>();
@@ -524,8 +736,10 @@ public class DiagnosticForkLoweringSourceTests
 
     /// <summary>
     /// A fork workflow whose anchor moniker (<c>Rat"ify</c>) and compensation seed
-    /// (<c>Stamp"Step</c>) carry an embedded double-quote — the M5 codegen-safety fixture
-    /// proving the emitted literals are escaped so the generated saga still compiles.
+    /// (<c>Stamp-Step</c>) are both hostile literals: the anchor carries an embedded
+    /// double-quote (escaped into the emitted string literals) and the seed carries a
+    /// hyphen (canonicalised into the <c>DiagnosticForkCount_</c> identifier suffix) —
+    /// the M5 codegen-safety fixture proving the generated saga still compiles.
     /// </summary>
     private const string HostileLiteralForkWorkflow = """"
         using System;
@@ -591,7 +805,7 @@ public class DiagnosticForkLoweringSourceTests
                 .AllowDiagnosticFork(fork => fork
                     .Anchor("Rat\"ify")
                     .PermitTrigger(ForkTrigger.RatificationFailure, "provisionalStampEventId", "taints")
-                    .WithCompensationSeed("Stamp\"Step")
+                    .WithCompensationSeed("Stamp-Step")
                     .MaxForks(2))
                 .Finally<CompleteStep>();
         }

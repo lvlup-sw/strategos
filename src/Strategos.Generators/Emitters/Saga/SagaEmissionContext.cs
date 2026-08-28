@@ -75,6 +75,17 @@ internal sealed class SagaEmissionContext
     public IReadOnlyDictionary<string, (BranchModel Branch, BranchCaseModel Case)> BranchPathInfo { get; }
 
     /// <summary>
+    /// Gets every branch case keyed by construct, path prefix, and last-step phase name.
+    /// </summary>
+    /// <remarks>
+    /// Saga <c>Handle</c> emitters that route by construct and path read this map.
+    /// The string <see cref="BranchPathInfo"/> stays for existing emitters and is keyed
+    /// by phase name (not bare type). The exclusive-path name-collision diagnostic still forbids the same phase name on two
+    /// exclusive cases.
+    /// </remarks>
+    public IReadOnlyDictionary<PathRoutingKey, (BranchModel Branch, BranchCaseModel Case)> BranchPathsByRoutingKey { get; }
+
+    /// <summary>
     /// Gets the step models indexed by step name.
     /// </summary>
     public IReadOnlyDictionary<string, StepModel> StepsByName { get; }
@@ -102,6 +113,17 @@ internal sealed class SagaEmissionContext
     /// This lookup allows determining if a step ends a fork path.
     /// </remarks>
     public IReadOnlyDictionary<string, (ForkModel Fork, ForkPathModel Path)> ForkPathInfo { get; }
+
+    /// <summary>
+    /// Gets every fork path-end keyed by construct, path index, and last-step phase name.
+    /// </summary>
+    /// <remarks>
+    /// Events, worker, and saga <c>Handle</c> emitters that route by construct and path
+    /// read this map. Two paths that share a phase name each have their own entry.
+    /// <see cref="ForkPathInfo"/> still last-write-wins on that shared phase name so
+    /// existing <c>Handle</c> emitters keep compiling until they switch over.
+    /// </remarks>
+    public IReadOnlyDictionary<PathRoutingKey, (ForkModel Fork, ForkPathModel Path)> ForkPathsByRoutingKey { get; }
 
     /// <summary>
     /// Gets the forks indexed by their join step name.
@@ -150,11 +172,15 @@ internal sealed class SagaEmissionContext
         MainFlow = MainFlowClassification.For(model);
         LoopsByLastStep = BuildLoopsByLastStep(model);
         BranchesByPreviousStep = BuildBranchesByPreviousStep(model);
-        BranchPathInfo = BuildBranchPathInfo(model);
+        var branchPathMaps = BuildBranchPathInfo(model);
+        BranchPathInfo = branchPathMaps.ByPhaseName;
+        BranchPathsByRoutingKey = branchPathMaps.ByRoutingKey;
         StepsByName = BuildStepsByName(model);
         ApprovalsByPrecedingStep = BuildApprovalsByPrecedingStep(model);
         ForksByPreviousStep = BuildForksByPreviousStep(model);
-        ForkPathInfo = BuildForkPathInfo(model);
+        var forkPathMaps = BuildForkPathInfo(model);
+        ForkPathInfo = forkPathMaps.ByPhaseName;
+        ForkPathsByRoutingKey = forkPathMaps.ByRoutingKey;
         ForksByJoinStep = BuildForksByJoinStep(model);
         ForkPathSteps = BuildForkPathSteps(model);
     }
@@ -203,15 +229,16 @@ internal sealed class SagaEmissionContext
             .ToDictionary(b => b.PreviousStepName, b => b);
     }
 
-    private static IReadOnlyDictionary<string, (BranchModel Branch, BranchCaseModel Case)> BuildBranchPathInfo(WorkflowModel model)
+    private static (IReadOnlyDictionary<string, (BranchModel Branch, BranchCaseModel Case)> ByPhaseName, IReadOnlyDictionary<PathRoutingKey, (BranchModel Branch, BranchCaseModel Case)> ByRoutingKey) BuildBranchPathInfo(WorkflowModel model)
     {
-        var result = new Dictionary<string, (BranchModel, BranchCaseModel)>();
+        var byPhaseName = new Dictionary<string, (BranchModel, BranchCaseModel)>(StringComparer.Ordinal);
+        var byRoutingKey = new Dictionary<PathRoutingKey, (BranchModel, BranchCaseModel)>();
 
         if (model.HasBranches)
         {
             foreach (var branch in model.Branches!)
             {
-                AddBranchCases(result, branch);
+                AddBranchCases(byPhaseName, byRoutingKey, branch);
             }
         }
 
@@ -221,18 +248,19 @@ internal sealed class SagaEmissionContext
             {
                 if (loop.BranchOnExit is not null)
                 {
-                    AddBranchCases(result, loop.BranchOnExit);
+                    AddBranchCases(byPhaseName, byRoutingKey, loop.BranchOnExit);
                 }
             }
         }
 
-        return result;
+        return (byPhaseName, byRoutingKey);
     }
 
     /// <summary>
     /// Admits every case that has steps into the path-info lookup, workflow-ending cases included.
     /// </summary>
-    /// <param name="result">The lookup being populated.</param>
+    /// <param name="byPhaseName">The phase-name lookup being populated.</param>
+    /// <param name="byRoutingKey">The identity-carrying lookup being populated.</param>
     /// <param name="branch">The branch whose cases should be admitted.</param>
     /// <remarks>
     /// Excluding an ending case leaves its last step to the ordinary step handler, where
@@ -240,16 +268,39 @@ internal sealed class SagaEmissionContext
     /// path-end handler reads <see cref="BranchCaseModel.IsTerminal"/> instead.
     /// </remarks>
     private static void AddBranchCases(
-        Dictionary<string, (BranchModel Branch, BranchCaseModel Case)> result,
+        Dictionary<string, (BranchModel Branch, BranchCaseModel Case)> byPhaseName,
+        Dictionary<PathRoutingKey, (BranchModel Branch, BranchCaseModel Case)> byRoutingKey,
         BranchModel branch)
     {
         foreach (var branchCase in branch.Cases)
         {
-            if (branchCase.StepNames.Count > 0)
+            if (branchCase.StepNames.Count == 0)
             {
-                result[branchCase.LastStepName] = (branch, branchCase);
+                continue;
             }
+
+            var phaseName = ToPhaseName(branch.LoopPrefix, branchCase.LastStepName);
+            byPhaseName[phaseName] = (branch, branchCase);
+            byRoutingKey[PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, phaseName)] =
+                (branch, branchCase);
         }
+    }
+
+    /// <summary>
+    /// Combines a branch's loop prefix with a case step's effective name so the string
+    /// map keys the same phase name the step list uses.
+    /// </summary>
+    /// <param name="loopPrefix">The branch's loop prefix, or null when not inside a loop.</param>
+    /// <param name="effectiveName">The case step's effective name (instance or type).</param>
+    /// <returns>The phase name used as the string-map key.</returns>
+    private static string ToPhaseName(string? loopPrefix, string effectiveName)
+    {
+        if (string.IsNullOrEmpty(loopPrefix))
+        {
+            return effectiveName;
+        }
+
+        return $"{loopPrefix}_{effectiveName}";
     }
 
     private static IReadOnlyDictionary<string, StepModel> BuildStepsByName(WorkflowModel model)
@@ -283,29 +334,33 @@ internal sealed class SagaEmissionContext
         return model.Forks!.ToDictionary(f => f.PreviousStepName, f => f);
     }
 
-    private static IReadOnlyDictionary<string, (ForkModel Fork, ForkPathModel Path)> BuildForkPathInfo(WorkflowModel model)
+    private static (IReadOnlyDictionary<string, (ForkModel Fork, ForkPathModel Path)> ByPhaseName, IReadOnlyDictionary<PathRoutingKey, (ForkModel Fork, ForkPathModel Path)> ByRoutingKey) BuildForkPathInfo(WorkflowModel model)
     {
-        var result = new Dictionary<string, (ForkModel, ForkPathModel)>();
+        var byPhaseName = new Dictionary<string, (ForkModel, ForkPathModel)>(StringComparer.Ordinal);
+        var byRoutingKey = new Dictionary<PathRoutingKey, (ForkModel, ForkPathModel)>();
 
         if (!model.HasForks)
         {
-            return result;
+            return (byPhaseName, byRoutingKey);
         }
 
         foreach (var fork in model.Forks!)
         {
             foreach (var path in fork.Paths)
             {
-                // Get the last step in this path
-                if (path.StepNames.Count > 0)
+                if (path.StepNames.Count == 0)
                 {
-                    var lastStepName = path.StepNames[path.StepNames.Count - 1];
-                    result[lastStepName] = (fork, path);
+                    continue;
                 }
+
+                var lastStepName = path.LastStepName;
+                byPhaseName[lastStepName] = (fork, path);
+                byRoutingKey[PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, lastStepName)] =
+                    (fork, path);
             }
         }
 
-        return result;
+        return (byPhaseName, byRoutingKey);
     }
 
     private static IReadOnlyDictionary<string, ForkModel> BuildForksByJoinStep(WorkflowModel model)

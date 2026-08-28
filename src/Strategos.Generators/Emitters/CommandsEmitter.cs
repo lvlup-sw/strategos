@@ -28,6 +28,7 @@ internal static class CommandsEmitter
     {
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
+        var naming = ForkPathCompletedNaming.For(model);
         var sb = new StringBuilder();
 
         // File header
@@ -57,10 +58,16 @@ internal static class CommandsEmitter
         // Execute{StepType}WorkerCommand - worker dispatch with state (Saga → Worker)
         // Worker commands use unprefixed step type names since handlers are per-type
         var emittedWorkerCommands = new HashSet<string>(StringComparer.Ordinal);
+        var emittedStartStems = new HashSet<string>(model.StepNames, StringComparer.Ordinal);
         if (model.Steps is not null)
         {
             foreach (var step in model.Steps)
             {
+                if (naming.IsQualifiedPhase(step.PhaseName))
+                {
+                    continue;
+                }
+
                 if (emittedWorkerCommands.Add(step.StepName))
                 {
                     sb.AppendLine();
@@ -73,6 +80,11 @@ internal static class CommandsEmitter
             // Fallback for models without Step collection - use phase names
             foreach (var stepName in model.StepNames)
             {
+                if (naming.IsQualifiedPhase(stepName))
+                {
+                    continue;
+                }
+
                 sb.AppendLine();
                 EmitExecuteWorkerCommand(sb, model, stepName);
             }
@@ -124,18 +136,32 @@ internal static class CommandsEmitter
         {
             foreach (var fork in model.Forks)
             {
-                // Generate worker commands for fork path steps. Keyed on the step TYPE, like every
-                // other entry in this set: worker handlers are generated per type, so keying on
-                // the phase name would emit a second worker command — under the loop prefix, or
-                // under an instance name — that no handler accepts.
+                // Unique-type fork paths keep Execute{StepType}WorkerCommand. Shared-type
+                // instances use the same stem as the completed event so T1c can dispatch
+                // a distinct worker command per path instance.
                 foreach (var path in fork.Paths)
                 {
                     foreach (var step in path.Steps)
                     {
-                        if (emittedWorkerCommands.Add(step.StepName))
+                        var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, step.PhaseName);
+                        var stem = naming.StemFor(key, step.StepName);
+                        if (emittedWorkerCommands.Add(stem))
                         {
                             sb.AppendLine();
-                            EmitExecuteWorkerCommand(sb, model, step.StepName);
+                            EmitExecuteWorkerCommand(sb, model, stem);
+                        }
+
+                        // PhaseName collision: Start{PhaseName}Command is already taken.
+                        // Emit Start{PathId}_{PhaseName}Command so T1c can dispatch it.
+                        if (naming.IsSharedType(step.StepName)
+                            && !string.Equals(stem, step.PhaseName, StringComparison.Ordinal)
+                            && emittedStartStems.Add(stem))
+                        {
+                            sb.AppendLine();
+                            EmitStartStepCommand(sb, model, stem);
+
+                            sb.AppendLine();
+                            EmitExecuteCommand(sb, model, stem);
                         }
                     }
                 }

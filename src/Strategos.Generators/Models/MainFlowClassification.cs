@@ -39,6 +39,7 @@ internal sealed class MainFlowClassification
     private readonly WorkflowModel _model;
     private readonly HashSet<string> _offMainFlowStepNames;
     private readonly Dictionary<string, string> _successorWithinPath;
+    private readonly Dictionary<PathRoutingKey, string> _successorWithinPathByKey;
     private readonly Dictionary<string, ApprovalPathEnd> _approvalPathEnds;
 
     private MainFlowClassification(WorkflowModel model)
@@ -46,11 +47,12 @@ internal sealed class MainFlowClassification
         _model = model;
         _offMainFlowStepNames = new HashSet<string>(StringComparer.Ordinal);
         _successorWithinPath = new Dictionary<string, string>(StringComparer.Ordinal);
+        _successorWithinPathByKey = new Dictionary<PathRoutingKey, string>();
         _approvalPathEnds = new Dictionary<string, ApprovalPathEnd>(StringComparer.Ordinal);
 
-        ClassifyForkPaths(model, _offMainFlowStepNames, _successorWithinPath);
-        ClassifyBranchCases(model, _offMainFlowStepNames, _successorWithinPath);
-        ClassifyLoopExitBranchCases(model, _offMainFlowStepNames, _successorWithinPath);
+        ClassifyForkPaths(model, _offMainFlowStepNames, _successorWithinPath, _successorWithinPathByKey);
+        ClassifyBranchCases(model, _offMainFlowStepNames, _successorWithinPath, _successorWithinPathByKey);
+        ClassifyLoopExitBranchCases(model, _offMainFlowStepNames, _successorWithinPath, _successorWithinPathByKey);
         ClassifyFailureHandlerSteps(model, _offMainFlowStepNames);
         ClassifyApprovalSteps(model.ApprovalPoints, _offMainFlowStepNames, _successorWithinPath, _approvalPathEnds);
         ClassifyConfidenceHandlerSteps(model, _offMainFlowStepNames);
@@ -90,6 +92,23 @@ internal sealed class MainFlowClassification
     /// </returns>
     public bool TryGetSuccessorWithinPath(string stepName, out string successorStepName) =>
         _successorWithinPath.TryGetValue(stepName, out successorStepName!);
+
+    /// <summary>
+    /// Gets the in-path successor of a step identified by construct, path, and phase name.
+    /// </summary>
+    /// <param name="key">The routing key for the step on its owning path.</param>
+    /// <param name="successorStepName">The next step's phase name on that same path.</param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="key"/> is a non-last step of a fork
+    /// path or branch case; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <remarks>
+    /// Saga <c>Handle</c> emitters must use this overload when two fork paths share a
+    /// phase name. The string overload last-write-wins in that case and cannot name the
+    /// live path.
+    /// </remarks>
+    public bool TryGetSuccessorWithinPath(PathRoutingKey key, out string successorStepName) =>
+        _successorWithinPathByKey.TryGetValue(key, out successorStepName!);
 
     /// <summary>
     /// Gets where an approval's rejection or escalation chain goes once its last step completes.
@@ -186,10 +205,12 @@ internal sealed class MainFlowClassification
     /// <param name="model">The workflow model.</param>
     /// <param name="offMainFlow">The set being accumulated.</param>
     /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="successorWithinPathByKey">The identity-carrying in-path successor map being accumulated.</param>
     private static void ClassifyForkPaths(
         WorkflowModel model,
         HashSet<string> offMainFlow,
-        Dictionary<string, string> successorWithinPath)
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<PathRoutingKey, string> successorWithinPathByKey)
     {
         if (model.Forks is null)
         {
@@ -200,7 +221,12 @@ internal sealed class MainFlowClassification
         {
             foreach (var path in fork.Paths)
             {
-                ClassifyPath(path.StepNames, offMainFlow, successorWithinPath);
+                ClassifyPath(
+                    path.StepNames,
+                    offMainFlow,
+                    successorWithinPath,
+                    successorWithinPathByKey,
+                    phaseName => PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, phaseName));
             }
         }
     }
@@ -211,10 +237,12 @@ internal sealed class MainFlowClassification
     /// <param name="model">The workflow model.</param>
     /// <param name="offMainFlow">The set being accumulated.</param>
     /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="successorWithinPathByKey">The identity-carrying in-path successor map being accumulated.</param>
     private static void ClassifyBranchCases(
         WorkflowModel model,
         HashSet<string> offMainFlow,
-        Dictionary<string, string> successorWithinPath)
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<PathRoutingKey, string> successorWithinPathByKey)
     {
         if (model.Branches is null)
         {
@@ -223,10 +251,7 @@ internal sealed class MainFlowClassification
 
         foreach (var branch in model.Branches)
         {
-            foreach (var branchCase in branch.Cases)
-            {
-                ClassifyPath(branchCase.StepNames, offMainFlow, successorWithinPath);
-            }
+            ClassifyBranchPathCases(branch, offMainFlow, successorWithinPath, successorWithinPathByKey);
         }
     }
 
@@ -242,10 +267,12 @@ internal sealed class MainFlowClassification
     /// <param name="model">The workflow model.</param>
     /// <param name="offMainFlow">The set being accumulated.</param>
     /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="successorWithinPathByKey">The identity-carrying in-path successor map being accumulated.</param>
     private static void ClassifyLoopExitBranchCases(
         WorkflowModel model,
         HashSet<string> offMainFlow,
-        Dictionary<string, string> successorWithinPath)
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<PathRoutingKey, string> successorWithinPathByKey)
     {
         if (model.Loops is null)
         {
@@ -259,10 +286,33 @@ internal sealed class MainFlowClassification
                 continue;
             }
 
-            foreach (var branchCase in loop.BranchOnExit.Cases)
-            {
-                ClassifyPath(branchCase.StepNames, offMainFlow, successorWithinPath);
-            }
+            ClassifyBranchPathCases(loop.BranchOnExit, offMainFlow, successorWithinPath, successorWithinPathByKey);
+        }
+    }
+
+    /// <summary>
+    /// Classifies every case of one branch, keying in-path successors by phase name
+    /// (loop-prefixed when the branch sits inside a loop) and by <see cref="PathRoutingKey"/>.
+    /// </summary>
+    /// <param name="branch">The branch whose cases should be classified.</param>
+    /// <param name="offMainFlow">The set being accumulated.</param>
+    /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="successorWithinPathByKey">The identity-carrying in-path successor map being accumulated.</param>
+    private static void ClassifyBranchPathCases(
+        BranchModel branch,
+        HashSet<string> offMainFlow,
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<PathRoutingKey, string> successorWithinPathByKey)
+    {
+        foreach (var branchCase in branch.Cases)
+        {
+            var phaseNames = ToPhaseNames(branchCase.StepNames, branch.LoopPrefix);
+            ClassifyPath(
+                phaseNames,
+                offMainFlow,
+                successorWithinPath,
+                successorWithinPathByKey,
+                phaseName => PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, phaseName));
         }
     }
 
@@ -378,7 +428,7 @@ internal sealed class MainFlowClassification
         var pathStepNames = new List<string>(pathSteps.Count);
         foreach (var step in pathSteps)
         {
-            pathStepNames.Add(step.StepName);
+            pathStepNames.Add(step.PhaseName);
         }
 
         ClassifyPath(pathStepNames, offMainFlow, successorWithinPath);
@@ -416,10 +466,20 @@ internal sealed class MainFlowClassification
     /// <param name="pathStepNames">The ordered step phase names of a single path.</param>
     /// <param name="offMainFlow">The set being accumulated.</param>
     /// <param name="successorWithinPath">The in-path successor map being accumulated.</param>
+    /// <param name="successorWithinPathByKey">
+    /// The identity-carrying successor map, or null when the path has no construct identity
+    /// (approval chains).
+    /// </param>
+    /// <param name="routingKeyFactory">
+    /// Builds a <see cref="PathRoutingKey"/> for a phase name on this path, or null when
+    /// <paramref name="successorWithinPathByKey"/> is unused.
+    /// </param>
     private static void ClassifyPath(
         IReadOnlyList<string> pathStepNames,
         HashSet<string> offMainFlow,
-        Dictionary<string, string> successorWithinPath)
+        Dictionary<string, string> successorWithinPath,
+        Dictionary<PathRoutingKey, string>? successorWithinPathByKey = null,
+        Func<string, PathRoutingKey>? routingKeyFactory = null)
     {
         for (var i = 0; i < pathStepNames.Count; i++)
         {
@@ -428,9 +488,38 @@ internal sealed class MainFlowClassification
 
             if (i < pathStepNames.Count - 1)
             {
-                successorWithinPath[stepName] = pathStepNames[i + 1];
+                var successor = pathStepNames[i + 1];
+                successorWithinPath[stepName] = successor;
+
+                if (successorWithinPathByKey is not null && routingKeyFactory is not null)
+                {
+                    successorWithinPathByKey[routingKeyFactory(stepName)] = successor;
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Applies a loop prefix so classification keys match the step list's phase names.
+    /// Branch case <c>StepNames</c> stay unprefixed — emitters prefix at emit time.
+    /// </summary>
+    /// <param name="stepNames">The case's effective names, without loop prefix.</param>
+    /// <param name="loopPrefix">The branch's loop prefix, or null when not inside a loop.</param>
+    /// <returns>Phase names that match the workflow step list.</returns>
+    private static IReadOnlyList<string> ToPhaseNames(IReadOnlyList<string> stepNames, string? loopPrefix)
+    {
+        if (string.IsNullOrEmpty(loopPrefix))
+        {
+            return stepNames;
+        }
+
+        var prefixed = new List<string>(stepNames.Count);
+        foreach (var stepName in stepNames)
+        {
+            prefixed.Add($"{loopPrefix}_{stepName}");
+        }
+
+        return prefixed;
     }
 
     /// <summary>

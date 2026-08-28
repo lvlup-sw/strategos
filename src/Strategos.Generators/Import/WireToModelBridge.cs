@@ -191,9 +191,8 @@ internal static class WireToModelBridge
             return new BridgeResult(null, diagnostics);
         }
 
-        // Same EffectiveName / type-collision gates the C# [Workflow] root runs in
-        // TransformToResult. Sharing EmitWorkflowSources is not sharing the gate: a JSON
-        // fork twin of the #190 shape would otherwise lower to CS0111.
+        // Same EffectiveName gate the C# [Workflow] root runs in TransformToResult.
+        // Sharing EmitWorkflowSources is not sharing the gate.
         var identityDiagnostics = CollectIdentityDiagnostics(baseStepModels, forkModels, workflowName!);
         if (identityDiagnostics.Count > 0)
         {
@@ -255,8 +254,9 @@ internal static class WireToModelBridge
     }
 
     /// <summary>
-    /// Applies the C# identity gates (duplicate EffectiveName, exclusive-path
-    /// type collision) to the mapped import IR so a JSON twin cannot emit a colliding saga.
+    /// Applies the C# duplicate-EffectiveName gate to the mapped import IR so a
+    /// JSON twin cannot emit a colliding saga. Path-end type collision is no longer
+    /// a gate: fork Handle overloads bind the path-qualified completed event.
     /// </summary>
     private static List<Diagnostic> CollectIdentityDiagnostics(
         IReadOnlyList<StepModel> baseStepModels,
@@ -308,15 +308,6 @@ internal static class WireToModelBridge
                 WorkflowDiagnostics.DuplicateStepName,
                 Location.None,
                 duplicate,
-                workflowName));
-        }
-
-        foreach (var collidingType in PathEndTypeCollisionFinder.Find(forkModels, []))
-        {
-            diagnostics.Add(Diagnostic.Create(
-                WorkflowDiagnostics.PathEndTypeCollision,
-                Location.None,
-                collidingType,
                 workflowName));
         }
 
@@ -490,6 +481,43 @@ internal static class WireToModelBridge
                     $"$.diagnosticForks[{i}].permittedTriggers[{secondIndex}]",
                     DescribeId(duplicate)));
             }
+        }
+
+        // Two diagnostic-fork edges whose compensation seeds sanitize to the same
+        // DiagnosticForkCount_{seed} key (#156.3). Reject rather than share a counter:
+        // MapDiagnosticForks would otherwise lower two edges onto one saga property.
+        var compensationSeeds = new string[definition.DiagnosticForks.Count];
+        for (var i = 0; i < definition.DiagnosticForks.Count; i++)
+        {
+            compensationSeeds[i] = definition.DiagnosticForks[i].CompensationSeed ?? string.Empty;
+        }
+
+        foreach (var duplicate in DiagnosticForkModel.FindDuplicateCompensationSeeds(compensationSeeds))
+        {
+            var duplicateKey = DiagnosticForkModel.SanitizeCompensationSeedMoniker(duplicate);
+            var secondIndex = -1;
+            for (var i = 0; i < compensationSeeds.Length; i++)
+            {
+                if (string.IsNullOrEmpty(compensationSeeds[i]))
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                    DiagnosticForkModel.SanitizeCompensationSeedMoniker(compensationSeeds[i]),
+                    duplicateKey,
+                    StringComparison.Ordinal))
+                {
+                    secondIndex = i;
+                }
+            }
+
+            rejections.Add(Diagnostic.Create(
+                WorkflowDiagnostics.DuplicateCompensationSeed,
+                Location.None,
+                jsonFilePath,
+                $"$.diagnosticForks[{secondIndex}]",
+                DescribeId(duplicate)));
         }
 
         return rejections;

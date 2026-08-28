@@ -1,0 +1,44 @@
+# TruffleHog — verified-secret scan on PRs and pushes to main (#147).
+#
+# There is no org reusable for this scanner; the job is inlined (same shape as
+# hierophant's required "Secret Scanning" check). --results=verified fails
+# closed on live credentials and ignores unverified entropy matches.
+#
+# fetch-depth: 0 so the action can resolve the event's base..head range.
+
+name: TruffleHog
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: TruffleHog Secret Scan
+        id: trufflehog
+        uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b # v3.97.1
+        continue-on-error: true
+        with:
+          extra_args: --results=verified
+
+      - name: Fail on verified secrets
+        if: steps.trufflehog.conclusion == 'failure'
+        run: |
+          echo "::error::TruffleHog detected verified secrets."
+          exit 1

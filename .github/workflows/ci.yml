@@ -15,7 +15,7 @@ jobs:
     # under this ref is fixed.
     uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@v1
     with:
-      solution-path: 'src/strategos.sln'
+      solution-path: 'src/strategos.slnx'
       test-project-patterns: |
         src/*Tests/*.csproj
       skip-patterns: |
@@ -96,7 +96,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Pack
-        run: dotnet pack src/strategos.sln --configuration Release --output ./packages
+        run: dotnet pack src/strategos.slnx --configuration Release --output ./packages
 
       - name: Consumer dep-flow probe (G1 / F1 regression net)
         # Verifies that a clean consumer referencing only the packed

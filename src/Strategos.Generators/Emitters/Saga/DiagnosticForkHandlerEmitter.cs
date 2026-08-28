@@ -55,10 +55,14 @@ namespace Strategos.Generators.Emitters.Saga;
 /// <c>Trigger{Pascal}FailureHandlerCommand</c>.
 /// </para>
 /// <para>
-/// The fork count is PER EDGE (a <c>DiagnosticForkCount_{index}</c> saga property per
-/// declared fork edge): each edge enforces its declared <c>maxForks</c> bound against its
-/// OWN tally, so a high-bound edge cannot exhaust a shared pool and starve a low-bound
-/// edge (L3).
+/// The fork count is PER EDGE, keyed by the sanitized compensation-seed moniker
+/// (a <c>DiagnosticForkCount_{seed}</c> saga property per declared fork edge; same
+/// '-' → '_' sanitizer as <c>Fork_{id}_Path{n}State</c>). Each edge enforces its
+/// declared <c>maxForks</c> bound against its OWN tally, so a high-bound edge cannot
+/// exhaust a shared pool and starve a low-bound edge (L3). Two edges that share a
+/// seed are rejected (duplicate-compensation-seed diagnostic) rather than sharing a counter. 2.10.0 used
+/// positional <c>DiagnosticForkCount_{i}</c>; 2.11.0 is a breaking saga-property
+/// rename with no dual-read shim.
 /// </para>
 /// </remarks>
 internal sealed class DiagnosticForkHandlerEmitter
@@ -182,7 +186,16 @@ internal sealed class DiagnosticForkHandlerEmitter
     {
         var permittedVar = $"edge{edgeIndex}Permitted";
         var evidenceVar = $"edge{edgeIndex}EvidencePresent";
-        var countVar = $"DiagnosticForkCount_{edgeIndex}";
+        var countVar = fork.CountPropertyName;
+        var admittedVar = $"edge{edgeIndex}Admitted";
+
+        // 2.10.0 keyed this tally positionally (DiagnosticForkCount_{i}); 2.11.0 keys it by
+        // seed. A saga persisted before the rename carries only the positional value, so the
+        // bound is evaluated against the MAX of the two and the seed-keyed property is the
+        // only one written forward. Null when the positional name is itself a seed-keyed
+        // name, in which case only the current property exists.
+        var legacyCountVar = DiagnosticForkModel.LegacyPositionalCountPropertyName(
+            model.DiagnosticForks!, edgeIndex);
 
         // Every moniker below is authored in user DSL string literals (anchors, evidence
         // field names, the compensation seed), so it may contain a double-quote or a
@@ -260,7 +273,18 @@ internal sealed class DiagnosticForkHandlerEmitter
         // one out of a shared pool.
         sb.AppendLine("            // maxForks bound (per edge; the loop MaxIterations forced-exit precedent): once");
         sb.AppendLine("            // THIS edge's bound is reached, an overflowing fork routes to the blocked terminal.");
-        sb.AppendLine($"            if ({countVar} >= {fork.MaxForks})");
+        if (legacyCountVar is null)
+        {
+            sb.AppendLine($"            var {admittedVar} = {countVar};");
+        }
+        else
+        {
+            sb.AppendLine($"            // Fold the 2.10.0 positional tally forward so an upgraded in-flight saga");
+            sb.AppendLine($"            // keeps the forks it already admitted counted against this bound.");
+            sb.AppendLine($"            var {admittedVar} = {countVar} > {legacyCountVar} ? {countVar} : {legacyCountVar};");
+        }
+
+        sb.AppendLine($"            if ({admittedVar} >= {fork.MaxForks})");
         sb.AppendLine("            {");
         sb.AppendLine("                logger.LogWarning(");
         sb.AppendLine("                    \"Diagnostic fork bound {Bound} reached for workflow {WorkflowId}; routing to blocked terminal for human escalation\",");
@@ -270,7 +294,7 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("                yield break;");
         sb.AppendLine("            }");
         sb.AppendLine();
-        sb.AppendLine($"            {countVar}++;");
+        sb.AppendLine($"            {countVar} = {admittedVar} + 1;");
 
         if (model.IsEventSourced)
         {

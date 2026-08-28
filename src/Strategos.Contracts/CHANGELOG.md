@@ -15,6 +15,14 @@ enforced by the T30 structural diff in CI).
 
 ### Added
 
+- **Diagnostics family — `AGWF038` (`DuplicateCompensationSeed`, severity `error`):** a new
+  AGWF code for two diagnostic-fork edges whose compensation seeds sanitize to the same
+  `DiagnosticForkCount_{seed}` key. Sharing a counter would let one edge's `maxForks`
+  bound starve the other; the generator rejects the pair on C# extract and on JSON
+  import. Additive (a new enum member + a new catalog entry), so it is a minor,
+  non-breaking change; the package moves 0.7.0 → 0.8.0. **Consumers upgrade first:**
+  the emitted `AgwfCode` converter throws on a member it does not know, so a consumer
+  pinned to 0.7.0 cannot deserialize a payload carrying `AGWF038` (#156.3).
 - **Diagnostics family — `AGWF037` (`DuplicatePermittedForkTrigger`, severity `error`):** a new
   AGWF code for two `PermitTrigger` declarations on one diagnostic-fork edge that name the
   same closed trigger. First-wins dedup would silently drop one evidence schema; the generator
