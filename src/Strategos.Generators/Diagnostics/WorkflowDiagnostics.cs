@@ -568,20 +568,16 @@ internal static class WorkflowDiagnostics
         description: "Either a main-flow step chains to an off-flow successor, or a rejoin last step never dispatches the declared terminal. The generator holds both the declared terminal and each computed successor, so the whole failure class is decidable before anything runs.");
 
     /// <summary>
-    /// Exclusive paths collide on a step type under distinct instance names (#189, #190, #191).
+    /// Historical catalog member for exclusive-path type collision (#189, #190, #191).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Fork already rejects duplicate <c>EffectiveName</c>s (<see cref="DuplicateStepName"/>). Two
-    /// exclusive-path steps of the same fork that share <c>StepName</c> (type) but differ in
-    /// <c>InstanceName</c> — interiors as well as last steps — compile past that check and emit
-    /// duplicate <c>Handle({Type}Completed)</c> overloads (CS0111). Branch cases that share a step
-    /// type under distinct instance names have the same problem: the extractor records bare type
-    /// names into <c>StepNames</c>, so instance names do not disambiguate the successor map.
-    /// </para>
-    /// <para>
-    /// An error that blocks generation: a CS0111 in generated code is worse than a diagnostic.
-    /// Authors who need the same step type on exclusive paths must use distinct types.
+    /// Kept so the catalog identity shipped in 0.7.0 remains stable. The generator no longer
+    /// reports this descriptor: fork path instances that share a type bind
+    /// <c>Handle({PhaseName}Completed)</c> (the same phase string <c>Start{PhaseName}Command</c>
+    /// already uses), and branch completions keep one <c>Handle({StepType}Completed)</c> that
+    /// routes by the live case. Same <c>EffectiveName</c> on two fork or linear steps is still
+    /// <see cref="DuplicateStepName"/>.
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor PathEndTypeCollision = new(

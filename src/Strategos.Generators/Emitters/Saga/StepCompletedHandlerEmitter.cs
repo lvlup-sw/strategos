@@ -55,15 +55,13 @@ internal sealed class StepCompletedHandlerEmitter
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
-        // Determine event name:
-        // Worker handlers generate unprefixed events (e.g., ValidateThesisStepCompleted) because they
-        // are generated per step TYPE, not per phase. Fork path steps use the same handlers, so they
-        // receive the same unprefixed events.
-        // When stepModel is available, use its StepName directly.
-        // When stepModel is null (semantic resolution failed), extract base step name from phase name.
+        // Completed event: unique-type and linear steps stay {StepType}Completed.
+        // Fork-path instances that share a type bind {PhaseName}Completed so two
+        // parallel path-ends do not emit CS0111 on the same saga.
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
-        var eventName = $"{baseStepName}Completed";
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, baseStepName, context.IsForkPathStep);
 
         // XML documentation
         sb.AppendLine("    /// <summary>");

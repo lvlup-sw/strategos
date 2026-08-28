@@ -48,9 +48,10 @@ internal sealed class ForkDispatchHandlerEmitter
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(fork, nameof(fork));
 
-        // Use unprefixed step type name for completed event (workers return per-type events)
+        // The step preceding a fork is on the main flow; keep {StepType}Completed.
         var baseStepName = ExtractBaseStepName(stepName);
-        var eventName = $"{baseStepName}Completed";
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, baseStepName, isForkPathStep: false);
         var sanitizedId = fork.ForkId.Replace("-", "_");
 
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);

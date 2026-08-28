@@ -55,12 +55,10 @@ internal sealed class LoopCompletedHandlerEmitter
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
-        // Use unprefixed step type name for completed event (workers return per-type events)
-        // When stepModel is available, use its StepName directly.
-        // When stepModel is null (semantic resolution failed), extract base step name from phase name.
         var stepModel = context.StepModel;
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
-        var eventName = $"{baseStepName}Completed";
+        var eventName = PathEndTypeCollisionFinder.CompletedEventName(
+            model, stepName, baseStepName, context.IsForkPathStep);
         var loops = context.LoopsAtStep!;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var innermostLoop = loops[0];
