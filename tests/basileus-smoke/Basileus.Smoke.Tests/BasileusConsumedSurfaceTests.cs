@@ -7,13 +7,13 @@
 // DR-11 / T-022 — basileus-consumed surface smoke tests.
 //
 // Solution-layout decision: this project lives in a STANDALONE
-// tests/basileus-smoke/Basileus.Smoke.sln rather than being added to
-// src/strategos.sln. Two reasons:
+// tests/basileus-smoke/Basileus.Smoke.slnx rather than being added to
+// src/strategos.slnx. Two reasons:
 //
 //   1) Chicken-and-egg with CI: the smoke project's <PackageReference>
 //      to LevelUp.Strategos.Agents 2.7.0-smoke only resolves AFTER
 //      `dotnet pack` populates the sibling local-feed/. The main
-//      build-test job restores src/strategos.sln before any pack step,
+//      build-test job restores src/strategos.slnx before any pack step,
 //      so including this csproj there would break that job.
 //
 //   2) Directory.Build.props isolation: src/Directory.Build.props

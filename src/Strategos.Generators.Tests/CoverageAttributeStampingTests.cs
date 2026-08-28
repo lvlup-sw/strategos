@@ -240,14 +240,14 @@ public sealed class CoverageAttributeStampingTests
         }
     }
 
-    // Walks up to the directory containing strategos.sln (the src dir), mirroring the
+    // Walks up to the directory containing strategos.slnx (the src dir), mirroring the
     // existing StepConfigParityTests source-root resolution.
     private static string FindSolutionRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "strategos.sln")))
+            if (File.Exists(Path.Combine(dir.FullName, "strategos.slnx")))
             {
                 return dir.FullName;
             }
@@ -257,6 +257,6 @@ public sealed class CoverageAttributeStampingTests
 
         throw new InvalidOperationException(
             "Could not locate the solution root (no ancestor of "
-            + $"'{AppContext.BaseDirectory}' contains strategos.sln).");
+            + $"'{AppContext.BaseDirectory}' contains strategos.slnx).");
     }
 }

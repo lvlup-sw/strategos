@@ -652,18 +652,18 @@ public sealed class StepConfigParityTests
 
     /// <summary>
     /// Walks up from the running test assembly's directory to the solution root — the directory
-    /// containing <c>strategos.sln</c> (the <c>src</c> dir) — so the relative
+    /// containing <c>strategos.slnx</c> (the <c>src</c> dir) — so the relative
     /// <see cref="LoweredProof.BehavioralTestFile"/> paths can be resolved at test runtime
     /// regardless of the build output layout.
     /// </summary>
     /// <returns>The absolute path to the solution root directory.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when no ancestor contains <c>strategos.sln</c>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when no ancestor contains <c>strategos.slnx</c>.</exception>
     private static string FindSolutionRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "strategos.sln")))
+            if (File.Exists(Path.Combine(dir.FullName, "strategos.slnx")))
             {
                 return dir.FullName;
             }
@@ -673,7 +673,7 @@ public sealed class StepConfigParityTests
 
         throw new InvalidOperationException(
             "Could not locate the solution root (no ancestor of "
-            + $"'{AppContext.BaseDirectory}' contains strategos.sln).");
+            + $"'{AppContext.BaseDirectory}' contains strategos.slnx).");
     }
 
     /// <summary>

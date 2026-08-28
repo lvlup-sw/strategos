@@ -8,7 +8,7 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_QUALITY: 'preview'
-  SOLUTION_PATH: 'src/strategos.sln'
+  SOLUTION_PATH: 'src/strategos.slnx'
 
 # Required for trusted publishing (OIDC)
 permissions:
