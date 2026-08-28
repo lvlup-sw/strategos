@@ -87,86 +87,141 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
 
         // Emit handlers for branch case steps
         // These steps execute conditionally based on discriminator
+        EmitDedicatedBranchCaseHandlers(sb, model, context);
+    }
+
+    /// <summary>
+    /// Emits start and completed handlers for branch-case steps that the main step loop did not
+    /// already emit, including the cases of a branch a loop evaluates on exit.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="context">The saga emission context.</param>
+    /// <remarks>
+    /// Loop-exit branches live on <see cref="LoopModel.BranchOnExit"/> and are deliberately
+    /// absent from <see cref="WorkflowModel.Branches"/>. Walking only the workflow collection
+    /// leaves a rejoining loop-exit case without a path-end handler, so the declared terminal
+    /// never starts (#184).
+    /// </remarks>
+    private void EmitDedicatedBranchCaseHandlers(
+        StringBuilder sb,
+        WorkflowModel model,
+        SagaEmissionContext context)
+    {
+        if (!model.HasBranches && !HasLoopExitBranch(model))
+        {
+            return;
+        }
+
+        // Track underlying step names (not phase names) from main step loop
+        // Phase names may have loop prefixes (e.g., TargetLoop_VerifyVetoWithResearchStep)
+        // but event handlers use underlying step names (e.g., VerifyVetoWithResearchStep)
+        // This prevents duplicate Handle(VerifyVetoWithResearchStepCompleted) methods
+        var processedStepNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var phaseName in model.StepNames)
+        {
+            if (context.StepsByName.TryGetValue(phaseName, out var stepModel))
+            {
+                processedStepNames.Add(stepModel.StepName);
+            }
+            else
+            {
+                // Fallback: extract base step name from phase name (handles loop prefixes)
+                // e.g., "TargetLoop_VerifyVetoStep" → "VerifyVetoStep"
+                var baseStepName = ExtractBaseStepName(phaseName);
+                processedStepNames.Add(baseStepName);
+            }
+        }
+
         if (model.HasBranches)
         {
-            // Track underlying step names (not phase names) from main step loop
-            // Phase names may have loop prefixes (e.g., TargetLoop_VerifyVetoWithResearchStep)
-            // but event handlers use underlying step names (e.g., VerifyVetoWithResearchStep)
-            // This prevents duplicate Handle(VerifyVetoWithResearchStepCompleted) methods
-            var processedStepNames = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var phaseName in model.StepNames)
+            foreach (var branch in model.Branches!)
             {
-                if (context.StepsByName.TryGetValue(phaseName, out var stepModel))
+                EmitHandlersForBranchCases(sb, model, context, branch, processedStepNames);
+            }
+        }
+
+        if (model.HasLoops)
+        {
+            foreach (var loop in model.Loops!)
+            {
+                if (loop.BranchOnExit is not null)
                 {
-                    processedStepNames.Add(stepModel.StepName);
+                    EmitHandlersForBranchCases(sb, model, context, loop.BranchOnExit, processedStepNames);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits start and completed handlers for each unprocessed step of the branch's cases.
+    /// </summary>
+    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
+    /// <param name="model">The workflow model.</param>
+    /// <param name="context">The saga emission context.</param>
+    /// <param name="branch">The branch whose cases should be emitted.</param>
+    /// <param name="processedStepNames">Step names already handled in the main step loop.</param>
+    private void EmitHandlersForBranchCases(
+        StringBuilder sb,
+        WorkflowModel model,
+        SagaEmissionContext context,
+        BranchModel branch,
+        HashSet<string> processedStepNames)
+    {
+        foreach (var branchCase in branch.Cases)
+        {
+            for (var i = 0; i < branchCase.StepNames.Count; i++)
+            {
+                var stepName = branchCase.StepNames[i];
+
+                // Skip if already handled in main step loop
+                if (processedStepNames.Contains(stepName))
+                {
+                    continue;
+                }
+
+                var isLastStepInBranchCase = i == branchCase.StepNames.Count - 1;
+                var endsWorkflowHere = branchCase.IsTerminal && isLastStepInBranchCase;
+
+                // A case that declared .Complete() has no successor at its last step, so the
+                // branch-level convergence point is not its next step (#175).
+                var nextStepName = isLastStepInBranchCase
+                    ? (endsWorkflowHere ? null : branch.RejoinStepName)
+                    : branchCase.StepNames[i + 1];
+
+                // Emit StartStep handler
+                sb.AppendLine();
+                var branchHandlerContext = new HandlerContext(
+                    StepIndex: i,
+                    IsLastStep: false, // Not last in overall workflow
+                    IsTerminalStep: endsWorkflowHere,
+                    NextStepName: nextStepName,
+                    StepModel: null,
+                    LoopsAtStep: null,
+                    BranchAtStep: null,
+                    ApprovalAtStep: null,
+                    ForkAtStep: null,
+                    ForkPathEnding: null,
+                    JoinForkAtStep: null,
+                    IsForkPathStep: false);
+
+                _startEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
+
+                // Emit Completed handler
+                sb.AppendLine();
+                if (isLastStepInBranchCase)
+                {
+                    // Last step in branch path - emit path end handler. The path-end
+                    // handler intercepts this step, so it carries the step's own
+                    // confidence policy; nothing else would emit the gate.
+                    context.StepsByName.TryGetValue(stepName, out var lastStepModel);
+                    _branchEmitter.EmitPathEndHandler(
+                        sb, model, stepName, branch, branchCase, lastStepModel?.Confidence);
                 }
                 else
                 {
-                    // Fallback: extract base step name from phase name (handles loop prefixes)
-                    // e.g., "TargetLoop_VerifyVetoStep" → "VerifyVetoStep"
-                    var baseStepName = ExtractBaseStepName(phaseName);
-                    processedStepNames.Add(baseStepName);
-                }
-            }
-
-            foreach (var branch in model.Branches!)
-            {
-                foreach (var branchCase in branch.Cases)
-                {
-                    for (var i = 0; i < branchCase.StepNames.Count; i++)
-                    {
-                        var stepName = branchCase.StepNames[i];
-
-                        // Skip if already handled in main step loop
-                        if (processedStepNames.Contains(stepName))
-                        {
-                            continue;
-                        }
-
-                        var isLastStepInBranchCase = i == branchCase.StepNames.Count - 1;
-                        var endsWorkflowHere = branchCase.IsTerminal && isLastStepInBranchCase;
-
-                        // A case that declared .Complete() has no successor at its last step, so the
-                        // branch-level convergence point is not its next step (#175).
-                        var nextStepName = isLastStepInBranchCase
-                            ? (endsWorkflowHere ? null : branch.RejoinStepName)
-                            : branchCase.StepNames[i + 1];
-
-                        // Emit StartStep handler
-                        sb.AppendLine();
-                        var branchHandlerContext = new HandlerContext(
-                            StepIndex: i,
-                            IsLastStep: false, // Not last in overall workflow
-                            IsTerminalStep: endsWorkflowHere,
-                            NextStepName: nextStepName,
-                            StepModel: null,
-                            LoopsAtStep: null,
-                            BranchAtStep: null,
-                            ApprovalAtStep: null,
-                            ForkAtStep: null,
-                            ForkPathEnding: null,
-                            JoinForkAtStep: null,
-                            IsForkPathStep: false);
-
-                        _startEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
-
-                        // Emit Completed handler
-                        sb.AppendLine();
-                        if (isLastStepInBranchCase)
-                        {
-                            // Last step in branch path - emit path end handler. The path-end
-                            // handler intercepts this step, so it carries the step's own
-                            // confidence policy; nothing else would emit the gate.
-                            context.StepsByName.TryGetValue(stepName, out var lastStepModel);
-                            _branchEmitter.EmitPathEndHandler(
-                                sb, model, stepName, branch, branchCase, lastStepModel?.Confidence);
-                        }
-                        else
-                        {
-                            // Intermediate step - emit standard handler chaining to next step
-                            _completedEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
-                        }
-                    }
+                    // Intermediate step - emit standard handler chaining to next step
+                    _completedEmitter.EmitHandler(sb, model, stepName, branchHandlerContext);
                 }
             }
         }
@@ -387,5 +442,31 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         return lastUnderscoreIndex >= 0
             ? phaseName.Substring(lastUnderscoreIndex + 1)
             : phaseName;
+    }
+
+    /// <summary>
+    /// Returns whether any loop on the model evaluates a branch on exit.
+    /// </summary>
+    /// <param name="model">The workflow model.</param>
+    /// <returns>
+    /// <see langword="true"/> when at least one loop carries a <see cref="LoopModel.BranchOnExit"/>;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    private static bool HasLoopExitBranch(WorkflowModel model)
+    {
+        if (!model.HasLoops)
+        {
+            return false;
+        }
+
+        foreach (var loop in model.Loops!)
+        {
+            if (loop.BranchOnExit is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

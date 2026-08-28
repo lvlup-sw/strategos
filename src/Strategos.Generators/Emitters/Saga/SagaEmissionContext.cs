@@ -59,13 +59,18 @@ internal sealed class SagaEmissionContext
 
     /// <summary>
     /// Gets the branch path info indexed by the last step of each branch path, including the paths
-    /// of cases that end the workflow rather than rejoining.
+    /// of cases that end the workflow rather than rejoining, and the cases of a branch a loop
+    /// evaluates on exit.
     /// </summary>
     /// <remarks>
     /// This lookup is the only live route into <see cref="BranchHandlerEmitter.EmitPathEndHandler"/>
     /// when the workflow is authored in C#, so a case excluded from it never has its ending decided
     /// from its own declaration. Workflow-ending cases are therefore admitted, and the handler reads
     /// <see cref="BranchCaseModel.IsTerminal"/> to tell an ending path from a rejoining one (#175).
+    /// Loop-exit branches live on <see cref="LoopModel.BranchOnExit"/> and are deliberately absent
+    /// from <see cref="WorkflowModel.Branches"/>, so walking only the workflow collection would
+    /// leave a rejoining loop-exit case with no path-end handler and skip the declared terminal
+    /// (#184).
     /// </remarks>
     public IReadOnlyDictionary<string, (BranchModel Branch, BranchCaseModel Case)> BranchPathInfo { get; }
 
@@ -202,27 +207,49 @@ internal sealed class SagaEmissionContext
     {
         var result = new Dictionary<string, (BranchModel, BranchCaseModel)>();
 
-        if (!model.HasBranches)
+        if (model.HasBranches)
         {
-            return result;
+            foreach (var branch in model.Branches!)
+            {
+                AddBranchCases(result, branch);
+            }
         }
 
-        foreach (var branch in model.Branches!)
+        if (model.HasLoops)
         {
-            foreach (var branchCase in branch.Cases)
+            foreach (var loop in model.Loops!)
             {
-                // Every case with steps is admitted, workflow-ending cases included. Excluding an
-                // ending case leaves its last step to the ordinary step handler, where terminality
-                // is decided by list position rather than by the case's own declaration; the
-                // path-end handler reads BranchCaseModel.IsTerminal instead.
-                if (branchCase.StepNames.Count > 0)
+                if (loop.BranchOnExit is not null)
                 {
-                    result[branchCase.LastStepName] = (branch, branchCase);
+                    AddBranchCases(result, loop.BranchOnExit);
                 }
             }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Admits every case that has steps into the path-info lookup, workflow-ending cases included.
+    /// </summary>
+    /// <param name="result">The lookup being populated.</param>
+    /// <param name="branch">The branch whose cases should be admitted.</param>
+    /// <remarks>
+    /// Excluding an ending case leaves its last step to the ordinary step handler, where
+    /// terminality is decided by list position rather than by the case's own declaration; the
+    /// path-end handler reads <see cref="BranchCaseModel.IsTerminal"/> instead.
+    /// </remarks>
+    private static void AddBranchCases(
+        Dictionary<string, (BranchModel Branch, BranchCaseModel Case)> result,
+        BranchModel branch)
+    {
+        foreach (var branchCase in branch.Cases)
+        {
+            if (branchCase.StepNames.Count > 0)
+            {
+                result[branchCase.LastStepName] = (branch, branchCase);
+            }
+        }
     }
 
     private static IReadOnlyDictionary<string, StepModel> BuildStepsByName(WorkflowModel model)

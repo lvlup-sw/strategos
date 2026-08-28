@@ -270,6 +270,69 @@ public class SagaStepHandlersEmitterTests
         await Assert.That(output).Contains("StartFinalizeCommand");
     }
 
+    /// <summary>
+    /// A rejoining case of a loop-exit branch publishes the start command for the declared
+    /// terminal, and a sibling <c>.Complete()</c> case still marks the saga completed.
+    /// </summary>
+    /// <remarks>
+    /// The branch lives on the loop and is absent from the workflow's branch collection.
+    /// Case steps are omitted from <c>StepNames</c> so the dedicated branch-case handler loop
+    /// is the only site that can emit their path-end handlers (#184).
+    /// </remarks>
+    [Test]
+    public async Task Emit_LoopExitRejoiningCase_PublishesStartCommandForDeclaredTerminal()
+    {
+        var exitBranch = BranchModel.Create(
+            branchId: "claim-exit",
+            previousStepName: "Investigation_GatherEvidence",
+            discriminatorPropertyPath: "Outcome",
+            discriminatorTypeName: "ClaimOutcome",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            cases:
+            [
+                BranchCaseModel.Create("ClaimOutcome.Pay", "Pay", ["PayClaim"], isTerminal: false),
+                BranchCaseModel.Create("ClaimOutcome.Deny", "Deny", ["DenyClaim"], isTerminal: true),
+            ],
+            rejoinStepName: "CloseClaim");
+
+        var loop = LoopModel.Create(
+            loopName: "Investigation",
+            conditionId: "SettleClaim-Investigation",
+            maxIterations: 5,
+            bodySteps: [StepModel.Create("GatherEvidence", "TestNamespace.GatherEvidence", loopName: "Investigation")],
+            continuationStepName: null,
+            parentLoopName: null,
+            branchOnExitId: "claim-exit",
+            branchOnExit: exitBranch);
+
+        var model = CreateMinimalModel(
+            stepNames: ["OpenClaim", "Investigation_GatherEvidence", "CloseClaim"],
+            loops: [loop]);
+
+        var output = EmitStepHandlers(model);
+
+        await Assert.That(model.HasBranches)
+            .IsFalse()
+            .Because("a branch that follows a repeat-until loop is attached to the loop, not to the workflow");
+
+        var payClaim = CompletedHandlerBodyFor(output, "PayClaim");
+        await Assert.That(payClaim)
+            .Contains("return new StartCloseClaimCommand(WorkflowId);")
+            .Because("a rejoining loop-exit case must dispatch the declared terminal");
+        await Assert.That(payClaim)
+            .DoesNotContain("MarkCompleted();")
+            .Because("completing at the rejoining case skips Finally");
+
+        var denyClaim = CompletedHandlerBodyFor(output, "DenyClaim");
+        await Assert.That(denyClaim)
+            .Contains("MarkCompleted();")
+            .Because("a sibling .Complete() case still ends the workflow at its own last step");
+        await Assert.That(denyClaim)
+            .DoesNotContain("StartCloseClaimCommand")
+            .Because("a denied claim must never be routed to the declared terminal");
+    }
+
     // ====================================================================
     // Section F: Validation Tests
     // ====================================================================

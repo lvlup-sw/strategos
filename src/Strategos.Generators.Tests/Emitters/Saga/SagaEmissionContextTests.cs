@@ -282,6 +282,83 @@ public class SagaEmissionContextTests
         await Assert.That(context.BranchPathInfo["Approved_Process"].Case.IsTerminal).IsFalse();
     }
 
+    /// <summary>
+    /// Cases of a branch a loop evaluates on exit are included in path info even though that
+    /// branch is attached to the loop and absent from the workflow's branch collection.
+    /// </summary>
+    /// <remarks>
+    /// Walking only <c>model.Branches</c> leaves a rejoining loop-exit case with no path-end
+    /// handler, so the declared terminal never starts (#184).
+    /// </remarks>
+    [Test]
+    public async Task Create_LoopExitBranch_IncludesCasesInBranchPathInfo()
+    {
+        var loop = CreateFulfilmentLoopWithExitBranch();
+        var model = CreateMinimalModel(
+            stepNames:
+            [
+                "Fulfilment_AllocateStock", "Fulfilment_VerifyStock", "ShipOrder", "ExpediteShipment", "HoldShipment",
+            ],
+            loops: [loop]);
+
+        var context = SagaEmissionContext.Create(model);
+
+        await Assert.That(model.HasBranches)
+            .IsFalse()
+            .Because("a branch that follows a repeat-until loop is attached to the loop, not to the workflow");
+
+        await Assert.That(context.BranchPathInfo.ContainsKey("ExpediteShipment")).IsTrue();
+        await Assert.That(context.BranchPathInfo["ExpediteShipment"].Case.IsTerminal).IsFalse();
+        await Assert.That(context.BranchPathInfo["ExpediteShipment"].Branch.RejoinStepName)
+            .IsEqualTo("ShipOrder");
+        await Assert.That(context.BranchPathInfo.ContainsKey("HoldShipment")).IsTrue();
+        await Assert.That(context.BranchPathInfo["HoldShipment"].Case.IsTerminal).IsFalse();
+    }
+
+    /// <summary>
+    /// Mixed loop-exit cases are both admitted: the rejoining case so it can dispatch the
+    /// declared terminal, and the <c>.Complete()</c> sibling so it still marks the saga completed.
+    /// </summary>
+    [Test]
+    public async Task Create_MixedLoopExitCases_IncludesRejoiningAndTerminalInPathInfo()
+    {
+        var exitBranch = BranchModel.Create(
+            branchId: "claim-exit",
+            previousStepName: "Investigation_GatherEvidence",
+            discriminatorPropertyPath: "Outcome",
+            discriminatorTypeName: "ClaimOutcome",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            cases:
+            [
+                BranchCaseModel.Create("ClaimOutcome.Pay", "Pay", ["PayClaim"], isTerminal: false),
+                BranchCaseModel.Create("ClaimOutcome.Deny", "Deny", ["DenyClaim"], isTerminal: true),
+            ],
+            rejoinStepName: "CloseClaim");
+
+        var loop = LoopModel.Create(
+            loopName: "Investigation",
+            conditionId: "SettleClaim-Investigation",
+            maxIterations: 5,
+            bodySteps: [StepModel.Create("GatherEvidence", "TestNamespace.GatherEvidence", loopName: "Investigation")],
+            continuationStepName: null,
+            parentLoopName: null,
+            branchOnExitId: "claim-exit",
+            branchOnExit: exitBranch);
+
+        var model = CreateMinimalModel(
+            stepNames: ["OpenClaim", "Investigation_GatherEvidence", "CloseClaim", "PayClaim", "DenyClaim"],
+            loops: [loop]);
+
+        var context = SagaEmissionContext.Create(model);
+
+        await Assert.That(context.BranchPathInfo.ContainsKey("PayClaim")).IsTrue();
+        await Assert.That(context.BranchPathInfo["PayClaim"].Case.IsTerminal).IsFalse();
+        await Assert.That(context.BranchPathInfo["PayClaim"].Branch.RejoinStepName).IsEqualTo("CloseClaim");
+        await Assert.That(context.BranchPathInfo.ContainsKey("DenyClaim")).IsTrue();
+        await Assert.That(context.BranchPathInfo["DenyClaim"].Case.IsTerminal).IsTrue();
+    }
+
     // ====================================================================
     // Section E: Step Lookup Tests
     // ====================================================================
