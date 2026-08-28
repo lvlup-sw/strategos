@@ -10,7 +10,8 @@ namespace Strategos.Ontology;
 /// DR-4 (Task 8). Eight sealed-record variants cover object-type,
 /// property, and link granularity. The mechanical ingester is forbidden
 /// from constructing <c>Add</c>/<c>Update</c> deltas whose descriptors
-/// contain <c>Actions</c>, <c>Events</c>, or <c>Lifecycle</c> (AONT205);
+/// contain <c>Actions</c>, <c>Events</c>, <c>Lifecycle</c>,
+/// <c>InterfaceActionMappings</c>, or <c>ExternalLinkExtensionPoints</c> (AONT205);
 /// validation occurs at delta-apply time, not at delta-construction time.
 /// <see cref="RenameProperty"/> is a single delta — not a Remove+Add pair
 /// — to preserve identity through the matcher.
