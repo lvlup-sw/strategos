@@ -38,7 +38,7 @@ The real defect is a **duplicate**, not a miss. `TryBuildConfiguredForkPathStepM
 
 ## Constraints
 
-Anchored to `.claude/skills/strategos-design-invariants/`:
+Anchored to `.agents/skills/strategos-design-invariants/`:
 
 - **INV-1** — Workflows lower into Wolverine + Marten via Roslyn SG. *Violated today in the shipped composition, twice; only a real-host run discharges it.*
 - **INV-5** — Three-tiered validation with stable `AGWF*`/`AONT*` ids, preferring the earliest tier that **can** catch the error. *Load-bearing: this failure class is compile-time decidable and has no compile-time guard.*
@@ -191,6 +191,8 @@ Three jobs in `ci.yml` consume org reusable workflows at `@main`.
 - `ToolAnnotations`' record shape is **unchanged**: the schema diff 2025-11-25 → 2026-07-28 shows `ToolAnnotations` identical, `Tool.execution` removed (Strategos never had it), `CallToolResult.resultType` added. The re-pin is a docstring change with no code change, and the issue's open question is answered rather than left open.
 - INV-3's own catalog is amended (12 sites across three files), including the executable grep gate at `deterministic-checks.md:101`, whose deny-list must gain `2025-11-25` and whose path scope excludes the `Agents.Mcp` README it should cover.
   > **Defect found at implementation, 2026-08-22: this half cannot ship in the PR.** `.claude/` is gitignored (`.gitignore:81`) and `git ls-files .claude` is empty, so the invariant catalog is **not under version control** — it can never appear in a diff, and an isolated implementer cannot reach it. The amendment is therefore an out-of-band local change, applied and verified separately from the PR, and the lane produced a ready-to-apply patch rather than a commit. The wider implication is filed as **#178**: the catalog that governs every design audit in this repo is untracked, unreviewable and un-shareable, which is why an 11-site staleness could accumulate unnoticed — including a grep gate whose deny-list omitted the revision it should have rejected, so it passed by being blind. The amendment itself was applied out-of-band on 2026-08-22 and kill-probed (it fires on the pre-fix source).
+  >
+  > **#178 follow-up:** the catalog is now tracked at `.agents/skills/strategos-design-invariants/` (`.agents/` is not gitignored). Live path references in this spec point there.
 - `CallToolResult.resultType` (#176) and the pre-existing `Tool.icons` gap (#177) stay **filed, not folded in** — both are `src/Strategos.Ontology.MCP/**` code changes beyond a docs PR. #176 touches the surface #171 also touches; sequence them so they do not collide.
 - **Both** `packages.md` files are corrected: `docs/packages.md` (named by #166, unpublished) and `docs/src/content/docs/reference/packages.md` (the page users actually read, not named by #166) — or the unpublished duplicate is deleted. Fixing only the one the issue names leaves the published page wrong.
   > **Corrected at implementation:** the listings were missing **nine** packages, not six. #166 names only the ontology family and misses `Contracts`, `Identity.Abstractions` and `Agents.Mcp`. Cross-check against the fourteen `.csproj` files carrying a `PackageId`, not against the issue's count.
@@ -587,7 +589,7 @@ Move the protocol pin to the current upstream revision at all three production s
 
 **Risk Tier:** low · **Test Layer:** unit
 **Implements:** DR-10
-**Files:** `src/Strategos.Ontology.MCP/ToolAnnotations.cs`, `src/Strategos.Ontology.MCP/OntologyToolDescriptor.cs`, `src/Strategos.Agents.Mcp/README.md`, `.claude/skills/strategos-design-invariants/references/INV-3-mcp-first-class-latest-spec.md`, `.claude/skills/strategos-design-invariants/references/deterministic-checks.md`, `.claude/skills/strategos-design-invariants/SKILL.md`
+**Files:** `src/Strategos.Ontology.MCP/ToolAnnotations.cs`, `src/Strategos.Ontology.MCP/OntologyToolDescriptor.cs`, `src/Strategos.Agents.Mcp/README.md`, `.agents/skills/strategos-design-invariants/references/INV-3-mcp-first-class-latest-spec.md`, `.agents/skills/strategos-design-invariants/references/deterministic-checks.md`, `.agents/skills/strategos-design-invariants/SKILL.md`
 **Verification:** no code change — the annotation record's shape is identical across the two revisions, which is what makes this a docstring move. The catalog amendment goes through the invariant-amendment path rather than a hand edit. Historical records under design, plan and changelog paths are left alone; they were true when written. The two genuine revision gaps stay filed, not folded in.
 **Dependencies:** None · **Parallelizable:** Yes
 
