@@ -28,6 +28,7 @@ internal static class EventsEmitter
     {
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
+        var naming = ForkPathCompletedNaming.For(model);
         var sb = new StringBuilder();
 
         // File header
@@ -49,13 +50,19 @@ internal static class EventsEmitter
         // Workflow Started event
         EmitStartedEvent(sb, model);
 
-        // Step Completed events for each unique STEP TYPE (deduplicated)
-        // Workers return events using unprefixed step type names
+        // Step Completed events for each unique STEP TYPE (deduplicated).
+        // Fork-path instances that share a type publish a path-qualified event
+        // (emitted from the fork loop below) so Wolverine can bind Handle by CLR type.
         var emittedStepEvents = new HashSet<string>(StringComparer.Ordinal);
         if (model.Steps is not null)
         {
             foreach (var step in model.Steps)
             {
+                if (naming.IsQualifiedPhase(step.PhaseName))
+                {
+                    continue;
+                }
+
                 if (emittedStepEvents.Add(step.StepName))
                 {
                     sb.AppendLine();
@@ -68,6 +75,11 @@ internal static class EventsEmitter
             // Fallback for models without Step collection - use phase names
             foreach (var stepName in model.StepNames)
             {
+                if (naming.IsQualifiedPhase(stepName))
+                {
+                    continue;
+                }
+
                 sb.AppendLine();
                 EmitStepCompletedEvent(sb, model, stepName);
             }
@@ -78,18 +90,19 @@ internal static class EventsEmitter
         {
             foreach (var fork in model.Forks)
             {
-                // Generate events for fork path steps. Keyed on the step TYPE, like every other
-                // entry in this set: a worker publishes its type's completed event, so keying on
-                // the phase name would emit a second event record — under the loop prefix, or
-                // under an instance name — that nothing ever publishes or handles.
+                // Unique-type fork paths keep {StepType}Completed. Shared-type
+                // instances use PhaseName, path-qualified when ForkPathsByRoutingKey
+                // has more than one key with that PhaseName.
                 foreach (var path in fork.Paths)
                 {
                     foreach (var step in path.Steps)
                     {
-                        if (emittedStepEvents.Add(step.StepName))
+                        var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, step.PhaseName);
+                        var stem = naming.StemFor(key, step.StepName);
+                        if (emittedStepEvents.Add(stem))
                         {
                             sb.AppendLine();
-                            EmitStepCompletedEvent(sb, model, step.StepName);
+                            EmitStepCompletedEvent(sb, model, stem);
                         }
                     }
                 }
