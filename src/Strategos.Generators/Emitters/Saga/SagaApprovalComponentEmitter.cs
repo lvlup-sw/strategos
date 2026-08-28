@@ -52,6 +52,15 @@ internal sealed class SagaApprovalComponentEmitter : ISagaComponentEmitter
 
             sb.AppendLine();
             _resumeHandlerEmitter.EmitResumeHandler(sb, model, approval, resumeContext);
+
+            sb.AppendLine();
+            _resumeHandlerEmitter.EmitSetPendingHandler(sb, model, approval);
+
+            if (approval.HasEscalation)
+            {
+                sb.AppendLine();
+                _resumeHandlerEmitter.EmitTimeoutHandler(sb, model, approval);
+            }
         }
     }
 
@@ -70,6 +79,14 @@ internal sealed class SagaApprovalComponentEmitter : ISagaComponentEmitter
         // branch-case, failure-handler or handler-chain step — which bypasses that construct's
         // own dispatch handler and leaves the workflow with no way forward. The skip set is the
         // same shared classification the other successor scans consult.
+        //
+        // When that successor is a fork's JOIN, the handlers emitter must dispatch the fork
+        // itself rather than Start{Join}: join is main-flow (by design) and fork paths are
+        // not, so this scan lands on the join and the fork never starts (#182). ForkExtractor
+        // walks through an intervening AwaitApproval when recording ForkModel.PreviousStepName,
+        // so ForksByPreviousStep is keyed by the gated step — the same name as
+        // ApprovalModel.PrecedingStepName. The join-step lookup is the one that names the
+        // defect: the resume target is the join, and that is exactly when dispatch must change.
         var nextStepName = ctx.MainFlow.NextMainFlowStepNameAfter(approval.PrecedingStepName);
 
         return new ApprovalResumeContext(

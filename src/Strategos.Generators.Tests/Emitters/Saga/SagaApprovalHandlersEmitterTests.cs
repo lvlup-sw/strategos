@@ -359,6 +359,45 @@ public class SagaApprovalHandlersEmitterTests
         await Assert.That(result).Contains("public void Handle(");
     }
 
+    /// <summary>
+    /// A last-on-flow approval with a rejection chain must publish the chain's first
+    /// start command. The void handler only mutated phase and commented that a
+    /// subsequent handler would run the step — nothing published the command, so the
+    /// saga parked forever (#186).
+    /// </summary>
+    [Test]
+    public async Task EmitResumeHandler_LastOnFlowWithRejection_DispatchesFirstRejectionStep()
+    {
+        var emitter = new SagaApprovalHandlersEmitter();
+        var sb = new StringBuilder();
+        var model = CreateMinimalModel();
+        var approval = ApprovalModel.Create(
+            approvalPointName: "FinalReview",
+            approverTypeName: "Manager",
+            precedingStepName: "FinalizeOrder",
+            rejectionSteps:
+            [
+                StepModel.Create("LogRejection", "TestNamespace.LogRejection"),
+                StepModel.Create("NotifyUser", "TestNamespace.NotifyUser"),
+            ]);
+        var context = CreateFinalStepContext();
+
+        emitter.EmitResumeHandler(sb, model, approval, context);
+        var result = sb.ToString();
+
+        await Assert.That(result)
+            .Contains("public object? Handle(")
+            .Because("a void handler cannot publish the rejection-chain start command");
+
+        await Assert.That(result)
+            .Contains("StartLogRejectionCommand")
+            .Because("the last-on-flow rejected arm must dispatch the chain's first step");
+
+        await Assert.That(result)
+            .DoesNotContain("subsequent handler")
+            .Because("that comment described a handoff that had no trigger");
+    }
+
     // =============================================================================
     // F. Phase 2 - ApprovalDecision Enum Handling Tests
     // =============================================================================
