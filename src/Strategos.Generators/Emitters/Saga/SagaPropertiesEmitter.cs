@@ -149,21 +149,25 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             }
         }
 
-        // Diagnostic-fork tally (DR-9): a PER-EDGE counter of admitted diagnostic forks,
-        // keyed by the fork edge's declaration index. Each edge's maxForks guard enforces
+        // Diagnostic-fork tally (DR-9 / #156.3): a PER-EDGE counter of admitted diagnostic
+        // forks, keyed by the sanitized compensation-seed moniker (the same '-' → '_'
+        // sanitizer used for Fork_{id}_Path{n}State). Each edge's maxForks guard enforces
         // its declared bound against its OWN counter (the loop MaxIterations forced-exit
         // precedent), so a high-bound edge cannot starve a low-bound edge out of a shared
-        // pool. Emitted only for a workflow that declares a fork edge (byte-unchanged
-        // otherwise), one property per edge.
+        // pool. Two edges that sanitize to the same key are rejected (duplicate-seed diagnostic) rather
+        // than sharing a counter.
+        //
+        // 2.10.0 emitted positional DiagnosticForkCount_{i}. 2.11.0 renames the persisted
+        // saga property to DiagnosticForkCount_{seed}. That is a breaking Marten document
+        // field rename; there is no dual-read shim for the positional name.
         if (model.HasDiagnosticForks)
         {
-            var forks = model.DiagnosticForks!;
-            for (var i = 0; i < forks.Count; i++)
+            foreach (var fork in model.DiagnosticForks!)
             {
                 sb.AppendLine("    /// <summary>");
-                sb.AppendLine($"    /// Gets or sets the number of diagnostic forks admitted by fork edge {i}.");
+                sb.AppendLine($"    /// Gets or sets the number of diagnostic forks admitted by the edge seeded at {fork.CompensationSeedMoniker}.");
                 sb.AppendLine("    /// </summary>");
-                sb.AppendLine($"    public int DiagnosticForkCount_{i} {{ get; set; }}");
+                sb.AppendLine($"    public int {fork.CountPropertyName} {{ get; set; }}");
                 sb.AppendLine();
             }
         }

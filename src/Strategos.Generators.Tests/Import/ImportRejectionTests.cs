@@ -34,6 +34,7 @@ public sealed class ImportRejectionTests
     private const string ReliabilityGateCode = "AGWF033";
     private const string ForkTriggerEvidenceCode = "AGWF034";
     private const string DuplicatePermittedForkTriggerCode = "AGWF037";
+    private const string DuplicateCompensationSeedCode = "AGWF038";
 
     /// <summary>
     /// Real step types so a NON-rejected import can resolve its monikers and lower a saga — the
@@ -288,6 +289,41 @@ public sealed class ImportRejectionTests
         }
         """;
 
+    // Two diagnostic-fork edges that share a compensation seed — the #156.3 case.
+    // Sharing a DiagnosticForkCount_{seed} counter is rejected as AGWF038.
+    private const string ForkDuplicateSeedJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-duplicate-seed",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [ { "transitionId": "t1", "fromStepId": "s1", "toStepId": "s2", "isDefault": false } ],
+          "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "diagnosticForks": [
+            {
+              "anchorStepIds": [ "RejectStepA" ],
+              "permittedTriggers": [
+                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] }
+              ],
+              "maxForks": 2,
+              "compensationSeed": "RejectStepB"
+            },
+            {
+              "anchorStepIds": [ "RejectStepB" ],
+              "permittedTriggers": [
+                { "trigger": "GateContradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
+              ],
+              "maxForks": 1,
+              "compensationSeed": "RejectStepB"
+            }
+          ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
     // Negative control: two DISTINCT triggers on one edge stay clean — no AGWF037.
     private const string ForkDistinctTriggersJson = """
         {
@@ -445,6 +481,22 @@ public sealed class ImportRejectionTests
             DuplicatePermittedForkTriggerCode,
             "$.diagnosticForks[0].permittedTriggers[1]",
             "RatificationFailure");
+    }
+
+    /// <summary>
+    /// JSON-import twin: two diagnostic-fork edges that share a compensation seed
+    /// fire AGWF038 and emit no saga (#156.3).
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkDuplicateCompensationSeed_IsRejected_WithAgwf038AndNoSaga()
+    {
+        var result = RunGenerator(StepTypes, ("reject-fork-duplicate-seed.workflow.json", ForkDuplicateSeedJson));
+        await AssertRejected(
+            result,
+            DuplicateCompensationSeedCode,
+            "$.diagnosticForks[1]",
+            "RejectStepB");
     }
 
     /// <summary>

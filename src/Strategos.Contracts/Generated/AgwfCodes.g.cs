@@ -107,5 +107,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF037 — Duplicate permitted fork trigger.</summary>
         public const string DuplicatePermittedForkTrigger = "AGWF037";
+
+        /// <summary>AGWF038 — Duplicate diagnostic-fork compensation seed.</summary>
+        public const string DuplicateCompensationSeed = "AGWF038";
     }
 }

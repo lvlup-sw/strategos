@@ -483,6 +483,43 @@ internal static class WireToModelBridge
             }
         }
 
+        // Two diagnostic-fork edges whose compensation seeds sanitize to the same
+        // DiagnosticForkCount_{seed} key (#156.3). Reject rather than share a counter:
+        // MapDiagnosticForks would otherwise lower two edges onto one saga property.
+        var compensationSeeds = new string[definition.DiagnosticForks.Count];
+        for (var i = 0; i < definition.DiagnosticForks.Count; i++)
+        {
+            compensationSeeds[i] = definition.DiagnosticForks[i].CompensationSeed ?? string.Empty;
+        }
+
+        foreach (var duplicate in DiagnosticForkModel.FindDuplicateCompensationSeeds(compensationSeeds))
+        {
+            var duplicateKey = DiagnosticForkModel.SanitizeCompensationSeedMoniker(duplicate);
+            var secondIndex = -1;
+            for (var i = 0; i < compensationSeeds.Length; i++)
+            {
+                if (string.IsNullOrEmpty(compensationSeeds[i]))
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                    DiagnosticForkModel.SanitizeCompensationSeedMoniker(compensationSeeds[i]),
+                    duplicateKey,
+                    StringComparison.Ordinal))
+                {
+                    secondIndex = i;
+                }
+            }
+
+            rejections.Add(Diagnostic.Create(
+                WorkflowDiagnostics.DuplicateCompensationSeed,
+                Location.None,
+                jsonFilePath,
+                $"$.diagnosticForks[{secondIndex}]",
+                DescribeId(duplicate)));
+        }
+
         return rejections;
     }
 

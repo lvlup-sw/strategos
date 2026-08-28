@@ -139,6 +139,63 @@ internal sealed record DiagnosticForkModel(
     }
 
     /// <summary>
+    /// Sanitizes a compensation-seed moniker the same way fork-path saga properties
+    /// sanitize <c>ForkId</c> for <c>Fork_{id}_Path{n}State</c>: replace '-' with '_'.
+    /// The resulting token is the suffix of <see cref="CountPropertyName"/>.
+    /// </summary>
+    /// <param name="compensationSeedMoniker">The authored compensation-seed moniker.</param>
+    /// <returns>The identifier-safe moniker used as the <c>DiagnosticForkCount_</c> suffix.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="compensationSeedMoniker"/> is null.</exception>
+    public static string SanitizeCompensationSeedMoniker(string compensationSeedMoniker)
+    {
+        ThrowHelper.ThrowIfNull(compensationSeedMoniker, nameof(compensationSeedMoniker));
+        return compensationSeedMoniker.Replace("-", "_");
+    }
+
+    /// <summary>
+    /// Gets the per-edge saga counter property name, keyed by the sanitized
+    /// compensation-seed moniker (<c>DiagnosticForkCount_{seed}</c>). 2.10.0 used
+    /// positional <c>DiagnosticForkCount_{i}</c>; 2.11.0 renames the persisted
+    /// property. There is no dual-read shim.
+    /// </summary>
+    public string CountPropertyName =>
+        "DiagnosticForkCount_" + SanitizeCompensationSeedMoniker(CompensationSeedMoniker);
+
+    /// <summary>
+    /// Returns each compensation seed whose sanitized moniker appears more than
+    /// once, in first-seen-collision order. Empty seeds are ignored. Used by the
+    /// C# extractor and the JSON-import bridge so two edges that would share a
+    /// <c>DiagnosticForkCount_{seed}</c> property are rejected rather than
+    /// merged onto one counter (#156.3).
+    /// </summary>
+    /// <param name="compensationSeeds">The compensation-seed monikers declared across edges.</param>
+    /// <returns>The colliding seeds (the later original of each sanitized-key clash), or empty.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="compensationSeeds"/> is null.</exception>
+    public static IReadOnlyList<string> FindDuplicateCompensationSeeds(IEnumerable<string> compensationSeeds)
+    {
+        ThrowHelper.ThrowIfNull(compensationSeeds, nameof(compensationSeeds));
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var duplicates = new List<string>();
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var seed in compensationSeeds)
+        {
+            if (string.IsNullOrEmpty(seed))
+            {
+                continue;
+            }
+
+            var key = SanitizeCompensationSeedMoniker(seed);
+            if (!seen.Add(key) && reported.Add(key))
+            {
+                duplicates.Add(seed);
+            }
+        }
+
+        return duplicates;
+    }
+
+    /// <summary>
     /// Returns each trigger name that appears more than once, in first-seen order.
     /// Empty names are ignored. Used by the C# extractor and the JSON-import bridge
     /// so a duplicate <c>PermitTrigger</c> is rejected rather than first-wins-deduped (#156.2).

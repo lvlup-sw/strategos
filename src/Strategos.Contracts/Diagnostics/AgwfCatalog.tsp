@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **31 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **32 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.
@@ -53,6 +53,7 @@ enum AgwfCode {
   UnreachableTermination: "AGWF035",
   PathEndTypeCollision: "AGWF036",
   DuplicatePermittedForkTrigger: "AGWF037",
+  DuplicateCompensationSeed: "AGWF038",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -362,5 +363,15 @@ model AgwfEntryDuplicatePermittedForkTrigger {
   severity: "error";
   summary: "Duplicate permitted fork trigger";
   remediation: "Workflow '{0}' declares permitted trigger '{2}' more than once on one diagnostic-fork edge at {1}. Two same-trigger declarations can carry different evidence schemas; declare each trigger at most once.";
+  since: "2.11.0";
+}
+
+/** AGWF038 — Duplicate diagnostic-fork compensation seed (#156.3). */
+@jsonSchema
+model AgwfEntryDuplicateCompensationSeed {
+  id: "AGWF038";
+  severity: "error";
+  summary: "Duplicate diagnostic-fork compensation seed";
+  remediation: "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.";
   since: "2.11.0";
 }

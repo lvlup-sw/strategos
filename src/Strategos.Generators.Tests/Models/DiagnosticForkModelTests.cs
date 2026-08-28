@@ -134,6 +134,36 @@ public class DiagnosticForkModelTests
     }
 
     /// <summary>
+    /// Distinct seeds stay unique; a repeated seed and a hyphen/underscore pair that
+    /// sanitize to the same key are both reported (#156.3).
+    /// </summary>
+    [Test]
+    public async Task FindDuplicateCompensationSeeds_ReportsSanitizedCollisions()
+    {
+        var duplicates = DiagnosticForkModel.FindDuplicateCompensationSeeds(
+            ["RollbackOne", "RollbackTwo", "RollbackOne", "foo-bar", "foo_bar"]);
+
+        await Assert.That(duplicates).IsEquivalentTo(new[] { "RollbackOne", "foo_bar" });
+    }
+
+    /// <summary>
+    /// The count property is keyed by the hyphen-sanitized compensation seed.
+    /// </summary>
+    [Test]
+    public async Task CountPropertyName_UsesSanitizedCompensationSeed()
+    {
+        var model = DiagnosticForkModel.Create(
+            ["Anchor"],
+            [Trigger("RatificationFailure", "e")],
+            "rollback-provisional",
+            2);
+
+        await Assert.That(model.CountPropertyName).IsEqualTo("DiagnosticForkCount_rollback_provisional");
+        await Assert.That(DiagnosticForkModel.SanitizeCompensationSeedMoniker("StampStep"))
+            .IsEqualTo("StampStep");
+    }
+
+    /// <summary>
     /// Verifies that Create throws when the compensation seed is whitespace.
     /// </summary>
     [Test]
