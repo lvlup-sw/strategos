@@ -544,10 +544,13 @@ internal static class WorkflowDiagnostics
     /// </para>
     /// <para>
     /// The whole class is decidable at emission — the generator holds both the declared terminal
-    /// and each computed successor — so this reports it there. Two conditions: the declared
-    /// terminal has a main-flow successor at all, or a main-flow step's computed successor is a
-    /// step owned by a construct. Argument 0 is the step whose successor is wrong; argument 1 is
-    /// the workflow name; argument 2 is the successor it resolved to.
+    /// and each computed successor — so this reports it there. Over-reach: the declared terminal
+    /// has a main-flow successor at all, or a main-flow step's computed successor is a step
+    /// owned by a construct. Under-reach: a rejoin construct's last step does not dispatch the
+    /// declared terminal. Argument 0 is the declared terminal (under-reach) or the step whose
+    /// successor is wrong (over-reach); argument 1 is the workflow name; argument 2 is the other
+    /// step of the broken pair — the successor it resolved to, or the last step that should have
+    /// dispatched the terminal.
     /// </para>
     /// <para>
     /// An error, not a warning: a workflow that cannot reach its termination does not run. Until
