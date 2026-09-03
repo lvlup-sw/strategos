@@ -8,6 +8,7 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
     <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <LvlupTreatWarningsAsErrors>true</LvlupTreatWarningsAsErrors>
     <!-- MinVer: recognize v-prefixed tags like v1.0.0 -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
