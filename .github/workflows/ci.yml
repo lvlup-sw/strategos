@@ -13,7 +13,7 @@ jobs:
     # movable, so the SHA is recorded here to make that visible; the workflows
     # themselves SHA-pin their internal composite actions, so the action graph
     # under this ref is fixed.
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@v1
+    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@main
     with:
       solution-path: 'src/strategos.slnx'
       test-project-patterns: |
@@ -150,7 +150,7 @@ jobs:
     needs: build-test
     if: github.event_name == 'pull_request'
     # v1 -> c10269573359bc91ff59fe5e9cb8090bbc6cb87a at pin time.
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@v1
+    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@main
     permissions:
       pull-requests: write
     with:
@@ -164,7 +164,7 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     # v1 -> c10269573359bc91ff59fe5e9cb8090bbc6cb87a at pin time.
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@v1
+    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
 
   quality-gates:
     # T-023 / DR-7, DR-10, DR-11 grep gates. Pure shell — no .NET needed,
