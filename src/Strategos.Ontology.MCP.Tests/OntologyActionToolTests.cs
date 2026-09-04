@@ -7,6 +7,8 @@ namespace Strategos.Ontology.MCP.Tests;
 
 public class OntologyActionToolTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     private OntologyGraph _graph = null!;
     private IActionDispatcher _actionDispatcher = null!;
     private IObjectSetProvider _objectSetProvider = null!;
@@ -34,6 +36,7 @@ public class OntologyActionToolTests
 
         // Act
         var result = await _tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: request,
@@ -48,6 +51,7 @@ public class OntologyActionToolTests
         await _actionDispatcher.Received(1).DispatchAsync(
             Arg.Is<ActionContext>(ctx =>
                 ctx.Domain == "trading"
+                && ctx.Principal == Principal
                 && ctx.ObjectType == "TestPosition"
                 && ctx.ObjectId == "p1"
                 && ctx.ActionName == "execute_trade"),
@@ -77,6 +81,7 @@ public class OntologyActionToolTests
 
         // Act
         var result = await _tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: request,
@@ -118,6 +123,7 @@ public class OntologyActionToolTests
 
         // Act
         await _tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: request,
@@ -138,6 +144,7 @@ public class OntologyActionToolTests
     {
         // Act
         var result = await _tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "nonexistent_action",
             request: new { },
@@ -155,6 +162,7 @@ public class OntologyActionToolTests
     {
         // Act
         var result = await _tool.ExecuteAsync(
+            principal: Principal,
             objectType: "NonExistentType",
             action: "some_action",
             request: new { },
@@ -193,6 +201,7 @@ public class OntologyActionToolTests
 
         // Act — batch dispatch (no objectId, so DispatchBatchAsync is reached)
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "trading_documents",
             action: "execute_trade",
             request: new { },
@@ -207,6 +216,24 @@ public class OntologyActionToolTests
         await Assert.That(root).IsNotNull();
         await Assert.That(root!.ObjectTypeName).IsEqualTo("trading_documents");
         await Assert.That(root.ObjectType).IsEqualTo(typeof(TestPosition));
+    }
+
+    [Test]
+    public async Task OntologyAction_MissingPrincipal_IsRefusedBeforeDispatch()
+    {
+        var result = await _tool.ExecuteAsync(
+            principal: null,
+            objectType: "TestPosition",
+            action: "execute_trade",
+            request: new { },
+            domain: "trading",
+            objectId: "p1");
+
+        await Assert.That(result.Results).HasCount().EqualTo(1);
+        await Assert.That(result.Results[0].IsSuccess).IsFalse();
+        await Assert.That(result.Results[0].Error).Contains("principal");
+        await _actionDispatcher.DidNotReceiveWithAnyArgs()
+            .DispatchAsync(default!, default!, default);
     }
 }
 

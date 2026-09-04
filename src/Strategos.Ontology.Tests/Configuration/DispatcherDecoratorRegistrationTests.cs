@@ -133,7 +133,12 @@ public class DispatcherDecoratorRegistrationTests
         var dispatcher = provider.GetRequiredService<IActionDispatcher>();
 
         // Resolves successfully and routes Dispatch through the inner stub.
-        var ctx = new ActionContext("test-domain", "TestPosition", "p-1", "Noop");
+        var ctx = new ActionContext(
+            new ActionPrincipal("User", "user-1"),
+            "test-domain",
+            "TestPosition",
+            "p-1",
+            "Noop");
         var result = await dispatcher.DispatchAsync(ctx, new { }, CancellationToken.None);
         await Assert.That(result.IsSuccess).IsTrue();
     }

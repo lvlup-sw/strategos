@@ -202,8 +202,14 @@ public static class OntologyServerToolFactory
                     "ontology_action requires an IActionDispatcher to be registered in the host's service provider.");
 
             var tool = new OntologyActionTool(graph, dispatcher, ResolveObjectSetProvider(context));
+            var principalResolver = context.Services?.GetService<IActionPrincipalResolver>()
+                ?? ClaimsActionPrincipalResolver.Instance;
+            var principal = context.User is null
+                ? null
+                : principalResolver.Resolve(context.User);
 
             return await tool.ExecuteAsync(
+                principal,
                 objectType,
                 action,
                 request,

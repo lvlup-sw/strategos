@@ -48,6 +48,7 @@ public sealed class OntologyActionTool
     /// Executes an action on a single object or a filtered set of objects.
     /// </summary>
     public async Task<ActionToolResult> ExecuteAsync(
+        ActionPrincipal? principal,
         string objectType,
         string action,
         object request,
@@ -58,6 +59,13 @@ public sealed class OntologyActionTool
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(objectType);
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        if (principal is null)
+        {
+            return new ActionToolResult(
+                [new ActionResult(false, Error: "An authenticated action principal is required.")],
+                CurrentMeta());
+        }
 
         var resolvedDomain = domain ?? ResolveDomain(objectType);
 
@@ -91,15 +99,16 @@ public sealed class OntologyActionTool
 
         if (objectId is not null)
         {
-            return await DispatchSingleAsync(validDomain, objectType, objectId, action, request, ct)
+            return await DispatchSingleAsync(principal, validDomain, objectType, objectId, action, request, ct)
                 .ConfigureAwait(false);
         }
 
-        return await DispatchBatchAsync(validDomain, objectType, action, request, filter, ct)
+        return await DispatchBatchAsync(principal, validDomain, objectType, action, request, filter, ct)
             .ConfigureAwait(false);
     }
 
     private async Task<ActionToolResult> DispatchSingleAsync(
+        ActionPrincipal principal,
         string domain,
         string objectType,
         string objectId,
@@ -107,7 +116,7 @@ public sealed class OntologyActionTool
         object request,
         CancellationToken ct)
     {
-        var context = new ActionContext(domain, objectType, objectId, action);
+        var context = new ActionContext(principal, domain, objectType, objectId, action);
         var result = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
         return new ActionToolResult([result], CurrentMeta());
     }
@@ -115,6 +124,7 @@ public sealed class OntologyActionTool
     private ResponseMeta CurrentMeta() => ResponseMeta.ForGraph(_graph);
 
     private async Task<ActionToolResult> DispatchBatchAsync(
+        ActionPrincipal principal,
         string domain,
         string objectType,
         string action,
@@ -140,7 +150,7 @@ public sealed class OntologyActionTool
         foreach (var item in queryResult.Items)
         {
             var itemId = item?.ToString() ?? string.Empty;
-            var context = new ActionContext(domain, objectType, itemId, action);
+            var context = new ActionContext(principal, domain, objectType, itemId, action);
             try
             {
                 var actionResult = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);

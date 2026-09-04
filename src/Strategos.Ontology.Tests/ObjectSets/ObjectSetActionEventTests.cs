@@ -6,6 +6,8 @@ namespace Strategos.Ontology.Tests.ObjectSets;
 
 public class ObjectSetActionEventTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     private IObjectSetProvider _provider = null!;
     private IActionDispatcher _dispatcher = null!;
     private IEventStreamProvider _eventProvider = null!;
@@ -32,7 +34,7 @@ public class ObjectSetActionEventTests
         var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
 
         // Act
-        var results = await set.ApplyAsync("DoSomething", new { Value = 1 });
+        var results = await set.ApplyAsync(Principal, "DoSomething", new { Value = 1 });
 
         // Assert
         await Assert.That(results).HasCount().EqualTo(1);
@@ -52,11 +54,11 @@ public class ObjectSetActionEventTests
         var request = new { To = "test@example.com" };
 
         // Act
-        await set.ApplyAsync("SendEmail", request);
+        await set.ApplyAsync(Principal, "SendEmail", request);
 
         // Assert
         await _dispatcher.Received(1).DispatchAsync(
-            Arg.Is<ActionContext>(c => c.ActionName == "SendEmail"),
+            Arg.Is<ActionContext>(c => c.ActionName == "SendEmail" && c.Principal == Principal),
             Arg.Is<object>(r => r == request),
             Arg.Any<CancellationToken>());
     }
@@ -125,7 +127,7 @@ public class ObjectSetActionEventTests
         var set = new ObjectSet<string>(descriptorName, _provider, _dispatcher, _eventProvider);
 
         // Act
-        await set.ApplyAsync("Archive", new { });
+        await set.ApplyAsync(Principal, "Archive", new { });
 
         // Assert — dispatcher receives the descriptor name, not "String"
         await _dispatcher.Received(1).DispatchAsync(

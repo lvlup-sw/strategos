@@ -217,10 +217,11 @@ public class EndToEndDispatchValidationTests
             NullLogger<ObservableActionDispatcher>.Instance);
 
         var context = new ActionContext(
-            Domain: "e2e-trading",
-            ObjectType: "E2EPosition",
-            ObjectId: "pos-1",
-            ActionName: "get_position")
+            principal: new ActionPrincipal("User", "user-1"),
+            domain: "e2e-trading",
+            objectType: "E2EPosition",
+            objectId: "pos-1",
+            actionName: "get_position")
         {
             ActionDescriptor = readOnlyDescriptor,
         };
@@ -256,10 +257,11 @@ public class EndToEndDispatchValidationTests
         // No known properties supplied — the RequiresLink("Position") precondition
         // is unsatisfied when the link is absent from knownProperties.
         var context = new ActionContext(
-            Domain: "e2e-trading",
-            ObjectType: "E2EOrder",
-            ObjectId: "ord-1",
-            ActionName: "submit_order")
+            principal: new ActionPrincipal("User", "user-1"),
+            domain: "e2e-trading",
+            objectType: "E2EOrder",
+            objectId: "ord-1",
+            actionName: "submit_order")
         {
             ActionDescriptor = mutatingDescriptor,
         };

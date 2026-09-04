@@ -4,17 +4,20 @@ namespace Strategos.Ontology.Tests.Actions;
 
 public class ActionDispatcherTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     [Test]
     public async Task ActionContext_Create_HasDomainObjectTypeAndAction()
     {
         // Arrange & Act
-        var context = new ActionContext("CRM", "Contact", "c-1", "SendEmail");
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "SendEmail");
 
         // Assert
         await Assert.That(context.Domain).IsEqualTo("CRM");
         await Assert.That(context.ObjectType).IsEqualTo("Contact");
         await Assert.That(context.ObjectId).IsEqualTo("c-1");
         await Assert.That(context.ActionName).IsEqualTo("SendEmail");
+        await Assert.That(context.Principal).IsSameReferenceAs(Principal);
     }
 
     [Test]
@@ -46,7 +49,7 @@ public class ActionDispatcherTests
     {
         // Arrange
         var dispatcher = Substitute.For<IActionDispatcher>();
-        var context = new ActionContext("CRM", "Contact", "c-1", "SendEmail");
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "SendEmail");
         var request = new { To = "test@example.com" };
         dispatcher.DispatchAsync(context, request, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true, Result: "sent")));
@@ -62,7 +65,7 @@ public class ActionDispatcherTests
     public async Task ActionContext_Options_DefaultsToNull()
     {
         // Arrange & Act
-        var context = new ActionContext("CRM", "Contact", "c-1", "SendEmail");
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "SendEmail");
 
         // Assert
         await Assert.That(context.Options).IsNull();
@@ -73,11 +76,18 @@ public class ActionDispatcherTests
     {
         // Arrange & Act
         var options = new ActionDispatchOptions { EnforcePreconditions = true };
-        var context = new ActionContext("CRM", "Contact", "c-1", "SendEmail", options);
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "SendEmail", options);
 
         // Assert
         await Assert.That(context.Options).IsNotNull();
         await Assert.That(context.Options!.EnforcePreconditions).IsTrue();
+    }
+
+    [Test]
+    public async Task ActionContext_MissingPrincipal_Throws()
+    {
+        await Assert.That(() => new ActionContext(null!, "CRM", "Contact", "c-1", "SendEmail"))
+            .Throws<ArgumentNullException>();
     }
 
     [Test]

@@ -15,6 +15,8 @@ namespace Strategos.Ontology.MCP.Tests;
 /// </summary>
 public class OntologyActionToolResilienceTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     private OntologyGraph _graph = null!;
     private IActionDispatcher _actionDispatcher = null!;
     private IObjectSetProvider _objectSetProvider = null!;
@@ -36,6 +38,7 @@ public class OntologyActionToolResilienceTests
 
         // Act
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "NonExistentType",
             action: "some_action",
             request: new { },
@@ -55,6 +58,7 @@ public class OntologyActionToolResilienceTests
 
         // Act
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "nonexistent_action",
             request: new { },
@@ -87,6 +91,7 @@ public class OntologyActionToolResilienceTests
 
         // Act
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: new { },

@@ -1,7 +1,15 @@
 #nullable enable
+const Strategos.Ontology.MCP.Hosting.ActionPrincipalClaimTypes.PrincipalType = "strategos:principal_type" -> string!
 Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions
 static Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions.AddOntologyTools(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!
 static Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions.AddOntologyTools(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder, Strategos.Ontology.OntologyGraph! graph) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!
+static Strategos.Ontology.MCP.Hosting.ClaimsActionPrincipalResolver.Instance.get -> Strategos.Ontology.MCP.Hosting.ClaimsActionPrincipalResolver!
 static Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory.CreateAnswerComposer(Microsoft.Extensions.Logging.ILoggerFactory! loggerFactory) -> Strategos.Ontology.MCP.OntologyAnswerComposer!
 static Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory.CreateServerTools(Strategos.Ontology.OntologyGraph! graph) -> System.Collections.Generic.IEnumerable<ModelContextProtocol.Server.McpServerTool!>!
+Strategos.Ontology.MCP.Hosting.ActionPrincipalClaimTypes
+Strategos.Ontology.MCP.Hosting.ClaimsActionPrincipalResolver
+Strategos.Ontology.MCP.Hosting.ClaimsActionPrincipalResolver.ClaimsActionPrincipalResolver() -> void
+Strategos.Ontology.MCP.Hosting.ClaimsActionPrincipalResolver.Resolve(System.Security.Claims.ClaimsPrincipal! caller) -> Strategos.Ontology.Actions.ActionPrincipal?
+Strategos.Ontology.MCP.Hosting.IActionPrincipalResolver
+Strategos.Ontology.MCP.Hosting.IActionPrincipalResolver.Resolve(System.Security.Claims.ClaimsPrincipal! caller) -> Strategos.Ontology.Actions.ActionPrincipal?
 Strategos.Ontology.MCP.Hosting.OntologyServerToolFactory

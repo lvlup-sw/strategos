@@ -16,6 +16,8 @@ namespace Strategos.Ontology.MCP.Tests;
 /// </summary>
 public sealed class RelateActionGatingTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     public sealed record Account(string Id, string Status = "open");
 
     public sealed record Holder(string Id);
@@ -71,8 +73,8 @@ public sealed class RelateActionGatingTests
         var tool = new OntologyActionTool(graph, dispatcher, provider);
 
         // Act — relate, then unrelate, both as ACTIONS on a single object.
-        await tool.ExecuteAsync("Account", "relate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
-        await tool.ExecuteAsync("Account", "unrelate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
+        await tool.ExecuteAsync(Principal, "Account", "relate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
+        await tool.ExecuteAsync(Principal, "Account", "unrelate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
 
         // Assert — BOTH went through the action dispatcher (the gate), never a direct
         // writer call.
@@ -102,7 +104,7 @@ public sealed class RelateActionGatingTests
 
         // Act
         var result = await tool.ExecuteAsync(
-            "Account", "relate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
+            Principal, "Account", "relate_holder", new RelateRequest("h1"), domain: "rel", objectId: "a1");
 
         // Assert — the relate was denied at the gate.
         await Assert.That(result.Results).HasCount().EqualTo(1);

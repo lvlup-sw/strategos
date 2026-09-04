@@ -39,6 +39,20 @@ Each action tool descriptor includes `ActionConstraintSummary` records with hard
 - **Constraint Summaries**: Hard/soft constraint counts embedded in tool descriptions for zero-shot agent reasoning
 - **Python Stubs**: `OntologyStubGenerator` produces `.pyi`-style type stubs for agent tooling
 
+Direct action-tool callers must bind the authenticated caller explicitly:
+
+```csharp
+var principal = new ActionPrincipal("User", "user-42");
+var result = await actionTool.ExecuteAsync(
+    principal,
+    objectType: "Order",
+    action: "submit",
+    request: request,
+    objectId: "order-7");
+```
+
+Passing no principal is refused before the dispatcher is called. The MCP hosting package resolves this value from the authenticated request automatically.
+
 ## License
 
 MIT

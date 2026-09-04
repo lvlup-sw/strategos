@@ -91,7 +91,7 @@ Strategos.Ontology.MCP.OntologyAbstainedRecord.NearestRecordsCount.get -> int
 Strategos.Ontology.MCP.OntologyAbstainedRecord.OntologyAbstainedRecord(int nearestRecordsCount) -> void
 Strategos.Ontology.MCP.OntologyAbstainedRecord.Type.get -> string!
 Strategos.Ontology.MCP.OntologyActionTool
-Strategos.Ontology.MCP.OntologyActionTool.ExecuteAsync(string! objectType, string! action, object! request, string? domain = null, string? objectId = null, string? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.ActionToolResult!>!
+Strategos.Ontology.MCP.OntologyActionTool.ExecuteAsync(Strategos.Ontology.Actions.ActionPrincipal? principal, string! objectType, string! action, object! request, string? domain = null, string? objectId = null, string? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.MCP.ActionToolResult!>!
 Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider) -> void
 Strategos.Ontology.MCP.OntologyActionTool.OntologyActionTool(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.ObjectSets.IObjectSetProvider! objectSetProvider, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.MCP.OntologyActionTool!>! logger) -> void
 Strategos.Ontology.MCP.OntologyAnswerComposer
