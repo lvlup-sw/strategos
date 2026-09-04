@@ -5,6 +5,7 @@ namespace Strategos.Ontology.MCP;
 /// <c>ontology_action</c> tool descriptor.
 /// </summary>
 public sealed record ActionSemanticSummary(
+    string DomainName,
     string ObjectTypeName,
     string ActionName,
     ToolAnnotations Annotations,

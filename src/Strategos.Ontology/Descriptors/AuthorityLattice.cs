@@ -11,7 +11,7 @@ public sealed class AuthorityLattice
     private readonly ImmutableDictionary<string, AuthorityDescriptor> _authorities;
 
     /// <summary>
-    /// Initializes a validated authority product lattice.
+    /// Initializes a new instance of the <see cref="AuthorityLattice"/> class.
     /// </summary>
     /// <param name="axes">Independent axes whose levels run weakest to strongest.</param>
     /// <param name="authorities">Named literals positioned on every axis.</param>

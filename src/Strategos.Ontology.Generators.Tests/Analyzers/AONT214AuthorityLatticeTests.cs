@@ -77,6 +77,42 @@ public sealed class AONT214AuthorityLatticeTests
             .IsTrue();
     }
 
+    [Test]
+    public async Task Analyze_NonLiteralAxisLevels_DoesNotEmitFalsePositive()
+    {
+        var diagnostics = await AnalyzeAsync("""
+            var levels = new[] { "read", "write" };
+            builder.AuthorityAxis("access", levels);
+            builder.Authority("reader").At("access", "read");
+            """);
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task Analyze_DescriptorRequiredAuthority_CountsAsUse()
+    {
+        var diagnostics = await AnalyzeAsync("""
+            builder.AuthorityAxis("access", "read");
+            builder.Authority("reader").At("access", "read");
+            builder.ObjectTypeFromDescriptor(new Strategos.Ontology.Descriptors.ObjectTypeDescriptor
+            {
+                Name = "Model",
+                DomainName = "test",
+                ClrType = typeof(Model),
+                Actions =
+                [
+                    new Strategos.Ontology.Descriptors.ActionDescriptor("read", "read")
+                    {
+                        RequiredAuthority = "reader",
+                    },
+                ],
+            });
+            """);
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
     private static Task<System.Collections.Immutable.ImmutableArray<Diagnostic>> AnalyzeAsync(string body) =>
         AnalyzerTestHelper.GetDiagnosticsWithIdAsync(
             $$"""

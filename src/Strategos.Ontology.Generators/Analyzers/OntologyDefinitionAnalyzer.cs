@@ -243,6 +243,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
             var frame = new HashSet<string>(StringComparer.Ordinal);
             var frameExpression = FindInitializerValue(actionCreation.Initializer, "TouchedResources");
+            var frameIsReadable = frameExpression is null
+                || frameExpression is CollectionExpressionSyntax
+                || frameExpression is ArrayCreationExpressionSyntax
+                || frameExpression is ImplicitArrayCreationExpressionSyntax;
             if (frameExpression is not null)
             {
                 foreach (var resourceFactory in frameExpression.DescendantNodesAndSelf()
@@ -252,6 +256,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     if (resource is not null)
                     {
                         frame.Add(resource);
+                    }
+                    else
+                    {
+                        frameIsReadable = false;
                     }
                 }
             }
@@ -273,7 +281,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 }
 
                 var resource = ExtractPostconditionResource(postcondition.Initializer);
-                if (resource is not null && !frame.Contains(resource))
+                if (frameIsReadable && resource is not null && !frame.Contains(resource))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         OntologyDiagnostics.ActionFrameUnsound,
@@ -334,6 +342,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             (Dictionary<string, string> Coordinates, List<string> Implications, Location Location)>(
                 StringComparer.Ordinal);
         var requiredAuthorities = new List<(string Name, Location Location)>();
+        var analysisIsReadable = true;
 
         foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
@@ -344,7 +353,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (symbol.Name == "AuthorityAxis" && IsOntologyBuilderType(symbol.ContainingType.Name))
+            var receiverTypeName = symbol.ContainingType?.Name ?? string.Empty;
+            if (symbol.Name == "AuthorityAxis" && IsOntologyBuilderType(receiverTypeName))
             {
                 var name = ExtractStringArg(invocation, 0);
                 if (name is null)
@@ -352,15 +362,20 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     continue;
                 }
 
-                var levels = invocation.ArgumentList.Arguments
+                var parsedLevels = invocation.ArgumentList.Arguments
                     .Skip(1)
                     .Select(argument => argument.Expression is LiteralExpressionSyntax literal
                         && literal.IsKind(SyntaxKind.StringLiteralExpression)
                             ? literal.Token.ValueText
                             : null)
-                    .Where(level => level is not null)
-                    .Cast<string>()
                     .ToArray();
+                if (parsedLevels.Any(level => level is null))
+                {
+                    analysisIsReadable = false;
+                    continue;
+                }
+
+                var levels = parsedLevels.Cast<string>().ToArray();
                 if (axes.ContainsKey(name))
                 {
                     ReportAuthorityDiagnostic(context, invocation.GetLocation(),
@@ -378,7 +393,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 }
             }
 
-            if (symbol.Name == "Authority" && IsOntologyBuilderType(symbol.ContainingType.Name))
+            if (symbol.Name == "Authority" && IsOntologyBuilderType(receiverTypeName))
             {
                 var name = ExtractStringArg(invocation, 0);
                 if (name is null)
@@ -402,6 +417,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                             {
                                 coordinates[axis] = level;
                             }
+                            else
+                            {
+                                analysisIsReadable = false;
+                            }
                         }
                         else if (memberName == "Implies")
                         {
@@ -409,6 +428,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                             if (implied is not null)
                             {
                                 implications.Add(implied);
+                            }
+                            else
+                            {
+                                analysisIsReadable = false;
                             }
                         }
                     }
@@ -432,7 +455,35 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 {
                     requiredAuthorities.Add((required, invocation.GetLocation()));
                 }
+                else
+                {
+                    analysisIsReadable = false;
+                }
             }
+        }
+
+        foreach (var assignment in body.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+        {
+            if (assignment.Left is not IdentifierNameSyntax identifier
+                || identifier.Identifier.Text != "RequiredAuthority")
+            {
+                continue;
+            }
+
+            var required = ExtractStringLiteral(assignment.Right);
+            if (required is null)
+            {
+                analysisIsReadable = false;
+            }
+            else
+            {
+                requiredAuthorities.Add((required, assignment.GetLocation()));
+            }
+        }
+
+        if (!analysisIsReadable)
+        {
+            return;
         }
 
         foreach (var entry in authorities)
@@ -1098,6 +1149,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             info.ActionModifiesProperties.Add((modifiesActionName, modifiesProp, invocation.GetLocation()));
             AddActionFrameResource(info, modifiesActionName, $"Property:{modifiesProp}");
         }
+        else if (modifiesActionName is not null)
+        {
+            info.UnreadableActionFrames.Add(modifiesActionName);
+        }
     }
 
     private static void CollectEmitsEventInfo(
@@ -1118,6 +1173,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             info.ActionEmitsEvents.Add((emitsActionName, eventTypeName, invocation.GetLocation()));
             AddActionFrameResource(info, emitsActionName, $"Event:{eventTypeName}");
         }
+        else if (emitsActionName is not null)
+        {
+            info.UnreadableActionFrames.Add(emitsActionName);
+        }
     }
 
     private static void CollectCreatesLinkedInfo(
@@ -1134,6 +1193,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         {
             info.ActionCreatesLinked.Add((createsActionName, createsLinkName, invocation.GetLocation()));
             AddActionFrameResource(info, createsActionName, $"Link:{createsLinkName}");
+        }
+        else if (createsActionName is not null)
+        {
+            info.UnreadableActionFrames.Add(createsActionName);
         }
     }
 
@@ -1161,6 +1224,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         if (resource is not null)
         {
             AddActionFrameResource(info, actionName, resource);
+        }
+        else
+        {
+            info.UnreadableActionFrames.Add(actionName);
         }
     }
 
@@ -1778,6 +1845,12 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         // resources by construction; explicit Touches() calls join that frame.
         foreach (var (actionName, compensatingAction, location) in ot.ActionCompensations)
         {
+            if (ot.UnreadableActionFrames.Contains(actionName)
+                || ot.UnreadableActionFrames.Contains(compensatingAction))
+            {
+                continue;
+            }
+
             var forwardFrame = ot.ActionFrameResources.TryGetValue(actionName, out var forward)
                 ? forward
                 : new HashSet<string>(StringComparer.Ordinal);
@@ -2504,6 +2577,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
 
         public Dictionary<string, HashSet<string>> ActionFrameResources { get; } =
             new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        public HashSet<string> UnreadableActionFrames { get; } = new HashSet<string>(StringComparer.Ordinal);
 
         public List<(string ActionName, string CompensatingAction, Location Location)> ActionCompensations { get; } =
             new List<(string, string, Location)>();

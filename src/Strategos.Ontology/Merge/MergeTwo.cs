@@ -73,6 +73,7 @@ public static class MergeTwo
             // id path (INV-8); silently dropping the accessor here would force
             // a later reflection fallback that DR-1 forbids.
             IdAccessor = hand.IdAccessor ?? ingested.IdAccessor,
+            IdPredicateFactory = hand.IdPredicateFactory ?? ingested.IdPredicateFactory,
             Properties = MergeProperties(hand.Properties, ingested.Properties),
             Links = MergeLinks(hand.Links, ingested.Links),
             Actions = hand.Actions,

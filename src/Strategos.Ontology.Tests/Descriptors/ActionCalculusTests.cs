@@ -66,6 +66,17 @@ public sealed class ActionCalculusTests
     }
 
     [Test]
+    public async Task ActionDescriptor_DefensivelySnapshotsTouchedResources()
+    {
+        var resources = new List<ActionResource> { ActionResource.Property("Body") };
+        var action = new ActionDescriptor("revise", "revise") { TouchedResources = resources };
+
+        resources.Add(ActionResource.Property("Classification"));
+
+        await Assert.That(action.TouchedResources).IsEquivalentTo([ActionResource.Property("Body")]);
+    }
+
+    [Test]
     public async Task RollbackPlan_IsMechanicallyReversedFromTheCompletedPrefix()
     {
         var reserve = new ActionDescriptor("reserve", "reserve")

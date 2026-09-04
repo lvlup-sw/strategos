@@ -62,6 +62,63 @@ public sealed class RelationAuthorizationTests
     }
 
     [Test]
+    public async Task DispatchAsync_CallerSuppliedUnprotectedDescriptor_CannotBypassGraphRelation()
+    {
+        var graph = BuildGraph();
+        var inner = Substitute.For<IActionDispatcher>();
+        var resolver = Substitute.For<IActionRelationResolver>();
+        var dispatcher = new RelationAuthorizationActionDispatcher(inner, graph, resolver);
+        var context = Context(graph) with
+        {
+            ActionDescriptor = new ActionDescriptor("update", "spoofed"),
+        };
+
+        var result = await dispatcher.DispatchAsync(context, new { });
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await resolver.DidNotReceive().HoldsAsync(
+            Arg.Any<ActionContext>(),
+            Arg.Any<ActionPrecondition>(),
+            Arg.Any<CancellationToken>());
+        await inner.DidNotReceive().DispatchAsync(
+            Arg.Any<ActionContext>(),
+            Arg.Any<object>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ObjectSetResolver_EmitsProviderTranslatableIdentifierPredicates()
+    {
+        var graph = BuildGraph();
+        var provider = Substitute.For<IObjectSetProvider>();
+        ObjectSetExpression? captured = null;
+        provider.ExecuteAsync<object>(Arg.Do<ObjectSetExpression>(value => captured = value), Arg.Any<CancellationToken>())
+            .Returns(new ObjectSetResult<object>([], 0, ObjectSetInclusion.Properties));
+        var resolver = new ObjectSetActionRelationResolver(graph, provider);
+
+        await resolver.HoldsAsync(Context(graph), RelationPrecondition());
+
+        var finalFilter = (FilterExpression)captured!;
+        await Assert.That(finalFilter.Predicate.Body.NodeType).IsEqualTo(System.Linq.Expressions.ExpressionType.Equal);
+    }
+
+    [Test]
+    public async Task ObjectSetResolver_DoesNotRetargetUnknownDomainToUniqueGlobalName()
+    {
+        var graph = BuildGraph();
+        var provider = Substitute.For<IObjectSetProvider>();
+        var resolver = new ObjectSetActionRelationResolver(graph, provider);
+        var context = Context(graph) with { Domain = "other-domain" };
+
+        var holds = await resolver.HoldsAsync(context, RelationPrecondition());
+
+        await Assert.That(holds).IsFalse();
+        await provider.DidNotReceive().ExecuteAsync<object>(
+            Arg.Any<ObjectSetExpression>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ObjectSetResolver_TraversesTargetPathAndPrincipalRelation()
     {
         var graph = BuildGraph();

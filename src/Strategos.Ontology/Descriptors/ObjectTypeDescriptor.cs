@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Linq.Expressions;
 
 namespace Strategos.Ontology.Descriptors;
 
@@ -138,6 +139,8 @@ public sealed record ObjectTypeDescriptor
     /// type is ever performed (INV-8). Null when no key has been declared.
     /// </summary>
     public Func<object, object?>? IdAccessor { get; init; }
+
+    internal Func<string, LambdaExpression?>? IdPredicateFactory { get; init; }
 
     public IReadOnlyList<PropertyDescriptor> Properties { get; init; } = [];
 

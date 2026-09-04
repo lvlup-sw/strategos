@@ -156,6 +156,7 @@ public sealed class OntologyToolDiscovery
         _graph.ObjectTypes
             .SelectMany(objectType => objectType.Actions.Select(action =>
                 new ActionSemanticSummary(
+                    objectType.DomainName,
                     objectType.Name,
                     action.Name,
                     new ToolAnnotations(

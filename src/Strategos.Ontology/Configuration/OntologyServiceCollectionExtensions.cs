@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Strategos.Ontology.Actions;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
@@ -148,7 +150,9 @@ public static class OntologyServiceCollectionExtensions
                 dispatcher = new RelationAuthorizationActionDispatcher(
                     dispatcher,
                     graph,
-                    relationResolver);
+                    relationResolver,
+                    sp.GetService<ILogger<RelationAuthorizationActionDispatcher>>()
+                        ?? NullLogger<RelationAuthorizationActionDispatcher>.Instance);
                 dispatcher = new AuthorityAuthorizationActionDispatcher(dispatcher, graph);
 
                 foreach (var factory in orderedFactories)

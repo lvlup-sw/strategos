@@ -1,9 +1,13 @@
+using System.Collections.Immutable;
+
 namespace Strategos.Ontology.Descriptors;
 
 public sealed record ActionDescriptor(
     string Name,
     string Description)
 {
+    private ImmutableArray<ActionResource> touchedResources = [];
+
     public Type? AcceptsType { get; init; }
 
     public Type? ReturnsType { get; init; }
@@ -41,7 +45,15 @@ public sealed record ActionDescriptor(
     /// Resources this action may affect. The frame must contain every resource
     /// named by a mutating postcondition.
     /// </summary>
-    public IReadOnlyList<ActionResource> TouchedResources { get; init; } = [];
+    public IReadOnlyList<ActionResource> TouchedResources
+    {
+        get => touchedResources;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            touchedResources = value.ToImmutableArray();
+        }
+    }
 
     /// <summary>Name of the action that restores this action's frame.</summary>
     public string? CompensatingActionName { get; init; }

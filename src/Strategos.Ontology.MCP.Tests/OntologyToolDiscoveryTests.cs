@@ -182,6 +182,7 @@ public class OntologyToolDiscoveryTests
             .Single(tool => tool.Name == "ontology_action");
 
         var upsert = actionTool.ActionSemantics.Single(summary => summary.ActionName == "upsert");
+        await Assert.That(upsert.DomainName).IsEqualTo("semantic-actions");
         await Assert.That(upsert.Annotations.ReadOnlyHint).IsFalse();
         await Assert.That(upsert.Annotations.IdempotentHint).IsTrue();
         await Assert.That(upsert.AuthorizationRequirements).HasCount().EqualTo(1);
@@ -197,6 +198,22 @@ public class OntologyToolDiscoveryTests
         await Assert.That(read.Annotations.IdempotentHint).IsTrue();
     }
 
+    [Test]
+    public async Task Discover_ActionSemantics_PreserveDomainForDuplicateObjectAndActionNames()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<FirstSharedActionDomain>();
+        graphBuilder.AddDomain<SecondSharedActionDomain>();
+        var semantics = new OntologyToolDiscovery(graphBuilder.Build()).Discover()
+            .Single(tool => tool.Name == "ontology_action")
+            .ActionSemantics
+            .Where(summary => summary.ObjectTypeName == "Shared" && summary.ActionName == "inspect")
+            .ToList();
+
+        await Assert.That(semantics.Select(summary => summary.DomainName))
+            .IsEquivalentTo(["first", "second"]);
+    }
+
     /// <summary>
     /// Creates a test ontology graph with constrained actions for testing
     /// constraint summary generation.
@@ -209,7 +226,7 @@ public class OntologyToolDiscoveryTests
     }
 }
 
-public class SemanticActionDomainOntology : DomainOntology
+internal sealed class SemanticActionDomainOntology : DomainOntology
 {
     public override string DomainName => "semantic-actions";
 
@@ -238,6 +255,38 @@ public class SemanticActionDomainOntology : DomainOntology
                 .Touches(ActionResource.Property("Status"))
                 .Idempotent()
                 .BoundToWorkflow("revert-upsert-account");
+        });
+    }
+}
+
+internal sealed record FirstSharedObject(string Id);
+
+internal sealed record SecondSharedObject(string Id);
+
+internal sealed class FirstSharedActionDomain : DomainOntology
+{
+    public override string DomainName => "first";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<FirstSharedObject>("Shared", objectType =>
+        {
+            objectType.Key(item => item.Id);
+            objectType.Action("inspect").ReadOnly().BoundToWorkflow("first-inspect");
+        });
+    }
+}
+
+internal sealed class SecondSharedActionDomain : DomainOntology
+{
+    public override string DomainName => "second";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<SecondSharedObject>("Shared", objectType =>
+        {
+            objectType.Key(item => item.Id);
+            objectType.Action("inspect").ReadOnly().BoundToWorkflow("second-inspect");
         });
     }
 }

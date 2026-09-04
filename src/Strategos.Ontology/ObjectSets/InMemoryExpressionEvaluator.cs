@@ -185,8 +185,9 @@ public sealed class InMemoryExpressionEvaluator
             return sourceItems.Where(typedPredicate).ToList();
         }
 
-        throw new InvalidOperationException(
-            $"Filter predicate type '{compiled.GetType().Name}' is not compatible with Func<{typeof(T).Name}, bool>.");
+        return sourceItems
+            .Where(item => (bool)compiled.DynamicInvoke(item)!)
+            .ToList();
     }
 
     // Untyped (object-space) evaluation of a source expression, used by DR-3

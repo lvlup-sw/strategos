@@ -28,6 +28,7 @@ internal sealed class AssociationBuilder<TRel>
 
     private PropertyDescriptor? _keyProperty;
     private Func<object, object?>? _idAccessor;
+    private Func<string, LambdaExpression?>? _idPredicateFactory;
     private AssociationEndpoint? _left;
     private AssociationEndpoint? _right;
 
@@ -51,6 +52,7 @@ internal sealed class AssociationBuilder<TRel>
         // reflection on the instance type (INV-8) — identical to ObjectTypeBuilder.
         var compiled = keySelector.Compile();
         _idAccessor = o => compiled((TRel)o);
+        _idPredicateFactory = expectedId => ExpressionHelper.CreateIdentifierPredicate(keySelector, expectedId);
     }
 
     public IAssociationEndpointBuilder<TRel> Between<TLeft>(Expression<Func<TRel, TLeft>> endpoint)
@@ -129,6 +131,7 @@ internal sealed class AssociationBuilder<TRel>
             Kind = ObjectKind.Association,
             KeyProperty = _keyProperty,
             IdAccessor = _idAccessor,
+            IdPredicateFactory = _idPredicateFactory,
             Properties = properties.AsReadOnly(),
             AssociationEndpoints = new[] { _left, _right }.AsReadOnly(),
         };

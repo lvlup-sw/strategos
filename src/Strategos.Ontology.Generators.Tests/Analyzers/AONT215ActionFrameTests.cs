@@ -67,6 +67,37 @@ public sealed class AONT215ActionFrameTests
         await Assert.That(diagnostics).IsEmpty();
     }
 
+    [Test]
+    public async Task DescriptorFrameFromVariable_DoesNotEmitFalsePositive()
+    {
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsWithIdAsync(Source("""
+            var resources = new[] { ActionResource.Property("Status") };
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = "test",
+                ClrType = typeof(Model),
+                Actions =
+                [
+                    new ActionDescriptor("publish", "Publish")
+                    {
+                        TouchedResources = resources,
+                        Postconditions =
+                        [
+                            new ActionPostcondition
+                            {
+                                Kind = PostconditionKind.ModifiesProperty,
+                                PropertyName = "Status",
+                            },
+                        ],
+                    },
+                ],
+            });
+            """), OntologyDiagnosticIds.ActionFrameUnsound);
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
     private static string Source(string body) => $$"""
         using Strategos.Ontology;
         using Strategos.Ontology.Builder;

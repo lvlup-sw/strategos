@@ -68,32 +68,43 @@ internal static class OntologyGraphHasher
     private static void WriteAuthorities(BinaryWriter writer, OntologyGraph graph)
     {
         writer.Write("AUTHORITIES|");
-        foreach (var domain in graph.Domains.OrderBy(domain => domain.DomainName, StringComparer.Ordinal))
+        var domains = graph.Domains.OrderBy(domain => domain.DomainName, StringComparer.Ordinal).ToArray();
+        writer.Write(domains.Length);
+        foreach (var domain in domains)
         {
             WriteString(writer, domain.DomainName);
-            foreach (var axis in domain.AuthorityAxes.OrderBy(axis => axis.Name, StringComparer.Ordinal))
+            var axes = domain.AuthorityAxes.OrderBy(axis => axis.Name, StringComparer.Ordinal).ToArray();
+            writer.Write(axes.Length);
+            foreach (var axis in axes)
             {
                 WriteString(writer, axis.Name);
+                writer.Write(axis.Levels.Length);
                 foreach (var level in axis.Levels)
                 {
                     WriteString(writer, level);
                 }
             }
 
-            foreach (var authority in domain.Authorities.OrderBy(
-                         authority => authority.Name,
-                         StringComparer.Ordinal))
+            var authorities = domain.Authorities.OrderBy(
+                authority => authority.Name,
+                StringComparer.Ordinal).ToArray();
+            writer.Write(authorities.Length);
+            foreach (var authority in authorities)
             {
                 WriteString(writer, authority.Name);
-                foreach (var coordinate in authority.Coordinates.OrderBy(
-                             coordinate => coordinate.Key,
-                             StringComparer.Ordinal))
+                var coordinates = authority.Coordinates.OrderBy(
+                    coordinate => coordinate.Key,
+                    StringComparer.Ordinal).ToArray();
+                writer.Write(coordinates.Length);
+                foreach (var coordinate in coordinates)
                 {
                     WriteString(writer, coordinate.Key);
                     WriteString(writer, coordinate.Value);
                 }
 
-                foreach (var implied in authority.ExplicitImplications.Order(StringComparer.Ordinal))
+                var implications = authority.ExplicitImplications.Order(StringComparer.Ordinal).ToArray();
+                writer.Write(implications.Length);
+                foreach (var implied in implications)
                 {
                     WriteString(writer, implied);
                 }

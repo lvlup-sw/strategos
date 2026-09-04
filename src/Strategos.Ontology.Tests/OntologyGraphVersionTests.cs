@@ -90,6 +90,35 @@ public class OntologyGraphVersionTests
         await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
     }
 
+    [Test]
+    public async Task Version_AuthorityCollectionsPreserveStructuralBoundaries()
+    {
+        var graphA = Graph(domains:
+        [
+            new DomainDescriptor("d")
+            {
+                AuthorityAxes =
+                [
+                    new AuthorityAxisDescriptor("a", ["b", "c"]),
+                    new AuthorityAxisDescriptor("d", ["e"]),
+                ],
+            },
+        ]);
+        var graphB = Graph(domains:
+        [
+            new DomainDescriptor("d")
+            {
+                AuthorityAxes =
+                [
+                    new AuthorityAxisDescriptor("a", ["b"]),
+                    new AuthorityAxisDescriptor("c", ["d", "e"]),
+                ],
+            },
+        ]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
     // ------------------------------------------------------------------
     // A2: hasher must be sensitive to ObjectType structural changes.
     // ------------------------------------------------------------------
@@ -590,9 +619,10 @@ public class OntologyGraphVersionTests
     //
     // Last regenerated for the action-object program (#162/#164/#165/#170/#171):
     // relation authorization, retry safety, authority, frames, compensation,
-    // client visibility, and confirmation now participate in graph identity.
+    // client visibility, confirmation, and nested authority boundaries now
+    // participate in graph identity.
     private const string ReferenceFixtureVersion =
-        "9d60afd2865ace2fbacbac0b638388d83052e74519276c57a834a707cf73d700";
+        "8ae8148c65f4155db0f16be2fb90e7c7c825f2429c05e4e5ba328c82e8473014";
 
     [Test]
     public async Task Version_ReferenceFixture_MatchesPinnedConstant()

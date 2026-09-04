@@ -20,6 +20,7 @@ public class TestOntologyDomain : DomainOntology
         {
             obj.Key(p => p.Id);
             obj.Property(p => p.Symbol).Required();
+            obj.Action("Noop").BoundToWorkflow("noop");
         });
     }
 }

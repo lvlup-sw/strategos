@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Globalization;
 
 namespace Strategos.Ontology.Builder;
 
@@ -47,6 +48,57 @@ internal static class ExpressionHelper
         throw new ArgumentException(
             $"Expression '{methodSelector}' does not refer to a method. " +
             "Use a method group expression like: t => t.MethodName");
+    }
+
+    public static LambdaExpression? CreateIdentifierPredicate<T>(
+        Expression<Func<T, object>> keySelector,
+        string expectedId)
+    {
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(expectedId);
+
+        var member = ExtractMemberExpression(keySelector.Body);
+        var keyType = Nullable.GetUnderlyingType(member.Type) ?? member.Type;
+        object expectedValue;
+        try
+        {
+            expectedValue = ConvertIdentifier(expectedId, keyType);
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException
+            or ArgumentException or OverflowException)
+        {
+            return null;
+        }
+
+        Expression expected = Expression.Constant(expectedValue, keyType);
+        if (member.Type != keyType)
+        {
+            expected = Expression.Convert(expected, member.Type);
+        }
+
+        return Expression.Lambda<Func<T, bool>>(
+            Expression.Equal(member, expected),
+            keySelector.Parameters);
+    }
+
+    private static object ConvertIdentifier(string expectedId, Type keyType)
+    {
+        if (keyType == typeof(string))
+        {
+            return expectedId;
+        }
+
+        if (keyType == typeof(Guid))
+        {
+            return Guid.Parse(expectedId);
+        }
+
+        if (keyType.IsEnum)
+        {
+            return Enum.Parse(keyType, expectedId, ignoreCase: false);
+        }
+
+        return Convert.ChangeType(expectedId, keyType, CultureInfo.InvariantCulture);
     }
 
     private static MemberExpression ExtractMemberExpression(Expression expression) =>

@@ -24,6 +24,10 @@ public sealed class ActionDecoratorTests
         await Assert.That(declarations).Contains("extern dec confirm");
         await Assert.That(declarations).Contains("extern dec readOnly");
         await Assert.That(implementation).Contains("setExtension");
+        await Assert.That(implementation).Contains("createTypeSpecLibrary");
+        await Assert.That(implementation).Contains("contract-action-requires-model");
+        await Assert.That(implementation).Contains("contract-action-shared-model");
+        await Assert.That(implementation).Contains("return undefined");
     }
 
     [Test]

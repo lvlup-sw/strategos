@@ -33,6 +33,20 @@ public sealed class AONT216CompensationTests
         await Assert.That(diagnostics).IsEmpty();
     }
 
+    [Test]
+    public async Task FluentCompensationWithUnreadableSelector_DoesNotEmitFalsePositive()
+    {
+        var diagnostics = await AnalyzeAsync("""
+            System.Linq.Expressions.Expression<System.Func<Model, object>> selector = item => item.Status;
+            obj.Action("publish")
+                .Modifies(selector)
+                .CompensatedBy("unpublish");
+            obj.Action("unpublish").Modifies(selector);
+            """);
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
     private static Task<System.Collections.Immutable.ImmutableArray<Diagnostic>> AnalyzeAsync(string actions) =>
         AnalyzerTestHelper.GetDiagnosticsWithIdAsync(
             $$"""

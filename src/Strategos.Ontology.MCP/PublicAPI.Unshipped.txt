@@ -26,7 +26,7 @@ Strategos.Ontology.MCP.ActionConstraintSummary.SoftConstraintCount.init -> void
 Strategos.Ontology.MCP.ActionSemanticSummary
 Strategos.Ontology.MCP.ActionSemanticSummary.ActionName.get -> string!
 Strategos.Ontology.MCP.ActionSemanticSummary.ActionName.init -> void
-Strategos.Ontology.MCP.ActionSemanticSummary.ActionSemanticSummary(string! ObjectTypeName, string! ActionName, Strategos.Ontology.MCP.ToolAnnotations! Annotations, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionAuthorizationRequirement!>! AuthorizationRequirements, string? RequiredAuthority, System.Collections.Generic.IReadOnlyList<string!>! AllowedClients, bool RequiresConfirmation, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionResource!>! TouchedResources, string? CompensatingActionName) -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.ActionSemanticSummary(string! DomainName, string! ObjectTypeName, string! ActionName, Strategos.Ontology.MCP.ToolAnnotations! Annotations, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionAuthorizationRequirement!>! AuthorizationRequirements, string? RequiredAuthority, System.Collections.Generic.IReadOnlyList<string!>! AllowedClients, bool RequiresConfirmation, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionResource!>! TouchedResources, string? CompensatingActionName) -> void
 Strategos.Ontology.MCP.ActionSemanticSummary.AllowedClients.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Strategos.Ontology.MCP.ActionSemanticSummary.AllowedClients.init -> void
 Strategos.Ontology.MCP.ActionSemanticSummary.Annotations.get -> Strategos.Ontology.MCP.ToolAnnotations!
@@ -35,6 +35,8 @@ Strategos.Ontology.MCP.ActionSemanticSummary.AuthorizationRequirements.get -> Sy
 Strategos.Ontology.MCP.ActionSemanticSummary.AuthorizationRequirements.init -> void
 Strategos.Ontology.MCP.ActionSemanticSummary.CompensatingActionName.get -> string?
 Strategos.Ontology.MCP.ActionSemanticSummary.CompensatingActionName.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.DomainName.get -> string!
+Strategos.Ontology.MCP.ActionSemanticSummary.DomainName.init -> void
 Strategos.Ontology.MCP.ActionSemanticSummary.ObjectTypeName.get -> string!
 Strategos.Ontology.MCP.ActionSemanticSummary.ObjectTypeName.init -> void
 Strategos.Ontology.MCP.ActionSemanticSummary.RequiredAuthority.get -> string?

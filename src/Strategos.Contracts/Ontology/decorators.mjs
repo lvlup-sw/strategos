@@ -1,7 +1,28 @@
-import { getDoc } from "@typespec/compiler";
+import { createTypeSpecLibrary, getDoc, paramMessage } from "@typespec/compiler";
 import { setExtension } from "@typespec/json-schema";
 
 export const namespace = "LevelUp.Strategos.Ontology";
+
+export const $lib = createTypeSpecLibrary({
+  name: "@lvlup-sw/strategos-contracts",
+  diagnostics: {
+    "contract-action-requires-model": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Ontology operation '${"operationName"}' must accept or return a named model.`,
+      },
+    },
+    "contract-action-shared-model": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Ontology operations '${"operationName"}' and '${"existingOperationName"}' cannot share the same metadata model.`,
+      },
+    },
+  },
+});
+
+const { reportDiagnostic } = $lib;
+const metadataOwners = new WeakMap();
 
 function metadataTarget(context, operation) {
   for (const property of operation.parameters.properties.values()) {
@@ -14,18 +35,36 @@ function metadataTarget(context, operation) {
     return operation.returnType;
   }
 
-  context.program.reportDiagnostic({
+  reportDiagnostic(context.program, {
     code: "contract-action-requires-model",
-    severity: "error",
-    message: `Ontology operation '${operation.name}' must accept or return a named model.`,
+    format: { operationName: operation.name },
     target: operation,
   });
 
-  return operation.parameters;
+  return undefined;
 }
 
 function extend(context, operation, key, value) {
-  setExtension(context.program, metadataTarget(context, operation), key, value);
+  const target = metadataTarget(context, operation);
+  if (target === undefined) {
+    return;
+  }
+
+  const existingOperation = metadataOwners.get(target);
+  if (existingOperation !== undefined && existingOperation !== operation.name) {
+    reportDiagnostic(context.program, {
+      code: "contract-action-shared-model",
+      format: {
+        operationName: operation.name,
+        existingOperationName: existingOperation,
+      },
+      target: operation,
+    });
+    return;
+  }
+
+  metadataOwners.set(target, operation.name);
+  setExtension(context.program, target, key, value);
 }
 
 export function $objectKind(context, operation, domainName, objectName, kind) {

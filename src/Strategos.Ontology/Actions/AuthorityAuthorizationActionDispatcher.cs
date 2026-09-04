@@ -8,6 +8,11 @@ public sealed class AuthorityAuthorizationActionDispatcher : IActionDispatcher
     private readonly IActionDispatcher inner;
     private readonly OntologyGraph graph;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuthorityAuthorizationActionDispatcher"/> class.
+    /// </summary>
+    /// <param name="inner">The dispatcher invoked after authority checks pass.</param>
+    /// <param name="graph">The authoritative ontology graph.</param>
     public AuthorityAuthorizationActionDispatcher(IActionDispatcher inner, OntologyGraph graph)
     {
         ArgumentNullException.ThrowIfNull(inner);
@@ -27,10 +32,23 @@ public sealed class AuthorityAuthorizationActionDispatcher : IActionDispatcher
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
 
-        var descriptor = context.ActionDescriptor ?? ResolveAction(context);
-        if (descriptor?.RequiredAuthority is null)
+        var descriptor = ResolveAction(context);
+        if (descriptor is null)
         {
-            return inner.DispatchAsync(context, request, ct);
+            return Task.FromResult(DeniedUnknownAction(context));
+        }
+
+        if (context.ActionDescriptor is not null && !ReferenceEquals(context.ActionDescriptor, descriptor))
+        {
+            return Task.FromResult(DeniedUnknownAction(context));
+        }
+
+        var authorizedContext = ReferenceEquals(descriptor, context.ActionDescriptor)
+            ? context
+            : context with { ActionDescriptor = descriptor };
+        if (descriptor.RequiredAuthority is null)
+        {
+            return inner.DispatchAsync(authorizedContext, request, ct);
         }
 
         var lattice = graph.GetAuthorityLattice(context.Domain);
@@ -45,9 +63,6 @@ public sealed class AuthorityAuthorizationActionDispatcher : IActionDispatcher
                     + $"for action '{descriptor.Name}'."));
         }
 
-        var authorizedContext = ReferenceEquals(descriptor, context.ActionDescriptor)
-            ? context
-            : context with { ActionDescriptor = descriptor };
         return inner.DispatchAsync(authorizedContext, request, ct);
     }
 
@@ -71,4 +86,8 @@ public sealed class AuthorityAuthorizationActionDispatcher : IActionDispatcher
         var objectType = graph.GetObjectType(context.Domain, context.ObjectType);
         return objectType?.Actions.FirstOrDefault(action => action.Name == context.ActionName);
     }
+
+    private static ActionResult DeniedUnknownAction(ActionContext context) => new(
+        false,
+        Error: $"Action '{context.Domain}/{context.ObjectType}/{context.ActionName}' is not present in the authoritative ontology graph.");
 }

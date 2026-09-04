@@ -97,6 +97,7 @@ Strategos.Ontology.Actions.ObservableActionDispatcher.ObservableActionDispatcher
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher.DispatchAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher.RelationAuthorizationActionDispatcher(Strategos.Ontology.Actions.IActionDispatcher! inner, Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionRelationResolver! relationResolver) -> void
+Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher.RelationAuthorizationActionDispatcher(Strategos.Ontology.Actions.IActionDispatcher! inner, Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionRelationResolver! relationResolver, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher!>! logger) -> void
 Strategos.Ontology.AssemblyMarker
 Strategos.Ontology.AssociationEdge
 Strategos.Ontology.AssociationEdge.AssociationEdge(string! AssociationName, string! DomainName, string! SourceDescriptorName, string! DestinationDescriptorName) -> void

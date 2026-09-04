@@ -5,6 +5,7 @@ namespace Strategos.Ontology.Descriptors;
 /// <summary>
 /// A named authority literal positioned on every axis of its domain's authority lattice.
 /// </summary>
+/// <param name="Name">The authority literal name.</param>
 public sealed record AuthorityDescriptor(string Name)
 {
     /// <summary>

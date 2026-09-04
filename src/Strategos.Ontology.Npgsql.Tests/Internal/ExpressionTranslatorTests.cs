@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Npgsql.Internal;
 using Strategos.Ontology.ObjectSets;
 
@@ -29,6 +30,22 @@ public class ExpressionTranslatorTests
         await Assert.That(result.Parameters).HasCount().EqualTo(1);
         await Assert.That(result.Parameters[0].Name).IsEqualTo("@p0");
         await Assert.That(result.Parameters[0].Value).IsEqualTo("foo");
+    }
+
+    [Test]
+    public async Task Translate_OntologyIdentifierPredicate_GeneratesMemberComparison()
+    {
+        var graph = new OntologyGraphBuilder().AddDomain<IdentifierDomain>().Build();
+        var descriptor = graph.GetObjectType("identifier", nameof(TestEntity))!;
+        var predicate = descriptor.IdPredicateFactory!("entity-1")!;
+        var filter = new FilterExpression(
+            new RootExpression(typeof(TestEntity), nameof(TestEntity)),
+            predicate);
+
+        var result = ExpressionTranslator.Translate(filter);
+
+        await Assert.That(result.WhereClause).IsEqualTo("data->>'Name' = @p0");
+        await Assert.That(result.Parameters[0].Value).IsEqualTo("entity-1");
     }
 
     [Test]
@@ -138,5 +155,15 @@ public class ExpressionTranslatorTests
         public string Name { get; set; } = string.Empty;
 
         public int Age { get; set; }
+    }
+
+    private sealed class IdentifierDomain : DomainOntology
+    {
+        public override string DomainName => "identifier";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.Object<TestEntity>(objectType => objectType.Key(item => item.Name));
+        }
     }
 }

@@ -34,6 +34,36 @@ public sealed class AuthorityAuthorizationTests
         await Assert.That(inner.LastContext!.ActionDescriptor!.Name).IsEqualTo("read");
     }
 
+    [Test]
+    public async Task Dispatch_CallerSuppliedUnprotectedDescriptor_CannotBypassGraphAuthority()
+    {
+        var inner = new RecordingDispatcher();
+        var dispatcher = new AuthorityAuthorizationActionDispatcher(inner, CreateGraph());
+        var context = Context("write", "reader") with
+        {
+            ActionDescriptor = new ActionDescriptor("write", "spoofed"),
+        };
+
+        var result = await dispatcher.DispatchAsync(context, new object());
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(inner.Calls).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Dispatch_UnknownDomain_ReturnsDenial()
+    {
+        var inner = new RecordingDispatcher();
+        var dispatcher = new AuthorityAuthorizationActionDispatcher(inner, CreateGraph());
+        var context = Context("write", "writer") with { Domain = "unknown" };
+
+        var result = await dispatcher.DispatchAsync(context, new object());
+
+        await Assert.That(result.IsSuccess).IsFalse();
+        await Assert.That(result.Error).Contains("not present");
+        await Assert.That(inner.Calls).IsEqualTo(0);
+    }
+
     private static ActionContext Context(string action, string grant) => new(
         new ActionPrincipal("User", "user-1") { GrantedAuthorities = [grant] },
         "authority-dispatch",

@@ -1,13 +1,39 @@
 namespace Strategos.Ontology.Descriptors;
 
 /// <summary>A stable, local resource identifier in an action's declared frame.</summary>
+/// <param name="Kind">The resource family.</param>
+/// <param name="Name">The resource name.</param>
 public sealed record ActionResource(ActionResourceKind Kind, string Name)
 {
-    public static ActionResource Property(string propertyName) => new(ActionResourceKind.Property, propertyName);
+    /// <summary>Creates a property resource.</summary>
+    /// <param name="propertyName">The property name.</param>
+    /// <returns>The resource identifier.</returns>
+    public static ActionResource Property(string propertyName)
+    {
+        return new ActionResource(ActionResourceKind.Property, propertyName);
+    }
 
-    public static ActionResource Link(string linkName) => new(ActionResourceKind.Link, linkName);
+    /// <summary>Creates a link resource.</summary>
+    /// <param name="linkName">The link name.</param>
+    /// <returns>The resource identifier.</returns>
+    public static ActionResource Link(string linkName)
+    {
+        return new ActionResource(ActionResourceKind.Link, linkName);
+    }
 
-    public static ActionResource Event(string eventTypeName) => new(ActionResourceKind.Event, eventTypeName);
+    /// <summary>Creates an event resource.</summary>
+    /// <param name="eventTypeName">The event type name.</param>
+    /// <returns>The resource identifier.</returns>
+    public static ActionResource Event(string eventTypeName)
+    {
+        return new ActionResource(ActionResourceKind.Event, eventTypeName);
+    }
 
-    public static ActionResource External(string resourceName) => new(ActionResourceKind.External, resourceName);
+    /// <summary>Creates an external resource.</summary>
+    /// <param name="resourceName">The external resource name.</param>
+    /// <returns>The resource identifier.</returns>
+    public static ActionResource External(string resourceName)
+    {
+        return new ActionResource(ActionResourceKind.External, resourceName);
+    }
 }

@@ -1,5 +1,3 @@
-using System.Linq.Expressions;
-
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
 
@@ -46,8 +44,14 @@ public sealed class ObjectSetActionRelationResolver : IActionRelationResolver
             return false;
         }
 
+        var sourceIdPredicate = current.IdPredicateFactory?.Invoke(context.ObjectId);
+        if (sourceIdPredicate is null)
+        {
+            return false;
+        }
+
         ObjectSetExpression expression = new RootExpression(current.ClrType ?? typeof(object), current.Name);
-        expression = new FilterExpression(expression, IdPredicate(current.IdAccessor, context.ObjectId));
+        expression = new FilterExpression(expression, sourceIdPredicate);
 
         foreach (var linkName in precondition.LinkPath)
         {
@@ -87,9 +91,13 @@ public sealed class ObjectSetActionRelationResolver : IActionRelationResolver
             precondition.RelationName,
             principalDescriptor.ClrType ?? typeof(object),
             principalDescriptor.Name);
-        expression = new FilterExpression(
-            expression,
-            IdPredicate(principalDescriptor.IdAccessor, context.Principal.PrincipalId));
+        var principalIdPredicate = principalDescriptor.IdPredicateFactory?.Invoke(context.Principal.PrincipalId);
+        if (principalIdPredicate is null)
+        {
+            return false;
+        }
+
+        expression = new FilterExpression(expression, principalIdPredicate);
 
         var result = await provider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
         return result.Items.Count > 0;
@@ -97,24 +105,6 @@ public sealed class ObjectSetActionRelationResolver : IActionRelationResolver
 
     private ObjectTypeDescriptor? ResolveDescriptor(string preferredDomain, string name)
     {
-        var exact = graph.GetObjectType(preferredDomain, name);
-        if (exact is not null)
-        {
-            return exact;
-        }
-
-        var matches = graph.ObjectTypes.Where(candidate => candidate.Name == name).Take(2).ToList();
-        return matches.Count == 1 ? matches[0] : null;
-    }
-
-    private static LambdaExpression IdPredicate(Func<object, object?> idAccessor, string expectedId)
-    {
-        Func<object, bool> predicate = item => string.Equals(
-            idAccessor(item)?.ToString() ?? string.Empty,
-            expectedId,
-            StringComparison.Ordinal);
-        var parameter = Expression.Parameter(typeof(object), "item");
-        var invoke = Expression.Invoke(Expression.Constant(predicate), parameter);
-        return Expression.Lambda<Func<object, bool>>(invoke, parameter);
+        return graph.GetObjectType(preferredDomain, name);
     }
 }
