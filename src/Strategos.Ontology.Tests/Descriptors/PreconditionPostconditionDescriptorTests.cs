@@ -7,10 +7,11 @@ public class PreconditionPostconditionDescriptorTests
     [Test]
     public async Task PreconditionKind_HasExpectedValues()
     {
-        await Assert.That(Enum.GetValues<PreconditionKind>()).HasCount().EqualTo(3);
+        await Assert.That(Enum.GetValues<PreconditionKind>()).HasCount().EqualTo(4);
         await Assert.That(PreconditionKind.PropertyPredicate).IsEqualTo((PreconditionKind)0);
         await Assert.That(PreconditionKind.LinkExists).IsEqualTo((PreconditionKind)1);
         await Assert.That(PreconditionKind.Custom).IsEqualTo((PreconditionKind)2);
+        await Assert.That(PreconditionKind.RelationHolds).IsEqualTo((PreconditionKind)3);
     }
 
     [Test]

@@ -141,6 +141,8 @@ public sealed class OntologyGraphBuilder
             var domainDescriptor = new DomainDescriptor(domainOntology.DomainName)
             {
                 ObjectTypes = ontologyBuilder.ObjectTypes.ToArray(),
+                AuthorityAxes = ontologyBuilder.AuthorityAxes.ToArray(),
+                Authorities = ontologyBuilder.Authorities.ToArray(),
             };
 
             domains.Add(domainDescriptor);
@@ -165,6 +167,8 @@ public sealed class OntologyGraphBuilder
             var domainDescriptor = new DomainDescriptor(domainName)
             {
                 ObjectTypes = ontologyBuilder.ObjectTypes.ToArray(),
+                AuthorityAxes = ontologyBuilder.AuthorityAxes.ToArray(),
+                Authorities = ontologyBuilder.Authorities.ToArray(),
             };
 
             domains.Add(domainDescriptor);
@@ -259,6 +263,7 @@ public sealed class OntologyGraphBuilder
         var fatalDiagnostics = ImmutableArray.CreateBuilder<OntologyDiagnostic>();
         var nonFatalDiagnostics = ImmutableArray.CreateBuilder<OntologyDiagnostic>();
         PerformGraphFreezeChecks(
+            domains,
             allObjectTypes,
             ingestedOriginals,
             fatalDiagnostics,
@@ -294,11 +299,37 @@ public sealed class OntologyGraphBuilder
     /// succeeds.
     /// </summary>
     private void PerformGraphFreezeChecks(
+        IReadOnlyList<DomainDescriptor> domains,
         List<ObjectTypeDescriptor> allObjectTypes,
         IReadOnlyDictionary<(string DomainName, string Name), ObjectTypeDescriptor> ingestedOriginals,
         ImmutableArray<OntologyDiagnostic>.Builder fatal,
         ImmutableArray<OntologyDiagnostic>.Builder nonFatal)
     {
+        ValidateAuthorityLattices(domains, fatal);
+        ValidateActionFrames(allObjectTypes, fatal);
+
+        // AONT213 — RFC 9110 safe ⇒ idempotent. Descriptor-first and
+        // contract-authored inputs can bypass the fluent ReadOnly() builder,
+        // which sets both flags by construction, so graph freeze is the common
+        // machine-checked enforcement tier.
+        foreach (var descriptor in allObjectTypes)
+        {
+            foreach (var action in descriptor.Actions.Where(candidate =>
+                         candidate.IsReadOnly && !candidate.Idempotent))
+            {
+                fatal.Add(new OntologyDiagnostic(
+                    Id: "AONT213",
+                    Message:
+                        $"AONT213: action '{action.Name}' on "
+                        + $"'{descriptor.DomainName}.{descriptor.Name}' is read-only but not idempotent. "
+                        + "Every safe action must also be idempotent.",
+                    Severity: OntologyDiagnosticSeverity.Error,
+                    DomainName: descriptor.DomainName,
+                    TypeName: descriptor.Name,
+                    PropertyName: action.Name));
+            }
+        }
+
         // AONT201 — hand-declared property missing from ingested
         // descriptor (after MergeTwo). Inspect the merged descriptor for
         // hand-tagged properties and confirm each appears on the
@@ -547,6 +578,187 @@ public sealed class OntologyGraphBuilder
             LogNonFatal(diag);
         }
     }
+
+    private static void ValidateAuthorityLattices(
+        IReadOnlyList<DomainDescriptor> domains,
+        ImmutableArray<OntologyDiagnostic>.Builder fatal)
+    {
+        foreach (var domain in domains)
+        {
+            AuthorityLattice? lattice;
+            try
+            {
+                lattice = new AuthorityLattice(domain.AuthorityAxes, domain.Authorities);
+            }
+            catch (ArgumentException exception)
+            {
+                fatal.Add(AuthorityDiagnostic(domain.DomainName, exception.Message));
+                continue;
+            }
+
+            var actions = domain.ObjectTypes.SelectMany(objectType => objectType.Actions).ToArray();
+            var authorityNames = domain.Authorities
+                .Select(authority => authority.Name)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var action in actions.Where(action => action.RequiredAuthority is not null))
+            {
+                if (!authorityNames.Contains(action.RequiredAuthority!))
+                {
+                    fatal.Add(AuthorityDiagnostic(
+                        domain.DomainName,
+                        $"Action '{action.Name}' requires unknown authority "
+                        + $"'{action.RequiredAuthority}'.",
+                        action.Name));
+                }
+            }
+
+            var usedAuthorities = actions
+                .Select(action => action.RequiredAuthority)
+                .Where(authority => authority is not null)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var authority in domain.Authorities.Where(authority =>
+                         !usedAuthorities.Contains(authority.Name)))
+            {
+                fatal.Add(AuthorityDiagnostic(
+                    domain.DomainName,
+                    $"Authority '{authority.Name}' is not required by any action.",
+                    authority.Name));
+            }
+
+            foreach (var authority in domain.Authorities)
+            {
+                foreach (var implied in authority.ExplicitImplications)
+                {
+                    if (!authorityNames.Contains(implied))
+                    {
+                        fatal.Add(AuthorityDiagnostic(
+                            domain.DomainName,
+                            $"Authority '{authority.Name}' implies unknown authority '{implied}'.",
+                            authority.Name));
+                        continue;
+                    }
+
+                    if (!lattice.Satisfies(authority.Name, implied))
+                    {
+                        fatal.Add(AuthorityDiagnostic(
+                            domain.DomainName,
+                            $"Authority '{authority.Name}' declares that it implies '{implied}', "
+                            + "but its product coordinates are not at least as strong on every axis.",
+                            authority.Name));
+                    }
+                }
+            }
+        }
+    }
+
+    private static void ValidateActionFrames(
+        IReadOnlyList<ObjectTypeDescriptor> objectTypes,
+        ImmutableArray<OntologyDiagnostic>.Builder fatal)
+    {
+        foreach (var objectType in objectTypes)
+        {
+            var actionsByName = objectType.Actions
+                .GroupBy(action => action.Name, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+
+            foreach (var action in objectType.Actions)
+            {
+                var frame = new HashSet<ActionResource>(action.TouchedResources);
+                foreach (var resource in frame.Where(resource => string.IsNullOrWhiteSpace(resource.Name)))
+                {
+                    fatal.Add(FrameDiagnostic(
+                        objectType,
+                        action,
+                        $"The declared {resource.Kind} resource name is empty."));
+                }
+
+                foreach (var postcondition in action.Postconditions)
+                {
+                    var mutated = ResourceFor(postcondition);
+                    if (mutated is not null && !frame.Contains(mutated))
+                    {
+                        fatal.Add(FrameDiagnostic(
+                            objectType,
+                            action,
+                            $"Postcondition mutates '{mutated.Kind}:{mutated.Name}' outside the declared frame."));
+                    }
+                }
+
+                if (action.CompensatingActionName is null)
+                {
+                    continue;
+                }
+
+                if (!actionsByName.TryGetValue(action.CompensatingActionName, out var compensation))
+                {
+                    fatal.Add(CompensationDiagnostic(
+                        objectType,
+                        action,
+                        $"Compensating action '{action.CompensatingActionName}' does not exist."));
+                    continue;
+                }
+
+                if (!frame.SetEquals(compensation.TouchedResources))
+                {
+                    fatal.Add(CompensationDiagnostic(
+                        objectType,
+                        action,
+                        $"Compensating action '{compensation.Name}' declares a different frame; "
+                        + "an inverse must restore exactly the forward action's touched resources."));
+                }
+            }
+        }
+    }
+
+    private static ActionResource? ResourceFor(ActionPostcondition postcondition) =>
+        postcondition.Kind switch
+        {
+            PostconditionKind.ModifiesProperty when postcondition.PropertyName is not null =>
+                ActionResource.Property(postcondition.PropertyName),
+            PostconditionKind.CreatesLink when postcondition.LinkName is not null =>
+                ActionResource.Link(postcondition.LinkName),
+            PostconditionKind.EmitsEvent when postcondition.EventTypeName is not null =>
+                ActionResource.Event(postcondition.EventTypeName),
+            _ => null,
+        };
+
+    private static OntologyDiagnostic FrameDiagnostic(
+        ObjectTypeDescriptor objectType,
+        ActionDescriptor action,
+        string detail) => new(
+            Id: "AONT215",
+            Message:
+                $"AONT215: unsound action frame for '{objectType.DomainName}.{objectType.Name}.{action.Name}'. "
+                + detail,
+            Severity: OntologyDiagnosticSeverity.Error,
+            DomainName: objectType.DomainName,
+            TypeName: objectType.Name,
+            PropertyName: action.Name);
+
+    private static OntologyDiagnostic CompensationDiagnostic(
+        ObjectTypeDescriptor objectType,
+        ActionDescriptor action,
+        string detail) => new(
+            Id: "AONT216",
+            Message:
+                $"AONT216: authored compensation disagrees with the derived inverse for "
+                + $"'{objectType.DomainName}.{objectType.Name}.{action.Name}'. {detail}",
+            Severity: OntologyDiagnosticSeverity.Error,
+            DomainName: objectType.DomainName,
+            TypeName: objectType.Name,
+            PropertyName: action.Name);
+
+    private static OntologyDiagnostic AuthorityDiagnostic(
+        string domainName,
+        string detail,
+        string? memberName = null) => new(
+            Id: "AONT214",
+            Message: $"AONT214: invalid authority lattice in domain '{domainName}'. {detail}",
+            Severity: OntologyDiagnosticSeverity.Error,
+            DomainName: domainName,
+            TypeName: null,
+            PropertyName: memberName);
 
     /// <summary>
     /// Collects every (DomainName, TargetName) pair that a hand-authored

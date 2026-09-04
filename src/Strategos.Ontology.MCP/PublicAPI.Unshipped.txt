@@ -5,6 +5,12 @@ const Strategos.Ontology.MCP.OntologyTraverseTool.RowBudget = 100 -> int
 static Strategos.Ontology.MCP.NoOpOntologyAuditSink.Instance.get -> Strategos.Ontology.MCP.NoOpOntologyAuditSink!
 static Strategos.Ontology.MCP.OntologyAnswerComposer.AdvertisedOutputSchema() -> System.Text.Json.JsonElement
 static Strategos.Ontology.MCP.ResponseMeta.ForGraph(Strategos.Ontology.OntologyGraph! graph) -> Strategos.Ontology.MCP.ResponseMeta!
+Strategos.Ontology.MCP.ActionAuthorizationRequirement
+Strategos.Ontology.MCP.ActionAuthorizationRequirement.ActionAuthorizationRequirement(string! RelationName, System.Collections.Generic.IReadOnlyList<string!>! LinkPath) -> void
+Strategos.Ontology.MCP.ActionAuthorizationRequirement.LinkPath.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Strategos.Ontology.MCP.ActionAuthorizationRequirement.LinkPath.init -> void
+Strategos.Ontology.MCP.ActionAuthorizationRequirement.RelationName.get -> string!
+Strategos.Ontology.MCP.ActionAuthorizationRequirement.RelationName.init -> void
 Strategos.Ontology.MCP.ActionConstraintSummary
 Strategos.Ontology.MCP.ActionConstraintSummary.ActionConstraintSummary(string! ObjectTypeName, string! ActionName, int HardConstraintCount, int SoftConstraintCount, System.Collections.Generic.IReadOnlyList<string!>! ConstraintDescriptions) -> void
 Strategos.Ontology.MCP.ActionConstraintSummary.ActionName.get -> string!
@@ -17,6 +23,28 @@ Strategos.Ontology.MCP.ActionConstraintSummary.ObjectTypeName.get -> string!
 Strategos.Ontology.MCP.ActionConstraintSummary.ObjectTypeName.init -> void
 Strategos.Ontology.MCP.ActionConstraintSummary.SoftConstraintCount.get -> int
 Strategos.Ontology.MCP.ActionConstraintSummary.SoftConstraintCount.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary
+Strategos.Ontology.MCP.ActionSemanticSummary.ActionName.get -> string!
+Strategos.Ontology.MCP.ActionSemanticSummary.ActionName.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.ActionSemanticSummary(string! DomainName, string! ObjectTypeName, string! ActionName, Strategos.Ontology.MCP.ToolAnnotations! Annotations, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionAuthorizationRequirement!>! AuthorizationRequirements, string? RequiredAuthority, System.Collections.Generic.IReadOnlyList<string!>! AllowedClients, bool RequiresConfirmation, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionResource!>! TouchedResources, string? CompensatingActionName) -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.AllowedClients.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Strategos.Ontology.MCP.ActionSemanticSummary.AllowedClients.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.Annotations.get -> Strategos.Ontology.MCP.ToolAnnotations!
+Strategos.Ontology.MCP.ActionSemanticSummary.Annotations.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.AuthorizationRequirements.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionAuthorizationRequirement!>!
+Strategos.Ontology.MCP.ActionSemanticSummary.AuthorizationRequirements.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.CompensatingActionName.get -> string?
+Strategos.Ontology.MCP.ActionSemanticSummary.CompensatingActionName.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.DomainName.get -> string!
+Strategos.Ontology.MCP.ActionSemanticSummary.DomainName.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.ObjectTypeName.get -> string!
+Strategos.Ontology.MCP.ActionSemanticSummary.ObjectTypeName.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.RequiredAuthority.get -> string?
+Strategos.Ontology.MCP.ActionSemanticSummary.RequiredAuthority.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.RequiresConfirmation.get -> bool
+Strategos.Ontology.MCP.ActionSemanticSummary.RequiresConfirmation.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.TouchedResources.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionResource!>!
+Strategos.Ontology.MCP.ActionSemanticSummary.TouchedResources.init -> void
 Strategos.Ontology.MCP.ActionToolResult
 Strategos.Ontology.MCP.ActionToolResult.ActionToolResult(System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>! Results, Strategos.Ontology.MCP.ResponseMeta! Meta) -> void
 Strategos.Ontology.MCP.ActionToolResult.Meta.get -> Strategos.Ontology.MCP.ResponseMeta!
@@ -119,6 +147,8 @@ Strategos.Ontology.MCP.OntologyStubGenerator.OntologyStubGenerator(Strategos.Ont
 Strategos.Ontology.MCP.OntologyToolDescriptor
 Strategos.Ontology.MCP.OntologyToolDescriptor.Annotations.get -> Strategos.Ontology.MCP.ToolAnnotations!
 Strategos.Ontology.MCP.OntologyToolDescriptor.Annotations.init -> void
+Strategos.Ontology.MCP.OntologyToolDescriptor.ActionSemantics.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionSemanticSummary!>!
+Strategos.Ontology.MCP.OntologyToolDescriptor.ActionSemantics.init -> void
 Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.MCP.ActionConstraintSummary!>!
 Strategos.Ontology.MCP.OntologyToolDescriptor.ConstraintSummaries.init -> void
 Strategos.Ontology.MCP.OntologyToolDescriptor.Description.get -> string!

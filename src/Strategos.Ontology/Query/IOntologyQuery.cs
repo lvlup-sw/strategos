@@ -1,3 +1,4 @@
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
 
@@ -21,6 +22,27 @@ public interface IOntologyQuery
     IReadOnlyList<ActionDescriptor> GetValidActions(
         string objectType,
         IReadOnlyDictionary<string, object?>? knownProperties = null);
+
+    /// <summary>
+    /// Returns actions whose hard property, link, and principal-relation
+    /// preconditions hold for a specific target instance.
+    /// </summary>
+    /// <param name="principal">Authenticated principal requesting an action.</param>
+    /// <param name="domain">Domain that owns the target object type.</param>
+    /// <param name="objectType">Target object descriptor name.</param>
+    /// <param name="objectId">Target object identifier.</param>
+    /// <param name="knownProperties">Optional property values for local predicate evaluation.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Actions whose hard preconditions are satisfied.</returns>
+    Task<IReadOnlyList<ActionDescriptor>> GetValidActionsAsync(
+        ActionPrincipal principal,
+        string domain,
+        string objectType,
+        string objectId,
+        IReadOnlyDictionary<string, object?>? knownProperties = null,
+        CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "Principal-aware action discovery requires a runtime relation resolver.");
 
     IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string objectType,

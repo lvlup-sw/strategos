@@ -6,7 +6,7 @@
 
 using Strategos.Contracts.Codegen;
 
-// Usage: ContractsCodegen <schemas-dir> <output-dir>
+// Usage: ContractsCodegen <schemas-dir> <output-dir> [ontology-output-dir]
 // Reads every *.json JSON Schema in <schemas-dir> and emits one sealed record
 // per schema into <output-dir>, in the shape mandated by INV-6 (sealed record)
 // and INV-7 ({ get; init; } + IReadOnlyList<T> collections).
@@ -20,10 +20,21 @@ using Strategos.Contracts.Codegen;
 // (JsonDocument) — no third-party resolver — and resolves cross-file $refs by
 // document name, emitting directly into the exact INV-6/INV-7 shape.
 
-if (args.Length != 2)
+if (args.Length is < 2 or > 3)
 {
-    await Console.Error.WriteLineAsync("usage: ContractsCodegen <schemas-dir> <output-dir>").ConfigureAwait(false);
+    await Console.Error.WriteLineAsync(
+        "usage: ContractsCodegen <schemas-dir> <output-dir> [ontology-output-dir]").ConfigureAwait(false);
     return 2;
 }
 
-return await RecordEmitter.RunAsync(schemasDir: args[0], outputDir: args[1]).ConfigureAwait(false);
+if (args.Length == 2)
+{
+    return await RecordEmitter.RunAsync(
+        schemasDir: args[0],
+        outputDir: args[1]).ConfigureAwait(false);
+}
+
+return await RecordEmitter.RunAsync(
+    schemasDir: args[0],
+    outputDir: args[1],
+    extensions: [new OntologyContractEmitter(args[2])]).ConfigureAwait(false);

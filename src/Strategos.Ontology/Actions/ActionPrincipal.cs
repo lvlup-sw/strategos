@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Strategos.Ontology.Actions;
 
 /// <summary>
@@ -35,4 +37,7 @@ public sealed record ActionPrincipal
     /// Gets the identifier of the principal instance.
     /// </summary>
     public string PrincipalId { get; }
+
+    /// <summary>Gets the named authority literals granted to this principal.</summary>
+    public ImmutableArray<string> GrantedAuthorities { get; init; } = [];
 }

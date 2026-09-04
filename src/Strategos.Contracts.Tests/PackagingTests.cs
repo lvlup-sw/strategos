@@ -69,26 +69,26 @@ public class PackagingTests
     }
 
     /// <summary>
-    /// T32 — the 0.8.0 release package. Packs the project and asserts:
-    /// the version is 0.8.0; all three schema families (events / workflow /
-    /// diagnostics) are embedded under <c>contentFiles/any/any/schemas/</c>; the
+    /// T32 — the 0.9.0 release package. Packs the project and asserts:
+    /// the version is 0.9.0; all four schema families (events / workflow /
+    /// diagnostics / ontology) are embedded under <c>contentFiles/any/any/schemas/</c>; the
     /// #53 builder fixtures are embedded under
     /// <c>contentFiles/any/any/fixtures/</c> (so Exarchos can extract them); and
     /// the compiled contracts assembly ships under <c>lib/</c>.
-    /// (0.8.0 adds the duplicate-compensation-seed diagnostic id over 0.7.0's
-    /// path-end type-collision id;
+    /// (0.9.0 adds contract-authored ontology action metadata over 0.8.0's
+    /// duplicate-compensation-seed diagnostic id;
     /// see <see cref="Packaging_SmqSchemas_EmbeddedAsContent"/> for content.)
     /// </summary>
     [Test]
     [Property("Category", "Pack")]
-    public async Task Package_Version_Is_0_8_0_WithEventsIrAndDiagnosticsContent()
+    public async Task Package_Version_Is_0_9_0_WithActionContractsAndExistingContent()
     {
         // The fixtures are content (T32): ensure they exist on disk first — the
         // #53 export writes them under artifacts/builder-fixtures/.
         await EnsureFixturesExportedAsync();
 
         var projectDir = RepoLayout.ContractsProjectDir;
-        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-080-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-090-").FullName;
 
         try
         {
@@ -102,26 +102,26 @@ public class PackagingTests
                 .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
             await Assert.That(nupkg).IsNotNull();
 
-            // Version 0.8.0 — read from the file name (the canonical packed version).
+            // Version 0.9.0 — read from the file name (the canonical packed version).
             var fileName = Path.GetFileName(nupkg!);
-            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.8.0.nupkg")
-                .Because($"the package must version at exactly 0.8.0; got {fileName}");
+            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.9.0.nupkg")
+                .Because($"the package must version at exactly 0.9.0; got {fileName}");
 
             using var archive = ZipFile.OpenRead(nupkg!);
 
-            // The .nuspec also pins 0.8.0.
+            // The .nuspec also pins 0.9.0.
             var nuspec = archive.Entries.First(e =>
                 e.FullName.EndsWith(".nuspec", StringComparison.Ordinal));
             using (var reader = new StreamReader(nuspec.Open()))
             {
                 var nuspecXml = await reader.ReadToEndAsync();
-                await Assert.That(nuspecXml).Contains("<version>0.8.0</version>")
-                    .Because("the .nuspec must declare version 0.8.0.");
+                await Assert.That(nuspecXml).Contains("<version>0.9.0</version>")
+                    .Because("the .nuspec must declare version 0.9.0.");
             }
 
             string[] entries = [.. archive.Entries.Select(e => e.FullName)];
 
-            // All three families' schemas embedded under contentFiles/.../schemas/.
+            // All four families' schemas embedded under contentFiles/.../schemas/.
             const string schemaPath = "contentFiles/any/any/schemas/";
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
@@ -135,6 +135,10 @@ public class PackagingTests
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
                 && e.EndsWith("InvariantEntry.json", StringComparison.Ordinal))
                 .Because("the diagnostics (invariant) family schema must be embedded.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("InspectPositionRequest.json", StringComparison.Ordinal))
+                .Because("the ontology action schema and decorator metadata must be embedded.");
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
                 && e.EndsWith("AgwfEntryDuplicatePermittedForkTrigger.json", StringComparison.Ordinal))

@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InspectPositionResult.json",
+    "type": "object",
+    "properties": {
+        "positionId": {
+            "type": "string",
+            "description": "Stable position identifier."
+        },
+        "status": {
+            "type": "string",
+            "description": "Current position status."
+        }
+    },
+    "required": [
+        "positionId",
+        "status"
+    ],
+    "description": "Projection returned by the contract-authored position inspection action."
+}

@@ -14,6 +14,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTRACTS_DIR="$REPO_ROOT/src/Strategos.Contracts"
 CODEGEN_PROJ="$REPO_ROOT/src/Strategos.Contracts.Codegen/Strategos.Contracts.Codegen.csproj"
+ONTOLOGY_GENERATED_DIR="$REPO_ROOT/src/Strategos.Ontology/Contracts/Generated"
 
 cd "$CONTRACTS_DIR"
 
@@ -39,6 +40,7 @@ node scripts/bundle-workflow-schema.mjs
 echo "[contracts-codegen] emitting C# records ..."
 dotnet run --project "$CODEGEN_PROJ" -- \
   "$CONTRACTS_DIR/schemas/json-schema" \
-  "$CONTRACTS_DIR/Generated"
+  "$CONTRACTS_DIR/Generated" \
+  "$ONTOLOGY_GENERATED_DIR"
 
 echo "[contracts-codegen] done."

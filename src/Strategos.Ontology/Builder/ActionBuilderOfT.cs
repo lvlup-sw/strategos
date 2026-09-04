@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Collections.Immutable;
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
@@ -14,6 +15,10 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     private string? _boundToolName;
     private string? _boundToolMethod;
     private bool _isReadOnly;
+    private bool _idempotent;
+    private string? _requiredAuthority;
+    private string? _compensatingActionName;
+    private readonly HashSet<ActionResource> _touchedResources = [];
     private readonly List<ActionPrecondition> _preconditions = [];
     private readonly List<ActionPostcondition> _postconditions = [];
     private readonly List<string> _validFromStates = [];
@@ -28,6 +33,10 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     IActionBuilder IActionBuilder.BoundToWorkflow(string workflowName) => BoundToWorkflow(workflowName);
     IActionBuilder IActionBuilder.BoundToTool(string toolName, string methodName) => BoundToTool(toolName, methodName);
     IActionBuilder IActionBuilder.ReadOnly() => ReadOnly();
+    IActionBuilder IActionBuilder.Idempotent() => Idempotent();
+    IActionBuilder IActionBuilder.RequiresAuthority(string authorityName) => RequiresAuthority(authorityName);
+    IActionBuilder IActionBuilder.Touches(ActionResource resource) => Touches(resource);
+    IActionBuilder IActionBuilder.CompensatedBy(string actionName) => CompensatedBy(actionName);
 
     public IActionBuilder<T> Description(string description)
     {
@@ -65,6 +74,34 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     public IActionBuilder<T> ReadOnly()
     {
         _isReadOnly = true;
+        _idempotent = true;
+        return this;
+    }
+
+    public IActionBuilder<T> Idempotent()
+    {
+        _idempotent = true;
+        return this;
+    }
+
+    public IActionBuilder<T> RequiresAuthority(string authorityName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorityName);
+        _requiredAuthority = authorityName;
+        return this;
+    }
+
+    public IActionBuilder<T> Touches(ActionResource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        _touchedResources.Add(resource);
+        return this;
+    }
+
+    public IActionBuilder<T> CompensatedBy(string actionName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        _compensatingActionName = actionName;
         return this;
     }
 
@@ -131,6 +168,27 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         return this;
     }
 
+    public IActionBuilder<T> RequiresRelation(string relationName, params string[] linkPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relationName);
+        ArgumentNullException.ThrowIfNull(linkPath);
+        if (linkPath.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Relation paths cannot contain empty link names.", nameof(linkPath));
+        }
+
+        _preconditions.Add(new ActionPrecondition
+        {
+            Expression = BuildRelationExpression(relationName, linkPath),
+            Description = $"Requires the caller to hold relation '{relationName}' via {FormatPath(linkPath)}",
+            Kind = PreconditionKind.RelationHolds,
+            RelationName = relationName,
+            LinkPath = linkPath.ToImmutableArray(),
+            Strength = ConstraintStrength.Hard,
+        });
+        return this;
+    }
+
     public IActionBuilder<T> Modifies(Expression<Func<T, object>> propertySelector)
     {
         var memberName = ExpressionHelper.ExtractMemberName(propertySelector);
@@ -139,6 +197,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             Kind = PostconditionKind.ModifiesProperty,
             PropertyName = memberName,
         });
+        _touchedResources.Add(ActionResource.Property(memberName));
         return this;
     }
 
@@ -150,6 +209,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             LinkName = linkName,
             TargetTypeName = typeof(TTarget).Name,
         });
+        _touchedResources.Add(ActionResource.Link(linkName));
         return this;
     }
 
@@ -160,6 +220,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             Kind = PostconditionKind.EmitsEvent,
             EventTypeName = typeof(TEvent).Name,
         });
+        _touchedResources.Add(ActionResource.Event(typeof(TEvent).Name));
         return this;
     }
 
@@ -179,7 +240,17 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
             IsReadOnly = _isReadOnly,
+            Idempotent = _idempotent,
+            RequiredAuthority = _requiredAuthority,
+            TouchedResources = _touchedResources.ToArray(),
+            CompensatingActionName = _compensatingActionName,
             Preconditions = _preconditions.ToList().AsReadOnly(),
             Postconditions = _postconditions.ToList().AsReadOnly(),
         };
+
+    private static string BuildRelationExpression(string relationName, IReadOnlyList<string> linkPath) =>
+        $"principal -[{relationName}]-> {FormatPath(linkPath)}";
+
+    private static string FormatPath(IReadOnlyList<string> linkPath) =>
+        linkPath.Count == 0 ? "target" : string.Join("/", linkPath);
 }

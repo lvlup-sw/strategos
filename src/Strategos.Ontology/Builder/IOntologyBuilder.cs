@@ -5,6 +5,17 @@ namespace Strategos.Ontology.Builder;
 public interface IOntologyBuilder
 {
     /// <summary>
+    /// Declares an independent authority axis, ordered from weakest to strongest.
+    /// </summary>
+    void AuthorityAxis(string name, params string[] levels);
+
+    /// <summary>
+    /// Declares a named authority literal. The returned builder must position it
+    /// on every authority axis in the domain.
+    /// </summary>
+    IAuthorityBuilder Authority(string name);
+
+    /// <summary>
     /// Registers a CLR type <typeparamref name="T"/> with its default
     /// descriptor name (<c>typeof(T).Name</c>).
     /// </summary>

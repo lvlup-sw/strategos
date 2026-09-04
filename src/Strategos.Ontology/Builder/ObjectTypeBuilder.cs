@@ -38,6 +38,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
 
     private PropertyDescriptor? _keyProperty;
     private Func<object, object?>? _idAccessor;
+    private Func<string, LambdaExpression?>? _idPredicateFactory;
     private readonly List<PropertyBuilder<T>> _propertyBuilders = [];
     private readonly List<LinkBuilder> _linkBuilders = [];
     private readonly List<ActionBuilder<T>> _actionBuilders = [];
@@ -62,6 +63,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
         // id with zero per-call reflection on the instance type (INV-8).
         var compiled = keySelector.Compile();
         _idAccessor = o => compiled((T)o);
+        _idPredicateFactory = expectedId => ExpressionHelper.CreateIdentifierPredicate(keySelector, expectedId);
     }
 
     public void Kind(ObjectKind kind)
@@ -164,6 +166,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
             Kind = _objectKind,
             KeyProperty = _keyProperty,
             IdAccessor = _idAccessor,
+            IdPredicateFactory = _idPredicateFactory,
             Properties = _propertyBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
             Links = _linkBuilders.ConvertAll(b => b.Build()).AsReadOnly(),
             Actions = actions.AsReadOnly(),

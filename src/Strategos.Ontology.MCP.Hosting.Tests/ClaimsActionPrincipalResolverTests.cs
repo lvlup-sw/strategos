@@ -17,13 +17,17 @@ public sealed class ClaimsActionPrincipalResolverTests
     {
         var caller = CreateCaller(
             new Claim(ActionPrincipalClaimTypes.PrincipalType, "User"),
-            new Claim(ClaimTypes.NameIdentifier, "user-1"));
+            new Claim(ClaimTypes.NameIdentifier, "user-1"),
+            new Claim(ActionPrincipalClaimTypes.Authority, "portfolio.read"),
+            new Claim(ActionPrincipalClaimTypes.Authority, "portfolio.write"));
 
         var principal = ClaimsActionPrincipalResolver.Instance.Resolve(caller);
 
         await Assert.That(principal).IsNotNull();
         await Assert.That(principal!.PrincipalType).IsEqualTo("User");
         await Assert.That(principal.PrincipalId).IsEqualTo("user-1");
+        await Assert.That(principal.GrantedAuthorities)
+            .IsEquivalentTo(["portfolio.read", "portfolio.write"]);
     }
 
     /// <summary>

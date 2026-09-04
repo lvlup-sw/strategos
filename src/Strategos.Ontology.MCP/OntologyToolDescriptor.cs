@@ -37,6 +37,12 @@ public sealed record OntologyToolDescriptor(
     public IReadOnlyList<ActionConstraintSummary> ConstraintSummaries { get; init; } = [];
 
     /// <summary>
+    /// Per-action retry-safety and authorization semantics for the dynamic
+    /// operations routed through <c>ontology_action</c>.
+    /// </summary>
+    public IReadOnlyList<ActionSemanticSummary> ActionSemantics { get; init; } = [];
+
+    /// <summary>
     /// Optional MCP <c>Tool.icons</c> (2026-07-28). Null when the descriptor
     /// source supplies none — never a placeholder icon.
     /// </summary>

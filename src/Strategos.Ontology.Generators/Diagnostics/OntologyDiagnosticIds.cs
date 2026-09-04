@@ -96,4 +96,11 @@ internal static class OntologyDiagnosticIds
     // (interface declares ACTIONS but no implementors). INV-5: monotonic, next
     // free past the AONT211 ceiling; AONT209/AONT210/AONT211 untouched.
     public const string PolymorphicTargetNoJunctionTable = "AONT212";
+
+    // Action-calculus object diagnostics (#171, #165, #164). These occupy the
+    // next monotonic ids after AONT212; never reuse them for unrelated checks.
+    public const string SafeActionNotIdempotent = "AONT213";
+    public const string InvalidAuthorityLattice = "AONT214";
+    public const string ActionFrameUnsound = "AONT215";
+    public const string CompensationDisagreesWithInverse = "AONT216";
 }

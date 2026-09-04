@@ -13,6 +13,8 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
     private readonly List<ObjectTypeDescriptor> _objectTypes = [];
     private readonly List<InterfaceDescriptor> _interfaces = [];
     private readonly List<CrossDomainLinkBuilder> _crossDomainLinkBuilders = [];
+    private readonly List<AuthorityAxisDescriptor> _authorityAxes = [];
+    private readonly List<AuthorityBuilder> _authorityBuilders = [];
 
     // DR-7 (Tasks 23-30): retain a snapshot of the original ingested
     // descriptor (pre-merge) per (DomainName, Name). The graph-freeze
@@ -44,6 +46,26 @@ internal sealed class OntologyBuilder(string domainName) : IOntologyBuilder
 
     public IReadOnlyList<CrossDomainLinkDescriptor> CrossDomainLinks =>
         _crossDomainLinkBuilders.ConvertAll(b => b.Build()).AsReadOnly();
+
+    public IReadOnlyList<AuthorityAxisDescriptor> AuthorityAxes => _authorityAxes.AsReadOnly();
+
+    public IReadOnlyList<AuthorityDescriptor> Authorities =>
+        _authorityBuilders.ConvertAll(builder => builder.Build()).AsReadOnly();
+
+    public void AuthorityAxis(string name, params string[] levels)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(levels);
+        _authorityAxes.Add(new AuthorityAxisDescriptor(name, levels.ToImmutableArray()));
+    }
+
+    public IAuthorityBuilder Authority(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var builder = new AuthorityBuilder(name);
+        _authorityBuilders.Add(builder);
+        return builder;
+    }
 
     public void Object<T>(Action<IObjectTypeBuilder<T>> configure)
         where T : class

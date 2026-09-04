@@ -11,6 +11,7 @@ on:
     paths:
       - 'src/Strategos.Contracts/**'
       - 'src/Strategos.Contracts.Codegen/**'
+      - 'src/Strategos.Ontology/Contracts/**'
       - 'docs/diagnostics/**'
       - 'scripts/contracts-codegen.sh'
       - '.github/workflows/contracts-codegen-guard.yml'
@@ -19,6 +20,7 @@ on:
     paths:
       - 'src/Strategos.Contracts/**'
       - 'src/Strategos.Contracts.Codegen/**'
+      - 'src/Strategos.Ontology/Contracts/**'
       - 'docs/diagnostics/**'
       - 'scripts/contracts-codegen.sh'
 
@@ -57,4 +59,5 @@ jobs:
           git diff --exit-code -- \
             src/Strategos.Contracts/Generated \
             src/Strategos.Contracts/schemas \
+            src/Strategos.Ontology/Contracts/Generated \
             docs/diagnostics

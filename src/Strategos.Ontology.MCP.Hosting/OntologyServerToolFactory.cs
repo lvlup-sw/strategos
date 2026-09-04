@@ -47,6 +47,8 @@ public static class OntologyServerToolFactory
     /// </summary>
     internal const string ConstraintSummariesMetaKey = "constraintSummaries";
 
+    internal const string ActionSemanticsMetaKey = "actionSemantics";
+
     /// <summary>
     /// MCP 2026-07-28 <c>resultType</c> for a finished <c>tools/call</c>. The
     /// installed 1.3.0 SDK has no <c>CallToolResult.ResultType</c>; Hosting
@@ -270,16 +272,26 @@ public static class OntologyServerToolFactory
 
     private static JsonObject? BuildMeta(OntologyToolDescriptor descriptor)
     {
-        if (descriptor.ConstraintSummaries.Count == 0)
+        if (descriptor.ConstraintSummaries.Count == 0
+            && descriptor.ActionSemantics.Count == 0)
         {
             return null;
         }
 
-        var summariesJson = JsonSerializer.SerializeToNode(descriptor.ConstraintSummaries);
-        return new JsonObject
+        var meta = new JsonObject();
+        if (descriptor.ConstraintSummaries.Count > 0)
         {
-            [ConstraintSummariesMetaKey] = summariesJson,
-        };
+            meta[ConstraintSummariesMetaKey] =
+                JsonSerializer.SerializeToNode(descriptor.ConstraintSummaries);
+        }
+
+        if (descriptor.ActionSemantics.Count > 0)
+        {
+            meta[ActionSemanticsMetaKey] =
+                JsonSerializer.SerializeToNode(descriptor.ActionSemantics);
+        }
+
+        return meta;
     }
 
     /// <summary>

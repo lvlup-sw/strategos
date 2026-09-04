@@ -83,7 +83,8 @@ public sealed class OntologyActionTool
                 CurrentMeta());
         }
 
-        if (!HasAction(objectTypeDescriptor, action))
+        var actionDescriptor = objectTypeDescriptor.Actions.FirstOrDefault(candidate => candidate.Name == action);
+        if (actionDescriptor is null)
         {
             var availableActions = string.Join(", ", objectTypeDescriptor.Actions.Select(a => a.Name));
             return new ActionToolResult(
@@ -99,11 +100,25 @@ public sealed class OntologyActionTool
 
         if (objectId is not null)
         {
-            return await DispatchSingleAsync(principal, validDomain, objectType, objectId, action, request, ct)
+            return await DispatchSingleAsync(
+                    principal,
+                    validDomain,
+                    objectType,
+                    objectId,
+                    actionDescriptor,
+                    request,
+                    ct)
                 .ConfigureAwait(false);
         }
 
-        return await DispatchBatchAsync(principal, validDomain, objectType, action, request, filter, ct)
+        return await DispatchBatchAsync(
+                principal,
+                validDomain,
+                objectType,
+                actionDescriptor,
+                request,
+                filter,
+                ct)
             .ConfigureAwait(false);
     }
 
@@ -112,11 +127,14 @@ public sealed class OntologyActionTool
         string domain,
         string objectType,
         string objectId,
-        string action,
+        ActionDescriptor action,
         object request,
         CancellationToken ct)
     {
-        var context = new ActionContext(principal, domain, objectType, objectId, action);
+        var context = new ActionContext(principal, domain, objectType, objectId, action.Name)
+        {
+            ActionDescriptor = action,
+        };
         var result = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
         return new ActionToolResult([result], CurrentMeta());
     }
@@ -127,7 +145,7 @@ public sealed class OntologyActionTool
         ActionPrincipal principal,
         string domain,
         string objectType,
-        string action,
+        ActionDescriptor action,
         object request,
         string? filter,
         CancellationToken ct)
@@ -150,7 +168,10 @@ public sealed class OntologyActionTool
         foreach (var item in queryResult.Items)
         {
             var itemId = item?.ToString() ?? string.Empty;
-            var context = new ActionContext(principal, domain, objectType, itemId, action);
+            var context = new ActionContext(principal, domain, objectType, itemId, action.Name)
+            {
+                ActionDescriptor = action,
+            };
             try
             {
                 var actionResult = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
@@ -165,9 +186,6 @@ public sealed class OntologyActionTool
 
         return new ActionToolResult(results, CurrentMeta());
     }
-
-    private static bool HasAction(ObjectTypeDescriptor objectType, string actionName) =>
-        objectType.Actions.Any(a => a.Name == actionName);
 
     private string? ResolveDomain(string objectType)
     {

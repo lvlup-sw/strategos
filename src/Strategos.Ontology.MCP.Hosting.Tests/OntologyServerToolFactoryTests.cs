@@ -125,6 +125,37 @@ public sealed class OntologyServerToolFactoryTests
         await Assert.That(actualFirst.SoftConstraintCount).IsEqualTo(expectedFirst.SoftConstraintCount);
     }
 
+    [Test]
+    public async Task CreateServerTools_PreservesActionSemantics()
+    {
+        var graph = TestOntologyGraphFactory.CreateConstrainedGraph();
+        var actionDescriptor = new Strategos.Ontology.MCP.OntologyToolDiscovery(graph)
+            .Discover()
+            .Single(d => d.Name == "ontology_action");
+
+        await Assert.That(actionDescriptor.ActionSemantics.Count).IsGreaterThan(0);
+
+        var actionTool = OntologyServerToolFactory.CreateServerTools(graph)
+            .Single(t => t.ProtocolTool.Name == "ontology_action");
+
+        var meta = actionTool.ProtocolTool.Meta;
+        await Assert.That(meta).IsNotNull();
+        await Assert.That(meta!.ContainsKey("actionSemantics")).IsTrue();
+
+        var carried = JsonSerializer.Deserialize<List<Strategos.Ontology.MCP.ActionSemanticSummary>>(
+            meta["actionSemantics"]!.ToJsonString());
+        await Assert.That(carried).IsNotNull();
+        await Assert.That(carried!.Count).IsEqualTo(actionDescriptor.ActionSemantics.Count);
+
+        var expectedFirst = actionDescriptor.ActionSemantics[0];
+        var actualFirst = carried[0];
+        await Assert.That(actualFirst.ObjectTypeName).IsEqualTo(expectedFirst.ObjectTypeName);
+        await Assert.That(actualFirst.ActionName).IsEqualTo(expectedFirst.ActionName);
+        await Assert.That(actualFirst.Annotations).IsEqualTo(expectedFirst.Annotations);
+        await Assert.That(actualFirst.AuthorizationRequirements)
+            .IsEquivalentTo(expectedFirst.AuthorizationRequirements);
+    }
+
     private static string PropertiesJson(JsonElement schema)
     {
         // Re-serialize the "properties" subtree to a canonical string. This is the part

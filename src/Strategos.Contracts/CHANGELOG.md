@@ -15,6 +15,12 @@ enforced by the T30 structural diff in CI).
 
 ### Added
 
+- **Ontology action contracts:** TypeSpec `extern dec` decorators for object
+  ownership, authority, relation paths, clients, confirmation, read-only, and
+  idempotent semantics. The decorators emit language-neutral
+  `x-strategos-*` JSON Schema metadata; the C# extension emits immutable
+  `HandAuthoredContract` ontology descriptors. Additive, so the package moves
+  0.8.0 → 0.9.0 (#170).
 - **Diagnostics family — `AGWF038` (`DuplicateCompensationSeed`, severity `error`):** a new
   AGWF code for two diagnostic-fork edges whose compensation seeds sanitize to the same
   `DiagnosticForkCount_{seed}` key. Sharing a counter would let one edge's `maxForks`

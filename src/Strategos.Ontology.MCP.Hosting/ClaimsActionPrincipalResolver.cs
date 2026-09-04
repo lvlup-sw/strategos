@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Collections.Immutable;
 
 using Strategos.Ontology.Actions;
 
@@ -31,6 +32,14 @@ public sealed class ClaimsActionPrincipalResolver : IActionPrincipalResolver
 
         return string.IsNullOrWhiteSpace(principalType) || string.IsNullOrWhiteSpace(principalId)
             ? null
-            : new ActionPrincipal(principalType, principalId);
+            : new ActionPrincipal(principalType, principalId)
+            {
+                GrantedAuthorities = identity
+                    .FindAll(ActionPrincipalClaimTypes.Authority)
+                    .Select(claim => claim.Value)
+                    .Where(authority => !string.IsNullOrWhiteSpace(authority))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToImmutableArray(),
+            };
     }
 }

@@ -33,12 +33,13 @@ public sealed class OntologyToolDiscovery
         var domainNames = string.Join(", ", _graph.Domains.Select(d => d.DomainName));
         var objectTypeCount = _graph.ObjectTypes.Count;
         var constraintSummaries = BuildConstraintSummaries();
+        var actionSemantics = BuildActionSemantics();
 
         return
         [
             BuildExploreDescriptor(domainNames, objectTypeCount),
             BuildQueryDescriptor(domainNames, objectTypeCount),
-            BuildActionDescriptor(domainNames, objectTypeCount, constraintSummaries),
+            BuildActionDescriptor(domainNames, objectTypeCount, constraintSummaries, actionSemantics),
             BuildValidateDescriptor(domainNames, objectTypeCount),
         ];
     }
@@ -84,7 +85,8 @@ public sealed class OntologyToolDiscovery
     private static OntologyToolDescriptor BuildActionDescriptor(
         string domainNames,
         int objectTypeCount,
-        IReadOnlyList<ActionConstraintSummary> constraintSummaries) =>
+        IReadOnlyList<ActionConstraintSummary> constraintSummaries,
+        IReadOnlyList<ActionSemanticSummary> actionSemantics) =>
         new(
             "ontology_action",
             BuildActionDescription(domainNames, objectTypeCount, constraintSummaries))
@@ -97,6 +99,7 @@ public sealed class OntologyToolDiscovery
                 IdempotentHint: false,
                 OpenWorldHint: false),
             ConstraintSummaries = constraintSummaries,
+            ActionSemantics = actionSemantics,
         };
 
     [RequiresUnreferencedCode("OutputSchema generation reflects over ValidationVerdict.")]
@@ -148,6 +151,33 @@ public sealed class OntologyToolDiscovery
 
         return summaries.AsReadOnly();
     }
+
+    private IReadOnlyList<ActionSemanticSummary> BuildActionSemantics() =>
+        _graph.ObjectTypes
+            .SelectMany(objectType => objectType.Actions.Select(action =>
+                new ActionSemanticSummary(
+                    objectType.DomainName,
+                    objectType.Name,
+                    action.Name,
+                    new ToolAnnotations(
+                        ReadOnlyHint: action.IsReadOnly,
+                        DestructiveHint: !action.IsReadOnly,
+                        IdempotentHint: action.Idempotent,
+                        OpenWorldHint: false),
+                    action.Preconditions
+                        .Where(precondition => precondition.Kind == PreconditionKind.RelationHolds)
+                        .Select(precondition => new ActionAuthorizationRequirement(
+                            precondition.RelationName ?? string.Empty,
+                            precondition.LinkPath))
+                        .ToList()
+                        .AsReadOnly(),
+                    action.RequiredAuthority,
+                    action.AllowedClients,
+                    action.RequiresConfirmation,
+                    action.TouchedResources,
+                    action.CompensatingActionName)))
+            .ToList()
+            .AsReadOnly();
 
     private static string BuildExploreDescription(string domainNames, int objectTypeCount)
     {
