@@ -23,13 +23,13 @@ jobs:
     environment: nuget-publish
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Required for MinVer and git-cliff
           fetch-tags: true  # Explicitly fetch tags for version detection
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           dotnet-quality: ${{ env.DOTNET_QUALITY }}
@@ -104,7 +104,7 @@ jobs:
           args: --latest --strip header
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ./packages/*
           body: ${{ steps.changelog.outputs.content }}
