@@ -13,7 +13,7 @@ namespace Strategos.Ontology.Actions;
 public sealed record ActionPrincipal
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="ActionPrincipal"/> record.
+    /// Initializes a new instance of the <see cref="ActionPrincipal"/> class.
     /// </summary>
     /// <param name="principalType">Ontology descriptor name for the principal.</param>
     /// <param name="principalId">Identifier of the principal instance.</param>

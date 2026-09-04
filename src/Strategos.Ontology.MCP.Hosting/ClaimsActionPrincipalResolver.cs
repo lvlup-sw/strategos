@@ -20,14 +20,14 @@ public sealed class ClaimsActionPrincipalResolver : IActionPrincipalResolver
     {
         ArgumentNullException.ThrowIfNull(caller);
 
-        if (caller.Identity?.IsAuthenticated is not true)
+        if (caller.Identity is not ClaimsIdentity identity || !identity.IsAuthenticated)
         {
             return null;
         }
 
-        var principalType = caller.FindFirst(ActionPrincipalClaimTypes.PrincipalType)?.Value;
-        var principalId = caller.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? caller.FindFirst("sub")?.Value;
+        var principalType = identity.FindFirst(ActionPrincipalClaimTypes.PrincipalType)?.Value;
+        var principalId = identity.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? identity.FindFirst("sub")?.Value;
 
         return string.IsNullOrWhiteSpace(principalType) || string.IsNullOrWhiteSpace(principalId)
             ? null

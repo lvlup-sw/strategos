@@ -2,8 +2,14 @@ using Strategos.Ontology.Actions;
 
 namespace Strategos.Ontology.Tests.Actions;
 
+/// <summary>
+/// Verifies the immutable ontology action-principal contract.
+/// </summary>
 public sealed class ActionPrincipalTests
 {
+    /// <summary>
+    /// Verifies that valid principal coordinates are preserved.
+    /// </summary>
     [Test]
     public async Task Constructor_ValidTypeAndId_PreservesValues()
     {
@@ -13,6 +19,9 @@ public sealed class ActionPrincipalTests
         await Assert.That(principal.PrincipalId).IsEqualTo("svc-42");
     }
 
+    /// <summary>
+    /// Verifies that neither principal coordinate may be blank.
+    /// </summary>
     [Test]
     [Arguments(null, "id")]
     [Arguments("", "id")]
@@ -26,6 +35,9 @@ public sealed class ActionPrincipalTests
             .Throws<ArgumentException>();
     }
 
+    /// <summary>
+    /// Verifies that record cloning cannot remove a context principal.
+    /// </summary>
     [Test]
     public async Task ActionContext_RecordCloneCannotRemovePrincipal()
     {

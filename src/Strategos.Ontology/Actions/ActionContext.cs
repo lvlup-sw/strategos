@@ -10,7 +10,7 @@ public sealed record ActionContext
     private readonly ActionPrincipal principal = null!;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ActionContext"/> record.
+    /// Initializes a new instance of the <see cref="ActionContext"/> class.
     /// </summary>
     /// <param name="principal">Authenticated principal requesting the action.</param>
     /// <param name="domain">Domain that owns the target object type.</param>
@@ -26,6 +26,8 @@ public sealed record ActionContext
         string actionName,
         ActionDispatchOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(principal);
+
         Principal = principal;
         Domain = domain;
         ObjectType = objectType;

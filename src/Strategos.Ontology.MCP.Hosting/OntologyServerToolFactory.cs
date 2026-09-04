@@ -204,7 +204,7 @@ public static class OntologyServerToolFactory
             var tool = new OntologyActionTool(graph, dispatcher, ResolveObjectSetProvider(context));
             var principalResolver = context.Services?.GetService<IActionPrincipalResolver>()
                 ?? ClaimsActionPrincipalResolver.Instance;
-            var principal = context.User is null
+            var principal = context.User?.Identity?.IsAuthenticated is not true
                 ? null
                 : principalResolver.Resolve(context.User);
 
