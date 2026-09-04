@@ -6,7 +6,7 @@ namespace Strategos.Ontology.Tests.Actions;
 public class ObservableActionDispatcherTests
 {
     private static ActionContext MakeContext() =>
-        new("CRM", "Order", "o-1", "Place");
+        new(new ActionPrincipal("User", "user-1"), "CRM", "Order", "o-1", "Place");
 
     [Test]
     public async Task Dispatch_AfterCompletion_InvokesAllRegisteredObservers()

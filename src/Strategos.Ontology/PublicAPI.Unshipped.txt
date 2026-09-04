@@ -18,7 +18,7 @@ static Strategos.Ontology.Temporal.AssociationTemporalEvent.Assert(string! assoc
 static Strategos.Ontology.Temporal.AssociationTemporalEvent.Retract(string! associationId, System.DateTimeOffset systemTo, string? retractingAgent = null) -> Strategos.Ontology.Temporal.AssociationTemporalEvent!
 static Strategos.Ontology.Temporal.TemporalAssociationProjection.Replay(System.Collections.Generic.IEnumerable<Strategos.Ontology.Temporal.AssociationTemporalEvent!>! events) -> Strategos.Ontology.Temporal.TemporalAssociationProjection!
 Strategos.Ontology.Actions.ActionContext
-Strategos.Ontology.Actions.ActionContext.ActionContext(string! Domain, string! ObjectType, string! ObjectId, string! ActionName, Strategos.Ontology.Actions.ActionDispatchOptions? Options = null) -> void
+Strategos.Ontology.Actions.ActionContext.ActionContext(Strategos.Ontology.Actions.ActionPrincipal! principal, string! domain, string! objectType, string! objectId, string! actionName, Strategos.Ontology.Actions.ActionDispatchOptions? options = null) -> void
 Strategos.Ontology.Actions.ActionContext.ActionDescriptor.get -> Strategos.Ontology.Descriptors.ActionDescriptor?
 Strategos.Ontology.Actions.ActionContext.ActionDescriptor.init -> void
 Strategos.Ontology.Actions.ActionContext.ActionName.get -> string!
@@ -31,6 +31,12 @@ Strategos.Ontology.Actions.ActionContext.ObjectType.get -> string!
 Strategos.Ontology.Actions.ActionContext.ObjectType.init -> void
 Strategos.Ontology.Actions.ActionContext.Options.get -> Strategos.Ontology.Actions.ActionDispatchOptions?
 Strategos.Ontology.Actions.ActionContext.Options.init -> void
+Strategos.Ontology.Actions.ActionContext.Principal.get -> Strategos.Ontology.Actions.ActionPrincipal!
+Strategos.Ontology.Actions.ActionContext.Principal.init -> void
+Strategos.Ontology.Actions.ActionPrincipal
+Strategos.Ontology.Actions.ActionPrincipal.ActionPrincipal(string! principalType, string! principalId) -> void
+Strategos.Ontology.Actions.ActionPrincipal.PrincipalId.get -> string!
+Strategos.Ontology.Actions.ActionPrincipal.PrincipalType.get -> string!
 Strategos.Ontology.Actions.ActionDispatchOptions
 Strategos.Ontology.Actions.ActionDispatchOptions.EnforcePreconditions.get -> bool
 Strategos.Ontology.Actions.ActionDispatchOptions.EnforcePreconditions.init -> void
@@ -725,7 +731,7 @@ Strategos.Ontology.ObjectSets.IObjectSetWriter.UnrelateAsync(string! srcDescript
 Strategos.Ontology.ObjectSets.ISearchable
 Strategos.Ontology.ObjectSets.ISearchable.Embedding.get -> float[]!
 Strategos.Ontology.ObjectSets.ObjectSet<T>
-Strategos.Ontology.ObjectSets.ObjectSet<T>.ApplyAsync(string! actionName, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>!>!
+Strategos.Ontology.ObjectSets.ObjectSet<T>.ApplyAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! actionName, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.EventsAsync(System.TimeSpan? since = null, System.Collections.Generic.IReadOnlyList<string!>? eventTypes = null) -> System.Collections.Generic.IAsyncEnumerable<Strategos.Ontology.Events.OntologyEvent!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.ExecuteAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.ObjectSets.ObjectSetResult<T!>!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.Expression.get -> Strategos.Ontology.ObjectSets.ObjectSetExpression!

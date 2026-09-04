@@ -5,6 +5,8 @@ namespace Strategos.Ontology.Tests.Actions;
 
 public class DispatchReadOnlyAsyncTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     private sealed class CapturingDispatcher : IActionDispatcher
     {
         private readonly ActionResult _result;
@@ -32,7 +34,7 @@ public class DispatchReadOnlyAsyncTests
         var expected = new ActionResult(true, Result: "ok");
         var dispatcher = new CapturingDispatcher(expected);
         var descriptor = new ActionDescriptor("GetPosition", "Read position") { IsReadOnly = true };
-        var context = new ActionContext("CRM", "Contact", "c-1", "GetPosition")
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "GetPosition")
         {
             ActionDescriptor = descriptor,
         };
@@ -52,7 +54,7 @@ public class DispatchReadOnlyAsyncTests
     {
         var dispatcher = new CapturingDispatcher(new ActionResult(true, Result: "should-not-see"));
         var descriptor = new ActionDescriptor("UpdatePosition", "Mutates position") { IsReadOnly = false };
-        var context = new ActionContext("CRM", "Contact", "c-1", "UpdatePosition")
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "UpdatePosition")
         {
             ActionDescriptor = descriptor,
         };
@@ -71,7 +73,7 @@ public class DispatchReadOnlyAsyncTests
     public async Task DispatchReadOnlyAsync_OnMissingDescriptor_ReturnsFailureWithoutCallingInner()
     {
         var dispatcher = new CapturingDispatcher(new ActionResult(true));
-        var context = new ActionContext("CRM", "Contact", "c-1", "Unknown");
+        var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "Unknown");
         var request = new { Probe = 1 };
 
         var result = await ((IActionDispatcher)dispatcher).DispatchReadOnlyAsync(

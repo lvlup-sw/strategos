@@ -6,6 +6,8 @@ namespace Strategos.Ontology.MCP.Tests;
 
 public class OntologyActionToolMetaTests
 {
+    private static readonly ActionPrincipal Principal = new("User", "user-1");
+
     [Test]
     public async Task Action_ResultCarriesMetaWithGraphVersion()
     {
@@ -21,6 +23,7 @@ public class OntologyActionToolMetaTests
 
         // Act — single-object dispatch
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: new { },
@@ -49,6 +52,7 @@ public class OntologyActionToolMetaTests
         var tool = new OntologyActionTool(graph, dispatcher, provider);
 
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: new { },
@@ -71,6 +75,7 @@ public class OntologyActionToolMetaTests
 
         // Unknown object type
         var r1 = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "DoesNotExist",
             action: "noop",
             request: new { },
@@ -80,6 +85,7 @@ public class OntologyActionToolMetaTests
 
         // Unknown action on a real type
         var r2 = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "no_such_action",
             request: new { },
@@ -102,6 +108,7 @@ public class OntologyActionToolMetaTests
         var tool = new OntologyActionTool(graph, dispatcher, provider);
 
         var result = await tool.ExecuteAsync(
+            principal: Principal,
             objectType: "TestPosition",
             action: "execute_trade",
             request: new { },

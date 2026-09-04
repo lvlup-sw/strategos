@@ -10,7 +10,7 @@ public class ConstraintReportingActionDispatcherTests
     private static ActionContext MakeContext(
         string actionName,
         ActionDescriptor? descriptor = null) =>
-        new("CRM", "Order", "o-1", actionName)
+        new(new ActionPrincipal("User", "user-1"), "CRM", "Order", "o-1", actionName)
         {
             ActionDescriptor = descriptor,
         };

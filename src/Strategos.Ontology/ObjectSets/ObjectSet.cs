@@ -151,8 +151,19 @@ public sealed class ObjectSet<T> where T : class
     /// descriptor name carried on the expression's root, so a multi-registered CLR
     /// type reaches the registration the caller selected.
     /// </summary>
-    public async Task<IReadOnlyList<ActionResult>> ApplyAsync(string actionName, object request, CancellationToken ct = default)
+    /// <param name="principal">Authenticated principal requesting the action.</param>
+    /// <param name="actionName">Name of the action to apply.</param>
+    /// <param name="request">Action request payload.</param>
+    /// <param name="ct">Token used to cancel materialization or dispatch.</param>
+    /// <returns>One result for each materialized object.</returns>
+    public async Task<IReadOnlyList<ActionResult>> ApplyAsync(
+        ActionPrincipal principal,
+        string actionName,
+        object request,
+        CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(principal);
+
         var result = await _provider.ExecuteAsync<T>(Expression, ct).ConfigureAwait(false);
         var results = new List<ActionResult>(result.Items.Count);
         var descriptorName = Expression.RootObjectTypeName;
@@ -160,7 +171,7 @@ public sealed class ObjectSet<T> where T : class
         foreach (var item in result.Items)
         {
             var objectId = item?.ToString() ?? string.Empty;
-            var context = new ActionContext(descriptorName, descriptorName, objectId, actionName);
+            var context = new ActionContext(principal, descriptorName, descriptorName, objectId, actionName);
             var actionResult = await _actionDispatcher.DispatchAsync(context, request, ct).ConfigureAwait(false);
             results.Add(actionResult);
         }
