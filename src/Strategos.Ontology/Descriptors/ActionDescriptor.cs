@@ -25,6 +25,40 @@ public sealed record ActionDescriptor(
     public bool IsReadOnly { get; init; }
 
     /// <summary>
+    /// Indicates whether repeating the action produces the same externally
+    /// observable effect. Defaults to <c>false</c>. Read-only actions must also
+    /// be idempotent.
+    /// </summary>
+    public bool Idempotent { get; init; }
+
+    /// <summary>
+    /// Named authority literal required to invoke this action. Null means the
+    /// action declares no authority requirement.
+    /// </summary>
+    public string? RequiredAuthority { get; init; }
+
+    /// <summary>
+    /// Resources this action may affect. The frame must contain every resource
+    /// named by a mutating postcondition.
+    /// </summary>
+    public IReadOnlyList<ActionResource> TouchedResources { get; init; } = [];
+
+    /// <summary>Name of the action that restores this action's frame.</summary>
+    public string? CompensatingActionName { get; init; }
+
+    /// <summary>
+    /// Client identifiers allowed to surface this action. An empty collection
+    /// means the contract does not restrict discovery by client.
+    /// </summary>
+    public IReadOnlyList<string> AllowedClients { get; init; } = [];
+
+    /// <summary>
+    /// Indicates that an interactive client must obtain confirmation before
+    /// dispatching this action.
+    /// </summary>
+    public bool RequiresConfirmation { get; init; }
+
+    /// <summary>
     /// Descriptor-first preconditions for this action. This is the
     /// first-class authoring field; the fluent
     /// <c>IActionBuilder&lt;T&gt;.Requires(...)</c> methods are obsolete

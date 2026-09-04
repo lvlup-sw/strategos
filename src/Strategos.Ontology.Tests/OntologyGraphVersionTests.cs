@@ -588,12 +588,11 @@ public class OntologyGraphVersionTests
     // assertion failure message, and replace the constant. Confirm the diff
     // matches the intended hasher change before committing.
     //
-    // Last regenerated for DR-5 (#120, closes #114): the |EDGE| framing and the
-    // per-edge-property bytes were removed from WriteLink and the cross-domain
-    // link serialization when the schema-only edge-properties surface was
-    // deleted, so every graph's version hash shifted by design.
+    // Last regenerated for the action-object program (#162/#164/#165/#170/#171):
+    // relation authorization, retry safety, authority, frames, compensation,
+    // client visibility, and confirmation now participate in graph identity.
     private const string ReferenceFixtureVersion =
-        "fbabcc0c9c364db86fa9240005cd6bdee2f90ed50017c703cc904fed1c3b18f8";
+        "9d60afd2865ace2fbacbac0b638388d83052e74519276c57a834a707cf73d700";
 
     [Test]
     public async Task Version_ReferenceFixture_MatchesPinnedConstant()

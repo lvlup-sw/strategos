@@ -12,6 +12,10 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
     private string? _boundToolName;
     private string? _boundToolMethod;
     private bool _isReadOnly;
+    private bool _idempotent;
+    private string? _requiredAuthority;
+    private string? _compensatingActionName;
+    private readonly HashSet<ActionResource> _touchedResources = [];
 
     public IActionBuilder Description(string description)
     {
@@ -49,6 +53,34 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
     public IActionBuilder ReadOnly()
     {
         _isReadOnly = true;
+        _idempotent = true;
+        return this;
+    }
+
+    public IActionBuilder Idempotent()
+    {
+        _idempotent = true;
+        return this;
+    }
+
+    public IActionBuilder RequiresAuthority(string authorityName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorityName);
+        _requiredAuthority = authorityName;
+        return this;
+    }
+
+    public IActionBuilder Touches(ActionResource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        _touchedResources.Add(resource);
+        return this;
+    }
+
+    public IActionBuilder CompensatedBy(string actionName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        _compensatingActionName = actionName;
         return this;
     }
 
@@ -62,5 +94,9 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
             IsReadOnly = _isReadOnly,
+            Idempotent = _idempotent,
+            RequiredAuthority = _requiredAuthority,
+            TouchedResources = _touchedResources.ToArray(),
+            CompensatingActionName = _compensatingActionName,
         };
 }

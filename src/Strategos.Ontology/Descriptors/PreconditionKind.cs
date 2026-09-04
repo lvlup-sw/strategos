@@ -5,4 +5,5 @@ public enum PreconditionKind
     PropertyPredicate,
     LinkExists,
     Custom,
+    RelationHolds,
 }

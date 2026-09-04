@@ -24,6 +24,7 @@ The Reference section provides detailed, factual documentation for looking up sp
 | [Packages](/reference/packages) | NuGet package overview, dependencies, and installation scenarios |
 | [Diagnostics](/reference/diagnostics) | AONT ontology diagnostics and AGWF/AGSR workflow analyzer codes |
 | [Ontology](/reference/ontology) | `IOntologyQuery`, `IObjectSetProvider`, `IEmbeddingProvider`, dispatcher, sources, graph versioning, Npgsql |
+| [Action calculus contracts](/reference/action-calculus) | Principals, relation authorization, authority joins, resource frames, compensation, retry safety |
 | [Configuration](/reference/configuration) | Wolverine, Marten, and PostgreSQL integration setup |
 | [Phase Enum Persistence](/reference/phase-persistence) | Name vs ordinal storage of the generated `Phase` enum; Newtonsoft is a data-migration risk |
 

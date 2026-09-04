@@ -172,6 +172,18 @@ public sealed class OntologyGraph
             ? chains
             : [];
 
+    /// <summary>
+    /// Returns the validated authority product lattice for a domain.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The domain is not present.</exception>
+    public AuthorityLattice GetAuthorityLattice(string domainName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domainName);
+        var domain = Domains.FirstOrDefault(candidate => candidate.DomainName == domainName)
+            ?? throw new KeyNotFoundException($"Unknown ontology domain '{domainName}'.");
+        return new AuthorityLattice(domain.AuthorityAxes, domain.Authorities);
+    }
+
     private ObjectTypeDescriptor? FindObjectTypeByName(string preferredDomain, string typeName)
     {
         // First try the preferred domain

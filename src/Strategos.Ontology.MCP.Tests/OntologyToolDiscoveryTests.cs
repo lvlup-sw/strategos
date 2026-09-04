@@ -1,5 +1,6 @@
 using Strategos.Ontology;
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.MCP.Tests;
 
@@ -172,6 +173,30 @@ public class OntologyToolDiscoveryTests
         await Assert.That(actionTool.Description).Contains("constraint rule(s)");
     }
 
+    [Test]
+    public async Task Discover_ActionSemantics_ProjectRelationAndRetrySafetyPerAction()
+    {
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<SemanticActionDomainOntology>();
+        var actionTool = new OntologyToolDiscovery(graphBuilder.Build()).Discover()
+            .Single(tool => tool.Name == "ontology_action");
+
+        var upsert = actionTool.ActionSemantics.Single(summary => summary.ActionName == "upsert");
+        await Assert.That(upsert.Annotations.ReadOnlyHint).IsFalse();
+        await Assert.That(upsert.Annotations.IdempotentHint).IsTrue();
+        await Assert.That(upsert.AuthorizationRequirements).HasCount().EqualTo(1);
+        await Assert.That(upsert.AuthorizationRequirements[0].RelationName).IsEqualTo("owner");
+        await Assert.That(upsert.AuthorizationRequirements[0].LinkPath).IsEquivalentTo(["space"]);
+        await Assert.That(upsert.RequiredAuthority).IsEqualTo("writer");
+        await Assert.That(upsert.TouchedResources)
+            .IsEquivalentTo([ActionResource.Property("Status")]);
+        await Assert.That(upsert.CompensatingActionName).IsEqualTo("revert-upsert");
+
+        var read = actionTool.ActionSemantics.Single(summary => summary.ActionName == "read");
+        await Assert.That(read.Annotations.ReadOnlyHint).IsTrue();
+        await Assert.That(read.Annotations.IdempotentHint).IsTrue();
+    }
+
     /// <summary>
     /// Creates a test ontology graph with constrained actions for testing
     /// constraint summary generation.
@@ -181,6 +206,39 @@ public class OntologyToolDiscoveryTests
         var builder = new OntologyGraphBuilder();
         builder.AddDomain<ConstrainedDomainOntology>();
         return builder.Build();
+    }
+}
+
+public class SemanticActionDomainOntology : DomainOntology
+{
+    public override string DomainName => "semantic-actions";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.AuthorityAxis("access", "read", "write");
+        builder.Authority("reader").At("access", "read");
+        builder.Authority("writer").At("access", "write").Implies("reader");
+
+        builder.Object<TestAccount>(obj =>
+        {
+            obj.Key(account => account.Id);
+            obj.Action("upsert")
+                .RequiresRelation("owner", "space")
+                .RequiresAuthority("writer")
+                .Touches(ActionResource.Property("Status"))
+                .CompensatedBy("revert-upsert")
+                .Idempotent()
+                .BoundToWorkflow("upsert-account");
+            obj.Action("read")
+                .RequiresAuthority("reader")
+                .ReadOnly()
+                .BoundToWorkflow("read-account");
+            obj.Action("revert-upsert")
+                .RequiresAuthority("writer")
+                .Touches(ActionResource.Property("Status"))
+                .Idempotent()
+                .BoundToWorkflow("revert-upsert-account");
+        });
     }
 }
 

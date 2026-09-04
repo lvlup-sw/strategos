@@ -6,6 +6,33 @@ internal static class OntologyDiagnostics
 {
     private const string Category = "Strategos.Ontology";
 
+    public static readonly DiagnosticDescriptor ActionFrameUnsound = new(
+        OntologyDiagnosticIds.ActionFrameUnsound,
+        "Action mutation falls outside its declared frame",
+        "Action '{0}' mutates '{1}' outside its declared frame",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Every descriptor-first mutating postcondition must name a resource in the action frame.");
+
+    public static readonly DiagnosticDescriptor CompensationDisagreesWithInverse = new(
+        OntologyDiagnosticIds.CompensationDisagreesWithInverse,
+        "Compensation disagrees with the derived inverse",
+        "Action '{0}' names compensation '{1}', but their frames differ or the compensation is undeclared",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A compensation must exist and restore exactly the forward action's frame.");
+
+    public static readonly DiagnosticDescriptor InvalidAuthorityLattice = new(
+        OntologyDiagnosticIds.InvalidAuthorityLattice,
+        "Authority product lattice is invalid",
+        "Invalid authority lattice: {0}",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Every authority must occupy every declared axis, name valid levels, be used by an action, and preserve the product order.");
+
     // --- Core (AONT001-008) ---
 
     public static readonly DiagnosticDescriptor MissingKey = new(

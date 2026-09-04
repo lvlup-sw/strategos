@@ -1,0 +1,32 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InspectPositionRequest.json",
+    "type": "object",
+    "properties": {
+        "positionId": {
+            "type": "string",
+            "description": "Stable position identifier."
+        }
+    },
+    "required": [
+        "positionId"
+    ],
+    "description": "Input carried by the contract-authored position inspection action.",
+    "x-strategos-idempotent": true,
+    "x-strategos-read-only": true,
+    "x-strategos-confirm": false,
+    "x-strategos-clients": [
+        "mcp",
+        "web"
+    ],
+    "x-strategos-relation": "owner",
+    "x-strategos-link-path": [
+        "Portfolio"
+    ],
+    "x-strategos-authority": "position.reader",
+    "x-strategos-action-name": "inspectPosition",
+    "x-strategos-action-description": "Inspect a position visible through its owning portfolio.",
+    "x-strategos-domain": "Trading",
+    "x-strategos-object": "Position",
+    "x-strategos-object-kind": "entity"
+}

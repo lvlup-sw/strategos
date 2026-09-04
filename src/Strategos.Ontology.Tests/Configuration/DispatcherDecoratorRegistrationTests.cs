@@ -17,7 +17,7 @@ public class DispatcherDecoratorRegistrationTests
     }
 
     [Test]
-    public async Task NoDecoratorExtensions_YieldsUserDispatcherUnchanged()
+    public async Task NoDecoratorExtensions_AddsMandatoryAuthorizationChokepoints()
     {
         var services = BaseServices();
 
@@ -30,7 +30,11 @@ public class DispatcherDecoratorRegistrationTests
         var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IActionDispatcher>();
 
-        await Assert.That(dispatcher).IsTypeOf<StubActionDispatcher>();
+        await Assert.That(dispatcher).IsTypeOf<AuthorityAuthorizationActionDispatcher>();
+        var authority = (AuthorityAuthorizationActionDispatcher)dispatcher;
+        await Assert.That(authority.Inner).IsTypeOf<RelationAuthorizationActionDispatcher>();
+        var relation = (RelationAuthorizationActionDispatcher)authority.Inner;
+        await Assert.That(relation.Inner).IsTypeOf<StubActionDispatcher>();
     }
 
     [Test]
@@ -86,12 +90,16 @@ public class DispatcherDecoratorRegistrationTests
         var outer = provider.GetRequiredService<IActionDispatcher>();
 
         await Assert.That(outer).IsTypeOf<ObservableActionDispatcher>();
-        // Verify the full chain so a regression that drops the constraint
-        // layer entirely is caught: Observable → ConstraintReporting → Stub.
+        // Verify the full chain so a regression that drops either enforcement
+        // layer is caught: Observable → ConstraintReporting → Authority → Relation → Stub.
         var observable = (ObservableActionDispatcher)outer;
         await Assert.That(observable.Inner).IsTypeOf<ConstraintReportingActionDispatcher>();
         var constraintReporting = (ConstraintReportingActionDispatcher)observable.Inner;
-        await Assert.That(constraintReporting.Inner).IsTypeOf<StubActionDispatcher>();
+        await Assert.That(constraintReporting.Inner).IsTypeOf<AuthorityAuthorizationActionDispatcher>();
+        var authority = (AuthorityAuthorizationActionDispatcher)constraintReporting.Inner;
+        await Assert.That(authority.Inner).IsTypeOf<RelationAuthorizationActionDispatcher>();
+        var relation = (RelationAuthorizationActionDispatcher)authority.Inner;
+        await Assert.That(relation.Inner).IsTypeOf<StubActionDispatcher>();
     }
 
     [Test]
@@ -114,7 +122,11 @@ public class DispatcherDecoratorRegistrationTests
         var observable = (ObservableActionDispatcher)outer;
         await Assert.That(observable.Inner).IsTypeOf<ConstraintReportingActionDispatcher>();
         var constraintReporting = (ConstraintReportingActionDispatcher)observable.Inner;
-        await Assert.That(constraintReporting.Inner).IsTypeOf<StubActionDispatcher>();
+        await Assert.That(constraintReporting.Inner).IsTypeOf<AuthorityAuthorizationActionDispatcher>();
+        var authority = (AuthorityAuthorizationActionDispatcher)constraintReporting.Inner;
+        await Assert.That(authority.Inner).IsTypeOf<RelationAuthorizationActionDispatcher>();
+        var relation = (RelationAuthorizationActionDispatcher)authority.Inner;
+        await Assert.That(relation.Inner).IsTypeOf<StubActionDispatcher>();
     }
 
     [Test]

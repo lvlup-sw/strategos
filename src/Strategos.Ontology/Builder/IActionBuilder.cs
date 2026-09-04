@@ -1,3 +1,5 @@
+using Strategos.Ontology.Descriptors;
+
 namespace Strategos.Ontology.Builder;
 
 public interface IActionBuilder
@@ -20,4 +22,22 @@ public interface IActionBuilder
     /// </summary>
     /// <returns>The same builder instance for fluent chaining.</returns>
     IActionBuilder ReadOnly();
+
+    /// <summary>
+    /// Marks the action as safe to repeat without changing its externally
+    /// observable effect.
+    /// </summary>
+    /// <returns>The same builder instance for fluent chaining.</returns>
+    IActionBuilder Idempotent();
+
+    /// <summary>
+    /// Requires the named domain authority to invoke this action.
+    /// </summary>
+    IActionBuilder RequiresAuthority(string authorityName);
+
+    /// <summary>Adds a resource to the action's declared frame.</summary>
+    IActionBuilder Touches(ActionResource resource);
+
+    /// <summary>Names the action that restores this action's declared frame.</summary>
+    IActionBuilder CompensatedBy(string actionName);
 }

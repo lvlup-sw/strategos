@@ -33,7 +33,17 @@ public static class RecordEmitter
     /// <param name="schemasDir">Directory containing emitted JSON Schema documents.</param>
     /// <param name="outputDir">Directory the <c>*.g.cs</c> files are written to.</param>
     /// <returns>Process exit code (0 on success).</returns>
-    public static async Task<int> RunAsync(string schemasDir, string outputDir)
+    public static Task<int> RunAsync(string schemasDir, string outputDir) =>
+        RunAsync(schemasDir, outputDir, []);
+
+    /// <summary>
+    /// Generates the stable Contracts records, then invokes downstream
+    /// extensions over the same canonical schema set.
+    /// </summary>
+    internal static async Task<int> RunAsync(
+        string schemasDir,
+        string outputDir,
+        IReadOnlyList<ISchemaEmissionExtension> extensions)
     {
         if (!Directory.Exists(schemasDir))
         {
@@ -95,7 +105,22 @@ public static class RecordEmitter
         // AGWF single-source catalog (#52): emit the AgwfCode enum (symbolic
         // member names), the canonical agwf-catalog.json data artifact, and the
         // docs/diagnostics/agwf.md reference from the AgwfEntry* schema consts.
-        return await AgwfCatalogEmitter.RunAsync(schemasDir, outputDir).ConfigureAwait(false);
+        var exitCode = await AgwfCatalogEmitter.RunAsync(schemasDir, outputDir).ConfigureAwait(false);
+        if (exitCode != 0)
+        {
+            return exitCode;
+        }
+
+        foreach (var extension in extensions)
+        {
+            exitCode = await extension.EmitAsync(schemasDir).ConfigureAwait(false);
+            if (exitCode != 0)
+            {
+                return exitCode;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>

@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Strategos.Ontology.Descriptors;
+
 namespace Strategos.Ontology.Builder;
 
 public interface IActionBuilder<T> : IActionBuilder
@@ -24,6 +26,24 @@ public interface IActionBuilder<T> : IActionBuilder
     /// <returns>The same generic builder instance for fluent chaining.</returns>
     new IActionBuilder<T> ReadOnly();
 
+    /// <summary>
+    /// Marks the action as safe to repeat without changing its externally
+    /// observable effect.
+    /// </summary>
+    /// <returns>The same generic builder instance for fluent chaining.</returns>
+    new IActionBuilder<T> Idempotent();
+
+    /// <summary>
+    /// Requires the named domain authority to invoke this action.
+    /// </summary>
+    new IActionBuilder<T> RequiresAuthority(string authorityName);
+
+    /// <summary>Adds a resource to the action's declared frame.</summary>
+    new IActionBuilder<T> Touches(ActionResource resource);
+
+    /// <summary>Names the action that restores this action's declared frame.</summary>
+    new IActionBuilder<T> CompensatedBy(string actionName);
+
     IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector);
 
     /// <summary>
@@ -44,6 +64,16 @@ public interface IActionBuilder<T> : IActionBuilder
     IActionBuilder<T> RequiresLink(string linkName);
 
     IActionBuilder<T> RequiresLinkSoft(string linkName);
+
+    /// <summary>
+    /// Declares that the calling principal must be reachable from the action
+    /// target by following <paramref name="linkPath"/> and then the named
+    /// <paramref name="relationName"/>.
+    /// </summary>
+    /// <param name="relationName">Final link from the selected resource to the principal.</param>
+    /// <param name="linkPath">Ordered links from the action target to that resource.</param>
+    /// <returns>The same generic builder instance for fluent chaining.</returns>
+    IActionBuilder<T> RequiresRelation(string relationName, params string[] linkPath);
 
     IActionBuilder<T> Modifies(Expression<Func<T, object>> propertySelector);
 

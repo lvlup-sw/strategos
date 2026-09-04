@@ -96,11 +96,6 @@ public static class OntologyServiceCollectionExtensions
 
     private static void ApplyDispatcherDecorators(IServiceCollection services, OntologyOptions options)
     {
-        if (options.DispatcherDecorators.Count == 0)
-        {
-            return;
-        }
-
         var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(IActionDispatcher));
         if (descriptor is null)
         {
@@ -147,6 +142,15 @@ public static class OntologyServiceCollectionExtensions
             sp =>
             {
                 var dispatcher = innerFactory(sp);
+                var graph = sp.GetRequiredService<OntologyGraph>();
+                var relationResolver = sp.GetService<IActionRelationResolver>()
+                    ?? CreateDefaultRelationResolver(sp, graph);
+                dispatcher = new RelationAuthorizationActionDispatcher(
+                    dispatcher,
+                    graph,
+                    relationResolver);
+                dispatcher = new AuthorityAuthorizationActionDispatcher(dispatcher, graph);
+
                 foreach (var factory in orderedFactories)
                 {
                     dispatcher = factory(sp, dispatcher);
@@ -155,5 +159,23 @@ public static class OntologyServiceCollectionExtensions
                 return dispatcher;
             },
             descriptor.Lifetime));
+    }
+
+    private static IActionRelationResolver CreateDefaultRelationResolver(
+        IServiceProvider services,
+        OntologyGraph graph) =>
+        services.GetService<IObjectSetProvider>() is { } provider
+            ? new ObjectSetActionRelationResolver(graph, provider)
+            : UnavailableActionRelationResolver.Instance;
+
+    private sealed class UnavailableActionRelationResolver : IActionRelationResolver
+    {
+        internal static UnavailableActionRelationResolver Instance { get; } = new();
+
+        public Task<bool> HoldsAsync(
+            ActionContext context,
+            Descriptors.ActionPrecondition precondition,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
     }
 }

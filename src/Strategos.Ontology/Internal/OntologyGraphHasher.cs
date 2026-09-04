@@ -54,6 +54,7 @@ internal static class OntologyGraphHasher
         using (var writer = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
             WriteStableHeader(writer, graph);
+            WriteAuthorities(writer, graph);
             WriteObjectTypes(writer, graph);
             WriteInterfaces(writer, graph);
             WriteCrossDomainLinks(writer, graph);
@@ -62,6 +63,44 @@ internal static class OntologyGraphHasher
 
         var hash = SHA256.HashData(ms.ToArray());
         return Convert.ToHexStringLower(hash);
+    }
+
+    private static void WriteAuthorities(BinaryWriter writer, OntologyGraph graph)
+    {
+        writer.Write("AUTHORITIES|");
+        foreach (var domain in graph.Domains.OrderBy(domain => domain.DomainName, StringComparer.Ordinal))
+        {
+            WriteString(writer, domain.DomainName);
+            foreach (var axis in domain.AuthorityAxes.OrderBy(axis => axis.Name, StringComparer.Ordinal))
+            {
+                WriteString(writer, axis.Name);
+                foreach (var level in axis.Levels)
+                {
+                    WriteString(writer, level);
+                }
+            }
+
+            foreach (var authority in domain.Authorities.OrderBy(
+                         authority => authority.Name,
+                         StringComparer.Ordinal))
+            {
+                WriteString(writer, authority.Name);
+                foreach (var coordinate in authority.Coordinates.OrderBy(
+                             coordinate => coordinate.Key,
+                             StringComparer.Ordinal))
+                {
+                    WriteString(writer, coordinate.Key);
+                    WriteString(writer, coordinate.Value);
+                }
+
+                foreach (var implied in authority.ExplicitImplications.Order(StringComparer.Ordinal))
+                {
+                    WriteString(writer, implied);
+                }
+            }
+        }
+
+        writer.Write("|END_AUTHORITIES");
     }
 
     private static void WriteStableHeader(BinaryWriter writer, OntologyGraph graph)
@@ -198,6 +237,26 @@ internal static class OntologyGraphHasher
         WriteString(writer, a.BoundWorkflowName ?? string.Empty);
         WriteString(writer, a.BoundToolName ?? string.Empty);
         WriteString(writer, a.BoundToolMethod ?? string.Empty);
+        writer.Write(a.IsReadOnly);
+        writer.Write(a.Idempotent);
+        writer.Write(a.RequiresConfirmation);
+        WriteString(writer, a.RequiredAuthority ?? string.Empty);
+        WriteString(writer, a.CompensatingActionName ?? string.Empty);
+
+        writer.Write("|CLIENTS|");
+        foreach (var client in a.AllowedClients.Order(StringComparer.Ordinal))
+        {
+            WriteString(writer, client);
+        }
+
+        writer.Write("|TOUCHES|");
+        foreach (var resource in a.TouchedResources
+                     .OrderBy(resource => resource.Kind)
+                     .ThenBy(resource => resource.Name, StringComparer.Ordinal))
+        {
+            WriteString(writer, resource.Kind.ToString());
+            WriteString(writer, resource.Name);
+        }
 
         writer.Write("|PRE|");
         foreach (var pc in a.Preconditions.OrderBy(x => x.Description, StringComparer.Ordinal))
@@ -206,6 +265,13 @@ internal static class OntologyGraphHasher
             WriteString(writer, pc.Expression);
             WriteString(writer, pc.Kind.ToString());
             WriteString(writer, pc.LinkName ?? string.Empty);
+            WriteString(writer, pc.RelationName ?? string.Empty);
+            writer.Write(pc.LinkPath.Length);
+            foreach (var linkName in pc.LinkPath)
+            {
+                WriteString(writer, linkName);
+            }
+
             WriteString(writer, pc.Strength.ToString());
         }
 

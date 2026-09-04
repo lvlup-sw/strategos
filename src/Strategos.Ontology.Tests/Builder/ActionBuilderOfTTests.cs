@@ -41,6 +41,16 @@ public sealed class TrackATestType
 public class ActionBuilderOfTTests
 {
     [Test]
+    public async Task RequiresAuthority_StoresNamedRequirement()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        builder.RequiresAuthority("portfolio.write");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.RequiredAuthority).IsEqualTo("portfolio.write");
+    }
+
+    [Test]
     public async Task Build_ProducesDescriptorWithName()
     {
         var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
@@ -147,6 +157,20 @@ public class ActionBuilderOfTTests
     }
 
     [Test]
+    public async Task RequiresRelation_AddsStructuredPrincipalRelationPrecondition()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+
+        builder.RequiresRelation("owner", "Portfolio", "Space");
+        var precondition = builder.Build().Preconditions.Single();
+
+        await Assert.That(precondition.Kind).IsEqualTo(PreconditionKind.RelationHolds);
+        await Assert.That(precondition.RelationName).IsEqualTo("owner");
+        await Assert.That(precondition.LinkPath).IsEquivalentTo(["Portfolio", "Space"]);
+        await Assert.That(precondition.IsOpaque).IsFalse();
+    }
+
+    [Test]
     public async Task Modifies_AddsPostconditionWithModifiesProperty()
     {
         var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
@@ -233,6 +257,28 @@ public class ActionBuilderOfTTests
 
         await Assert.That(descriptor.Preconditions.Count).IsEqualTo(0);
         await Assert.That(descriptor.Postconditions.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Idempotent_WriteAction_OptsIntoRetrySafety()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("UpsertPosition");
+        builder.Idempotent();
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.IsReadOnly).IsFalse();
+        await Assert.That(descriptor.Idempotent).IsTrue();
+    }
+
+    [Test]
+    public async Task ReadOnly_ActionIsIdempotentByConstruction()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetPosition");
+        builder.ReadOnly();
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.IsReadOnly).IsTrue();
+        await Assert.That(descriptor.Idempotent).IsTrue();
     }
 
     [Test]

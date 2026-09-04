@@ -1,4 +1,5 @@
 #nullable enable
+const Strategos.Ontology.MCP.Hosting.ActionPrincipalClaimTypes.Authority = "strategos:authority" -> string!
 const Strategos.Ontology.MCP.Hosting.ActionPrincipalClaimTypes.PrincipalType = "strategos:principal_type" -> string!
 Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions
 static Microsoft.Extensions.DependencyInjection.OntologyMcpServerBuilderExtensions.AddOntologyTools(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!

@@ -56,7 +56,10 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.AssociationEndpointCardinalityInvalid,
             OntologyDiagnostics.EdgePropertyAuthoringRemoved,
             OntologyDiagnostics.AmbiguousTraversalWithoutDescriptor,
-            OntologyDiagnostics.PolymorphicTargetNoJunctionTable);
+            OntologyDiagnostics.PolymorphicTargetNoJunctionTable,
+            OntologyDiagnostics.InvalidAuthorityLattice,
+            OntologyDiagnostics.ActionFrameUnsound,
+            OntologyDiagnostics.CompensationDisagreesWithInverse);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -216,7 +219,334 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         ReportPolyglotInvariantViolations(context, body);
         ReportAssociationCardinalityViolations(context, body);
         ReportEdgePropertyAuthoringRemoved(context, body);
+        ReportAuthorityLatticeViolations(context, body);
+        ReportDescriptorActionFrameViolations(context, body);
     }
+
+    private static void ReportDescriptorActionFrameViolations(
+        SyntaxNodeAnalysisContext context,
+        SyntaxNode body)
+    {
+        foreach (var actionCreation in body.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+        {
+            var createdType = context.SemanticModel
+                .GetTypeInfo(actionCreation, context.CancellationToken).Type;
+            if (createdType?.Name != "ActionDescriptor" || actionCreation.Initializer is null)
+            {
+                continue;
+            }
+
+            var actionName = actionCreation.ArgumentList is { Arguments.Count: > 0 }
+                ? ExtractStringLiteral(actionCreation.ArgumentList.Arguments[0].Expression)
+                : null;
+            actionName ??= "<descriptor action>";
+
+            var frame = new HashSet<string>(StringComparer.Ordinal);
+            var frameExpression = FindInitializerValue(actionCreation.Initializer, "TouchedResources");
+            if (frameExpression is not null)
+            {
+                foreach (var resourceFactory in frameExpression.DescendantNodesAndSelf()
+                             .OfType<InvocationExpressionSyntax>())
+                {
+                    var resource = ExtractActionResource(resourceFactory, context.SemanticModel);
+                    if (resource is not null)
+                    {
+                        frame.Add(resource);
+                    }
+                }
+            }
+
+            var postconditions = FindInitializerValue(actionCreation.Initializer, "Postconditions");
+            if (postconditions is null)
+            {
+                continue;
+            }
+
+            foreach (var postcondition in postconditions.DescendantNodesAndSelf()
+                         .OfType<ObjectCreationExpressionSyntax>())
+            {
+                var postconditionType = context.SemanticModel
+                    .GetTypeInfo(postcondition, context.CancellationToken).Type;
+                if (postconditionType?.Name != "ActionPostcondition" || postcondition.Initializer is null)
+                {
+                    continue;
+                }
+
+                var resource = ExtractPostconditionResource(postcondition.Initializer);
+                if (resource is not null && !frame.Contains(resource))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        OntologyDiagnostics.ActionFrameUnsound,
+                        postcondition.GetLocation(),
+                        actionName,
+                        resource));
+                }
+            }
+        }
+    }
+
+    private static ExpressionSyntax? FindInitializerValue(
+        InitializerExpressionSyntax initializer,
+        string propertyName) =>
+        initializer.Expressions
+            .OfType<AssignmentExpressionSyntax>()
+            .Where(assignment => assignment.Left is IdentifierNameSyntax identifier
+                && identifier.Identifier.Text == propertyName)
+            .Select(assignment => assignment.Right)
+            .FirstOrDefault();
+
+    private static string? ExtractPostconditionResource(InitializerExpressionSyntax initializer)
+    {
+        var kind = FindInitializerValue(initializer, "Kind") switch
+        {
+            MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
+            IdentifierNameSyntax identifier => identifier.Identifier.Text,
+            _ => null,
+        };
+
+        return kind switch
+        {
+            "ModifiesProperty" => PrefixAssignedString(initializer, "PropertyName", "Property"),
+            "CreatesLink" => PrefixAssignedString(initializer, "LinkName", "Link"),
+            "EmitsEvent" => PrefixAssignedString(initializer, "EventTypeName", "Event"),
+            _ => null,
+        };
+    }
+
+    private static string? PrefixAssignedString(
+        InitializerExpressionSyntax initializer,
+        string propertyName,
+        string resourceKind)
+    {
+        var value = FindInitializerValue(initializer, propertyName);
+        var name = value is null ? null : ExtractStringLiteral(value);
+        return name is null ? null : $"{resourceKind}:{name}";
+    }
+
+    private static void ReportAuthorityLatticeViolations(
+        SyntaxNodeAnalysisContext context,
+        SyntaxNode body)
+    {
+        var axes = new Dictionary<string, (IReadOnlyList<string> Levels, Location Location)>(
+            StringComparer.Ordinal);
+        var authorities = new Dictionary<
+            string,
+            (Dictionary<string, string> Coordinates, List<string> Implications, Location Location)>(
+                StringComparer.Ordinal);
+        var requiredAuthorities = new List<(string Name, Location Location)>();
+
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var symbol = context.SemanticModel
+                .GetSymbolInfo(invocation, context.CancellationToken).Symbol as IMethodSymbol;
+            if (symbol is null)
+            {
+                continue;
+            }
+
+            if (symbol.Name == "AuthorityAxis" && IsOntologyBuilderType(symbol.ContainingType.Name))
+            {
+                var name = ExtractStringArg(invocation, 0);
+                if (name is null)
+                {
+                    continue;
+                }
+
+                var levels = invocation.ArgumentList.Arguments
+                    .Skip(1)
+                    .Select(argument => argument.Expression is LiteralExpressionSyntax literal
+                        && literal.IsKind(SyntaxKind.StringLiteralExpression)
+                            ? literal.Token.ValueText
+                            : null)
+                    .Where(level => level is not null)
+                    .Cast<string>()
+                    .ToArray();
+                if (axes.ContainsKey(name))
+                {
+                    ReportAuthorityDiagnostic(context, invocation.GetLocation(),
+                        $"axis '{name}' is declared more than once");
+                }
+                else
+                {
+                    axes.Add(name, (levels, invocation.GetLocation()));
+                }
+
+                if (levels.Length == 0 || levels.Distinct(StringComparer.Ordinal).Count() != levels.Length)
+                {
+                    ReportAuthorityDiagnostic(context, invocation.GetLocation(),
+                        $"axis '{name}' must contain distinct literal levels ordered weakest to strongest");
+                }
+            }
+
+            if (symbol.Name == "Authority" && IsOntologyBuilderType(symbol.ContainingType.Name))
+            {
+                var name = ExtractStringArg(invocation, 0);
+                if (name is null)
+                {
+                    continue;
+                }
+
+                var coordinates = new Dictionary<string, string>(StringComparer.Ordinal);
+                var implications = new List<string>();
+                var statement = invocation.FirstAncestorOrSelf<StatementSyntax>();
+                if (statement is not null)
+                {
+                    foreach (var chained in statement.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                    {
+                        var memberName = (chained.Expression as MemberAccessExpressionSyntax)?.Name.Identifier.Text;
+                        if (memberName == "At")
+                        {
+                            var axis = ExtractStringArg(chained, 0);
+                            var level = ExtractStringArg(chained, 1);
+                            if (axis is not null && level is not null)
+                            {
+                                coordinates[axis] = level;
+                            }
+                        }
+                        else if (memberName == "Implies")
+                        {
+                            var implied = ExtractStringArg(chained, 0);
+                            if (implied is not null)
+                            {
+                                implications.Add(implied);
+                            }
+                        }
+                    }
+                }
+
+                if (authorities.ContainsKey(name))
+                {
+                    ReportAuthorityDiagnostic(context, invocation.GetLocation(),
+                        $"authority '{name}' is declared more than once");
+                }
+                else
+                {
+                    authorities.Add(name, (coordinates, implications, invocation.GetLocation()));
+                }
+            }
+
+            if (symbol.Name == "RequiresAuthority")
+            {
+                var required = ExtractStringArg(invocation, 0);
+                if (required is not null)
+                {
+                    requiredAuthorities.Add((required, invocation.GetLocation()));
+                }
+            }
+        }
+
+        foreach (var entry in authorities)
+        {
+            var name = entry.Key;
+            var authority = entry.Value;
+            if (!new HashSet<string>(authority.Coordinates.Keys, StringComparer.Ordinal)
+                    .SetEquals(axes.Keys))
+            {
+                ReportAuthorityDiagnostic(context, authority.Location,
+                    $"authority '{name}' must declare exactly one level on every axis");
+                continue;
+            }
+
+            foreach (var coordinate in authority.Coordinates)
+            {
+                var axisName = coordinate.Key;
+                var levelName = coordinate.Value;
+                if (!axes.TryGetValue(axisName, out var axis)
+                    || !axis.Levels.Contains(levelName, StringComparer.Ordinal))
+                {
+                    ReportAuthorityDiagnostic(context, authority.Location,
+                        $"authority '{name}' names unknown level '{levelName}' on axis '{axisName}'");
+                }
+            }
+        }
+
+        var used = new HashSet<string>(
+            requiredAuthorities.Select(requirement => requirement.Name),
+            StringComparer.Ordinal);
+        foreach (var (required, location) in requiredAuthorities)
+        {
+            if (!authorities.ContainsKey(required))
+            {
+                ReportAuthorityDiagnostic(context, location,
+                    $"action requires unknown authority '{required}'");
+            }
+        }
+
+        foreach (var entry in authorities)
+        {
+            var name = entry.Key;
+            var authority = entry.Value;
+            if (!used.Contains(name))
+            {
+                ReportAuthorityDiagnostic(context, authority.Location,
+                    $"authority '{name}' is not required by any action");
+            }
+
+            foreach (var implied in authority.Implications)
+            {
+                if (!authorities.TryGetValue(implied, out var weaker))
+                {
+                    ReportAuthorityDiagnostic(context, authority.Location,
+                        $"authority '{name}' implies unknown authority '{implied}'");
+                    continue;
+                }
+
+                if (!IsPointwiseAtLeast(authority.Coordinates, weaker.Coordinates, axes))
+                {
+                    ReportAuthorityDiagnostic(context, authority.Location,
+                        $"authority '{name}' implies '{implied}', but is not at least as strong on every axis");
+                }
+            }
+        }
+    }
+
+    private static bool IsPointwiseAtLeast(
+        IReadOnlyDictionary<string, string> stronger,
+        IReadOnlyDictionary<string, string> weaker,
+        IReadOnlyDictionary<string, (IReadOnlyList<string> Levels, Location Location)> axes)
+    {
+        foreach (var entry in axes)
+        {
+            var axisName = entry.Key;
+            var axis = entry.Value;
+            if (!stronger.TryGetValue(axisName, out var strongerLevel)
+                || !weaker.TryGetValue(axisName, out var weakerLevel))
+            {
+                return false;
+            }
+
+            var strongerRank = IndexOf(axis.Levels, strongerLevel);
+            var weakerRank = IndexOf(axis.Levels, weakerLevel);
+            if (strongerRank < 0 || weakerRank < 0 || strongerRank < weakerRank)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int IndexOf(IReadOnlyList<string> values, string value)
+    {
+        for (var index = 0; index < values.Count; index++)
+        {
+            if (string.Equals(values[index], value, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static void ReportAuthorityDiagnostic(
+        SyntaxNodeAnalysisContext context,
+        Location location,
+        string detail) =>
+        context.ReportDiagnostic(Diagnostic.Create(
+            OntologyDiagnostics.InvalidAuthorityLattice,
+            location,
+            detail));
 
     // AONT209 (DR-5, #120, closes #114): the schema-only edge-properties
     // surface was removed. Its authoring vectors no longer resolve to a
@@ -609,6 +939,14 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     CollectCreatesLinkedInfo(invocation, model, info);
                     break;
 
+                case "Touches":
+                    CollectTouchesInfo(invocation, model, info);
+                    break;
+
+                case "CompensatedBy":
+                    CollectCompensatedByInfo(invocation, model, info);
+                    break;
+
                 case "RequiresLink":
                     CollectRequiresLinkInfo(invocation, model, info);
                     break;
@@ -758,6 +1096,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         if (modifiesActionName != null && modifiesProp != null)
         {
             info.ActionModifiesProperties.Add((modifiesActionName, modifiesProp, invocation.GetLocation()));
+            AddActionFrameResource(info, modifiesActionName, $"Property:{modifiesProp}");
         }
     }
 
@@ -777,6 +1116,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         {
             var eventTypeName = calledMethod.TypeArguments[0].Name;
             info.ActionEmitsEvents.Add((emitsActionName, eventTypeName, invocation.GetLocation()));
+            AddActionFrameResource(info, emitsActionName, $"Event:{eventTypeName}");
         }
     }
 
@@ -793,6 +1133,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         if (createsActionName != null && createsLinkName != null)
         {
             info.ActionCreatesLinked.Add((createsActionName, createsLinkName, invocation.GetLocation()));
+            AddActionFrameResource(info, createsActionName, $"Link:{createsLinkName}");
         }
     }
 
@@ -805,6 +1146,64 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         {
             info.ActionRequiresLinks.Add((reqActionName, reqLinkName, invocation.GetLocation()));
         }
+    }
+
+    private static void CollectTouchesInfo(
+        InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
+    {
+        var actionName = FindActionNameInChain(invocation, model);
+        if (actionName is null || invocation.ArgumentList.Arguments.Count == 0)
+        {
+            return;
+        }
+
+        var resource = ExtractActionResource(invocation.ArgumentList.Arguments[0].Expression, model);
+        if (resource is not null)
+        {
+            AddActionFrameResource(info, actionName, resource);
+        }
+    }
+
+    private static void CollectCompensatedByInfo(
+        InvocationExpressionSyntax invocation, SemanticModel model, ObjectTypeInfo info)
+    {
+        var actionName = FindActionNameInChain(invocation, model);
+        var compensatingAction = ExtractStringArg(invocation, 0);
+        if (actionName is not null && compensatingAction is not null)
+        {
+            info.ActionCompensations.Add((actionName, compensatingAction, invocation.GetLocation()));
+        }
+    }
+
+    private static string? ExtractActionResource(ExpressionSyntax expression, SemanticModel model)
+    {
+        if (expression is not InvocationExpressionSyntax factory
+            || factory.Expression is not MemberAccessExpressionSyntax member
+            || factory.ArgumentList.Arguments.Count == 0)
+        {
+            return null;
+        }
+
+        var symbol = model.GetSymbolInfo(factory).Symbol as IMethodSymbol;
+        if (symbol?.ContainingType.Name != "ActionResource")
+        {
+            return null;
+        }
+
+        var name = ExtractStringArg(factory, 0);
+        return name is null ? null : $"{member.Name.Identifier.Text}:{name}";
+    }
+
+    private static void AddActionFrameResource(
+        ObjectTypeInfo info, string actionName, string resource)
+    {
+        if (!info.ActionFrameResources.TryGetValue(actionName, out var resources))
+        {
+            resources = new HashSet<string>(StringComparer.Ordinal);
+            info.ActionFrameResources.Add(actionName, resources);
+        }
+
+        resources.Add(resource);
     }
 
     private static void CollectComputedInfo(
@@ -1373,6 +1772,28 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                     OntologyDiagnostics.ReadOnlyConflictsWithMutation, location, actionName, ot.Name, mutator));
             }
         }
+
+        // AONT216: the authored compensation edge must point to an action whose
+        // derived frame is exactly the forward frame. Fluent mutators add their
+        // resources by construction; explicit Touches() calls join that frame.
+        foreach (var (actionName, compensatingAction, location) in ot.ActionCompensations)
+        {
+            var forwardFrame = ot.ActionFrameResources.TryGetValue(actionName, out var forward)
+                ? forward
+                : new HashSet<string>(StringComparer.Ordinal);
+            var compensationFrame = ot.ActionFrameResources.TryGetValue(compensatingAction, out var inverse)
+                ? inverse
+                : new HashSet<string>(StringComparer.Ordinal);
+            if (!ot.DeclaredActions.Contains(compensatingAction)
+                || !forwardFrame.SetEquals(compensationFrame))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    OntologyDiagnostics.CompensationDisagreesWithInverse,
+                    location,
+                    actionName,
+                    compensatingAction));
+            }
+        }
     }
 
     private static void ReportPostconditionOverlapDiagnostics(
@@ -1854,6 +2275,12 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
+    private static string? ExtractStringLiteral(ExpressionSyntax expression) =>
+        expression is LiteralExpressionSyntax literal
+        && literal.IsKind(SyntaxKind.StringLiteralExpression)
+            ? literal.Token.ValueText
+            : null;
+
     private static string? ExtractPropertyNameFromExpression(InvocationExpressionSyntax invocation)
     {
         if (invocation.ArgumentList.Arguments.Count == 0)
@@ -2073,6 +2500,12 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string Mutator, Location Location)> ActionMutationCalls { get; } =
+            new List<(string, string, Location)>();
+
+        public Dictionary<string, HashSet<string>> ActionFrameResources { get; } =
+            new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        public List<(string ActionName, string CompensatingAction, Location Location)> ActionCompensations { get; } =
             new List<(string, string, Location)>();
 
         public List<(string ActionName, string LinkName, Location Location)> ActionRequiresLinks { get; } =

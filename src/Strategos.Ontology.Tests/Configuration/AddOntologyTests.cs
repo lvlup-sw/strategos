@@ -181,6 +181,10 @@ public class AddOntologyTests
         var dispatcher = provider.GetService<IActionDispatcher>();
 
         await Assert.That(dispatcher).IsNotNull();
-        await Assert.That(dispatcher).IsTypeOf<StubActionDispatcher>();
+        await Assert.That(dispatcher).IsTypeOf<AuthorityAuthorizationActionDispatcher>();
+        var authority = (AuthorityAuthorizationActionDispatcher)dispatcher!;
+        await Assert.That(authority.Inner).IsTypeOf<RelationAuthorizationActionDispatcher>();
+        var relation = (RelationAuthorizationActionDispatcher)authority.Inner;
+        await Assert.That(relation.Inner).IsTypeOf<StubActionDispatcher>();
     }
 }

@@ -13,9 +13,10 @@ main.tsp  (canonical)
    │ tsp compile  (@typespec/json-schema)
    ▼
 schemas/json-schema/*.json
-   │ Strategos.Contracts.Codegen  (NJsonSchema parse + INV-6/7 template)
-   ▼
-Generated/*.g.cs   →   compiled into LevelUp.Strategos.Contracts.dll
+   ├─ Strategos.Contracts.Codegen  (raw JSON + INV-6/7 template)
+   │  ▼
+   │ Generated/*.g.cs   →   compiled into LevelUp.Strategos.Contracts.dll
+   └─ x-strategos-* metadata → ContractOntologyCatalog (Ontology adapter)
 ```
 
 Regenerate with `scripts/contracts-codegen.sh`. The emitted `schemas/` and
@@ -174,7 +175,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.5.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.9.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -186,7 +187,9 @@ the semantic-merge-queue surface (`MergeGateDecision` / `JourneyResult` /
 `WorkflowRef` / `WorkflowCatalog`, the `_meta.degraded` response envelope) and
 the AGWF catalog; 0.4.0 added the strategy-compiler contract layer (the
 `GateClass` gate taxonomy, the fork/compensation edge, and the licensed-abstention
-union); 0.5.0 adds the terminal-reachability AGWF id — each an additive minor. The package embeds all three schema
+union); 0.5.0–0.8.0 add workflow diagnostics; 0.9.0 adds contract-authored
+ontology action metadata and the generated descriptor adapter — each an
+additive minor. The package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under
 `contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`

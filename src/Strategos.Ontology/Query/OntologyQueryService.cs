@@ -12,6 +12,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
     private readonly IObjectSetProvider? _objectSetProvider;
     private readonly IActionDispatcher? _actionDispatcher;
     private readonly IEventStreamProvider? _eventStreamProvider;
+    private readonly IActionRelationResolver? _relationResolver;
     private readonly IReadOnlyList<IPatternDetector> _patternDetectors;
 
     /// <summary>
@@ -46,6 +47,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
         _objectSetProvider = objectSetProvider;
         _actionDispatcher = actionDispatcher;
         _eventStreamProvider = eventStreamProvider;
+        _relationResolver = new ObjectSetActionRelationResolver(graph, objectSetProvider);
         _patternDetectors = BuildPatternDetectors();
     }
 
@@ -165,6 +167,66 @@ internal sealed class OntologyQueryService : IOntologyQuery
                 .All(p => IsPreconditionSatisfiable(p, knownProperties)))
             .ToList()
             .AsReadOnly();
+    }
+
+    public async Task<IReadOnlyList<ActionDescriptor>> GetValidActionsAsync(
+        ActionPrincipal principal,
+        string domain,
+        string objectType,
+        string objectId,
+        IReadOnlyDictionary<string, object?>? knownProperties = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain);
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectId);
+
+        var descriptor = graph.GetObjectType(domain, objectType);
+        if (descriptor is null)
+        {
+            return [];
+        }
+
+        var valid = new List<ActionDescriptor>(descriptor.Actions.Count);
+        foreach (var action in descriptor.Actions)
+        {
+            var context = new ActionContext(principal, domain, objectType, objectId, action.Name)
+            {
+                ActionDescriptor = action,
+            };
+            var satisfiesAll = true;
+
+            foreach (var precondition in action.Preconditions.Where(candidate =>
+                         candidate.Strength == ConstraintStrength.Hard))
+            {
+                if (precondition.Kind == PreconditionKind.RelationHolds)
+                {
+                    if (_relationResolver is null ||
+                        !await _relationResolver.HoldsAsync(context, precondition, ct).ConfigureAwait(false))
+                    {
+                        satisfiesAll = false;
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (knownProperties is not null &&
+                    !IsPreconditionSatisfiable(precondition, knownProperties))
+                {
+                    satisfiesAll = false;
+                    break;
+                }
+            }
+
+            if (satisfiesAll)
+            {
+                valid.Add(action);
+            }
+        }
+
+        return valid.AsReadOnly();
     }
 
     public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
@@ -804,6 +866,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
         {
             PreconditionKind.LinkExists => IsLinkSatisfiable(precondition, knownProperties),
             PreconditionKind.PropertyPredicate => IsPropertyPredicateSatisfiable(precondition, knownProperties),
+            PreconditionKind.RelationHolds => false,
             _ => true, // Custom or unknown kinds are optimistically satisfiable
         };
     }
