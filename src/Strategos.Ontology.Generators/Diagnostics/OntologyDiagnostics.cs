@@ -33,6 +33,51 @@ internal static class OntologyDiagnostics
         isEnabledByDefault: true,
         description: "Every authority must occupy every declared axis, name valid levels, be used by an action, and preserve the product order.");
 
+    public static readonly DiagnosticDescriptor IllegalActionSeam = new(
+        OntologyDiagnosticIds.IllegalActionSeam,
+        "Sequential action contracts are incompatible",
+        "Illegal action seam '{0}/{1}' -> '{2}/{3}'; counterexample: {4}",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The upstream effective post-state guarantee must imply the downstream hard requirement.");
+
+    public static readonly DiagnosticDescriptor OpaqueActionContract = new(
+        OntologyDiagnosticIds.OpaqueActionContract,
+        "Action is opaque to static composition proof",
+        "Action '{0}/{1}' is excluded from static proof by custom evaluator(s): {2}",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Custom predicates are evaluated at runtime and cannot participate in the closed proof fragment.");
+
+    public static readonly DiagnosticDescriptor ActionComposabilityCoverage = new(
+        OntologyDiagnosticIds.ActionComposabilityCoverage,
+        "Action composability coverage",
+        "Action composability coverage: {0}",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "Reports proved, opaque, vacuous, invalid, and statically unresolved concrete action contracts.");
+
+    public static readonly DiagnosticDescriptor DynamicActionSequence = new(
+        OntologyDiagnosticIds.DynamicActionSequence,
+        "Action sequence receives runtime-only verification",
+        "Action sequence is dynamic and receives runtime-only verification: {0}",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "Use direct constructions, immutable single-assignment locals, or statically initialized collections for build-time proof.");
+
+    public static readonly DiagnosticDescriptor InvalidActionContract = new(
+        OntologyDiagnosticIds.InvalidActionContract,
+        "Action predicate or contract is invalid",
+        "Invalid action predicate or contract: {0}",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Rejects unsupported expressions, subject mismatches, contradictions, and unrealizable frames at the earliest visible tier.");
+
     // --- Core (AONT001-008) ---
 
     public static readonly DiagnosticDescriptor MissingKey = new(

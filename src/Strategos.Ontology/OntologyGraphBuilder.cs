@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
+using System.Globalization;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Strategos.Ontology.ActionLogic;
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Descriptors;
@@ -307,6 +309,7 @@ public sealed class OntologyGraphBuilder
     {
         ValidateAuthorityLattices(domains, fatal);
         ValidateActionFrames(allObjectTypes, fatal);
+        ValidateActionContracts(allObjectTypes, fatal, nonFatal);
 
         // AONT213 — RFC 9110 safe ⇒ idempotent. Descriptor-first and
         // contract-authored inputs can bypass the fluent ReadOnly() builder,
@@ -664,7 +667,12 @@ public sealed class OntologyGraphBuilder
 
             foreach (var action in objectType.Actions)
             {
-                var frame = new HashSet<ActionResource>(action.TouchedResources);
+                // Contract-shape validation below owns malformed null entries and
+                // reports them as AONT221. Keep the independent frame validator
+                // null-safe so a hand-authored descriptor cannot pre-empt that
+                // diagnostic with a NullReferenceException.
+                var frame = new HashSet<ActionResource>(
+                    action.TouchedResources.Where(resource => resource is not null));
                 foreach (var resource in frame.Where(resource => string.IsNullOrWhiteSpace(resource.Name)))
                 {
                     fatal.Add(FrameDiagnostic(
@@ -675,6 +683,11 @@ public sealed class OntologyGraphBuilder
 
                 foreach (var postcondition in action.Postconditions)
                 {
+                    if (postcondition is null)
+                    {
+                        continue;
+                    }
+
                     var mutated = ResourceFor(postcondition);
                     if (mutated is not null && !frame.Contains(mutated))
                     {
@@ -699,6 +712,12 @@ public sealed class OntologyGraphBuilder
                     continue;
                 }
 
+                if (action.TouchedResources.Any(resource => resource is null)
+                    || compensation.TouchedResources.Any(resource => resource is null))
+                {
+                    continue;
+                }
+
                 if (!frame.SetEquals(compensation.TouchedResources))
                 {
                     fatal.Add(CompensationDiagnostic(
@@ -709,6 +728,114 @@ public sealed class OntologyGraphBuilder
                 }
             }
         }
+    }
+
+    private void ValidateActionContracts(
+        IReadOnlyList<ObjectTypeDescriptor> objectTypes,
+        ImmutableArray<OntologyDiagnostic>.Builder fatal,
+        ImmutableArray<OntologyDiagnostic>.Builder nonFatal)
+    {
+        var total = 0;
+        var composable = 0;
+        var opaque = 0;
+        var vacuous = 0;
+        var invalid = 0;
+
+        foreach (var objectType in objectTypes)
+        {
+            var expectedSubject = new ActionSubject(objectType.DomainName, objectType.Name);
+            var duplicateActionGroups = objectType.Actions
+                .GroupBy(action => action.Name, StringComparer.Ordinal)
+                .Where(group => group.Skip(1).Any())
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .ToArray();
+            var duplicateActionNames = duplicateActionGroups
+                .Select(group => group.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var duplicateActionGroup in duplicateActionGroups)
+            {
+                fatal.Add(InvalidActionContractDiagnostic(
+                    objectType,
+                    duplicateActionGroup.First(),
+                    $"Action identity '{expectedSubject}.{duplicateActionGroup.Key}' is declared "
+                    + $"{duplicateActionGroup.Count().ToString(CultureInfo.InvariantCulture)} times; "
+                    + "action names must be unique within an ActionSubject."));
+            }
+
+            foreach (var action in objectType.Actions)
+            {
+                total++;
+                if (duplicateActionNames.Contains(action.Name))
+                {
+                    invalid++;
+                    continue;
+                }
+
+                if (!action.Subject.Equals(expectedSubject))
+                {
+                    invalid++;
+                    fatal.Add(InvalidActionContractDiagnostic(
+                        objectType,
+                        action,
+                        $"Subject '{action.Subject}' does not match containing object '{expectedSubject}'."));
+                    continue;
+                }
+
+                var proof = ActionContractProofEngine.Analyze(action);
+                switch (proof.Kind)
+                {
+                    case ActionContractProofKind.Invalid:
+                        invalid++;
+                        fatal.Add(InvalidActionContractDiagnostic(
+                            objectType,
+                            action,
+                            proof.Reason ?? "The action contract is invalid."));
+                        break;
+                    case ActionContractProofKind.Opaque:
+                    {
+                        opaque++;
+                        var diagnostic = new OntologyDiagnostic(
+                            Id: "AONT218",
+                            Message:
+                                $"AONT218: action '{action.Subject}/{action.Name}' is excluded from static "
+                                + $"composition proof by custom predicate evaluator(s): "
+                                + $"{string.Join(", ", proof.OpaqueKeys)}.",
+                            Severity: OntologyDiagnosticSeverity.Warning,
+                            DomainName: objectType.DomainName,
+                            TypeName: objectType.Name,
+                            PropertyName: action.Name);
+                        nonFatal.Add(diagnostic);
+                        LogNonFatal(diagnostic);
+                        break;
+                    }
+
+                    case ActionContractProofKind.Closed when proof.HasNontrivialEffectiveGuarantee:
+                        composable++;
+                        break;
+                    case ActionContractProofKind.Closed:
+                        vacuous++;
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Unknown action proof kind '{proof.Kind}'.");
+                }
+            }
+        }
+
+        if (total == 0)
+        {
+            return;
+        }
+
+        var percentage = composable * 100.0 / total;
+        var coverage = new OntologyDiagnostic(
+            Id: "AONT219",
+            Message:
+                $"AONT219: action composability coverage is {composable}/{total} "
+                + $"({percentage:0.##}%): composable={composable}, opaque={opaque}, "
+                + $"vacuous={vacuous}, invalid={invalid}, statically-unresolved=0.",
+            Severity: OntologyDiagnosticSeverity.Info);
+        nonFatal.Add(coverage);
+        LogNonFatal(coverage);
     }
 
     private static ActionResource? ResourceFor(ActionPostcondition postcondition) =>
@@ -743,6 +870,19 @@ public sealed class OntologyGraphBuilder
             Id: "AONT216",
             Message:
                 $"AONT216: authored compensation disagrees with the derived inverse for "
+                + $"'{objectType.DomainName}.{objectType.Name}.{action.Name}'. {detail}",
+            Severity: OntologyDiagnosticSeverity.Error,
+            DomainName: objectType.DomainName,
+            TypeName: objectType.Name,
+            PropertyName: action.Name);
+
+    private static OntologyDiagnostic InvalidActionContractDiagnostic(
+        ObjectTypeDescriptor objectType,
+        ActionDescriptor action,
+        string detail) => new(
+            Id: "AONT221",
+            Message:
+                $"AONT221: invalid predicate or action contract for "
                 + $"'{objectType.DomainName}.{objectType.Name}.{action.Name}'. {detail}",
             Severity: OntologyDiagnosticSeverity.Error,
             DomainName: objectType.DomainName,

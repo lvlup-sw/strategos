@@ -57,22 +57,26 @@ public static class OntologyServiceCollectionExtensions
         services.AddSingleton(graph);
 
         // Register IOntologyQuery as a factory so that IObjectSetProvider/IActionDispatcher/
-        // IEventStreamProvider — registered later via OntologyOptions service registrations —
-        // can be resolved at activation time. When backing services are not registered,
-        // falls back to the read-only constructor; GetObjectSet<T> will then throw with a
-        // clear diagnostic if invoked without those dependencies.
+        // IEventStreamProvider and optional predicate evaluators — registered later via
+        // OntologyOptions service registrations — can be resolved at activation time.
+        // Methods that require an absent backing service throw a clear diagnostic.
         services.AddSingleton<IOntologyQuery>(sp =>
         {
             var graphInstance = sp.GetRequiredService<OntologyGraph>();
             var objectSetProvider = sp.GetService<IObjectSetProvider>();
             var actionDispatcher = sp.GetService<IActionDispatcher>();
             var eventStreamProvider = sp.GetService<IEventStreamProvider>();
+            var relationResolver = sp.GetService<IActionRelationResolver>()
+                ?? CreateDefaultRelationResolver(sp, graphInstance);
 
-            return objectSetProvider is not null
-                && actionDispatcher is not null
-                && eventStreamProvider is not null
-                    ? new OntologyQueryService(graphInstance, objectSetProvider, actionDispatcher, eventStreamProvider)
-                    : new OntologyQueryService(graphInstance);
+            return new OntologyQueryService(
+                graphInstance,
+                objectSetProvider,
+                actionDispatcher,
+                eventStreamProvider,
+                relationResolver,
+                sp.GetServices<ICustomActionPredicateEvaluator>(),
+                sp.GetService<ILogger<OntologyQueryService>>());
         });
 
         foreach (var registration in options.ServiceRegistrations)
@@ -150,9 +154,12 @@ public static class OntologyServiceCollectionExtensions
                 dispatcher = new RelationAuthorizationActionDispatcher(
                     dispatcher,
                     graph,
+                    sp.GetService<IActionFactResolver>(),
                     relationResolver,
+                    sp.GetServices<ICustomActionPredicateEvaluator>(),
                     sp.GetService<ILogger<RelationAuthorizationActionDispatcher>>()
-                        ?? NullLogger<RelationAuthorizationActionDispatcher>.Instance);
+                        ?? NullLogger<RelationAuthorizationActionDispatcher>.Instance,
+                    reportSoftConstraints: options.ReportActionConstraints);
                 dispatcher = new AuthorityAuthorizationActionDispatcher(dispatcher, graph);
 
                 foreach (var factory in orderedFactories)
@@ -165,21 +172,10 @@ public static class OntologyServiceCollectionExtensions
             descriptor.Lifetime));
     }
 
-    private static IActionRelationResolver CreateDefaultRelationResolver(
+    private static IActionRelationResolver? CreateDefaultRelationResolver(
         IServiceProvider services,
         OntologyGraph graph) =>
         services.GetService<IObjectSetProvider>() is { } provider
             ? new ObjectSetActionRelationResolver(graph, provider)
-            : UnavailableActionRelationResolver.Instance;
-
-    private sealed class UnavailableActionRelationResolver : IActionRelationResolver
-    {
-        internal static UnavailableActionRelationResolver Instance { get; } = new();
-
-        public Task<bool> HoldsAsync(
-            ActionContext context,
-            Descriptors.ActionPrecondition precondition,
-            CancellationToken ct = default) =>
-            Task.FromResult(false);
-    }
+            : null;
 }
