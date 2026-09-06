@@ -1,4 +1,5 @@
-using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
+
 using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
@@ -12,7 +13,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
     private readonly IObjectSetProvider? _objectSetProvider;
     private readonly IActionDispatcher? _actionDispatcher;
     private readonly IEventStreamProvider? _eventStreamProvider;
-    private readonly IActionRelationResolver? _relationResolver;
+    private readonly ActionPredicateEvaluator _predicateEvaluator;
     private readonly IReadOnlyList<IPatternDetector> _patternDetectors;
 
     /// <summary>
@@ -24,6 +25,7 @@ internal sealed class OntologyQueryService : IOntologyQuery
     {
         ArgumentNullException.ThrowIfNull(graph);
         this.graph = graph;
+        _predicateEvaluator = new ActionPredicateEvaluator();
         _patternDetectors = BuildPatternDetectors();
     }
 
@@ -47,7 +49,28 @@ internal sealed class OntologyQueryService : IOntologyQuery
         _objectSetProvider = objectSetProvider;
         _actionDispatcher = actionDispatcher;
         _eventStreamProvider = eventStreamProvider;
-        _relationResolver = new ObjectSetActionRelationResolver(graph, objectSetProvider);
+        _predicateEvaluator = new ActionPredicateEvaluator(
+            new ObjectSetActionRelationResolver(graph, objectSetProvider));
+        _patternDetectors = BuildPatternDetectors();
+    }
+
+    internal OntologyQueryService(
+        OntologyGraph graph,
+        IObjectSetProvider? objectSetProvider,
+        IActionDispatcher? actionDispatcher,
+        IEventStreamProvider? eventStreamProvider,
+        IActionRelationResolver? relationResolver,
+        IEnumerable<ICustomActionPredicateEvaluator> customEvaluators,
+        ILogger<OntologyQueryService>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(customEvaluators);
+
+        this.graph = graph;
+        _objectSetProvider = objectSetProvider;
+        _actionDispatcher = actionDispatcher;
+        _eventStreamProvider = eventStreamProvider;
+        _predicateEvaluator = new ActionPredicateEvaluator(relationResolver, customEvaluators, logger);
         _patternDetectors = BuildPatternDetectors();
     }
 
@@ -84,7 +107,8 @@ internal sealed class OntologyQueryService : IOntologyQuery
         // name via Object<T>(name, ...) — into the RootExpression so providers
         // dispatch against the correct descriptor partition.
         return new ObjectSet<T>(
-            descriptorName: ot.Name,
+            graph,
+            ot,
             _objectSetProvider,
             _actionDispatcher,
             _eventStreamProvider);
@@ -146,35 +170,55 @@ internal sealed class OntologyQueryService : IOntologyQuery
     public IReadOnlyList<ObjectTypeDescriptor> GetImplementors(string interfaceName) =>
         graph.GetImplementors(interfaceName);
 
+    public IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+        string objectType,
+        ActionFacts? facts) =>
+        RetainDiscoverableCandidates(
+            BuildCandidateEvaluationsFor(FindObjectType(objectType), facts ?? ActionFacts.Empty));
+
+    public IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+        string domain,
+        string objectType,
+        ActionFacts? facts) =>
+        RetainDiscoverableCandidates(
+            BuildCandidateEvaluationsFor(graph.GetObjectType(domain, objectType), facts ?? ActionFacts.Empty));
+
     public IReadOnlyList<ActionDescriptor> GetValidActions(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null)
-    {
-        var ot = FindObjectType(objectType);
-        if (ot is null)
-        {
-            return [];
-        }
-
-        if (knownProperties is null)
-        {
-            return ot.Actions;
-        }
-
-        return ot.Actions
-            .Where(a => a.Preconditions.Count == 0 || a.Preconditions
-                .Where(p => p.Strength == Descriptors.ConstraintStrength.Hard)
-                .All(p => IsPreconditionSatisfiable(p, knownProperties)))
-            .ToList()
-            .AsReadOnly();
-    }
+        ActionFacts? facts = null) =>
+        GetCandidateActions(objectType, facts)
+            .Where(candidate => candidate.Availability != ActionAvailability.Unavailable)
+            .Select(candidate => candidate.Action)
+            .ToArray();
 
     public async Task<IReadOnlyList<ActionDescriptor>> GetValidActionsAsync(
         ActionPrincipal principal,
         string domain,
         string objectType,
         string objectId,
-        IReadOnlyDictionary<string, object?>? knownProperties = null,
+        ActionFacts? facts = null,
+        CancellationToken ct = default)
+    {
+        var candidates = await GetCandidateActionsAsync(
+            principal,
+            domain,
+            objectType,
+            objectId,
+            facts,
+            ct).ConfigureAwait(false);
+
+        return candidates
+            .Where(candidate => candidate.Availability != ActionAvailability.Unavailable)
+            .Select(candidate => candidate.Action)
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<ActionCandidateEvaluation>> GetCandidateActionsAsync(
+        ActionPrincipal principal,
+        string domain,
+        string objectType,
+        string objectId,
+        ActionFacts? facts = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -188,82 +232,87 @@ internal sealed class OntologyQueryService : IOntologyQuery
             return [];
         }
 
-        var valid = new List<ActionDescriptor>(descriptor.Actions.Count);
+        var knownFacts = facts ?? ActionFacts.Empty;
+        var candidates = new List<ActionCandidateEvaluation>(descriptor.Actions.Count);
         foreach (var action in descriptor.Actions)
         {
+            ct.ThrowIfCancellationRequested();
             var context = new ActionContext(principal, domain, objectType, objectId, action.Name)
             {
                 ActionDescriptor = action,
             };
-            var satisfiesAll = true;
-
-            foreach (var precondition in action.Preconditions.Where(candidate =>
-                         candidate.Strength == ConstraintStrength.Hard))
+            var constraints = await EvaluateConstraintsAsync(
+                action.Preconditions,
+                knownFacts,
+                context,
+                request: null,
+                ct).ConfigureAwait(false);
+            var candidate = new ActionCandidateEvaluation(
+                action,
+                GetAvailability(constraints),
+                constraints);
+            if (candidate.Availability != ActionAvailability.Unavailable)
             {
-                if (precondition.Kind == PreconditionKind.RelationHolds)
-                {
-                    if (_relationResolver is null ||
-                        !await _relationResolver.HoldsAsync(context, precondition, ct).ConfigureAwait(false))
-                    {
-                        satisfiesAll = false;
-                        break;
-                    }
-
-                    continue;
-                }
-
-                if (knownProperties is not null &&
-                    !IsPreconditionSatisfiable(precondition, knownProperties))
-                {
-                    satisfiesAll = false;
-                    break;
-                }
-            }
-
-            if (satisfiesAll)
-            {
-                valid.Add(action);
+                candidates.Add(candidate);
             }
         }
 
-        return valid.AsReadOnly();
+        return candidates.AsReadOnly();
     }
 
     public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null) =>
-        BuildConstraintReportsFor(FindObjectType(objectType), knownProperties);
+        ActionFacts? facts) =>
+        BuildConstraintReportsFor(FindObjectType(objectType), facts ?? ActionFacts.Empty);
 
     public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string domain,
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null) =>
-        BuildConstraintReportsFor(graph.GetObjectType(domain, objectType), knownProperties);
+        ActionFacts? facts) =>
+        BuildConstraintReportsFor(graph.GetObjectType(domain, objectType), facts ?? ActionFacts.Empty);
 
-    private static IReadOnlyList<ActionConstraintReport> BuildConstraintReportsFor(
+    private IReadOnlyList<ActionCandidateEvaluation> BuildCandidateEvaluationsFor(
         ObjectTypeDescriptor? ot,
-        IReadOnlyDictionary<string, object?>? knownProperties)
+        ActionFacts facts)
     {
         if (ot is null)
         {
             return [];
         }
 
-        var props = knownProperties ?? new Dictionary<string, object?>();
-        var reports = new List<ActionConstraintReport>(ot.Actions.Count);
+        var candidates = new List<ActionCandidateEvaluation>(ot.Actions.Count);
 
         foreach (var action in ot.Actions)
         {
-            var constraints = EvaluateConstraints(action.Preconditions, props);
-            var isAvailable = constraints
-                .Where(c => c.Strength == Descriptors.ConstraintStrength.Hard)
-                .All(c => c.IsSatisfied);
+            var constraints = EvaluateConstraints(action.Preconditions, facts);
+            candidates.Add(new ActionCandidateEvaluation(action, GetAvailability(constraints), constraints));
+        }
 
-            reports.Add(new ActionConstraintReport(action, isAvailable, constraints));
+        return candidates.AsReadOnly();
+    }
+
+    private IReadOnlyList<ActionConstraintReport> BuildConstraintReportsFor(
+        ObjectTypeDescriptor? ot,
+        ActionFacts facts)
+    {
+        var candidates = BuildCandidateEvaluationsFor(ot, facts);
+        var reports = new List<ActionConstraintReport>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            reports.Add(new ActionConstraintReport(
+                candidate.Action,
+                candidate.Availability,
+                candidate.Constraints));
         }
 
         return reports.AsReadOnly();
     }
+
+    private static IReadOnlyList<ActionCandidateEvaluation> RetainDiscoverableCandidates(
+        IEnumerable<ActionCandidateEvaluation> candidates) =>
+        candidates
+            .Where(candidate => candidate.Availability != ActionAvailability.Unavailable)
+            .ToArray();
 
     public IReadOnlyList<PostconditionTrace> TracePostconditions(
         string objectType, string actionName, int maxDepth = 1)
@@ -723,9 +772,9 @@ internal sealed class OntologyQueryService : IOntologyQuery
     private ObjectTypeDescriptor? FindObjectType(string domain, string objectType) =>
         graph.GetObjectType(domain, objectType);
 
-    private static IReadOnlyList<ConstraintEvaluation> EvaluateConstraints(
+    private IReadOnlyList<ConstraintEvaluation> EvaluateConstraints(
         IReadOnlyList<ActionPrecondition> preconditions,
-        IReadOnlyDictionary<string, object?> knownProperties)
+        ActionFacts facts)
     {
         if (preconditions.Count == 0)
         {
@@ -736,254 +785,99 @@ internal sealed class OntologyQueryService : IOntologyQuery
 
         foreach (var precondition in preconditions)
         {
-            var isSatisfied = IsPreconditionSatisfiable(precondition, knownProperties);
-            string? failureReason = null;
-            IReadOnlyDictionary<string, object?>? expectedShape = null;
-
-            if (!isSatisfied)
-            {
-                failureReason = BuildFailureReason(precondition, knownProperties);
-                expectedShape = BuildExpectedShape(precondition);
-            }
+            var truthValue = _predicateEvaluator.Evaluate(precondition.Predicate, facts);
 
             evaluations.Add(new ConstraintEvaluation(
                 precondition,
-                isSatisfied,
+                truthValue,
                 precondition.Strength,
-                failureReason,
-                expectedShape));
+                BuildFailureReason(precondition, truthValue),
+                truthValue == PredicateTruthValue.Satisfied
+                    ? null
+                    : BuildExpectedShape(precondition.Predicate)));
         }
 
         return evaluations.AsReadOnly();
     }
 
-    private static string BuildFailureReason(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
+    private async ValueTask<IReadOnlyList<ConstraintEvaluation>> EvaluateConstraintsAsync(
+        IReadOnlyList<ActionPrecondition> preconditions,
+        ActionFacts facts,
+        ActionContext context,
+        object? request,
+        CancellationToken ct)
     {
-        return precondition.Kind switch
+        if (preconditions.Count == 0)
         {
-            PreconditionKind.LinkExists => BuildLinkFailureReason(precondition, knownProperties),
-            PreconditionKind.PropertyPredicate => BuildPropertyFailureReason(precondition, knownProperties),
-            _ => $"Custom precondition not satisfied: {precondition.Description}",
+            return [];
+        }
+
+        var evaluations = new List<ConstraintEvaluation>(preconditions.Count);
+        var evaluation = _predicateEvaluator.BeginEvaluation(facts, context, request);
+        foreach (var precondition in preconditions)
+        {
+            var truthValue = await evaluation.EvaluateAsync(
+                precondition.Predicate,
+                ct).ConfigureAwait(false);
+            evaluations.Add(new ConstraintEvaluation(
+                precondition,
+                truthValue,
+                precondition.Strength,
+                BuildFailureReason(precondition, truthValue),
+                truthValue == PredicateTruthValue.Satisfied
+                    ? null
+                    : BuildExpectedShape(precondition.Predicate)));
+        }
+
+        return evaluations.AsReadOnly();
+    }
+
+    private static string? BuildFailureReason(
+        ActionPrecondition precondition,
+        PredicateTruthValue truthValue) => truthValue switch
+        {
+            PredicateTruthValue.Satisfied => null,
+            PredicateTruthValue.Unsatisfied =>
+                $"Requirement '{precondition.Expression}' is not satisfied.",
+            _ => $"Could not determine whether requirement '{precondition.Expression}' is satisfied from the available facts.",
         };
-    }
 
-    private static string BuildLinkFailureReason(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
+    private static IReadOnlyDictionary<string, object?>? BuildExpectedShape(ActionPredicate predicate)
     {
-        if (precondition.LinkName is null)
+        switch (predicate)
         {
-            return "Link precondition has no link name specified";
-        }
+            case PropertyComparisonPredicate comparison:
+                return new Dictionary<string, object?>
+                {
+                    [comparison.PropertyReference.Name] = comparison.Value,
+                };
 
-        if (!knownProperties.TryGetValue(precondition.LinkName, out var value))
-        {
-            return $"Link '{precondition.LinkName}' is not present in known properties";
-        }
+            case LinkExistsPredicate link:
+                return new Dictionary<string, object?> { [link.LinkName] = true };
 
-        return $"Link '{precondition.LinkName}' has value '{value}' but requires a truthy value";
-    }
-
-    private static string BuildPropertyFailureReason(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
-    {
-        var expression = precondition.Expression;
-        if (string.IsNullOrWhiteSpace(expression))
-        {
-            return $"Property precondition not satisfied: {precondition.Description}";
-        }
-
-        var parsed = TryParseComparison(expression);
-        if (parsed is null)
-        {
-            return $"Property precondition not satisfied: {precondition.Description}";
-        }
-
-        var (propertyName, op, rightSide) = parsed.Value;
-
-        if (!knownProperties.TryGetValue(propertyName, out var knownValue) || knownValue is null)
-        {
-            return $"Property '{propertyName}' is not known but requires '{op} {rightSide}'";
-        }
-
-        return $"Property '{propertyName}' has value '{knownValue}' but requires '{op} {rightSide}'";
-    }
-
-    private static IReadOnlyDictionary<string, object?>? BuildExpectedShape(
-        ActionPrecondition precondition)
-    {
-        if (precondition.Kind == PreconditionKind.LinkExists)
-        {
-            if (precondition.LinkName is null)
-            {
+            default:
                 return null;
+        }
+    }
+
+    private static ActionAvailability GetAvailability(
+        IReadOnlyList<ConstraintEvaluation> constraints)
+    {
+        var hard = constraints.Where(evaluation => evaluation.Strength == ConstraintStrength.Hard);
+        var availability = ActionAvailability.Available;
+        foreach (var evaluation in hard)
+        {
+            switch (evaluation.TruthValue)
+            {
+                case PredicateTruthValue.Unsatisfied:
+                    return ActionAvailability.Unavailable;
+                case PredicateTruthValue.Indeterminate:
+                    availability = ActionAvailability.Indeterminate;
+                    break;
             }
-
-            return new Dictionary<string, object?> { [precondition.LinkName] = true };
         }
 
-        if (precondition.Kind != PreconditionKind.PropertyPredicate)
-        {
-            return null;
-        }
-
-        var parsed = TryParseComparison(precondition.Expression);
-        if (parsed is null)
-        {
-            return null;
-        }
-
-        var (propertyName, op, rightSide) = parsed.Value;
-        return new Dictionary<string, object?> { [propertyName] = $"{op} {rightSide}" };
-    }
-
-    private static (string PropertyName, string Op, string RightSide)? TryParseComparison(
-        string expression)
-    {
-        var convertMatch = ConvertPropertyPattern.Match(expression);
-        if (convertMatch.Success)
-        {
-            return (convertMatch.Groups[2].Value, convertMatch.Groups[3].Value, convertMatch.Groups[4].Value);
-        }
-
-        var simpleMatch = SimplePropertyPattern.Match(expression);
-        if (simpleMatch.Success)
-        {
-            return (simpleMatch.Groups[2].Value, simpleMatch.Groups[3].Value, simpleMatch.Groups[4].Value);
-        }
-
-        return null;
-    }
-
-    private static bool IsPreconditionSatisfiable(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
-    {
-        return precondition.Kind switch
-        {
-            PreconditionKind.LinkExists => IsLinkSatisfiable(precondition, knownProperties),
-            PreconditionKind.PropertyPredicate => IsPropertyPredicateSatisfiable(precondition, knownProperties),
-            PreconditionKind.RelationHolds => false,
-            _ => true, // Custom or unknown kinds are optimistically satisfiable
-        };
-    }
-
-    private static bool IsLinkSatisfiable(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
-    {
-        if (precondition.LinkName is null)
-        {
-            return true;
-        }
-
-        if (!knownProperties.TryGetValue(precondition.LinkName, out var value))
-        {
-            return false;
-        }
-
-        return value is true or (not null and not false);
-    }
-
-    private static bool IsPropertyPredicateSatisfiable(
-        ActionPrecondition precondition,
-        IReadOnlyDictionary<string, object?> knownProperties)
-    {
-        var expression = precondition.Expression;
-        if (string.IsNullOrWhiteSpace(expression))
-        {
-            return true;
-        }
-
-        // Try to evaluate simple binary comparisons from expression tree ToString() output.
-        // Expression format examples:
-        //   (p.Quantity > 0)
-        //   (Convert(p.Status, Int32) == 1)
-        return TryEvaluateSimpleComparison(expression, knownProperties) ?? true;
-    }
-
-    private static readonly Regex SimplePropertyPattern = new(
-        @"\((\w+)\.(\w+)\s*(>=|<=|==|!=|>|<)\s*(.+?)\)",
-        RegexOptions.Compiled);
-
-    private static readonly Regex ConvertPropertyPattern = new(
-        @"\(Convert\((\w+)\.(\w+),\s*\w+\)\s*(>=|<=|==|!=|>|<)\s*(.+?)\)",
-        RegexOptions.Compiled);
-
-    private static bool? TryEvaluateSimpleComparison(
-        string expression,
-        IReadOnlyDictionary<string, object?> knownProperties)
-    {
-        var parsed = TryParseComparison(expression);
-        if (parsed is null)
-        {
-            return null; // Can't parse — optimistically satisfiable
-        }
-
-        var (propertyName, op, rightSide) = parsed.Value;
-
-        if (!knownProperties.TryGetValue(propertyName, out var knownValue) || knownValue is null)
-        {
-            return null; // Property not known — optimistically satisfiable
-        }
-
-        return EvaluateComparison(knownValue, op, rightSide);
-    }
-
-    private static bool? EvaluateComparison(object knownValue, string op, string rightSide)
-    {
-        // Convert both sides to comparable decimals for numeric comparison
-        if (TryConvertToDecimal(knownValue, out var leftNum) &&
-            decimal.TryParse(rightSide, out var rightNum))
-        {
-            return op switch
-            {
-                "==" => leftNum == rightNum,
-                "!=" => leftNum != rightNum,
-                ">" => leftNum > rightNum,
-                "<" => leftNum < rightNum,
-                ">=" => leftNum >= rightNum,
-                "<=" => leftNum <= rightNum,
-                _ => null,
-            };
-        }
-
-        // For enum types, convert to int and compare
-        if (knownValue is Enum enumValue && int.TryParse(rightSide, out var rightInt))
-        {
-            var leftInt = Convert.ToInt32(enumValue);
-            return op switch
-            {
-                "==" => leftInt == rightInt,
-                "!=" => leftInt != rightInt,
-                _ => null,
-            };
-        }
-
-        // String equality comparison
-        var leftStr = knownValue.ToString() ?? string.Empty;
-        return op switch
-        {
-            "==" => string.Equals(leftStr, rightSide, StringComparison.Ordinal),
-            "!=" => !string.Equals(leftStr, rightSide, StringComparison.Ordinal),
-            _ => null,
-        };
-    }
-
-    private static bool TryConvertToDecimal(object value, out decimal result)
-    {
-        if (value is byte or sbyte or short or ushort or int or uint
-            or long or ulong or float or double or decimal)
-        {
-            result = Convert.ToDecimal(value);
-            return true;
-        }
-
-        result = 0;
-        return false;
+        return availability;
     }
 
     private interface IPatternDetector
@@ -1150,38 +1044,59 @@ internal sealed class OntologyQueryService : IOntologyQuery
 
                 foreach (var pre in descriptor.Preconditions)
                 {
-                    var propName = ExtractPropertyName(pre);
-                    if (propName is null)
+                    foreach (var propName in EnumeratePropertyNames(pre.Predicate))
                     {
-                        continue;
-                    }
-
-                    if (!acceptsProps.Contains(propName))
-                    {
-                        yield return new PatternViolation(
-                            PatternName: "Action.PreconditionPropertyMissing",
-                            Description: $"Action '{action.ActionName}' precondition references property '{propName}' which is not present on AcceptsType '{descriptor.AcceptsType.Name}'.",
-                            Subject: action.Subject,
-                            Severity: ViolationSeverity.Error);
+                        if (!acceptsProps.Contains(propName))
+                        {
+                            yield return new PatternViolation(
+                                PatternName: "Action.PreconditionPropertyMissing",
+                                Description: $"Action '{action.ActionName}' precondition references property '{propName}' which is not present on AcceptsType '{descriptor.AcceptsType.Name}'.",
+                                Subject: action.Subject,
+                                Severity: ViolationSeverity.Error);
+                        }
                     }
                 }
             }
         }
 
-        private static string? ExtractPropertyName(ActionPrecondition pre)
+        private static IEnumerable<string> EnumeratePropertyNames(ActionPredicate predicate)
         {
-            if (pre.Kind == PreconditionKind.LinkExists)
+            switch (predicate)
             {
-                return pre.LinkName;
-            }
+                case PropertyComparisonPredicate comparison:
+                    yield return comparison.PropertyReference.Name;
+                    break;
 
-            if (pre.Kind != PreconditionKind.PropertyPredicate)
-            {
-                return null;
-            }
+                case AllPredicate all:
+                    foreach (var operand in all.Operands)
+                    {
+                        foreach (var name in EnumeratePropertyNames(operand))
+                        {
+                            yield return name;
+                        }
+                    }
 
-            var parsed = TryParseComparison(pre.Expression);
-            return parsed?.PropertyName;
+                    break;
+
+                case AnyPredicate any:
+                    foreach (var operand in any.Operands)
+                    {
+                        foreach (var name in EnumeratePropertyNames(operand))
+                        {
+                            yield return name;
+                        }
+                    }
+
+                    break;
+
+                case NotPredicate not:
+                    foreach (var name in EnumeratePropertyNames(not.Operand))
+                    {
+                        yield return name;
+                    }
+
+                    break;
+            }
         }
     }
 

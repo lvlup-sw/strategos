@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionNullLiteralV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "null"
+        }
+    },
+    "required": [
+        "kind"
+    ],
+    "description": "An explicit null literal. Missing data is not represented by this arm."
+}

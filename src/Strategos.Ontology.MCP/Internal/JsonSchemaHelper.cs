@@ -15,8 +15,9 @@ internal static class JsonSchemaHelper
 {
     /// <summary>
     /// Returns a JSON Schema describing the wire shape of <typeparamref name="T"/>.
-    /// Pure passthrough over <see cref="JsonSchemaExporter"/> — does NOT rewrite
-    /// any keyword (in particular, <c>anyOf</c> is preserved as-is).
+    /// Preserves <see cref="JsonSchemaExporter"/>'s shape (in particular,
+    /// <c>anyOf</c>) while restoring the exact closed vocabularies hidden behind
+    /// custom wire-enum converters.
     /// </summary>
     /// <remarks>
     /// For polymorphic types where you want the MCP-spec <c>oneOf</c> dispatch
@@ -30,7 +31,8 @@ internal static class JsonSchemaHelper
     {
         var node = JsonSchemaExporter.GetJsonSchemaAsNode(
             JsonSerializerOptions.Default,
-            typeof(T));
+            typeof(T),
+            CreateWireContractExporterOptions());
 
         return JsonSerializer.SerializeToElement(node);
     }
@@ -68,7 +70,8 @@ internal static class JsonSchemaHelper
 
         var node = JsonSchemaExporter.GetJsonSchemaAsNode(
             JsonSerializerOptions.Default,
-            typeof(T));
+            typeof(T),
+            CreateWireContractExporterOptions());
 
         RewriteRootAnyOfToOneOf(node, typeof(T).Name);
 
@@ -146,4 +149,42 @@ internal static class JsonSchemaHelper
                 "JsonSchemaExporter output shape may have changed.");
         }
     }
+
+    private static JsonSchemaExporterOptions CreateWireContractExporterOptions() => new()
+    {
+        TransformSchemaNode = static (context, node) => context.TypeInfo.Type switch
+        {
+            var type when type == typeof(ActionComparisonOperatorV1) => ExactStringEnumSchema(
+            [
+                "equal",
+                "not-equal",
+                "less-than",
+                "less-than-or-equal",
+                "greater-than",
+                "greater-than-or-equal",
+            ]),
+            var type when type == typeof(ActionPredicateScalarKindV1) => ExactStringEnumSchema(
+            [
+                "boolean",
+                "integer",
+                "decimal",
+                "string",
+                "enum",
+                "symbol",
+            ]),
+            var type when type == typeof(ActionRequirementStrengthV1) => ExactStringEnumSchema(
+            [
+                "hard",
+                "soft",
+            ]),
+            _ => node,
+        },
+    };
+
+    private static JsonObject ExactStringEnumSchema(IEnumerable<string> values) => new()
+    {
+        ["type"] = "string",
+        ["enum"] = new JsonArray(
+            values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()),
+    };
 }

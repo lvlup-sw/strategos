@@ -21,30 +21,35 @@ public sealed record LoopDefinition
     /// Stable loop identifier.
     /// </summary>
     [JsonPropertyName("loopId")]
+    [JsonRequired]
     public string LoopId { get; init; } = default!;
 
     /// <summary>
     /// Loop name (used for phase enum prefixing).
     /// </summary>
     [JsonPropertyName("loopName")]
+    [JsonRequired]
     public string LoopName { get; init; } = default!;
 
     /// <summary>
     /// Step id where the loop originates.
     /// </summary>
     [JsonPropertyName("fromStepId")]
+    [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
     /// Maximum iterations (infinite-loop guard).
     /// </summary>
     [JsonPropertyName("maxIterations")]
+    [JsonRequired]
     public int MaxIterations { get; init; }
 
     /// <summary>
     /// Steps in the loop body.
     /// </summary>
     [JsonPropertyName("bodySteps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> BodySteps { get; init; } = default!;
 
     /// <summary>

@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -28,7 +30,7 @@ namespace Strategos.Contracts.Generated;
 /// converters stay strict, an added member is flagged NOTICE: consumers upgrade
 /// before producers emit it. Removing or renaming a member is a breaking major.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<ForkTrigger>))]
+[JsonConverter(typeof(ForkTriggerJsonConverter))]
 public enum ForkTrigger
 {
     [JsonStringEnumMemberName("ratification_failure")]
@@ -39,4 +41,36 @@ public enum ForkTrigger
 
     [JsonStringEnumMemberName("operator_explicit")]
     OperatorExplicit,
+}
+
+public sealed class ForkTriggerJsonConverter : JsonConverter<ForkTrigger>
+{
+    public override ForkTrigger Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("ForkTrigger requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "ratification_failure" => ForkTrigger.RatificationFailure,
+            "gate_contradiction" => ForkTrigger.GateContradiction,
+            "operator_explicit" => ForkTrigger.OperatorExplicit,
+            _ => throw new JsonException("Unknown ForkTrigger wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, ForkTrigger value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            ForkTrigger.RatificationFailure => "ratification_failure",
+            ForkTrigger.GateContradiction => "gate_contradiction",
+            ForkTrigger.OperatorExplicit => "operator_explicit",
+            _ => throw new JsonException("Unknown ForkTrigger value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

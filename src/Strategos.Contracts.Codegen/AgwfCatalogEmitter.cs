@@ -150,6 +150,8 @@ public static class AgwfCatalogEmitter
         sb.AppendLine("// =============================================================================");
         sb.AppendLine("#nullable enable");
         sb.AppendLine();
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Text.Json;");
         sb.AppendLine("using System.Text.Json.Serialization;");
         sb.AppendLine();
         sb.Append("namespace ").Append(Namespace).AppendLine(";");
@@ -157,11 +159,11 @@ public static class AgwfCatalogEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// AGWF workflow source-generator diagnostic codes (#52). Single canonical");
         sb.AppendLine("/// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member NAMES are");
-        sb.AppendLine("/// the wire identity — <see cref=\"JsonStringEnumConverter\"/> plus a per-member");
-        sb.AppendLine("/// <c>JsonStringEnumMemberName</c> make every consumer bind by name, never by");
-        sb.AppendLine("/// ordinal (INV-5); each maps to its <c>AGWF0xx</c> wire value.");
+        sb.AppendLine("/// the wire identity — an exact-token converter makes every consumer bind by");
+        sb.AppendLine("/// the declared <c>AGWF0xx</c> string, never by CLR name, case-folding, or ordinal");
+        sb.AppendLine("/// (INV-5).");
         sb.AppendLine("/// </summary>");
-        sb.Append("[JsonConverter(typeof(JsonStringEnumConverter<AgwfCode>))]").AppendLine();
+        sb.AppendLine("[JsonConverter(typeof(AgwfCodeJsonConverter))]");
         sb.AppendLine("public enum AgwfCode");
         sb.AppendLine("{");
 
@@ -178,6 +180,52 @@ public static class AgwfCatalogEmitter
             }
         }
 
+        sb.AppendLine("}");
+        sb.AppendLine();
+        // External source-generated serializer contexts instantiate the
+        // attribute-bound converter directly, so it must be public.
+        sb.AppendLine("public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>");
+        sb.AppendLine("{");
+        sb.AppendLine("    public override AgwfCode Read(");
+        sb.AppendLine("        ref Utf8JsonReader reader,");
+        sb.AppendLine("        Type typeToConvert,");
+        sb.AppendLine("        JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (reader.TokenType != JsonTokenType.String)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            throw new JsonException(\"AgwfCode requires an exact string wire token.\");");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return reader.GetString() switch");
+        sb.AppendLine("        {");
+        foreach (var entry in entries)
+        {
+            sb.Append("            ").Append(JsonSerializer.Serialize(entry.Id)).Append(" => AgwfCode.")
+              .Append(entry.Name).AppendLine(",");
+        }
+
+        sb.AppendLine("            _ => throw new JsonException(\"Unknown AgwfCode wire token.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    public override void Write(");
+        sb.AppendLine("        Utf8JsonWriter writer,");
+        sb.AppendLine("        AgwfCode value,");
+        sb.AppendLine("        JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var token = value switch");
+        sb.AppendLine("        {");
+        foreach (var entry in entries)
+        {
+            sb.Append("            AgwfCode.").Append(entry.Name).Append(" => ")
+              .Append(JsonSerializer.Serialize(entry.Id)).AppendLine(",");
+        }
+
+        sb.AppendLine("            _ => throw new JsonException(\"Unknown AgwfCode value.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine();
+        sb.AppendLine("        writer.WriteStringValue(token);");
+        sb.AppendLine("    }");
         sb.AppendLine("}");
         return sb.ToString();
     }

@@ -2,11 +2,35 @@ using System.Collections.Immutable;
 
 namespace Strategos.Ontology.Descriptors;
 
-public sealed record ActionDescriptor(
-    string Name,
-    string Description)
+public sealed record ActionDescriptor
 {
     private ImmutableArray<ActionResource> touchedResources = [];
+    private ImmutableArray<string> allowedClients = [];
+    private ImmutableArray<ActionPrecondition> preconditions = [];
+    private ImmutableArray<ActionGuarantee> ensures = [];
+    private ImmutableArray<ActionPostcondition> postconditions = [];
+
+    /// <summary>Initializes an action descriptor with stable ontology identity.</summary>
+    public ActionDescriptor(ActionSubject subject, string name, string description)
+    {
+        Subject = subject ?? throw new ArgumentNullException(nameof(subject));
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Action name cannot be empty.", nameof(name));
+        }
+
+        Name = name;
+        Description = description ?? throw new ArgumentNullException(nameof(description));
+    }
+
+    /// <summary>Gets the ontology object this action operates on.</summary>
+    public ActionSubject Subject { get; }
+
+    /// <summary>Gets the action name within its subject.</summary>
+    public string Name { get; }
+
+    /// <summary>Gets the human-readable description.</summary>
+    public string Description { get; }
 
     public Type? AcceptsType { get; init; }
 
@@ -62,7 +86,15 @@ public sealed record ActionDescriptor(
     /// Client identifiers allowed to surface this action. An empty collection
     /// means the contract does not restrict discovery by client.
     /// </summary>
-    public IReadOnlyList<string> AllowedClients { get; init; } = [];
+    public IReadOnlyList<string> AllowedClients
+    {
+        get => allowedClients;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            allowedClients = value.ToImmutableArray();
+        }
+    }
 
     /// <summary>
     /// Indicates that an interactive client must obtain confirmation before
@@ -71,12 +103,37 @@ public sealed record ActionDescriptor(
     public bool RequiresConfirmation { get; init; }
 
     /// <summary>
-    /// Descriptor-first preconditions for this action. This is the
-    /// first-class authoring field; the fluent
-    /// <c>IActionBuilder&lt;T&gt;.Requires(...)</c> methods are obsolete
-    /// and have no fluent successor.
+    /// Typed preconditions for this action.
     /// </summary>
-    public IReadOnlyList<ActionPrecondition> Preconditions { get; init; } = [];
+    public IReadOnlyList<ActionPrecondition> Preconditions
+    {
+        get => preconditions;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            preconditions = value.ToImmutableArray();
+        }
+    }
 
-    public IReadOnlyList<ActionPostcondition> Postconditions { get; init; } = [];
+    /// <summary>Explicit post-state facts promised on successful completion.</summary>
+    public IReadOnlyList<ActionGuarantee> Ensures
+    {
+        get => ensures;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ensures = value.ToImmutableArray();
+        }
+    }
+
+    /// <summary>Effect and frame metadata; these are not value guarantees.</summary>
+    public IReadOnlyList<ActionPostcondition> Postconditions
+    {
+        get => postconditions;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            postconditions = value.ToImmutableArray();
+        }
+    }
 }

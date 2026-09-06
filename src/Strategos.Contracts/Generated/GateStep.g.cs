@@ -20,12 +20,14 @@ public sealed record GateStep : StepDefinition
     /// Stable step identifier (the builder&apos;s `StepDefinition.StepId`).
     /// </summary>
     [JsonPropertyName("stepId")]
+    [JsonRequired]
     public string StepId { get; init; } = default!;
 
     /// <summary>
     /// Step name (the builder&apos;s `StepDefinition.StepName`).
     /// </summary>
     [JsonPropertyName("stepName")]
+    [JsonRequired]
     public string StepName { get; init; } = default!;
 
     /// <summary>
@@ -38,6 +40,7 @@ public sealed record GateStep : StepDefinition
     /// Whether this step terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 
     /// <summary>
@@ -56,6 +59,7 @@ public sealed record GateStep : StepDefinition
     /// Simple-name CLR moniker of the step type (LB-2).
     /// </summary>
     [JsonPropertyName("stepType")]
+    [JsonRequired]
     public string StepType { get; init; } = default!;
 
     /// <summary>

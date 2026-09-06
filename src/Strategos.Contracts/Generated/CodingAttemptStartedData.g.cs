@@ -17,11 +17,14 @@ namespace Strategos.Contracts.Generated;
 public sealed record CodingAttemptStartedData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("attemptNumber")]
+    [JsonRequired]
     public int AttemptNumber { get; init; }
 
     [JsonPropertyName("containerId")]
+    [JsonRequired]
     public string ContainerId { get; init; } = default!;
 }

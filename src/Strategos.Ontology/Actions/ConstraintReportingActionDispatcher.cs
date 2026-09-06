@@ -16,6 +16,7 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
     private readonly IActionDispatcher _inner;
     private readonly Func<IOntologyQuery> _queryAccessor;
     private readonly ILogger<ConstraintReportingActionDispatcher> _logger;
+    private readonly bool _authoritativeReportingHandled;
 
     internal IActionDispatcher Inner => _inner;
 
@@ -39,16 +40,19 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         _inner = inner;
         _queryAccessor = () => query;
         _logger = logger;
+        _authoritativeReportingHandled = false;
     }
 
     private ConstraintReportingActionDispatcher(
         IActionDispatcher inner,
         Func<IOntologyQuery> queryAccessor,
-        ILogger<ConstraintReportingActionDispatcher> logger)
+        ILogger<ConstraintReportingActionDispatcher> logger,
+        bool authoritativeReportingHandled)
     {
         _inner = inner;
         _queryAccessor = queryAccessor;
         _logger = logger;
+        _authoritativeReportingHandled = authoritativeReportingHandled;
     }
 
     /// <summary>
@@ -59,13 +63,18 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
     internal static ConstraintReportingActionDispatcher CreateDeferred(
         IActionDispatcher inner,
         Lazy<IOntologyQuery> query,
-        ILogger<ConstraintReportingActionDispatcher> logger)
+        ILogger<ConstraintReportingActionDispatcher> logger,
+        bool authoritativeReportingHandled)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(logger);
 
-        return new ConstraintReportingActionDispatcher(inner, () => query.Value, logger);
+        return new ConstraintReportingActionDispatcher(
+            inner,
+            () => query.Value,
+            logger,
+            authoritativeReportingHandled);
     }
 
     public async Task<ActionResult> DispatchAsync(
@@ -75,6 +84,11 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         ArgumentNullException.ThrowIfNull(request);
 
         var result = await _inner.DispatchAsync(context, request, ct).ConfigureAwait(false);
+        if (result.Violations is not null || _authoritativeReportingHandled)
+        {
+            return result;
+        }
+
         return AppendViolationsIfAny(context, result);
     }
 
@@ -89,7 +103,10 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
         IReadOnlyList<ActionConstraintReport> reports;
         try
         {
-            reports = _queryAccessor().GetActionConstraintReport(context.ObjectType, knownProperties: null);
+            reports = _queryAccessor().GetActionConstraintReport(
+                context.Domain,
+                context.ObjectType,
+                facts: null);
         }
         catch (Exception ex)
         {
@@ -118,6 +135,18 @@ public sealed class ConstraintReportingActionDispatcher : IActionDispatcher
 
             if (evaluation.Strength == ConstraintStrength.Hard)
             {
+                if (result.IsSuccess &&
+                    context.Options?.EnforcePreconditions == true &&
+                    evaluation.TruthValue == PredicateTruthValue.Indeterminate)
+                {
+                    // The inner authorization layer has already proven every
+                    // enforced hard predicate against authoritative facts.
+                    // The legacy reporting query intentionally receives no
+                    // dispatch facts, so its unknown result must not replace
+                    // that stronger decision.
+                    continue;
+                }
+
                 hard.Add(evaluation);
             }
             else

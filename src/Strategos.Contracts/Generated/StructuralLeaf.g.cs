@@ -22,6 +22,7 @@ public sealed record StructuralLeaf : CheckNode
     /// The structural pattern to match; inert match data, not a command.
     /// </summary>
     [JsonPropertyName("pattern")]
+    [JsonRequired]
     public string Pattern { get; init; } = default!;
 
     /// <summary>

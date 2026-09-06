@@ -103,4 +103,12 @@ internal static class OntologyDiagnosticIds
     public const string InvalidAuthorityLattice = "AONT214";
     public const string ActionFrameUnsound = "AONT215";
     public const string CompensationDisagreesWithInverse = "AONT216";
+
+    // Typed action-composition diagnostics (#168). These continue the monotonic
+    // AONT200-series allocation; identities are stable consumer contracts.
+    public const string IllegalActionSeam = "AONT217";
+    public const string OpaqueActionContract = "AONT218";
+    public const string ActionComposabilityCoverage = "AONT219";
+    public const string DynamicActionSequence = "AONT220";
+    public const string InvalidActionContract = "AONT221";
 }

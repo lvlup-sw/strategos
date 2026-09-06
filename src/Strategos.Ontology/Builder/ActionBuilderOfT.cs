@@ -1,10 +1,9 @@
 using System.Linq.Expressions;
-using System.Collections.Immutable;
 using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
 
-internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
+internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IActionBuilder<T>
     where T : class
 {
     private string _description = string.Empty;
@@ -20,6 +19,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     private string? _compensatingActionName;
     private readonly HashSet<ActionResource> _touchedResources = [];
     private readonly List<ActionPrecondition> _preconditions = [];
+    private readonly List<ActionGuarantee> _ensures = [];
     private readonly List<ActionPostcondition> _postconditions = [];
     private readonly List<string> _validFromStates = [];
 
@@ -37,6 +37,14 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     IActionBuilder IActionBuilder.RequiresAuthority(string authorityName) => RequiresAuthority(authorityName);
     IActionBuilder IActionBuilder.Touches(ActionResource resource) => Touches(resource);
     IActionBuilder IActionBuilder.CompensatedBy(string actionName) => CompensatedBy(actionName);
+    IActionBuilder IActionBuilder.Requires(ActionPredicate predicate, string? description) => Requires(predicate, description);
+    IActionBuilder IActionBuilder.RequiresSoft(ActionPredicate predicate, string? description) => RequiresSoft(predicate, description);
+    IActionBuilder IActionBuilder.Ensures(ActionPredicate predicate, string? description) => Ensures(predicate, description);
+    IActionBuilder IActionBuilder.RequiresLink(string linkName) => RequiresLink(linkName);
+    IActionBuilder IActionBuilder.RequiresLinkSoft(string linkName) => RequiresLinkSoft(linkName);
+    IActionBuilder IActionBuilder.RequiresRelation(string relationName, params string[] linkPath) => RequiresRelation(relationName, linkPath);
+    IActionBuilder IActionBuilder.EnsuresLink(string linkName) => EnsuresLink(linkName);
+    IActionBuilder IActionBuilder.EnsuresRelation(string relationName, params string[] linkPath) => EnsuresRelation(relationName, linkPath);
 
     public IActionBuilder<T> Description(string description)
     {
@@ -111,82 +119,83 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
         return BoundToTool(typeof(TTool).Name, methodName);
     }
 
-    [Obsolete("Use ActionDescriptor.Preconditions to declare action preconditions. There is no fluent successor.")]
+    public IActionBuilder<T> Requires(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _preconditions.Add(new ActionPrecondition(
+            predicate,
+            description ?? predicate.Expression,
+            ConstraintStrength.Hard));
+        return this;
+    }
+
     public IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate)
     {
-        var expressionString = predicate.Body.ToString();
-        var description = ExpressionHelper.ExtractPredicateString(predicate);
+        ArgumentNullException.ThrowIfNull(predicate);
+        var translated = ActionPredicateExpressionTranslator.Translate(predicate);
+        return Requires(translated, translated.Expression);
+    }
 
-        _preconditions.Add(new ActionPrecondition
-        {
-            Expression = expressionString,
-            Description = description,
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Hard,
-        });
+    public IActionBuilder<T> RequiresSoft(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _preconditions.Add(new ActionPrecondition(
+            predicate,
+            description ?? predicate.Expression,
+            ConstraintStrength.Soft));
         return this;
     }
 
     public IActionBuilder<T> RequiresSoft(Expression<Func<T, bool>> predicate)
     {
-        var expressionString = predicate.Body.ToString();
-        var description = ExpressionHelper.ExtractPredicateString(predicate);
+        ArgumentNullException.ThrowIfNull(predicate);
+        var translated = ActionPredicateExpressionTranslator.Translate(predicate);
+        return RequiresSoft(translated, translated.Expression);
+    }
 
-        _preconditions.Add(new ActionPrecondition
-        {
-            Expression = expressionString,
-            Description = description,
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Soft,
-        });
+    public IActionBuilder<T> Ensures(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _ensures.Add(new ActionGuarantee(predicate, description));
         return this;
+    }
+
+    public IActionBuilder<T> Ensures(Expression<Func<T, bool>> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        var translated = ActionPredicateExpressionTranslator.Translate(predicate);
+        return Ensures(translated, translated.Expression);
     }
 
     public IActionBuilder<T> RequiresLink(string linkName)
     {
-        _preconditions.Add(new ActionPrecondition
-        {
-            Expression = $"Link '{linkName}' exists",
-            Description = $"Requires link '{linkName}' to have at least one target",
-            Kind = PreconditionKind.LinkExists,
-            LinkName = linkName,
-            Strength = ConstraintStrength.Hard,
-        });
-        return this;
+        return Requires(
+            ActionPredicate.LinkExists(linkName),
+            $"Requires link '{linkName}' to have at least one target");
     }
 
     public IActionBuilder<T> RequiresLinkSoft(string linkName)
     {
-        _preconditions.Add(new ActionPrecondition
-        {
-            Expression = $"Link '{linkName}' exists",
-            Description = $"Prefers link '{linkName}' to have at least one target",
-            Kind = PreconditionKind.LinkExists,
-            LinkName = linkName,
-            Strength = ConstraintStrength.Soft,
-        });
-        return this;
+        return RequiresSoft(
+            ActionPredicate.LinkExists(linkName),
+            $"Prefers link '{linkName}' to have at least one target");
     }
 
     public IActionBuilder<T> RequiresRelation(string relationName, params string[] linkPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(relationName);
-        ArgumentNullException.ThrowIfNull(linkPath);
-        if (linkPath.Any(string.IsNullOrWhiteSpace))
-        {
-            throw new ArgumentException("Relation paths cannot contain empty link names.", nameof(linkPath));
-        }
+        return Requires(
+            ActionPredicate.RelationHolds(relationName, linkPath),
+            $"Requires the caller to hold relation '{relationName}' via {FormatPath(linkPath)}");
+    }
 
-        _preconditions.Add(new ActionPrecondition
-        {
-            Expression = BuildRelationExpression(relationName, linkPath),
-            Description = $"Requires the caller to hold relation '{relationName}' via {FormatPath(linkPath)}",
-            Kind = PreconditionKind.RelationHolds,
-            RelationName = relationName,
-            LinkPath = linkPath.ToImmutableArray(),
-            Strength = ConstraintStrength.Hard,
-        });
-        return this;
+    public IActionBuilder<T> EnsuresLink(string linkName)
+    {
+        return Ensures(ActionPredicate.LinkExists(linkName));
+    }
+
+    public IActionBuilder<T> EnsuresRelation(string relationName, params string[] linkPath)
+    {
+        return Ensures(ActionPredicate.RelationHolds(relationName, linkPath));
     }
 
     public IActionBuilder<T> Modifies(Expression<Func<T, object>> propertySelector)
@@ -231,7 +240,7 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
     }
 
     public ActionDescriptor Build() =>
-        new(name, _description)
+        new(subject, name, _description)
         {
             AcceptsType = _acceptsType,
             ReturnsType = _returnsType,
@@ -244,12 +253,10 @@ internal sealed class ActionBuilder<T>(string name) : IActionBuilder<T>
             RequiredAuthority = _requiredAuthority,
             TouchedResources = _touchedResources.ToArray(),
             CompensatingActionName = _compensatingActionName,
-            Preconditions = _preconditions.ToList().AsReadOnly(),
-            Postconditions = _postconditions.ToList().AsReadOnly(),
+            Preconditions = _preconditions,
+            Ensures = _ensures,
+            Postconditions = _postconditions,
         };
-
-    private static string BuildRelationExpression(string relationName, IReadOnlyList<string> linkPath) =>
-        $"principal -[{relationName}]-> {FormatPath(linkPath)}";
 
     private static string FormatPath(IReadOnlyList<string> linkPath) =>
         linkPath.Count == 0 ? "target" : string.Join("/", linkPath);

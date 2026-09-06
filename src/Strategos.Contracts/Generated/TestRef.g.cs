@@ -17,8 +17,10 @@ namespace Strategos.Contracts.Generated;
 public sealed record TestRef
 {
     [JsonPropertyName("name")]
+    [JsonRequired]
     public string Name { get; init; } = default!;
 
     [JsonPropertyName("file")]
+    [JsonRequired]
     public string File { get; init; } = default!;
 }

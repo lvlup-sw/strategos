@@ -22,17 +22,20 @@ public sealed record WorkflowCatalogEntry
     /// Catalog workflow identity (the lookup key for a catalog `WorkflowRef`).
     /// </summary>
     [JsonPropertyName("workflowId")]
+    [JsonRequired]
     public string WorkflowId { get; init; } = default!;
 
     /// <summary>
     /// Catalog version this entry was published at (the second half of the key).
     /// </summary>
     [JsonPropertyName("catalogVersion")]
+    [JsonRequired]
     public string CatalogVersion { get; init; } = default!;
 
     /// <summary>
     /// The serialized workflow-IR payload for this catalog entry.
     /// </summary>
     [JsonPropertyName("definition")]
+    [JsonRequired]
     public WorkflowDefinitionV1 Definition { get; init; } = default!;
 }

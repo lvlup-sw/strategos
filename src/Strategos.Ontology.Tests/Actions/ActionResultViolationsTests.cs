@@ -19,16 +19,15 @@ public class ActionResultViolationsTests
     public async Task ActionResult_NewWithViolations_PreservesReport()
     {
         // Arrange
-        var precondition = new ActionPrecondition
-        {
-            Expression = "(p.Quantity > 0)",
-            Description = "Quantity must be positive",
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Hard,
-        };
+        var precondition = new ActionPrecondition(
+            ActionPredicate.Property(
+                new PredicatePropertyReference("Quantity", PredicateScalarKind.Integer),
+                PredicateComparisonOperator.GreaterThan,
+                PredicateLiteral.Integer(0)),
+            "Quantity must be positive");
 
-        var hard1 = new ConstraintEvaluation(precondition, IsSatisfied: false, ConstraintStrength.Hard, "zero quantity", null);
-        var hard2 = new ConstraintEvaluation(precondition, IsSatisfied: false, ConstraintStrength.Hard, "negative quantity", null);
+        var hard1 = new ConstraintEvaluation(precondition, PredicateTruthValue.Unsatisfied, ConstraintStrength.Hard, "zero quantity", null);
+        var hard2 = new ConstraintEvaluation(precondition, PredicateTruthValue.Unsatisfied, ConstraintStrength.Hard, "negative quantity", null);
 
         var report = new ConstraintViolationReport(
             ActionName: "Ship",

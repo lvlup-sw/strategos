@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - Unreleased
+
+> **Approved source-compatibility exception:** issue #168 intentionally makes a
+> source-breaking minor release. The legacy writable/string-parsed action
+> precondition surface is removed without a compatibility parser so typed
+> predicates remain the sole semantic authority. See the
+> [2.13 migration guide](docs/src/content/docs/guide/ontology/migration-v2-13.md).
+
+### Added
+
+- **Typed, sound action composition (#168).** Actions now have ontology-named
+  subjects, immutable typed hard/soft predicates, explicit post-state
+  guarantees, and exact sequential compatibility proofs across arbitrary
+  `AND`/`OR`/`NOT` formulas. A pure managed proof kernel validates contracts,
+  performs semantic forgetting over written resources, and returns stable
+  counterexamples for illegal seams.
+- **Three-valued runtime enforcement.** `ActionFacts`, tri-state discovery,
+  authoritative dispatch-time fact resolution, keyed custom evaluators, and
+  structured constraint reports preserve the distinction between false and
+  unknown. Enforced hard predicates fail closed; relation-bearing hard formulas
+  remain mandatory regardless of the general enforcement switch.
+- **Composition diagnostics.** `AONT217`–`AONT221` cover refuted seams, opaque
+  exclusions, proof coverage, dynamic sequences, and invalid contracts. Runtime
+  and the netstandard analyzer share the same proof kernel.
+
+### Changed
+
+- **Action contracts are source-breaking.** Every `ActionDescriptor` requires an
+  `ActionSubject`; `ActionPrecondition` is constructor-based; and
+  `PreconditionKind` plus writable legacy expression/relation/link fields are
+  removed. Direct `ObjectSet<T>` construction likewise requires the complete
+  `ActionSubject`; the descriptor-name-only constructor is removed because it
+  could not preserve domain identity. `Expression` remains a canonical display
+  projection and is never parsed.
+- **Contracts package 0.10.0.** TypeSpec metadata emits versioned tagged
+  `ActionPredicateV1` requirements and guarantees. `@relation` lowers to a typed
+  predicate; unknown discriminators are rejected. Generated closed enums accept
+  and emit only their exact wire tokens (never CLR spellings or numeric forms),
+  and generated required properties now fail deserialization when absent.
+- **Graph-version rollover.** Canonical action hashing now includes subjects,
+  predicates, guarantees, and opaque semantic keys/read sets. Action-bearing
+  graphs change hash once on upgrade; presentation descriptions remain excluded.
+
 ## [2.11.0] - Unreleased
 
 **Correctness core.** A C#-authored workflow using `Fork` or `Branch` never terminated. The defect

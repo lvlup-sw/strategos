@@ -28,6 +28,7 @@ public sealed record PermittedForkTrigger
     /// The closed trigger this entry permits (DR-8 — the shared trigger identity).
     /// </summary>
     [JsonPropertyName("trigger")]
+    [JsonRequired]
     public ForkTrigger Trigger { get; init; }
 
     /// <summary>
@@ -40,5 +41,6 @@ public sealed record PermittedForkTrigger
     /// guard (DR-9) — never at authoring time; this shape pins the declared floor.
     /// </summary>
     [JsonPropertyName("requiredEvidenceFields")]
+    [JsonRequired]
     public IReadOnlyList<string> RequiredEvidenceFields { get; init; } = default!;
 }

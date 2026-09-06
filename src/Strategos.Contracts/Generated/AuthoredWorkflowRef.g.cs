@@ -26,5 +26,6 @@ public sealed record AuthoredWorkflowRef : WorkflowRef
     /// Natural-language description of the journey to author/run.
     /// </summary>
     [JsonPropertyName("journeyDescription")]
+    [JsonRequired]
     public string JourneyDescription { get; init; } = default!;
 }

@@ -1,4 +1,5 @@
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -23,7 +24,7 @@ public class ObjectSetIncludeTests
     public async Task ObjectSet_Include_SetsInclusionOnExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var included = set.Include(ObjectSetInclusion.Properties);
@@ -38,7 +39,7 @@ public class ObjectSetIncludeTests
     public async Task ObjectSet_Include_Schema_IncludesPropertiesActionsLinksInterfaces()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var included = set.Include(ObjectSetInclusion.Schema);
@@ -56,7 +57,7 @@ public class ObjectSetIncludeTests
     public async Task ObjectSet_Include_Full_IncludesEverything()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var included = set.Include(ObjectSetInclusion.Full);

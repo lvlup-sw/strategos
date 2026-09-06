@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
@@ -164,18 +165,20 @@ public sealed class OntologyToolDiscovery
                         DestructiveHint: !action.IsReadOnly,
                         IdempotentHint: action.Idempotent,
                         OpenWorldHint: false),
-                    action.Preconditions
-                        .Where(precondition => precondition.Kind == PreconditionKind.RelationHolds)
-                        .Select(precondition => new ActionAuthorizationRequirement(
-                            precondition.RelationName ?? string.Empty,
-                            precondition.LinkPath))
-                        .ToList()
-                        .AsReadOnly(),
+                    ActionPredicateContractProjection.MandatoryRelations(action.Preconditions),
                     action.RequiredAuthority,
                     action.AllowedClients,
                     action.RequiresConfirmation,
                     action.TouchedResources,
-                    action.CompensatingActionName)))
+                    action.CompensatingActionName)
+                {
+                    Requires = action.Preconditions
+                        .Select(ActionPredicateContractProjection.Requirement)
+                        .ToImmutableArray(),
+                    Ensures = action.Ensures
+                        .Select(ActionPredicateContractProjection.Guarantee)
+                        .ToImmutableArray(),
+                }))
             .ToList()
             .AsReadOnly();
 

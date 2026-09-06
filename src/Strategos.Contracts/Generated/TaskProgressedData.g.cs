@@ -17,9 +17,11 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskProgressedData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("tddPhase")]
+    [JsonRequired]
     public TddPhase TddPhase { get; init; }
 
     [JsonPropertyName("detail")]

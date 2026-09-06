@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// Lifecycle status of an ontological record (ADR §2.5). The Wolverine saga
 /// transitions a record through these states as intent events are applied.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<RecordStatus>))]
+[JsonConverter(typeof(RecordStatusJsonConverter))]
 public enum RecordStatus
 {
     [JsonStringEnumMemberName("proposed")]
@@ -34,4 +36,42 @@ public enum RecordStatus
 
     [JsonStringEnumMemberName("failed")]
     Failed,
+}
+
+public sealed class RecordStatusJsonConverter : JsonConverter<RecordStatus>
+{
+    public override RecordStatus Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("RecordStatus requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "proposed" => RecordStatus.Proposed,
+            "validated" => RecordStatus.Validated,
+            "enriched" => RecordStatus.Enriched,
+            "executing" => RecordStatus.Executing,
+            "completed" => RecordStatus.Completed,
+            "failed" => RecordStatus.Failed,
+            _ => throw new JsonException("Unknown RecordStatus wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, RecordStatus value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            RecordStatus.Proposed => "proposed",
+            RecordStatus.Validated => "validated",
+            RecordStatus.Enriched => "enriched",
+            RecordStatus.Executing => "executing",
+            RecordStatus.Completed => "completed",
+            RecordStatus.Failed => "failed",
+            _ => throw new JsonException("Unknown RecordStatus value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

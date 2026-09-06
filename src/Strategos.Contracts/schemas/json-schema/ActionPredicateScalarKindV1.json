@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionPredicateScalarKindV1.json",
+    "type": "string",
+    "enum": [
+        "boolean",
+        "integer",
+        "decimal",
+        "string",
+        "enum",
+        "symbol"
+    ],
+    "description": "The scalar domain of a property compared by an action predicate."
+}

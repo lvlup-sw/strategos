@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -13,7 +15,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// TDD cycle phase carried by `task.progressed` events.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<TddPhase>))]
+[JsonConverter(typeof(TddPhaseJsonConverter))]
 public enum TddPhase
 {
     [JsonStringEnumMemberName("red")]
@@ -24,4 +26,36 @@ public enum TddPhase
 
     [JsonStringEnumMemberName("refactor")]
     Refactor,
+}
+
+public sealed class TddPhaseJsonConverter : JsonConverter<TddPhase>
+{
+    public override TddPhase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("TddPhase requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "red" => TddPhase.Red,
+            "green" => TddPhase.Green,
+            "refactor" => TddPhase.Refactor,
+            _ => throw new JsonException("Unknown TddPhase wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, TddPhase value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            TddPhase.Red => "red",
+            TddPhase.Green => "green",
+            TddPhase.Refactor => "refactor",
+            _ => throw new JsonException("Unknown TddPhase value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

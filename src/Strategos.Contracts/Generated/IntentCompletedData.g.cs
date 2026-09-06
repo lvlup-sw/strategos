@@ -17,15 +17,19 @@ namespace Strategos.Contracts.Generated;
 public sealed record IntentCompletedData
 {
     [JsonPropertyName("recordId")]
+    [JsonRequired]
     public string RecordId { get; init; } = default!;
 
     [JsonPropertyName("featureId")]
+    [JsonRequired]
     public string FeatureId { get; init; } = default!;
 
     [JsonPropertyName("tasksCompleted")]
+    [JsonRequired]
     public int TasksCompleted { get; init; }
 
     [JsonPropertyName("tasksFailed")]
+    [JsonRequired]
     public int TasksFailed { get; init; }
 
     [JsonPropertyName("duration")]

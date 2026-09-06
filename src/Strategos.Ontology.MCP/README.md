@@ -12,13 +12,14 @@ Requires `Strategos.Ontology` (included as a dependency).
 
 ## MCP Tools
 
-Three tools are auto-generated from your ontology definitions:
+Four tools are auto-generated from your ontology definitions:
 
 | Tool | Purpose |
 |------|---------|
 | `ontology_explore` | Browse domains, object types, actions, links, events, interfaces |
 | `ontology_query` | Query object sets with filters, link traversal, interface narrowing |
 | `ontology_action` | Dispatch actions (single or batch) through `IActionDispatcher` |
+| `ontology_validate` | Check a design intent against the frozen ontology graph |
 
 ## Tool Discovery
 
@@ -29,7 +30,7 @@ var discovery = new OntologyToolDiscovery(ontologyGraph);
 IReadOnlyList<OntologyToolDescriptor> tools = discovery.Discover();
 ```
 
-Each action tool descriptor includes `ActionConstraintSummary` records with hard/soft constraint counts, enabling agents to assess action availability directly from tool discovery.
+Each action tool descriptor includes `ActionConstraintSummary` records with hard/soft constraint counts, enabling agents to assess action availability directly from tool discovery. It also carries typed `requires` and `ensures` predicate metadata in the closed Contracts 0.10 wire vocabulary. Arbitrary-precision integers and exact decimals remain canonical strings on the wire, and unknown predicate tags are rejected.
 
 ## Features
 
@@ -37,6 +38,7 @@ Each action tool descriptor includes `ActionConstraintSummary` records with hard
 - **Object Queries**: Composable filter, link traversal, interface narrowing, and include expressions
 - **Action Dispatch**: Single-object or batch execution routed through `IActionDispatcher`
 - **Constraint Summaries**: Hard/soft constraint counts embedded in tool descriptions for zero-shot agent reasoning
+- **Typed Action Contracts**: Lossless recursive requirements and guarantees in MCP `_meta`
 - **Python Stubs**: `OntologyStubGenerator` produces `.pyi`-style type stubs for agent tooling
 
 Direct action-tool callers must bind the authenticated caller explicitly:

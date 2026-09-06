@@ -27,6 +27,7 @@ public sealed record ResponseMetaV1
     /// decision as authoritative and MUST short-circuit &quot;use the decision&quot; logic.
     /// </summary>
     [JsonPropertyName("degraded")]
+    [JsonRequired]
     public bool Degraded { get; init; }
 
     /// <summary>

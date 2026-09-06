@@ -9,10 +9,10 @@ namespace Strategos.Ontology.Actions;
 /// <c>IOntologyQuery.GetActionConstraintReport</c> and friends.
 /// </summary>
 /// <param name="Precondition">The precondition that was evaluated.</param>
-/// <param name="IsSatisfied">Whether the precondition evaluated as satisfied.</param>
+/// <param name="TruthValue">The three-valued outcome of evaluating the precondition.</param>
 /// <param name="Strength">Constraint strength (hard or soft) of the precondition.</param>
 /// <param name="FailureReason">
-/// Optional human-readable explanation when the precondition is unsatisfied;
+/// Optional human-readable explanation when the precondition is unsatisfied or indeterminate;
 /// null when satisfied.
 /// </param>
 /// <param name="ExpectedShape">
@@ -21,7 +21,11 @@ namespace Strategos.Ontology.Actions;
 /// </param>
 public sealed record ConstraintEvaluation(
     ActionPrecondition Precondition,
-    bool IsSatisfied,
+    PredicateTruthValue TruthValue,
     ConstraintStrength Strength,
     string? FailureReason,
-    IReadOnlyDictionary<string, object?>? ExpectedShape);
+    IReadOnlyDictionary<string, object?>? ExpectedShape)
+{
+    /// <summary>Gets whether the precondition is known to be satisfied.</summary>
+    public bool IsSatisfied => TruthValue == PredicateTruthValue.Satisfied;
+}

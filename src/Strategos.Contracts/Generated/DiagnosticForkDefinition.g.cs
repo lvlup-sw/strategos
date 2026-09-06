@@ -39,6 +39,7 @@ public sealed record DiagnosticForkDefinition
     /// edge with nowhere to fork is unrepresentable.
     /// </summary>
     [JsonPropertyName("anchorStepIds")]
+    [JsonRequired]
     public IReadOnlyList<string> AnchorStepIds { get; init; } = default!;
 
     /// <summary>
@@ -47,6 +48,7 @@ public sealed record DiagnosticForkDefinition
     /// the edge is inexpressible without declaring a permitted trigger (DR-7).
     /// </summary>
     [JsonPropertyName("permittedTriggers")]
+    [JsonRequired]
     public IReadOnlyList<PermittedForkTrigger> PermittedTriggers { get; init; } = default!;
 
     /// <summary>
@@ -56,6 +58,7 @@ public sealed record DiagnosticForkDefinition
     /// forbids the very fork the edge exists to permit.
     /// </summary>
     [JsonPropertyName("maxForks")]
+    [JsonRequired]
     public int MaxForks { get; init; }
 
     /// <summary>
@@ -64,5 +67,6 @@ public sealed record DiagnosticForkDefinition
     /// Compensate / OnFailure merged trigger site (DR-9). REQUIRED and non-empty.
     /// </summary>
     [JsonPropertyName("compensationSeed")]
+    [JsonRequired]
     public string CompensationSeed { get; init; } = default!;
 }

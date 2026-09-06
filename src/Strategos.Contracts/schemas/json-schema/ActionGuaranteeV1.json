@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionGuaranteeV1.json",
+    "type": "object",
+    "properties": {
+        "predicate": {
+            "$ref": "ActionPredicateV1.json"
+        },
+        "expression": {
+            "type": "string",
+            "description": "Canonical display projection; consumers never parse this field."
+        },
+        "description": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "predicate",
+        "expression"
+    ],
+    "description": "One typed post-state guarantee carried in schema metadata."
+}

@@ -22,7 +22,25 @@ extern dec authority(target: Operation, name: valueof string);
 extern dec relation(
   target: Operation,
   name: valueof string,
-  ...linkPath: valueof string[]
+  ...linkPath: valueof LevelUp.Strategos.Contracts.ActionLinkPathSegmentV1[]
+);
+
+/**
+ * Declares a typed hard or soft action requirement. Unsupported or unknown
+ * predicate kinds are rejected by TypeSpec before schema emission.
+ */
+extern dec requires(
+  target: Operation,
+  predicate: valueof LevelUp.Strategos.Contracts.ActionPredicateV1,
+  strength?: valueof LevelUp.Strategos.Contracts.ActionRequirementStrengthV1,
+  description?: valueof string
+);
+
+/** Declares a typed post-state guarantee. */
+extern dec ensures(
+  target: Operation,
+  predicate: valueof LevelUp.Strategos.Contracts.ActionPredicateV1,
+  description?: valueof string
 );
 
 /** Declares the clients allowed to surface an operation. */

@@ -17,12 +17,15 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskTestResultData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("passed")]
+    [JsonRequired]
     public int Passed { get; init; }
 
     [JsonPropertyName("failed")]
+    [JsonRequired]
     public int Failed { get; init; }
 
     [JsonPropertyName("coverage")]

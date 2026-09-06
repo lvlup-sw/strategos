@@ -74,7 +74,10 @@ public class AONT205GraphFreezeTests
                 SourceId = "marten-typescript-defect",
                 Actions = new List<ActionDescriptor>
                 {
-                    new("Trade", "Trade action emitted by a misbehaving ingester"),
+                    new(
+                        new ActionSubject("Trading", "DefectivePosition"),
+                        "Trade",
+                        "Trade action emitted by a misbehaving ingester"),
                 },
             };
 
@@ -213,7 +216,10 @@ public class AONT205GraphFreezeTests
                 Source = DescriptorSource.HandAuthoredContract,
                 Actions = new List<ActionDescriptor>
                 {
-                    new("Trade", "Contract-authored trade"),
+                    new(
+                        new ActionSubject("Trading", "ContractPosition"),
+                        "Trade",
+                        "Contract-authored trade"),
                 },
             };
 

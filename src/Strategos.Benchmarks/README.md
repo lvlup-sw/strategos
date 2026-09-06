@@ -37,6 +37,9 @@ dotnet run -c Release --project src/Strategos.Benchmarks -- --filter *ThompsonSa
 # Run specific benchmark class
 dotnet run -c Release --project src/Strategos.Benchmarks -- --filter *AgentSelectionBenchmarks*
 
+# Measure typed action-composition proof and projection costs
+dotnet run -c Release --project src/Strategos.Benchmarks -- --filter *ActionCompositionProofBenchmarks*
+
 # Run specific benchmark method
 dotnet run -c Release --project src/Strategos.Benchmarks -- --filter *AgentSelectionBenchmarks.SelectAgent*
 
@@ -190,6 +193,7 @@ src/Strategos.Benchmarks/
 │   ├── LoopDetection/        # Loop detection benchmarks
 │   ├── Ledgers/              # Ledger operation benchmarks
 │   ├── Budget/               # Workflow budget benchmarks
+│   ├── Ontology/             # Exact action-contract proof benchmarks
 │   ├── VectorSearch/         # RAG/search benchmarks
 │   └── StepExecution/        # Cache and execution benchmarks
 ├── Comparative/              # Package comparison benchmarks
@@ -205,6 +209,12 @@ src/Strategos.Benchmarks/
 4. **Mark baseline** with `[Benchmark(Baseline = true)]`
 5. **Avoid I/O** in benchmark methods when testing pure computation
 6. **Warmup** is handled automatically by BenchmarkDotNet
+
+The ontology proof benchmarks are non-gating measurements. They deliberately
+contain no wall-clock assertions or pass/fail latency budgets; the exhaustive
+oracle and contract tests gate correctness, while benchmark results show how
+proof cost and allocation scale as predicates introduce more finite-domain
+cells.
 
 ## Common Commands
 

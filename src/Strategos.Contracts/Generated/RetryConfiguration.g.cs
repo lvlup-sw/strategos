@@ -22,6 +22,7 @@ public sealed record RetryConfiguration
     /// Maximum retry attempts.
     /// </summary>
     [JsonPropertyName("maxAttempts")]
+    [JsonRequired]
     public int MaxAttempts { get; init; }
 
     /// <summary>

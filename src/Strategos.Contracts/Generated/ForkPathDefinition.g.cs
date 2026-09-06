@@ -21,18 +21,21 @@ public sealed record ForkPathDefinition
     /// Stable fork-path identifier.
     /// </summary>
     [JsonPropertyName("pathId")]
+    [JsonRequired]
     public string PathId { get; init; } = default!;
 
     /// <summary>
     /// Zero-based path index within the fork.
     /// </summary>
     [JsonPropertyName("pathIndex")]
+    [JsonRequired]
     public int PathIndex { get; init; }
 
     /// <summary>
     /// Steps executed on this concurrent path.
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>

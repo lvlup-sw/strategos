@@ -26,6 +26,8 @@ public static class OntologyDispatcherDecoratorExtensions
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        options.ReportActionConstraints = true;
+
         if (options.DispatcherDecorators.Any(d => d.Order == ConstraintReportingOrder))
         {
             return options;
@@ -42,7 +44,8 @@ public static class OntologyDispatcherDecoratorExtensions
                 return ConstraintReportingActionDispatcher.CreateDeferred(
                     inner,
                     lazyQuery,
-                    sp.GetRequiredService<ILogger<ConstraintReportingActionDispatcher>>());
+                    sp.GetRequiredService<ILogger<ConstraintReportingActionDispatcher>>(),
+                    authoritativeReportingHandled: true);
             }));
         return options;
     }

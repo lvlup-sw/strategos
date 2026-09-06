@@ -90,9 +90,11 @@ public class InterfaceActionTests
         mapping.ActionDefault("Search",
             tool => tool.BoundToTool("SearchMcpTools", "SearchAsync"));
 
-        var defaultActions = mapping.GetDefaultActions();
+        var subject = new ActionSubject("Trading", "TestSearchablePosition");
+        var defaultActions = mapping.GetDefaultActions(subject);
         await Assert.That(defaultActions.Count).IsEqualTo(1);
         await Assert.That(defaultActions[0].BoundToolName).IsEqualTo("SearchMcpTools");
+        await Assert.That(defaultActions[0].Subject).IsEqualTo(subject);
     }
 
     [Test]

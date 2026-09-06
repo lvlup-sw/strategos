@@ -24,18 +24,22 @@ The hasher canonicalises the graph into a stable byte stream (length-prefixed UT
 - **Object types** (sorted by `DomainName`, then `Name`). Per type:
   - `Name`, `DomainName`, `ParentTypeName`, `Kind` (`ObjectKind` enum), `KeyProperty.Name`.
   - `Properties[*]` (sorted by `Name`): `Name`, `Kind`, `PropertyType.FullName`, `IsRequired`, `VectorDimensions`.
-  - `Actions[*]` (sorted by `Name`): `Name`, `AcceptsType.FullName`, `ReturnsType.FullName`, `BindingType`, `BoundWorkflowName`, `BoundToolName`, `BoundToolMethod`, `Preconditions[*]` (`Description`, `Expression`, `Kind`, `LinkName`, `Strength`), `Postconditions[*]` (`Kind`, `PropertyName`, `LinkName`, `EventTypeName`, `TargetTypeName`).
-  - `Links[*]` (sorted by `Name`): `Name`, `TargetTypeName`, `Cardinality`, `EdgeProperties[*]` (`Name`, `Kind`).
+  - `Actions[*]` (sorted by `Name`): `Subject.DomainName`, `Subject.ObjectTypeName`, `Name`, `AcceptsType.FullName`, `ReturnsType.FullName`, binding fields, read-only/idempotence/confirmation flags, required authority, compensation name, allowed clients, touched resources, normalized precondition canonical tokens and strengths, normalized guarantee canonical tokens, and postcondition effect fields.
+  - `Links[*]` (sorted by `Name`): `Name`, `TargetTypeName`, and `Cardinality`.
   - `Events[*]` (sorted by `EventType.FullName`): `EventType.FullName`, `Severity`, `MaterializedLinks`, `UpdatedProperties`.
   - `Lifecycle` (when present): `PropertyName`, `StateEnumTypeName`, `States[*]` (`Name`, `IsInitial`, `IsTerminal`), `Transitions[*]` (`FromState`, `ToState`, `TriggerActionName`, `TriggerEventTypeName`).
   - `ImplementedInterfaces[*].Name`.
   - `InterfacePropertyMappings[*]` (sorted by `InterfaceName`, `TargetPropertyName`, `SourcePropertyName`): `InterfaceName`, `TargetPropertyName`, `SourcePropertyName`.
   - `InterfaceActionMappings[*]` (sorted by `InterfaceActionName`, `ConcreteActionName`): `InterfaceActionName`, `ConcreteActionName`.
 - **Interfaces** (sorted by `Name`): `Name`, `Properties` (`Name`, `Kind`, `PropertyType.FullName`), `Actions` (`Name`, `AcceptsTypeName`, `ReturnsTypeName`).
-- **Cross-domain links** (sorted by `SourceDomain`, `SourceObjectType.Name`, `Name`, `TargetDomain`, `TargetObjectType.Name`, `Cardinality`): `SourceDomain`, `SourceObjectType.Name`, `Name`, `TargetDomain`, `TargetObjectType.Name`, `Cardinality`, `EdgeProperties[*]` (`Name`, `Kind`).
+- **Cross-domain links** (sorted by `SourceDomain`, `SourceObjectType.Name`, `Name`, `TargetDomain`, `TargetObjectType.Name`, `Cardinality`): those six fields.
 - **Workflow chains** (sorted by `WorkflowName`, then consumed/produced type identity): `WorkflowName`, `ConsumedType` (FullName / SymbolKey / Name fallback), `ProducedType` (same fallback chain).
 
-`ActionPrecondition.Description` is included because it is the precondition's identity / sort key — distinct from per-action free-form documentation prose.
+Action predicate identity is its deterministic canonical token. That token
+includes typed property references and literals; aggregate structure; link and
+relation atoms; and, for custom predicates, the stable evaluator key, ordered
+arguments, and declared read set. The readable `Expression` is a projection of
+that structure and is not a hash input.
 
 ## What is deliberately NOT hashed
 
@@ -43,7 +47,8 @@ Excluded so the hash remains a structural-only fingerprint and documentation chu
 
 | Excluded | Rationale |
 |---|---|
-| `Description` text on actions, links, properties, lifecycle states/transitions, events, cross-domain links, interface actions | Documentation prose changes do not affect dispatch behaviour or the surface agents reason about. |
+| `Description` text on actions, preconditions, guarantees, links, properties, lifecycle states/transitions, events, cross-domain links, interface actions | Documentation prose changes do not affect dispatch behaviour or the surface agents reason about. |
+| Predicate/guarantee `Expression` display projections | The normalized canonical token already carries semantic identity; the display string is never parsed. |
 | `OntologyGraph.Warnings` | Advisory, non-structural diagnostic strings. |
 | `OntologyGraph.ObjectTypeNamesByType` | Derived index from `ObjectTypes`; mutation without mutating the underlying list is impossible. |
 | `PropertyDescriptor.IsComputed` / `DerivedFrom` / `TransitiveDerivedFrom` | Captured implicitly via `PropertyKind == Computed`; the derivation chain is reconstructable from `Properties`. |
@@ -56,13 +61,15 @@ Any structural mutation of the included fields produces a new hash. Examples:
 - Adding, removing, or renaming an object type, property, link, action, event, lifecycle state, or transition.
 - Changing a property's `PropertyType`, `IsRequired`, `VectorDimensions`, or `Kind`.
 - Rebinding an action's `BoundWorkflowName`, `BoundToolName`, or `BoundToolMethod` (a dispatch-routing change).
-- Adding, removing, or modifying a precondition or postcondition.
-- Changing a link's `Cardinality` or `EdgeProperties`.
+- Changing an action subject, hard/soft requirement, post-state guarantee,
+  custom evaluator key/arguments/read set, frame, or effect postcondition.
+- Changing a link's `Cardinality`.
 - Changing the `(consumed, produced)` shape of a workflow chain.
 
 Examples that do *not* change the hash:
 
-- Editing a `Description` string anywhere it appears.
+- Editing a `Description` string anywhere it appears, including requirement
+  and guarantee prose.
 - Reordering registration calls (canonicalisation sorts every collection).
 - Adding entries to `OntologyGraph.Warnings`.
 
@@ -71,6 +78,14 @@ Examples that do *not* change the hash:
 Treat `Version` as an opaque cache key. When a downstream cache (a planner's tool list, an agent's action-availability snapshot, a UI's type browser) is keyed by the hash and the current `OntologyGraph.Version` does not match the cached value, invalidate and rebuild. Two graphs with the same hash are guaranteed to share every hashed structural field; two graphs with different hashes differ in at least one such field.
 
 The MCP surface emits `_meta.ontologyVersion` on every tool response — MCP clients should compare against their last-seen value and invalidate cached descriptors on mismatch. See [MCP integration guide](/guide/ontology/mcp-integration/) for the `_meta` envelope shape.
+
+:::caution[2.13 cache rollover]
+Strategos 2.13 intentionally changes the action canonicalization once to add
+subjects, typed predicates, guarantees, and custom-predicate identity. Every
+existing action-bearing graph therefore receives a new version on its first
+2.13 build. Invalidate caches instead of attempting to translate an older hash.
+See the [2.13 migration guide](/guide/ontology/migration-v2-13/#9-invalidate-graph-version-caches-once).
+:::
 
 ## Determinism guarantees
 

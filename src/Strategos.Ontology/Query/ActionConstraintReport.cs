@@ -7,5 +7,9 @@ namespace Strategos.Ontology.Query;
 
 public sealed record ActionConstraintReport(
     ActionDescriptor Action,
-    bool IsAvailable,
-    IReadOnlyList<ConstraintEvaluation> Constraints);
+    ActionAvailability Availability,
+    IReadOnlyList<ConstraintEvaluation> Constraints)
+{
+    /// <summary>Gets whether every hard constraint is known to be satisfied.</summary>
+    public bool IsAvailable => Availability == ActionAvailability.Available;
+}

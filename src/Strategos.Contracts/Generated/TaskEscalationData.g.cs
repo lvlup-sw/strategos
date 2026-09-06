@@ -17,12 +17,15 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskEscalationData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("escalationTarget")]
+    [JsonRequired]
     public object EscalationTarget { get; init; } = default!;
 
     [JsonPropertyName("suggestedAction")]
+    [JsonRequired]
     public object SuggestedAction { get; init; } = default!;
 
     [JsonPropertyName("reason")]

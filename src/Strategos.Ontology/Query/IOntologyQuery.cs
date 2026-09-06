@@ -19,45 +19,92 @@ public interface IOntologyQuery
     IReadOnlyList<ObjectTypeDescriptor> GetImplementors(string interfaceName);
 
     // Precondition & Postcondition queries (§4.14.5)
-    IReadOnlyList<ActionDescriptor> GetValidActions(
+    /// <summary>
+    /// Returns actions that are available or indeterminate using an empty fact
+    /// set. Actions proven unavailable are excluded.
+    /// </summary>
+    IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(string objectType) =>
+        GetCandidateActions(objectType, facts: null);
+
+    IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null);
+        ActionFacts? facts);
 
     /// <summary>
-    /// Returns actions whose hard property, link, and principal-relation
-    /// preconditions hold for a specific target instance.
+    /// Returns available and indeterminate candidates for a domain-qualified
+    /// object type, excluding actions proven unavailable.
+    /// </summary>
+    IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+        string domain,
+        string objectType) =>
+        GetCandidateActions(domain, objectType, facts: null);
+
+    /// <summary>
+    /// Returns available and indeterminate candidates for a domain-qualified
+    /// object type, excluding actions proven unavailable.
+    /// </summary>
+    IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+        string domain,
+        string objectType,
+        ActionFacts? facts) =>
+        GetCandidateActions(objectType, facts);
+
+    IReadOnlyList<ActionDescriptor> GetValidActions(
+        string objectType,
+        ActionFacts? facts = null);
+
+    /// <summary>
+    /// Returns actions whose hard requirements are not proven false for a
+    /// specific target instance. Indeterminate actions are retained.
     /// </summary>
     /// <param name="principal">Authenticated principal requesting an action.</param>
     /// <param name="domain">Domain that owns the target object type.</param>
     /// <param name="objectType">Target object descriptor name.</param>
     /// <param name="objectId">Target object identifier.</param>
-    /// <param name="knownProperties">Optional property values for local predicate evaluation.</param>
+    /// <param name="facts">Optional typed facts for local predicate evaluation.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Actions whose hard preconditions are satisfied.</returns>
+    /// <returns>Actions whose hard preconditions are satisfied or indeterminate.</returns>
     Task<IReadOnlyList<ActionDescriptor>> GetValidActionsAsync(
         ActionPrincipal principal,
         string domain,
         string objectType,
         string objectId,
-        IReadOnlyDictionary<string, object?>? knownProperties = null,
+        ActionFacts? facts = null,
         CancellationToken ct = default) =>
         throw new NotSupportedException(
             "Principal-aware action discovery requires a runtime relation resolver.");
 
+    /// <summary>
+    /// Returns available and indeterminate candidates, excluding actions proven
+    /// unavailable by the supplied discovery facts and evaluators.
+    /// </summary>
+    Task<IReadOnlyList<ActionCandidateEvaluation>> GetCandidateActionsAsync(
+        ActionPrincipal principal,
+        string domain,
+        string objectType,
+        string objectId,
+        ActionFacts? facts = null,
+        CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "Principal-aware action discovery requires runtime predicate evaluators.");
+
+    IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(string objectType) =>
+        GetActionConstraintReport(objectType, facts: null);
+
     IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null);
+        ActionFacts? facts);
 
     /// <summary>
-    /// Domain-qualified overload of <see cref="GetActionConstraintReport(string, IReadOnlyDictionary{string, object?}?)"/>.
+    /// Domain-qualified overload of <see cref="GetActionConstraintReport(string, ActionFacts?)"/>.
     /// Implementations that walk multiple domains should resolve the
     /// descriptor by <c>(domain, objectType)</c> to avoid returning
     /// constraints from a same-named type in a different domain.
     /// </summary>
     /// <param name="domain">Domain that owns <paramref name="objectType"/>.</param>
     /// <param name="objectType">Simple object type name within <paramref name="domain"/>.</param>
-    /// <param name="knownProperties">
-    /// Optional known property values consumed by precondition evaluation.
+    /// <param name="facts">
+    /// Optional typed facts consumed by precondition evaluation.
     /// </param>
     /// <returns>
     /// One <see cref="ActionConstraintReport"/> per registered action on the
@@ -71,9 +118,17 @@ public interface IOntologyQuery
     /// </remarks>
     IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string domain,
+        string objectType) =>
+        GetActionConstraintReport(domain, objectType, facts: null);
+
+    /// <summary>
+    /// Domain-qualified overload accepting explicit typed facts.
+    /// </summary>
+    IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
+        string domain,
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null)
-        => GetActionConstraintReport(objectType, knownProperties);
+        ActionFacts? facts)
+        => GetActionConstraintReport(objectType, facts);
 
     IReadOnlyList<PostconditionTrace> TracePostconditions(
         string objectType, string actionName, int maxDepth = 1);

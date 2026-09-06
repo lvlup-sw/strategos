@@ -1,4 +1,5 @@
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -31,7 +32,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var results = await set.ApplyAsync(Principal, "DoSomething", new { Value = 1 });
@@ -50,7 +51,7 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
         var request = new { To = "test@example.com" };
 
         // Act
@@ -71,7 +72,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(evt));
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var events = new List<OntologyEvent>();
@@ -94,7 +95,7 @@ public class ObjectSetActionEventTests
 
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<OntologyEvent>());
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         await foreach (var _ in set.EventsAsync(since, eventTypes))
@@ -124,14 +125,14 @@ public class ObjectSetActionEventTests
             .Returns(Task.FromResult(new ObjectSetResult<string>(items, 1, ObjectSetInclusion.Properties)));
         _dispatcher.DispatchAsync(Arg.Any<ActionContext>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true)));
-        var set = new ObjectSet<string>(descriptorName, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("trading", descriptorName), _provider, _dispatcher, _eventProvider);
 
         // Act
         await set.ApplyAsync(Principal, "Archive", new { });
 
         // Assert — dispatcher receives the descriptor name, not "String"
         await _dispatcher.Received(1).DispatchAsync(
-            Arg.Is<ActionContext>(c => c.ObjectType == descriptorName),
+            Arg.Is<ActionContext>(c => c.Domain == "trading" && c.ObjectType == descriptorName),
             Arg.Any<object>(),
             Arg.Any<CancellationToken>());
     }
@@ -143,7 +144,7 @@ public class ObjectSetActionEventTests
         const string descriptorName = "trading_documents";
         _eventProvider.QueryEventsAsync(Arg.Any<EventQuery>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<OntologyEvent>());
-        var set = new ObjectSet<string>(descriptorName, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("trading", descriptorName), _provider, _dispatcher, _eventProvider);
 
         // Act
         await foreach (var _ in set.EventsAsync())
@@ -152,7 +153,8 @@ public class ObjectSetActionEventTests
 
         // Assert — event query carries the descriptor name, not "String"
         _eventProvider.Received(1).QueryEventsAsync(
-            Arg.Is<EventQuery>(q => q.ObjectTypeName == descriptorName),
+            Arg.Is<EventQuery>(q =>
+                q.Domain == "trading" && q.ObjectTypeName == descriptorName),
             Arg.Any<CancellationToken>());
     }
 

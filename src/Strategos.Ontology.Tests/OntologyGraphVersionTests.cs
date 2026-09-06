@@ -154,13 +154,13 @@ public class OntologyGraphVersionTests
     {
         var tA = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "desc"),
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc"),
         ]);
         var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
 
         var tB = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoItRenamed", "desc"),
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoItRenamed", "desc"),
         ]);
         var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
 
@@ -294,7 +294,7 @@ public class OntologyGraphVersionTests
         // even though the action's surface (Name/Accepts/Returns) is identical.
         var tA = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "desc")
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Workflow,
                 BoundWorkflowName = "WorkflowA",
@@ -302,7 +302,7 @@ public class OntologyGraphVersionTests
         ]);
         var tB = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "desc")
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Workflow,
                 BoundWorkflowName = "WorkflowB",
@@ -321,7 +321,7 @@ public class OntologyGraphVersionTests
         // Rebinding BoundToolName / BoundToolMethod is also dispatch routing.
         var tA = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "desc")
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Tool,
                 BoundToolName = "ToolA",
@@ -330,7 +330,7 @@ public class OntologyGraphVersionTests
         ]);
         var tB = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "desc")
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Tool,
                 BoundToolName = "ToolB",
@@ -527,17 +527,188 @@ public class OntologyGraphVersionTests
     {
         var tA = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "Original description"),
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "Original description"),
         ]);
         var tB = ObjectType("T", "d", actions:
         [
-            new ActionDescriptor("DoIt", "Completely different prose"),
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "Completely different prose"),
         ]);
 
         var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
         var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
 
         await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingActionSubject_ChangesHash()
+    {
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc"),
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("other", "T"), "DoIt", "desc"),
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_ChangingTypedRequirementOrGuarantee_ChangesHash()
+    {
+        var one = IntegerPredicate("Count", 1);
+        var two = IntegerPredicate("Count", 2);
+        var requirementA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(one, "presentation")],
+            },
+        ]);
+        var requirementB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(two, "presentation")],
+            },
+        ]);
+        var guarantee = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(one, "presentation")],
+                Ensures = [new ActionGuarantee(one)],
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", requirementA)], objectTypes: [requirementA]);
+        var graphB = Graph(domains: [Domain("d", requirementB)], objectTypes: [requirementB]);
+        var graphC = Graph(domains: [Domain("d", guarantee)], objectTypes: [guarantee]);
+
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+        await Assert.That(graphA.Version).IsNotEqualTo(graphC.Version);
+    }
+
+    [Test]
+    public async Task Version_PredicateDescriptionsAndRegistrationOrder_DoNotChangeHash()
+    {
+        var one = IntegerPredicate("Count", 1);
+        var link = ActionPredicate.LinkExists("owner");
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions =
+                [
+                    new ActionPrecondition(one, "first prose"),
+                    new ActionPrecondition(link, "second prose", ConstraintStrength.Soft),
+                ],
+                Ensures =
+                [
+                    new ActionGuarantee(one, "first guarantee prose"),
+                    new ActionGuarantee(link, "second guarantee prose"),
+                ],
+            },
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions =
+                [
+                    new ActionPrecondition(link, "changed prose", ConstraintStrength.Soft),
+                    new ActionPrecondition(one, "also changed"),
+                ],
+                Ensures =
+                [
+                    new ActionGuarantee(link, "changed guarantee prose"),
+                    new ActionGuarantee(one, null),
+                ],
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_CustomSemanticInputsParticipateButDescriptionsDoNot()
+    {
+        var customA = ActionPredicate.Custom(
+            "policy.v1",
+            [PredicateLiteral.String("alpha")],
+            [ActionResource.Property("Status")]);
+        var customB = ActionPredicate.Custom(
+            "policy.v1",
+            [PredicateLiteral.String("beta")],
+            [ActionResource.Property("Status")]);
+        var customWithDifferentKey = ActionPredicate.Custom(
+            "policy.v2",
+            [PredicateLiteral.String("alpha")],
+            [ActionResource.Property("Status")]);
+        var customWithDifferentReadSet = ActionPredicate.Custom(
+            "policy.v1",
+            [PredicateLiteral.String("alpha")],
+            [ActionResource.Link("Status")]);
+        var tA = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(customA, "first description")],
+            },
+        ]);
+        var tAWithNewProse = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(customA, "changed description")],
+            },
+        ]);
+        var tB = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(customB, "first description")],
+            },
+        ]);
+        var tWithDifferentKey = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(customWithDifferentKey, "first description")],
+            },
+        ]);
+        var tWithDifferentReadSet = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                Preconditions = [new ActionPrecondition(customWithDifferentReadSet, "first description")],
+            },
+        ]);
+
+        var graphA = Graph(domains: [Domain("d", tA)], objectTypes: [tA]);
+        var graphAWithNewProse = Graph(
+            domains: [Domain("d", tAWithNewProse)],
+            objectTypes: [tAWithNewProse]);
+        var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
+        var graphWithDifferentKey = Graph(
+            domains: [Domain("d", tWithDifferentKey)],
+            objectTypes: [tWithDifferentKey]);
+        var graphWithDifferentReadSet = Graph(
+            domains: [Domain("d", tWithDifferentReadSet)],
+            objectTypes: [tWithDifferentReadSet]);
+
+        await Assert.That(graphA.Version).IsEqualTo(graphAWithNewProse.Version);
+        await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+        await Assert.That(graphA.Version).IsNotEqualTo(graphWithDifferentKey.Version);
+        await Assert.That(graphA.Version).IsNotEqualTo(graphWithDifferentReadSet.Version);
     }
 
     [Test]
@@ -617,12 +788,11 @@ public class OntologyGraphVersionTests
     // assertion failure message, and replace the constant. Confirm the diff
     // matches the intended hasher change before committing.
     //
-    // Last regenerated for the action-object program (#162/#164/#165/#170/#171):
-    // relation authorization, retry safety, authority, frames, compensation,
-    // client visibility, confirmation, and nested authority boundaries now
-    // participate in graph identity.
+    // Last regenerated for typed action calculus (#168): action subjects,
+    // normalized typed requirements/guarantees, and explicit collection framing
+    // now participate in graph identity while presentation prose stays excluded.
     private const string ReferenceFixtureVersion =
-        "8ae8148c65f4155db0f16be2fb90e7c7c825f2429c05e4e5ba328c82e8473014";
+        "004643e0888a8eebaf686df5c019d21c0c834b24720d495186442b4a6c1e6494";
 
     [Test]
     public async Task Version_ReferenceFixture_MatchesPinnedConstant()
@@ -731,7 +901,10 @@ public class OntologyGraphVersionTests
             ],
             Actions =
             [
-                new ActionDescriptor("Submit", "submit the order"),
+                new ActionDescriptor(
+                    new ActionSubject("trading", "Order"),
+                    "Submit",
+                    "submit the order"),
             ],
             Links =
             [
@@ -763,4 +936,10 @@ public class OntologyGraphVersionTests
             crossDomainLinks: [xdl],
             workflowChains: [chain]);
     }
+
+    private static ActionPredicate IntegerPredicate(string name, int value) =>
+        ActionPredicate.Property(
+            new PredicatePropertyReference(name, PredicateScalarKind.Integer),
+            PredicateComparisonOperator.Equal,
+            PredicateLiteral.Integer(value));
 }

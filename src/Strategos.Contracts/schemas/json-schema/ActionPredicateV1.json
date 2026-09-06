@@ -1,0 +1,34 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionPredicateV1.json",
+    "anyOf": [
+        {
+            "$ref": "ActionTruePredicateV1.json"
+        },
+        {
+            "$ref": "ActionFalsePredicateV1.json"
+        },
+        {
+            "$ref": "ActionPropertyComparisonPredicateV1.json"
+        },
+        {
+            "$ref": "ActionLinkExistsPredicateV1.json"
+        },
+        {
+            "$ref": "ActionRelationHoldsPredicateV1.json"
+        },
+        {
+            "$ref": "ActionAllPredicateV1.json"
+        },
+        {
+            "$ref": "ActionAnyPredicateV1.json"
+        },
+        {
+            "$ref": "ActionNotPredicateV1.json"
+        },
+        {
+            "$ref": "ActionCustomPredicateV1.json"
+        }
+    ],
+    "description": "Version 1 of the immutable, closed action-predicate language. Unknown kinds\nare invalid; consumers must never reinterpret them as custom or true."
+}

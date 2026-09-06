@@ -22,6 +22,7 @@ public sealed record CompensationConfiguration
     /// Simple-name CLR moniker of the compensation step type (LB-2).
     /// </summary>
     [JsonPropertyName("compensationStepType")]
+    [JsonRequired]
     public string CompensationStepType { get; init; } = default!;
 
     /// <summary>

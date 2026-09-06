@@ -40,4 +40,28 @@ public interface IActionBuilder
 
     /// <summary>Names the action that restores this action's declared frame.</summary>
     IActionBuilder CompensatedBy(string actionName);
+
+    /// <summary>Adds a hard typed precondition.</summary>
+    IActionBuilder Requires(ActionPredicate predicate, string? description = null);
+
+    /// <summary>Adds a soft typed precondition.</summary>
+    IActionBuilder RequiresSoft(ActionPredicate predicate, string? description = null);
+
+    /// <summary>Adds an explicit typed post-state guarantee.</summary>
+    IActionBuilder Ensures(ActionPredicate predicate, string? description = null);
+
+    /// <summary>Adds a hard link-existence precondition.</summary>
+    IActionBuilder RequiresLink(string linkName);
+
+    /// <summary>Adds a soft link-existence precondition.</summary>
+    IActionBuilder RequiresLinkSoft(string linkName);
+
+    /// <summary>Adds a hard principal-relation precondition.</summary>
+    IActionBuilder RequiresRelation(string relationName, params string[] linkPath);
+
+    /// <summary>Adds an explicit link-existence guarantee.</summary>
+    IActionBuilder EnsuresLink(string linkName);
+
+    /// <summary>Adds an explicit principal-relation guarantee.</summary>
+    IActionBuilder EnsuresRelation(string relationName, params string[] linkPath);
 }

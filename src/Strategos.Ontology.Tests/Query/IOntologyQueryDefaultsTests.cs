@@ -1,3 +1,4 @@
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Query;
@@ -61,13 +62,17 @@ public class IOntologyQueryDefaultsTests
 
         public IReadOnlyList<ObjectTypeDescriptor> GetImplementors(string interfaceName) => [];
 
+        public IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+            string objectType,
+            ActionFacts? facts = null) => [];
+
         public IReadOnlyList<ActionDescriptor> GetValidActions(
             string objectType,
-            IReadOnlyDictionary<string, object?>? knownProperties = null) => [];
+            ActionFacts? facts = null) => [];
 
         public IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
             string objectType,
-            IReadOnlyDictionary<string, object?>? knownProperties = null) => [];
+            ActionFacts? facts = null) => [];
 
         public IReadOnlyList<PostconditionTrace> TracePostconditions(
             string objectType, string actionName, int maxDepth = 1) => [];

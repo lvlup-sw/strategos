@@ -21,6 +21,7 @@ public sealed record FabricQueryData
     /// Kind of fabric query that was executed.
     /// </summary>
     [JsonPropertyName("queryType")]
+    [JsonRequired]
     public FabricQueryType QueryType { get; init; }
 
     /// <summary>
@@ -33,17 +34,20 @@ public sealed record FabricQueryData
     /// Number of results returned.
     /// </summary>
     [JsonPropertyName("resultCount")]
+    [JsonRequired]
     public int ResultCount { get; init; }
 
     /// <summary>
     /// True if the query was served from a degraded / partial fabric.
     /// </summary>
     [JsonPropertyName("degraded")]
+    [JsonRequired]
     public bool Degraded { get; init; }
 
     /// <summary>
     /// Ontology graph version the query resolved against.
     /// </summary>
     [JsonPropertyName("ontologyVersion")]
+    [JsonRequired]
     public string OntologyVersion { get; init; } = default!;
 }

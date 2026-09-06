@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionStringLiteralV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "string"
+        },
+        "value": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "kind",
+        "value"
+    ],
+    "description": "An ordinal string literal."
+}

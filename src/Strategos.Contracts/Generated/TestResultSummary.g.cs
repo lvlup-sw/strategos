@@ -17,9 +17,11 @@ namespace Strategos.Contracts.Generated;
 public sealed record TestResultSummary
 {
     [JsonPropertyName("passed")]
+    [JsonRequired]
     public int Passed { get; init; }
 
     [JsonPropertyName("failed")]
+    [JsonRequired]
     public int Failed { get; init; }
 
     [JsonPropertyName("coverage")]

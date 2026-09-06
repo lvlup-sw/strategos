@@ -175,7 +175,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.9.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.10.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -188,8 +188,14 @@ the semantic-merge-queue surface (`MergeGateDecision` / `JourneyResult` /
 the AGWF catalog; 0.4.0 added the strategy-compiler contract layer (the
 `GateClass` gate taxonomy, the fork/compensation edge, and the licensed-abstention
 union); 0.5.0–0.8.0 add workflow diagnostics; 0.9.0 adds contract-authored
-ontology action metadata and the generated descriptor adapter — each an
-additive minor. The package embeds all schema
+ontology action metadata and the generated descriptor adapter; 0.10.0 adds the
+versioned `ActionPredicateV1`/`ActionLiteralV1` wire vocabulary and replaces
+legacy relation-only action metadata with typed `@requires`/`@ensures`
+metadata. Integer and decimal predicate values use canonical strings so every
+consumer preserves exact values. Unknown predicate discriminators are invalid,
+never an implicit custom predicate. Closed enums accept only their exact
+TypeSpec wire tokens, and schema-required fields fail deserialization when
+omitted. The package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under
 `contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`

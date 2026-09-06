@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Numerics;
+using System.Text.Json;
+
 using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Query;
@@ -77,7 +81,7 @@ public sealed class OntologyValidateTool
             // expected by the constraint evaluator; action arguments win on
             // key collisions because they describe the *invocation* rather
             // than the prior subject state.
-            var lookup = MergeKnownPropsAndArgs(intent.KnownProperties, action.Arguments);
+            var facts = MergeKnownPropsAndArgs(intent.KnownProperties, action.Arguments);
 
             // Domain-qualified lookup so a graph with two same-named types in
             // different domains (e.g. trading.Order vs fulfillment.Order)
@@ -85,7 +89,7 @@ public sealed class OntologyValidateTool
             var reports = _query.GetActionConstraintReport(
                 action.Subject.Domain,
                 action.Subject.ObjectTypeName,
-                lookup);
+                facts);
 
             // The query returns a report per registered action on the object type.
             // Narrow to the proposed action so we don't report constraints from
@@ -123,19 +127,18 @@ public sealed class OntologyValidateTool
 
     private static ConstraintEvaluation BuildUnknownActionViolation(ProposedAction action)
     {
-        var synthetic = new ActionPrecondition
-        {
-            Expression = $"action_registered('{action.ActionName}')",
-            Description =
+        var synthetic = new ActionPrecondition(
+            ActionPredicate.Custom(
+                "strategos.action-registered",
+                [PredicateLiteral.String(action.ActionName)]),
+            description:
                 $"Action '{action.ActionName}' must be registered on " +
                 $"'{action.Subject.Domain}.{action.Subject.ObjectTypeName}'.",
-            Kind = PreconditionKind.Custom,
-            Strength = ConstraintStrength.Hard,
-        };
+            ConstraintStrength.Hard);
 
         return new ConstraintEvaluation(
             Precondition: synthetic,
-            IsSatisfied: false,
+            TruthValue: PredicateTruthValue.Unsatisfied,
             Strength: ConstraintStrength.Hard,
             FailureReason:
                 $"Action '{action.ActionName}' is not registered on " +
@@ -143,31 +146,116 @@ public sealed class OntologyValidateTool
             ExpectedShape: null);
     }
 
-    private static IReadOnlyDictionary<string, object?>? MergeKnownPropsAndArgs(
+    private static ActionFacts MergeKnownPropsAndArgs(
         IReadOnlyDictionary<string, object?>? knownProperties,
         IReadOnlyDictionary<string, object?>? actionArguments)
     {
-        if (actionArguments is null || actionArguments.Count == 0)
+        var properties = new Dictionary<string, PredicateLiteral>(StringComparer.Ordinal);
+        AddFacts(properties, knownProperties);
+        AddFacts(properties, actionArguments);
+        return properties.Count == 0 ? ActionFacts.Empty : new ActionFacts(properties);
+    }
+
+    private static void AddFacts(
+        IDictionary<string, PredicateLiteral> destination,
+        IReadOnlyDictionary<string, object?>? values)
+    {
+        if (values is null)
         {
-            return knownProperties;
+            return;
         }
 
-        if (knownProperties is null || knownProperties.Count == 0)
+        foreach (var pair in values)
         {
-            return actionArguments;
+            if (TryCreateLiteral(pair.Value, out var literal))
+            {
+                destination[pair.Key] = literal;
+            }
+            else
+            {
+                // An invocation argument still overrides a same-named known
+                // property. Unsupported values therefore make that fact
+                // unknown instead of leaking the earlier value through.
+                destination.Remove(pair.Key);
+            }
+        }
+    }
+
+    private static bool TryCreateLiteral(object? value, out PredicateLiteral literal)
+    {
+        switch (value)
+        {
+            case null:
+                literal = PredicateLiteral.Null;
+                return true;
+            case PredicateLiteral typed:
+                literal = typed;
+                return true;
+            case bool boolean:
+                literal = PredicateLiteral.Boolean(boolean);
+                return true;
+            case byte or sbyte or short or ushort or int or uint or long or ulong:
+                literal = PredicateLiteral.Integer(BigInteger.Parse(
+                    Convert.ToString(value, CultureInfo.InvariantCulture)!,
+                    CultureInfo.InvariantCulture));
+                return true;
+            case BigInteger integer:
+                literal = PredicateLiteral.Integer(integer);
+                return true;
+            case decimal exactDecimal:
+                literal = PredicateLiteral.Decimal(exactDecimal);
+                return true;
+            case PredicateDecimal exactDecimal:
+                literal = PredicateLiteral.Decimal(exactDecimal);
+                return true;
+            case string text:
+                literal = PredicateLiteral.String(text);
+                return true;
+            case Enum enumValue when Enum.GetName(enumValue.GetType(), enumValue) is { } memberName:
+                literal = PredicateLiteral.Enum(enumValue.GetType().Name, memberName);
+                return true;
+            case JsonElement element:
+                return TryCreateJsonLiteral(element, out literal);
+            default:
+                literal = null!;
+                return false;
+        }
+    }
+
+    private static bool TryCreateJsonLiteral(JsonElement value, out PredicateLiteral literal)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Null:
+                literal = PredicateLiteral.Null;
+                return true;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                literal = PredicateLiteral.Boolean(value.GetBoolean());
+                return true;
+            case JsonValueKind.String:
+                literal = PredicateLiteral.String(value.GetString()!);
+                return true;
+            case JsonValueKind.Number:
+            {
+                var text = value.GetRawText();
+                if (BigInteger.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var integer))
+                {
+                    literal = PredicateLiteral.Integer(integer);
+                    return true;
+                }
+
+                if (PredicateDecimal.TryParse(text, out var exactDecimal))
+                {
+                    literal = PredicateLiteral.Decimal(exactDecimal);
+                    return true;
+                }
+
+                break;
+            }
         }
 
-        var merged = new Dictionary<string, object?>(knownProperties.Count + actionArguments.Count);
-        foreach (var kvp in knownProperties)
-        {
-            merged[kvp.Key] = kvp.Value;
-        }
-
-        foreach (var kvp in actionArguments)
-        {
-            merged[kvp.Key] = kvp.Value;
-        }
-
-        return merged;
+        literal = null!;
+        return false;
     }
 }

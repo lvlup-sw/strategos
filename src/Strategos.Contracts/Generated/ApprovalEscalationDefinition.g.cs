@@ -21,23 +21,27 @@ public sealed record ApprovalEscalationDefinition
     /// Stable escalation identifier.
     /// </summary>
     [JsonPropertyName("escalationId")]
+    [JsonRequired]
     public string EscalationId { get; init; } = default!;
 
     /// <summary>
     /// Steps run on escalation.
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
     /// Nested approval gates within the escalation, if any.
     /// </summary>
     [JsonPropertyName("nestedApprovals")]
+    [JsonRequired]
     public IReadOnlyList<ApprovalDefinition> NestedApprovals { get; init; } = default!;
 
     /// <summary>
     /// Whether escalation terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 }

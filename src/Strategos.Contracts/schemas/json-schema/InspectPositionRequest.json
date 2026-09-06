@@ -19,9 +19,50 @@
         "mcp",
         "web"
     ],
-    "x-strategos-relation": "owner",
-    "x-strategos-link-path": [
-        "Portfolio"
+    "x-strategos-ensures-v1": [
+        {
+            "predicate": {
+                "kind": "relation-holds",
+                "relationName": "owner",
+                "linkPath": [
+                    "Portfolio"
+                ]
+            },
+            "expression": "principal -[owner]-> Portfolio",
+            "description": "The ownership relation remains established."
+        }
+    ],
+    "x-strategos-requires-v1": [
+        {
+            "predicate": {
+                "kind": "property-comparison",
+                "property": {
+                    "name": "status",
+                    "scalarKind": "string",
+                    "isNullable": false
+                },
+                "operator": "not-equal",
+                "value": {
+                    "kind": "string",
+                    "value": "closed"
+                }
+            },
+            "expression": "status != \"closed\"",
+            "strength": "soft",
+            "description": "The position should not already be closed."
+        },
+        {
+            "strength": "hard",
+            "description": "Requires relation 'owner'.",
+            "predicate": {
+                "kind": "relation-holds",
+                "relationName": "owner",
+                "linkPath": [
+                    "Portfolio"
+                ]
+            },
+            "expression": "principal -[owner]-> Portfolio"
+        }
     ],
     "x-strategos-authority": "position.reader",
     "x-strategos-action-name": "inspectPosition",

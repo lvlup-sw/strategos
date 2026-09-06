@@ -20,30 +20,35 @@ public sealed record ProcessLayerData
     /// Reference to the design document the process layer derives from.
     /// </summary>
     [JsonPropertyName("designRef")]
+    [JsonRequired]
     public string DesignRef { get; init; } = default!;
 
     /// <summary>
     /// Ordered task ledger (TaskSpec shapes land with §4.4).
     /// </summary>
     [JsonPropertyName("taskLedger")]
+    [JsonRequired]
     public IReadOnlyList<object> TaskLedger { get; init; } = default!;
 
     /// <summary>
     /// Quality gates the work must clear (QualityGateSpec shapes land with §4.4).
     /// </summary>
     [JsonPropertyName("qualityGates")]
+    [JsonRequired]
     public IReadOnlyList<object> QualityGates { get; init; } = default!;
 
     /// <summary>
     /// Cross-task dependencies (DependencySpec shapes land with §4.4).
     /// </summary>
     [JsonPropertyName("dependencies")]
+    [JsonRequired]
     public IReadOnlyList<object> Dependencies { get; init; } = default!;
 
     /// <summary>
     /// Governs local-vs-remote task placement.
     /// </summary>
     [JsonPropertyName("delegationPolicy")]
+    [JsonRequired]
     public DelegationPolicy DelegationPolicy { get; init; }
 
     /// <summary>

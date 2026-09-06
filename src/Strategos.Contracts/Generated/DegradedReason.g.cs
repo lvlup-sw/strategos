@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -19,7 +21,7 @@ namespace Strategos.Contracts.Generated;
 /// ordinal. Adding a reason is an additive minor; renaming or removing one is a
 /// breaking major.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DegradedReason>))]
+[JsonConverter(typeof(DegradedReasonJsonConverter))]
 public enum DegradedReason
 {
     [JsonStringEnumMemberName("model_timeout")]
@@ -45,4 +47,46 @@ public enum DegradedReason
 
     [JsonStringEnumMemberName("sandbox_unavailable")]
     SandboxUnavailable,
+}
+
+public sealed class DegradedReasonJsonConverter : JsonConverter<DegradedReason>
+{
+    public override DegradedReason Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("DegradedReason requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "model_timeout" => DegradedReason.ModelTimeout,
+            "model_5xx" => DegradedReason.Model5xx,
+            "rate_limit" => DegradedReason.RateLimit,
+            "malformed_output" => DegradedReason.MalformedOutput,
+            "low_confidence" => DegradedReason.LowConfidence,
+            "judge_unavailable" => DegradedReason.JudgeUnavailable,
+            "budget_exhausted" => DegradedReason.BudgetExhausted,
+            "sandbox_unavailable" => DegradedReason.SandboxUnavailable,
+            _ => throw new JsonException("Unknown DegradedReason wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, DegradedReason value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            DegradedReason.ModelTimeout => "model_timeout",
+            DegradedReason.Model5xx => "model_5xx",
+            DegradedReason.RateLimit => "rate_limit",
+            DegradedReason.MalformedOutput => "malformed_output",
+            DegradedReason.LowConfidence => "low_confidence",
+            DegradedReason.JudgeUnavailable => "judge_unavailable",
+            DegradedReason.BudgetExhausted => "budget_exhausted",
+            DegradedReason.SandboxUnavailable => "sandbox_unavailable",
+            _ => throw new JsonException("Unknown DegradedReason value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

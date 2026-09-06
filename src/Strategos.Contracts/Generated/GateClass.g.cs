@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -21,7 +23,7 @@ namespace Strategos.Contracts.Generated;
 /// ordinal. Adding a class is an additive minor; renaming or removing one is a
 /// breaking major.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<GateClass>))]
+[JsonConverter(typeof(GateClassJsonConverter))]
 public enum GateClass
 {
     [JsonStringEnumMemberName("typecheck")]
@@ -47,4 +49,46 @@ public enum GateClass
 
     [JsonStringEnumMemberName("rules")]
     Rules,
+}
+
+public sealed class GateClassJsonConverter : JsonConverter<GateClass>
+{
+    public override GateClass Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("GateClass requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "typecheck" => GateClass.Typecheck,
+            "lint" => GateClass.Lint,
+            "scoped_test" => GateClass.ScopedTest,
+            "full_suite" => GateClass.FullSuite,
+            "mutation_adequacy" => GateClass.MutationAdequacy,
+            "merge_gate" => GateClass.MergeGate,
+            "llm_judge" => GateClass.LlmJudge,
+            "rules" => GateClass.Rules,
+            _ => throw new JsonException("Unknown GateClass wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, GateClass value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            GateClass.Typecheck => "typecheck",
+            GateClass.Lint => "lint",
+            GateClass.ScopedTest => "scoped_test",
+            GateClass.FullSuite => "full_suite",
+            GateClass.MutationAdequacy => "mutation_adequacy",
+            GateClass.MergeGate => "merge_gate",
+            GateClass.LlmJudge => "llm_judge",
+            GateClass.Rules => "rules",
+            _ => throw new JsonException("Unknown GateClass value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

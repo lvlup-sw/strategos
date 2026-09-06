@@ -1,4 +1,5 @@
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -30,7 +31,7 @@ public class TraverseLinkExpressionTests
     public async Task TraverseLink_WithDescriptorNameOverride_CarriesTargetDescriptorName()
     {
         // Arrange
-        var set = new ObjectSet<Source>("positions", _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<Source>(new ActionSubject("trading", "positions"), _provider, _dispatcher, _eventProvider);
 
         // Act — the new two-arg overload threads an explicit target descriptor name
         var traversed = set.TraverseLink<Linked>("Orders", "trading_orders");
@@ -46,7 +47,7 @@ public class TraverseLinkExpressionTests
     public async Task TraverseLink_WithoutOverride_TargetDescriptorNameIsNull()
     {
         // Arrange
-        var set = new ObjectSet<Source>("positions", _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<Source>(new ActionSubject("trading", "positions"), _provider, _dispatcher, _eventProvider);
 
         // Act — the existing single-arg overload supplies no override
         var traversed = set.TraverseLink<Linked>("Orders");

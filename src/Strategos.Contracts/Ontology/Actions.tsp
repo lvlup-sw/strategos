@@ -21,6 +21,20 @@ model InspectPositionResult {
 @objectKind("Trading", "Position", "entity")
 @authority("position.reader")
 @relation("owner", "Portfolio")
+@requires(
+  #{
+    kind: "property-comparison",
+    property: #{ name: "status", scalarKind: ActionPredicateScalarKindV1.String, isNullable: false },
+    operator: ActionComparisonOperatorV1.NotEqual,
+    value: #{ kind: "string", value: "closed" }
+  },
+  ActionRequirementStrengthV1.Soft,
+  "The position should not already be closed."
+)
+@ensures(
+  #{ kind: "relation-holds", relationName: "owner", linkPath: #["Portfolio"] },
+  "The ownership relation remains established."
+)
 @clients("mcp", "web")
 @confirm(false)
 @readOnly

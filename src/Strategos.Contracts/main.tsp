@@ -20,6 +20,7 @@ import "./Diagnostics/AgwfCatalog.tsp";
 import "./Gates/GateClass.tsp";
 import "./Gates/GateDeclaration.tsp";
 import "./Ontology/AbstentionResponse.tsp";
+import "./Ontology/ActionPredicates.tsp";
 import "./Ontology/Actions.tsp";
 import "./Ontology/decorators.tsp";
 

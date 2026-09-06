@@ -11,17 +11,16 @@ public class ConstraintViolationReportTests
     public async Task ConstraintViolationReport_Construction_PreservesAllFields()
     {
         // Arrange
-        var precondition = new ActionPrecondition
-        {
-            Expression = "(p.Quantity > 0)",
-            Description = "Quantity must be positive",
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Hard,
-        };
+        var precondition = new ActionPrecondition(
+            ActionPredicate.Property(
+                new PredicatePropertyReference("Quantity", PredicateScalarKind.Integer),
+                PredicateComparisonOperator.GreaterThan,
+                PredicateLiteral.Integer(0)),
+            "Quantity must be positive");
 
-        var hard1 = new ConstraintEvaluation(precondition, IsSatisfied: false, ConstraintStrength.Hard, "Quantity is 0", null);
-        var hard2 = new ConstraintEvaluation(precondition, IsSatisfied: false, ConstraintStrength.Hard, "Quantity is negative", null);
-        var soft1 = new ConstraintEvaluation(precondition, IsSatisfied: false, ConstraintStrength.Soft, "Optional link missing", null);
+        var hard1 = new ConstraintEvaluation(precondition, PredicateTruthValue.Unsatisfied, ConstraintStrength.Hard, "Quantity is 0", null);
+        var hard2 = new ConstraintEvaluation(precondition, PredicateTruthValue.Unsatisfied, ConstraintStrength.Hard, "Quantity is negative", null);
+        var soft1 = new ConstraintEvaluation(precondition, PredicateTruthValue.Unsatisfied, ConstraintStrength.Soft, "Optional link missing", null);
 
         // Act
         var report = new ConstraintViolationReport(

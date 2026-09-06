@@ -27,7 +27,8 @@ public class OntologyValidateToolTests
             CrossDomainHops: new List<CrossDomainHop>(),
             Scope: scope);
 
-    private static ActionDescriptor MakeDescriptor(string name) => new(name, $"{name} description");
+    private static ActionDescriptor MakeDescriptor(string name) =>
+        new(new ActionSubject("trading", "Order"), name, $"{name} description");
 
     /// <summary>
     /// Returns a constraint report that recognizes <paramref name="name"/> as a
@@ -36,21 +37,23 @@ public class OntologyValidateToolTests
     /// be flagged as "unknown action" by OntologyValidateTool.
     /// </summary>
     private static ActionConstraintReport KnownActionReport(string name = "Ship") =>
-        new(MakeDescriptor(name), IsAvailable: true, Constraints: Array.Empty<ConstraintEvaluation>());
+        new(MakeDescriptor(name), ActionAvailability.Available, Array.Empty<ConstraintEvaluation>());
 
     private static ConstraintEvaluation MakeEvaluation(
         bool isSatisfied,
         ConstraintStrength strength,
         string? failureReason = null)
     {
-        var precondition = new ActionPrecondition
-        {
-            Expression = "expr",
-            Description = "desc",
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = strength,
-        };
-        return new ConstraintEvaluation(precondition, isSatisfied, strength, failureReason, null);
+        var precondition = new ActionPrecondition(
+            ActionPredicate.LinkExists("test-link"),
+            "desc",
+            strength);
+        return new ConstraintEvaluation(
+            precondition,
+            isSatisfied ? PredicateTruthValue.Satisfied : PredicateTruthValue.Unsatisfied,
+            strength,
+            failureReason,
+            null);
     }
 
     private static IOntologyQuery MakeQuery(
@@ -60,13 +63,13 @@ public class OntologyValidateToolTests
     {
         var query = Substitute.For<IOntologyQuery>();
         query
-            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<ActionFacts?>())
             .Returns(constraintReports ?? Array.Empty<ActionConstraintReport>());
         // OntologyValidateTool calls the domain-qualified overload — stub
         // both paths so test doubles return the same constraint reports
         // regardless of which overload the production code chooses.
         query
-            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ActionFacts?>())
             .Returns(constraintReports ?? Array.Empty<ActionConstraintReport>());
         query
             .EstimateBlastRadius(Arg.Any<IReadOnlyList<OntologyNodeRef>>(), Arg.Any<BlastRadiusOptions?>())
@@ -99,7 +102,10 @@ public class OntologyValidateToolTests
     {
         var descriptor = MakeDescriptor("Ship");
         var hardEval = MakeEvaluation(isSatisfied: false, ConstraintStrength.Hard, "boom");
-        var report = new ActionConstraintReport(descriptor, IsAvailable: false, Constraints: new[] { hardEval });
+        var report = new ActionConstraintReport(
+            descriptor,
+            ActionAvailability.Unavailable,
+            new[] { hardEval });
         var query = MakeQuery(constraintReports: new[] { report });
         var tool = new OntologyValidateTool(query);
 
@@ -115,7 +121,10 @@ public class OntologyValidateToolTests
     {
         var descriptor = MakeDescriptor("Audit");
         var softEval = MakeEvaluation(isSatisfied: false, ConstraintStrength.Soft);
-        var report = new ActionConstraintReport(descriptor, IsAvailable: true, Constraints: new[] { softEval });
+        var report = new ActionConstraintReport(
+            descriptor,
+            ActionAvailability.Available,
+            new[] { softEval });
         var query = MakeQuery(constraintReports: new[] { report });
         var tool = new OntologyValidateTool(query);
 
@@ -253,46 +262,43 @@ public class OntologyValidateToolTests
         // Regression: ProposedAction.Arguments must flow into the per-action
         // constraint evaluation so preconditions that reference action
         // arguments (e.g. "quantity > 0") are evaluated correctly.
-        IReadOnlyDictionary<string, object?>? captured = null;
+        ActionFacts? captured = null;
         var query = Substitute.For<IOntologyQuery>();
         query
-            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<ActionFacts?>())
             .Returns(call =>
             {
-                captured = call.ArgAt<IReadOnlyDictionary<string, object?>?>(1);
+                captured = call.ArgAt<ActionFacts?>(1);
                 return Array.Empty<ActionConstraintReport>();
             });
         // OntologyValidateTool now calls the domain-qualified overload first;
         // capture from there too so this regression test works whichever
         // overload OntologyValidateTool decides to invoke.
         query
-            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+            .GetActionConstraintReport(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ActionFacts?>())
             .Returns(call =>
             {
-                captured = call.ArgAt<IReadOnlyDictionary<string, object?>?>(2);
+                captured = call.ArgAt<ActionFacts?>(2);
                 // Return a non-empty report keyed to the action name so the
                 // tool doesn't surface an unknown-action hard violation that
                 // would interfere with the merge assertion.
-                var precond = new ActionPrecondition
-                {
-                    Expression = "true",
-                    Description = "always-satisfied",
-                    Kind = PreconditionKind.PropertyPredicate,
-                    Strength = ConstraintStrength.Hard,
-                };
+                var precond = new ActionPrecondition(
+                    ActionPredicate.True,
+                    "always-satisfied",
+                    ConstraintStrength.Hard);
                 return new[]
                 {
                     new ActionConstraintReport(
-                        new ActionDescriptor("Ship", "Ship description"),
-                        IsAvailable: true,
-                        Constraints: new[]
+                        MakeDescriptor("Ship"),
+                        ActionAvailability.Available,
+                        new[]
                         {
                             new ConstraintEvaluation(
                                 precond,
-                                IsSatisfied: true,
-                                Strength: ConstraintStrength.Hard,
-                                FailureReason: null,
-                                ExpectedShape: null),
+                                PredicateTruthValue.Satisfied,
+                                ConstraintStrength.Hard,
+                                null,
+                                null),
                         }),
                 };
             });
@@ -308,6 +314,8 @@ public class OntologyValidateToolTests
         {
             ["quantity"] = 5,
             ["status"] = "OverriddenByArg",
+            ["region"] = 1.25d,
+            ["explicitNull"] = null,
         };
         var knownProperties = new Dictionary<string, object?>
         {
@@ -322,11 +330,21 @@ public class OntologyValidateToolTests
         tool.Validate(intent);
 
         await Assert.That(captured).IsNotNull();
-        await Assert.That(captured!.ContainsKey("quantity")).IsTrue();
-        await Assert.That(captured["quantity"]).IsEqualTo(5);
-        // Subject property the action does not override is still present.
-        await Assert.That(captured["region"]).IsEqualTo("EU");
+        await Assert.That(captured!.Properties.ContainsKey("quantity")).IsTrue();
+        await Assert.That(captured.Properties["quantity"])
+            .IsEqualTo(PredicateLiteral.Integer(5));
+
+        // Floating-point values are outside the lossless predicate language.
+        // Since action arguments take precedence, the unsupported argument
+        // makes the previously known region unknown instead of retaining it.
+        await Assert.That(captured.Properties.ContainsKey("region")).IsFalse();
+
+        // Explicit null remains distinct from missing information.
+        await Assert.That(captured.Properties["explicitNull"])
+            .IsEqualTo(PredicateLiteral.Null);
+
         // Action arguments win on key collisions.
-        await Assert.That(captured["status"]).IsEqualTo("OverriddenByArg");
+        await Assert.That(captured.Properties["status"])
+            .IsEqualTo(PredicateLiteral.String("OverriddenByArg"));
     }
 }

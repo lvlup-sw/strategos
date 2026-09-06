@@ -1,6 +1,6 @@
+using System.Linq.Expressions;
 using System.Reflection;
 using Strategos.Ontology.Builder;
-using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests.Builder;
 
@@ -62,16 +62,17 @@ public class IActionBuilderTests
     }
 
     [Test]
-    public async Task Requires_IsObsolete_PointingAtActionDescriptorPreconditions()
+    public async Task Requires_ExpressionOverload_IsSupportedAndNotObsolete()
     {
         var method = typeof(IActionBuilder<>)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Single(m => m.Name == nameof(IActionBuilder<object>.Requires));
+            .Single(m =>
+                m.Name == nameof(IActionBuilder<object>.Requires)
+                && m.GetParameters()[0].ParameterType.IsGenericType
+                && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(Expression<>));
 
         var obsolete = method.GetCustomAttribute<ObsoleteAttribute>();
 
-        await Assert.That(obsolete).IsNotNull();
-        await Assert.That(obsolete!.Message).Contains(nameof(ActionDescriptor.Preconditions));
-        await Assert.That(obsolete.Message).Contains("no fluent successor", StringComparison.OrdinalIgnoreCase);
+        await Assert.That(obsolete).IsNull();
     }
 }

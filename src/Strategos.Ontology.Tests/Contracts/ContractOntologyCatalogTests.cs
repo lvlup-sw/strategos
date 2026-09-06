@@ -17,14 +17,21 @@ public sealed class ContractOntologyCatalogTests
 
         await Assert.That(position.Source).IsEqualTo(DescriptorSource.HandAuthoredContract);
         await Assert.That(position.SymbolKey).IsEqualTo("typespec://Trading/Position");
+        await Assert.That(position.ClrType).IsNull();
         await Assert.That(action.Name).IsEqualTo("inspectPosition");
+        await Assert.That(action.Subject).IsEqualTo(new ActionSubject("Trading", "Position"));
         await Assert.That(action.RequiredAuthority).IsEqualTo("position.reader");
         await Assert.That(action.AllowedClients).IsEquivalentTo(["mcp", "web"]);
         await Assert.That(action.RequiresConfirmation).IsFalse();
         await Assert.That(action.IsReadOnly).IsTrue();
         await Assert.That(action.Idempotent).IsTrue();
-        await Assert.That(action.Preconditions.Single().Kind)
-            .IsEqualTo(PreconditionKind.RelationHolds);
+        await Assert.That(action.Preconditions).HasCount().EqualTo(2);
+        await Assert.That(action.Preconditions.Select(item => item.Predicate))
+            .Contains(predicate => predicate is RelationHoldsPredicate);
+        await Assert.That(action.Preconditions.Select(item => item.Predicate))
+            .Contains(predicate => predicate is PropertyComparisonPredicate);
+        await Assert.That(action.Ensures).HasCount().EqualTo(1);
+        await Assert.That(action.Ensures[0].Predicate).IsTypeOf<RelationHoldsPredicate>();
     }
 
     [Test]

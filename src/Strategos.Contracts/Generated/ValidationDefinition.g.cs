@@ -23,11 +23,13 @@ public sealed record ValidationDefinition
     /// Declarative predicate description (not executable code, LB-1).
     /// </summary>
     [JsonPropertyName("predicateExpression")]
+    [JsonRequired]
     public string PredicateExpression { get; init; } = default!;
 
     /// <summary>
     /// Error message surfaced when validation fails.
     /// </summary>
     [JsonPropertyName("errorMessage")]
+    [JsonRequired]
     public string ErrorMessage { get; init; } = default!;
 }

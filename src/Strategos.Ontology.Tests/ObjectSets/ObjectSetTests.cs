@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 
@@ -24,7 +25,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Create_HasRootExpression()
     {
         // Arrange & Act
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Assert
         await Assert.That(set.Expression).IsTypeOf<RootExpression>();
@@ -35,7 +36,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Where_ReturnsNewObjectSetWithFilterExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set.Where(s => s.Length > 5);
@@ -50,7 +51,7 @@ public class ObjectSetTests
     public async Task ObjectSet_Where_PreservesOriginalObjectSet()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set.Where(s => s.Length > 5);
@@ -64,7 +65,7 @@ public class ObjectSetTests
     public async Task ObjectSet_MultipleWheres_ChainsExpressions()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var filtered = set
@@ -83,7 +84,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_ReturnsSimilarObjectSet()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.SimilarTo("search query");
@@ -97,7 +98,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_FluentChain_ProducesCorrectExpression()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act — fluent chain replaces the legacy positional/optional-arg API
         var similar = set
@@ -119,7 +120,7 @@ public class ObjectSetTests
     public async Task ObjectSet_SimilarTo_AfterWhere_ChainsExpressions()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.Where(s => s.Length > 5).SimilarTo("query");
@@ -133,7 +134,7 @@ public class ObjectSetTests
     public async Task SimilarTo_WithOnlyQueryText_ReturnsSimilarObjectSetWithDefaults()
     {
         // Arrange
-        var set = new ObjectSet<string>(typeof(string).Name, _provider, _dispatcher, _eventProvider);
+        var set = new ObjectSet<string>(new ActionSubject("tests", typeof(string).Name), _provider, _dispatcher, _eventProvider);
 
         // Act
         var similar = set.SimilarTo("query text");
@@ -160,9 +161,12 @@ public class ObjectSetTests
     [Test]
     public async Task ObjectSet_Constructor_ThreadsDescriptorNameIntoRootExpression()
     {
-        // Arrange & Act — use the new descriptor-name-first constructor
+        // Arrange & Act — ontology identity is domain-qualified.
         var set = new ObjectSet<Foo>(
-            "trading_documents", _provider, _dispatcher, _eventProvider);
+            new ActionSubject("trading", "trading_documents"),
+            _provider,
+            _dispatcher,
+            _eventProvider);
 
         // Assert — the root expression must carry the explicit descriptor name,
         // not the CLR type name (which would be "Foo").

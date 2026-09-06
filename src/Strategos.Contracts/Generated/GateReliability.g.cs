@@ -35,6 +35,7 @@ public sealed record GateReliability
     /// Measured false-positive rate of the gate, a fraction in the closed unit interval.
     /// </summary>
     [JsonPropertyName("fpr")]
+    [JsonRequired]
     public double Fpr { get; init; }
 
     /// <summary>
@@ -45,12 +46,14 @@ public sealed record GateReliability
     /// Keep `@minValue(0)` (#156.1).
     /// </summary>
     [JsonPropertyName("sampleSize")]
+    [JsonRequired]
     public int SampleSize { get; init; }
 
     /// <summary>
     /// When the measurement was taken (UTC).
     /// </summary>
     [JsonPropertyName("asOf")]
+    [JsonRequired]
     public string AsOf { get; init; } = default!;
 
     /// <summary>
@@ -59,5 +62,6 @@ public sealed record GateReliability
     /// reliability block without a source is invalid.
     /// </summary>
     [JsonPropertyName("source")]
+    [JsonRequired]
     public string Source { get; init; } = default!;
 }

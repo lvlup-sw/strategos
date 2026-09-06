@@ -27,6 +27,8 @@ public sealed class OntologyOptions
 
     internal List<(int Order, Func<IServiceProvider, IActionDispatcher, IActionDispatcher> Factory)> DispatcherDecorators => _dispatcherDecorators;
 
+    internal bool ReportActionConstraints { get; set; }
+
     /// <summary>
     /// DR-3 (Task 12): factories that activate each
     /// <see cref="IOntologySource"/> implementation registered via
@@ -73,6 +75,22 @@ public sealed class OntologyOptions
         where T : class, IActionDispatcher
     {
         _serviceRegistrations.Add(services => services.AddSingleton<IActionDispatcher, T>());
+        return this;
+    }
+
+    /// <summary>Registers the authoritative target-fact resolver used during dispatch.</summary>
+    public OntologyOptions UseActionFactResolver<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
+        where T : class, IActionFactResolver
+    {
+        _serviceRegistrations.Add(services => services.AddSingleton<IActionFactResolver, T>());
+        return this;
+    }
+
+    /// <summary>Registers a keyed evaluator for opaque action predicates.</summary>
+    public OntologyOptions AddCustomActionPredicateEvaluator<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
+        where T : class, ICustomActionPredicateEvaluator
+    {
+        _serviceRegistrations.Add(services => services.AddSingleton<ICustomActionPredicateEvaluator, T>());
         return this;
     }
 

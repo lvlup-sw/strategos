@@ -14,7 +14,7 @@ A formal analysis mapping the Strategos `Strategos.Ontology` layer against Zhou 
 - **T-Box:** The ontology schema -- class definitions, relations, constraints, and axioms (OWL/RDF). Corresponds roughly to our `DomainOntology.Define()` method body.
 - **A-Box:** Concrete instances of T-Box classes -- the populated knowledge graph. Corresponds to runtime entity instances persisted outside our ontology layer.
 - **Hard constraints:** Formal T-Box axioms (class hierarchy, domain/range typing, cardinality). Enforced deterministically at tool-call time. Parallel to our `Requires()` preconditions.
-- **Soft constraints:** Natural-language annotations (`rdfs:comment`) that guide but don't block. Parallel to our `Description()` metadata.
+- **Soft constraints:** Natural-language annotations (`rdfs:comment`) that guide but don't block. Parallel to our typed `RequiresSoft()` predicates; Strategos descriptions remain presentation metadata.
 - **Constraint feedback:** Structured error responses from tool calls when violations are detected. The agent retries with corrected inputs.
 
 ---
@@ -31,17 +31,22 @@ Zhou et al.'s paper is the closest published work to our `Strategos.Ontology` de
 
 3. **Action space scoping.** Both use the ontology to constrain which tools agents can invoke. OTC groups tools by task step and exposes them through MCP. We filter actions by object type, lifecycle state, and preconditions via `IOntologyQuery.GetValidActions()` [§4.14.12].
 
-**Three areas where OTC extends beyond our design:**
+**Areas where OTC still extends beyond our design:**
 
-1. **Runtime constraint feedback loop.** OTC tools return structured error messages on constraint violations, and the agent iteratively retries. Our preconditions are currently metadata-only (enforcement is opt-in) with no structured feedback protocol for constraint violations.
+1. **LLM-driven compilation (meta-prompts).** OTC uses an LLM agent to
+   *generate* tool implementations from the T-Box, using domain-agnostic
+   meta-prompts. Strategos deliberately keeps compilation deterministic and
+   represents non-decidable runtime policy as explicitly keyed `Custom`
+   predicates.
 
-2. **LLM-driven compilation (meta-prompts).** OTC uses an LLM agent to *generate* the tool implementations from the T-Box, using domain-agnostic meta-prompts. Our compilation is deterministic (Roslyn source generator). The LLM-driven approach enables handling soft constraints that cannot be expressed as formal axioms.
-
-3. **Hard/soft constraint distinction.** OTC explicitly separates formal axioms (hard) from annotation-based guidance (soft). Our system has preconditions (hard, expressible as predicates) and descriptions (soft, free-text) but no formal taxonomy of constraint types.
+The other two gaps identified by the original analysis are closed in 2.13.
+`ConstraintStrength` distinguishes hard and soft predicates, tri-state
+discovery preserves unknown information, and dispatch returns structured
+constraint violations while failing closed when enforcement is enabled.
 
 **Two areas where our design extends beyond OTC:**
 
-1. **Compile-time validation.** Our Roslyn source generator catches invalid ontology definitions (broken links, type mismatches, unreachable states) at build time with 35 diagnostic codes [§4.14.11]. OTC validates only at runtime.
+1. **Compile-time validation.** Our Roslyn source generator and analyzer catch invalid ontology definitions (broken links, type mismatches, unreachable states, and incompatible explicit action sequences) through the versioned AONT diagnostic catalog [§4.14.11]. OTC validates only at runtime.
 
 2. **Rich schema refinements.** Our lifecycle state machines, derivation chains, interface actions, and extension points have no counterparts in OTC. The paper's ontology model is simpler (classes, properties, constraints) without temporal, compositional, or cross-domain abstractions.
 
@@ -59,8 +64,8 @@ Alignment ratings: **Strong** = direct structural correspondence; **Moderate** =
 | 4 | **Action** `obj.Action("name")` | Generated MCP tool function | Strong | The paper's core contribution maps directly: OTC compiles T-Box class operations into MCP tool functions with typed inputs, validation logic, and constraint checks [§3, §6.1]. Our Actions are declared in the ontology DSL and bound to workflows or MCP tools [§4.14.4]. The key difference: OTC *generates* tool implementations; we generate tool *metadata* (stubs, descriptions) while implementations exist separately. |
 | 5 | **Interface** `builder.Interface<T>()` | No equivalent | Novel | OTC operates within a single T-Box at a time. There is no cross-cutting polymorphic shape system. OWL supports abstract classes and intersection types, but OTC does not use them for tool dispatch. |
 | 6 | **Cross-Domain Link** `builder.CrossDomainLink()` | Cross-ontology references (OntoSyn → OntoSpecies → OntoMOPs) | Moderate | OTC uses multiple complementary ontologies (OntoSynthesis, OntoSpecies, OntoMOPs) linked through shared IRIs [§2, p.8]. Our cross-domain links formalize this with explicit declarations and extension points. OTC's approach is more implicit -- ontologies share a namespace and reference each other's classes. |
-| 7 | **Precondition** `.Requires()` | Hard constraints (T-Box axioms) | Strong | OTC's hard constraints are "class hierarchy, domain and range typing, datatype restrictions, and any modelled cardinalities" [§6.1, p.18] -- checked deterministically at tool-call time. Our preconditions are expression-tree predicates. Both serve the same purpose: gate actions on semantic validity. OTC's constraint feedback loop (return error → agent retries) goes further than our metadata-only default. |
-| 8 | **Postcondition** `.Modifies()`, `.CreatesLinked<T>()` | Tool return values + Turtle store mutations | Moderate | OTC tools mutate a persistent Turtle store and return results + validation feedback [§6.2, p.19]. Our postconditions are declarative metadata. OTC's approach is more operational (tools actually perform mutations); ours is more analytical (metadata enables staleness reasoning). |
+| 7 | **Precondition** `.Requires()` | Hard constraints (T-Box axioms) | Strong | OTC's hard constraints are "class hierarchy, domain and range typing, datatype restrictions, and any modelled cardinalities" [§6.1, p.18] -- checked deterministically at tool-call time. Strategos uses immutable typed predicates, hard/soft strength, tri-state discovery, and fail-closed dispatch enforcement. |
+| 8 | **Guarantee and frame** `.Ensures()`, `.Modifies()`, `.CreatesLinked<T>()` | Tool return values + Turtle store mutations | Moderate | OTC tools mutate a persistent Turtle store and return results + validation feedback [§6.2, p.19]. Strategos separates post-state facts (`Ensures`) from may-write frame metadata; `CreatesLinked` is the sole effect that soundly derives a predicate fact. |
 | 9 | **Lifecycle** `obj.Lifecycle()` | JSON iteration plan with ordered steps | Weak | OTC's JSON task decomposition defines an ordered sequence of extraction steps [§6.1, p.17]. This is a process-level lifecycle (document → synthesis steps → grounding), not an entity-level state machine. Our Lifecycle is richer: it models entity state transitions with explicit triggers. |
 | 10 | **Derivation Chain** `.Computed().DerivedFrom()` | No equivalent | Novel | OTC does not model property dependencies or staleness propagation. Derived entities (CBUs) are computed by downstream enrichment modules, not tracked as ontological metadata. |
 | 11 | **Interface Action** `iface.Action("Search")` | No equivalent | Novel | OTC has no polymorphic action dispatch. Tools are bound to specific T-Box classes. |
@@ -81,7 +86,7 @@ The deepest alignment between our systems is the compilation pipeline itself:
 | **Input** | OWL T-Box + meta-prompts | `DomainOntology.Define()` method body |
 | **Compiler** | LLM agent (preparation stage) | Roslyn incremental source generator |
 | **Output** | Python MCP server + typed tools + JSON plan | `IOntologyQuery` service + descriptors + MCP stubs |
-| **Validation** | Runtime (tool-call time) | Compile-time (35 diagnostics) + optional runtime |
+| **Validation** | Runtime (tool-call time) | Compile-time AONT diagnostics + runtime enforcement |
 | **Target** | RDF/Turtle knowledge graph | .NET DI container + domain persistence |
 
 OTC: "Ontological specifications are compiled into executable tool interfaces that LLM-based agents must use to create and modify knowledge graph instances, enforcing semantic constraints during generation rather than through post-hoc validation" [Abstract].
@@ -92,7 +97,7 @@ The architectural insight is identical. The implementation strategies differ in 
 
 1. **Deterministic vs. generative compilation.** Our Roslyn generator produces deterministic output from the same input every time. OTC uses an LLM to generate tool implementations, which introduces variability but enables handling of soft constraints that formal axioms cannot express.
 
-2. **Build-time vs. runtime validation.** Our 35 diagnostic codes catch errors at compile time (AONT001-AONT035). OTC catches errors only when tools are invoked at runtime. Our approach is safer for production systems; OTC's is more flexible for exploratory knowledge extraction.
+2. **Build-time vs. runtime validation.** Our AONT catalog catches errors at compile time, including typed-contract failures through `AONT217`–`AONT221`. OTC catches errors only when tools are invoked at runtime. Our approach is safer for production systems; OTC's is more flexible for exploratory knowledge extraction.
 
 ### 3.2 Constraint Enforcement Model
 
@@ -100,9 +105,21 @@ Both systems enforce constraints at the point of agent interaction rather than p
 
 **OTC:** "The compilation layer treats the T-Box as a machine-readable contract. It specifies which classes, relations, attributes, and constraints are allowed. From this contract, the framework generates executable tool interfaces with explicitly specified inputs, outputs, and validation behaviour. These tools are the only way to create or modify structured instances, so constraints are checked and repaired during construction" [§3, p.9].
 
-**Our system:** `Requires(p => p.Status == PositionStatus.Active)` gates action dispatch. `GetValidActions(objectType, knownProperties)` filters the action space to only semantically valid operations [§4.14.5, §4.14.12].
+**Our system:** `Requires(p => p.Status == PositionStatus.Active)` lowers to a
+typed action predicate and gates dispatch. `GetCandidateActions(objectType,
+facts)` distinguishes available from indeterminate operations while excluding
+those proven unavailable; `GetActionConstraintReport` exposes all three states
+[§4.14.5, §4.14.12].
 
-The key difference is OTC's **constraint feedback loop**: when a tool call violates a constraint, the tool returns a structured error and the agent retries. Our preconditions are metadata-only by default (`ActionDispatchOptions.EnforcePreconditions = true` is opt-in). OTC's feedback loop is central to their results -- ablating it drops synthesis-step F1 significantly [§4.2].
+The key difference is the default policy rather than the shape of feedback. Both
+systems can return structured constraint results, but Strategos keeps general
+hard-predicate enforcement opt-in through
+`ActionDispatchOptions.EnforcePreconditions`. Hard predicates containing a
+relation are always enforced. When enforcement blocks dispatch,
+`ActionResult.Violations` preserves satisfied/unsatisfied/indeterminate
+distinctions so an agent can correct or escalate the call. OTC enables its
+feedback loop as the normal construction path; ablating that loop drops
+synthesis-step F1 significantly [§4.2].
 
 ### 3.3 MCP as the Integration Layer
 
@@ -118,31 +135,50 @@ Both systems use MCP to bridge between symbolic ontological knowledge and LLM ag
 
 ## 4. Gap Analysis
 
-### 4.1 No Runtime Constraint Feedback Protocol
+### 4.1 Runtime Constraint Feedback Protocol
+
+**Status: Implemented in 2.13**
 
 **Paper concept:** OTC tools return structured constraint violation messages: "If a violation is detected, for example a missing required field, a type mismatch, or an invalid unit, the tool returns an error with an explanation. The agent then retries with corrected inputs" [§6.2, p.19-20]. This feedback loop is critical -- ablating it causes "a substantial drop in synthesis-step F1" [§4.2].
 
-**Our design:** Preconditions are metadata. When `EnforcePreconditions = true`, a precondition failure throws an exception or returns an error, but there is no structured protocol for communicating *what* failed and *how* to fix it. The agent receives a generic failure, not actionable guidance.
+**Our design:** `ConstraintEvaluation` records the predicate, truth value,
+strength, failure reason, and optional expected shape. Dispatch failures carry a
+`ConstraintViolationReport` in `ActionResult.Violations`; query and discovery
+surfaces expose the same three-valued results. Missing authoritative facts stay
+`Indeterminate`, so enforcing dispatch fails closed without pretending the
+predicate is false.
 
-**Impact:** High. The paper's empirical results demonstrate that constraint feedback materially improves agent performance. Without structured feedback, agents cannot self-correct -- they must either abandon the action or retry blindly.
+**Remaining difference:** Strategos supplies semantic failure data, but choosing
+and retrying a corrected invocation remains the consuming agent's responsibility.
 
-**Recommendation:** Add a `ConstraintViolation` response type to `IActionDispatcher` that includes: which precondition failed, the current property values, and suggested corrections. This turns our metadata-only preconditions into an interactive constraint enforcement system matching OTC's feedback loop.
+**Assessment:** The contract and enforcement substrate is complete. Consumers
+can build the OTC-style retry loop without parsing exception text.
 
-### 4.2 No Generative/Soft Constraint Layer
+### 4.2 Typed Soft Constraints Without Prompt Generation
+
+**Status: Predicate layer implemented in 2.13; prompt generation is deferred**
 
 **Paper concept:** OTC distinguishes hard constraints (formal axioms, deterministically enforced) from soft constraints (natural-language annotations in `rdfs:comment`, used to guide but not block). Soft constraints capture "operational definitions and heuristic decision rules that guide boundary setting and classification during extraction" [§6.1, p.18]. These are compiled into task-specific prompts, not tool validators.
 
-**Our design:** We have `Requires()` (hard, predicate-based) and `Description()` (soft, free-text). But the `Description()` strings are not structured as constraint guidance -- they're documentation. There is no mechanism to express "prefer this behavior" vs. "require this behavior."
+**Our design:** `Requires()` creates a hard predicate and `RequiresSoft()`
+creates a typed advisory predicate. Soft predicates participate in discovery and
+constraint reports but never block dispatch or enter static composition proofs.
+Descriptions remain presentation metadata and are deliberately excluded from
+semantic identity. Strategos does not yet compile soft predicates into an
+agent-specific prompt.
 
-**Impact:** Medium. For our current use case (tool dispatch in a typed .NET system), hard constraints suffice. But as agents become more autonomous, soft constraints (preferences, heuristics, best practices) would improve decision quality without rigidly blocking actions.
+**Impact:** Low. The hard/soft contract distinction is explicit; only automatic
+prompt synthesis remains absent.
 
-**Recommendation:** Consider adding an optional `Guidance()` method to the action builder that expresses soft constraints separately from `Description()`:
+**Usage:** Express machine-evaluable guidance with `RequiresSoft()`:
 
 ```csharp
 obj.Action("ExecuteTrade")
-    .Requires(p => p.Status == PositionStatus.Active)   // hard: blocks if false
-    .Guidance("Prefer executing during market hours")     // soft: advisory
-    .Guidance("Verify strategy alignment before large trades"); // soft: advisory
+    .Requires(p => p.Status == PositionStatus.Active)
+    .RequiresSoft(ActionPredicate.Custom(
+        "trading.prefer-market-hours",
+        readSet: [ActionResource.External("market-clock")]),
+        description: "Prefer executing during market hours");
 ```
 
 ### 4.3 No Tool Implementation Generation
@@ -159,61 +195,58 @@ obj.Action("ExecuteTrade")
 
 ## 5. Architectural Recommendations
 
-### 5.1 Add Structured Constraint Feedback to Action Dispatch
+### 5.1 Structured Constraint Feedback to Action Dispatch
 
-**Priority: High** | **Effort: Medium** | **Breaking: No**
+**Status: Implemented in 2.13**
 
 The paper's most impactful finding is that structured constraint feedback improves agent performance. Adapt this for our system:
 
 ```csharp
-public sealed record ConstraintViolationResult
-{
-    public required string ActionName { get; init; }
-    public required IReadOnlyList<ViolatedPrecondition> Violations { get; init; }
-    public string? SuggestedCorrection { get; init; }
-}
-
-public sealed record ViolatedPrecondition
-{
-    public required string Expression { get; init; }
-    public required string Description { get; init; }
-    public required object? ActualValue { get; init; }
-    public required object? RequiredValue { get; init; }
-}
+public sealed record ConstraintEvaluation(
+    ActionPrecondition Precondition,
+    PredicateTruthValue TruthValue,
+    ConstraintStrength Strength,
+    string? FailureReason,
+    IReadOnlyDictionary<string, object?>? ExpectedShape);
 ```
 
-When `IActionDispatcher` enforces preconditions and a violation occurs, return `ConstraintViolationResult` instead of throwing. The agent can inspect the violations and take corrective action (modify the object, choose a different action, or escalate).
+`ActionResult.Violations` carries a `ConstraintViolationReport` instead of
+throwing. An agent can distinguish `Unsatisfied` from `Indeterminate`, inspect
+hard and soft entries, and take corrective action.
 
 **OTC precedent:** "Each tool call returns both results and validation feedback. The feedback reports whether the requested update satisfies the ontology constraints" [§6.2, p.19].
 
-### 5.2 Add Constraint Kind Taxonomy
+### 5.2 Hard and Soft Constraint Taxonomy
 
-**Priority: Medium** | **Effort: Low** | **Breaking: No**
+**Status: Implemented in 2.13**
 
 Formalize the hard/soft distinction from the paper:
 
 ```csharp
-public enum ConstraintKind
+public enum ConstraintStrength
 {
-    Hard,       // Must be satisfied; blocks dispatch
-    Soft,       // Advisory; included in agent context but does not block
-    Structural  // Link existence, type compatibility (always hard)
+    Hard,
+    Soft,
 }
 ```
 
-Add `ConstraintKind` to `ActionPrecondition`. This enables `IOntologyQuery.GetValidActions()` to separately report hard failures (action blocked) vs. soft warnings (action allowed but not recommended).
+`ActionPrecondition.Strength` is immutable. Soft predicates are reported but
+never block; hard relation-bearing formulas remain mandatory even when general
+precondition enforcement is disabled.
 
-### 5.3 Enrich MCP Tool Stubs with Constraint Metadata
+### 5.3 MCP Tool Constraint Metadata
 
-**Priority: High** | **Effort: Low** | **Breaking: No**
+**Status: Implemented in 2.13 / Contracts 0.10**
 
-OTC's MCP tools carry ontology-derived validation descriptions. Ensure our `Strategos.Ontology.MCP` progressive disclosure stubs include:
+`Strategos.Ontology.MCP` progressive-disclosure metadata now includes:
 
-- Precondition expressions (human-readable) in tool descriptions
-- Lifecycle state requirements ("requires Position in Active state")
-- Postcondition summaries ("modifies Quantity, creates linked TradeOrder")
+- structured, versioned `requires` predicates with canonical display text;
+- structured `ensures` post-state guarantees;
+- effect/frame, authority, client, confirmation, and safe relation-facade
+  metadata.
 
-This is already partially described in §4.14.15 but should be made explicit in the MCP tool schema generation to match OTC's approach of "ontology-derived name and a typed argument schema" with "short usage instructions drawn from T-Box annotations" [§6.1, p.18].
+Consumers must interpret the tagged predicate model and never parse the display
+expression. Unknown discriminators are rejected.
 
 ---
 
@@ -256,7 +289,7 @@ The N&R analysis identifies *structural* gaps in our ontology model (hierarchy, 
 |----------|---------|
 | [§4.14.4] | Core primitives (12 concepts) |
 | [§4.14.5] | Preconditions and postconditions |
-| [§4.14.11] | Source generator pipeline (35 diagnostics) |
+| [§4.14.11] | Source generator and analyzer diagnostic pipeline |
 | [§4.14.12] | IOntologyQuery interface |
 | [§4.14.15] | Basileus adoption and MCP integration |
 

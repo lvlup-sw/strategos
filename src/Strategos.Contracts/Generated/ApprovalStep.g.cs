@@ -21,12 +21,14 @@ public sealed record ApprovalStep : StepDefinition
     /// Stable step identifier (the builder&apos;s `StepDefinition.StepId`).
     /// </summary>
     [JsonPropertyName("stepId")]
+    [JsonRequired]
     public string StepId { get; init; } = default!;
 
     /// <summary>
     /// Step name (the builder&apos;s `StepDefinition.StepName`).
     /// </summary>
     [JsonPropertyName("stepName")]
+    [JsonRequired]
     public string StepName { get; init; } = default!;
 
     /// <summary>
@@ -39,6 +41,7 @@ public sealed record ApprovalStep : StepDefinition
     /// Whether this step terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 
     /// <summary>
@@ -57,5 +60,6 @@ public sealed record ApprovalStep : StepDefinition
     /// Simple-name CLR moniker of the approver type (LB-2).
     /// </summary>
     [JsonPropertyName("approverType")]
+    [JsonRequired]
     public string ApproverType { get; init; } = default!;
 }

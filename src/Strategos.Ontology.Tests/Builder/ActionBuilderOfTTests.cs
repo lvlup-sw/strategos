@@ -40,10 +40,13 @@ public sealed class TrackATestType
 
 public class ActionBuilderOfTTests
 {
+    private static readonly ActionSubject Subject = new("Trading", "TestPositionWithStatus");
+    private static readonly ActionSubject TrackSubject = new("Trading", "TrackATestType");
+
     [Test]
     public async Task RequiresAuthority_StoresNamedRequirement()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
         builder.RequiresAuthority("portfolio.write");
         var descriptor = builder.Build();
 
@@ -53,7 +56,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Build_ProducesDescriptorWithName()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         var descriptor = builder.Build();
 
@@ -63,7 +66,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Description_SetsDescription()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Description("Open a new position");
         var descriptor = builder.Build();
@@ -74,7 +77,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Accepts_SetsAcceptsType()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Accepts<TestTradeExecutionRequest>();
         var descriptor = builder.Build();
@@ -85,7 +88,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Returns_SetsReturnsType()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Returns<TestTradeExecutionResult>();
         var descriptor = builder.Build();
@@ -96,7 +99,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task BoundToWorkflow_SetsBindingAndWorkflowName()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.BoundToWorkflow("execute-trade");
         var descriptor = builder.Build();
@@ -108,7 +111,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task BoundToTool_SetsBindingAndToolReference()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote");
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);
 
         builder.BoundToTool("MarketData", "GetQuoteAsync");
         var descriptor = builder.Build();
@@ -121,20 +124,20 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Requires_AddsPreconditionWithPropertyPredicate()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Requires(p => p.Status == TestPositionStatus.Active);
         var descriptor = builder.Build();
 
         await Assert.That(descriptor.Preconditions.Count).IsEqualTo(1);
-        await Assert.That(descriptor.Preconditions[0].Kind).IsEqualTo(PreconditionKind.PropertyPredicate);
+        await Assert.That(descriptor.Preconditions[0].Predicate).IsTypeOf<PropertyComparisonPredicate>();
         await Assert.That(descriptor.Preconditions[0].Description).Contains("Status");
     }
 
     [Test]
     public async Task Requires_MultipleCallsAddMultiplePreconditions()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Requires(p => p.Status == TestPositionStatus.Active);
         builder.Requires(p => p.Quantity > 0);
@@ -146,34 +149,35 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task RequiresLink_AddsPreconditionWithLinkExists()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.RequiresLink("Strategy");
         var descriptor = builder.Build();
 
         await Assert.That(descriptor.Preconditions.Count).IsEqualTo(1);
-        await Assert.That(descriptor.Preconditions[0].Kind).IsEqualTo(PreconditionKind.LinkExists);
-        await Assert.That(descriptor.Preconditions[0].LinkName).IsEqualTo("Strategy");
+        await Assert.That(descriptor.Preconditions[0].Predicate).IsTypeOf<LinkExistsPredicate>();
+        await Assert.That(((LinkExistsPredicate)descriptor.Preconditions[0].Predicate).LinkName)
+            .IsEqualTo("Strategy");
     }
 
     [Test]
     public async Task RequiresRelation_AddsStructuredPrincipalRelationPrecondition()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.RequiresRelation("owner", "Portfolio", "Space");
         var precondition = builder.Build().Preconditions.Single();
+        var relation = (RelationHoldsPredicate)precondition.Predicate;
 
-        await Assert.That(precondition.Kind).IsEqualTo(PreconditionKind.RelationHolds);
-        await Assert.That(precondition.RelationName).IsEqualTo("owner");
-        await Assert.That(precondition.LinkPath).IsEquivalentTo(["Portfolio", "Space"]);
+        await Assert.That(relation.RelationName).IsEqualTo("owner");
+        await Assert.That(relation.LinkPath).IsEquivalentTo(["Portfolio", "Space"]);
         await Assert.That(precondition.IsOpaque).IsFalse();
     }
 
     [Test]
     public async Task Modifies_AddsPostconditionWithModifiesProperty()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Modifies(p => p.Quantity);
         var descriptor = builder.Build();
@@ -186,7 +190,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Modifies_MultipleCallsAddMultiplePostconditions()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.Modifies(p => p.Quantity);
         builder.Modifies(p => p.UnrealizedPnL);
@@ -200,7 +204,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task CreatesLinked_AddsPostconditionWithCreatesLink()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.CreatesLinked<TestTradeOrder>("Orders");
         var descriptor = builder.Build();
@@ -213,7 +217,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task EmitsEvent_AddsPostconditionWithEmitsEvent()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder.EmitsEvent<TestTradeExecutedEvent>();
         var descriptor = builder.Build();
@@ -226,7 +230,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task FluentChaining_AllMethodsChainCorrectly()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade");
+        var builder = new ActionBuilder<TestPositionWithStatus>("ExecuteTrade", Subject);
 
         builder
             .Description("Execute a trade")
@@ -251,7 +255,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task DefaultPreconditionsAndPostconditions_AreEmpty()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("SimpleAction");
+        var builder = new ActionBuilder<TestPositionWithStatus>("SimpleAction", Subject);
 
         var descriptor = builder.Build();
 
@@ -262,7 +266,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task Idempotent_WriteAction_OptsIntoRetrySafety()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("UpsertPosition");
+        var builder = new ActionBuilder<TestPositionWithStatus>("UpsertPosition", Subject);
         builder.Idempotent();
         var descriptor = builder.Build();
 
@@ -273,7 +277,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task ReadOnly_ActionIsIdempotentByConstruction()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("GetPosition");
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetPosition", Subject);
         builder.ReadOnly();
         var descriptor = builder.Build();
 
@@ -284,7 +288,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task NonGenericInterface_ChainedMethodsReturnSameBuilder()
     {
-        IActionBuilder builder = new ActionBuilder<TestPositionWithStatus>("Test");
+        IActionBuilder builder = new ActionBuilder<TestPositionWithStatus>("Test", Subject);
 
         var result = builder.Description("desc");
 
@@ -294,7 +298,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task BoundToTool_Expression_SetsToolNameAndMethod()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote");
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);
 
         builder.BoundToTool<TestTool>(t => t.DoSomethingAsync);
         var descriptor = builder.Build();
@@ -306,7 +310,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task BoundToTool_Expression_SetsBindingTypeToTool()
     {
-        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote");
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);
 
         builder.BoundToTool<TestTool>(t => t.DoSomethingAsync);
         var descriptor = builder.Build();
@@ -317,7 +321,7 @@ public class ActionBuilderOfTTests
     [Test]
     public async Task ValidFromState_RecordsStateNameOnBuilder()
     {
-        var builder = new ActionBuilder<TrackATestType>("ClosePosition");
+        var builder = new ActionBuilder<TrackATestType>("ClosePosition", TrackSubject);
 
         builder.ValidFromState(TrackATestState.Open);
 

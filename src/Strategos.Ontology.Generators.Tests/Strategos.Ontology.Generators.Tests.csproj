@@ -19,4 +19,9 @@
     <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Strategos.Ontology.Tests\Shared\ActionCompositionProofVectors.cs"
+             Link="Shared\ActionCompositionProofVectors.cs" />
+  </ItemGroup>
+
 </Project>

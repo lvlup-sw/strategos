@@ -4,6 +4,8 @@ namespace Strategos.Ontology.Tests.Descriptors;
 
 public class ActionDescriptorTests
 {
+    private static readonly ActionSubject Subject = new("Trading", "Position");
+
     [Test]
     public async Task ActionBindingType_HasExpectedValues()
     {
@@ -15,8 +17,9 @@ public class ActionDescriptorTests
     [Test]
     public async Task ActionDescriptor_Create_HasNameAndDescription()
     {
-        var descriptor = new ActionDescriptor("ExecuteTrade", "Open a new position");
+        var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position");
 
+        await Assert.That(descriptor.Subject).IsEqualTo(Subject);
         await Assert.That(descriptor.Name).IsEqualTo("ExecuteTrade");
         await Assert.That(descriptor.Description).IsEqualTo("Open a new position");
     }
@@ -24,7 +27,7 @@ public class ActionDescriptorTests
     [Test]
     public async Task ActionDescriptor_BoundToWorkflow_SetsBindingType()
     {
-        var descriptor = new ActionDescriptor("ExecuteTrade", "Open a new position")
+        var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position")
         {
             BindingType = ActionBindingType.Workflow,
             BoundWorkflowName = "execute-trade",
@@ -37,7 +40,7 @@ public class ActionDescriptorTests
     [Test]
     public async Task ActionDescriptor_BoundToTool_SetsToolReference()
     {
-        var descriptor = new ActionDescriptor("ExecuteTrade", "Open a new position")
+        var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position")
         {
             BindingType = ActionBindingType.Tool,
             BoundToolName = "trading-tool",
@@ -52,7 +55,7 @@ public class ActionDescriptorTests
     [Test]
     public async Task ActionDescriptor_Unbound_DefaultBinding()
     {
-        var descriptor = new ActionDescriptor("ExecuteTrade", "Open a new position");
+        var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position");
 
         await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Unbound);
         await Assert.That(descriptor.BoundWorkflowName).IsNull();

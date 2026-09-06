@@ -36,7 +36,10 @@ public class HandAuthoredContractMergeTests
                 Source = DescriptorSource.HandAuthoredContract,
                 Actions = new List<ActionDescriptor>
                 {
-                    new("Trade", "Contract-authored trade"),
+                    new(
+                        new ActionSubject(DomainName, "Position"),
+                        "Trade",
+                        "Contract-authored trade"),
                 },
             };
 
@@ -100,7 +103,10 @@ public class HandAuthoredContractMergeTests
             SourceId = IngestSourceId,
             Actions = new List<ActionDescriptor>
             {
-                new("Trade", "Mechanical trade"),
+                new(
+                    new ActionSubject(DomainName, "OrphanIntent"),
+                    "Trade",
+                    "Mechanical trade"),
             },
         };
 

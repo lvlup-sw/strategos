@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -16,7 +18,7 @@ namespace Strategos.Contracts.Generated;
 /// is attached in 0.2.0 — the slot exists so a future federation release is an
 /// additive minor, not a breaking V2.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<StepRuntime>))]
+[JsonConverter(typeof(StepRuntimeJsonConverter))]
 public enum StepRuntime
 {
     [JsonStringEnumMemberName("exarchos")]
@@ -27,4 +29,36 @@ public enum StepRuntime
 
     [JsonStringEnumMemberName("remote")]
     Remote,
+}
+
+public sealed class StepRuntimeJsonConverter : JsonConverter<StepRuntime>
+{
+    public override StepRuntime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("StepRuntime requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "exarchos" => StepRuntime.Exarchos,
+            "strategos" => StepRuntime.Strategos,
+            "remote" => StepRuntime.Remote,
+            _ => throw new JsonException("Unknown StepRuntime wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, StepRuntime value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            StepRuntime.Exarchos => "exarchos",
+            StepRuntime.Strategos => "strategos",
+            StepRuntime.Remote => "remote",
+            _ => throw new JsonException("Unknown StepRuntime value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

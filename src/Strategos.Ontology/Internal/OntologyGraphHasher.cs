@@ -48,8 +48,9 @@ internal static class OntologyGraphHasher
         //     captured implicitly via PropertyKind (Computed) and the derivation
         //     chain is reconstructable from Properties.
         //   - ExternalLinkExtensionPoints.MatchedLinkNames — derived during build.
-        // ActionPrecondition.Description IS included because it is the precondition's
-        // identity / sort key, distinct from per-action free-form documentation prose.
+        // Action predicate/guarantee descriptions and canonical display strings are
+        // deliberately excluded. Their normalized canonical tokens are the semantic
+        // identity; presentation-only prose must not invalidate structural caches.
         using var ms = new MemoryStream();
         using (var writer = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
@@ -237,6 +238,8 @@ internal static class OntologyGraphHasher
     private static void WriteAction(BinaryWriter writer, ActionDescriptor a)
     {
         writer.Write("A|");
+        WriteString(writer, a.Subject.DomainName);
+        WriteString(writer, a.Subject.ObjectTypeName);
         WriteString(writer, a.Name);
         WriteString(writer, a.AcceptsType?.FullName ?? string.Empty);
         WriteString(writer, a.ReturnsType?.FullName ?? string.Empty);
@@ -255,44 +258,57 @@ internal static class OntologyGraphHasher
         WriteString(writer, a.CompensatingActionName ?? string.Empty);
 
         writer.Write("|CLIENTS|");
-        foreach (var client in a.AllowedClients.Order(StringComparer.Ordinal))
+        var clients = a.AllowedClients.Order(StringComparer.Ordinal).ToArray();
+        writer.Write(clients.Length);
+        foreach (var client in clients)
         {
             WriteString(writer, client);
         }
 
         writer.Write("|TOUCHES|");
-        foreach (var resource in a.TouchedResources
-                     .OrderBy(resource => resource.Kind)
-                     .ThenBy(resource => resource.Name, StringComparer.Ordinal))
+        var touchedResources = a.TouchedResources
+            .OrderBy(resource => resource.Kind)
+            .ThenBy(resource => resource.Name, StringComparer.Ordinal)
+            .ToArray();
+        writer.Write(touchedResources.Length);
+        foreach (var resource in touchedResources)
         {
             WriteString(writer, resource.Kind.ToString());
             WriteString(writer, resource.Name);
         }
 
         writer.Write("|PRE|");
-        foreach (var pc in a.Preconditions.OrderBy(x => x.Description, StringComparer.Ordinal))
+        var preconditions = a.Preconditions
+            .OrderBy(precondition => precondition.Strength)
+            .ThenBy(precondition => precondition.Predicate.CanonicalToken, StringComparer.Ordinal)
+            .ToArray();
+        writer.Write(preconditions.Length);
+        foreach (var precondition in preconditions)
         {
-            WriteString(writer, pc.Description);
-            WriteString(writer, pc.Expression);
-            WriteString(writer, pc.Kind.ToString());
-            WriteString(writer, pc.LinkName ?? string.Empty);
-            WriteString(writer, pc.RelationName ?? string.Empty);
-            writer.Write(pc.LinkPath.Length);
-            foreach (var linkName in pc.LinkPath)
-            {
-                WriteString(writer, linkName);
-            }
+            WriteString(writer, precondition.Predicate.CanonicalToken);
+            WriteString(writer, precondition.Strength.ToString());
+        }
 
-            WriteString(writer, pc.Strength.ToString());
+        writer.Write("|ENSURES|");
+        var guarantees = a.Ensures
+            .OrderBy(guarantee => guarantee.Predicate.CanonicalToken, StringComparer.Ordinal)
+            .ToArray();
+        writer.Write(guarantees.Length);
+        foreach (var guarantee in guarantees)
+        {
+            WriteString(writer, guarantee.Predicate.CanonicalToken);
         }
 
         writer.Write("|POST|");
-        foreach (var pc in a.Postconditions
-                              .OrderBy(x => x.Kind.ToString(), StringComparer.Ordinal)
-                              .ThenBy(x => x.PropertyName ?? string.Empty, StringComparer.Ordinal)
-                              .ThenBy(x => x.LinkName ?? string.Empty, StringComparer.Ordinal)
-                              .ThenBy(x => x.EventTypeName ?? string.Empty, StringComparer.Ordinal)
-                              .ThenBy(x => x.TargetTypeName ?? string.Empty, StringComparer.Ordinal))
+        var postconditions = a.Postconditions
+            .OrderBy(x => x.Kind.ToString(), StringComparer.Ordinal)
+            .ThenBy(x => x.PropertyName ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(x => x.LinkName ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(x => x.EventTypeName ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(x => x.TargetTypeName ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+        writer.Write(postconditions.Length);
+        foreach (var pc in postconditions)
         {
             WriteString(writer, pc.Kind.ToString());
             WriteString(writer, pc.PropertyName ?? string.Empty);

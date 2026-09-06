@@ -21,11 +21,13 @@ public sealed record ScopeNode : CheckNode
     /// File glob the child check is scoped to (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("file-glob")]
+    [JsonRequired]
     public string FileGlob { get; init; } = default!;
 
     /// <summary>
     /// The child check evaluated within the scope (recurses into CheckNode).
     /// </summary>
     [JsonPropertyName("child")]
+    [JsonRequired]
     public CheckNode Child { get; init; } = default!;
 }

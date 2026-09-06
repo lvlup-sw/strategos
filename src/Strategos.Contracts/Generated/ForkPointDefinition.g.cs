@@ -21,23 +21,27 @@ public sealed record ForkPointDefinition
     /// Stable fork-point identifier.
     /// </summary>
     [JsonPropertyName("forkPointId")]
+    [JsonRequired]
     public string ForkPointId { get; init; } = default!;
 
     /// <summary>
     /// Step id where the fork originates.
     /// </summary>
     [JsonPropertyName("fromStepId")]
+    [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
     /// Concurrent fork paths.
     /// </summary>
     [JsonPropertyName("paths")]
+    [JsonRequired]
     public IReadOnlyList<ForkPathDefinition> Paths { get; init; } = default!;
 
     /// <summary>
     /// Step id where the concurrent paths rejoin.
     /// </summary>
     [JsonPropertyName("joinStepId")]
+    [JsonRequired]
     public string JoinStepId { get; init; } = default!;
 }

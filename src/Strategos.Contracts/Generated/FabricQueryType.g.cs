@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -13,7 +15,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// Kind of fabric query recorded by a `fabric.query` audit event (ADR §4.2).
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FabricQueryType>))]
+[JsonConverter(typeof(FabricQueryTypeJsonConverter))]
 public enum FabricQueryType
 {
     [JsonStringEnumMemberName("ontologyQuery")]
@@ -27,4 +29,38 @@ public enum FabricQueryType
 
     [JsonStringEnumMemberName("intentRegister")]
     IntentRegister,
+}
+
+public sealed class FabricQueryTypeJsonConverter : JsonConverter<FabricQueryType>
+{
+    public override FabricQueryType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("FabricQueryType requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "ontologyQuery" => FabricQueryType.OntologyQuery,
+            "designValidation" => FabricQueryType.DesignValidation,
+            "domainStateResolution" => FabricQueryType.DomainStateResolution,
+            "intentRegister" => FabricQueryType.IntentRegister,
+            _ => throw new JsonException("Unknown FabricQueryType wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, FabricQueryType value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            FabricQueryType.OntologyQuery => "ontologyQuery",
+            FabricQueryType.DesignValidation => "designValidation",
+            FabricQueryType.DomainStateResolution => "domainStateResolution",
+            FabricQueryType.IntentRegister => "intentRegister",
+            _ => throw new JsonException("Unknown FabricQueryType value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

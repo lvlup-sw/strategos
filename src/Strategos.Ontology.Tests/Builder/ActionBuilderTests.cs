@@ -5,10 +5,12 @@ namespace Strategos.Ontology.Tests.Builder;
 
 public class ActionBuilderTests
 {
+    private static readonly ActionSubject Subject = new("Trading", "Position");
+
     [Test]
     public async Task ActionBuilder_Build_ProducesDescriptorWithName()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         var descriptor = builder.Build();
 
@@ -18,7 +20,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_Description_SetsDescription()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         builder.Description("Open a new position");
         var descriptor = builder.Build();
@@ -29,7 +31,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_Accepts_SetsAcceptsType()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         builder.Accepts<TestTradeExecutionRequest>();
         var descriptor = builder.Build();
@@ -40,7 +42,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_Returns_SetsReturnsType()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         builder.Returns<TestTradeExecutionResult>();
         var descriptor = builder.Build();
@@ -51,7 +53,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_BoundToWorkflow_SetsBindingAndWorkflowName()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         builder.BoundToWorkflow("execute-trade");
         var descriptor = builder.Build();
@@ -63,7 +65,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_BoundToTool_SetsBindingAndToolReference()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         builder.BoundToTool("trading-tool", "execute");
         var descriptor = builder.Build();
@@ -76,7 +78,7 @@ public class ActionBuilderTests
     [Test]
     public async Task ActionBuilder_Unbound_DefaultsToUnbound()
     {
-        var builder = new ActionBuilder("ExecuteTrade");
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
 
         var descriptor = builder.Build();
 

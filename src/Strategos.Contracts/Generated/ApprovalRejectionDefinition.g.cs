@@ -21,17 +21,20 @@ public sealed record ApprovalRejectionDefinition
     /// Stable rejection-handler identifier.
     /// </summary>
     [JsonPropertyName("rejectionHandlerId")]
+    [JsonRequired]
     public string RejectionHandlerId { get; init; } = default!;
 
     /// <summary>
     /// Steps run on rejection.
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
     /// Whether rejection terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 }

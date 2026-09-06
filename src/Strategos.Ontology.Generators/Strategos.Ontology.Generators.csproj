@@ -28,6 +28,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The exact, dependency-free finite-domain kernel is source-linked so
+         runtime and analyzer proofs cannot drift. It has no ontology/runtime,
+         source-generator, Wolverine, Marten, Z3, or native dependency. -->
+    <Compile Include="..\Strategos.Ontology\ActionLogic\LogicFormula.cs"
+             Link="ActionLogic\LogicFormula.cs" />
+    <Compile Include="..\Strategos.Ontology\ActionLogic\FiniteDomainSolver.cs"
+             Link="ActionLogic\FiniteDomainSolver.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Strategos.Ontology.Generators.Tests" />
   </ItemGroup>
 

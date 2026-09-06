@@ -1,8 +1,8 @@
 namespace Strategos.Ontology.Actions;
 
 /// <summary>
-/// Options controlling action dispatch behavior. Preconditions and postconditions
-/// are metadata by default; enforcement is opt-in via these options.
+/// Options controlling action dispatch behavior. General precondition enforcement
+/// is opt-in; hard formulas containing a relation are always enforced.
 /// </summary>
 public sealed record ActionDispatchOptions
 {
@@ -12,8 +12,8 @@ public sealed record ActionDispatchOptions
     public static readonly ActionDispatchOptions Default = new();
 
     /// <summary>
-    /// When true, the dispatcher evaluates action preconditions before dispatch
-    /// and returns a failure result if any precondition is unsatisfied.
+    /// When true, the dispatcher requires every hard precondition to evaluate
+    /// satisfied before dispatch. Unsatisfied and indeterminate results fail closed.
     /// </summary>
     public bool EnforcePreconditions { get; init; }
 }

@@ -4,10 +4,12 @@ namespace Strategos.Ontology.Tests.Descriptors;
 
 public class ActionDescriptorReadOnlyTests
 {
+    private static readonly ActionSubject Subject = new("Trading", "Balance");
+
     [Test]
     public async Task ActionDescriptor_IsReadOnlyDefault_IsFalse()
     {
-        var descriptor = new ActionDescriptor("GetBalance", "Read the current balance");
+        var descriptor = new ActionDescriptor(Subject, "GetBalance", "Read the current balance");
 
         await Assert.That(descriptor.IsReadOnly).IsFalse();
     }
@@ -15,7 +17,7 @@ public class ActionDescriptorReadOnlyTests
     [Test]
     public async Task ActionDescriptor_IsReadOnlyTrue_FlowsThroughInit()
     {
-        var descriptor = new ActionDescriptor("GetBalance", "Read the current balance")
+        var descriptor = new ActionDescriptor(Subject, "GetBalance", "Read the current balance")
             with { IsReadOnly = true };
 
         await Assert.That(descriptor.IsReadOnly).IsTrue();

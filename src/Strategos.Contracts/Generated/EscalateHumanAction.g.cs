@@ -21,5 +21,6 @@ public sealed record EscalateHumanAction : NextAction
     /// Why the action escalates to a human.
     /// </summary>
     [JsonPropertyName("reason")]
+    [JsonRequired]
     public string Reason { get; init; } = default!;
 }

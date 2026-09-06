@@ -41,7 +41,10 @@ public sealed class AuthorityAuthorizationTests
         var dispatcher = new AuthorityAuthorizationActionDispatcher(inner, CreateGraph());
         var context = Context("write", "reader") with
         {
-            ActionDescriptor = new ActionDescriptor("write", "spoofed"),
+            ActionDescriptor = new ActionDescriptor(
+                new ActionSubject("authority-dispatch", nameof(SecuredDocument)),
+                "write",
+                "spoofed"),
         };
 
         var result = await dispatcher.DispatchAsync(context, new object());

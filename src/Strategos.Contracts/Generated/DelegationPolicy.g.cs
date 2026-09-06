@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// Delegation policy carried by an ontological record&apos;s process layer (ADR §2.5,
 /// §2.6). Governs whether the router may place tasks locally or remotely.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DelegationPolicy>))]
+[JsonConverter(typeof(DelegationPolicyJsonConverter))]
 public enum DelegationPolicy
 {
     [JsonStringEnumMemberName("local")]
@@ -25,4 +27,36 @@ public enum DelegationPolicy
 
     [JsonStringEnumMemberName("auto")]
     Auto,
+}
+
+public sealed class DelegationPolicyJsonConverter : JsonConverter<DelegationPolicy>
+{
+    public override DelegationPolicy Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("DelegationPolicy requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "local" => DelegationPolicy.Local,
+            "remote" => DelegationPolicy.Remote,
+            "auto" => DelegationPolicy.Auto,
+            _ => throw new JsonException("Unknown DelegationPolicy wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, DelegationPolicy value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            DelegationPolicy.Local => "local",
+            DelegationPolicy.Remote => "remote",
+            DelegationPolicy.Auto => "auto",
+            _ => throw new JsonException("Unknown DelegationPolicy value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

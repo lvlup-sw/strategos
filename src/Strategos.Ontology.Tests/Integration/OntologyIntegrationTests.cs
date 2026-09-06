@@ -5,6 +5,7 @@ using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
+using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.Tests.Integration;
 
@@ -59,7 +60,10 @@ public class TradingTestOntology : DomainOntology
             obj.Key(p => p.Id);
             obj.Property(p => p.Symbol).Required();
             obj.Property(p => p.Quantity);
-            obj.Action("close-position").Accepts<decimal>().Description("Close position");
+            obj.Action("close-position")
+                .Accepts<decimal>()
+                .Description("Close position")
+                .Requires(position => position.Quantity > 0m);
             obj.HasMany<TradeOrderItem>("orders");
             obj.Implements<IHasSymbol>(map =>
             {
@@ -71,6 +75,8 @@ public class TradingTestOntology : DomainOntology
         {
             obj.Key(o => o.OrderId);
             obj.Property(o => o.Amount).Required();
+            obj.Action("cancel-order")
+                .Requires(order => order.Amount > 0m);
         });
 
         builder.CrossDomainLink("PositionToArticle")
@@ -160,6 +166,79 @@ public class IntegrationStubActionDispatcher : IActionDispatcher
 {
     public Task<ActionResult> DispatchAsync(ActionContext context, object request, CancellationToken ct = default) =>
         Task.FromResult(new ActionResult(true));
+}
+
+public class IntegrationSinglePositionObjectSetProvider : IObjectSetProvider
+{
+    public Task<ObjectSetResult<T>> ExecuteAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
+        where T : class
+    {
+        IReadOnlyList<T> items = typeof(T) == typeof(Position)
+            ? [(T)(object)new Position { Id = "position-1", Symbol = "STRAT", Quantity = 1m }]
+            : typeof(T) == typeof(TradeOrderItem)
+                ? [(T)(object)new TradeOrderItem { OrderId = "order-42", Amount = 25m }]
+                : [];
+
+        return Task.FromResult(new ObjectSetResult<T>(items, items.Count, ObjectSetInclusion.Properties));
+    }
+
+    public IAsyncEnumerable<T> StreamAsync<T>(ObjectSetExpression expression, CancellationToken ct = default)
+        where T : class =>
+        AsyncEnumerable.Empty<T>();
+
+    public Task<ScoredObjectSetResult<T>> ExecuteSimilarityAsync<T>(
+        SimilarityExpression expression, CancellationToken ct = default) where T : class =>
+        Task.FromResult(new ScoredObjectSetResult<T>([], 0, ObjectSetInclusion.Properties, []));
+
+    public Task EnsureSchemaAsync<T>(CancellationToken ct = default) where T : class => Task.CompletedTask;
+
+    public Task EnsureAllSchemasAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+public class IntegrationRecordingActionDispatcher : IActionDispatcher
+{
+    public ActionContext? LastContext { get; private set; }
+
+    public Task<ActionResult> DispatchAsync(ActionContext context, object request, CancellationToken ct = default)
+    {
+        LastContext = context;
+        return Task.FromResult(new ActionResult(true));
+    }
+}
+
+public sealed class IntegrationPositionFactResolver : IActionFactResolver
+{
+    public ActionContext? LastContext { get; private set; }
+
+    public ValueTask<ActionFacts?> ResolveAsync(
+        ActionContext context,
+        CancellationToken ct = default)
+    {
+        LastContext = context;
+        if (!string.Equals(context.ObjectId, "position-1", StringComparison.Ordinal))
+        {
+            if (!string.Equals(context.ObjectId, "order-42", StringComparison.Ordinal))
+            {
+                return ValueTask.FromResult<ActionFacts?>(null);
+            }
+
+            return ValueTask.FromResult<ActionFacts?>(new ActionFacts(
+                properties:
+                [
+                    KeyValuePair.Create(
+                        nameof(TradeOrderItem.Amount),
+                        PredicateLiteral.Decimal(25m)),
+                ]));
+        }
+
+        return ValueTask.FromResult<ActionFacts?>(new ActionFacts(
+            properties:
+            [
+                KeyValuePair.Create(
+                    nameof(Position.Quantity),
+                    PredicateLiteral.Decimal(1m)),
+            ]));
+    }
 }
 
 // --- Integration tests ---
@@ -263,7 +342,10 @@ public class OntologyIntegrationTests
 
         // Verify we can construct an ObjectSet with the resolved providers
         var positionSet = new ObjectSet<Position>(
-            nameof(Position), objectSetProvider, actionDispatcher, eventStreamProvider);
+            new ActionSubject("trading", nameof(Position)),
+            objectSetProvider,
+            actionDispatcher,
+            eventStreamProvider);
         var result = await positionSet.ExecuteAsync();
 
         await Assert.That(result).IsNotNull();
@@ -274,6 +356,95 @@ public class OntologyIntegrationTests
         await Assert.That(positionType).IsNotNull();
         await Assert.That(positionType!.Actions).HasCount().EqualTo(1);
         await Assert.That(positionType.Actions[0].Name).IsEqualTo("close-position");
+    }
+
+    [Test]
+    public async Task Ontology_QueryObjectSetApply_UsesDomainQualifiedSubjectThroughDispatcherGuard()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOntology(options =>
+        {
+            options.AddDomain<TradingTestOntology>();
+            options.AddDomain<KnowledgeTestOntology>();
+            options.UseObjectSetProvider<IntegrationSinglePositionObjectSetProvider>();
+            options.UseEventStreamProvider<IntegrationStubEventStreamProvider>();
+            options.UseActionDispatcher<IntegrationRecordingActionDispatcher>();
+            options.UseActionFactResolver<IntegrationPositionFactResolver>();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var query = provider.GetRequiredService<IOntologyQuery>();
+        var positionSet = query.GetObjectSet<Position>("Position");
+
+        var results = await positionSet.ApplyAsync(
+            new ActionPrincipal("User", "user-1"),
+            "close-position",
+            new { },
+            new ActionDispatchOptions { EnforcePreconditions = true });
+
+        var innerDispatcher = provider.GetRequiredService<IntegrationRecordingActionDispatcher>();
+        var factResolver = (IntegrationPositionFactResolver)provider.GetRequiredService<IActionFactResolver>();
+        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results[0].IsSuccess).IsTrue();
+        await Assert.That(innerDispatcher.LastContext).IsNotNull();
+        await Assert.That(innerDispatcher.LastContext!.Domain).IsEqualTo("trading");
+        await Assert.That(innerDispatcher.LastContext.ObjectType).IsEqualTo("Position");
+        await Assert.That(innerDispatcher.LastContext.ObjectId).IsEqualTo("position-1");
+        await Assert.That(innerDispatcher.LastContext.ActionName).IsEqualTo("close-position");
+        await Assert.That(innerDispatcher.LastContext.ActionDescriptor).IsNotNull();
+        await Assert.That(innerDispatcher.LastContext.ActionDescriptor!.Name).IsEqualTo("close-position");
+        await Assert.That(factResolver.LastContext).IsNotNull();
+        await Assert.That(factResolver.LastContext!.ObjectId).IsEqualTo("position-1");
+    }
+
+    [Test]
+    public async Task Ontology_QueryTraversalApply_PreservesTargetDescriptorAndProjectsTargetId()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOntology(options =>
+        {
+            options.AddDomain<TradingTestOntology>();
+            options.AddDomain<KnowledgeTestOntology>();
+            options.UseObjectSetProvider<IntegrationSinglePositionObjectSetProvider>();
+            options.UseEventStreamProvider<IntegrationStubEventStreamProvider>();
+            options.UseActionDispatcher<IntegrationRecordingActionDispatcher>();
+            options.UseActionFactResolver<IntegrationPositionFactResolver>();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var query = provider.GetRequiredService<IOntologyQuery>();
+        var orders = query
+            .GetObjectSet<Position>(nameof(Position))
+            .TraverseLink<TradeOrderItem>("orders")
+            .Where(order => order.Amount > 0m)
+            .Include(ObjectSetInclusion.Actions);
+
+        var traversal = (TraverseLinkExpression)((FilterExpression)((IncludeExpression)orders.Expression).Source).Source;
+        await Assert.That(traversal.TargetDescriptorName).IsEqualTo(nameof(TradeOrderItem));
+
+        var results = await orders.ApplyAsync(
+            new ActionPrincipal("User", "user-1"),
+            "cancel-order",
+            new { },
+            new ActionDispatchOptions { EnforcePreconditions = true });
+
+        var innerDispatcher = provider.GetRequiredService<IntegrationRecordingActionDispatcher>();
+        var factResolver = (IntegrationPositionFactResolver)provider.GetRequiredService<IActionFactResolver>();
+        await Assert.That(results).HasCount().EqualTo(1);
+        await Assert.That(results[0].IsSuccess).IsTrue();
+        await Assert.That(innerDispatcher.LastContext).IsNotNull();
+        await Assert.That(innerDispatcher.LastContext!.Domain).IsEqualTo("trading");
+        await Assert.That(innerDispatcher.LastContext.ObjectType).IsEqualTo(nameof(TradeOrderItem));
+        await Assert.That(innerDispatcher.LastContext.ObjectId).IsEqualTo("order-42");
+        await Assert.That(innerDispatcher.LastContext.ActionName).IsEqualTo("cancel-order");
+        await Assert.That(innerDispatcher.LastContext.ActionDescriptor).IsNotNull();
+        await Assert.That(innerDispatcher.LastContext.ActionDescriptor!.Name).IsEqualTo("cancel-order");
+        await Assert.That(factResolver.LastContext).IsNotNull();
+        await Assert.That(factResolver.LastContext!.Domain).IsEqualTo("trading");
+        await Assert.That(factResolver.LastContext.ObjectType).IsEqualTo(nameof(TradeOrderItem));
+        await Assert.That(factResolver.LastContext.ObjectId).IsEqualTo("order-42");
     }
 
     [Test]

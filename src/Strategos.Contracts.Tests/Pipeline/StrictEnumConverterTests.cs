@@ -51,4 +51,34 @@ public class StrictEnumConverterTests
 
         await Assert.That(value).IsEqualTo(CodingAttemptOutcome.TestsFailed);
     }
+
+    /// <summary>A closed string enum never accepts its underlying numeric ordinal.</summary>
+    [Test]
+    public async Task EmittedEnumConverter_NumericOrdinal_ThrowsJsonException()
+    {
+        var act = () => JsonSerializer.Deserialize<CodingAttemptOutcome>("0");
+
+        await Assert.That(act).Throws<JsonException>();
+    }
+
+    /// <summary>Quoted ordinals, CLR names, and wrong-case aliases are not wire tokens.</summary>
+    [Test]
+    [Arguments("\"0\"")]
+    [Arguments("\"TestsFailed\"")]
+    [Arguments("\"TESTS_FAILED\"")]
+    public async Task EmittedEnumConverter_NonCanonicalString_ThrowsJsonException(string json)
+    {
+        var act = () => JsonSerializer.Deserialize<CodingAttemptOutcome>(json);
+
+        await Assert.That(act).Throws<JsonException>();
+    }
+
+    /// <summary>Undefined CLR values cannot leak out as numeric contract tokens.</summary>
+    [Test]
+    public async Task EmittedEnumConverter_UndefinedValue_ThrowsJsonException()
+    {
+        var act = () => JsonSerializer.Serialize((CodingAttemptOutcome)99);
+
+        await Assert.That(act).Throws<JsonException>();
+    }
 }

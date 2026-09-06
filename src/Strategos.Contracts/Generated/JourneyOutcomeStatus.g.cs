@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -15,7 +17,7 @@ namespace Strategos.Contracts.Generated;
 /// VALUES are the exact snake_case tokens cross-repo consumers match on. Reused
 /// both as the overall `JourneyResult.outcome` and per-journey on `JourneyOutcome`.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<JourneyOutcomeStatus>))]
+[JsonConverter(typeof(JourneyOutcomeStatusJsonConverter))]
 public enum JourneyOutcomeStatus
 {
     [JsonStringEnumMemberName("all_passed")]
@@ -29,4 +31,38 @@ public enum JourneyOutcomeStatus
 
     [JsonStringEnumMemberName("not_executed")]
     NotExecuted,
+}
+
+public sealed class JourneyOutcomeStatusJsonConverter : JsonConverter<JourneyOutcomeStatus>
+{
+    public override JourneyOutcomeStatus Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("JourneyOutcomeStatus requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "all_passed" => JourneyOutcomeStatus.AllPassed,
+            "partial" => JourneyOutcomeStatus.Partial,
+            "all_failed" => JourneyOutcomeStatus.AllFailed,
+            "not_executed" => JourneyOutcomeStatus.NotExecuted,
+            _ => throw new JsonException("Unknown JourneyOutcomeStatus wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, JourneyOutcomeStatus value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            JourneyOutcomeStatus.AllPassed => "all_passed",
+            JourneyOutcomeStatus.Partial => "partial",
+            JourneyOutcomeStatus.AllFailed => "all_failed",
+            JourneyOutcomeStatus.NotExecuted => "not_executed",
+            _ => throw new JsonException("Unknown JourneyOutcomeStatus value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

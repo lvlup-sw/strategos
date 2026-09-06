@@ -22,9 +22,8 @@ namespace Strategos.Contracts;
 /// the JSON Schema validates exactly what ships.
 /// </para>
 /// <para>
-/// The options mirror the generated records' contract: enums serialize to their
-/// string wire value (the generated enums carry
-/// <c>[JsonConverter(typeof(JsonStringEnumConverter&lt;T&gt;))]</c>), the
+/// The options mirror the generated records' contract: enums serialize through
+/// generated per-enum converters that accept only their exact string wire tokens, the
 /// discriminated <c>StepDefinition</c> union round-trips on its <c>kind</c>
 /// discriminator via <c>[JsonPolymorphic]</c>, and <c>null</c> members (optional
 /// wire fields that were absent on the builder IR) are omitted.
@@ -42,6 +41,7 @@ public static class ContractsJson
     {
         WriteIndented = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        RespectNullableAnnotations = true,
     };
 
     /// <summary>Serializes a contract value to its canonical JSON wire form.</summary>

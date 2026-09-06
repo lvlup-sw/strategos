@@ -85,4 +85,10 @@ var verdict = validateTool.Validate(intent);
 
 The dispatcher resolves `CancelOrder`'s descriptor, sees its precondition (`Status == "Pending"`), evaluates it against the supplied `KnownProperties`, and finds the constraint unsatisfied. The verdict comes back with `Passed = false`, one entry in `HardViolations` naming the precondition, a `BlastRadius` scoped `Local` (one type, one domain), and an empty `PatternViolations` list. The agent reads `FailureReason` and reports back rather than calling the action.
 
-If `KnownProperties` is null or omits the referenced property, the evaluator returns satisfied — optimistic 2.5.0 behavior. Link-existence preconditions remain deterministic and still fail closed when the link is absent. Populate `KnownProperties` when you need deterministic verdicts on property predicates.
+If `KnownProperties` is null or omits the referenced property, evaluation is
+`Indeterminate`. An indeterminate hard predicate appears in `HardViolations`, so
+the validation verdict fails closed. Explicit `null` is a known literal and is
+different from a missing fact. `DesignIntent.KnownProperties` supplies property
+facts only, so a link predicate stays indeterminate on this validation surface;
+use the `ActionFacts` query APIs when explicit link presence or absence is
+available.

@@ -4,20 +4,26 @@
 // </copyright>
 // =============================================================================
 
+using System.Globalization;
+using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Strategos.Contracts.Codegen;
 
 /// <summary>
-/// RecordEmitter extension for contract-authored ontology operations. TypeSpec
-/// decorators are persisted as <c>x-strategos-*</c> JSON Schema metadata; this
-/// extension projects that provider-neutral metadata into immutable ontology
-/// descriptors without introducing an Ontology dependency into Contracts.
+/// Projects TypeSpec-authored ontology action metadata into immutable ontology
+/// descriptors. The extension deliberately emits source strings rather than
+/// referencing Strategos.Ontology, preserving the contracts layer's acyclic
+/// dependency boundary.
 /// </summary>
 internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissionExtension
 {
     private const string OutputFileName = "ContractOntology.g.cs";
+    private const string RequiresProperty = "x-strategos-requires-v1";
+    private const string EnsuresProperty = "x-strategos-ensures-v1";
+    private const string CanonicalDecimalPattern = "^(0|-?[1-9][0-9]*|-?(0|[1-9][0-9]*)\\.[0-9]*[1-9])$";
 
     public async Task<int> EmitAsync(string schemasDir)
     {
@@ -36,12 +42,63 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
             }
         }
 
+        ValidateConsistentObjectKinds(actions);
+        ValidateUniqueActionIdentities(actions);
         Directory.CreateDirectory(outputDir);
         await File.WriteAllTextAsync(
             Path.Combine(outputDir, OutputFileName),
             Emit(actions),
             Encoding.UTF8).ConfigureAwait(false);
         return 0;
+    }
+
+    private static void ValidateUniqueActionIdentities(IEnumerable<ContractAction> actions)
+    {
+        var duplicate = actions
+            .GroupBy(action => (action.DomainName, action.ObjectName, action.ActionName))
+            .Where(group => group.Skip(1).Any())
+            .OrderBy(group => group.Key.DomainName, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.ObjectName, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.ActionName, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (duplicate is null)
+        {
+            return;
+        }
+
+        throw Invalid(
+            $"action identity '{duplicate.Key.DomainName}/{duplicate.Key.ObjectName}.{duplicate.Key.ActionName}'",
+            $"is declared {duplicate.Count().ToString(CultureInfo.InvariantCulture)} times; "
+            + "action identity must be unique within its subject.");
+    }
+
+    private static void ValidateConsistentObjectKinds(IEnumerable<ContractAction> actions)
+    {
+        var conflict = actions
+            .GroupBy(action => (action.DomainName, action.ObjectName))
+            .Select(group => new
+            {
+                group.Key,
+                ObjectKinds = group
+                    .Select(action => action.ObjectKind)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(kind => kind, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(kind => kind, StringComparer.Ordinal)
+                    .ToArray(),
+            })
+            .Where(group => group.ObjectKinds.Length > 1)
+            .OrderBy(group => group.Key.DomainName, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.ObjectName, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (conflict is null)
+        {
+            return;
+        }
+
+        throw Invalid(
+            $"action subject '{conflict.Key.DomainName}/{conflict.Key.ObjectName}'",
+            $"declares conflicting object kinds {string.Join(", ", conflict.ObjectKinds.Select(Literal))}; "
+            + "object kind must be consistent across all actions in a subject.");
     }
 
     private static string Emit(IReadOnlyList<ContractAction> actions)
@@ -59,7 +116,7 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
         sb.AppendLine("    [");
 
         foreach (var objectGroup in actions
-                     .GroupBy(action => (action.DomainName, action.ObjectName, action.ObjectKind))
+                     .GroupBy(action => (action.DomainName, action.ObjectName))
                      .OrderBy(group => group.Key.DomainName, StringComparer.Ordinal)
                      .ThenBy(group => group.Key.ObjectName, StringComparer.Ordinal))
         {
@@ -71,7 +128,8 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
                 $"typespec://{objectGroup.Key.DomainName}/{objectGroup.Key.ObjectName}")).AppendLine(",");
             sb.AppendLine("            LanguageId = \"typespec\",");
             sb.AppendLine("            Source = DescriptorSource.HandAuthoredContract,");
-            sb.Append("            Kind = ObjectKind.").Append(MapObjectKind(objectGroup.Key.ObjectKind)).AppendLine(",");
+            sb.Append("            Kind = ObjectKind.").Append(MapObjectKind(
+                objectGroup.First().ObjectKind)).AppendLine(",");
             sb.AppendLine("            Actions =");
             sb.AppendLine("            [");
 
@@ -91,7 +149,9 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
 
     private static void EmitAction(StringBuilder sb, ContractAction action)
     {
-        sb.Append("                new ActionDescriptor(")
+        sb.Append("                new ActionDescriptor(new ActionSubject(")
+            .Append(Literal(action.DomainName)).Append(", ")
+            .Append(Literal(action.ObjectName)).Append("), ")
             .Append(Literal(action.ActionName)).Append(", ")
             .Append(Literal(action.Description)).AppendLine(")");
         sb.AppendLine("                {");
@@ -101,20 +161,37 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
         sb.Append("                    RequiresConfirmation = ").Append(Boolean(action.RequiresConfirmation)).AppendLine(",");
         sb.Append("                    AllowedClients = ").Append(StringArray(action.Clients)).AppendLine(",");
 
-        if (action.RelationName is not null)
+        if (action.Requirements.Count > 0)
         {
             sb.AppendLine("                    Preconditions =");
             sb.AppendLine("                    [");
-            sb.AppendLine("                        new ActionPrecondition");
-            sb.AppendLine("                        {");
-            sb.Append("                            Expression = ").Append(Literal(
-                $"relation:{action.RelationName}")).AppendLine(",");
-            sb.Append("                            Description = ").Append(Literal(
-                $"Requires relation '{action.RelationName}'.")).AppendLine(",");
-            sb.AppendLine("                            Kind = PreconditionKind.RelationHolds,");
-            sb.Append("                            RelationName = ").Append(Literal(action.RelationName)).AppendLine(",");
-            sb.Append("                            LinkPath = ").Append(StringArray(action.LinkPath)).AppendLine(",");
-            sb.AppendLine("                        },");
+            foreach (var requirement in action.Requirements)
+            {
+                sb.Append("                        new ActionPrecondition(")
+                    .Append(requirement.Predicate.Emit()).Append(", ")
+                    .Append(Literal(requirement.Description ?? "Typed action requirement.")).Append(", ")
+                    .Append("ConstraintStrength.").Append(requirement.Strength).AppendLine("),");
+            }
+
+            sb.AppendLine("                    ],");
+        }
+
+        if (action.Guarantees.Count > 0)
+        {
+            sb.AppendLine("                    Ensures =");
+            sb.AppendLine("                    [");
+            foreach (var guarantee in action.Guarantees)
+            {
+                sb.Append("                        new ActionGuarantee(")
+                    .Append(guarantee.Predicate.Emit());
+                if (guarantee.Description is not null)
+                {
+                    sb.Append(", ").Append(Literal(guarantee.Description));
+                }
+
+                sb.AppendLine("),");
+            }
+
             sb.AppendLine("                    ],");
         }
 
@@ -139,6 +216,108 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
 
     private static string Boolean(bool value) => value ? "true" : "false";
 
+    private static string RequiredString(JsonElement value, string propertyName, string context)
+    {
+        if (!value.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(property.GetString()))
+        {
+            throw Invalid(context, $"requires a non-empty string '{propertyName}'.");
+        }
+
+        return property.GetString()!;
+    }
+
+    private static string? OptionalString(JsonElement value, string propertyName, string context)
+    {
+        if (!value.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            throw Invalid(context, $"property '{propertyName}' must be a string when present.");
+        }
+
+        return property.GetString();
+    }
+
+    private static bool RequiredBoolean(JsonElement value, string propertyName, string context)
+    {
+        if (!value.TryGetProperty(propertyName, out var property)
+            || property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw Invalid(context, $"requires a Boolean '{propertyName}'.");
+        }
+
+        return property.GetBoolean();
+    }
+
+    private static JsonElement RequiredObject(JsonElement value, string propertyName, string context)
+    {
+        if (!value.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.Object)
+        {
+            throw Invalid(context, $"requires an object '{propertyName}'.");
+        }
+
+        return property;
+    }
+
+    private static IReadOnlyList<T> ReadArray<T>(
+        JsonElement value,
+        string propertyName,
+        string context,
+        bool required,
+        Func<JsonElement, string, T> read)
+    {
+        if (!value.TryGetProperty(propertyName, out var property))
+        {
+            if (required)
+            {
+                throw Invalid(context, $"requires an array '{propertyName}'.");
+            }
+
+            return [];
+        }
+
+        if (property.ValueKind != JsonValueKind.Array)
+        {
+            throw Invalid(context, $"property '{propertyName}' must be an array.");
+        }
+
+        var result = new List<T>();
+        var index = 0;
+        foreach (var item in property.EnumerateArray())
+        {
+            result.Add(read(item, $"{context}.{propertyName}[{index}]"));
+            index++;
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(
+        JsonElement value,
+        string propertyName,
+        string context,
+        bool required)
+    {
+        return ReadArray(value, propertyName, context, required, static (item, itemContext) =>
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                throw Invalid(itemContext, "must be a non-empty string.");
+            }
+
+            return item.GetString()!;
+        });
+    }
+
+    private static InvalidOperationException Invalid(string context, string message) =>
+        new($"Invalid typed action contract at {context}: {message}");
+
     private sealed record ContractAction(
         string DomainName,
         string ObjectName,
@@ -146,8 +325,8 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
         string ActionName,
         string Description,
         string? Authority,
-        string? RelationName,
-        IReadOnlyList<string> LinkPath,
+        IReadOnlyList<ContractRequirement> Requirements,
+        IReadOnlyList<ContractGuarantee> Guarantees,
         IReadOnlyList<string> Clients,
         bool RequiresConfirmation,
         bool IsReadOnly,
@@ -156,39 +335,93 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
         public static bool TryRead(JsonElement root, out ContractAction? action)
         {
             action = null;
-            if (!TryString(root, "x-strategos-action-name", out var actionName))
+            var schemaContext = root.TryGetProperty("$id", out var schemaId)
+                && schemaId.ValueKind == JsonValueKind.String
+                ? $"schema '{schemaId.GetString()}'"
+                : "action schema";
+            if (!root.TryGetProperty("x-strategos-action-name", out _))
             {
+                var orphanMetadata = root.EnumerateObject()
+                    .Select(property => property.Name)
+                    .FirstOrDefault(name => name.StartsWith("x-strategos-", StringComparison.Ordinal));
+                if (orphanMetadata is not null)
+                {
+                    throw Invalid(
+                        schemaContext,
+                        $"metadata '{orphanMetadata}' requires complete @objectKind action identity.");
+                }
+
                 return false;
             }
 
-            if (!TryString(root, "x-strategos-domain", out var domainName)
-                || !TryString(root, "x-strategos-object", out var objectName)
-                || !TryString(root, "x-strategos-object-kind", out var objectKind))
+            var actionName = RequiredMetadataString(
+                root,
+                "x-strategos-action-name",
+                schemaContext);
+
+            if (root.TryGetProperty("x-strategos-relation", out _)
+                || root.TryGetProperty("x-strategos-link-path", out _))
             {
-                throw new InvalidOperationException(
-                    $"Contract ontology action '{actionName}' is missing objectKind metadata.");
+                throw Invalid(
+                    $"action '{actionName}'",
+                    "legacy relation metadata is not accepted; emit a typed relation-holds requirement.");
+            }
+
+            var domainName = RequiredMetadataString(
+                root,
+                "x-strategos-domain",
+                $"action '{actionName}'");
+            var objectName = RequiredMetadataString(
+                root,
+                "x-strategos-object",
+                $"action '{actionName}'");
+            var objectKind = RequiredMetadataString(
+                root,
+                "x-strategos-object-kind",
+                $"action '{actionName}'");
+
+            var context = $"action '{domainName}/{objectName}.{actionName}'";
+            string? authority = null;
+            if (root.TryGetProperty("x-strategos-authority", out var authorityProperty))
+            {
+                if (authorityProperty.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(authorityProperty.GetString()))
+                {
+                    throw Invalid(context, "metadata 'x-strategos-authority' must be a non-empty string when present.");
+                }
+
+                authority = authorityProperty.GetString();
             }
 
             action = new ContractAction(
-                domainName!,
-                objectName!,
-                objectKind!,
-                actionName!,
-                ReadString(root, "x-strategos-action-description") ?? actionName!,
-                ReadString(root, "x-strategos-authority"),
-                ReadString(root, "x-strategos-relation"),
-                ReadStrings(root, "x-strategos-link-path"),
-                ReadStrings(root, "x-strategos-clients"),
-                ReadBoolean(root, "x-strategos-confirm"),
-                ReadBoolean(root, "x-strategos-read-only"),
-                ReadBoolean(root, "x-strategos-idempotent"));
+                domainName,
+                objectName,
+                objectKind,
+                actionName,
+                ReadString(root, "x-strategos-action-description") ?? actionName,
+                authority,
+                ReadArray(root, RequiresProperty, context, required: false, ContractRequirement.Read),
+                ReadArray(root, EnsuresProperty, context, required: false, ContractGuarantee.Read),
+                ReadStrings(root, "x-strategos-clients", context),
+                ReadBoolean(root, "x-strategos-confirm", context),
+                ReadBoolean(root, "x-strategos-read-only", context),
+                ReadBoolean(root, "x-strategos-idempotent", context));
             return true;
         }
 
-        private static bool TryString(JsonElement root, string propertyName, out string? value)
+        private static string RequiredMetadataString(
+            JsonElement root,
+            string propertyName,
+            string context)
         {
-            value = ReadString(root, propertyName);
-            return value is not null;
+            if (!root.TryGetProperty(propertyName, out var property)
+                || property.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(property.GetString()))
+            {
+                throw Invalid(context, $"metadata '{propertyName}' must be a non-empty string.");
+            }
+
+            return property.GetString()!;
         }
 
         private static string? ReadString(JsonElement root, string propertyName) =>
@@ -196,17 +429,592 @@ internal sealed class OntologyContractEmitter(string outputDir) : ISchemaEmissio
                 ? value.GetString()
                 : null;
 
-        private static bool ReadBoolean(JsonElement root, string propertyName) =>
-            root.TryGetProperty(propertyName, out var value)
-            && value.ValueKind is JsonValueKind.True or JsonValueKind.False
-            && value.GetBoolean();
+        private static bool ReadBoolean(JsonElement root, string propertyName, string context)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                return false;
+            }
 
-        private static IReadOnlyList<string> ReadStrings(JsonElement root, string propertyName) =>
-            root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Array
-                ? value.EnumerateArray()
-                    .Where(item => item.ValueKind == JsonValueKind.String)
-                    .Select(item => item.GetString()!)
-                    .ToArray()
-                : [];
+            if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                throw Invalid(context, $"metadata '{propertyName}' must be Boolean.");
+            }
+
+            return value.GetBoolean();
+        }
+
+        private static IReadOnlyList<string> ReadStrings(
+            JsonElement root,
+            string propertyName,
+            string context)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                return [];
+            }
+
+            if (value.ValueKind != JsonValueKind.Array)
+            {
+                throw Invalid(context, $"metadata '{propertyName}' must be an array.");
+            }
+
+            var result = new List<string>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
+                {
+                    throw Invalid(context, $"metadata '{propertyName}' must contain non-empty strings.");
+                }
+
+                result.Add(item.GetString()!);
+            }
+
+            return result;
+        }
+    }
+
+    private sealed record ContractRequirement(
+        ContractPredicate Predicate,
+        string Strength,
+        string? Description)
+    {
+        internal static ContractRequirement Read(JsonElement value, string context)
+        {
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid(context, "requirement must be an object.");
+            }
+
+            var strength = RequiredString(value, "strength", context) switch
+            {
+                "hard" => "Hard",
+                "soft" => "Soft",
+                var unknown => throw Invalid(context, $"unknown requirement strength '{unknown}'."),
+            };
+            var expression = RequiredString(value, "expression", context);
+            var predicate = ContractPredicate.Read(
+                RequiredObject(value, "predicate", context),
+                $"{context}.predicate");
+            ValidateCanonicalExpression(expression, predicate, context);
+            return new ContractRequirement(
+                predicate,
+                strength,
+                OptionalString(value, "description", context));
+        }
+    }
+
+    private sealed record ContractGuarantee(ContractPredicate Predicate, string? Description)
+    {
+        internal static ContractGuarantee Read(JsonElement value, string context)
+        {
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid(context, "guarantee must be an object.");
+            }
+
+            var expression = RequiredString(value, "expression", context);
+            var predicate = ContractPredicate.Read(
+                RequiredObject(value, "predicate", context),
+                $"{context}.predicate");
+            ValidateCanonicalExpression(expression, predicate, context);
+            return new ContractGuarantee(
+                predicate,
+                OptionalString(value, "description", context));
+        }
+    }
+
+    private abstract record ContractPredicate
+    {
+        internal abstract string Emit();
+
+        internal abstract string Expression { get; }
+
+        internal abstract string CanonicalToken { get; }
+
+        internal static ContractPredicate Read(JsonElement value, string context)
+        {
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid(context, "predicate must be an object.");
+            }
+
+            return RequiredString(value, "kind", context) switch
+            {
+                "true" => new ConstantContractPredicate(true),
+                "false" => new ConstantContractPredicate(false),
+                "property-comparison" => ReadPropertyComparison(value, context),
+                "link-exists" => new LinkContractPredicate(RequiredString(value, "linkName", context)),
+                "relation-holds" => new RelationContractPredicate(
+                    RequiredString(value, "relationName", context),
+                    ReadStringArray(value, "linkPath", context, required: true)),
+                "all" => NormalizeAggregate(
+                    all: true,
+                    ReadArray(value, "predicates", context, required: true, Read)),
+                "any" => NormalizeAggregate(
+                    all: false,
+                    ReadArray(value, "predicates", context, required: true, Read)),
+                "not" => NormalizeNot(
+                    Read(RequiredObject(value, "predicate", context), $"{context}.predicate")),
+                "custom" => ReadCustom(value, context),
+                var unknown => throw Invalid(context, $"unknown predicate kind '{unknown}'."),
+            };
+        }
+
+        private static ContractPredicate NormalizeAggregate(
+            bool all,
+            IReadOnlyList<ContractPredicate> predicates)
+        {
+            var unique = new SortedDictionary<string, ContractPredicate>(StringComparer.Ordinal);
+            foreach (var predicate in predicates)
+            {
+                if (predicate is ConstantContractPredicate constant)
+                {
+                    if ((all && !constant.Value) || (!all && constant.Value))
+                    {
+                        return new ConstantContractPredicate(!all);
+                    }
+
+                    continue;
+                }
+
+                if (predicate is AggregateContractPredicate aggregate && aggregate.All == all)
+                {
+                    foreach (var nested in aggregate.Predicates)
+                    {
+                        unique[nested.CanonicalToken] = nested;
+                    }
+                }
+                else
+                {
+                    unique[predicate.CanonicalToken] = predicate;
+                }
+            }
+
+            return unique.Count switch
+            {
+                0 => new ConstantContractPredicate(all),
+                1 => unique.Values.First(),
+                _ => new AggregateContractPredicate(all, unique.Values.ToArray()),
+            };
+        }
+
+        private static ContractPredicate NormalizeNot(ContractPredicate predicate) => predicate switch
+        {
+            ConstantContractPredicate constant => new ConstantContractPredicate(!constant.Value),
+            NotContractPredicate not => not.Predicate,
+            _ => new NotContractPredicate(predicate),
+        };
+
+        private static ContractPredicate ReadCustom(JsonElement value, string context)
+        {
+            var readSet = ReadArray(value, "readSet", context, required: true, ContractResource.Read)
+                .GroupBy(resource => resource.CanonicalToken, StringComparer.Ordinal)
+                .Select(group => group.Last())
+                .OrderBy(resource => resource.CanonicalToken, StringComparer.Ordinal)
+                .ToArray();
+            return new CustomContractPredicate(
+                RequiredString(value, "evaluatorKey", context),
+                ReadArray(value, "arguments", context, required: true, ContractLiteral.Read),
+                readSet);
+        }
+
+        private static ContractPredicate ReadPropertyComparison(JsonElement value, string context)
+        {
+            var property = RequiredObject(value, "property", context);
+            var propertyContext = $"{context}.property";
+            var scalarKind = RequiredString(property, "scalarKind", propertyContext) switch
+            {
+                "boolean" => "Boolean",
+                "integer" => "Integer",
+                "decimal" => "Decimal",
+                "string" => "String",
+                "enum" => "Enum",
+                "symbol" => "Symbol",
+                var unknown => throw Invalid(propertyContext, $"unknown scalar kind '{unknown}'."),
+            };
+            var isNullable = RequiredBoolean(property, "isNullable", propertyContext);
+            var enumTypeName = OptionalString(property, "enumTypeName", propertyContext);
+            if (scalarKind == "Enum" && string.IsNullOrWhiteSpace(enumTypeName))
+            {
+                throw Invalid(propertyContext, "enum scalar requires a non-empty 'enumTypeName'.");
+            }
+
+            if (scalarKind != "Enum" && enumTypeName is not null)
+            {
+                throw Invalid(propertyContext, "'enumTypeName' is valid only for enum properties.");
+            }
+
+            var comparison = RequiredString(value, "operator", context) switch
+            {
+                "equal" => "Equal",
+                "not-equal" => "NotEqual",
+                "less-than" => "LessThan",
+                "less-than-or-equal" => "LessThanOrEqual",
+                "greater-than" => "GreaterThan",
+                "greater-than-or-equal" => "GreaterThanOrEqual",
+                var unknown => throw Invalid(context, $"unknown comparison operator '{unknown}'."),
+            };
+            var literal = ContractLiteral.Read(RequiredObject(value, "value", context), $"{context}.value");
+            ValidateComparison(scalarKind, enumTypeName, isNullable, comparison, literal, context);
+            return new ComparisonContractPredicate(
+                RequiredString(property, "name", propertyContext),
+                scalarKind,
+                enumTypeName,
+                isNullable,
+                comparison,
+                literal);
+        }
+
+        private static void ValidateComparison(
+            string scalarKind,
+            string? enumTypeName,
+            bool isNullable,
+            string comparison,
+            ContractLiteral literal,
+            string context)
+        {
+            if (literal.Kind == "Null")
+            {
+                if (!isNullable)
+                {
+                    throw Invalid(context, "a non-nullable property cannot be compared with null.");
+                }
+
+                if (comparison is not ("Equal" or "NotEqual"))
+                {
+                    throw Invalid(context, "null supports equality and inequality only.");
+                }
+
+                return;
+            }
+
+            if (!string.Equals(scalarKind, literal.Kind, StringComparison.Ordinal))
+            {
+                throw Invalid(context, $"property scalar '{scalarKind}' does not match literal '{literal.Kind}'.");
+            }
+
+            if (scalarKind == "Enum"
+                && !string.Equals(enumTypeName, literal.TypeName, StringComparison.Ordinal))
+            {
+                throw Invalid(context, "enum property and literal type names must match ordinally.");
+            }
+
+            if (scalarKind is not ("Integer" or "Decimal")
+                && comparison is not ("Equal" or "NotEqual"))
+            {
+                throw Invalid(context, $"scalar '{scalarKind}' supports equality and inequality only.");
+            }
+        }
+    }
+
+    private sealed record ConstantContractPredicate(bool Value) : ContractPredicate
+    {
+        internal override string Emit() => Value ? "ActionPredicate.True" : "ActionPredicate.False";
+
+        internal override string Expression => Value ? "true" : "false";
+
+        internal override string CanonicalToken => Value ? "constant:1" : "constant:0";
+    }
+
+    private sealed record ComparisonContractPredicate(
+        string PropertyName,
+        string ScalarKind,
+        string? EnumTypeName,
+        bool IsNullable,
+        string Comparison,
+        ContractLiteral Value) : ContractPredicate
+    {
+        internal override string Emit() =>
+            $"ActionPredicate.Property(new PredicatePropertyReference({Literal(PropertyName)}, "
+            + $"PredicateScalarKind.{ScalarKind}, {Boolean(IsNullable)}"
+            + (EnumTypeName is null ? ")" : $", {Literal(EnumTypeName)})") + ", "
+            + $"PredicateComparisonOperator.{Comparison}, {Value.Emit()})";
+
+        internal override string Expression =>
+            $"{PropertyName} {ComparisonExpression(Comparison)} {Value.Expression}";
+
+        internal override string CanonicalToken =>
+            $"comparison:{Segment(PropertyToken)}:{ComparisonIndex(Comparison)}:{Segment(Value.CanonicalToken)}";
+
+        private string PropertyToken =>
+            $"property:{Segment(PropertyName)}:{ScalarKindIndex(ScalarKind)}:{(IsNullable ? 1 : 0)}:"
+            + Segment(EnumTypeName ?? string.Empty);
+    }
+
+    private sealed record LinkContractPredicate(string LinkName) : ContractPredicate
+    {
+        internal override string Emit() => $"ActionPredicate.LinkExists({Literal(LinkName)})";
+
+        internal override string Expression => $"link({Quote(LinkName)}) exists";
+
+        internal override string CanonicalToken => "link-exists:" + Segment(LinkName);
+    }
+
+    private sealed record RelationContractPredicate(
+        string RelationName,
+        IReadOnlyList<string> LinkPath) : ContractPredicate
+    {
+        internal override string Emit() =>
+            $"ActionPredicate.RelationHolds({string.Join(", ", new[] { RelationName }.Concat(LinkPath).Select(Literal))})";
+
+        internal override string Expression =>
+            $"principal -[{RelationName}]-> {(LinkPath.Count == 0 ? "target" : string.Join("/", LinkPath))}";
+
+        internal override string CanonicalToken =>
+            "relation:" + Segment(RelationName) + ":" + string.Concat(LinkPath.Select(Segment));
+    }
+
+    private sealed record AggregateContractPredicate(
+        bool All,
+        IReadOnlyList<ContractPredicate> Predicates) : ContractPredicate
+    {
+        internal override string Emit() =>
+            $"ActionPredicate.{(All ? "All" : "Any")}(new ActionPredicate[] {{ "
+            + string.Join(", ", Predicates.Select(predicate => predicate.Emit()))
+            + " })";
+
+        internal override string Expression =>
+            "(" + string.Join(All ? " && " : " || ", Predicates.Select(predicate => predicate.Expression)) + ")";
+
+        internal override string CanonicalToken =>
+            (All ? "all:" : "any:")
+            + string.Concat(Predicates.Select(predicate => Segment(predicate.CanonicalToken)));
+    }
+
+    private sealed record NotContractPredicate(ContractPredicate Predicate) : ContractPredicate
+    {
+        internal override string Emit() => $"ActionPredicate.Not({Predicate.Emit()})";
+
+        internal override string Expression => $"!({Predicate.Expression})";
+
+        internal override string CanonicalToken => "not:" + Segment(Predicate.CanonicalToken);
+    }
+
+    private sealed record CustomContractPredicate(
+        string EvaluatorKey,
+        IReadOnlyList<ContractLiteral> Arguments,
+        IReadOnlyList<ContractResource> ReadSet) : ContractPredicate
+    {
+        internal override string Emit() =>
+            $"ActionPredicate.Custom({Literal(EvaluatorKey)}, new PredicateLiteral[] {{ "
+            + string.Join(", ", Arguments.Select(argument => argument.Emit()))
+            + " }, new ActionResource[] { "
+            + string.Join(", ", ReadSet.Select(resource => resource.Emit()))
+            + " })";
+
+        internal override string Expression =>
+            $"custom({Quote(EvaluatorKey)}"
+            + (Arguments.Count == 0
+                ? string.Empty
+                : ", " + string.Join(", ", Arguments.Select(argument => argument.Expression)))
+            + ")";
+
+        internal override string CanonicalToken =>
+            "custom:" + Segment(EvaluatorKey) + ":"
+            + string.Concat(Arguments.Select(argument => Segment(argument.CanonicalToken))) + ":"
+            + string.Concat(ReadSet.Select(resource => resource.CanonicalToken));
+    }
+
+    private sealed record ContractLiteral(string Kind, string? Value = null, string? TypeName = null)
+    {
+        internal string Expression => Kind switch
+        {
+            "Null" => "null",
+            "Boolean" or "Integer" or "Decimal" => Value!,
+            "String" => Quote(Value!),
+            "Enum" => $"{TypeName}.{Value}",
+            "Symbol" => $"symbol({Quote(Value!)})",
+            _ => throw new InvalidOperationException($"Unknown contract literal kind '{Kind}'."),
+        };
+
+        internal string CanonicalToken =>
+            $"literal:{LiteralKindIndex(Kind)}:{Segment(TypeName ?? string.Empty)}:{Segment(Value ?? string.Empty)}";
+
+        internal string Emit() => Kind switch
+        {
+            "Null" => "PredicateLiteral.Null",
+            "Boolean" => $"PredicateLiteral.Boolean({Value})",
+            "Integer" => $"PredicateLiteral.Integer(System.Numerics.BigInteger.Parse({Literal(Value!)}, System.Globalization.CultureInfo.InvariantCulture))",
+            "Decimal" => $"PredicateLiteral.Decimal({Literal(Value!)})",
+            "String" => $"PredicateLiteral.String({Literal(Value!)})",
+            "Enum" => $"PredicateLiteral.Enum({Literal(TypeName!)}, {Literal(Value!)})",
+            "Symbol" => $"PredicateLiteral.Symbol({Literal(Value!)})",
+            _ => throw new InvalidOperationException($"Unknown contract literal kind '{Kind}'."),
+        };
+
+        internal static ContractLiteral Read(JsonElement value, string context)
+        {
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid(context, "literal must be an object.");
+            }
+
+            var kind = RequiredString(value, "kind", context);
+            return kind switch
+            {
+                "null" => new ContractLiteral("Null"),
+                "boolean" => new ContractLiteral(
+                    "Boolean",
+                    Boolean(RequiredBoolean(value, "value", context))),
+                "integer" => ReadInteger(value, context),
+                "decimal" => ReadDecimal(value, context),
+                "string" => new ContractLiteral("String", ReadLiteralString(value, context)),
+                "enum" => new ContractLiteral(
+                    "Enum",
+                    RequiredString(value, "memberName", context),
+                    RequiredString(value, "typeName", context)),
+                "symbol" => new ContractLiteral("Symbol", RequiredString(value, "value", context)),
+                _ => throw Invalid(context, $"unknown literal kind '{kind}'."),
+            };
+        }
+
+        private static ContractLiteral ReadInteger(JsonElement value, string context)
+        {
+            var text = RequiredString(value, "value", context);
+            if (!BigInteger.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)
+                || !string.Equals(parsed.ToString(CultureInfo.InvariantCulture), text, StringComparison.Ordinal))
+            {
+                throw Invalid(context, $"integer '{text}' is not a canonical base-10 value.");
+            }
+
+            return new ContractLiteral("Integer", text);
+        }
+
+        private static ContractLiteral ReadDecimal(JsonElement value, string context)
+        {
+            var text = RequiredString(value, "value", context);
+            if (!Regex.IsMatch(text, CanonicalDecimalPattern, RegexOptions.CultureInvariant))
+            {
+                throw Invalid(context, $"decimal '{text}' is not a canonical exact base-10 value.");
+            }
+
+            return new ContractLiteral("Decimal", text);
+        }
+
+        private static string ReadLiteralString(JsonElement value, string context)
+        {
+            if (!value.TryGetProperty("value", out var property) || property.ValueKind != JsonValueKind.String)
+            {
+                throw Invalid(context, "requires a string 'value'.");
+            }
+
+            return property.GetString()!;
+        }
+    }
+
+    private sealed record ContractResource(string Kind, string Name)
+    {
+        internal string CanonicalToken => $"{ResourceKindIndex(Kind)}:{Segment(Name)}";
+
+        internal string Emit() => $"ActionResource.{Kind}({Literal(Name)})";
+
+        internal static ContractResource Read(JsonElement value, string context)
+        {
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid(context, "read-set resource must be an object.");
+            }
+
+            var kind = RequiredString(value, "kind", context) switch
+            {
+                "property" => "Property",
+                "link" => "Link",
+                "event" => "Event",
+                "external" => "External",
+                var unknown => throw Invalid(context, $"unknown resource kind '{unknown}'."),
+            };
+            return new ContractResource(kind, RequiredString(value, "name", context));
+        }
+    }
+
+    private static void ValidateCanonicalExpression(
+        string expression,
+        ContractPredicate predicate,
+        string context)
+    {
+        if (!string.Equals(expression, predicate.Expression, StringComparison.Ordinal))
+        {
+            throw Invalid(
+                context,
+                $"property 'expression' must equal the predicate's canonical display '{predicate.Expression}'.");
+        }
+    }
+
+    private static int ScalarKindIndex(string kind) => kind switch
+    {
+        "Boolean" => 0,
+        "Integer" => 1,
+        "Decimal" => 2,
+        "String" => 3,
+        "Enum" => 4,
+        "Symbol" => 5,
+        _ => throw new InvalidOperationException($"Unknown contract scalar kind '{kind}'."),
+    };
+
+    private static int LiteralKindIndex(string kind) => kind switch
+    {
+        "Null" => 0,
+        "Boolean" => 1,
+        "Integer" => 2,
+        "Decimal" => 3,
+        "String" => 4,
+        "Enum" => 5,
+        "Symbol" => 6,
+        _ => throw new InvalidOperationException($"Unknown contract literal kind '{kind}'."),
+    };
+
+    private static int ComparisonIndex(string comparison) => comparison switch
+    {
+        "Equal" => 0,
+        "NotEqual" => 1,
+        "LessThan" => 2,
+        "LessThanOrEqual" => 3,
+        "GreaterThan" => 4,
+        "GreaterThanOrEqual" => 5,
+        _ => throw new InvalidOperationException($"Unknown contract comparison '{comparison}'."),
+    };
+
+    private static int ResourceKindIndex(string kind) => kind switch
+    {
+        "Property" => 0,
+        "Link" => 1,
+        "Event" => 2,
+        "External" => 3,
+        _ => throw new InvalidOperationException($"Unknown contract resource kind '{kind}'."),
+    };
+
+    private static string ComparisonExpression(string comparison) => comparison switch
+    {
+        "Equal" => "==",
+        "NotEqual" => "!=",
+        "LessThan" => "<",
+        "LessThanOrEqual" => "<=",
+        "GreaterThan" => ">",
+        "GreaterThanOrEqual" => ">=",
+        _ => throw new InvalidOperationException($"Unknown contract comparison '{comparison}'."),
+    };
+
+    private static string Segment(string value) =>
+        value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value;
+
+    private static string Quote(string value)
+    {
+        var builder = new StringBuilder(value.Length + 2);
+        builder.Append('"');
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '\\': builder.Append("\\\\"); break;
+                case '"': builder.Append("\\\""); break;
+                case '\n': builder.Append("\\n"); break;
+                case '\r': builder.Append("\\r"); break;
+                case '\t': builder.Append("\\t"); break;
+                default: builder.Append(character); break;
+            }
+        }
+
+        return builder.Append('"').ToString();
     }
 }

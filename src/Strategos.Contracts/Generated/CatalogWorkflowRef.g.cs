@@ -28,11 +28,13 @@ public sealed record CatalogWorkflowRef : WorkflowRef
     /// Catalog workflow identity (resolves against `WorkflowCatalogEntry.workflowId`).
     /// </summary>
     [JsonPropertyName("workflowId")]
+    [JsonRequired]
     public string WorkflowId { get; init; } = default!;
 
     /// <summary>
     /// Pinned catalog version (resolves against `WorkflowCatalog.catalogVersion`).
     /// </summary>
     [JsonPropertyName("catalogVersion")]
+    [JsonRequired]
     public string CatalogVersion { get; init; } = default!;
 }

@@ -30,54 +30,63 @@ public sealed record WorkflowDefinitionV1
     /// Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2.
     /// </summary>
     [JsonPropertyName("schemaVersion")]
+    [JsonRequired]
     public string SchemaVersion { get; init; } = default!;
 
     /// <summary>
     /// Workflow name (the IR identity, matches the builder&apos;s `WorkflowDefinition.Name`).
     /// </summary>
     [JsonPropertyName("name")]
+    [JsonRequired]
     public string Name { get; init; } = default!;
 
     /// <summary>
     /// Ordered step definitions (the discriminated `StepDefinition` union).
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
     /// Directed transitions between steps.
     /// </summary>
     [JsonPropertyName("transitions")]
+    [JsonRequired]
     public IReadOnlyList<TransitionDefinition> Transitions { get; init; } = default!;
 
     /// <summary>
     /// Branch points (conditional fan-out).
     /// </summary>
     [JsonPropertyName("branchPoints")]
+    [JsonRequired]
     public IReadOnlyList<BranchPointDefinition> BranchPoints { get; init; } = default!;
 
     /// <summary>
     /// Loops (RepeatUntil constructs).
     /// </summary>
     [JsonPropertyName("loops")]
+    [JsonRequired]
     public IReadOnlyList<LoopDefinition> Loops { get; init; } = default!;
 
     /// <summary>
     /// Fork points (concurrent fan-out / join).
     /// </summary>
     [JsonPropertyName("forkPoints")]
+    [JsonRequired]
     public IReadOnlyList<ForkPointDefinition> ForkPoints { get; init; } = default!;
 
     /// <summary>
     /// Workflow-scoped failure handlers.
     /// </summary>
     [JsonPropertyName("failureHandlers")]
+    [JsonRequired]
     public IReadOnlyList<FailureHandlerDefinition> FailureHandlers { get; init; } = default!;
 
     /// <summary>
     /// Approval points (human-approval pauses).
     /// </summary>
     [JsonPropertyName("approvalPoints")]
+    [JsonRequired]
     public IReadOnlyList<ApprovalDefinition> ApprovalPoints { get; init; } = default!;
 
     /// <summary>

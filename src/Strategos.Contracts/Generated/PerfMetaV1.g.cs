@@ -24,23 +24,27 @@ public sealed record PerfMetaV1
     /// Wall-clock duration the producer took to compute the response, milliseconds.
     /// </summary>
     [JsonPropertyName("ms")]
+    [JsonRequired]
     public int Ms { get; init; }
 
     /// <summary>
     /// Input (prompt) tokens consumed while computing the response.
     /// </summary>
     [JsonPropertyName("inputTokens")]
+    [JsonRequired]
     public int InputTokens { get; init; }
 
     /// <summary>
     /// Output (completion) tokens produced while computing the response.
     /// </summary>
     [JsonPropertyName("outputTokens")]
+    [JsonRequired]
     public int OutputTokens { get; init; }
 
     /// <summary>
     /// Prompt-cache read tokens served while computing the response.
     /// </summary>
     [JsonPropertyName("cacheReadTokens")]
+    [JsonRequired]
     public int CacheReadTokens { get; init; }
 }

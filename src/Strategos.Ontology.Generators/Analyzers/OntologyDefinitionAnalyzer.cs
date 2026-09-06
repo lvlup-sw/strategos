@@ -59,7 +59,12 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.PolymorphicTargetNoJunctionTable,
             OntologyDiagnostics.InvalidAuthorityLattice,
             OntologyDiagnostics.ActionFrameUnsound,
-            OntologyDiagnostics.CompensationDisagreesWithInverse);
+            OntologyDiagnostics.CompensationDisagreesWithInverse,
+            OntologyDiagnostics.IllegalActionSeam,
+            OntologyDiagnostics.OpaqueActionContract,
+            OntologyDiagnostics.ActionComposabilityCoverage,
+            OntologyDiagnostics.DynamicActionSequence,
+            OntologyDiagnostics.InvalidActionContract);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -73,6 +78,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         // query code. A per-method action can't correlate the two, so we collect
         // both across the whole compilation and decide at compilation end.
         context.RegisterCompilationStartAction(RegisterAmbiguousTraversalGuard);
+        context.RegisterSyntaxNodeAction(
+            ActionCompositionAnalyzer.AnalyzeInvocation,
+            SyntaxKind.InvocationExpression);
     }
 
     // AONT211 (DR-10/DR-6, #128/#121): the compile-time guard for the DR-10
@@ -236,8 +244,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            var actionName = actionCreation.ArgumentList is { Arguments.Count: > 0 }
-                ? ExtractStringLiteral(actionCreation.ArgumentList.Arguments[0].Expression)
+            var actionName = actionCreation.ArgumentList is { Arguments.Count: > 1 }
+                ? ExtractStringLiteral(actionCreation.ArgumentList.Arguments[1].Expression)
                 : null;
             actionName ??= "<descriptor action>";
 

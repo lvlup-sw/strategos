@@ -21,5 +21,6 @@ public sealed record BuildkitePipelineParams
     /// The journeys to run in the pipeline, typed as `WorkflowRef` (INV-8).
     /// </summary>
     [JsonPropertyName("journeys")]
+    [JsonRequired]
     public IReadOnlyList<WorkflowRef> Journeys { get; init; } = default!;
 }

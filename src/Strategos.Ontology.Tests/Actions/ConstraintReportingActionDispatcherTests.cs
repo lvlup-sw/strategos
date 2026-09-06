@@ -16,7 +16,7 @@ public class ConstraintReportingActionDispatcherTests
         };
 
     private static ActionDescriptor MakeDescriptor(string name) =>
-        new(name, $"{name} description");
+        new(new ActionSubject("CRM", "Order"), name, $"{name} description");
 
     private static ConstraintEvaluation MakeEvaluation(
         string expression,
@@ -24,14 +24,16 @@ public class ConstraintReportingActionDispatcherTests
         ConstraintStrength strength,
         string? failureReason = null)
     {
-        var precondition = new ActionPrecondition
-        {
-            Expression = expression,
-            Description = expression,
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = strength,
-        };
-        return new ConstraintEvaluation(precondition, isSatisfied, strength, failureReason, null);
+        var precondition = new ActionPrecondition(
+            ActionPredicate.LinkExists(expression),
+            expression,
+            strength);
+        return new ConstraintEvaluation(
+            precondition,
+            isSatisfied ? PredicateTruthValue.Satisfied : PredicateTruthValue.Unsatisfied,
+            strength,
+            failureReason,
+            null);
     }
 
     [Test]
@@ -39,7 +41,10 @@ public class ConstraintReportingActionDispatcherTests
     {
         var inner = Substitute.For<IActionDispatcher>();
         var query = Substitute.For<IOntologyQuery>();
-        query.GetActionConstraintReport(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>())
+        query.GetActionConstraintReport(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<ActionFacts?>())
             .Returns([]);
         var innerResult = new ActionResult(true, Result: "ok");
         var ctx = MakeContext("Place", MakeDescriptor("Place"));
@@ -64,8 +69,8 @@ public class ConstraintReportingActionDispatcherTests
         var query = Substitute.For<IOntologyQuery>();
         var descriptor = MakeDescriptor("Ship");
         var hard = MakeEvaluation("Quantity > 0", isSatisfied: false, ConstraintStrength.Hard, "Quantity must be positive");
-        query.GetActionConstraintReport("Order", Arg.Any<IReadOnlyDictionary<string, object?>?>())
-            .Returns([new ActionConstraintReport(descriptor, IsAvailable: false, Constraints: [hard])]);
+        query.GetActionConstraintReport("CRM", "Order", Arg.Any<ActionFacts?>())
+            .Returns([new ActionConstraintReport(descriptor, ActionAvailability.Unavailable, Constraints: [hard])]);
         var ctx = MakeContext("Ship", descriptor);
         inner.DispatchAsync(ctx, Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(false, Error: "precondition failed")));
@@ -84,14 +89,47 @@ public class ConstraintReportingActionDispatcherTests
     }
 
     [Test]
+    public async Task Dispatch_InnerAuthoritativeViolations_ArePreservedVerbatim()
+    {
+        var inner = Substitute.For<IActionDispatcher>();
+        var query = Substitute.For<IOntologyQuery>();
+        var descriptor = MakeDescriptor("Ship");
+        var authoritative = new ConstraintViolationReport(
+            "Ship",
+            [MakeEvaluation("Quantity", isSatisfied: false, ConstraintStrength.Hard)],
+            [],
+            SuggestedCorrection: null);
+        var innerResult = new ActionResult(
+            false,
+            Error: "precondition failed",
+            Violations: authoritative);
+        var ctx = MakeContext("Ship", descriptor);
+        inner.DispatchAsync(ctx, Arg.Any<object>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(innerResult));
+        var sut = new ConstraintReportingActionDispatcher(
+            inner,
+            query,
+            NullLogger<ConstraintReportingActionDispatcher>.Instance);
+
+        var result = await sut.DispatchAsync(ctx, new { }, CancellationToken.None);
+
+        await Assert.That(result).IsSameReferenceAs(innerResult);
+        await Assert.That(result.Violations).IsSameReferenceAs(authoritative);
+        query.DidNotReceive().GetActionConstraintReport(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<ActionFacts?>());
+    }
+
+    [Test]
     public async Task Dispatch_SoftConstraintsOnSuccess_PopulatesSoftViolations()
     {
         var inner = Substitute.For<IActionDispatcher>();
         var query = Substitute.For<IOntologyQuery>();
         var descriptor = MakeDescriptor("Audit");
         var soft = MakeEvaluation("LinkedTo(Approval)", isSatisfied: false, ConstraintStrength.Soft);
-        query.GetActionConstraintReport("Order", Arg.Any<IReadOnlyDictionary<string, object?>?>())
-            .Returns([new ActionConstraintReport(descriptor, IsAvailable: true, Constraints: [soft])]);
+        query.GetActionConstraintReport("CRM", "Order", Arg.Any<ActionFacts?>())
+            .Returns([new ActionConstraintReport(descriptor, ActionAvailability.Available, Constraints: [soft])]);
         var ctx = MakeContext("Audit", descriptor);
         inner.DispatchAsync(ctx, Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true, Result: "audited")));
@@ -115,8 +153,8 @@ public class ConstraintReportingActionDispatcherTests
         var inner = Substitute.For<IActionDispatcher>();
         var query = Substitute.For<IOntologyQuery>();
         var descriptor = MakeDescriptor("Create");
-        query.GetActionConstraintReport("Order", Arg.Any<IReadOnlyDictionary<string, object?>?>())
-            .Returns([new ActionConstraintReport(descriptor, IsAvailable: true, Constraints: [])]);
+        query.GetActionConstraintReport("CRM", "Order", Arg.Any<ActionFacts?>())
+            .Returns([new ActionConstraintReport(descriptor, ActionAvailability.Available, Constraints: [])]);
         var ctx = MakeContext("Create", descriptor);
         inner.DispatchAsync(ctx, Arg.Any<object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ActionResult(true, Result: "created")));
@@ -149,7 +187,9 @@ public class ConstraintReportingActionDispatcherTests
 
         await Assert.That(result).IsSameReferenceAs(innerResult);
         query.DidNotReceive().GetActionConstraintReport(
-            Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object?>?>());
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<ActionFacts?>());
     }
 
     [Test]

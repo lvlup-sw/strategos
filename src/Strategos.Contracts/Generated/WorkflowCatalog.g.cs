@@ -26,11 +26,13 @@ public sealed record WorkflowCatalog
     /// Version of this catalog manifest.
     /// </summary>
     [JsonPropertyName("catalogVersion")]
+    [JsonRequired]
     public string CatalogVersion { get; init; } = default!;
 
     /// <summary>
     /// The published catalog entries.
     /// </summary>
     [JsonPropertyName("entries")]
+    [JsonRequired]
     public IReadOnlyList<WorkflowCatalogEntry> Entries { get; init; } = default!;
 }

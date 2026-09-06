@@ -21,6 +21,8 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
     private readonly string _domainName;
     private readonly string? _explicitName;
 
+    private ActionSubject Subject => new(_domainName, _explicitName ?? typeof(T).Name);
+
     public ObjectTypeBuilder(string domainName, string? explicitName = null)
     {
         if (explicitName is not null && !ExplicitNamePattern.IsMatch(explicitName))
@@ -101,7 +103,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
 
     public IActionBuilder<T> Action(string actionName)
     {
-        var builder = new ActionBuilder<T>(actionName);
+        var builder = new ActionBuilder<T>(actionName, Subject);
         _actionBuilders.Add(builder);
         return builder;
     }
@@ -127,7 +129,7 @@ internal sealed class ObjectTypeBuilder<T> : IObjectTypeBuilder<T>
         }
 
         // Register default actions directly to preserve full metadata
-        _defaultActionDescriptors.AddRange(mapping.GetDefaultActions());
+        _defaultActionDescriptors.AddRange(mapping.GetDefaultActions(Subject));
     }
 
     public void Lifecycle<TEnum>(

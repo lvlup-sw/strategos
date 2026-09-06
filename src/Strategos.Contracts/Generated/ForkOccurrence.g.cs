@@ -40,12 +40,14 @@ public sealed record ForkOccurrence
     /// Wire schema version literal — the DR-18 version marker (additive minors; breaking ⇒ fork.v2).
     /// </summary>
     [JsonPropertyName("schemaVersion")]
+    [JsonRequired]
     public string SchemaVersion { get; init; } = default!;
 
     /// <summary>
     /// The closed trigger that fired this fork (DR-8 — the shared trigger identity).
     /// </summary>
     [JsonPropertyName("trigger")]
+    [JsonRequired]
     public ForkTrigger Trigger { get; init; }
 
     /// <summary>
@@ -55,5 +57,6 @@ public sealed record ForkOccurrence
     /// enforced by the generated guard (DR-9).
     /// </summary>
     [JsonPropertyName("evidence")]
+    [JsonRequired]
     public IReadOnlyDictionary<string, string> Evidence { get; init; } = default!;
 }

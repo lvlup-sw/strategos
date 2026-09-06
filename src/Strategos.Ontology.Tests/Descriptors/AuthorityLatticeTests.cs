@@ -5,6 +5,8 @@ namespace Strategos.Ontology.Tests.Descriptors;
 
 public sealed class AuthorityLatticeTests
 {
+    private static readonly ActionSubject DocumentSubject = new("authority-test", "Document");
+
     [Test]
     public async Task ProductOrder_PreservesIndependentAxesAndComputesJoin()
     {
@@ -130,7 +132,7 @@ public sealed class AuthorityLatticeTests
             builder.AuthorityAxis("sensitivity", "public", "restricted");
             builder.Authority("reader").At("access", "read");
             builder.ObjectTypeFromDescriptor(DocumentWithActions(
-                new ActionDescriptor("read", "read") { RequiredAuthority = "reader" }));
+                new ActionDescriptor(DocumentSubject, "read", "read") { RequiredAuthority = "reader" }));
         }
     }
 
@@ -144,7 +146,7 @@ public sealed class AuthorityLatticeTests
             builder.Authority("reader").At("access", "read");
             builder.Authority("writer").At("access", "write");
             builder.ObjectTypeFromDescriptor(DocumentWithActions(
-                new ActionDescriptor("read", "read") { RequiredAuthority = "reader" }));
+                new ActionDescriptor(DocumentSubject, "read", "read") { RequiredAuthority = "reader" }));
         }
     }
 
@@ -158,8 +160,8 @@ public sealed class AuthorityLatticeTests
             builder.Authority("reader").At("access", "read").Implies("writer");
             builder.Authority("writer").At("access", "write");
             builder.ObjectTypeFromDescriptor(DocumentWithActions(
-                new ActionDescriptor("read", "read") { RequiredAuthority = "reader" },
-                new ActionDescriptor("write", "write") { RequiredAuthority = "writer" }));
+                new ActionDescriptor(DocumentSubject, "read", "read") { RequiredAuthority = "reader" },
+                new ActionDescriptor(DocumentSubject, "write", "write") { RequiredAuthority = "writer" }));
         }
     }
 
@@ -172,8 +174,8 @@ public sealed class AuthorityLatticeTests
             builder.AuthorityAxis("access", "read");
             builder.Authority("reader").At("access", "read");
             builder.ObjectTypeFromDescriptor(DocumentWithActions(
-                new ActionDescriptor("read", "read") { RequiredAuthority = "unknown" },
-                new ActionDescriptor("use-reader", "use reader") { RequiredAuthority = "reader" }));
+                new ActionDescriptor(DocumentSubject, "read", "read") { RequiredAuthority = "unknown" },
+                new ActionDescriptor(DocumentSubject, "use-reader", "use reader") { RequiredAuthority = "reader" }));
         }
     }
 

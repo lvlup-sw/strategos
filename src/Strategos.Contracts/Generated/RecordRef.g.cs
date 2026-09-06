@@ -25,11 +25,13 @@ public sealed record RecordRef
     /// Descriptor name of the record&apos;s object type (INV-8: a name, never a CLR type).
     /// </summary>
     [JsonPropertyName("descriptor")]
+    [JsonRequired]
     public string Descriptor { get; init; } = default!;
 
     /// <summary>
     /// Projected id of the record instance.
     /// </summary>
     [JsonPropertyName("recordId")]
+    [JsonRequired]
     public string RecordId { get; init; } = default!;
 }
