@@ -9,29 +9,29 @@ public class ValidationVerdictTests
     [Test]
     public async Task ValidationVerdict_Construction_PreservesAllFields()
     {
-        var precondition = new ActionPrecondition
-        {
-            Expression = "balance > 0",
-            Description = "Balance must be positive",
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Hard,
-        };
+        var precondition = new ActionPrecondition(
+            ActionPredicate.Property(
+                new PredicatePropertyReference("balance", PredicateScalarKind.Integer),
+                PredicateComparisonOperator.GreaterThan,
+                PredicateLiteral.Integer(0)),
+            "Balance must be positive",
+            ConstraintStrength.Hard);
         var hardEval = new ConstraintEvaluation(
             precondition,
-            IsSatisfied: false,
+            TruthValue: PredicateTruthValue.Unsatisfied,
             Strength: ConstraintStrength.Hard,
             FailureReason: "balance was zero",
             ExpectedShape: null);
-        var softPrecondition = new ActionPrecondition
-        {
-            Expression = "preferred",
-            Description = "Preferred status",
-            Kind = PreconditionKind.PropertyPredicate,
-            Strength = ConstraintStrength.Soft,
-        };
+        var softPrecondition = new ActionPrecondition(
+            ActionPredicate.Property(
+                new PredicatePropertyReference("status", PredicateScalarKind.String),
+                PredicateComparisonOperator.Equal,
+                PredicateLiteral.String("preferred")),
+            "Preferred status",
+            ConstraintStrength.Soft);
         var softEval = new ConstraintEvaluation(
             softPrecondition,
-            IsSatisfied: false,
+            TruthValue: PredicateTruthValue.Unsatisfied,
             Strength: ConstraintStrength.Soft,
             FailureReason: "preferred status missing",
             ExpectedShape: null);

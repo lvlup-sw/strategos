@@ -62,8 +62,12 @@ public sealed class TradingOntology : DomainOntology
 
 The expression-tree DSL is validated by the source generator. Diagnostics in the AONT001–AONT099 range catch missing keys, broken inverse links, unreachable lifecycle states, and similar errors before your code runs.
 
-:::caution[`.Requires(...)` is obsolete]
-Declare action preconditions on `ActionDescriptor.Preconditions`. There is no fluent successor — do not invent a replacement builder method. `.Requires(...)` still compiles so existing `Object<T>` authoring keeps working, and it is the only way the CLR-generic fluent surface writes preconditions today.
+:::tip[Typed action contracts]
+`.Requires(...)`, `.RequiresSoft(...)`, and `.Ensures(...)` translate the
+supported expression subset into immutable `ActionPredicate` values. Use their
+`ActionPredicate` overloads for CLR-free or explicit Boolean/link/relation
+formulas. See [Typed action calculus](/reference/action-calculus/) and the
+[2.13 migration guide](/guide/ontology/migration-v2-13/).
 :::
 
 `Object<T>` / `Interface<T>` stay CLR-generic. The first-class CLR-free path is `ObjectTypeFromDescriptor` / `ApplyDelta` — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/).
@@ -95,6 +99,10 @@ If your provider implements both `IObjectSetProvider` and `IObjectSetWriter`, `A
 Inject `IOntologyQuery` and ask it questions about the composed graph. The interface lives in `Strategos.Ontology.Query` and is registered as a singleton.
 
 ```csharp
+using Strategos.Ontology.Actions;
+using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Query;
+
 public sealed class TradingService
 {
     private readonly IOntologyQuery _query;
@@ -103,11 +111,15 @@ public sealed class TradingService
 
     public IReadOnlyList<ActionDescriptor> ListExecutableActions(Position position)
     {
-        var known = new Dictionary<string, object?>
-        {
-            [nameof(Position.Status)] = position.Status,
-            [nameof(Position.Quantity)] = position.Quantity,
-        };
+        var known = new ActionFacts(properties:
+        [
+            KeyValuePair.Create(
+                nameof(Position.Status),
+                PredicateLiteral.Enum(position.Status)),
+            KeyValuePair.Create(
+                nameof(Position.Quantity),
+                PredicateLiteral.Integer(position.Quantity)),
+        ]);
 
         return _query.GetValidActions("Position", known);
     }
@@ -120,7 +132,14 @@ public sealed class TradingService
 }
 ```
 
-`GetValidActions` filters declared actions by their `ActionDescriptor.Preconditions` (historically populated by `.Requires(...)`) against the supplied property dictionary. `GetActionConstraintReport` returns the same set with per-constraint pass/fail detail when you need a structured failure reason. `TracePostconditions` walks `.Modifies(...)`, `.CreatesLinked<T>(...)`, and `.EmitsEvent<T>(...)` declarations so an agent can plan against the effects of an action before invoking it.
+`GetCandidateActions` evaluates declared actions against immutable, typed
+`ActionFacts` and returns available and indeterminate actions, excluding only
+actions proven unavailable. `GetValidActions` is the equivalent descriptor-only
+convenience view. Use `GetActionConstraintReport` when you need all three
+availability outcomes, per-constraint tri-state detail, and a structured failure reason.
+`TracePostconditions` walks `.Modifies(...)`, `.CreatesLinked<T>(...)`, and
+`.EmitsEvent<T>(...)` declarations so an agent can plan against the effects of
+an action before invoking it.
 
 To materialize the objects themselves, call `_query.GetObjectSet<T>("Position")`. The returned `ObjectSet<T>` is a composable expression tree — `Where`, `TraverseLink`, `SimilarTo`, `Include`, then `ExecuteAsync(ct)`. See [Similarity Search](/strategos/guide/ontology/similarity-search/) for the embedding-aware path.
 

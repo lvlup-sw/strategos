@@ -188,14 +188,30 @@ public class OntologyToolDiscoveryTests
         await Assert.That(upsert.AuthorizationRequirements).HasCount().EqualTo(1);
         await Assert.That(upsert.AuthorizationRequirements[0].RelationName).IsEqualTo("owner");
         await Assert.That(upsert.AuthorizationRequirements[0].LinkPath).IsEquivalentTo(["space"]);
+        await Assert.That(upsert.Requires).HasCount().EqualTo(1);
+        await Assert.That(upsert.Requires[0].Predicate).IsTypeOf<ActionRelationHoldsPredicateV1>();
+        await Assert.That(upsert.Requires[0].Expression).IsEqualTo("principal -[owner]-> space");
+        await Assert.That(upsert.Ensures).HasCount().EqualTo(1);
+        await Assert.That(upsert.Ensures[0].Predicate).IsTypeOf<ActionLinkExistsPredicateV1>();
         await Assert.That(upsert.RequiredAuthority).IsEqualTo("writer");
         await Assert.That(upsert.TouchedResources)
-            .IsEquivalentTo([ActionResource.Property("Status")]);
+            .IsEquivalentTo([
+                ActionResource.Property("Status"),
+                ActionResource.Link("space"),
+            ]);
         await Assert.That(upsert.CompensatingActionName).IsEqualTo("revert-upsert");
 
         var read = actionTool.ActionSemantics.Single(summary => summary.ActionName == "read");
         await Assert.That(read.Annotations.ReadOnlyHint).IsTrue();
         await Assert.That(read.Annotations.IdempotentHint).IsTrue();
+
+        var alternative = actionTool.ActionSemantics.Single(summary => summary.ActionName == "alternative");
+        await Assert.That(alternative.AuthorizationRequirements).HasCount().EqualTo(1);
+        await Assert.That(alternative.AuthorizationRequirements[0].RelationName).IsEqualTo("owner");
+        await Assert.That(alternative.Requires.Select(requirement => requirement.Predicate))
+            .Contains(predicate => predicate is ActionAnyPredicateV1);
+        await Assert.That(alternative.Requires.Select(requirement => requirement.Predicate))
+            .Contains(predicate => predicate is ActionNotPredicateV1);
     }
 
     [Test]
@@ -241,8 +257,10 @@ internal sealed class SemanticActionDomainOntology : DomainOntology
             obj.Key(account => account.Id);
             obj.Action("upsert")
                 .RequiresRelation("owner", "space")
+                .EnsuresLink("space")
                 .RequiresAuthority("writer")
                 .Touches(ActionResource.Property("Status"))
+                .Touches(ActionResource.Link("space"))
                 .CompensatedBy("revert-upsert")
                 .Idempotent()
                 .BoundToWorkflow("upsert-account");
@@ -250,9 +268,22 @@ internal sealed class SemanticActionDomainOntology : DomainOntology
                 .RequiresAuthority("reader")
                 .ReadOnly()
                 .BoundToWorkflow("read-account");
+            obj.Action("alternative")
+                .Requires(ActionPredicate.Any(
+                    ActionPredicate.All(
+                        ActionPredicate.RelationHolds("owner", "space"),
+                        ActionPredicate.RelationHolds("editor", "space")),
+                    ActionPredicate.All(
+                        ActionPredicate.RelationHolds("owner", "space"),
+                        ActionPredicate.RelationHolds("administrator", "space"))))
+                .Requires(ActionPredicate.Not(ActionPredicate.RelationHolds("suspended")))
+                .RequiresSoft(ActionPredicate.RelationHolds("viewer", "space"))
+                .ReadOnly()
+                .BoundToWorkflow("alternative-account");
             obj.Action("revert-upsert")
                 .RequiresAuthority("writer")
                 .Touches(ActionResource.Property("Status"))
+                .Touches(ActionResource.Link("space"))
                 .Idempotent()
                 .BoundToWorkflow("revert-upsert-account");
         });

@@ -40,7 +40,10 @@ public sealed class AONT213Tests
                 Source = DescriptorSource.HandAuthoredContract,
                 Actions =
                 [
-                    new ActionDescriptor("read", "Read a document")
+                    new ActionDescriptor(
+                        new ActionSubject(DomainName, "Document"),
+                        "read",
+                        "Read a document")
                     {
                         IsReadOnly = true,
                         Idempotent = false,

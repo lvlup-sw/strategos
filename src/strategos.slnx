@@ -13,6 +13,7 @@
   <Project Path="Strategos.Contracts.Codegen/Strategos.Contracts.Codegen.csproj" />
   <Project Path="Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj" />
   <Project Path="Strategos.Contracts/Strategos.Contracts.csproj" />
+  <Project Path="Strategos.EnumJson.SourceGeneration.Tests/Strategos.EnumJson.SourceGeneration.Tests.csproj" />
   <Project Path="Strategos.Generators.Behavioral.Tests/Strategos.Generators.Behavioral.Tests.csproj" />
   <Project Path="Strategos.Generators.Tests/Strategos.Generators.Tests.csproj" />
   <Project Path="Strategos.Generators/Strategos.Generators.csproj" />

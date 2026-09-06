@@ -27,7 +27,9 @@ public sealed class RelationAuthorizationTests
         var result = await dispatcher.DispatchAsync(Context(graph), new { });
 
         await Assert.That(result.IsSuccess).IsFalse();
-        await Assert.That(result.Error).Contains("does not satisfy relation 'owner'");
+        await Assert.That(result.Error).Contains("hard requirements");
+        await Assert.That(result.Violations!.Hard.Single().TruthValue)
+            .IsEqualTo(PredicateTruthValue.Unsatisfied);
         await inner.DidNotReceive().DispatchAsync(
             Arg.Any<ActionContext>(),
             Arg.Any<object>(),
@@ -70,7 +72,10 @@ public sealed class RelationAuthorizationTests
         var dispatcher = new RelationAuthorizationActionDispatcher(inner, graph, resolver);
         var context = Context(graph) with
         {
-            ActionDescriptor = new ActionDescriptor("update", "spoofed"),
+            ActionDescriptor = new ActionDescriptor(
+                new ActionSubject("authorization", nameof(AuthorizationOrder)),
+                "update",
+                "spoofed"),
         };
 
         var result = await dispatcher.DispatchAsync(context, new { });
@@ -96,9 +101,10 @@ public sealed class RelationAuthorizationTests
             .Returns(new ObjectSetResult<object>([], 0, ObjectSetInclusion.Properties));
         var resolver = new ObjectSetActionRelationResolver(graph, provider);
 
-        await resolver.HoldsAsync(Context(graph), RelationPrecondition());
+        var holds = await resolver.HoldsAsync(Context(graph), RelationPrecondition());
 
         var finalFilter = (FilterExpression)captured!;
+        await Assert.That(holds).IsFalse();
         await Assert.That(finalFilter.Predicate.Body.NodeType).IsEqualTo(System.Linq.Expressions.ExpressionType.Equal);
     }
 
@@ -110,9 +116,9 @@ public sealed class RelationAuthorizationTests
         var resolver = new ObjectSetActionRelationResolver(graph, provider);
         var context = Context(graph) with { Domain = "other-domain" };
 
-        var holds = await resolver.HoldsAsync(context, RelationPrecondition());
-
-        await Assert.That(holds).IsFalse();
+        await Assert.That(async () => await resolver.HoldsAsync(context, RelationPrecondition()))
+            .Throws<InvalidOperationException>()
+            .WithMessageContaining("authoritative ontology metadata");
         await provider.DidNotReceive().ExecuteAsync<object>(
             Arg.Any<ObjectSetExpression>(),
             Arg.Any<CancellationToken>());
@@ -170,6 +176,61 @@ public sealed class RelationAuthorizationTests
         await Assert.That(actions.Select(action => action.Name)).IsEquivalentTo(["update", "view"]);
     }
 
+    [Test]
+    public async Task GetCandidateActionsAsync_MissingRelationResolver_RetainsIndeterminateAction()
+    {
+        var graph = BuildGraph();
+        var query = new OntologyQueryService(graph);
+
+        var candidates = await query.GetCandidateActionsAsync(
+            Owner,
+            "authorization",
+            nameof(AuthorizationOrder),
+            "order-1");
+        var valid = await query.GetValidActionsAsync(
+            Owner,
+            "authorization",
+            nameof(AuthorizationOrder),
+            "order-1");
+
+        var update = candidates.Single(candidate => candidate.Action.Name == "update");
+        await Assert.That(update.Availability).IsEqualTo(ActionAvailability.Indeterminate);
+        await Assert.That(valid.Select(action => action.Name)).Contains("update");
+    }
+
+    [Test]
+    public async Task GetCandidateActionsAsync_DefaultResolverMissingSymbolIdentity_IsIndeterminateAndRetained()
+    {
+        var graph = BuildSymbolKeyOnlyGraphWithoutIdentityInfrastructure();
+        var provider = Substitute.For<IObjectSetProvider>();
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+        var principal = new ActionPrincipal("PolyUser", "user-1");
+
+        var candidates = await query.GetCandidateActionsAsync(
+            principal,
+            "poly",
+            "PolyOrder",
+            "order-1");
+        var valid = await query.GetValidActionsAsync(
+            principal,
+            "poly",
+            "PolyOrder",
+            "order-1");
+
+        var inspect = candidates.Single(candidate => candidate.Action.Name == "inspect");
+        await Assert.That(inspect.Availability).IsEqualTo(ActionAvailability.Indeterminate);
+        await Assert.That(inspect.Constraints.Single().TruthValue)
+            .IsEqualTo(PredicateTruthValue.Indeterminate);
+        await Assert.That(valid.Select(action => action.Name)).Contains("inspect");
+        await provider.DidNotReceive().ExecuteAsync<object>(
+            Arg.Any<ObjectSetExpression>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private static ActionContext Context(OntologyGraph graph) =>
         new(Owner, "authorization", nameof(AuthorizationOrder), "order-1", "update")
         {
@@ -179,20 +240,51 @@ public sealed class RelationAuthorizationTests
         };
 
     private static ActionPrecondition RelationPrecondition() =>
-        new()
-        {
-            Expression = "principal -[owner]-> space",
-            Description = "caller owns the order space",
-            Kind = PreconditionKind.RelationHolds,
-            RelationName = "owner",
-            LinkPath = ["space"],
-        };
+        new(
+            ActionPredicate.RelationHolds("owner", "space"),
+            "caller owns the order space");
 
     private static OntologyGraph BuildGraph()
     {
         var builder = new OntologyGraphBuilder();
         builder.AddDomain<AuthorizationOntology>();
         return builder.Build();
+    }
+
+    private static OntologyGraph BuildSymbolKeyOnlyGraphWithoutIdentityInfrastructure()
+    {
+        var action = new ActionDescriptor(
+            new ActionSubject("poly", "PolyOrder"),
+            "inspect",
+            "inspect")
+        {
+            Preconditions = [new ActionPrecondition(ActionPredicate.RelationHolds("owner"), "owner")],
+        };
+        var order = new ObjectTypeDescriptor
+        {
+            Name = "PolyOrder",
+            DomainName = "poly",
+            ClrType = null,
+            SymbolKey = "scip-typescript ./orders.ts#Order",
+            Links = [new LinkDescriptor("owner", "PolyUser", LinkCardinality.OneToOne)],
+            Actions = [action],
+            // Deliberately no IdAccessor or IdPredicateFactory: a default relation
+            // resolver cannot authoritatively identify the action target.
+        };
+        var user = new ObjectTypeDescriptor
+        {
+            Name = "PolyUser",
+            DomainName = "poly",
+            ClrType = null,
+            SymbolKey = "scip-typescript ./users.ts#User",
+        };
+        ObjectTypeDescriptor[] objectTypes = [order, user];
+        return new OntologyGraph(
+            domains: [new DomainDescriptor("poly") { ObjectTypes = objectTypes }],
+            objectTypes: objectTypes,
+            interfaces: [],
+            crossDomainLinks: [],
+            workflowChains: []);
     }
 
     private static async Task<InMemoryObjectSetProvider> SeedProviderAsync(

@@ -1,4 +1,151 @@
 #nullable enable
+override Strategos.Ontology.MCP.Internal.ActionComparisonOperatorV1JsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+override Strategos.Ontology.MCP.Internal.ActionComparisonOperatorV1JsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Strategos.Ontology.MCP.ActionComparisonOperatorV1 value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Strategos.Ontology.MCP.Internal.ActionPredicateScalarKindV1JsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+override Strategos.Ontology.MCP.Internal.ActionPredicateScalarKindV1JsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Strategos.Ontology.MCP.ActionPredicateScalarKindV1 value, System.Text.Json.JsonSerializerOptions! options) -> void
+override Strategos.Ontology.MCP.Internal.ActionRequirementStrengthV1JsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> Strategos.Ontology.MCP.ActionRequirementStrengthV1
+override Strategos.Ontology.MCP.Internal.ActionRequirementStrengthV1JsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, Strategos.Ontology.MCP.ActionRequirementStrengthV1 value, System.Text.Json.JsonSerializerOptions! options) -> void
+Strategos.Ontology.MCP.Internal.ActionComparisonOperatorV1JsonConverter
+Strategos.Ontology.MCP.Internal.ActionComparisonOperatorV1JsonConverter.ActionComparisonOperatorV1JsonConverter() -> void
+Strategos.Ontology.MCP.Internal.ActionPredicateScalarKindV1JsonConverter
+Strategos.Ontology.MCP.Internal.ActionPredicateScalarKindV1JsonConverter.ActionPredicateScalarKindV1JsonConverter() -> void
+Strategos.Ontology.MCP.Internal.ActionRequirementStrengthV1JsonConverter
+Strategos.Ontology.MCP.Internal.ActionRequirementStrengthV1JsonConverter.ActionRequirementStrengthV1JsonConverter() -> void
+Strategos.Ontology.MCP.ActionAllPredicateV1
+Strategos.Ontology.MCP.ActionAllPredicateV1.Predicates.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionPredicateV1!>
+Strategos.Ontology.MCP.ActionAllPredicateV1.Predicates.init -> void
+Strategos.Ontology.MCP.ActionAnyPredicateV1
+Strategos.Ontology.MCP.ActionAnyPredicateV1.Predicates.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionPredicateV1!>
+Strategos.Ontology.MCP.ActionAnyPredicateV1.Predicates.init -> void
+Strategos.Ontology.MCP.ActionBooleanLiteralV1
+Strategos.Ontology.MCP.ActionBooleanLiteralV1.Value.get -> bool
+Strategos.Ontology.MCP.ActionBooleanLiteralV1.Value.init -> void
+Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.Equal = 0 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.GreaterThan = 4 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.GreaterThanOrEqual = 5 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.LessThan = 2 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.LessThanOrEqual = 3 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionComparisonOperatorV1.NotEqual = 1 -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionCustomPredicateV1
+Strategos.Ontology.MCP.ActionCustomPredicateV1.Arguments.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionLiteralV1!>
+Strategos.Ontology.MCP.ActionCustomPredicateV1.Arguments.init -> void
+Strategos.Ontology.MCP.ActionCustomPredicateV1.EvaluatorKey.get -> string!
+Strategos.Ontology.MCP.ActionCustomPredicateV1.EvaluatorKey.init -> void
+Strategos.Ontology.MCP.ActionCustomPredicateV1.ReadSet.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionResourceV1!>
+Strategos.Ontology.MCP.ActionCustomPredicateV1.ReadSet.init -> void
+Strategos.Ontology.MCP.ActionDecimalLiteralV1
+Strategos.Ontology.MCP.ActionDecimalLiteralV1.Value.get -> string!
+Strategos.Ontology.MCP.ActionDecimalLiteralV1.Value.init -> void
+Strategos.Ontology.MCP.ActionEnumLiteralV1
+Strategos.Ontology.MCP.ActionEnumLiteralV1.MemberName.get -> string!
+Strategos.Ontology.MCP.ActionEnumLiteralV1.MemberName.init -> void
+Strategos.Ontology.MCP.ActionEnumLiteralV1.TypeName.get -> string!
+Strategos.Ontology.MCP.ActionEnumLiteralV1.TypeName.init -> void
+Strategos.Ontology.MCP.ActionEventResourceV1
+Strategos.Ontology.MCP.ActionEventResourceV1.Name.get -> string!
+Strategos.Ontology.MCP.ActionEventResourceV1.Name.init -> void
+Strategos.Ontology.MCP.ActionExternalResourceV1
+Strategos.Ontology.MCP.ActionExternalResourceV1.Name.get -> string!
+Strategos.Ontology.MCP.ActionExternalResourceV1.Name.init -> void
+Strategos.Ontology.MCP.ActionFalsePredicateV1
+Strategos.Ontology.MCP.ActionGuaranteeV1
+Strategos.Ontology.MCP.ActionGuaranteeV1.Description.get -> string?
+Strategos.Ontology.MCP.ActionGuaranteeV1.Description.init -> void
+Strategos.Ontology.MCP.ActionGuaranteeV1.Expression.get -> string!
+Strategos.Ontology.MCP.ActionGuaranteeV1.Expression.init -> void
+Strategos.Ontology.MCP.ActionGuaranteeV1.Predicate.get -> Strategos.Ontology.MCP.ActionPredicateV1!
+Strategos.Ontology.MCP.ActionGuaranteeV1.Predicate.init -> void
+Strategos.Ontology.MCP.ActionIntegerLiteralV1
+Strategos.Ontology.MCP.ActionIntegerLiteralV1.Value.get -> string!
+Strategos.Ontology.MCP.ActionIntegerLiteralV1.Value.init -> void
+Strategos.Ontology.MCP.ActionLinkExistsPredicateV1
+Strategos.Ontology.MCP.ActionLinkExistsPredicateV1.LinkName.get -> string!
+Strategos.Ontology.MCP.ActionLinkExistsPredicateV1.LinkName.init -> void
+Strategos.Ontology.MCP.ActionLinkResourceV1
+Strategos.Ontology.MCP.ActionLinkResourceV1.Name.get -> string!
+Strategos.Ontology.MCP.ActionLinkResourceV1.Name.init -> void
+Strategos.Ontology.MCP.ActionLiteralV1
+Strategos.Ontology.MCP.ActionNotPredicateV1
+Strategos.Ontology.MCP.ActionNotPredicateV1.Predicate.get -> Strategos.Ontology.MCP.ActionPredicateV1!
+Strategos.Ontology.MCP.ActionNotPredicateV1.Predicate.init -> void
+Strategos.Ontology.MCP.ActionNullLiteralV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.Boolean = 0 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.Decimal = 2 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.Enum = 4 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.Integer = 1 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.String = 3 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateScalarKindV1.Symbol = 5 -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPredicateV1
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Operator.get -> Strategos.Ontology.MCP.ActionComparisonOperatorV1
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Operator.init -> void
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Property.get -> Strategos.Ontology.MCP.ActionPropertyReferenceV1!
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Property.init -> void
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Value.get -> Strategos.Ontology.MCP.ActionLiteralV1!
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.Value.init -> void
+Strategos.Ontology.MCP.ActionPropertyReferenceV1
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.EnumTypeName.get -> string?
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.EnumTypeName.init -> void
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.IsNullable.get -> bool
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.IsNullable.init -> void
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.Name.get -> string!
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.Name.init -> void
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.ScalarKind.get -> Strategos.Ontology.MCP.ActionPredicateScalarKindV1
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.ScalarKind.init -> void
+Strategos.Ontology.MCP.ActionPropertyResourceV1.ActionPropertyResourceV1(string! Name) -> void
+Strategos.Ontology.MCP.ActionPropertyResourceV1.Name.get -> string!
+Strategos.Ontology.MCP.ActionPropertyResourceV1.Name.init -> void
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1.LinkPath.get -> System.Collections.Immutable.ImmutableArray<string!>
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1.LinkPath.init -> void
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1.RelationName.get -> string!
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1.RelationName.init -> void
+Strategos.Ontology.MCP.ActionRequirementStrengthV1
+Strategos.Ontology.MCP.ActionRequirementStrengthV1.Hard = 0 -> Strategos.Ontology.MCP.ActionRequirementStrengthV1
+Strategos.Ontology.MCP.ActionRequirementStrengthV1.Soft = 1 -> Strategos.Ontology.MCP.ActionRequirementStrengthV1
+Strategos.Ontology.MCP.ActionRequirementV1
+Strategos.Ontology.MCP.ActionRequirementV1.Description.get -> string?
+Strategos.Ontology.MCP.ActionRequirementV1.Description.init -> void
+Strategos.Ontology.MCP.ActionRequirementV1.Expression.get -> string!
+Strategos.Ontology.MCP.ActionRequirementV1.Expression.init -> void
+Strategos.Ontology.MCP.ActionRequirementV1.Predicate.get -> Strategos.Ontology.MCP.ActionPredicateV1!
+Strategos.Ontology.MCP.ActionRequirementV1.Predicate.init -> void
+Strategos.Ontology.MCP.ActionRequirementV1.Strength.get -> Strategos.Ontology.MCP.ActionRequirementStrengthV1
+Strategos.Ontology.MCP.ActionRequirementV1.Strength.init -> void
+Strategos.Ontology.MCP.ActionResourceV1
+Strategos.Ontology.MCP.ActionSemanticSummary.Ensures.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionGuaranteeV1!>
+Strategos.Ontology.MCP.ActionSemanticSummary.Ensures.init -> void
+Strategos.Ontology.MCP.ActionSemanticSummary.Requires.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionRequirementV1!>
+Strategos.Ontology.MCP.ActionSemanticSummary.Requires.init -> void
+Strategos.Ontology.MCP.ActionStringLiteralV1
+Strategos.Ontology.MCP.ActionStringLiteralV1.Value.get -> string!
+Strategos.Ontology.MCP.ActionStringLiteralV1.Value.init -> void
+Strategos.Ontology.MCP.ActionSymbolLiteralV1
+Strategos.Ontology.MCP.ActionSymbolLiteralV1.Value.get -> string!
+Strategos.Ontology.MCP.ActionSymbolLiteralV1.Value.init -> void
+Strategos.Ontology.MCP.ActionTruePredicateV1
+Strategos.Ontology.MCP.ActionAllPredicateV1.ActionAllPredicateV1(System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionPredicateV1!> Predicates) -> void
+Strategos.Ontology.MCP.ActionAnyPredicateV1.ActionAnyPredicateV1(System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionPredicateV1!> Predicates) -> void
+Strategos.Ontology.MCP.ActionBooleanLiteralV1.ActionBooleanLiteralV1(bool Value) -> void
+Strategos.Ontology.MCP.ActionCustomPredicateV1.ActionCustomPredicateV1(string! EvaluatorKey, System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionLiteralV1!> Arguments, System.Collections.Immutable.ImmutableArray<Strategos.Ontology.MCP.ActionResourceV1!> ReadSet) -> void
+Strategos.Ontology.MCP.ActionDecimalLiteralV1.ActionDecimalLiteralV1(string! Value) -> void
+Strategos.Ontology.MCP.ActionEnumLiteralV1.ActionEnumLiteralV1(string! TypeName, string! MemberName) -> void
+Strategos.Ontology.MCP.ActionEventResourceV1.ActionEventResourceV1(string! Name) -> void
+Strategos.Ontology.MCP.ActionExternalResourceV1.ActionExternalResourceV1(string! Name) -> void
+Strategos.Ontology.MCP.ActionGuaranteeV1.ActionGuaranteeV1(Strategos.Ontology.MCP.ActionPredicateV1! Predicate, string! Expression, string? Description) -> void
+Strategos.Ontology.MCP.ActionIntegerLiteralV1.ActionIntegerLiteralV1(string! Value) -> void
+Strategos.Ontology.MCP.ActionLinkExistsPredicateV1.ActionLinkExistsPredicateV1(string! LinkName) -> void
+Strategos.Ontology.MCP.ActionLinkResourceV1.ActionLinkResourceV1(string! Name) -> void
+Strategos.Ontology.MCP.ActionNotPredicateV1.ActionNotPredicateV1(Strategos.Ontology.MCP.ActionPredicateV1! Predicate) -> void
+Strategos.Ontology.MCP.ActionPropertyComparisonPredicateV1.ActionPropertyComparisonPredicateV1(Strategos.Ontology.MCP.ActionPropertyReferenceV1! Property, Strategos.Ontology.MCP.ActionComparisonOperatorV1 Operator, Strategos.Ontology.MCP.ActionLiteralV1! Value) -> void
+Strategos.Ontology.MCP.ActionPropertyReferenceV1.ActionPropertyReferenceV1(string! Name, Strategos.Ontology.MCP.ActionPredicateScalarKindV1 ScalarKind, bool IsNullable, string? EnumTypeName = null) -> void
+Strategos.Ontology.MCP.ActionPropertyResourceV1
+Strategos.Ontology.MCP.ActionRelationHoldsPredicateV1.ActionRelationHoldsPredicateV1(string! RelationName, System.Collections.Immutable.ImmutableArray<string!> LinkPath) -> void
+Strategos.Ontology.MCP.ActionRequirementV1.ActionRequirementV1(Strategos.Ontology.MCP.ActionPredicateV1! Predicate, string! Expression, Strategos.Ontology.MCP.ActionRequirementStrengthV1 Strength, string? Description) -> void
+Strategos.Ontology.MCP.ActionStringLiteralV1.ActionStringLiteralV1(string! Value) -> void
+Strategos.Ontology.MCP.ActionSymbolLiteralV1.ActionSymbolLiteralV1(string! Value) -> void
 const Strategos.Ontology.MCP.OntologyAbstainedRecord.EventType = "ontology.abstained" -> string!
 const Strategos.Ontology.MCP.OntologyTraversalLimits.MaxDepth = 3 -> int
 const Strategos.Ontology.MCP.OntologyTraverseTool.RowBudget = 100 -> int

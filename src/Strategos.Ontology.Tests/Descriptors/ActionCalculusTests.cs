@@ -7,10 +7,12 @@ namespace Strategos.Ontology.Tests.Descriptors;
 
 public sealed class ActionCalculusTests
 {
+    private static readonly ActionSubject Subject = new("frame", "Document");
+
     [Test]
     public async Task FluentMutations_AddTheirResourcesToTheFrameByConstruction()
     {
-        var builder = new ActionBuilder<FramedDocument>("publish");
+        var builder = new ActionBuilder<FramedDocument>("publish", Subject);
         builder
             .Modifies(document => document.Status)
             .CreatesLinked<FramedDocument>("versions")
@@ -30,12 +32,12 @@ public sealed class ActionCalculusTests
     public async Task Sequential_ComputesFrameUnionAndAuthorityJoin()
     {
         var lattice = CreateLattice();
-        var revise = new ActionDescriptor("revise", "revise")
+        var revise = new ActionDescriptor(Subject, "revise", "revise")
         {
             RequiredAuthority = "public.writer",
             TouchedResources = [ActionResource.Property("Body")],
         };
-        var classify = new ActionDescriptor("classify", "classify")
+        var classify = new ActionDescriptor(Subject, "classify", "classify")
         {
             RequiredAuthority = "restricted.reader",
             TouchedResources = [ActionResource.Property("Classification")],
@@ -69,7 +71,7 @@ public sealed class ActionCalculusTests
     public async Task ActionDescriptor_DefensivelySnapshotsTouchedResources()
     {
         var resources = new List<ActionResource> { ActionResource.Property("Body") };
-        var action = new ActionDescriptor("revise", "revise") { TouchedResources = resources };
+        var action = new ActionDescriptor(Subject, "revise", "revise") { TouchedResources = resources };
 
         resources.Add(ActionResource.Property("Classification"));
 
@@ -79,11 +81,11 @@ public sealed class ActionCalculusTests
     [Test]
     public async Task RollbackPlan_IsMechanicallyReversedFromTheCompletedPrefix()
     {
-        var reserve = new ActionDescriptor("reserve", "reserve")
+        var reserve = new ActionDescriptor(Subject, "reserve", "reserve")
         {
             CompensatingActionName = "release",
         };
-        var charge = new ActionDescriptor("charge", "charge")
+        var charge = new ActionDescriptor(Subject, "charge", "charge")
         {
             CompensatingActionName = "refund",
         };
@@ -166,7 +168,7 @@ public sealed class ActionCalculusTests
                 Source = DescriptorSource.HandAuthoredContract,
                 Actions =
                 [
-                    new ActionDescriptor("publish", "publish")
+                    new ActionDescriptor(Subject, "publish", "publish")
                     {
                         Postconditions =
                         [
@@ -197,12 +199,12 @@ public sealed class ActionCalculusTests
                 Source = DescriptorSource.HandAuthoredContract,
                 Actions =
                 [
-                    new ActionDescriptor("publish", "publish")
+                    new ActionDescriptor(Subject, "publish", "publish")
                     {
                         TouchedResources = [ActionResource.Property("Status")],
                         CompensatingActionName = "unpublish",
                     },
-                    new ActionDescriptor("unpublish", "unpublish")
+                    new ActionDescriptor(Subject, "unpublish", "unpublish")
                     {
                         TouchedResources = [ActionResource.Property("PublishedAt")],
                     },

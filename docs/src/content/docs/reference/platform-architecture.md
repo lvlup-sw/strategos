@@ -1254,8 +1254,9 @@ The core `Strategos.Ontology` package includes text chunking (`ITextChunker`, `S
 | Action | `obj.Action("name")` | Operation on an Object Type, bound to a workflow or MCP tool |
 | Interface | `builder.Interface<T>()` | Polymorphic shape for cross-domain queries (backed by C# interfaces) |
 | Cross-Domain Link | `builder.CrossDomainLink("name")` | Relationship between Object Types in different domain assemblies |
-| Precondition | `ActionDescriptor.Preconditions` | Descriptor-first predicates that must hold for an action to be valid; `ConstraintStrength` (`Hard` \| `Soft`) controls blocking vs. advisory behavior. Fluent `.Requires(...)` is obsolete and has no fluent successor. |
-| Postcondition | `.Modifies(p => p.Qty)`, `.CreatesLinked<T>()`, `.EmitsEvent<T>()` | Declarative effect: what an action changes upon successful execution |
+| Requirement | `.Requires(...)`, `.RequiresSoft(...)` | Immutable typed predicate that is blocking (hard) or advisory (soft). |
+| Guarantee | `.Ensures(...)` | Typed fact promised after successful execution. |
+| Effect/frame | `.Modifies(p => p.Qty)`, `.CreatesLinked<T>()`, `.EmitsEvent<T>()` | What an action may change; a write is not a resulting-value guarantee. |
 | Lifecycle | `obj.Lifecycle(p => p.Status, ...)` | State machine binding a property to states, transitions, and triggers |
 | Derivation Chain | `.Computed().DerivedFrom(p => p.X, p => p.Y)` | Dependency graph for computed properties (staleness tracking) |
 | Interface Action | `iface.Action("Search")` | Action declared on an interface, dispatched polymorphically to concrete implementations |
@@ -1280,12 +1281,18 @@ obj.HasOne<Position>("Position").Inverse("Orders");
 
 The analyzer validates inverse link symmetry at freeze time: (1) the inverse link name must correspond to a declared link on the target type, and (2) the inverse relationship must be symmetric (if A's "Orders" link declares inverse "Position", then B's "Position" link must declare inverse "Orders"). Asymmetric or missing inverses produce diagnostics (AONT038, AONT039). This mirrors the INVERSE slot in N&amp;R's ontological semantics [Ch.7 &sect;7.1.1], ensuring navigation paths are always bidirectional.
 
-#### 4.14.5 Action Preconditions & Postconditions
+#### 4.14.5 Action Requirements, Guarantees & Effects
 
-Actions currently declare `Accepts<T>()`, `Returns<T>()`, and `BoundTo*()`, but nothing about **when** the action is valid or **what it changes**. An agent considering `ExecuteTrade` on a `Position` has no ontology metadata to determine that the position must be Active, or that executing a trade will modify `Quantity` and create a linked `TradeOrder`. Preconditions and postconditions serve two audiences: (1) the agent, which reads them as planning constraints during the ThinkStep, and (2) the `IActionDispatcher`, which can optionally enforce preconditions at dispatch time.
+Actions carry typed requirements, post-state guarantees, and effect/frame
+metadata. These serve both planning and dispatch: the action calculus proves
+closed sequential contracts, discovery evaluates a particular fact set, and
+the dispatcher can enforce hard requirements against authoritative target
+facts.
 
-:::caution[`.Requires(...)` is obsolete]
-Declare preconditions on `ActionDescriptor.Preconditions`. There is no fluent successor. The listing below is the historical CLR-generic surface; new descriptor-first authoring sets `Preconditions` on the `ActionDescriptor` directly (via `ObjectTypeFromDescriptor` / `ApplyDelta` for CLR-free types).
+:::note[Strategos 2.13]
+Requirements are no longer string-parsed. Fluent expression overloads translate
+a restricted subset into `ActionPredicate`; descriptor-first authoring passes
+the predicate directly. See the [2.13 migration guide](/guide/ontology/migration-v2-13/).
 :::
 
 **DSL methods on `IActionBuilder`:**
@@ -1301,6 +1308,7 @@ obj.Action("ExecuteTrade")
     .Requires(p => p.Quantity > 0)
     .RequiresLink("Strategy")  // Position must have a linked Strategy
     .RequiresSoft(p => p.UnrealizedPnL > -10000)  // Soft: advisory, does not block
+    .Ensures(p => p.Status == PositionStatus.Active)
 
     // Postconditions: what changes after execution?
     .Modifies(p => p.Quantity)
@@ -1311,111 +1319,91 @@ obj.Action("ExecuteTrade")
 
 Design decisions:
 
-- `Requires()` uses `Expression<Func<T, bool>>` -- the same expression tree pattern as `ObjectSet<T>.Where()`. This maintains DSL consistency and enables the runtime to extract the predicate for both metadata display and optional enforcement.
+- `Requires()`, `RequiresSoft()`, and `Ensures()` accept either a typed
+  `ActionPredicate` or a restricted `Expression<Func<T, bool>>`; expressions
+  are translated once and never serialized/reparsed as source text.
 - `RequiresLink(string linkName)` asserts that the specified link must have at least one target. This is a structural precondition (the link exists), not a value predicate.
 - `Modifies()` uses `Expression<Func<T, object>>` -- a property selector. The postcondition does not specify the new value (that depends on runtime input), only that the property will change.
 - `CreatesLinked<TTarget>(string linkName)` declares that executing this action may create new instances of `TTarget` and materialize the specified link.
 - `EmitsEvent<TEvent>()` declares that this action produces the specified event type. The event must be declared on the same object type via `obj.Event<T>()`.
 - All methods are additive. Calling `.Requires()` multiple times adds AND-combined conditions. This mirrors guard clause composition.
-- Preconditions and postconditions are **metadata by default**. Enforcement is opt-in via `ActionDispatchOptions.EnforcePreconditions = true`.
+- General hard-precondition enforcement is opt-in via
+  `ActionDispatchOptions.EnforcePreconditions = true`; hard relation formulas
+  are mandatory regardless of that switch.
 - `RequiresSoft()` uses the same `Expression<Func<T, bool>>` pattern as `Requires()`, but sets `ConstraintStrength.Soft`. Soft constraints are advisory -- they appear in constraint reports but do not block `GetValidActions()` results.
 - `RequiresLinkSoft(string linkName)` is the soft variant of `RequiresLink()`. It advises that a link should exist but does not block action availability.
-- `GetValidActions()` filters only on `Hard` constraints; soft constraints are always passed through. This matches Zhou et al.'s [&sect;5.2] distinction between blocking preconditions (hard T-Box constraints) and advisory guidance (soft preferences).
+- `GetCandidateActions()` distinguishes available from indeterminate actions
+  and excludes unavailable actions. `GetValidActions()` returns the same
+  retained descriptors without evaluations. `GetActionConstraintReport()`
+  includes unavailable actions for diagnostics. Soft constraints never block.
 
-**Descriptor types:**
+**Descriptor construction:**
 
 ```csharp
-public sealed record ActionPrecondition
-{
-    /// <summary>Serialized expression tree for display and enforcement.</summary>
-    public required string Expression { get; init; }
+var status = new PredicatePropertyReference(
+    "Status",
+    PredicateScalarKind.Enum,
+    enumTypeName: "PositionStatus");
+var isActive = ActionPredicate.Property(
+    status,
+    PredicateComparisonOperator.Equal,
+    PredicateLiteral.Enum("PositionStatus", "Active"));
 
-    /// <summary>Human-readable description derived from the expression.</summary>
-    public required string Description { get; init; }
+var requirement = new ActionPrecondition(
+    isActive,
+    "Position must be active",
+    ConstraintStrength.Hard);
 
-    /// <summary>PropertyPredicate, LinkExists, or Custom.</summary>
-    public required PreconditionKind Kind { get; init; }
+var guarantee = new ActionGuarantee(
+    isActive,
+    "Position remains active");
 
-    /// <summary>For LinkExists preconditions, the link name that must have targets.</summary>
-    public string? LinkName { get; init; }
-
-    /// <summary>Hard (blocks action availability) or Soft (advisory only). Default: Hard.</summary>
-    public ConstraintStrength Strength { get; init; } = ConstraintStrength.Hard;
-}
-
-public enum ConstraintStrength
-{
-    /// <summary>Action is unavailable if this precondition fails.</summary>
-    Hard,
-
-    /// <summary>Advisory: reported in constraint feedback but does not block availability.</summary>
-    Soft
-}
-
-public sealed record ActionPostcondition
-{
-    /// <summary>ModifiesProperty, CreatesLink, or EmitsEvent.</summary>
-    public required PostconditionKind Kind { get; init; }
-
-    /// <summary>For ModifiesProperty: the property name that changes.</summary>
-    public string? PropertyName { get; init; }
-
-    /// <summary>For CreatesLink: the link name and target type.</summary>
-    public string? LinkName { get; init; }
-
-    /// <summary>For EmitsEvent: the event type name.</summary>
-    public string? EventTypeName { get; init; }
-}
+// Both expose Predicate and a read-only canonical Expression projection.
 ```
 
-`ActionDescriptor` gains two new collection properties: `Preconditions` and `Postconditions` (both default to empty).
+`ActionDescriptor` snapshots `Preconditions`, `Ensures`,
+`Postconditions`, `TouchedResources`, and `AllowedClients`. The closed
+predicate hierarchy provides constants, property/literal comparisons, link and
+relation atoms, `All`, `Any`, `Not`, and explicit `Custom` evaluation.
 
 **Structured constraint feedback:**
 
 When an agent evaluates whether an action is available, the system returns a detailed constraint report rather than a simple boolean. This enables agents to understand *why* an action is blocked and what conditions would make it available -- a key feedback loop identified in Zhou et al. [&sect;5.1].
 
 ```csharp
-public sealed record ActionConstraintReport
-{
-    /// <summary>The action being evaluated.</summary>
-    public required ActionDescriptor Action { get; init; }
+public sealed record ActionCandidateEvaluation(
+    ActionDescriptor Action,
+    ActionAvailability Availability,
+    IReadOnlyList<ConstraintEvaluation> Constraints);
 
-    /// <summary>True if all Hard constraints are satisfied.</summary>
-    public required bool IsAvailable { get; init; }
-
-    /// <summary>Per-constraint evaluation results (both Hard and Soft).</summary>
-    public required IReadOnlyList<ConstraintEvaluation> Constraints { get; init; }
-}
-
-public sealed record ConstraintEvaluation
-{
-    /// <summary>The precondition being evaluated.</summary>
-    public required ActionPrecondition Precondition { get; init; }
-
-    /// <summary>Whether the precondition is satisfied.</summary>
-    public required bool IsSatisfied { get; init; }
-
-    /// <summary>Hard or Soft -- inherited from the precondition.</summary>
-    public required ConstraintStrength Strength { get; init; }
-
-    /// <summary>Human-readable explanation when IsSatisfied is false.</summary>
-    public string? FailureReason { get; init; }
-
-    /// <summary>
-    /// Suggested property values that would satisfy the constraint.
-    /// Keys are property names; values are the expected values or ranges.
-    /// </summary>
-    public IReadOnlyDictionary<string, object?>? ExpectedShape { get; init; }
-}
+public sealed record ConstraintEvaluation(
+    ActionPrecondition Precondition,
+    PredicateTruthValue TruthValue,
+    ConstraintStrength Strength,
+    string? FailureReason,
+    IReadOnlyDictionary<string, object?>? ExpectedShape);
 ```
 
-The `ExpectedShape` dictionary enables agents to reason about what state transitions are needed to satisfy a failed constraint. For example, a failed `Requires(p => p.Status == Active)` constraint would produce `ExpectedShape = { "Status": "Active" }`, allowing the agent to search for an action that transitions Status to Active.
+The `ExpectedShape` dictionary enables agents to reason about what state
+transitions are needed to satisfy a simple failed property or link constraint.
+For example, a failed `Requires(p => p.Status == Active)` constraint carries
+the corresponding enum `PredicateLiteral` under the `"Status"` key, allowing
+the agent to search for an action that transitions `Status` to `Active`.
 
 **Query methods on `IOntologyQuery`:**
 
-- `GetValidActions(objectType, knownProperties?)` -- Returns actions whose **hard** preconditions could be satisfied given the known property values. Actions with only soft constraint failures are included (they are available but with advisory warnings).
-- `GetActionConstraintReport(objectType, knownProperties?)` -- Returns an `ActionConstraintReport` for each action on the object type, providing per-constraint evaluation results including failure reasons and expected shapes. This is the primary feedback mechanism for agent planning.
+- `GetCandidateActions(objectType, ActionFacts?)` -- Returns availability and
+  per-constraint results for available and indeterminate actions.
+- `GetValidActions(objectType, ActionFacts?)` -- Convenience that returns all
+  actions not proven unavailable, including indeterminate actions.
+- `GetActionConstraintReport(objectType, ActionFacts?)` -- Returns an
+  `ActionConstraintReport` for each action with failure reasons and expected
+  shapes.
 - `TracePostconditions(objectType, action, maxDepth)` -- Returns the transitive closure of property modifications: "if I execute action X, which properties across which objects might change?"
+
+The full predicate grammar, exact sequential proof semantics, authoritative
+dispatch behavior, and composition API are specified in
+[Typed action calculus](/reference/action-calculus/).
 
 #### 4.14.6 Object Lifecycle / State Machine
 
@@ -2127,24 +2115,26 @@ public interface IOntologyQuery
     /// <summary>Get all Object Types implementing a given interface.</summary>
     IReadOnlyList<ObjectTypeDescriptor> GetImplementors<TInterface>();
 
-    // ── Precondition & Postcondition queries (§4.14.5) ──
+    // ── Requirement & effect queries (§4.14.5) ──
 
     /// <summary>
-    /// Returns actions whose Hard preconditions could be satisfied
-    /// given the known property values. Actions with only Soft constraint
-    /// failures are included (available but with advisory warnings).
+    /// Returns available and indeterminate actions with each constraint result.
+    /// </summary>
+    IReadOnlyList<ActionCandidateEvaluation> GetCandidateActions(
+        string objectType,
+        ActionFacts? facts = null);
+
+    /// <summary>
+    /// Returns every action not proven unavailable. Indeterminate is retained.
     /// </summary>
     IReadOnlyList<ActionDescriptor> GetValidActions(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null);
+        ActionFacts? facts = null);
 
-    /// <summary>
-    /// Returns per-action constraint reports with failure reasons and expected shapes.
-    /// Primary feedback mechanism for agent planning (Zhou et al. §5.1).
-    /// </summary>
+    /// <summary>Returns per-action constraint reports.</summary>
     IReadOnlyList<ActionConstraintReport> GetActionConstraintReport(
         string objectType,
-        IReadOnlyDictionary<string, object?>? knownProperties = null);
+        ActionFacts? facts = null);
 
     /// <summary>
     /// Returns the transitive closure of property modifications:

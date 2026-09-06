@@ -33,7 +33,10 @@ public class DispatchReadOnlyAsyncTests
     {
         var expected = new ActionResult(true, Result: "ok");
         var dispatcher = new CapturingDispatcher(expected);
-        var descriptor = new ActionDescriptor("GetPosition", "Read position") { IsReadOnly = true };
+        var descriptor = new ActionDescriptor(
+            new ActionSubject("CRM", "Contact"),
+            "GetPosition",
+            "Read position") { IsReadOnly = true };
         var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "GetPosition")
         {
             ActionDescriptor = descriptor,
@@ -53,7 +56,10 @@ public class DispatchReadOnlyAsyncTests
     public async Task DispatchReadOnlyAsync_OnNonReadOnlyAction_ReturnsFailureWithoutCallingInner()
     {
         var dispatcher = new CapturingDispatcher(new ActionResult(true, Result: "should-not-see"));
-        var descriptor = new ActionDescriptor("UpdatePosition", "Mutates position") { IsReadOnly = false };
+        var descriptor = new ActionDescriptor(
+            new ActionSubject("CRM", "Contact"),
+            "UpdatePosition",
+            "Mutates position") { IsReadOnly = false };
         var context = new ActionContext(Principal, "CRM", "Contact", "c-1", "UpdatePosition")
         {
             ActionDescriptor = descriptor,

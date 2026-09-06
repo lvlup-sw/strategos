@@ -66,10 +66,17 @@ Inject `IOntologyQuery` to query the ontology at runtime:
 
 ```csharp
 // Which actions are valid given current state?
-var actions = query.GetValidActions("Position", knownProperties);
+var facts = new ActionFacts(
+    properties:
+    [
+        KeyValuePair.Create(
+            "Status",
+            PredicateLiteral.Enum("PositionStatus", "Active")),
+    ]);
+var candidates = query.GetCandidateActions("trading", "Position", facts);
 
 // Structured constraint report with failure reasons
-var report = query.GetActionConstraintReport("Position", knownProperties);
+var report = query.GetActionConstraintReport("trading", "Position", facts);
 
 // What would ExecuteTrade affect?
 var effects = query.TracePostconditions("Position", "ExecuteTrade");
@@ -81,10 +88,11 @@ var affected = query.GetAffectedProperties("Position", "Quantity");
 ## Features
 
 - **Fluent DSL**: Expression-tree-based builder for type-safe ontology definitions
-- **Compile-Time Validation**: 35 Roslyn diagnostics (AONT001-AONT035) catch errors at build time
+- **Compile-Time Validation**: Roslyn AONT diagnostics catch authoring and contract errors at build time
 - **Object Types**: Map existing C# types with keys, properties, links, actions, events
 - **IS-A Hierarchy**: `IsA<TParent>()` for type subsumption and inheritance queries
-- **Preconditions**: Hard (blocking) and soft (advisory) constraints on actions
+- **Typed action contracts**: Closed hard/soft predicates, explicit guarantees,
+  exact sequential composition proofs, and tri-state runtime discovery
 - **Lifecycle**: State machine declarations with action/event-triggered transitions
 - **Derivation Chains**: Transitive property dependency tracking across domains
 - **Interfaces**: Polymorphic queries across domain boundaries

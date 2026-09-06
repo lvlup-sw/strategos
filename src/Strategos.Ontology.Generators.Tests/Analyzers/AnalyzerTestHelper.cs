@@ -33,6 +33,8 @@ internal static class AnalyzerTestHelper
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Numerics.BigInteger).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(ImmutableArray<>).Assembly.Location),
             MetadataReference.CreateFromFile(ontologyAssembly.Location),
         };
 

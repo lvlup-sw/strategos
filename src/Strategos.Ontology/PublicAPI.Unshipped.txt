@@ -1,13 +1,110 @@
 #nullable enable
+abstract Strategos.Ontology.Descriptors.ActionPredicate.CanonicalToken.get -> string!
+abstract Strategos.Ontology.Descriptors.ActionPredicate.ContainsCustom.get -> bool
+abstract Strategos.Ontology.Descriptors.ActionPredicate.ContainsRelation.get -> bool
+abstract Strategos.Ontology.Descriptors.ActionPredicate.Expression.get -> string!
+abstract Strategos.Ontology.Descriptors.ActionPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
 abstract Strategos.Ontology.DomainOntology.Define(Strategos.Ontology.Builder.IOntologyBuilder! builder) -> void
 abstract Strategos.Ontology.DomainOntology.DomainName.get -> string!
 const Strategos.Ontology.Identity.ObjectIdentityProjector.CompositeKeySeparator = "\u001f" -> string!
+override sealed Strategos.Ontology.Descriptors.ActionPredicate.Equals(object? obj) -> bool
+override sealed Strategos.Ontology.Descriptors.ActionPredicate.GetHashCode() -> int
+override sealed Strategos.Ontology.Descriptors.ActionPredicate.ToString() -> string!
+override Strategos.Ontology.Descriptors.ActionSubject.ToString() -> string!
+override Strategos.Ontology.Descriptors.AllPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.AllPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.AllPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.AllPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.AllPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.AnyPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.AnyPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.AnyPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.AnyPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.AnyPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.ConstantActionPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.ConstantActionPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.ConstantActionPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.ConstantActionPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.ConstantActionPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.CustomPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.CustomPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.CustomPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.CustomPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.CustomPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.LinkExistsPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.LinkExistsPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.LinkExistsPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.LinkExistsPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.LinkExistsPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.NotPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.NotPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.NotPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.NotPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.NotPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.PredicateDecimal.Equals(object? obj) -> bool
+override Strategos.Ontology.Descriptors.PredicateDecimal.GetHashCode() -> int
+override Strategos.Ontology.Descriptors.PredicateDecimal.ToString() -> string!
+override Strategos.Ontology.Descriptors.PredicateLiteral.ToString() -> string!
+override Strategos.Ontology.Descriptors.PropertyComparisonPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.PropertyComparisonPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.PropertyComparisonPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.PropertyComparisonPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.PropertyComparisonPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
+override Strategos.Ontology.Descriptors.RelationHoldsPredicate.CanonicalToken.get -> string!
+override Strategos.Ontology.Descriptors.RelationHoldsPredicate.ContainsCustom.get -> bool
+override Strategos.Ontology.Descriptors.RelationHoldsPredicate.ContainsRelation.get -> bool
+override Strategos.Ontology.Descriptors.RelationHoldsPredicate.Expression.get -> string!
+override Strategos.Ontology.Descriptors.RelationHoldsPredicate.ReferencedResources.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
 override Strategos.Ontology.ObjectSets.TraverseLinkExpression.RootObjectTypeName.get -> string!
 override Strategos.Ontology.Provenance.AssociationProvenance.GetHashCode() -> int
 static readonly Strategos.Ontology.Actions.ActionDispatchOptions.Default -> Strategos.Ontology.Actions.ActionDispatchOptions!
+static Strategos.Ontology.Actions.ActionFacts.Empty.get -> Strategos.Ontology.Actions.ActionFacts!
 static Strategos.Ontology.Configuration.OntologyDispatcherDecoratorExtensions.AddConstraintReporting(this Strategos.Ontology.Configuration.OntologyOptions! options) -> Strategos.Ontology.Configuration.OntologyOptions!
 static Strategos.Ontology.Configuration.OntologyDispatcherDecoratorExtensions.AddDispatchObservation(this Strategos.Ontology.Configuration.OntologyOptions! options) -> Strategos.Ontology.Configuration.OntologyOptions!
 static Strategos.Ontology.Configuration.OntologyServiceCollectionExtensions.AddOntology(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Strategos.Ontology.Configuration.OntologyOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeSequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, params Strategos.Ontology.Descriptors.ActionCompositionOperand![]! operands) -> Strategos.Ontology.Descriptors.ActionCompositionAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeSequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionCompositionOperand!>! operands) -> Strategos.Ontology.Descriptors.ActionCompositionAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeSequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Threading.CancellationToken cancellationToken, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionCompositionOperand!>! operands) -> Strategos.Ontology.Descriptors.ActionCompositionAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeSequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Threading.CancellationToken cancellationToken, params Strategos.Ontology.Descriptors.ActionCompositionOperand![]! operands) -> Strategos.Ontology.Descriptors.ActionCompositionAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.Identity(Strategos.Ontology.Descriptors.ActionSubject! subject) -> Strategos.Ontology.Descriptors.ActionCompositionOperand!
+static Strategos.Ontology.Descriptors.ActionCalculus.Sequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, params Strategos.Ontology.Descriptors.ActionCompositionOperand![]! operands) -> Strategos.Ontology.Descriptors.CompositeActionContract!
+static Strategos.Ontology.Descriptors.ActionCalculus.Sequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionCompositionOperand!>! operands) -> Strategos.Ontology.Descriptors.CompositeActionContract!
+static Strategos.Ontology.Descriptors.ActionCompositionOperand.From(Strategos.Ontology.Descriptors.ActionDescriptor! action) -> Strategos.Ontology.Descriptors.ActionCompositionOperand!
+static Strategos.Ontology.Descriptors.ActionCompositionOperand.From(Strategos.Ontology.Descriptors.CompositeActionContract! composite) -> Strategos.Ontology.Descriptors.ActionCompositionOperand!
+static Strategos.Ontology.Descriptors.ActionCompositionOperand.implicit operator Strategos.Ontology.Descriptors.ActionCompositionOperand!(Strategos.Ontology.Descriptors.ActionDescriptor! action) -> Strategos.Ontology.Descriptors.ActionCompositionOperand!
+static Strategos.Ontology.Descriptors.ActionCompositionOperand.implicit operator Strategos.Ontology.Descriptors.ActionCompositionOperand!(Strategos.Ontology.Descriptors.CompositeActionContract! composite) -> Strategos.Ontology.Descriptors.ActionCompositionOperand!
+static Strategos.Ontology.Descriptors.ActionPredicate.All(params Strategos.Ontology.Descriptors.ActionPredicate![]! operands) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.All(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionPredicate!>! operands) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.Any(params Strategos.Ontology.Descriptors.ActionPredicate![]! operands) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.Any(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionPredicate!>! operands) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.Custom(string! evaluatorKey, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.PredicateLiteral!>? arguments = null, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionResource!>? readSet = null) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.False.get -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.LinkExists(string! linkName) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.Not(Strategos.Ontology.Descriptors.ActionPredicate! operand) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.operator !=(Strategos.Ontology.Descriptors.ActionPredicate? left, Strategos.Ontology.Descriptors.ActionPredicate? right) -> bool
+static Strategos.Ontology.Descriptors.ActionPredicate.operator ==(Strategos.Ontology.Descriptors.ActionPredicate? left, Strategos.Ontology.Descriptors.ActionPredicate? right) -> bool
+static Strategos.Ontology.Descriptors.ActionPredicate.Property(Strategos.Ontology.Descriptors.PredicatePropertyReference! property, Strategos.Ontology.Descriptors.PredicateComparisonOperator comparison, Strategos.Ontology.Descriptors.PredicateLiteral! value) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.RelationHolds(string! relationName, params string![]! linkPath) -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.ActionPredicate.True.get -> Strategos.Ontology.Descriptors.ActionPredicate!
+static Strategos.Ontology.Descriptors.PredicateDecimal.FromDecimal(decimal value) -> Strategos.Ontology.Descriptors.PredicateDecimal
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator !=(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator <(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator <=(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator ==(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator >(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.operator >=(Strategos.Ontology.Descriptors.PredicateDecimal left, Strategos.Ontology.Descriptors.PredicateDecimal right) -> bool
+static Strategos.Ontology.Descriptors.PredicateDecimal.Parse(string! text) -> Strategos.Ontology.Descriptors.PredicateDecimal
+static Strategos.Ontology.Descriptors.PredicateDecimal.TryParse(string? text, out Strategos.Ontology.Descriptors.PredicateDecimal value) -> bool
+static Strategos.Ontology.Descriptors.PredicateLiteral.Boolean(bool value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Decimal(decimal value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Decimal(Strategos.Ontology.Descriptors.PredicateDecimal value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Decimal(string! value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Enum(string! typeName, string! memberName) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Enum<TEnum>(TEnum value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Integer(System.Numerics.BigInteger value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Null.get -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.String(string! value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
+static Strategos.Ontology.Descriptors.PredicateLiteral.Symbol(string! value) -> Strategos.Ontology.Descriptors.PredicateLiteral!
 static Strategos.Ontology.Ingestion.IngestionPipeline<T>.Create() -> Strategos.Ontology.Ingestion.IngestionPipelineBuilder<T!>!
 static Strategos.Ontology.Merge.MergeTwo.Merge(Strategos.Ontology.Descriptors.ObjectTypeDescriptor! hand, Strategos.Ontology.Descriptors.ObjectTypeDescriptor! ingested) -> Strategos.Ontology.Descriptors.ObjectTypeDescriptor!
 static Strategos.Ontology.Merge.MergeTwo.MergeLinks(System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.LinkDescriptor!>! hand, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.LinkDescriptor!>! ingested) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.LinkDescriptor!>!
@@ -17,6 +114,10 @@ static Strategos.Ontology.Retrieval.RankFusion.Reciprocal(System.Collections.Gen
 static Strategos.Ontology.Temporal.AssociationTemporalEvent.Assert(string! associationId, string! sourceId, string! targetId, System.DateTimeOffset validFrom, System.DateTimeOffset? validTo, System.DateTimeOffset systemFrom, string? assertingAgent = null) -> Strategos.Ontology.Temporal.AssociationTemporalEvent!
 static Strategos.Ontology.Temporal.AssociationTemporalEvent.Retract(string! associationId, System.DateTimeOffset systemTo, string? retractingAgent = null) -> Strategos.Ontology.Temporal.AssociationTemporalEvent!
 static Strategos.Ontology.Temporal.TemporalAssociationProjection.Replay(System.Collections.Generic.IEnumerable<Strategos.Ontology.Temporal.AssociationTemporalEvent!>! events) -> Strategos.Ontology.Temporal.TemporalAssociationProjection!
+Strategos.Ontology.Actions.ActionAvailability
+Strategos.Ontology.Actions.ActionAvailability.Available = 0 -> Strategos.Ontology.Actions.ActionAvailability
+Strategos.Ontology.Actions.ActionAvailability.Indeterminate = 2 -> Strategos.Ontology.Actions.ActionAvailability
+Strategos.Ontology.Actions.ActionAvailability.Unavailable = 1 -> Strategos.Ontology.Actions.ActionAvailability
 Strategos.Ontology.Actions.ActionContext
 Strategos.Ontology.Actions.ActionContext.ActionContext(Strategos.Ontology.Actions.ActionPrincipal! principal, string! domain, string! objectType, string! objectId, string! actionName, Strategos.Ontology.Actions.ActionDispatchOptions? options = null) -> void
 Strategos.Ontology.Actions.ActionContext.ActionDescriptor.get -> Strategos.Ontology.Descriptors.ActionDescriptor?
@@ -33,6 +134,10 @@ Strategos.Ontology.Actions.ActionContext.Options.get -> Strategos.Ontology.Actio
 Strategos.Ontology.Actions.ActionContext.Options.init -> void
 Strategos.Ontology.Actions.ActionContext.Principal.get -> Strategos.Ontology.Actions.ActionPrincipal!
 Strategos.Ontology.Actions.ActionContext.Principal.init -> void
+Strategos.Ontology.Actions.ActionFacts
+Strategos.Ontology.Actions.ActionFacts.ActionFacts(System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, Strategos.Ontology.Descriptors.PredicateLiteral!>>? properties = null, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, bool>>? links = null) -> void
+Strategos.Ontology.Actions.ActionFacts.Links.get -> System.Collections.Immutable.ImmutableDictionary<string!, bool>!
+Strategos.Ontology.Actions.ActionFacts.Properties.get -> System.Collections.Immutable.ImmutableDictionary<string!, Strategos.Ontology.Descriptors.PredicateLiteral!>!
 Strategos.Ontology.Actions.ActionPrincipal
 Strategos.Ontology.Actions.ActionPrincipal.ActionPrincipal(string! principalType, string! principalId) -> void
 Strategos.Ontology.Actions.ActionPrincipal.PrincipalId.get -> string!
@@ -57,17 +162,18 @@ Strategos.Ontology.Actions.ActionResult.Result.init -> void
 Strategos.Ontology.Actions.ActionResult.Violations.get -> Strategos.Ontology.Actions.ConstraintViolationReport?
 Strategos.Ontology.Actions.ActionResult.Violations.init -> void
 Strategos.Ontology.Actions.ConstraintEvaluation
-Strategos.Ontology.Actions.ConstraintEvaluation.ConstraintEvaluation(Strategos.Ontology.Descriptors.ActionPrecondition! Precondition, bool IsSatisfied, Strategos.Ontology.Descriptors.ConstraintStrength Strength, string? FailureReason, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? ExpectedShape) -> void
+Strategos.Ontology.Actions.ConstraintEvaluation.ConstraintEvaluation(Strategos.Ontology.Descriptors.ActionPrecondition! Precondition, Strategos.Ontology.Actions.PredicateTruthValue TruthValue, Strategos.Ontology.Descriptors.ConstraintStrength Strength, string? FailureReason, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? ExpectedShape) -> void
 Strategos.Ontology.Actions.ConstraintEvaluation.ExpectedShape.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
 Strategos.Ontology.Actions.ConstraintEvaluation.ExpectedShape.init -> void
 Strategos.Ontology.Actions.ConstraintEvaluation.FailureReason.get -> string?
 Strategos.Ontology.Actions.ConstraintEvaluation.FailureReason.init -> void
 Strategos.Ontology.Actions.ConstraintEvaluation.IsSatisfied.get -> bool
-Strategos.Ontology.Actions.ConstraintEvaluation.IsSatisfied.init -> void
 Strategos.Ontology.Actions.ConstraintEvaluation.Precondition.get -> Strategos.Ontology.Descriptors.ActionPrecondition!
 Strategos.Ontology.Actions.ConstraintEvaluation.Precondition.init -> void
 Strategos.Ontology.Actions.ConstraintEvaluation.Strength.get -> Strategos.Ontology.Descriptors.ConstraintStrength
 Strategos.Ontology.Actions.ConstraintEvaluation.Strength.init -> void
+Strategos.Ontology.Actions.ConstraintEvaluation.TruthValue.get -> Strategos.Ontology.Actions.PredicateTruthValue
+Strategos.Ontology.Actions.ConstraintEvaluation.TruthValue.init -> void
 Strategos.Ontology.Actions.ConstraintReportingActionDispatcher
 Strategos.Ontology.Actions.ConstraintReportingActionDispatcher.ConstraintReportingActionDispatcher(Strategos.Ontology.Actions.IActionDispatcher! inner, Strategos.Ontology.Query.IOntologyQuery! query, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.Actions.ConstraintReportingActionDispatcher!>! logger) -> void
 Strategos.Ontology.Actions.ConstraintReportingActionDispatcher.DispatchAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
@@ -81,19 +187,38 @@ Strategos.Ontology.Actions.ConstraintViolationReport.Soft.get -> System.Collecti
 Strategos.Ontology.Actions.ConstraintViolationReport.Soft.init -> void
 Strategos.Ontology.Actions.ConstraintViolationReport.SuggestedCorrection.get -> string?
 Strategos.Ontology.Actions.ConstraintViolationReport.SuggestedCorrection.init -> void
+Strategos.Ontology.Actions.CustomActionPredicateContext
+Strategos.Ontology.Actions.CustomActionPredicateContext.ActionContext.get -> Strategos.Ontology.Actions.ActionContext!
+Strategos.Ontology.Actions.CustomActionPredicateContext.ActionContext.init -> void
+Strategos.Ontology.Actions.CustomActionPredicateContext.CustomActionPredicateContext(Strategos.Ontology.Actions.ActionContext! ActionContext, Strategos.Ontology.Descriptors.CustomPredicate! Predicate, Strategos.Ontology.Actions.ActionFacts! Facts, object? Request) -> void
+Strategos.Ontology.Actions.CustomActionPredicateContext.Facts.get -> Strategos.Ontology.Actions.ActionFacts!
+Strategos.Ontology.Actions.CustomActionPredicateContext.Facts.init -> void
+Strategos.Ontology.Actions.CustomActionPredicateContext.Predicate.get -> Strategos.Ontology.Descriptors.CustomPredicate!
+Strategos.Ontology.Actions.CustomActionPredicateContext.Predicate.init -> void
+Strategos.Ontology.Actions.CustomActionPredicateContext.Request.get -> object?
+Strategos.Ontology.Actions.CustomActionPredicateContext.Request.init -> void
 Strategos.Ontology.Actions.IActionDispatcher
 Strategos.Ontology.Actions.IActionDispatcher.DispatchAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
 Strategos.Ontology.Actions.IActionDispatcher.DispatchReadOnlyAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
 Strategos.Ontology.Actions.IActionDispatchObserver
 Strategos.Ontology.Actions.IActionDispatchObserver.OnDispatchedAsync(Strategos.Ontology.Actions.ActionContext! context, Strategos.Ontology.Actions.ActionResult! result, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+Strategos.Ontology.Actions.IActionFactResolver
+Strategos.Ontology.Actions.IActionFactResolver.ResolveAsync(Strategos.Ontology.Actions.ActionContext! context, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Strategos.Ontology.Actions.ActionFacts?>
 Strategos.Ontology.Actions.IActionRelationResolver
 Strategos.Ontology.Actions.IActionRelationResolver.HoldsAsync(Strategos.Ontology.Actions.ActionContext! context, Strategos.Ontology.Descriptors.ActionPrecondition! precondition, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Strategos.Ontology.Actions.ICustomActionPredicateEvaluator
+Strategos.Ontology.Actions.ICustomActionPredicateEvaluator.EvaluateAsync(Strategos.Ontology.Actions.CustomActionPredicateContext! context, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Strategos.Ontology.Actions.PredicateTruthValue>
+Strategos.Ontology.Actions.ICustomActionPredicateEvaluator.EvaluatorKey.get -> string!
 Strategos.Ontology.Actions.ObjectSetActionRelationResolver
 Strategos.Ontology.Actions.ObjectSetActionRelationResolver.HoldsAsync(Strategos.Ontology.Actions.ActionContext! context, Strategos.Ontology.Descriptors.ActionPrecondition! precondition, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 Strategos.Ontology.Actions.ObjectSetActionRelationResolver.ObjectSetActionRelationResolver(Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.ObjectSets.IObjectSetProvider! provider) -> void
 Strategos.Ontology.Actions.ObservableActionDispatcher
 Strategos.Ontology.Actions.ObservableActionDispatcher.DispatchAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
 Strategos.Ontology.Actions.ObservableActionDispatcher.ObservableActionDispatcher(Strategos.Ontology.Actions.IActionDispatcher! inner, System.Collections.Generic.IEnumerable<Strategos.Ontology.Actions.IActionDispatchObserver!>! observers, Microsoft.Extensions.Logging.ILogger<Strategos.Ontology.Actions.ObservableActionDispatcher!>! logger) -> void
+Strategos.Ontology.Actions.PredicateTruthValue
+Strategos.Ontology.Actions.PredicateTruthValue.Indeterminate = 2 -> Strategos.Ontology.Actions.PredicateTruthValue
+Strategos.Ontology.Actions.PredicateTruthValue.Satisfied = 0 -> Strategos.Ontology.Actions.PredicateTruthValue
+Strategos.Ontology.Actions.PredicateTruthValue.Unsatisfied = 1 -> Strategos.Ontology.Actions.PredicateTruthValue
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher.DispatchAsync(Strategos.Ontology.Actions.ActionContext! context, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.Actions.ActionResult!>!
 Strategos.Ontology.Actions.RelationAuthorizationActionDispatcher.RelationAuthorizationActionDispatcher(Strategos.Ontology.Actions.IActionDispatcher! inner, Strategos.Ontology.OntologyGraph! graph, Strategos.Ontology.Actions.IActionRelationResolver! relationResolver) -> void
@@ -114,9 +239,17 @@ Strategos.Ontology.Builder.IActionBuilder.Accepts<T>() -> Strategos.Ontology.Bui
 Strategos.Ontology.Builder.IActionBuilder.BoundToTool(string! toolName, string! methodName) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.BoundToWorkflow(string! workflowName) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.Description(string! description) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.Ensures(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.EnsuresLink(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.EnsuresRelation(string! relationName, params string![]! linkPath) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.Idempotent() -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.Requires(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.RequiresAuthority(string! authorityName) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.ReadOnly() -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.RequiresLink(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.RequiresLinkSoft(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.RequiresRelation(string! relationName, params string![]! linkPath) -> Strategos.Ontology.Builder.IActionBuilder!
+Strategos.Ontology.Builder.IActionBuilder.RequiresSoft(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder.Returns<T>() -> Strategos.Ontology.Builder.IActionBuilder!
 Strategos.Ontology.Builder.IActionBuilder<T>
 Strategos.Ontology.Builder.IActionBuilder<T>.Accepts<TAccepts>() -> Strategos.Ontology.Builder.IActionBuilder<T!>!
@@ -126,14 +259,20 @@ Strategos.Ontology.Builder.IActionBuilder<T>.BoundToWorkflow(string! workflowNam
 Strategos.Ontology.Builder.IActionBuilder<T>.CreatesLinked<TTarget>(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.Description(string! description) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.EmitsEvent<TEvent>() -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.Ensures(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.Ensures(System.Linq.Expressions.Expression<System.Func<T!, bool>!>! predicate) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.EnsuresLink(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.EnsuresRelation(string! relationName, params string![]! linkPath) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.Idempotent() -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.Modifies(System.Linq.Expressions.Expression<System.Func<T!, object!>!>! propertySelector) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.ReadOnly() -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.Requires(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.RequiresAuthority(string! authorityName) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.Requires(System.Linq.Expressions.Expression<System.Func<T!, bool>!>! predicate) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.RequiresLink(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.RequiresLinkSoft(string! linkName) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.RequiresRelation(string! relationName, params string![]! linkPath) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
+Strategos.Ontology.Builder.IActionBuilder<T>.RequiresSoft(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.RequiresSoft(System.Linq.Expressions.Expression<System.Func<T!, bool>!>! predicate) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.Returns<TReturns>() -> Strategos.Ontology.Builder.IActionBuilder<T!>!
 Strategos.Ontology.Builder.IActionBuilder<T>.ValidFromState<TEnum>(TEnum state) -> Strategos.Ontology.Builder.IActionBuilder<T!>!
@@ -251,6 +390,7 @@ Strategos.Ontology.Chunking.TextChunk.TextChunk() -> void
 Strategos.Ontology.Chunking.TextChunk.TextChunk(string! Content, int Index, int StartOffset, int EndOffset) -> void
 Strategos.Ontology.Configuration.OntologyDispatcherDecoratorExtensions
 Strategos.Ontology.Configuration.OntologyOptions
+Strategos.Ontology.Configuration.OntologyOptions.AddCustomActionPredicateEvaluator<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.AddDomain<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.AddServiceRegistration(System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>! registration) -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.AddSource<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
@@ -259,6 +399,7 @@ Strategos.Ontology.Configuration.OntologyOptions.EnableHygieneHints.get -> bool
 Strategos.Ontology.Configuration.OntologyOptions.EnableHygieneHints.init -> void
 Strategos.Ontology.Configuration.OntologyOptions.OntologyOptions() -> void
 Strategos.Ontology.Configuration.OntologyOptions.UseActionDispatcher<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
+Strategos.Ontology.Configuration.OntologyOptions.UseActionFactResolver<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.UseEmbeddingProvider<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.UseEventStreamProvider<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
 Strategos.Ontology.Configuration.OntologyOptions.UseObjectSetProvider<T>() -> Strategos.Ontology.Configuration.OntologyOptions!
@@ -268,10 +409,52 @@ Strategos.Ontology.Descriptors.ActionBindingType
 Strategos.Ontology.Descriptors.ActionBindingType.Tool = 2 -> Strategos.Ontology.Descriptors.ActionBindingType
 Strategos.Ontology.Descriptors.ActionBindingType.Unbound = 0 -> Strategos.Ontology.Descriptors.ActionBindingType
 Strategos.Ontology.Descriptors.ActionBindingType.Workflow = 1 -> Strategos.Ontology.Descriptors.ActionBindingType
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis.CanCompose.get -> bool
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis.Contract.get -> Strategos.Ontology.Descriptors.CompositeActionContract?
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis.Errors.get -> System.Collections.Immutable.ImmutableArray<string!>
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis.Seams.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionCompositionSeamResult!>
+Strategos.Ontology.Descriptors.ActionCompositionAnalysis.Status.get -> Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus.Invalid = 3 -> Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus.PartiallyVerified = 1 -> Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus.Proven = 0 -> Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus.Refuted = 2 -> Strategos.Ontology.Descriptors.ActionCompositionAnalysisStatus
+Strategos.Ontology.Descriptors.ActionCompositionException
+Strategos.Ontology.Descriptors.ActionCompositionException.ActionCompositionException(Strategos.Ontology.Descriptors.ActionCompositionAnalysis! analysis) -> void
+Strategos.Ontology.Descriptors.ActionCompositionException.Analysis.get -> Strategos.Ontology.Descriptors.ActionCompositionAnalysis!
+Strategos.Ontology.Descriptors.ActionCompositionExclusion
+Strategos.Ontology.Descriptors.ActionCompositionExclusion.ActionCompositionExclusion(Strategos.Ontology.Descriptors.ActionSubject! subject, string! actionName, System.Collections.Generic.IEnumerable<string!>! evaluatorKeys) -> void
+Strategos.Ontology.Descriptors.ActionCompositionExclusion.ActionName.get -> string!
+Strategos.Ontology.Descriptors.ActionCompositionExclusion.EvaluatorKeys.get -> System.Collections.Immutable.ImmutableArray<string!>
+Strategos.Ontology.Descriptors.ActionCompositionExclusion.Subject.get -> Strategos.Ontology.Descriptors.ActionSubject!
+Strategos.Ontology.Descriptors.ActionCompositionOperand
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.ActionCompositionSeamResult(Strategos.Ontology.Descriptors.ActionDescriptor! upstream, Strategos.Ontology.Descriptors.ActionDescriptor! downstream, Strategos.Ontology.Descriptors.ActionCompositionSeamStatus status, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionCounterexampleFact!>? counterexample = null, string? message = null) -> void
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.Counterexample.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionCounterexampleFact!>
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.Downstream.get -> Strategos.Ontology.Descriptors.ActionDescriptor!
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.Message.get -> string?
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.Status.get -> Strategos.Ontology.Descriptors.ActionCompositionSeamStatus
+Strategos.Ontology.Descriptors.ActionCompositionSeamResult.Upstream.get -> Strategos.Ontology.Descriptors.ActionDescriptor!
+Strategos.Ontology.Descriptors.ActionCompositionSeamStatus
+Strategos.Ontology.Descriptors.ActionCompositionSeamStatus.Opaque = 2 -> Strategos.Ontology.Descriptors.ActionCompositionSeamStatus
+Strategos.Ontology.Descriptors.ActionCompositionSeamStatus.Proven = 0 -> Strategos.Ontology.Descriptors.ActionCompositionSeamStatus
+Strategos.Ontology.Descriptors.ActionCompositionSeamStatus.Refuted = 1 -> Strategos.Ontology.Descriptors.ActionCompositionSeamStatus
+Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ActionContractVerificationStatus.Identity = 0 -> Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ActionContractVerificationStatus.PartiallyVerified = 2 -> Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ActionContractVerificationStatus.Proven = 1 -> Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ActionContractVerificationStatus.Refuted = 3 -> Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ActionCounterexampleFact
+Strategos.Ontology.Descriptors.ActionCounterexampleFact.ActionCounterexampleFact(string! Resource, string! Value) -> void
+Strategos.Ontology.Descriptors.ActionCounterexampleFact.Resource.get -> string!
+Strategos.Ontology.Descriptors.ActionCounterexampleFact.Resource.init -> void
+Strategos.Ontology.Descriptors.ActionCounterexampleFact.Value.get -> string!
+Strategos.Ontology.Descriptors.ActionCounterexampleFact.Value.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor
 Strategos.Ontology.Descriptors.ActionDescriptor.AcceptsType.get -> System.Type?
 Strategos.Ontology.Descriptors.ActionDescriptor.AcceptsType.init -> void
-Strategos.Ontology.Descriptors.ActionDescriptor.ActionDescriptor(string! Name, string! Description) -> void
+Strategos.Ontology.Descriptors.ActionDescriptor.ActionDescriptor(Strategos.Ontology.Descriptors.ActionSubject! subject, string! name, string! description) -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.AllowedClients.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Strategos.Ontology.Descriptors.ActionDescriptor.AllowedClients.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.BindingType.get -> Strategos.Ontology.Descriptors.ActionBindingType
@@ -283,13 +466,13 @@ Strategos.Ontology.Descriptors.ActionDescriptor.BoundToolName.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.BoundWorkflowName.get -> string?
 Strategos.Ontology.Descriptors.ActionDescriptor.BoundWorkflowName.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.Description.get -> string!
-Strategos.Ontology.Descriptors.ActionDescriptor.Description.init -> void
+Strategos.Ontology.Descriptors.ActionDescriptor.Ensures.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionGuarantee!>!
+Strategos.Ontology.Descriptors.ActionDescriptor.Ensures.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.Idempotent.get -> bool
 Strategos.Ontology.Descriptors.ActionDescriptor.Idempotent.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.IsReadOnly.get -> bool
 Strategos.Ontology.Descriptors.ActionDescriptor.IsReadOnly.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.Name.get -> string!
-Strategos.Ontology.Descriptors.ActionDescriptor.Name.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.Postconditions.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionPostcondition!>!
 Strategos.Ontology.Descriptors.ActionDescriptor.Postconditions.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.Preconditions.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionPrecondition!>!
@@ -300,6 +483,13 @@ Strategos.Ontology.Descriptors.ActionDescriptor.RequiresConfirmation.get -> bool
 Strategos.Ontology.Descriptors.ActionDescriptor.RequiresConfirmation.init -> void
 Strategos.Ontology.Descriptors.ActionDescriptor.ReturnsType.get -> System.Type?
 Strategos.Ontology.Descriptors.ActionDescriptor.ReturnsType.init -> void
+Strategos.Ontology.Descriptors.ActionDescriptor.Subject.get -> Strategos.Ontology.Descriptors.ActionSubject!
+Strategos.Ontology.Descriptors.ActionGuarantee
+Strategos.Ontology.Descriptors.ActionGuarantee.ActionGuarantee(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string? description = null) -> void
+Strategos.Ontology.Descriptors.ActionGuarantee.Description.get -> string?
+Strategos.Ontology.Descriptors.ActionGuarantee.Expression.get -> string!
+Strategos.Ontology.Descriptors.ActionGuarantee.IsOpaque.get -> bool
+Strategos.Ontology.Descriptors.ActionGuarantee.Predicate.get -> Strategos.Ontology.Descriptors.ActionPredicate!
 Strategos.Ontology.Descriptors.ActionPostcondition
 Strategos.Ontology.Descriptors.ActionPostcondition.EventTypeName.get -> string?
 Strategos.Ontology.Descriptors.ActionPostcondition.EventTypeName.init -> void
@@ -312,21 +502,22 @@ Strategos.Ontology.Descriptors.ActionPostcondition.PropertyName.init -> void
 Strategos.Ontology.Descriptors.ActionPostcondition.TargetTypeName.get -> string?
 Strategos.Ontology.Descriptors.ActionPostcondition.TargetTypeName.init -> void
 Strategos.Ontology.Descriptors.ActionPrecondition
+Strategos.Ontology.Descriptors.ActionPrecondition.ActionPrecondition(Strategos.Ontology.Descriptors.ActionPredicate! predicate, string! description, Strategos.Ontology.Descriptors.ConstraintStrength strength = Strategos.Ontology.Descriptors.ConstraintStrength.Hard) -> void
 Strategos.Ontology.Descriptors.ActionPrecondition.Description.get -> string!
-Strategos.Ontology.Descriptors.ActionPrecondition.Description.init -> void
 Strategos.Ontology.Descriptors.ActionPrecondition.Expression.get -> string!
-Strategos.Ontology.Descriptors.ActionPrecondition.Expression.init -> void
-Strategos.Ontology.Descriptors.ActionPrecondition.Kind.get -> Strategos.Ontology.Descriptors.PreconditionKind
-Strategos.Ontology.Descriptors.ActionPrecondition.Kind.init -> void
 Strategos.Ontology.Descriptors.ActionPrecondition.IsOpaque.get -> bool
-Strategos.Ontology.Descriptors.ActionPrecondition.LinkName.get -> string?
-Strategos.Ontology.Descriptors.ActionPrecondition.LinkName.init -> void
-Strategos.Ontology.Descriptors.ActionPrecondition.LinkPath.get -> System.Collections.Immutable.ImmutableArray<string!>
-Strategos.Ontology.Descriptors.ActionPrecondition.LinkPath.init -> void
-Strategos.Ontology.Descriptors.ActionPrecondition.RelationName.get -> string?
-Strategos.Ontology.Descriptors.ActionPrecondition.RelationName.init -> void
+Strategos.Ontology.Descriptors.ActionPrecondition.Predicate.get -> Strategos.Ontology.Descriptors.ActionPredicate!
 Strategos.Ontology.Descriptors.ActionPrecondition.Strength.get -> Strategos.Ontology.Descriptors.ConstraintStrength
-Strategos.Ontology.Descriptors.ActionPrecondition.Strength.init -> void
+Strategos.Ontology.Descriptors.ActionPredicate
+Strategos.Ontology.Descriptors.ActionPredicate.Equals(Strategos.Ontology.Descriptors.ActionPredicate? other) -> bool
+Strategos.Ontology.Descriptors.ActionSubject
+Strategos.Ontology.Descriptors.ActionSubject.ActionSubject(string! domainName, string! objectTypeName) -> void
+Strategos.Ontology.Descriptors.ActionSubject.DomainName.get -> string!
+Strategos.Ontology.Descriptors.ActionSubject.ObjectTypeName.get -> string!
+Strategos.Ontology.Descriptors.AllPredicate
+Strategos.Ontology.Descriptors.AllPredicate.Operands.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionPredicate!>
+Strategos.Ontology.Descriptors.AnyPredicate
+Strategos.Ontology.Descriptors.AnyPredicate.Operands.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionPredicate!>
 Strategos.Ontology.Descriptors.AssociationEndpoint
 Strategos.Ontology.Descriptors.AssociationEndpoint.AssociationEndpoint(string! Role, string! DescriptorName, Strategos.Ontology.Descriptors.EndpointCardinality Cardinality = Strategos.Ontology.Descriptors.EndpointCardinality.ManyToOne) -> void
 Strategos.Ontology.Descriptors.AssociationEndpoint.Cardinality.get -> Strategos.Ontology.Descriptors.EndpointCardinality
@@ -335,6 +526,15 @@ Strategos.Ontology.Descriptors.AssociationEndpoint.DescriptorName.get -> string!
 Strategos.Ontology.Descriptors.AssociationEndpoint.DescriptorName.init -> void
 Strategos.Ontology.Descriptors.AssociationEndpoint.Role.get -> string!
 Strategos.Ontology.Descriptors.AssociationEndpoint.Role.init -> void
+Strategos.Ontology.Descriptors.CompositeActionContract.FinalGuarantee.get -> Strategos.Ontology.Descriptors.ActionPredicate?
+Strategos.Ontology.Descriptors.CompositeActionContract.FirstRequirement.get -> Strategos.Ontology.Descriptors.ActionPredicate!
+Strategos.Ontology.Descriptors.CompositeActionContract.IsIdentity.get -> bool
+Strategos.Ontology.Descriptors.CompositeActionContract.OpaqueExclusions.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionCompositionExclusion!>
+Strategos.Ontology.Descriptors.CompositeActionContract.Seams.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionCompositionSeamResult!>
+Strategos.Ontology.Descriptors.CompositeActionContract.Subject.get -> Strategos.Ontology.Descriptors.ActionSubject!
+Strategos.Ontology.Descriptors.CompositeActionContract.VerificationStatus.get -> Strategos.Ontology.Descriptors.ActionContractVerificationStatus
+Strategos.Ontology.Descriptors.ConstantActionPredicate
+Strategos.Ontology.Descriptors.ConstantActionPredicate.Value.get -> bool
 Strategos.Ontology.Descriptors.ConstraintStrength
 Strategos.Ontology.Descriptors.ConstraintStrength.Hard = 0 -> Strategos.Ontology.Descriptors.ConstraintStrength
 Strategos.Ontology.Descriptors.ConstraintStrength.Soft = 1 -> Strategos.Ontology.Descriptors.ConstraintStrength
@@ -352,6 +552,10 @@ Strategos.Ontology.Descriptors.CrossDomainLinkDescriptor.TargetDomain.get -> str
 Strategos.Ontology.Descriptors.CrossDomainLinkDescriptor.TargetDomain.init -> void
 Strategos.Ontology.Descriptors.CrossDomainLinkDescriptor.TargetTypeName.get -> string!
 Strategos.Ontology.Descriptors.CrossDomainLinkDescriptor.TargetTypeName.init -> void
+Strategos.Ontology.Descriptors.CustomPredicate
+Strategos.Ontology.Descriptors.CustomPredicate.Arguments.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.PredicateLiteral!>
+Strategos.Ontology.Descriptors.CustomPredicate.EvaluatorKey.get -> string!
+Strategos.Ontology.Descriptors.CustomPredicate.ReadSet.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionResource!>
 Strategos.Ontology.Descriptors.DerivationSource
 Strategos.Ontology.Descriptors.DerivationSource.ExternalDomain.get -> string?
 Strategos.Ontology.Descriptors.DerivationSource.ExternalDomain.init -> void
@@ -530,6 +734,10 @@ Strategos.Ontology.Descriptors.LinkDescriptor.TargetSymbolKey.get -> string?
 Strategos.Ontology.Descriptors.LinkDescriptor.TargetSymbolKey.init -> void
 Strategos.Ontology.Descriptors.LinkDescriptor.TargetTypeName.get -> string!
 Strategos.Ontology.Descriptors.LinkDescriptor.TargetTypeName.init -> void
+Strategos.Ontology.Descriptors.LinkExistsPredicate
+Strategos.Ontology.Descriptors.LinkExistsPredicate.LinkName.get -> string!
+Strategos.Ontology.Descriptors.NotPredicate
+Strategos.Ontology.Descriptors.NotPredicate.Operand.get -> Strategos.Ontology.Descriptors.ActionPredicate!
 Strategos.Ontology.Descriptors.ObjectKind
 Strategos.Ontology.Descriptors.ObjectKind.Association = 2 -> Strategos.Ontology.Descriptors.ObjectKind
 Strategos.Ontology.Descriptors.ObjectKind.Entity = 0 -> Strategos.Ontology.Descriptors.ObjectKind
@@ -589,11 +797,55 @@ Strategos.Ontology.Descriptors.PostconditionKind
 Strategos.Ontology.Descriptors.PostconditionKind.CreatesLink = 1 -> Strategos.Ontology.Descriptors.PostconditionKind
 Strategos.Ontology.Descriptors.PostconditionKind.EmitsEvent = 2 -> Strategos.Ontology.Descriptors.PostconditionKind
 Strategos.Ontology.Descriptors.PostconditionKind.ModifiesProperty = 0 -> Strategos.Ontology.Descriptors.PostconditionKind
-Strategos.Ontology.Descriptors.PreconditionKind
-Strategos.Ontology.Descriptors.PreconditionKind.Custom = 2 -> Strategos.Ontology.Descriptors.PreconditionKind
-Strategos.Ontology.Descriptors.PreconditionKind.LinkExists = 1 -> Strategos.Ontology.Descriptors.PreconditionKind
-Strategos.Ontology.Descriptors.PreconditionKind.PropertyPredicate = 0 -> Strategos.Ontology.Descriptors.PreconditionKind
-Strategos.Ontology.Descriptors.PreconditionKind.RelationHolds = 3 -> Strategos.Ontology.Descriptors.PreconditionKind
+Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.Equal = 0 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.GreaterThan = 4 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.GreaterThanOrEqual = 5 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.LessThan = 2 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.LessThanOrEqual = 3 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateComparisonOperator.NotEqual = 1 -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PredicateDecimal
+Strategos.Ontology.Descriptors.PredicateDecimal.CompareTo(Strategos.Ontology.Descriptors.PredicateDecimal other) -> int
+Strategos.Ontology.Descriptors.PredicateDecimal.Equals(Strategos.Ontology.Descriptors.PredicateDecimal other) -> bool
+Strategos.Ontology.Descriptors.PredicateDecimal.PredicateDecimal() -> void
+Strategos.Ontology.Descriptors.PredicateDecimal.PredicateDecimal(System.Numerics.BigInteger unscaledValue, int scale) -> void
+Strategos.Ontology.Descriptors.PredicateDecimal.Scale.get -> int
+Strategos.Ontology.Descriptors.PredicateDecimal.UnscaledValue.get -> System.Numerics.BigInteger
+Strategos.Ontology.Descriptors.PredicateLiteral
+Strategos.Ontology.Descriptors.PredicateLiteral.BooleanValue.get -> bool
+Strategos.Ontology.Descriptors.PredicateLiteral.CanonicalToken.get -> string!
+Strategos.Ontology.Descriptors.PredicateLiteral.CanonicalValue.get -> string!
+Strategos.Ontology.Descriptors.PredicateLiteral.DecimalValue.get -> Strategos.Ontology.Descriptors.PredicateDecimal
+Strategos.Ontology.Descriptors.PredicateLiteral.EnumMemberName.get -> string!
+Strategos.Ontology.Descriptors.PredicateLiteral.IntegerValue.get -> System.Numerics.BigInteger
+Strategos.Ontology.Descriptors.PredicateLiteral.Kind.get -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteral.StringValue.get -> string!
+Strategos.Ontology.Descriptors.PredicateLiteral.TypeName.get -> string?
+Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Boolean = 1 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Decimal = 3 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Enum = 5 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Integer = 2 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Null = 0 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.String = 4 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicateLiteralKind.Symbol = 6 -> Strategos.Ontology.Descriptors.PredicateLiteralKind
+Strategos.Ontology.Descriptors.PredicatePropertyReference
+Strategos.Ontology.Descriptors.PredicatePropertyReference.EnumTypeName.get -> string?
+Strategos.Ontology.Descriptors.PredicatePropertyReference.IsNullable.get -> bool
+Strategos.Ontology.Descriptors.PredicatePropertyReference.Name.get -> string!
+Strategos.Ontology.Descriptors.PredicatePropertyReference.PredicatePropertyReference(string! name, Strategos.Ontology.Descriptors.PredicateScalarKind scalarKind, bool isNullable = false, string? enumTypeName = null) -> void
+Strategos.Ontology.Descriptors.PredicatePropertyReference.ScalarKind.get -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.Boolean = 0 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.Decimal = 2 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.Enum = 4 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.Integer = 1 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.String = 3 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PredicateScalarKind.Symbol = 5 -> Strategos.Ontology.Descriptors.PredicateScalarKind
+Strategos.Ontology.Descriptors.PropertyComparisonPredicate
+Strategos.Ontology.Descriptors.PropertyComparisonPredicate.Operator.get -> Strategos.Ontology.Descriptors.PredicateComparisonOperator
+Strategos.Ontology.Descriptors.PropertyComparisonPredicate.PropertyReference.get -> Strategos.Ontology.Descriptors.PredicatePropertyReference!
+Strategos.Ontology.Descriptors.PropertyComparisonPredicate.Value.get -> Strategos.Ontology.Descriptors.PredicateLiteral!
 Strategos.Ontology.Descriptors.PropertyDescriptor
 Strategos.Ontology.Descriptors.PropertyDescriptor.DerivedFrom.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.DerivationSource!>!
 Strategos.Ontology.Descriptors.PropertyDescriptor.DerivedFrom.init -> void
@@ -623,6 +875,9 @@ Strategos.Ontology.Descriptors.PropertyKind.Computed = 2 -> Strategos.Ontology.D
 Strategos.Ontology.Descriptors.PropertyKind.Reference = 1 -> Strategos.Ontology.Descriptors.PropertyKind
 Strategos.Ontology.Descriptors.PropertyKind.Scalar = 0 -> Strategos.Ontology.Descriptors.PropertyKind
 Strategos.Ontology.Descriptors.PropertyKind.Vector = 3 -> Strategos.Ontology.Descriptors.PropertyKind
+Strategos.Ontology.Descriptors.RelationHoldsPredicate
+Strategos.Ontology.Descriptors.RelationHoldsPredicate.LinkPath.get -> System.Collections.Immutable.ImmutableArray<string!>
+Strategos.Ontology.Descriptors.RelationHoldsPredicate.RelationName.get -> string!
 Strategos.Ontology.Diagnostics.OntologyDiagnostic
 Strategos.Ontology.Diagnostics.OntologyDiagnostic.DomainName.get -> string?
 Strategos.Ontology.Diagnostics.OntologyDiagnostic.DomainName.init -> void
@@ -802,11 +1057,12 @@ Strategos.Ontology.ObjectSets.ISearchable
 Strategos.Ontology.ObjectSets.ISearchable.Embedding.get -> float[]!
 Strategos.Ontology.ObjectSets.ObjectSet<T>
 Strategos.Ontology.ObjectSets.ObjectSet<T>.ApplyAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! actionName, object! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>!>!
+Strategos.Ontology.ObjectSets.ObjectSet<T>.ApplyAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! actionName, object! request, Strategos.Ontology.Actions.ActionDispatchOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ActionResult!>!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.EventsAsync(System.TimeSpan? since = null, System.Collections.Generic.IReadOnlyList<string!>? eventTypes = null) -> System.Collections.Generic.IAsyncEnumerable<Strategos.Ontology.Events.OntologyEvent!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.ExecuteAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Strategos.Ontology.ObjectSets.ObjectSetResult<T!>!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.Expression.get -> Strategos.Ontology.ObjectSets.ObjectSetExpression!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.Include(Strategos.Ontology.ObjectSets.ObjectSetInclusion inclusion) -> Strategos.Ontology.ObjectSets.ObjectSet<T!>!
-Strategos.Ontology.ObjectSets.ObjectSet<T>.ObjectSet(string! descriptorName, Strategos.Ontology.ObjectSets.IObjectSetProvider! provider, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.Events.IEventStreamProvider! eventStreamProvider) -> void
+Strategos.Ontology.ObjectSets.ObjectSet<T>.ObjectSet(Strategos.Ontology.Descriptors.ActionSubject! subject, Strategos.Ontology.ObjectSets.IObjectSetProvider! provider, Strategos.Ontology.Actions.IActionDispatcher! actionDispatcher, Strategos.Ontology.Events.IEventStreamProvider! eventStreamProvider) -> void
 Strategos.Ontology.ObjectSets.ObjectSet<T>.OfInterface<TInterface>() -> Strategos.Ontology.ObjectSets.ObjectSet<TInterface!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.SimilarTo(string! queryText) -> Strategos.Ontology.ObjectSets.SimilarObjectSet<T!>!
 Strategos.Ontology.ObjectSets.ObjectSet<T>.StreamAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<T!>!
@@ -1032,14 +1288,23 @@ Strategos.Ontology.Provenance.ProvRelation.WasAttributedTo = 4 -> Strategos.Onto
 Strategos.Ontology.Provenance.ProvRelation.WasDerivedFrom = 3 -> Strategos.Ontology.Provenance.ProvRelation
 Strategos.Ontology.Provenance.ProvRelation.WasGeneratedBy = 0 -> Strategos.Ontology.Provenance.ProvRelation
 Strategos.Ontology.Provenance.ProvRelation.WasInformedBy = 2 -> Strategos.Ontology.Provenance.ProvRelation
+Strategos.Ontology.Query.ActionCandidateEvaluation
+Strategos.Ontology.Query.ActionCandidateEvaluation.Action.get -> Strategos.Ontology.Descriptors.ActionDescriptor!
+Strategos.Ontology.Query.ActionCandidateEvaluation.Action.init -> void
+Strategos.Ontology.Query.ActionCandidateEvaluation.ActionCandidateEvaluation(Strategos.Ontology.Descriptors.ActionDescriptor! Action, Strategos.Ontology.Actions.ActionAvailability Availability, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>! Constraints) -> void
+Strategos.Ontology.Query.ActionCandidateEvaluation.Availability.get -> Strategos.Ontology.Actions.ActionAvailability
+Strategos.Ontology.Query.ActionCandidateEvaluation.Availability.init -> void
+Strategos.Ontology.Query.ActionCandidateEvaluation.Constraints.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>!
+Strategos.Ontology.Query.ActionCandidateEvaluation.Constraints.init -> void
 Strategos.Ontology.Query.ActionConstraintReport
 Strategos.Ontology.Query.ActionConstraintReport.Action.get -> Strategos.Ontology.Descriptors.ActionDescriptor!
 Strategos.Ontology.Query.ActionConstraintReport.Action.init -> void
-Strategos.Ontology.Query.ActionConstraintReport.ActionConstraintReport(Strategos.Ontology.Descriptors.ActionDescriptor! Action, bool IsAvailable, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>! Constraints) -> void
+Strategos.Ontology.Query.ActionConstraintReport.ActionConstraintReport(Strategos.Ontology.Descriptors.ActionDescriptor! Action, Strategos.Ontology.Actions.ActionAvailability Availability, System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>! Constraints) -> void
+Strategos.Ontology.Query.ActionConstraintReport.Availability.get -> Strategos.Ontology.Actions.ActionAvailability
+Strategos.Ontology.Query.ActionConstraintReport.Availability.init -> void
 Strategos.Ontology.Query.ActionConstraintReport.Constraints.get -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Actions.ConstraintEvaluation!>!
 Strategos.Ontology.Query.ActionConstraintReport.Constraints.init -> void
 Strategos.Ontology.Query.ActionConstraintReport.IsAvailable.get -> bool
-Strategos.Ontology.Query.ActionConstraintReport.IsAvailable.init -> void
 Strategos.Ontology.Query.AffectedProperty
 Strategos.Ontology.Query.AffectedProperty.AffectedProperty(string! Domain, string! ObjectTypeName, string! PropertyName, bool IsDirect) -> void
 Strategos.Ontology.Query.AffectedProperty.Domain.get -> string!
@@ -1099,11 +1364,18 @@ Strategos.Ontology.Query.IOntologyCoverageProvider.GetCoverage(Strategos.Ontolog
 Strategos.Ontology.Query.IOntologyQuery
 Strategos.Ontology.Query.IOntologyQuery.DetectPatternViolations(System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.OntologyNodeRef!>! affectedNodes, Strategos.Ontology.Query.DesignIntent! intent) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.PatternViolation!>!
 Strategos.Ontology.Query.IOntologyQuery.EstimateBlastRadius(System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.OntologyNodeRef!>! touchedNodes, Strategos.Ontology.Query.BlastRadiusOptions? options = null) -> Strategos.Ontology.Query.BlastRadius!
-Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! domain, string! objectType, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? knownProperties = null) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
-Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! objectType, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? knownProperties = null) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
+Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! domain, string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
+Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! domain, string! objectType, Strategos.Ontology.Actions.ActionFacts? facts) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
+Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
+Strategos.Ontology.Query.IOntologyQuery.GetActionConstraintReport(string! objectType, Strategos.Ontology.Actions.ActionFacts? facts) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionConstraintReport!>!
 Strategos.Ontology.Query.IOntologyQuery.GetActions(string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!
 Strategos.Ontology.Query.IOntologyQuery.GetActionsForState(string! objectType, string! stateName) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!
 Strategos.Ontology.Query.IOntologyQuery.GetAffectedProperties(string! objectType, string! propertyName) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.AffectedProperty!>!
+Strategos.Ontology.Query.IOntologyQuery.GetCandidateActions(string! domain, string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionCandidateEvaluation!>!
+Strategos.Ontology.Query.IOntologyQuery.GetCandidateActions(string! domain, string! objectType, Strategos.Ontology.Actions.ActionFacts? facts) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionCandidateEvaluation!>!
+Strategos.Ontology.Query.IOntologyQuery.GetCandidateActions(string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionCandidateEvaluation!>!
+Strategos.Ontology.Query.IOntologyQuery.GetCandidateActions(string! objectType, Strategos.Ontology.Actions.ActionFacts? facts) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionCandidateEvaluation!>!
+Strategos.Ontology.Query.IOntologyQuery.GetCandidateActionsAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! domain, string! objectType, string! objectId, Strategos.Ontology.Actions.ActionFacts? facts = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.ActionCandidateEvaluation!>!>!
 Strategos.Ontology.Query.IOntologyQuery.GetDerivationChain(string! objectType, string! propertyName) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.DerivationSource!>!
 Strategos.Ontology.Query.IOntologyQuery.GetExtensionPoints(string! objectType) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ExternalLinkExtensionPoint!>!
 Strategos.Ontology.Query.IOntologyQuery.GetImplementors(string! interfaceName) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ObjectTypeDescriptor!>!
@@ -1115,8 +1387,8 @@ Strategos.Ontology.Query.IOntologyQuery.GetObjectSet<T>(string! objectType) -> S
 Strategos.Ontology.Query.IOntologyQuery.GetObjectTypeNames<T>() -> System.Collections.Generic.IReadOnlyList<string!>!
 Strategos.Ontology.Query.IOntologyQuery.GetObjectTypes(string? domain = null, string? implementsInterface = null, bool includeSubtypes = false) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ObjectTypeDescriptor!>!
 Strategos.Ontology.Query.IOntologyQuery.GetTransitionsFrom(string! objectType, string! stateName) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.LifecycleTransitionDescriptor!>!
-Strategos.Ontology.Query.IOntologyQuery.GetValidActions(string! objectType, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? knownProperties = null) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!
-Strategos.Ontology.Query.IOntologyQuery.GetValidActionsAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! domain, string! objectType, string! objectId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? knownProperties = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!>!
+Strategos.Ontology.Query.IOntologyQuery.GetValidActions(string! objectType, Strategos.Ontology.Actions.ActionFacts? facts = null) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!
+Strategos.Ontology.Query.IOntologyQuery.GetValidActionsAsync(Strategos.Ontology.Actions.ActionPrincipal! principal, string! domain, string! objectType, string! objectId, Strategos.Ontology.Actions.ActionFacts? facts = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Descriptors.ActionDescriptor!>!>!
 Strategos.Ontology.Query.IOntologyQuery.ResolveInterfaceAction(string! objectType, string! interfaceActionName) -> Strategos.Ontology.Descriptors.ActionDescriptor?
 Strategos.Ontology.Query.IOntologyQuery.TracePostconditions(string! objectType, string! actionName, int maxDepth = 1) -> System.Collections.Generic.IReadOnlyList<Strategos.Ontology.Query.PostconditionTrace!>!
 Strategos.Ontology.Query.OntologyNodeRef
@@ -1302,7 +1574,6 @@ virtual Strategos.Ontology.ObjectSets.ObjectSetExpression.RootObjectTypeName.get
 static Strategos.Ontology.Descriptors.ActionCalculus.AuthoredRollbackAgrees(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionDescriptor!>! completedForwardPrefix, System.Collections.Generic.IEnumerable<string!>! authoredRollback) -> bool
 static Strategos.Ontology.Contracts.ContractOntologyCatalog.ObjectTypes.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ObjectTypeDescriptor!>
 static Strategos.Ontology.Descriptors.ActionCalculus.DeriveRollbackPlan(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionDescriptor!>! completedForwardPrefix) -> System.Collections.Immutable.ImmutableArray<string!>
-static Strategos.Ontology.Descriptors.ActionCalculus.Sequential(Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, params Strategos.Ontology.Descriptors.ActionDescriptor![]! actions) -> Strategos.Ontology.Descriptors.CompositeActionContract!
 static Strategos.Ontology.Descriptors.ActionFrame.Empty.get -> Strategos.Ontology.Descriptors.ActionFrame!
 static Strategos.Ontology.Descriptors.ActionResource.Event(string! eventTypeName) -> Strategos.Ontology.Descriptors.ActionResource!
 static Strategos.Ontology.Descriptors.ActionResource.External(string! resourceName) -> Strategos.Ontology.Descriptors.ActionResource!
@@ -1337,9 +1608,5 @@ Strategos.Ontology.Descriptors.ActionResourceKind.Link = 1 -> Strategos.Ontology
 Strategos.Ontology.Descriptors.ActionResourceKind.Property = 0 -> Strategos.Ontology.Descriptors.ActionResourceKind
 Strategos.Ontology.Descriptors.CompositeActionContract
 Strategos.Ontology.Descriptors.CompositeActionContract.Actions.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionDescriptor!>
-Strategos.Ontology.Descriptors.CompositeActionContract.Actions.init -> void
-Strategos.Ontology.Descriptors.CompositeActionContract.CompositeActionContract(System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionDescriptor!> Actions, Strategos.Ontology.Descriptors.AuthorityRequirement! RequiredAuthority, Strategos.Ontology.Descriptors.ActionFrame! Frame) -> void
 Strategos.Ontology.Descriptors.CompositeActionContract.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
-Strategos.Ontology.Descriptors.CompositeActionContract.Frame.init -> void
 Strategos.Ontology.Descriptors.CompositeActionContract.RequiredAuthority.get -> Strategos.Ontology.Descriptors.AuthorityRequirement!
-Strategos.Ontology.Descriptors.CompositeActionContract.RequiredAuthority.init -> void

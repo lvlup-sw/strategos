@@ -5,13 +5,18 @@ namespace Strategos.Ontology.Tests.Descriptors;
 public class PreconditionPostconditionDescriptorTests
 {
     [Test]
-    public async Task PreconditionKind_HasExpectedValues()
+    public async Task ActionPrecondition_PropertyPredicate_Record()
     {
-        await Assert.That(Enum.GetValues<PreconditionKind>()).HasCount().EqualTo(4);
-        await Assert.That(PreconditionKind.PropertyPredicate).IsEqualTo((PreconditionKind)0);
-        await Assert.That(PreconditionKind.LinkExists).IsEqualTo((PreconditionKind)1);
-        await Assert.That(PreconditionKind.Custom).IsEqualTo((PreconditionKind)2);
-        await Assert.That(PreconditionKind.RelationHolds).IsEqualTo((PreconditionKind)3);
+        var predicate = ActionPredicate.Property(
+            new PredicatePropertyReference("Status", PredicateScalarKind.String),
+            PredicateComparisonOperator.Equal,
+            PredicateLiteral.String("Active"));
+        var precondition = new ActionPrecondition(predicate, "Status must be Active");
+
+        await Assert.That(precondition.Expression).IsEqualTo("Status == \"Active\"");
+        await Assert.That(precondition.Description).IsEqualTo("Status must be Active");
+        await Assert.That(precondition.Predicate).IsEqualTo(predicate);
+        await Assert.That(precondition.IsOpaque).IsFalse();
     }
 
     [Test]
@@ -24,34 +29,15 @@ public class PreconditionPostconditionDescriptorTests
     }
 
     [Test]
-    public async Task ActionPrecondition_PropertyPredicate_Record()
-    {
-        var precondition = new ActionPrecondition
-        {
-            Expression = "Status == Active",
-            Description = "Status must be Active",
-            Kind = PreconditionKind.PropertyPredicate,
-        };
-
-        await Assert.That(precondition.Expression).IsEqualTo("Status == Active");
-        await Assert.That(precondition.Description).IsEqualTo("Status must be Active");
-        await Assert.That(precondition.Kind).IsEqualTo(PreconditionKind.PropertyPredicate);
-        await Assert.That(precondition.LinkName).IsNull();
-    }
-
-    [Test]
     public async Task ActionPrecondition_LinkExists_Record()
     {
-        var precondition = new ActionPrecondition
-        {
-            Expression = "Link 'Strategy' exists",
-            Description = "Requires link 'Strategy' to have at least one target",
-            Kind = PreconditionKind.LinkExists,
-            LinkName = "Strategy",
-        };
+        var predicate = ActionPredicate.LinkExists("Strategy");
+        var precondition = new ActionPrecondition(
+            predicate,
+            "Requires link 'Strategy' to have at least one target");
 
-        await Assert.That(precondition.Kind).IsEqualTo(PreconditionKind.LinkExists);
-        await Assert.That(precondition.LinkName).IsEqualTo("Strategy");
+        await Assert.That(precondition.Predicate).IsTypeOf<LinkExistsPredicate>();
+        await Assert.That(((LinkExistsPredicate)precondition.Predicate).LinkName).IsEqualTo("Strategy");
     }
 
     [Test]
@@ -98,9 +84,13 @@ public class PreconditionPostconditionDescriptorTests
     [Test]
     public async Task ActionDescriptor_DefaultPreconditionsAndPostconditions_AreEmpty()
     {
-        var descriptor = new ActionDescriptor("Test", "Test action");
+        var descriptor = new ActionDescriptor(
+            new ActionSubject("Test", "Thing"),
+            "Test",
+            "Test action");
 
         await Assert.That(descriptor.Preconditions.Count).IsEqualTo(0);
+        await Assert.That(descriptor.Ensures.Count).IsEqualTo(0);
         await Assert.That(descriptor.Postconditions.Count).IsEqualTo(0);
     }
 }

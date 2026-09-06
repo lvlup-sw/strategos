@@ -1,90 +1,406 @@
 ---
-title: Action calculus contracts
-description: Principal, relation, authority, retry-safety, and resource-frame semantics for ontology actions.
+title: Typed action calculus
+description: Typed predicates, post-state guarantees, exact sequential proofs, and three-valued runtime enforcement for ontology actions.
 ---
 
-An ontology action is an immutable contract. Its preconditions say what must be
-true, its postconditions say what it changes, `RequiredAuthority` says what the
-caller must be granted, and `TouchedResources` bounds the part of the world the
-action may affect.
+An ontology action is an immutable state-transition contract. Its
+`ActionSubject` gives it a language-neutral owner, hard requirements describe
+the states from which it may run, guarantees describe facts that hold after a
+successful run, and its frame says which resources it may change. Strategos can
+therefore prove whether one action may safely follow another instead of parsing
+display strings or assuming that a declared write produces a particular value.
 
-## Authority is a product order
+This surface is source-breaking in Strategos 2.13. See the
+[2.13 migration guide](/guide/ontology/migration-v2-13/) before upgrading an
+existing ontology.
 
-Authority uses its own vocabulary; it is not the orchestration `Capability`
-flags enum. A domain declares independent axes from weakest to strongest and
-positions every named authority on every axis:
+The design deliberately keeps the language restricted so proof remains
+deterministic and decidable, following the validation posture described in the
+[Cedar policy-language research](https://arxiv.org/abs/2403.04651). Sequential
+implication uses the standard SMT reduction—prove `G_A AND NOT R_B`
+unsatisfiable—documented by the current
+[SMT-LIB standard](https://smt-lib.org/language.shtml). Guarantees are genuine
+post-state assertions in the sense of
+[Hoare logic](https://doi.org/10.1145/363235.363259), not facts invented from a
+“may write” declaration.
+
+## Action identity and contract shape
+
+Every executable `ActionDescriptor` has a required subject whose identity is
+formed from ontology names, never CLR types:
 
 ```csharp
-builder.AuthorityAxis("access", "read", "write", "owner");
-builder.AuthorityAxis("sensitivity", "public", "internal", "restricted");
-
-builder.Authority("internal.writer")
-    .At("access", "write")
-    .At("sensitivity", "internal")
-    .Implies("public.reader");
+var subject = new ActionSubject("Trading", "Position");
+var action = new ActionDescriptor(subject, "Activate", "Activate a position")
+{
+    Preconditions =
+    [
+        new ActionPrecondition(
+            ActionPredicate.Property(
+                new PredicatePropertyReference(
+                    "Status",
+                    PredicateScalarKind.Enum,
+                    enumTypeName: "PositionStatus"),
+                PredicateComparisonOperator.Equal,
+                PredicateLiteral.Enum("PositionStatus", "Pending")),
+            "The position is pending."),
+    ],
+    Ensures =
+    [
+        new ActionGuarantee(
+            ActionPredicate.Property(
+                new PredicatePropertyReference(
+                    "Status",
+                    PredicateScalarKind.Enum,
+                    enumTypeName: "PositionStatus"),
+                PredicateComparisonOperator.Equal,
+                PredicateLiteral.Enum("PositionStatus", "Active"))),
+    ],
+    TouchedResources = [ActionResource.Property("Status")],
+};
 ```
 
-A grant satisfies a requirement only when it is at least as strong on every
-axis. Sequential composition computes its authority requirement as the
-pointwise join of the component requirements.
+All descriptor collections are defensively snapshotted into immutable arrays.
+Changing the source list after construction does not change the action.
 
-## Frames and non-interference
+## The closed predicate language
+
+`ActionPredicate` is a closed, immutable hierarchy. Instances are created by
+its canonicalizing factories:
+
+| Predicate | Meaning |
+|---|---|
+| `True`, `False` | Explicit logical constants. |
+| `Property(reference, operator, literal)` | Compare one subject property with one typed literal. |
+| `LinkExists(name)` | At least one target exists for the named link. |
+| `RelationHolds(name, path...)` | The authenticated principal holds the named relation after the path is traversed. |
+| `All(...)` | Conjunction (`AND`). |
+| `Any(...)` | Disjunction (`OR`). |
+| `Not(...)` | Negation. |
+| `Custom(key, arguments, readSet)` | An explicitly opaque predicate evaluated by a registered runtime evaluator. |
+
+Supported literals are explicit null, Boolean, arbitrary-precision integer,
+exact base-10 decimal, ordinal string, named enum member, and symbolic
+identifier. Integer and decimal values retain exact canonical text across
+serialization. Floating-point values are deliberately excluded.
+
+Integer and decimal properties support all six comparison operators. Boolean,
+string, enum, symbol, and null values support equality and inequality only.
+Null is permitted only for nullable property references and is different from
+a missing fact.
+
+Canonicalization happens during construction. `All` and `Any` flatten nested
+aggregates of the same kind, remove identity values, apply absorbing values,
+eliminate duplicates, and sort operands by their structural key. Property
+comparisons place the property on the left, and `Not(Not(p))` becomes `p`.
+Strategos does not distribute predicates into CNF or DNF. Predicate structural
+equality and the semantic tokens used for graph hashing use the normalized
+structure; descriptions and the human-readable `Expression` projection do not
+participate in semantic identity. Serialized contracts carry both the
+normalized predicate and this display projection. `Expression` is never
+reparsed.
+
+### Fluent and expression authoring
+
+The CLR-generic action builder accepts either an `ActionPredicate` or a
+restricted expression tree:
+
+```csharp
+builder.Object<Position>(obj =>
+{
+    obj.Action("ExecuteTrade")
+        .Requires(position =>
+            position.Status == PositionStatus.Active
+            && (position.Quantity > 0m || !position.Suspended))
+        .RequiresSoft(position => position.UnrealizedPnL > -10_000m)
+        .Ensures(position => position.Status == PositionStatus.Active)
+        .RequiresLink("Strategy")
+        .EnsuresLink("Orders")
+        .Modifies(position => position.Quantity)
+        .CreatesLinked<TradeOrder>("Orders");
+});
+```
+
+The expression translator accepts direct property-to-literal comparisons and
+`&&`, `||`, and `!` over those comparisons. A direct Boolean property is shorthand
+for equality with `true`. Integral CLR types and `BigInteger` lower to the
+integer domain, `decimal` remains exact, enums use their ontology type/member
+names, and a `Guid` property belongs to the symbol domain. C# has no `Guid`
+literal, so author non-null `Guid`/symbol comparisons with the typed
+`ActionPredicate.Property(..., PredicateLiteral.Symbol(...))` API instead of
+an expression overload.
+
+The following forms are rejected during construction and produce `AONT221`
+when the analyzer can see them: floating point, property-to-property
+comparisons, user-defined operators, method calls, captured values, fields,
+arithmetic, quantifiers, and transitive closure. Unsupported expressions never
+silently become `Custom`. A top-level `_ => true` is also rejected; write
+`.Requires(ActionPredicate.True)` when an explicit wildcard is intentional.
+These restrictions are in addition to the C# compiler's own
+[expression-tree restrictions](https://learn.microsoft.com/dotnet/csharp/language-reference/compiler-messages/expression-tree-restrictions).
+
+Use `ActionPredicate.Custom` only as an explicit design choice. The evaluator
+key, ordered typed arguments, and canonical declared read set are semantic. A
+description remains presentation metadata:
+
+```csharp
+var approved = ActionPredicate.Custom(
+    "trading.credit-approved.v1",
+    [PredicateLiteral.Symbol("standard")],
+    [ActionResource.Property("CreditStatus")]);
+```
+
+## Guarantees are facts; effects are a frame
+
+`ActionGuarantee` uses the same predicate vocabulary as a precondition. It is a
+fact promised after successful execution. `ActionPostcondition` remains effect
+and frame metadata:
+
+| Declaration | What may be inferred after the action |
+|---|---|
+| `Ensures(predicate)` | The predicate itself. |
+| `CreatesLinked<T>(name)` / `CreatesLink` | `LinkExists(name)`. |
+| `Modifies(property)` / `ModifiesProperty` | Nothing about the resulting value; it only says the property may be written. |
+| `EmitsEvent<T>()` / `EmitsEvent` | No state predicate. |
+
+This distinction prevents an unsound inference such as “may modify `Status`”
+therefore “`Status == Active`.” State the latter explicitly with `Ensures`.
 
 `TouchedResources` is the action's frame. Fluent `Modifies`, `CreatesLinked`,
-and `EmitsEvent` declarations add their corresponding resource to the frame by
-construction. Descriptor-first actions are checked at graph construction;
-literal descriptor initializers are also checked by the Roslyn analyzer.
-Postcondition mutation outside the frame is `AONT215` and fails the build.
+and `EmitsEvent` calls add their resources by construction. Descriptor-first
+actions are checked during graph freeze, and literal initializers are checked
+by the analyzer. `AONT215` reports mutation outside the frame.
 
-The contract callers may rely on is:
+For every predicate whose resources are disjoint from the frame, the predicate
+has the same truth value before and after the action. This non-interference rule
+is what permits requirements on untouched state to survive an action.
 
-> For every predicate whose resources are disjoint from `TouchedResources`,
-> the predicate has the same truth value before and after the action.
+## Exact sequential composition
 
-This makes local reasoning possible. The frame of `A ; B` is computed as the
-union of both frames. Two actions are candidates for parallel execution only
-when their frames are disjoint.
+For action `A`, Strategos defines:
 
-## Compensation
+- `R_A`: conjunction of its hard preconditions. Soft preconditions do not enter
+  static proofs.
+- `D_A`: explicit guarantees plus sound facts derived from effects (currently
+  link existence from `CreatesLink`).
+- `W_A`: the property and link resources the frame says the action may change.
+- `G_A = D_A AND Forget_W_A(R_A)`: its effective post-state guarantee.
 
-An action may name its compensating action with `CompensatedBy`. The
-compensating action must declare the same frame, because an inverse restores
-exactly the resources the forward action touched. `AONT216` rejects a missing
-or frame-incompatible compensator. For a completed prefix `A ; B`,
-`ActionCalculus.DeriveRollbackPlan` mechanically produces `B⁻¹ ; A⁻¹`; an
-authored rollback order can be compared with that derived plan. The Roslyn
-analyzer compares fluent compensation frames at compilation, and graph freeze
-provides the descriptor-first backstop.
+`Forget` is semantic existential projection, not deletion of matching syntax.
+For example, forgetting `x` from `x == 1 AND y == 2` yields `y == 2`, while
+forgetting `x` from `x == 1 OR y == 2` yields `True`.
 
-## Retry safety and relation authorization
+Before a closed action is used in a proof, Strategos checks that its hard
+requirements are satisfiable, its declared guarantees are satisfiable, and its
+frame is realizable:
 
-`ReadOnly()` implies `Idempotent()` by construction, and descriptor-first input
-is checked by `AONT213`. `RelationHolds` preconditions are evaluated at the
-dispatcher boundary against the authenticated `ActionPrincipal`; failures deny
-dispatch before the inner action handler runs.
+```text
+R_A  implies  exists W_A . D_A
+```
 
-## Contract-authored operations
+The last condition rejects a guarantee about untouched state unless the
+requirement already establishes it. Contradictory contracts and unrealizable
+frames are `AONT221` errors.
 
-`Strategos.Contracts` supplies TypeSpec `extern dec` decorators backed by a
-JavaScript implementation. A contract operation can declare its owning object,
-required authority, relation path, visible clients, confirmation posture, and
-retry semantics:
+An adjacent seam `A -> B` is legal exactly when `G_A` implies `R_B`. The proof
+kernel checks whether this counterexample formula is satisfiable:
+
+```text
+G_A AND NOT R_B
+```
+
+If it is satisfiable, `AONT217` reports a stable, minimized symbolic assignment
+that the upstream contract permits but the downstream requirement rejects.
+
+### Proof kernel
+
+The pure C# kernel partitions each referenced domain into the finitely many
+cells distinguished by constants in the formula: Boolean values; null and
+non-null; named strings, symbols, or enum members plus an `other` cell; numeric
+constants, gaps, and rays; and Boolean link/relation atoms. It lazily enumerates
+those cells with three-valued partial evaluation over a hash-consed normalized
+DAG, memoized partial results and unsatisfiable prefixes, and ordinal atom
+ordering. The procedure is exact and has no atom limit that can turn a closed
+predicate into “unknown.” Roslyn cancellation is honored.
+
+`Custom` is outside this closed proof fragment. An action with a custom hard
+requirement or guarantee is listed in `OpaqueExclusions`; adjacent seams become
+`Opaque`, and the composite is `PartiallyVerified`. Other closed actions, and
+closed seams that are not adjacent to an opaque action, are still checked.
+Opaque is not a proof of compatibility: runtime evaluation remains required.
+
+### Composition API and identity
+
+Use `AnalyzeSequential` for a nonthrowing result and `Sequential` when invalid
+contracts or refuted seams should throw `ActionCompositionException`:
+
+```csharp
+var analysis = ActionCalculus.AnalyzeSequential(lattice, reserve, charge);
+if (analysis.CanCompose)
+{
+    CompositeActionContract contract =
+        ActionCalculus.Sequential(lattice, reserve, charge);
+}
+```
+
+Operands may be actions, existing composites, or
+`ActionCalculus.Identity(subject)`. Nested composites are flattened before
+adjacent seams are checked. A composite exposes the subject, flattened action
+list, first requirement, final effective guarantee, authority join, frame
+union, verification status, seam results, and opaque exclusions.
+
+The identity is a distinct empty operand, typed by `ActionSubject`, and is
+removed while flattening. An ordinary action with `Requires=True` and
+`Ensures=True` is still an observable action and is not identity. An all-identity
+sequence produces an empty identity contract.
+
+Strategos 2.13 composes only actions with the same subject. Two object types
+with the same simple name in different domains remain distinct. Cross-subject
+state transfer is deferred. Composition is conservative across longer chains:
+facts do not survive an intervening action unless its own requirements and
+frame justify preserving them.
+
+## Runtime three-valued evaluation
+
+Static proof establishes contract compatibility; runtime discovery evaluates a
+particular state using strong-Kleene three-valued logic:
+
+- `PredicateTruthValue.Satisfied`
+- `PredicateTruthValue.Unsatisfied`
+- `PredicateTruthValue.Indeterminate`
+
+`ActionFacts` is an immutable set of typed property facts and explicit link
+presence/absence. A missing property or link is unknown. `PredicateLiteral.Null`
+and a link value of `false` are explicit known facts.
+
+```csharp
+var facts = new ActionFacts(
+    properties:
+    [
+        KeyValuePair.Create("Status", PredicateLiteral.Enum("PositionStatus", "Active")),
+        KeyValuePair.Create("Note", PredicateLiteral.Null),
+    ],
+    links:
+    [
+        KeyValuePair.Create("Strategy", true),
+        KeyValuePair.Create("Orders", false),
+    ]);
+
+var candidates = query.GetCandidateActions("Trading", "Position", facts);
+```
+
+`GetCandidateActions*` returns actions whose availability is `Available` or
+`Indeterminate`, with one result per hard or soft constraint. Actions proven
+`Unavailable` are excluded from discovery; their detailed outcome remains
+visible through `GetActionConstraintReport*`. The `GetValidActions*`
+convenience methods return the same non-unavailable action set without the
+per-constraint results. Soft predicates are reported but never block discovery
+or dispatch.
+
+Register authoritative facts and explicit custom evaluators with AOT-safe
+generic options methods:
+
+```csharp
+services.AddOntology(options => options
+    .UseActionFactResolver<PositionFactResolver>()
+    .AddCustomActionPredicateEvaluator<CreditApprovedEvaluator>());
+```
+
+A custom evaluator receives only the property and link facts named in its
+declared read set. If any declared target fact is missing, the custom leaf is
+`Indeterminate` and the evaluator is not invoked. External and event resources
+remain evaluator-owned.
+
+Discovery facts are planning hints, not authorization evidence. At dispatch,
+Strategos resolves authoritative facts for the target with
+`IActionFactResolver`. With `EnforcePreconditions = true`, every hard predicate
+must evaluate `Satisfied`; both false and indeterminate fail closed. A hard
+predicate containing a relation is mandatory even when general enforcement is
+off, and its complete Boolean formula—not a flattened relation shortcut—is
+evaluated. A missing or failing fact resolver (when target facts are needed),
+relation resolver, or custom evaluator yields `Indeterminate` and a structured
+log entry.
+
+## Authority, compensation, and retry safety
+
+Authority uses a product order rather than the orchestration `Capability`
+flags enum. A domain declares independent axes from weakest to strongest and
+positions each authority on every axis. Sequential composition computes the
+pointwise join of all component requirements.
+
+An action may name a compensating action with `CompensatedBy`. The compensator
+must declare the same frame; `AONT216` rejects a missing or frame-incompatible
+inverse. For a completed prefix `A ; B`, `DeriveRollbackPlan` produces
+`B^-1 ; A^-1`.
+
+`ReadOnly()` implies `Idempotent()` by construction. Descriptor-first contracts
+that mark a read-only action as non-idempotent are rejected by `AONT213`.
+
+## TypeSpec and MCP metadata
+
+`Strategos.Contracts` 0.10.0 defines the versioned tagged
+`ActionPredicateV1`, `ActionLiteralV1`, `ActionRequirementV1`, and
+`ActionGuaranteeV1` wire types. Contract operations author hard or soft
+requirements and guarantees directly:
 
 ```typespec
 @objectKind("Trading", "Position", "entity")
-@authority("position.reader")
-@relation("owner", "Portfolio")
-@clients("mcp", "web")
-@confirm(false)
-@readOnly
-@idempotent
+@requires(
+  #{
+    kind: "property-comparison",
+    property: #{
+      name: "status",
+      scalarKind: ActionPredicateScalarKindV1.String,
+      isNullable: false
+    },
+    operator: ActionComparisonOperatorV1.NotEqual,
+    value: #{ kind: "string", value: "closed" }
+  },
+  ActionRequirementStrengthV1.Soft,
+  "The position should not already be closed."
+)
+@requires(#{ kind: "link-exists", linkName: "auditTrail" })
+@ensures(
+  #{ kind: "link-exists", linkName: "auditTrail" },
+  "The existing audit trail remains available after success."
+)
 op inspectPosition(input: InspectPositionRequest): InspectPositionResult;
 ```
 
-The decorators write `x-strategos-*` JSON Schema metadata. The contracts
-code-generation pipeline consumes those extensions and emits
-`ContractOntologyCatalog.ObjectTypes`, with every object marked
-`DescriptorSource.HandAuthoredContract`. Compose the descriptors through
-`IOntologyBuilder.ObjectTypeFromDescriptor` alongside the domain's authority
-lattice. Contract metadata is deontic—what an action permits and requires—and
-never contains or selects a runtime implementation.
+The decorators emit structured `x-strategos-requires-v1` and
+`x-strategos-ensures-v1` arrays, including the canonical display expression.
+The display field is never parsed. `@relation` remains authoring sugar and
+lowers to a hard `relation-holds` requirement; the old relation/link-path pair
+is no longer emitted. Unknown predicate discriminators are rejected rather
+than treated as `Custom` or `True`.
+
+The 0.10 contract decorator surface does not yet author effect/frame metadata.
+Consequently, a TypeSpec guarantee must already follow from the operation's
+hard requirements; graph freeze rejects a contract that promises a new fact
+without declaring how that resource may change. Author state-changing
+guarantees in the CLR descriptor/fluent surface, where `TouchedResources` and
+postcondition effects are available, until a versioned contract frame is
+introduced.
+
+MCP action summaries expose schema-equivalent `requires` and `ensures` arrays.
+The MCP assembly keeps local wire records rather than depending on the
+contracts package, and parity is checked against the emitted 0.10 schemas.
+
+## Diagnostics
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `AONT217` | Error | A closed adjacent seam is refuted; includes its counterexample. |
+| `AONT218` | Warning | A custom requirement or guarantee excludes an action from complete static proof. |
+| `AONT219` | Info | Graph or explicit-sequence composability coverage. Zero-action graphs suppress it. |
+| `AONT220` | Info | An explicit sequence is too dynamic for the analyzer and receives runtime-only verification. |
+| `AONT221` | Error | Invalid expression, subject mismatch, contradiction, or unrealizable frame. |
+
+The analyzer recognizes direct constructions, immutable single-assignment
+locals, statically initialized immutable collections, nested `Sequential` calls,
+`ActionCalculus.Identity`, and `ActionCompositionOperand.From` at explicit
+`ActionCalculus.Sequential` calls. Arbitrary helper methods and mutable
+collections remain runtime checked. Graph freeze is the exact merged-graph
+backstop and reports coverage over concrete executable actions. See the
+[AONT200-series reference](/reference/diagnostics/aont-200-series/) for fixes
+and full messages.

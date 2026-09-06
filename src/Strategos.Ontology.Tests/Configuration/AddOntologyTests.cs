@@ -56,6 +56,24 @@ public class StubActionDispatcher : IActionDispatcher
         Task.FromResult(new ActionResult(true, null));
 }
 
+public sealed class StubActionFactResolver : IActionFactResolver
+{
+    public ValueTask<ActionFacts?> ResolveAsync(
+        ActionContext context,
+        CancellationToken ct = default) =>
+        ValueTask.FromResult<ActionFacts?>(ActionFacts.Empty);
+}
+
+public sealed class StubCustomActionPredicateEvaluator : ICustomActionPredicateEvaluator
+{
+    public string EvaluatorKey => "stub-v1";
+
+    public ValueTask<PredicateTruthValue> EvaluateAsync(
+        CustomActionPredicateContext context,
+        CancellationToken ct = default) =>
+        ValueTask.FromResult(PredicateTruthValue.Satisfied);
+}
+
 public class AddOntologyTests
 {
     [Test]
@@ -187,5 +205,25 @@ public class AddOntologyTests
         await Assert.That(authority.Inner).IsTypeOf<RelationAuthorizationActionDispatcher>();
         var relation = (RelationAuthorizationActionDispatcher)authority.Inner;
         await Assert.That(relation.Inner).IsTypeOf<StubActionDispatcher>();
+    }
+
+    [Test]
+    public async Task AddOntology_RegistersFactAndCustomPredicateEvaluators()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOntology(options =>
+        {
+            options.AddDomain<TestOntologyDomain>();
+            options.UseActionFactResolver<StubActionFactResolver>();
+            options.AddCustomActionPredicateEvaluator<StubCustomActionPredicateEvaluator>();
+        });
+
+        var provider = services.BuildServiceProvider();
+
+        await Assert.That(provider.GetRequiredService<IActionFactResolver>())
+            .IsTypeOf<StubActionFactResolver>();
+        await Assert.That(provider.GetServices<ICustomActionPredicateEvaluator>().Single())
+            .IsTypeOf<StubCustomActionPredicateEvaluator>();
     }
 }

@@ -103,6 +103,8 @@ public class ObjectTypeBuilderTests
         await Assert.That(descriptor.Actions.Count).IsEqualTo(1);
         await Assert.That(descriptor.Actions[0].Name).IsEqualTo("ExecuteTrade");
         await Assert.That(descriptor.Actions[0].BindingType).IsEqualTo(ActionBindingType.Workflow);
+        await Assert.That(descriptor.Actions[0].Subject)
+            .IsEqualTo(new ActionSubject("Trading", "TestPosition"));
     }
 
     [Test]

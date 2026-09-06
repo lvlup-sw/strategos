@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 
 using Strategos.Ontology;
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Query;
@@ -19,7 +20,7 @@ namespace Strategos.Ontology.MCP.Tests.Tools;
 /// The function under test is private to <c>OntologyQueryService</c>; tests
 /// drive it via the public <see cref="IOntologyQuery.GetActions(string)"/>
 /// entry point (bare name) and the domain-qualified
-/// <see cref="IOntologyQuery.GetActionConstraintReport(string, string, System.Collections.Generic.IReadOnlyDictionary{string, object?}?)"/>
+/// <see cref="IOntologyQuery.GetActionConstraintReport(string, string, ActionFacts?)"/>
 /// overload (which routes through <c>OntologyGraph.GetObjectType(domain, name)</c>
 /// directly — the unambiguous path).
 /// </remarks>
@@ -46,9 +47,9 @@ public sealed class OntologyValidateToolFindObjectTypeTests
         var query = provider.GetRequiredService<IOntologyQuery>();
 
         var tradingReports = query.GetActionConstraintReport(
-            "trading", "Order", knownProperties: null);
+            "trading", "Order", facts: null);
         var fulfillmentReports = query.GetActionConstraintReport(
-            "fulfillment", "Order", knownProperties: null);
+            "fulfillment", "Order", facts: null);
 
         // Each domain registers a distinct action on its Order — the report
         // shapes diverge, which is the ground-truth signal that resolution

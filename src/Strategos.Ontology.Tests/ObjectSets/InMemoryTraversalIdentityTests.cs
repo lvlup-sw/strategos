@@ -1,5 +1,8 @@
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
+using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
+using Strategos.Ontology.Query;
 
 namespace Strategos.Ontology.Tests.ObjectSets;
 
@@ -250,6 +253,41 @@ public class InMemoryTraversalIdentityTests
         await Assert.That(result).HasCount().EqualTo(1);
         await Assert.That(result[0].Id).IsEqualTo("edge1");
         await Assert.That(result[0].Partition).IsEqualTo("SymEdge");
+    }
+
+    [Test]
+    public async Task QueryObjectSet_LinkDeclaredAssociationDisambiguatesSharedClrType()
+    {
+        var graph = BuildMultiRegistrationGraph();
+        var query = new OntologyQueryService(
+            graph,
+            Substitute.For<IObjectSetProvider>(),
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        var edges = query
+            .GetObjectSet<OriginNode>(Origin)
+            .TraverseLink<MultiEdge>(LinkName);
+
+        var traversal = (TraverseLinkExpression)edges.Expression;
+        await Assert.That(traversal.TargetDescriptorName).IsEqualTo(EdgeRight);
+    }
+
+    [Test]
+    public async Task QueryObjectSet_ImplicitEdgeViewWithAmbiguousClrType_FailsClosed()
+    {
+        var graph = BuildNodeLinkAttributedGraph();
+        var query = new OntologyQueryService(
+            graph,
+            Substitute.For<IObjectSetProvider>(),
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        await Assert.That(() => query
+                .GetObjectSet<OriginNode>(Origin)
+                .TraverseLink<MultiEdge>(LinkName))
+            .Throws<InvalidOperationException>()
+            .WithMessageContaining("descriptor-name traversal overload");
     }
 
     // Graph where the Origin link declares a NODE target (Origin) but the relate

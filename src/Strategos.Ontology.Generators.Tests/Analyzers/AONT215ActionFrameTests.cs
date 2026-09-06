@@ -16,7 +16,10 @@ public sealed class AONT215ActionFrameTests
                 ClrType = typeof(Model),
                 Actions =
                 [
-                    new ActionDescriptor("publish", "Publish")
+                    new ActionDescriptor(
+                        new ActionSubject("test", "Document"),
+                        "publish",
+                        "Publish")
                     {
                         TouchedResources = [ActionResource.Property("Title")],
                         Postconditions =
@@ -48,7 +51,10 @@ public sealed class AONT215ActionFrameTests
                 ClrType = typeof(Model),
                 Actions =
                 [
-                    new ActionDescriptor("publish", "Publish")
+                    new ActionDescriptor(
+                        new ActionSubject("test", "Document"),
+                        "publish",
+                        "Publish")
                     {
                         TouchedResources = [ActionResource.Property("Status")],
                         Postconditions =
@@ -79,7 +85,10 @@ public sealed class AONT215ActionFrameTests
                 ClrType = typeof(Model),
                 Actions =
                 [
-                    new ActionDescriptor("publish", "Publish")
+                    new ActionDescriptor(
+                        new ActionSubject("test", "Document"),
+                        "publish",
+                        "Publish")
                     {
                         TouchedResources = resources,
                         Postconditions =

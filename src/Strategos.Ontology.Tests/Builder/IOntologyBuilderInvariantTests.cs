@@ -21,6 +21,8 @@ namespace Strategos.Ontology.Tests.Builder;
 /// </summary>
 public class IOntologyBuilderInvariantTests
 {
+    private static readonly ActionSubject PositionSubject = new("Trading", "Position");
+
     private static readonly DateTimeOffset Timestamp =
         new(2026, 5, 10, 12, 0, 0, TimeSpan.Zero);
 
@@ -40,7 +42,7 @@ public class IOntologyBuilderInvariantTests
             SourceId = SourceId,
             Actions = new List<ActionDescriptor>
             {
-                new("Trade", "Trade action"),
+                new(PositionSubject, "Trade", "Trade action"),
             },
         };
 
@@ -167,7 +169,7 @@ public class IOntologyBuilderInvariantTests
             Source = DescriptorSource.HandAuthored,
             Actions = new List<ActionDescriptor>
             {
-                new("Trade", "Trade action"),
+                new(PositionSubject, "Trade", "Trade action"),
             },
         };
 
@@ -204,7 +206,7 @@ public class IOntologyBuilderInvariantTests
             Source = DescriptorSource.HandAuthoredContract,
             Actions = new List<ActionDescriptor>
             {
-                new("Trade", "Contract-authored trade"),
+                new(PositionSubject, "Trade", "Contract-authored trade"),
             },
         };
 
@@ -337,7 +339,7 @@ public class IOntologyBuilderInvariantTests
             SourceId = SourceId,
             Actions = new List<ActionDescriptor>
             {
-                new("Trade", "Trade action"),
+                new(PositionSubject, "Trade", "Trade action"),
             },
         };
 

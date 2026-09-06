@@ -1,5 +1,6 @@
 // Copyright (c) Levelup Software. All rights reserved.
 
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Query;
@@ -100,11 +101,12 @@ public class ActionConstraintReportTests
     public async Task GetActionConstraintReport_AllSatisfied_IsAvailableTrue()
     {
         var query = ReportTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
-        {
-            ["Status"] = ReportTestStatus.Active,
-            ["Targets"] = true,
-        };
+        var knownProps = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(ReportTestStatus.Active),
+            },
+            links: new Dictionary<string, bool> { ["Targets"] = true });
 
         var reports = query.GetActionConstraintReport("ReportItem", knownProps);
 
@@ -117,10 +119,10 @@ public class ActionConstraintReportTests
     public async Task GetActionConstraintReport_PropertyPredicateUnsatisfied_HasFailureReason()
     {
         var query = ReportTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Quantity"] = 0m,
-        };
+            ["Quantity"] = PredicateLiteral.Decimal(0m),
+        });
 
         var reports = query.GetActionConstraintReport("ReportItem", knownProps);
 
@@ -134,10 +136,10 @@ public class ActionConstraintReportTests
     public async Task GetActionConstraintReport_PropertyPredicateUnsatisfied_HasExpectedShape()
     {
         var query = ReportTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Quantity"] = 0m,
-        };
+            ["Quantity"] = PredicateLiteral.Decimal(0m),
+        });
 
         var reports = query.GetActionConstraintReport("ReportItem", knownProps);
 
@@ -159,6 +161,8 @@ public class ActionConstraintReportTests
         // Soft constraint not satisfied but action still available
         await Assert.That(auditReport.IsAvailable).IsTrue();
         await Assert.That(auditReport.Constraints[0].Strength).IsEqualTo(ConstraintStrength.Soft);
+        await Assert.That(auditReport.Constraints[0].TruthValue)
+            .IsEqualTo(PredicateTruthValue.Indeterminate);
     }
 
     [Test]
@@ -177,11 +181,11 @@ public class ActionConstraintReportTests
     public async Task GetActionConstraintReport_MultipleConstraints_PartialSatisfaction()
     {
         var query = ReportTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = ReportTestStatus.Active,
-            ["Quantity"] = 0m, // soft constraint unsatisfied
-        };
+            ["Status"] = PredicateLiteral.Enum(ReportTestStatus.Active),
+            ["Quantity"] = PredicateLiteral.Decimal(0m),
+        });
 
         var reports = query.GetActionConstraintReport("ReportItem", knownProps);
 
@@ -210,10 +214,10 @@ public class ActionConstraintReportTests
     public async Task GetActionConstraintReport_HardConstraintUnsatisfied_IsAvailableFalse()
     {
         var query = ReportTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = ReportTestStatus.Pending,
-        };
+            ["Status"] = PredicateLiteral.Enum(ReportTestStatus.Pending),
+        });
 
         var reports = query.GetActionConstraintReport("ReportItem", knownProps);
 
@@ -225,5 +229,42 @@ public class ActionConstraintReportTests
             .Where(c => !c.IsSatisfied && c.Strength == ConstraintStrength.Hard)
             .ToList();
         await Assert.That(hardUnsatisfied.Count).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetCandidateActions_UnknownHardFact_IsIndeterminateAndRemainsValid()
+    {
+        var query = ReportTestGraphFactory.CreateQueryService();
+        var facts = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
+        {
+            ["Status"] = PredicateLiteral.Enum(ReportTestStatus.Active),
+        });
+
+        var candidates = query.GetCandidateActions("ReportItem", facts);
+        var valid = query.GetValidActions("ReportItem", facts);
+
+        var close = candidates.Single(candidate => candidate.Action.Name == "Close");
+        await Assert.That(close.Availability).IsEqualTo(ActionAvailability.Indeterminate);
+        await Assert.That(valid.Select(action => action.Name)).Contains("Close");
+    }
+
+    [Test]
+    public async Task GetCandidateActions_ProvenUnavailableActionIsExcludedButConstraintReportRetainsIt()
+    {
+        var query = ReportTestGraphFactory.CreateQueryService();
+        var facts = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(ReportTestStatus.Pending),
+            },
+            links: new Dictionary<string, bool> { ["Targets"] = false });
+
+        var candidates = query.GetCandidateActions("ReportItem", facts);
+        var reports = query.GetActionConstraintReport("ReportItem", facts);
+
+        await Assert.That(candidates.Select(candidate => candidate.Action.Name))
+            .DoesNotContain("Close");
+        await Assert.That(reports.Single(report => report.Action.Name == "Close").Availability)
+            .IsEqualTo(ActionAvailability.Unavailable);
     }
 }

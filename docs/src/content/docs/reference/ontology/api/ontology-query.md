@@ -16,9 +16,13 @@ Namespace: `Strategos.Ontology.Query`. Source: `src/Strategos.Ontology/Query/IOn
 | Core | `GetActions(string objectType)` | `IReadOnlyList<ActionDescriptor>` |
 | Core | `GetLinks(string objectType)` | `IReadOnlyList<LinkDescriptor>` |
 | Core | `GetImplementors(string interfaceName)` | `IReadOnlyList<ObjectTypeDescriptor>` |
-| Preconditions | `GetValidActions(string objectType, IReadOnlyDictionary<string, object?>? knownProperties)` | `IReadOnlyList<ActionDescriptor>` |
-| Preconditions | `GetActionConstraintReport(string objectType, IReadOnlyDictionary<string, object?>? knownProperties)` | `IReadOnlyList<ActionConstraintReport>` |
-| Preconditions | `GetActionConstraintReport(string domain, string objectType, IReadOnlyDictionary<string, object?>? knownProperties)` | `IReadOnlyList<ActionConstraintReport>` |
+| Preconditions | `GetCandidateActions(string objectType, ActionFacts? facts)` | `IReadOnlyList<ActionCandidateEvaluation>` |
+| Preconditions | `GetCandidateActions(string domain, string objectType, ActionFacts? facts)` | `IReadOnlyList<ActionCandidateEvaluation>` |
+| Preconditions | `GetCandidateActionsAsync(ActionPrincipal, domain, objectType, objectId, ActionFacts?, CancellationToken)` | `Task<IReadOnlyList<ActionCandidateEvaluation>>` |
+| Preconditions | `GetValidActions(string objectType, ActionFacts? facts)` | `IReadOnlyList<ActionDescriptor>` |
+| Preconditions | `GetValidActionsAsync(ActionPrincipal, domain, objectType, objectId, ActionFacts?, CancellationToken)` | `Task<IReadOnlyList<ActionDescriptor>>` |
+| Preconditions | `GetActionConstraintReport(string objectType, ActionFacts? facts)` | `IReadOnlyList<ActionConstraintReport>` |
+| Preconditions | `GetActionConstraintReport(string domain, string objectType, ActionFacts? facts)` | `IReadOnlyList<ActionConstraintReport>` |
 | Postconditions | `TracePostconditions(string objectType, string actionName, int maxDepth)` | `IReadOnlyList<PostconditionTrace>` |
 | Lifecycle | `GetActionsForState(string objectType, string stateName)` | `IReadOnlyList<ActionDescriptor>` |
 | Lifecycle | `GetTransitionsFrom(string objectType, string stateName)` | `IReadOnlyList<LifecycleTransitionDescriptor>` |
@@ -44,9 +48,23 @@ Namespace: `Strategos.Ontology.Query`. Source: `src/Strategos.Ontology/Query/IOn
 
 ### Precondition evaluation
 
-`GetValidActions` runs every registered action's precondition expression against `knownProperties` and returns the subset whose hard preconditions hold; missing keys evaluate as unsatisfied. `GetActionConstraintReport` returns one entry per action regardless of pass/fail, with the hard and soft evaluations split — agents read this to plan with awareness of why an action is currently unavailable.
+`GetCandidateActions*` evaluates immutable typed predicates against
+`ActionFacts`. It returns results carrying `ActionAvailability.Available` or
+`Indeterminate`, plus the hard and soft constraint evaluations; actions proven
+`Unavailable` are excluded. A missing fact is indeterminate; explicit
+`PredicateLiteral.Null` and link absence are known values.
 
-The domain-qualified overload (`GetActionConstraintReport(domain, objectType, knownProperties)`) is the recommended call site: the default interface implementation falls back to the simple-name overload only for backwards compatibility with test doubles that have not been updated.
+`GetValidActions*` is the compatibility convenience: it excludes only actions
+proven unavailable and therefore returns the same retained action set without
+the evaluations. Use `GetCandidateActions*` when the caller must distinguish
+known availability from incomplete information, and
+`GetActionConstraintReport*` to inspect unavailable actions too. The async
+forms supply the principal/target context needed by relation and custom evaluators.
+
+Domain-qualified overloads are the recommended call site when multiple domains
+may register the same object name. The default
+`GetActionConstraintReport(domain, objectType, facts)` implementation falls
+back to the simple-name overload only for compatibility with test doubles.
 
 ### Postcondition tracing
 
@@ -64,4 +82,8 @@ The domain-qualified overload (`GetActionConstraintReport(domain, objectType, kn
 
 ### Type parameters and nullability
 
-Every `where T : class` constraint is on `ObjectSet<T>` and `GetObjectTypeNames<T>`. `ResolveInterfaceAction` returns `null` when no concrete action implements the named interface action on `objectType`. Property dictionaries (`knownProperties`) are optional — pass `null` for an unconditional reading.
+Every `where T : class` constraint is on `ObjectSet<T>` and
+`GetObjectTypeNames<T>`. `ResolveInterfaceAction` returns `null` when no
+concrete action implements the named interface action on `objectType`.
+`ActionFacts` is optional; passing `null` means every property and link fact
+is unknown, not false.

@@ -6,14 +6,20 @@ sidebar:
 
 `Strategos.Ontology` is a type-safe semantic graph for domain modelling: Object Types, Properties, Links, Actions, Events, Lifecycles, and Interfaces declared in C# and validated at compile time by Roslyn source generators. Agents and dispatchers query the composed graph at runtime through `IOntologyQuery`. This section documents the public API surface for each package — for task-oriented walkthroughs see the [Ontology guide](/guide/ontology/).
 
-The fluent `Object<T>` / `Interface<T>` surface stays CLR-generic. `ObjectTypeFromDescriptor` / `ApplyDelta` is the first-class CLR-free path. A SymbolKey-only interface fan-out is not expressible — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/#clr-free-and-polymorphic-cannot-combine). Action preconditions are declared on `ActionDescriptor.Preconditions`; fluent `.Requires(...)` is obsolete and has no fluent successor.
+The fluent `Object<T>` / `Interface<T>` surface stays CLR-generic.
+`ObjectTypeFromDescriptor` / `ApplyDelta` is the first-class CLR-free path. A
+SymbolKey-only interface fan-out is not expressible — see
+[Polyglot Descriptors](/guide/ontology/polyglot-descriptors/#clr-free-and-polymorphic-cannot-combine).
+Actions use immutable typed predicates through fluent `Requires`,
+`RequiresSoft`, and `Ensures` overloads or descriptor-first
+`ActionPrecondition` / `ActionGuarantee` values.
 
 ## Package map
 
 | Package | Contains | Use when |
 |---|---|---|
 | `LevelUp.Strategos.Ontology` | `DomainOntology`, fluent builders (`IOntologyBuilder`, `IObjectTypeBuilder<T>`, ...), descriptor records, `IOntologyQuery`, `IObjectSetProvider`, `IObjectSetWriter`, expression nodes, `IActionDispatcher`, `IEmbeddingProvider`, `IOntologySource`, `OntologyGraph` | You define domain ontologies or write a runtime consumer (e.g. an MCP tool, a dispatcher decorator). |
-| `LevelUp.Strategos.Ontology.Generators` | Roslyn incremental generator emitting validation diagnostics (`AONT001`–`AONT208`) and the source-generated `IOntologyQuery` implementation. | Always — referenced as an `Analyzer` by the core package's consumers. |
+| `LevelUp.Strategos.Ontology.Generators` | Roslyn incremental generator emitting validation diagnostics (`AONT001`–`AONT221`) and the source-generated `IOntologyQuery` implementation. | Always — referenced as an `Analyzer` by the core package's consumers. |
 | `LevelUp.Strategos.Ontology.Npgsql` | `PgVectorObjectSetProvider`, `PgVectorOptions`, schema-creation helpers. Implements `IObjectSetProvider` + `IObjectSetWriter` against PostgreSQL with the `pgvector` extension. | You run similarity search against a PostgreSQL instance with `pgvector`. |
 | `LevelUp.Strategos.Ontology.Embeddings` | OpenAI-compatible `IEmbeddingProvider` implementation. | You need a production embedding provider without writing your own. |
 | `LevelUp.Strategos.Ontology.MCP` | Progressive disclosure MCP integration (`OntologyToolDescriptor`, `_meta` envelope). | You expose ontology actions over MCP. |

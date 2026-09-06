@@ -28,8 +28,10 @@ public class ObjectTypeBuilderGenericTests
         var descriptor = builder.Build();
 
         await Assert.That(descriptor.Actions[0].Preconditions.Count).IsEqualTo(3);
-        await Assert.That(descriptor.Actions[0].Preconditions[0].Kind).IsEqualTo(PreconditionKind.PropertyPredicate);
-        await Assert.That(descriptor.Actions[0].Preconditions[2].Kind).IsEqualTo(PreconditionKind.LinkExists);
+        await Assert.That(descriptor.Actions[0].Preconditions[0].Predicate)
+            .IsTypeOf<PropertyComparisonPredicate>();
+        await Assert.That(descriptor.Actions[0].Preconditions[2].Predicate)
+            .IsTypeOf<LinkExistsPredicate>();
     }
 
     [Test]

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Builder;
 using Strategos.Ontology.Configuration;
 using Strategos.Ontology.Descriptors;
@@ -320,12 +321,13 @@ public class OntologyQueryServicePreconditionTests
     public async Task GetValidActions_WithKnownProperties_FiltersActions()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
-        {
-            ["Status"] = QueryTestStatus.Active,
-            ["Quantity"] = 100m,
-            ["Orders"] = true, // link exists
-        };
+        var knownProps = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Active),
+                ["Quantity"] = PredicateLiteral.Decimal(100m),
+            },
+            links: new Dictionary<string, bool> { ["Orders"] = true });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
@@ -350,10 +352,10 @@ public class OntologyQueryServicePreconditionTests
     public async Task GetValidActions_PropertyPredicateUnsat_FiltersAction()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = QueryTestStatus.Closed,
-        };
+            ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Closed),
+        });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
@@ -367,12 +369,13 @@ public class OntologyQueryServicePreconditionTests
     public async Task GetValidActions_PropertyPredicateSat_IncludesAction()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
-        {
-            ["Status"] = QueryTestStatus.Active,
-            ["Quantity"] = 100m,
-            ["Orders"] = true, // link exists
-        };
+        var knownProps = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Active),
+                ["Quantity"] = PredicateLiteral.Decimal(100m),
+            },
+            links: new Dictionary<string, bool> { ["Orders"] = true });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
@@ -382,19 +385,19 @@ public class OntologyQueryServicePreconditionTests
     }
 
     [Test]
-    public async Task GetValidActions_LinkExistsUnsat_FiltersAction()
+    public async Task GetValidActions_LinkExplicitlyAbsent_FiltersAction()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
-        {
-            ["Status"] = QueryTestStatus.Active,
-            // No "Orders" key — link does not exist
-        };
+        var knownProps = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Active),
+            },
+            links: new Dictionary<string, bool> { ["Orders"] = false });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
-        // ExecuteTrade requires link "Orders" to exist, but no link info provided
-        // Should be filtered out
+        // ExecuteTrade requires link "Orders" to exist, and absence is explicit.
         var names = actions.Select(a => a.Name).ToList();
         await Assert.That(names).DoesNotContain("ExecuteTrade");
     }
@@ -403,11 +406,12 @@ public class OntologyQueryServicePreconditionTests
     public async Task GetValidActions_LinkExistsSat_IncludesAction()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
-        {
-            ["Status"] = QueryTestStatus.Active,
-            ["Orders"] = true, // link exists
-        };
+        var knownProps = new ActionFacts(
+            properties: new Dictionary<string, PredicateLiteral>
+            {
+                ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Active),
+            },
+            links: new Dictionary<string, bool> { ["Orders"] = true });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
@@ -420,10 +424,10 @@ public class OntologyQueryServicePreconditionTests
     public async Task GetValidActions_NoPreconditions_IncludesAll()
     {
         var query = QueryTestGraphFactory.CreateQueryService();
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(properties: new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = QueryTestStatus.Closed,
-        };
+            ["Status"] = PredicateLiteral.Enum(QueryTestStatus.Closed),
+        });
 
         var actions = query.GetValidActions("QueryPosition", knownProps);
 
@@ -1041,7 +1045,10 @@ public class OntologyQueryServiceGetObjectSetTests
         var eventStream = Substitute.For<Strategos.Ontology.Events.IEventStreamProvider>();
         mock.GetObjectSet<QueryPosition>("QueryPosition")
             .Returns(new Strategos.Ontology.ObjectSets.ObjectSet<QueryPosition>(
-                nameof(QueryPosition), provider, dispatcher, eventStream));
+                new ActionSubject("query", nameof(QueryPosition)),
+                provider,
+                dispatcher,
+                eventStream));
 
         // Act
         var result = mock.GetObjectSet<QueryPosition>("QueryPosition");

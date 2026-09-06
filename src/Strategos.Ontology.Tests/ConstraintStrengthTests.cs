@@ -5,6 +5,7 @@
 // =============================================================================
 
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Actions;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Query;
 
@@ -72,10 +73,12 @@ public class ConstraintStrengthOntology : DomainOntology
 
 public class ConstraintStrengthTests
 {
+    private static readonly ActionSubject Subject = new("test", "ConstraintOrder");
+
     [Test]
     public async Task RequiresSoft_SetsConstraintStrengthToSoft()
     {
-        var builder = new ActionBuilder<ConstraintOrder>("Review");
+        var builder = new ActionBuilder<ConstraintOrder>("Review", Subject);
         builder.RequiresSoft(o => o.Quantity > 0);
 
         var descriptor = builder.Build();
@@ -86,7 +89,7 @@ public class ConstraintStrengthTests
     [Test]
     public async Task Requires_DefaultStrength_IsHard()
     {
-        var builder = new ActionBuilder<ConstraintOrder>("Execute");
+        var builder = new ActionBuilder<ConstraintOrder>("Execute", Subject);
         builder.Requires(o => o.Status == ConstraintTestStatus.Active);
 
         var descriptor = builder.Build();
@@ -97,7 +100,7 @@ public class ConstraintStrengthTests
     [Test]
     public async Task RequiresLinkSoft_SetsConstraintStrengthToSoft()
     {
-        var builder = new ActionBuilder<ConstraintOrder>("Review");
+        var builder = new ActionBuilder<ConstraintOrder>("Review", Subject);
         builder.RequiresLinkSoft("Targets");
 
         var descriptor = builder.Build();
@@ -114,11 +117,11 @@ public class ConstraintStrengthTests
         var query = new OntologyQueryService(graph);
 
         // Quantity = 0, no Targets -- soft constraints unsatisfied
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(new Dictionary<string, PredicateLiteral>
         {
-            ["Quantity"] = 0m,
+            ["Quantity"] = PredicateLiteral.Decimal(0m),
             // No "Targets" -- soft link constraint also unsatisfied
-        };
+        });
 
         var actions = query.GetValidActions("ConstraintOrder", knownProps);
         var names = actions.Select(a => a.Name).ToList();
@@ -136,10 +139,12 @@ public class ConstraintStrengthTests
         var query = new OntologyQueryService(graph);
 
         // Status is Pending, no Targets -- hard constraints unsatisfied
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = ConstraintTestStatus.Pending,
-        };
+            ["Status"] = PredicateLiteral.Enum(
+                nameof(ConstraintTestStatus),
+                nameof(ConstraintTestStatus.Pending)),
+        });
 
         var actions = query.GetValidActions("ConstraintOrder", knownProps);
         var names = actions.Select(a => a.Name).ToList();
@@ -157,11 +162,13 @@ public class ConstraintStrengthTests
         var query = new OntologyQueryService(graph);
 
         // Status Active (hard satisfied), Quantity = 0 (soft unsatisfied)
-        var knownProps = new Dictionary<string, object?>
+        var knownProps = new ActionFacts(new Dictionary<string, PredicateLiteral>
         {
-            ["Status"] = ConstraintTestStatus.Active,
-            ["Quantity"] = 0m,
-        };
+            ["Status"] = PredicateLiteral.Enum(
+                nameof(ConstraintTestStatus),
+                nameof(ConstraintTestStatus.Active)),
+            ["Quantity"] = PredicateLiteral.Decimal(0m),
+        });
 
         var actions = query.GetValidActions("ConstraintOrder", knownProps);
         var names = actions.Select(a => a.Name).ToList();

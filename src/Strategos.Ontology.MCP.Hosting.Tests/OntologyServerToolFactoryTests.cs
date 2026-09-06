@@ -154,6 +154,13 @@ public sealed class OntologyServerToolFactoryTests
         await Assert.That(actualFirst.Annotations).IsEqualTo(expectedFirst.Annotations);
         await Assert.That(actualFirst.AuthorizationRequirements)
             .IsEquivalentTo(expectedFirst.AuthorizationRequirements);
+        await Assert.That(actualFirst.Requires.Length).IsEqualTo(expectedFirst.Requires.Length);
+        await Assert.That(actualFirst.Ensures.Length).IsEqualTo(expectedFirst.Ensures.Length);
+
+        var wire = meta["actionSemantics"]!.ToJsonString();
+        await Assert.That(wire).Contains("\"requires\"");
+        await Assert.That(wire).Contains("\"ensures\"");
+        await Assert.That(wire).Contains("\"kind\"");
     }
 
     private static string PropertiesJson(JsonElement schema)
