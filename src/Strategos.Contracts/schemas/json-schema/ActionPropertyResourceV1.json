@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionPropertyResourceV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "property"
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1
+        }
+    },
+    "required": [
+        "kind",
+        "name"
+    ],
+    "description": "A property resource declared in a custom predicate's read set."
+}

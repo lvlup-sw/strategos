@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionIntegerLiteralV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "integer"
+        },
+        "value": {
+            "type": "string",
+            "pattern": "^(0|-?[1-9][0-9]*)$"
+        }
+    },
+    "required": [
+        "kind",
+        "value"
+    ],
+    "description": "An arbitrary-precision integer encoded as a canonical base-10 string.\nJSON numbers are deliberately excluded because their precision is transport dependent."
+}

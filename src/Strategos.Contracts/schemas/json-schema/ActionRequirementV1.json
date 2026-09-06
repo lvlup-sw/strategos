@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionRequirementV1.json",
+    "type": "object",
+    "properties": {
+        "predicate": {
+            "$ref": "ActionPredicateV1.json"
+        },
+        "expression": {
+            "type": "string",
+            "description": "Canonical display projection; consumers never parse this field."
+        },
+        "strength": {
+            "$ref": "ActionRequirementStrengthV1.json"
+        },
+        "description": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "predicate",
+        "expression",
+        "strength"
+    ],
+    "description": "One typed hard or soft action requirement carried in schema metadata."
+}

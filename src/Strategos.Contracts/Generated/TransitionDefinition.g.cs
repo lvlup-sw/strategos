@@ -21,23 +21,27 @@ public sealed record TransitionDefinition
     /// Stable transition identifier.
     /// </summary>
     [JsonPropertyName("transitionId")]
+    [JsonRequired]
     public string TransitionId { get; init; } = default!;
 
     /// <summary>
     /// Step id this transition originates from.
     /// </summary>
     [JsonPropertyName("fromStepId")]
+    [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
     /// Step id this transition targets.
     /// </summary>
     [JsonPropertyName("toStepId")]
+    [JsonRequired]
     public string ToStepId { get; init; } = default!;
 
     /// <summary>
     /// Whether this is the default (fallthrough) transition.
     /// </summary>
     [JsonPropertyName("isDefault")]
+    [JsonRequired]
     public bool IsDefault { get; init; }
 }

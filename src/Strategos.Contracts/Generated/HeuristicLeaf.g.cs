@@ -22,5 +22,6 @@ public sealed record HeuristicLeaf : CheckNode
     /// Numeric gate the heuristic compares against (e.g. a ratio/count).
     /// </summary>
     [JsonPropertyName("threshold")]
+    [JsonRequired]
     public double Threshold { get; init; }
 }

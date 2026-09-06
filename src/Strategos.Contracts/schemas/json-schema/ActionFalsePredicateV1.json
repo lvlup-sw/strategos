@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionFalsePredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "false"
+        }
+    },
+    "required": [
+        "kind"
+    ],
+    "description": "Predicate that is satisfied by no state."
+}

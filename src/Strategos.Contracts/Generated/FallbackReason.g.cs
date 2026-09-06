@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -15,7 +17,7 @@ namespace Strategos.Contracts.Generated;
 /// model-side degradation reasons. Member names are PascalCase; wire VALUES are
 /// the exact snake_case tokens.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FallbackReason>))]
+[JsonConverter(typeof(FallbackReasonJsonConverter))]
 public enum FallbackReason
 {
     [JsonStringEnumMemberName("model_timeout")]
@@ -35,4 +37,42 @@ public enum FallbackReason
 
     [JsonStringEnumMemberName("judge_unavailable")]
     JudgeUnavailable,
+}
+
+public sealed class FallbackReasonJsonConverter : JsonConverter<FallbackReason>
+{
+    public override FallbackReason Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("FallbackReason requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "model_timeout" => FallbackReason.ModelTimeout,
+            "model_5xx" => FallbackReason.Model5xx,
+            "rate_limit" => FallbackReason.RateLimit,
+            "malformed_output" => FallbackReason.MalformedOutput,
+            "low_confidence" => FallbackReason.LowConfidence,
+            "judge_unavailable" => FallbackReason.JudgeUnavailable,
+            _ => throw new JsonException("Unknown FallbackReason wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, FallbackReason value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            FallbackReason.ModelTimeout => "model_timeout",
+            FallbackReason.Model5xx => "model_5xx",
+            FallbackReason.RateLimit => "rate_limit",
+            FallbackReason.MalformedOutput => "malformed_output",
+            FallbackReason.LowConfidence => "low_confidence",
+            FallbackReason.JudgeUnavailable => "judge_unavailable",
+            _ => throw new JsonException("Unknown FallbackReason value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

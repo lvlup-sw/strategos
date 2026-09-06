@@ -18,29 +18,35 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskDelegatedRemoteData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("featureId")]
+    [JsonRequired]
     public string FeatureId { get; init; } = default!;
 
     /// <summary>
     /// Delegation target — Basileus is the only remote tier in 0.2.0.
     /// </summary>
     [JsonPropertyName("target")]
+    [JsonRequired]
     public string Target { get; init; } = default!;
 
     [JsonPropertyName("agentRole")]
+    [JsonRequired]
     public string AgentRole { get; init; } = default!;
 
     /// <summary>
     /// Why the router chose remote placement.
     /// </summary>
     [JsonPropertyName("reason")]
+    [JsonRequired]
     public string Reason { get; init; } = default!;
 
     /// <summary>
     /// Blast-radius scope that biased the placement decision (Local | CrossDomain | Global).
     /// </summary>
     [JsonPropertyName("blastRadiusScope")]
+    [JsonRequired]
     public object BlastRadiusScope { get; init; } = default!;
 }

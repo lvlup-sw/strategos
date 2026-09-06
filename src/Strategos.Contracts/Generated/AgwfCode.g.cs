@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -13,11 +15,11 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// AGWF workflow source-generator diagnostic codes (#52). Single canonical
 /// source: authored in <c>Diagnostics/AgwfCatalog.tsp</c>. Member NAMES are
-/// the wire identity — <see cref="JsonStringEnumConverter"/> plus a per-member
-/// <c>JsonStringEnumMemberName</c> make every consumer bind by name, never by
-/// ordinal (INV-5); each maps to its <c>AGWF0xx</c> wire value.
+/// the wire identity — an exact-token converter makes every consumer bind by
+/// the declared <c>AGWF0xx</c> string, never by CLR name, case-folding, or ordinal
+/// (INV-5).
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<AgwfCode>))]
+[JsonConverter(typeof(AgwfCodeJsonConverter))]
 public enum AgwfCode
 {
     /// <summary>AGWF001 — Empty workflow name.</summary>
@@ -147,4 +149,100 @@ public enum AgwfCode
     /// <summary>AGWF038 — Duplicate diagnostic-fork compensation seed.</summary>
     [JsonStringEnumMemberName("AGWF038")]
     DuplicateCompensationSeed,
+}
+
+public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
+{
+    public override AgwfCode Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("AgwfCode requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "AGWF001" => AgwfCode.EmptyWorkflowName,
+            "AGWF002" => AgwfCode.NoStepsFound,
+            "AGWF003" => AgwfCode.DuplicateStepName,
+            "AGWF004" => AgwfCode.InvalidNamespace,
+            "AGWF009" => AgwfCode.MissingStartWith,
+            "AGWF010" => AgwfCode.MissingFinally,
+            "AGWF012" => AgwfCode.ForkWithoutJoin,
+            "AGWF014" => AgwfCode.LoopWithoutBody,
+            "AGWF015" => AgwfCode.InvalidPersistenceMode,
+            "AGWF016" => AgwfCode.EventSourcedRequiresState,
+            "AGWF017" => AgwfCode.CompensateNotAStep,
+            "AGWF018" => AgwfCode.ConfidenceThresholdOutOfRange,
+            "AGWF019" => AgwfCode.RequireConfidenceWithoutHandler,
+            "AGWF020" => AgwfCode.RetryMaxAttemptsBelowOne,
+            "AGWF021" => AgwfCode.NonPositiveTimeout,
+            "AGWF022" => AgwfCode.DeclaredButInert,
+            "AGWF023" => AgwfCode.MalformedWorkflowJson,
+            "AGWF024" => AgwfCode.UnsupportedSchemaVersion,
+            "AGWF025" => AgwfCode.UnresolvableStepMoniker,
+            "AGWF026" => AgwfCode.AmbiguousStepMoniker,
+            "AGWF027" => AgwfCode.ImportRejectedDelegateStep,
+            "AGWF028" => AgwfCode.ImportRejectedBranchPoint,
+            "AGWF029" => AgwfCode.ImportRejectedLoop,
+            "AGWF030" => AgwfCode.ImportRejectedValidationPredicate,
+            "AGWF031" => AgwfCode.ImportRejectedApprovalContext,
+            "AGWF032" => AgwfCode.ImportDanglingGateId,
+            "AGWF033" => AgwfCode.ImportReliabilityBearingGate,
+            "AGWF034" => AgwfCode.ImportForkTriggerWithoutEvidence,
+            "AGWF035" => AgwfCode.UnreachableTermination,
+            "AGWF036" => AgwfCode.PathEndTypeCollision,
+            "AGWF037" => AgwfCode.DuplicatePermittedForkTrigger,
+            "AGWF038" => AgwfCode.DuplicateCompensationSeed,
+            _ => throw new JsonException("Unknown AgwfCode wire token."),
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        AgwfCode value,
+        JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            AgwfCode.EmptyWorkflowName => "AGWF001",
+            AgwfCode.NoStepsFound => "AGWF002",
+            AgwfCode.DuplicateStepName => "AGWF003",
+            AgwfCode.InvalidNamespace => "AGWF004",
+            AgwfCode.MissingStartWith => "AGWF009",
+            AgwfCode.MissingFinally => "AGWF010",
+            AgwfCode.ForkWithoutJoin => "AGWF012",
+            AgwfCode.LoopWithoutBody => "AGWF014",
+            AgwfCode.InvalidPersistenceMode => "AGWF015",
+            AgwfCode.EventSourcedRequiresState => "AGWF016",
+            AgwfCode.CompensateNotAStep => "AGWF017",
+            AgwfCode.ConfidenceThresholdOutOfRange => "AGWF018",
+            AgwfCode.RequireConfidenceWithoutHandler => "AGWF019",
+            AgwfCode.RetryMaxAttemptsBelowOne => "AGWF020",
+            AgwfCode.NonPositiveTimeout => "AGWF021",
+            AgwfCode.DeclaredButInert => "AGWF022",
+            AgwfCode.MalformedWorkflowJson => "AGWF023",
+            AgwfCode.UnsupportedSchemaVersion => "AGWF024",
+            AgwfCode.UnresolvableStepMoniker => "AGWF025",
+            AgwfCode.AmbiguousStepMoniker => "AGWF026",
+            AgwfCode.ImportRejectedDelegateStep => "AGWF027",
+            AgwfCode.ImportRejectedBranchPoint => "AGWF028",
+            AgwfCode.ImportRejectedLoop => "AGWF029",
+            AgwfCode.ImportRejectedValidationPredicate => "AGWF030",
+            AgwfCode.ImportRejectedApprovalContext => "AGWF031",
+            AgwfCode.ImportDanglingGateId => "AGWF032",
+            AgwfCode.ImportReliabilityBearingGate => "AGWF033",
+            AgwfCode.ImportForkTriggerWithoutEvidence => "AGWF034",
+            AgwfCode.UnreachableTermination => "AGWF035",
+            AgwfCode.PathEndTypeCollision => "AGWF036",
+            AgwfCode.DuplicatePermittedForkTrigger => "AGWF037",
+            AgwfCode.DuplicateCompensationSeed => "AGWF038",
+            _ => throw new JsonException("Unknown AgwfCode value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

@@ -18,20 +18,25 @@ namespace Strategos.Contracts.Generated;
 public sealed record CrossTierDependencyResolvedData
 {
     [JsonPropertyName("dependentTaskId")]
+    [JsonRequired]
     public string DependentTaskId { get; init; } = default!;
 
     [JsonPropertyName("resolvedByTaskId")]
+    [JsonRequired]
     public string ResolvedByTaskId { get; init; } = default!;
 
     /// <summary>
     /// Tier that resolved the dependency.
     /// </summary>
     [JsonPropertyName("resolvedByTier")]
+    [JsonRequired]
     public object ResolvedByTier { get; init; } = default!;
 
     [JsonPropertyName("branch")]
+    [JsonRequired]
     public string Branch { get; init; } = default!;
 
     [JsonPropertyName("commitSha")]
+    [JsonRequired]
     public string CommitSha { get; init; } = default!;
 }

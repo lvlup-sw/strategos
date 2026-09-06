@@ -28,12 +28,14 @@ public sealed record GateDeclaration
     /// The typed gate class this declaration evaluates (DR-1 — the shared gate identity).
     /// </summary>
     [JsonPropertyName("class")]
+    [JsonRequired]
     public GateClass Class { get; init; }
 
     /// <summary>
     /// Stable identifier for this gate declaration.
     /// </summary>
     [JsonPropertyName("id")]
+    [JsonRequired]
     public string Id { get; init; } = default!;
 
     /// <summary>

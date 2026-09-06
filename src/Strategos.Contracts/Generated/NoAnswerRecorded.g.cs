@@ -24,5 +24,6 @@ public sealed record NoAnswerRecorded : AbstentionResponse
     /// The nearest non-matching records (may be empty). Each is a polyglot RecordRef moniker (INV-8), never a CLR type.
     /// </summary>
     [JsonPropertyName("nearestRecords")]
+    [JsonRequired]
     public IReadOnlyList<RecordRef> NearestRecords { get; init; } = default!;
 }

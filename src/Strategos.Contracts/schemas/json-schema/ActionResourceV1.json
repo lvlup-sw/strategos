@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionResourceV1.json",
+    "anyOf": [
+        {
+            "$ref": "ActionPropertyResourceV1.json"
+        },
+        {
+            "$ref": "ActionLinkResourceV1.json"
+        },
+        {
+            "$ref": "ActionEventResourceV1.json"
+        },
+        {
+            "$ref": "ActionExternalResourceV1.json"
+        }
+    ],
+    "description": "Closed resource vocabulary for a custom predicate's declared read set."
+}

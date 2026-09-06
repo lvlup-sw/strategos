@@ -29,54 +29,63 @@ public sealed record InvariantEntry
     /// Stable invariant identifier (e.g. `INV-4`).
     /// </summary>
     [JsonPropertyName("id")]
+    [JsonRequired]
     public string Id { get; init; } = default!;
 
     /// <summary>
     /// Design dimension the invariant belongs to (e.g. `DIM-3`).
     /// </summary>
     [JsonPropertyName("dimension")]
+    [JsonRequired]
     public string Dimension { get; init; } = default!;
 
     /// <summary>
     /// Axis within the dimension.
     /// </summary>
     [JsonPropertyName("axis")]
+    [JsonRequired]
     public string Axis { get; init; } = default!;
 
     /// <summary>
     /// Relative cost of loading/checking the invariant (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("cost-of-load")]
+    [JsonRequired]
     public string CostOfLoad { get; init; } = default!;
 
     /// <summary>
     /// Scopes the invariant applies to (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("applies-to")]
+    [JsonRequired]
     public IReadOnlyList<string> AppliesTo { get; init; } = default!;
 
     /// <summary>
     /// Human-readable summary of the invariant.
     /// </summary>
     [JsonPropertyName("summary")]
+    [JsonRequired]
     public string Summary { get; init; } = default!;
 
     /// <summary>
     /// Overlapping axioms (snake_case wire name preserved verbatim).
     /// </summary>
     [JsonPropertyName("axiom_overlap")]
+    [JsonRequired]
     public IReadOnlyList<string> AxiomOverlap { get; init; } = default!;
 
     /// <summary>
     /// Supporting citations.
     /// </summary>
     [JsonPropertyName("citations")]
+    [JsonRequired]
     public IReadOnlyList<string> Citations { get; init; } = default!;
 
     /// <summary>
     /// Cross-references to related material.
     /// </summary>
     [JsonPropertyName("references")]
+    [JsonRequired]
     public IReadOnlyList<string> References { get; init; } = default!;
 
     /// <summary>

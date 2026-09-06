@@ -19,24 +19,30 @@ namespace Strategos.Contracts.Generated;
 public sealed record OntologicalRecordData
 {
     [JsonPropertyName("id")]
+    [JsonRequired]
     public string Id { get; init; } = default!;
 
     [JsonPropertyName("featureId")]
+    [JsonRequired]
     public string FeatureId { get; init; } = default!;
 
     [JsonPropertyName("status")]
+    [JsonRequired]
     public RecordStatus Status { get; init; }
 
     [JsonPropertyName("createdAt")]
+    [JsonRequired]
     public string CreatedAt { get; init; } = default!;
 
     [JsonPropertyName("updatedAt")]
+    [JsonRequired]
     public string UpdatedAt { get; init; } = default!;
 
     /// <summary>
     /// Pins the ontology graph version the record was created against.
     /// </summary>
     [JsonPropertyName("ontologyVersion")]
+    [JsonRequired]
     public string OntologyVersion { get; init; } = default!;
 
     /// <summary>
@@ -52,6 +58,7 @@ public sealed record OntologicalRecordData
     public int? PrNumber { get; init; }
 
     [JsonPropertyName("processLayer")]
+    [JsonRequired]
     public ProcessLayerData ProcessLayer { get; init; } = default!;
 
     [JsonPropertyName("domainLayer")]

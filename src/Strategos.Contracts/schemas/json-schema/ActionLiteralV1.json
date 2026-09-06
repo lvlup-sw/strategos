@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionLiteralV1.json",
+    "anyOf": [
+        {
+            "$ref": "ActionNullLiteralV1.json"
+        },
+        {
+            "$ref": "ActionBooleanLiteralV1.json"
+        },
+        {
+            "$ref": "ActionIntegerLiteralV1.json"
+        },
+        {
+            "$ref": "ActionDecimalLiteralV1.json"
+        },
+        {
+            "$ref": "ActionStringLiteralV1.json"
+        },
+        {
+            "$ref": "ActionEnumLiteralV1.json"
+        },
+        {
+            "$ref": "ActionSymbolLiteralV1.json"
+        }
+    ],
+    "description": "Version 1 of the closed literal vocabulary used by action predicates.\nFloating-point values are intentionally not part of this union."
+}

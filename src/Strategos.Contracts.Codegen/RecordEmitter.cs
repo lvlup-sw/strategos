@@ -15,9 +15,9 @@ namespace Strategos.Contracts.Codegen;
 /// <list type="bullet">
 ///   <item>object schemas → a <c>sealed record</c> with <c>{ get; init; }</c>
 ///   members and <see cref="IReadOnlyList{T}"/> collections (INV-6 / INV-7);</item>
-///   <item>string-enum schemas → a C# <c>enum</c> whose members carry
-///   <c>[JsonStringEnumMemberName]</c> so the wire value round-trips verbatim
-///   (handles <c>@encodedName</c> / kebab-case / snake_case wire names);</item>
+///   <item>string-enum schemas → a C# <c>enum</c> with a generated exact-token
+///   converter, so only the schema's ordinal wire strings round-trip (including
+///   <c>@encodedName</c> / kebab-case / snake_case wire names);</item>
 /// </list>
 /// The emitter reads the raw JSON directly (rather than relying on a third-party
 /// resolver) so cross-file <c>$ref</c>s resolve to the correct generated type by
@@ -258,18 +258,17 @@ public static class RecordEmitter
     private static string EmitEnum(SchemaDoc doc)
     {
         var sb = new StringBuilder();
-        AppendHeader(sb, usings: ["System.Text.Json.Serialization"]);
+        AppendHeader(sb, usings: ["System", "System.Text.Json", "System.Text.Json.Serialization"]);
 
         if (!string.IsNullOrEmpty(doc.Description))
         {
             AppendXmlDoc(sb, doc.Description!, indent: string.Empty);
         }
 
-        // Serialize as the string wire value (honouring [JsonStringEnumMemberName]),
-        // not the numeric ordinal — cross-product consumers (Basileus, Zod) read
-        // these as strings.
-        sb.Append("[JsonConverter(typeof(JsonStringEnumConverter<")
-          .Append(doc.TypeName).AppendLine(">))]");
+        // Bind only the exact schema strings. JsonStringEnumConverter deliberately
+        // accepts case-insensitive CLR names and quoted numeric ordinals, so it is
+        // too permissive for a closed cross-product contract vocabulary.
+        sb.Append("[JsonConverter(typeof(").Append(doc.TypeName).AppendLine("JsonConverter))]");
         sb.Append("public enum ").Append(doc.TypeName).AppendLine();
         sb.AppendLine("{");
 
@@ -295,7 +294,65 @@ public static class RecordEmitter
         }
 
         sb.AppendLine("}");
+        sb.AppendLine();
+        AppendExactEnumConverter(
+            sb,
+            doc.TypeName,
+            doc.EnumValues.Select(wire => (Member: ToPascalCase(wire), Wire: wire)).ToList());
         return sb.ToString();
+    }
+
+    private static void AppendExactEnumConverter(
+        StringBuilder sb,
+        string enumName,
+        IReadOnlyList<(string Member, string Wire)> values)
+    {
+        // System.Text.Json source-generated contexts instantiate a converter
+        // from the consuming assembly. The converter therefore has to be
+        // publicly accessible when its enum is public.
+        sb.Append("public sealed class ").Append(enumName)
+          .Append("JsonConverter : JsonConverter<").Append(enumName).AppendLine(">");
+        sb.AppendLine("{");
+        sb.Append("    public override ").Append(enumName)
+          .AppendLine(" Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (reader.TokenType != JsonTokenType.String)");
+        sb.AppendLine("        {");
+        sb.Append("            throw new JsonException(\"").Append(enumName)
+          .AppendLine(" requires an exact string wire token.\");");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return reader.GetString() switch");
+        sb.AppendLine("        {");
+        foreach (var (member, wire) in values)
+        {
+            sb.Append("            ").Append(JsonSerializer.Serialize(wire)).Append(" => ")
+              .Append(enumName).Append('.').Append(member).AppendLine(",");
+        }
+
+        sb.Append("            _ => throw new JsonException(\"Unknown ").Append(enumName)
+          .AppendLine(" wire token.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.Append("    public override void Write(Utf8JsonWriter writer, ").Append(enumName)
+          .AppendLine(" value, JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var token = value switch");
+        sb.AppendLine("        {");
+        foreach (var (member, wire) in values)
+        {
+            sb.Append("            ").Append(enumName).Append('.').Append(member).Append(" => ")
+              .Append(JsonSerializer.Serialize(wire)).AppendLine(",");
+        }
+
+        sb.Append("            _ => throw new JsonException(\"Unknown ").Append(enumName)
+          .AppendLine(" value.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine();
+        sb.AppendLine("        writer.WriteStringValue(token);");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
     }
 
     private static string EmitRecord(
@@ -318,11 +375,22 @@ public static class RecordEmitter
         var emitProps = isUnionArm
             ? doc.Properties.Where(p => !string.Equals(p.WireName, binding!.DiscriminatorName, StringComparison.Ordinal)).ToList()
             : doc.Properties;
+        var validatedReferenceProperties = doc.TypeName.StartsWith("Action", StringComparison.Ordinal)
+            ? emitProps
+                .Where(property => property.Required && IsReferenceProperty(property, docs))
+                .ToList()
+            : [];
 
         sb.Append("public sealed record ").Append(doc.TypeName);
         if (isUnionArm)
         {
             sb.Append(" : ").Append(binding!.BaseTypeName);
+        }
+
+        if (validatedReferenceProperties.Count > 0)
+        {
+            sb.Append(isUnionArm ? ", " : " : ")
+                .Append("IJsonOnDeserialized, IJsonOnSerializing");
         }
 
         sb.AppendLine();
@@ -340,6 +408,11 @@ public static class RecordEmitter
             }
 
             sb.Append("    [JsonPropertyName(\"").Append(prop.WireName).AppendLine("\")]");
+            if (prop.Required)
+            {
+                sb.AppendLine("    [JsonRequired]");
+            }
+
             sb.Append("    public ").Append(clrType).Append(' ').Append(propName)
               .Append(" { get; init; }");
 
@@ -356,6 +429,36 @@ public static class RecordEmitter
             {
                 sb.AppendLine();
             }
+        }
+
+        if (validatedReferenceProperties.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("    void IJsonOnDeserialized.OnDeserialized() =>");
+            sb.AppendLine("        ValidateRequiredReferences();");
+            sb.AppendLine();
+            sb.AppendLine("    void IJsonOnSerializing.OnSerializing() =>");
+            sb.AppendLine("        ValidateRequiredReferences();");
+            sb.AppendLine();
+            sb.AppendLine("    private void ValidateRequiredReferences()");
+            sb.AppendLine("    {");
+            foreach (var property in validatedReferenceProperties)
+            {
+                sb.Append("        global::Strategos.Contracts.ContractJsonValidation.")
+                    .Append(property.IsArray ? "RequireNoNullElements" : "RequireNotNull")
+                    .Append('(').Append(ToPascalCase(property.WireName)).Append(", \"")
+                    .Append(doc.TypeName).Append('.').Append(property.WireName).AppendLine("\");");
+            }
+
+            if (string.Equals(doc.TypeName, "ActionPropertyReferenceV1", StringComparison.Ordinal))
+            {
+                sb.AppendLine(
+                    "        global::Strategos.Contracts.ContractJsonValidation.RequireEnumTypeName("
+                    + "ScalarKind == ActionPredicateScalarKindV1.Enum, EnumTypeName, "
+                    + "\"ActionPropertyReferenceV1.enumTypeName\");");
+            }
+
+            sb.AppendLine("    }");
         }
 
         sb.AppendLine("}");
@@ -424,10 +527,26 @@ public static class RecordEmitter
             {
                 return $"IReadOnlyDictionary<string, {MapScalar(target.MapValueScalar)}>";
             }
+
+            // A constrained TypeSpec scalar emits as its own JSON Schema document.
+            // Preserve the constraint in schema while projecting its primitive wire
+            // representation into C# (for example, a non-empty string stays string).
+            if (target.UnderlyingScalarType is not null)
+            {
+                return MapScalar(target.UnderlyingScalarType);
+            }
         }
 
         // Open object / scalar alias / unknown ref: an opaque payload.
         return "object";
+    }
+
+    private static bool IsReferenceProperty(
+        PropertyInfo property,
+        IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        _ = MapType(property, docs, out _, out var isReference);
+        return isReference;
     }
 
     private static string MapScalar(string? jsonType) => jsonType switch
@@ -556,6 +675,13 @@ public static class RecordEmitter
         /// </summary>
         public string? MapValueScalar { get; init; }
 
+        /// <summary>
+        /// The JSON scalar type represented by a named scalar-alias schema. This lets
+        /// constrained TypeSpec scalars retain their primitive CLR representation when
+        /// another schema references them.
+        /// </summary>
+        public string? UnderlyingScalarType { get; init; }
+
         public static SchemaDoc Classify(string fileName, JsonElement root)
         {
             var typeName = ToPascalCase(Path.GetFileNameWithoutExtension(fileName));
@@ -635,6 +761,11 @@ public static class RecordEmitter
             // typed additionalProperties/unevaluatedProperties) → a strongly-typed map.
             // Record<unknown> (no value type) has none and stays an opaque open object.
             var mapValueScalar = isObject ? ReadMapValueScalar(root) : null;
+            var underlyingScalarType = !isObject
+                && root.TryGetProperty("type", out var scalarType)
+                && scalarType.ValueKind == JsonValueKind.String
+                    ? scalarType.GetString()
+                    : null;
 
             return new SchemaDoc
             {
@@ -643,6 +774,7 @@ public static class RecordEmitter
                 Kind = SchemaKind.OpenObjectOrScalar,
                 Description = description,
                 MapValueScalar = mapValueScalar,
+                UnderlyingScalarType = underlyingScalarType,
             };
         }
 

@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -13,7 +15,7 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// Outcome of a coding attempt.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<CodingAttemptOutcome>))]
+[JsonConverter(typeof(CodingAttemptOutcomeJsonConverter))]
 public enum CodingAttemptOutcome
 {
     [JsonStringEnumMemberName("success")]
@@ -27,4 +29,38 @@ public enum CodingAttemptOutcome
 
     [JsonStringEnumMemberName("loop_detected")]
     LoopDetected,
+}
+
+public sealed class CodingAttemptOutcomeJsonConverter : JsonConverter<CodingAttemptOutcome>
+{
+    public override CodingAttemptOutcome Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("CodingAttemptOutcome requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "success" => CodingAttemptOutcome.Success,
+            "tests_failed" => CodingAttemptOutcome.TestsFailed,
+            "budget_exhausted" => CodingAttemptOutcome.BudgetExhausted,
+            "loop_detected" => CodingAttemptOutcome.LoopDetected,
+            _ => throw new JsonException("Unknown CodingAttemptOutcome wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, CodingAttemptOutcome value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            CodingAttemptOutcome.Success => "success",
+            CodingAttemptOutcome.TestsFailed => "tests_failed",
+            CodingAttemptOutcome.BudgetExhausted => "budget_exhausted",
+            CodingAttemptOutcome.LoopDetected => "loop_detected",
+            _ => throw new JsonException("Unknown CodingAttemptOutcome value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

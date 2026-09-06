@@ -21,18 +21,21 @@ public sealed record LowConfidenceHandlerDefinition
     /// Stable handler identifier.
     /// </summary>
     [JsonPropertyName("handlerId")]
+    [JsonRequired]
     public string HandlerId { get; init; } = default!;
 
     /// <summary>
     /// Steps run when confidence is below threshold.
     /// </summary>
     [JsonPropertyName("handlerSteps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> HandlerSteps { get; init; } = default!;
 
     /// <summary>
     /// Whether the handler terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 
     /// <summary>

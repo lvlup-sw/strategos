@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionNotPredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "not"
+        },
+        "predicate": {
+            "$ref": "ActionPredicateV1.json"
+        }
+    },
+    "required": [
+        "kind",
+        "predicate"
+    ],
+    "description": "Negation of one closed predicate."
+}

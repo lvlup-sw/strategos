@@ -21,23 +21,27 @@ public sealed record JourneyOutcome
     /// Catalog workflow identity of the journey that ran.
     /// </summary>
     [JsonPropertyName("workflowId")]
+    [JsonRequired]
     public string WorkflowId { get; init; } = default!;
 
     /// <summary>
     /// Pinned catalog version of the journey that ran.
     /// </summary>
     [JsonPropertyName("catalogVersion")]
+    [JsonRequired]
     public string CatalogVersion { get; init; } = default!;
 
     /// <summary>
     /// The outcome of this individual journey.
     /// </summary>
     [JsonPropertyName("outcome")]
+    [JsonRequired]
     public JourneyOutcomeStatus Outcome { get; init; }
 
     /// <summary>
     /// Reference to the evidence (logs/artifacts) this journey produced.
     /// </summary>
     [JsonPropertyName("evidenceRef")]
+    [JsonRequired]
     public string EvidenceRef { get; init; } = default!;
 }

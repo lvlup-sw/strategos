@@ -29,14 +29,7 @@ internal sealed class InterfaceBuilder<T>(string name) : IInterfaceBuilder<T>
             Properties = _properties.AsReadOnly(),
             Actions = _actionBuilders.ConvertAll(b =>
             {
-                var desc = b.Build();
-                return new InterfaceActionDescriptor
-                {
-                    Name = desc.Name,
-                    Description = string.IsNullOrEmpty(desc.Description) ? null : desc.Description,
-                    AcceptsTypeName = desc.AcceptsType?.Name,
-                    ReturnsTypeName = desc.ReturnsType?.Name,
-                };
+                return b.BuildInterfaceAction();
             }).AsReadOnly(),
         };
 }

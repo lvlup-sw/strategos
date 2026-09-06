@@ -17,11 +17,14 @@ namespace Strategos.Contracts.Generated;
 public sealed record IntentEnrichedData
 {
     [JsonPropertyName("recordId")]
+    [JsonRequired]
     public string RecordId { get; init; } = default!;
 
     [JsonPropertyName("featureId")]
+    [JsonRequired]
     public string FeatureId { get; init; } = default!;
 
     [JsonPropertyName("domainLayer")]
+    [JsonRequired]
     public DomainLayerData DomainLayer { get; init; } = default!;
 }

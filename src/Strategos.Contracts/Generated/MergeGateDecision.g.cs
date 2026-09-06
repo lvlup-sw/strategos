@@ -29,42 +29,49 @@ public sealed record MergeGateDecision
     /// Wire schema version literal.
     /// </summary>
     [JsonPropertyName("schemaVersion")]
+    [JsonRequired]
     public string SchemaVersion { get; init; } = default!;
 
     /// <summary>
     /// The gate&apos;s verdict.
     /// </summary>
     [JsonPropertyName("decision")]
+    [JsonRequired]
     public MergeDecision Decision { get; init; }
 
     /// <summary>
     /// Model confidence in the decision, in the unit interval.
     /// </summary>
     [JsonPropertyName("confidence")]
+    [JsonRequired]
     public double Confidence { get; init; }
 
     /// <summary>
     /// Human-readable rationale for the decision.
     /// </summary>
     [JsonPropertyName("rationale")]
+    [JsonRequired]
     public string Rationale { get; init; } = default!;
 
     /// <summary>
     /// How the evaluated diff was classified.
     /// </summary>
     [JsonPropertyName("diffClassification")]
+    [JsonRequired]
     public DiffClassification DiffClassification { get; init; }
 
     /// <summary>
     /// Risk signals the gate surfaced (free-form monikers).
     /// </summary>
     [JsonPropertyName("riskSignals")]
+    [JsonRequired]
     public IReadOnlyList<string> RiskSignals { get; init; } = default!;
 
     /// <summary>
     /// Journeys the gate suggests running, typed as `WorkflowRef` (INV-8).
     /// </summary>
     [JsonPropertyName("suggestedJourneys")]
+    [JsonRequired]
     public IReadOnlyList<WorkflowRef> SuggestedJourneys { get; init; } = default!;
 
     /// <summary>
@@ -77,29 +84,34 @@ public sealed record MergeGateDecision
     /// The prompt that produced this decision.
     /// </summary>
     [JsonPropertyName("promptId")]
+    [JsonRequired]
     public string PromptId { get; init; } = default!;
 
     /// <summary>
     /// The model that produced this decision.
     /// </summary>
     [JsonPropertyName("modelId")]
+    [JsonRequired]
     public string ModelId { get; init; } = default!;
 
     /// <summary>
     /// Shared SMQ response metadata block (degraded seam + merge context).
     /// </summary>
     [JsonPropertyName("_meta")]
+    [JsonRequired]
     public MergeQueueMetaV1 Meta { get; init; } = default!;
 
     /// <summary>
     /// Shared performance telemetry block.
     /// </summary>
     [JsonPropertyName("_perf")]
+    [JsonRequired]
     public PerfMetaV1 Perf { get; init; } = default!;
 
     /// <summary>
     /// Ordered next actions for the consumer, as a verb-discriminated `NextAction` union.
     /// </summary>
     [JsonPropertyName("nextActions")]
+    [JsonRequired]
     public IReadOnlyList<NextAction> NextActions { get; init; } = default!;
 }

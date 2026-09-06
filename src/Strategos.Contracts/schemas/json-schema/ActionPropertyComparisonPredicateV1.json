@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionPropertyComparisonPredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "property-comparison"
+        },
+        "property": {
+            "$ref": "ActionPropertyReferenceV1.json"
+        },
+        "operator": {
+            "$ref": "ActionComparisonOperatorV1.json"
+        },
+        "value": {
+            "$ref": "ActionLiteralV1.json"
+        }
+    },
+    "required": [
+        "kind",
+        "property",
+        "operator",
+        "value"
+    ],
+    "description": "Compare one ontology property with a typed literal."
+}

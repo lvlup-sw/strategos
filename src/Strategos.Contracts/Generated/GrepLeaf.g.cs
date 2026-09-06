@@ -23,6 +23,7 @@ public sealed record GrepLeaf : CheckNode
     /// The pattern to match (regex/literal); inert match data, not a command.
     /// </summary>
     [JsonPropertyName("pattern")]
+    [JsonRequired]
     public string Pattern { get; init; } = default!;
 
     /// <summary>

@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionRelationHoldsPredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "relation-holds"
+        },
+        "relationName": {
+            "type": "string",
+            "minLength": 1
+        },
+        "linkPath": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionLinkPathSegmentV1.json"
+            }
+        }
+    },
+    "required": [
+        "kind",
+        "relationName",
+        "linkPath"
+    ],
+    "description": "Assert that a named relation holds after following an ontology link path."
+}

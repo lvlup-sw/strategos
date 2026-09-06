@@ -21,24 +21,28 @@ public sealed record BranchPathDefinition
     /// Stable branch-path identifier.
     /// </summary>
     [JsonPropertyName("pathId")]
+    [JsonRequired]
     public string PathId { get; init; } = default!;
 
     /// <summary>
     /// Human-readable condition description (for visualization / diff).
     /// </summary>
     [JsonPropertyName("conditionDescription")]
+    [JsonRequired]
     public string ConditionDescription { get; init; } = default!;
 
     /// <summary>
     /// Steps executed on this path.
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
     /// Whether this path terminates without rejoining.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 
     /// <summary>

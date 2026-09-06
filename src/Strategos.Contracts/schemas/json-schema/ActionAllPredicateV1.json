@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionAllPredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "all"
+        },
+        "predicates": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionPredicateV1.json"
+            }
+        }
+    },
+    "required": [
+        "kind",
+        "predicates"
+    ],
+    "description": "Conjunction. Empty input canonicalizes to true in the runtime model."
+}

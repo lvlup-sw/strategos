@@ -1,36 +1,36 @@
-using System.Collections.Immutable;
-
 namespace Strategos.Ontology.Descriptors;
 
 public sealed record ActionPrecondition
 {
-    public required string Expression { get; init; }
-
-    public required string Description { get; init; }
-
-    public required PreconditionKind Kind { get; init; }
-
-    public string? LinkName { get; init; }
-
     /// <summary>
-    /// Gets the final relation that must connect the resource selected by
-    /// <see cref="LinkPath"/> to the calling principal.
+    /// Initializes a typed action precondition.
     /// </summary>
-    public string? RelationName { get; init; }
+    public ActionPrecondition(
+        ActionPredicate predicate,
+        string description,
+        ConstraintStrength strength = ConstraintStrength.Hard)
+    {
+        Predicate = predicate ?? throw new ArgumentNullException(nameof(predicate));
+        Description = description ?? throw new ArgumentNullException(nameof(description));
+        Strength = strength;
+    }
 
-    /// <summary>
-    /// Gets the ordered link path from the action target to the resource on
-    /// which <see cref="RelationName"/> must hold. An empty path evaluates the
-    /// relation directly on the action target.
-    /// </summary>
-    public ImmutableArray<string> LinkPath { get; init; } = ImmutableArray<string>.Empty;
+    /// <summary>Gets the typed predicate.</summary>
+    public ActionPredicate Predicate { get; }
+
+    /// <summary>Gets presentation-only prose describing the constraint.</summary>
+    public string Description { get; }
+
+    /// <summary>Gets the canonical display projection. It is never reparsed.</summary>
+    public string Expression => Predicate.Expression;
 
     /// <summary>
     /// Gets whether this precondition is opaque to build-time composition.
     /// Opaque preconditions remain runtime concerns and are not treated as
     /// members of the decidable predicate fragment.
     /// </summary>
-    public bool IsOpaque => Kind == PreconditionKind.Custom;
+    public bool IsOpaque => Predicate.ContainsCustom;
 
-    public ConstraintStrength Strength { get; init; } = ConstraintStrength.Hard;
+    /// <summary>Gets whether the constraint blocks dispatch.</summary>
+    public ConstraintStrength Strength { get; }
 }

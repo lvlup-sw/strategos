@@ -17,18 +17,23 @@ namespace Strategos.Contracts.Generated;
 public sealed record IntentProposedData
 {
     [JsonPropertyName("recordId")]
+    [JsonRequired]
     public string RecordId { get; init; } = default!;
 
     [JsonPropertyName("featureId")]
+    [JsonRequired]
     public string FeatureId { get; init; } = default!;
 
     [JsonPropertyName("processLayer")]
+    [JsonRequired]
     public ProcessLayerData ProcessLayer { get; init; } = default!;
 
     [JsonPropertyName("delegationPolicy")]
+    [JsonRequired]
     public DelegationPolicy DelegationPolicy { get; init; }
 
     [JsonPropertyName("ontologyVersion")]
+    [JsonRequired]
     public string OntologyVersion { get; init; } = default!;
 
     [JsonPropertyName("branch")]

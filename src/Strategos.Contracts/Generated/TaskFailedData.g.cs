@@ -17,9 +17,11 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskFailedData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("error")]
+    [JsonRequired]
     public string Error { get; init; } = default!;
 
     [JsonPropertyName("diagnostics")]

@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionTruePredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "true"
+        }
+    },
+    "required": [
+        "kind"
+    ],
+    "description": "Predicate that is satisfied by every state."
+}

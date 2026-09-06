@@ -21,6 +21,7 @@ public sealed record DomainLayerData
     /// Ontology nodes the change touches (OntologyNodeRef lands with §4.4).
     /// </summary>
     [JsonPropertyName("affectedNodes")]
+    [JsonRequired]
     public IReadOnlyList<object> AffectedNodes { get; init; } = default!;
 
     /// <summary>

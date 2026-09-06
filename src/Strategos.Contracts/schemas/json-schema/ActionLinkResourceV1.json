@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionLinkResourceV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "link"
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1
+        }
+    },
+    "required": [
+        "kind",
+        "name"
+    ],
+    "description": "A link resource declared in a custom predicate's read set."
+}

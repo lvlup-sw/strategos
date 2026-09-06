@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.Text.Json.Serialization;
+
 namespace Strategos.Ontology.MCP;
 
 /// <summary>
@@ -14,4 +17,13 @@ public sealed record ActionSemanticSummary(
     IReadOnlyList<string> AllowedClients,
     bool RequiresConfirmation,
     IReadOnlyList<Strategos.Ontology.Descriptors.ActionResource> TouchedResources,
-    string? CompensatingActionName);
+    string? CompensatingActionName)
+{
+    /// <summary>Typed hard and soft requirements in the Contracts 0.10 wire shape.</summary>
+    [JsonPropertyName("requires")]
+    public ImmutableArray<ActionRequirementV1> Requires { get; init; } = [];
+
+    /// <summary>Explicit post-state guarantees in the Contracts 0.10 wire shape.</summary>
+    [JsonPropertyName("ensures")]
+    public ImmutableArray<ActionGuaranteeV1> Ensures { get; init; } = [];
+}

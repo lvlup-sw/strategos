@@ -25,18 +25,21 @@ public sealed record ApprovalDefinition
     /// Stable approval-point identifier.
     /// </summary>
     [JsonPropertyName("approvalPointId")]
+    [JsonRequired]
     public string ApprovalPointId { get; init; } = default!;
 
     /// <summary>
     /// Simple-name CLR moniker of the approver type (LB-2).
     /// </summary>
     [JsonPropertyName("approverType")]
+    [JsonRequired]
     public string ApproverType { get; init; } = default!;
 
     /// <summary>
     /// Step id immediately preceding this approval gate.
     /// </summary>
     [JsonPropertyName("precedingStepId")]
+    [JsonRequired]
     public string PrecedingStepId { get; init; } = default!;
 
     /// <summary>

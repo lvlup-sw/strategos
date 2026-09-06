@@ -46,24 +46,30 @@ public interface IActionBuilder<T> : IActionBuilder
 
     IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector);
 
+    /// <summary>Adds a hard typed precondition.</summary>
+    new IActionBuilder<T> Requires(ActionPredicate predicate, string? description = null);
+
     /// <summary>
     /// Declares a hard property-predicate precondition on the action.
     /// </summary>
     /// <param name="predicate">Expression evaluated against the object instance.</param>
     /// <returns>The same generic builder instance for fluent chaining.</returns>
-    /// <remarks>
-    /// Prefer <see cref="Strategos.Ontology.Descriptors.ActionDescriptor.Preconditions"/>.
-    /// There is no fluent successor; this method remains only so existing
-    /// CLR-generic <c>Object&lt;T&gt;</c> authoring still compiles.
-    /// </remarks>
-    [Obsolete("Use ActionDescriptor.Preconditions to declare action preconditions. There is no fluent successor.")]
     IActionBuilder<T> Requires(Expression<Func<T, bool>> predicate);
+
+    /// <summary>Adds a soft typed precondition.</summary>
+    new IActionBuilder<T> RequiresSoft(ActionPredicate predicate, string? description = null);
 
     IActionBuilder<T> RequiresSoft(Expression<Func<T, bool>> predicate);
 
-    IActionBuilder<T> RequiresLink(string linkName);
+    /// <summary>Adds an explicit typed post-state guarantee.</summary>
+    new IActionBuilder<T> Ensures(ActionPredicate predicate, string? description = null);
 
-    IActionBuilder<T> RequiresLinkSoft(string linkName);
+    /// <summary>Adds an explicit expression-based post-state guarantee.</summary>
+    IActionBuilder<T> Ensures(Expression<Func<T, bool>> predicate);
+
+    new IActionBuilder<T> RequiresLink(string linkName);
+
+    new IActionBuilder<T> RequiresLinkSoft(string linkName);
 
     /// <summary>
     /// Declares that the calling principal must be reachable from the action
@@ -73,7 +79,11 @@ public interface IActionBuilder<T> : IActionBuilder
     /// <param name="relationName">Final link from the selected resource to the principal.</param>
     /// <param name="linkPath">Ordered links from the action target to that resource.</param>
     /// <returns>The same generic builder instance for fluent chaining.</returns>
-    IActionBuilder<T> RequiresRelation(string relationName, params string[] linkPath);
+    new IActionBuilder<T> RequiresRelation(string relationName, params string[] linkPath);
+
+    new IActionBuilder<T> EnsuresLink(string linkName);
+
+    new IActionBuilder<T> EnsuresRelation(string relationName, params string[] linkPath);
 
     IActionBuilder<T> Modifies(Expression<Func<T, object>> propertySelector);
 

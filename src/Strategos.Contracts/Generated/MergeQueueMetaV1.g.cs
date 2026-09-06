@@ -24,6 +24,7 @@ public sealed record MergeQueueMetaV1
     /// decision as authoritative and MUST short-circuit &quot;use the decision&quot; logic.
     /// </summary>
     [JsonPropertyName("degraded")]
+    [JsonRequired]
     public bool Degraded { get; init; }
 
     /// <summary>
@@ -36,23 +37,27 @@ public sealed record MergeQueueMetaV1
     /// The commit SHA at the head of the change under evaluation.
     /// </summary>
     [JsonPropertyName("headSha")]
+    [JsonRequired]
     public string HeadSha { get; init; } = default!;
 
     /// <summary>
     /// The base commit SHA the change merges into.
     /// </summary>
     [JsonPropertyName("baseSha")]
+    [JsonRequired]
     public string BaseSha { get; init; } = default!;
 
     /// <summary>
     /// The merge group / queue batch this evaluation belongs to.
     /// </summary>
     [JsonPropertyName("mergeGroupId")]
+    [JsonRequired]
     public string MergeGroupId { get; init; } = default!;
 
     /// <summary>
     /// The evaluator tier that produced the response (e.g. Tier 1 merge-gate, Tier 2 e2e).
     /// </summary>
     [JsonPropertyName("evaluatorTier")]
+    [JsonRequired]
     public string EvaluatorTier { get; init; } = default!;
 }

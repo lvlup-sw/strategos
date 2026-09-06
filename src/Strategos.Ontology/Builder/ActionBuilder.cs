@@ -2,7 +2,7 @@ using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Builder;
 
-internal sealed class ActionBuilder(string name) : IActionBuilder
+internal sealed class ActionBuilder(string name, ActionSubject? subject = null) : IActionBuilder
 {
     private string _description = string.Empty;
     private Type? _acceptsType;
@@ -16,6 +16,8 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
     private string? _requiredAuthority;
     private string? _compensatingActionName;
     private readonly HashSet<ActionResource> _touchedResources = [];
+    private readonly List<ActionPrecondition> _preconditions = [];
+    private readonly List<ActionGuarantee> _ensures = [];
 
     public IActionBuilder Description(string description)
     {
@@ -84,8 +86,57 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
         return this;
     }
 
-    public ActionDescriptor Build() =>
-        new(name, _description)
+    public IActionBuilder Requires(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _preconditions.Add(new ActionPrecondition(
+            predicate,
+            description ?? predicate.Expression,
+            ConstraintStrength.Hard));
+        return this;
+    }
+
+    public IActionBuilder RequiresSoft(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _preconditions.Add(new ActionPrecondition(
+            predicate,
+            description ?? predicate.Expression,
+            ConstraintStrength.Soft));
+        return this;
+    }
+
+    public IActionBuilder Ensures(ActionPredicate predicate, string? description = null)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        _ensures.Add(new ActionGuarantee(predicate, description));
+        return this;
+    }
+
+    public IActionBuilder RequiresLink(string linkName) =>
+        Requires(
+            ActionPredicate.LinkExists(linkName),
+            $"Requires link '{linkName}' to have at least one target");
+
+    public IActionBuilder RequiresLinkSoft(string linkName) =>
+        RequiresSoft(
+            ActionPredicate.LinkExists(linkName),
+            $"Prefers link '{linkName}' to have at least one target");
+
+    public IActionBuilder RequiresRelation(string relationName, params string[] linkPath) =>
+        Requires(
+            ActionPredicate.RelationHolds(relationName, linkPath),
+            $"Requires the caller to hold relation '{relationName}' via {FormatPath(linkPath)}");
+
+    public IActionBuilder EnsuresLink(string linkName) =>
+        Ensures(ActionPredicate.LinkExists(linkName));
+
+    public IActionBuilder EnsuresRelation(string relationName, params string[] linkPath) =>
+        Ensures(ActionPredicate.RelationHolds(relationName, linkPath));
+
+    public ActionDescriptor Build(ActionSubject? subjectOverride = null) =>
+        new(subjectOverride ?? subject ?? throw new InvalidOperationException(
+            $"Executable action '{name}' must be built for an ActionSubject."), name, _description)
         {
             AcceptsType = _acceptsType,
             ReturnsType = _returnsType,
@@ -98,5 +149,19 @@ internal sealed class ActionBuilder(string name) : IActionBuilder
             RequiredAuthority = _requiredAuthority,
             TouchedResources = _touchedResources.ToArray(),
             CompensatingActionName = _compensatingActionName,
+            Preconditions = _preconditions,
+            Ensures = _ensures,
         };
+
+    internal InterfaceActionDescriptor BuildInterfaceAction() =>
+        new()
+        {
+            Name = name,
+            Description = string.IsNullOrEmpty(_description) ? null : _description,
+            AcceptsTypeName = _acceptsType?.Name,
+            ReturnsTypeName = _returnsType?.Name,
+        };
+
+    private static string FormatPath(IReadOnlyList<string> linkPath) =>
+        linkPath.Count == 0 ? "target" : string.Join("/", linkPath);
 }

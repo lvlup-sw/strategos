@@ -21,5 +21,6 @@ public sealed record NotNode : CheckNode
     /// The single child check to negate (recurses into CheckNode).
     /// </summary>
     [JsonPropertyName("child")]
+    [JsonRequired]
     public CheckNode Child { get; init; } = default!;
 }

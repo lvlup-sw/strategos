@@ -22,5 +22,6 @@ public sealed record AuditEnforcement : Enforcement
     /// Natural-language audit prompt (kebab-case wire name); inert prose.
     /// </summary>
     [JsonPropertyName("audit-prompt")]
+    [JsonRequired]
     public string AuditPrompt { get; init; } = default!;
 }

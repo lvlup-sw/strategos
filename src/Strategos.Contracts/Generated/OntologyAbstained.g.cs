@@ -35,11 +35,13 @@ public sealed record OntologyAbstained
     /// Envelope type discriminator — pins this event to `ontology.abstained` (satisfies SdlcEventEnvelope.type).
     /// </summary>
     [JsonPropertyName("type")]
+    [JsonRequired]
     public string Type { get; init; } = default!;
 
     /// <summary>
     /// How many nearest non-matching records the abstention surfaced — a COUNT, never the record identities or contents (no data exfiltration through audit).
     /// </summary>
     [JsonPropertyName("nearestRecordsCount")]
+    [JsonRequired]
     public int NearestRecordsCount { get; init; }
 }

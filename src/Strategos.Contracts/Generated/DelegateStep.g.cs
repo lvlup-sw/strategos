@@ -23,12 +23,14 @@ public sealed record DelegateStep : StepDefinition
     /// Stable step identifier (the builder&apos;s `StepDefinition.StepId`).
     /// </summary>
     [JsonPropertyName("stepId")]
+    [JsonRequired]
     public string StepId { get; init; } = default!;
 
     /// <summary>
     /// Step name (the builder&apos;s `StepDefinition.StepName`).
     /// </summary>
     [JsonPropertyName("stepName")]
+    [JsonRequired]
     public string StepName { get; init; } = default!;
 
     /// <summary>
@@ -41,6 +43,7 @@ public sealed record DelegateStep : StepDefinition
     /// Whether this step terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 
     /// <summary>
@@ -59,5 +62,6 @@ public sealed record DelegateStep : StepDefinition
     /// Declares this step was a lambda whose body was dropped (LB-1). Always true.
     /// </summary>
     [JsonPropertyName("lambda")]
+    [JsonRequired]
     public bool Lambda { get; init; }
 }

@@ -20,5 +20,6 @@ public sealed record InspectPositionRequest
     /// Stable position identifier.
     /// </summary>
     [JsonPropertyName("positionId")]
+    [JsonRequired]
     public string PositionId { get; init; } = default!;
 }

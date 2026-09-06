@@ -18,7 +18,7 @@ internal static class GeneratedContractOntology
             Kind = ObjectKind.Entity,
             Actions =
             [
-                new ActionDescriptor("inspectPosition", "Inspect a position visible through its owning portfolio.")
+                new ActionDescriptor(new ActionSubject("Trading", "Position"), "inspectPosition", "Inspect a position visible through its owning portfolio.")
                 {
                     IsReadOnly = true,
                     Idempotent = true,
@@ -27,14 +27,12 @@ internal static class GeneratedContractOntology
                     AllowedClients = ImmutableArray.Create("mcp", "web"),
                     Preconditions =
                     [
-                        new ActionPrecondition
-                        {
-                            Expression = "relation:owner",
-                            Description = "Requires relation \u0027owner\u0027.",
-                            Kind = PreconditionKind.RelationHolds,
-                            RelationName = "owner",
-                            LinkPath = ImmutableArray.Create("Portfolio"),
-                        },
+                        new ActionPrecondition(ActionPredicate.Property(new PredicatePropertyReference("status", PredicateScalarKind.String, false), PredicateComparisonOperator.NotEqual, PredicateLiteral.String("closed")), "The position should not already be closed.", ConstraintStrength.Soft),
+                        new ActionPrecondition(ActionPredicate.RelationHolds("owner", "Portfolio"), "Requires relation \u0027owner\u0027.", ConstraintStrength.Hard),
+                    ],
+                    Ensures =
+                    [
+                        new ActionGuarantee(ActionPredicate.RelationHolds("owner", "Portfolio"), "The ownership relation remains established."),
                     ],
                 },
             ],

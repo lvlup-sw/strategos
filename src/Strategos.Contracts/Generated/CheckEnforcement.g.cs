@@ -22,5 +22,6 @@ public sealed record CheckEnforcement : Enforcement
     /// The declarative check tree evaluated to enforce the invariant.
     /// </summary>
     [JsonPropertyName("check")]
+    [JsonRequired]
     public CheckNode Check { get; init; } = default!;
 }

@@ -20,11 +20,13 @@ public sealed record InspectPositionResult
     /// Stable position identifier.
     /// </summary>
     [JsonPropertyName("positionId")]
+    [JsonRequired]
     public string PositionId { get; init; } = default!;
 
     /// <summary>
     /// Current position status.
     /// </summary>
     [JsonPropertyName("status")]
+    [JsonRequired]
     public string Status { get; init; } = default!;
 }

@@ -22,17 +22,20 @@ public sealed record PipelineProbe
     /// Stable identifier for the probe instance.
     /// </summary>
     [JsonPropertyName("id")]
+    [JsonRequired]
     public string Id { get; init; } = default!;
 
     /// <summary>
     /// Monotonic sequence — int32 (not int64) to avoid the JSON Schema string coercion.
     /// </summary>
     [JsonPropertyName("sequence")]
+    [JsonRequired]
     public int Sequence { get; init; }
 
     /// <summary>
     /// Free-form tags, proving collection emission.
     /// </summary>
     [JsonPropertyName("tags")]
+    [JsonRequired]
     public IReadOnlyList<string> Tags { get; init; } = default!;
 }

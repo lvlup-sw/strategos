@@ -30,41 +30,48 @@ public sealed record JourneyResult
     /// The overall outcome across all journeys.
     /// </summary>
     [JsonPropertyName("outcome")]
+    [JsonRequired]
     public JourneyOutcomeStatus Outcome { get; init; }
 
     /// <summary>
     /// Per-journey outcomes, typed as `JourneyOutcome` records.
     /// </summary>
     [JsonPropertyName("journeyOutcomes")]
+    [JsonRequired]
     public IReadOnlyList<JourneyOutcome> JourneyOutcomes { get; init; } = default!;
 
     /// <summary>
     /// Token/cost accounting for the journey run.
     /// </summary>
     [JsonPropertyName("budgetConsumed")]
+    [JsonRequired]
     public BudgetConsumedV1 BudgetConsumed { get; init; } = default!;
 
     /// <summary>
     /// Reference to the G3 provenance envelope for this run.
     /// </summary>
     [JsonPropertyName("provenanceRef")]
+    [JsonRequired]
     public string ProvenanceRef { get; init; } = default!;
 
     /// <summary>
     /// Shared SMQ response metadata block (degraded seam + merge context).
     /// </summary>
     [JsonPropertyName("_meta")]
+    [JsonRequired]
     public MergeQueueMetaV1 Meta { get; init; } = default!;
 
     /// <summary>
     /// Shared performance telemetry block.
     /// </summary>
     [JsonPropertyName("_perf")]
+    [JsonRequired]
     public PerfMetaV1 Perf { get; init; } = default!;
 
     /// <summary>
     /// Ordered next actions for the consumer, as a verb-discriminated `NextAction` union.
     /// </summary>
     [JsonPropertyName("nextActions")]
+    [JsonRequired]
     public IReadOnlyList<NextAction> NextActions { get; init; } = default!;
 }

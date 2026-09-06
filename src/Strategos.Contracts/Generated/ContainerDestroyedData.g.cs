@@ -17,14 +17,18 @@ namespace Strategos.Contracts.Generated;
 public sealed record ContainerDestroyedData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("containerId")]
+    [JsonRequired]
     public string ContainerId { get; init; } = default!;
 
     [JsonPropertyName("totalDuration")]
+    [JsonRequired]
     public double TotalDuration { get; init; }
 
     [JsonPropertyName("totalTokens")]
+    [JsonRequired]
     public int TotalTokens { get; init; }
 }

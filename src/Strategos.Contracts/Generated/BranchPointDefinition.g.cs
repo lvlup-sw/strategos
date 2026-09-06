@@ -21,18 +21,21 @@ public sealed record BranchPointDefinition
     /// Stable branch-point identifier.
     /// </summary>
     [JsonPropertyName("branchPointId")]
+    [JsonRequired]
     public string BranchPointId { get; init; } = default!;
 
     /// <summary>
     /// Step id where the branch originates.
     /// </summary>
     [JsonPropertyName("fromStepId")]
+    [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
     /// Available branch paths.
     /// </summary>
     [JsonPropertyName("paths")]
+    [JsonRequired]
     public IReadOnlyList<BranchPathDefinition> Paths { get; init; } = default!;
 
     /// <summary>

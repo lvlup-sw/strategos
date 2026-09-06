@@ -55,6 +55,6 @@ internal sealed class InterfaceMapping<TObject, TInterface> : IInterfaceMapping<
     public IReadOnlyList<InterfaceActionMapping> GetActionMappings() =>
         _actionMappings.AsReadOnly();
 
-    public IReadOnlyList<ActionDescriptor> GetDefaultActions() =>
-        _defaultActionBuilders.ConvertAll(b => b.Build()).AsReadOnly();
+    public IReadOnlyList<ActionDescriptor> GetDefaultActions(ActionSubject subject) =>
+        _defaultActionBuilders.ConvertAll(b => b.Build(subject)).AsReadOnly();
 }

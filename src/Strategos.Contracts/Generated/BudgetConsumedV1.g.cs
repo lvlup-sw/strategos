@@ -21,18 +21,21 @@ public sealed record BudgetConsumedV1
     /// Input (prompt) tokens consumed across the journey run.
     /// </summary>
     [JsonPropertyName("inputTokens")]
+    [JsonRequired]
     public int InputTokens { get; init; }
 
     /// <summary>
     /// Output (completion) tokens produced across the journey run.
     /// </summary>
     [JsonPropertyName("outputTokens")]
+    [JsonRequired]
     public int OutputTokens { get; init; }
 
     /// <summary>
     /// Prompt-cache read tokens served across the journey run.
     /// </summary>
     [JsonPropertyName("cacheReadTokens")]
+    [JsonRequired]
     public int CacheReadTokens { get; init; }
 
     /// <summary>

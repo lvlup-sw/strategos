@@ -21,5 +21,6 @@ public sealed record AnyOfNode : CheckNode
     /// Child checks; at least one must hold (recurses into CheckNode).
     /// </summary>
     [JsonPropertyName("children")]
+    [JsonRequired]
     public IReadOnlyList<CheckNode> Children { get; init; } = default!;
 }

@@ -21,12 +21,14 @@ public sealed record FailureHandlerDefinition
     /// Stable handler identifier.
     /// </summary>
     [JsonPropertyName("handlerId")]
+    [JsonRequired]
     public string HandlerId { get; init; } = default!;
 
     /// <summary>
     /// Handler scope (workflow | step | forkPath).
     /// </summary>
     [JsonPropertyName("scope")]
+    [JsonRequired]
     public FailureHandlerScope Scope { get; init; }
 
     /// <summary>
@@ -39,11 +41,13 @@ public sealed record FailureHandlerDefinition
     /// Recovery steps.
     /// </summary>
     [JsonPropertyName("steps")]
+    [JsonRequired]
     public IReadOnlyList<StepDefinition> Steps { get; init; } = default!;
 
     /// <summary>
     /// Whether the handler terminates the workflow.
     /// </summary>
     [JsonPropertyName("isTerminal")]
+    [JsonRequired]
     public bool IsTerminal { get; init; }
 }

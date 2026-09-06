@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// How the diff under evaluation was classified (#63). Member names are
 /// PascalCase; wire VALUES are the exact snake_case tokens.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DiffClassification>))]
+[JsonConverter(typeof(DiffClassificationJsonConverter))]
 public enum DiffClassification
 {
     [JsonStringEnumMemberName("docs")]
@@ -40,4 +42,46 @@ public enum DiffClassification
 
     [JsonStringEnumMemberName("mixed")]
     Mixed,
+}
+
+public sealed class DiffClassificationJsonConverter : JsonConverter<DiffClassification>
+{
+    public override DiffClassification Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("DiffClassification requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "docs" => DiffClassification.Docs,
+            "test_only" => DiffClassification.TestOnly,
+            "refactor" => DiffClassification.Refactor,
+            "feature" => DiffClassification.Feature,
+            "infra" => DiffClassification.Infra,
+            "schema" => DiffClassification.Schema,
+            "config" => DiffClassification.Config,
+            "mixed" => DiffClassification.Mixed,
+            _ => throw new JsonException("Unknown DiffClassification wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, DiffClassification value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            DiffClassification.Docs => "docs",
+            DiffClassification.TestOnly => "test_only",
+            DiffClassification.Refactor => "refactor",
+            DiffClassification.Feature => "feature",
+            DiffClassification.Infra => "infra",
+            DiffClassification.Schema => "schema",
+            DiffClassification.Config => "config",
+            DiffClassification.Mixed => "mixed",
+            _ => throw new JsonException("Unknown DiffClassification value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

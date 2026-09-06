@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// Source system that emitted an SDLC event. Constrains the envelope&apos;s
 /// `source` field to the two products on the contract boundary.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<EventSource>))]
+[JsonConverter(typeof(EventSourceJsonConverter))]
 public enum EventSource
 {
     [JsonStringEnumMemberName("exarchos")]
@@ -22,4 +24,34 @@ public enum EventSource
 
     [JsonStringEnumMemberName("basileus")]
     Basileus,
+}
+
+public sealed class EventSourceJsonConverter : JsonConverter<EventSource>
+{
+    public override EventSource Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("EventSource requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "exarchos" => EventSource.Exarchos,
+            "basileus" => EventSource.Basileus,
+            _ => throw new JsonException("Unknown EventSource wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, EventSource value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            EventSource.Exarchos => "exarchos",
+            EventSource.Basileus => "basileus",
+            _ => throw new JsonException("Unknown EventSource value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

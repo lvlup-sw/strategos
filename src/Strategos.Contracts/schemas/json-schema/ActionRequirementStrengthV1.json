@@ -1,0 +1,10 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionRequirementStrengthV1.json",
+    "type": "string",
+    "enum": [
+        "hard",
+        "soft"
+    ],
+    "description": "Whether a requirement blocks dispatch or is advisory."
+}

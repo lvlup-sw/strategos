@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionComparisonOperatorV1.json",
+    "type": "string",
+    "enum": [
+        "equal",
+        "not-equal",
+        "less-than",
+        "less-than-or-equal",
+        "greater-than",
+        "greater-than-or-equal"
+    ],
+    "description": "The comparison operators accepted by the closed action-predicate language."
+}

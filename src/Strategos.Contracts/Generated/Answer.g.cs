@@ -24,11 +24,13 @@ public sealed record Answer : AbstentionResponse
     /// The answer text.
     /// </summary>
     [JsonPropertyName("content")]
+    [JsonRequired]
     public string Content { get; init; } = default!;
 
     /// <summary>
     /// The supporting records — NON-EMPTY (`@minItems(1)`). Each is a polyglot RecordRef moniker (INV-8), never a CLR type.
     /// </summary>
     [JsonPropertyName("citations")]
+    [JsonRequired]
     public IReadOnlyList<RecordRef> Citations { get; init; } = default!;
 }

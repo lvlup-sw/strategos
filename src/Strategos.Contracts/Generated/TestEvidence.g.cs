@@ -17,11 +17,14 @@ namespace Strategos.Contracts.Generated;
 public sealed record TestEvidence
 {
     [JsonPropertyName("type")]
+    [JsonRequired]
     public object Type { get; init; } = default!;
 
     [JsonPropertyName("output")]
+    [JsonRequired]
     public string Output { get; init; } = default!;
 
     [JsonPropertyName("passed")]
+    [JsonRequired]
     public bool Passed { get; init; }
 }

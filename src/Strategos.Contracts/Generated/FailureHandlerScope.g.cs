@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// Scope of a failure handler (mirrors the builder&apos;s `FailureHandlerScope`):
 /// the whole workflow, a single step, or one fork path.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FailureHandlerScope>))]
+[JsonConverter(typeof(FailureHandlerScopeJsonConverter))]
 public enum FailureHandlerScope
 {
     [JsonStringEnumMemberName("workflow")]
@@ -25,4 +27,36 @@ public enum FailureHandlerScope
 
     [JsonStringEnumMemberName("forkPath")]
     ForkPath,
+}
+
+public sealed class FailureHandlerScopeJsonConverter : JsonConverter<FailureHandlerScope>
+{
+    public override FailureHandlerScope Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("FailureHandlerScope requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "workflow" => FailureHandlerScope.Workflow,
+            "step" => FailureHandlerScope.Step,
+            "forkPath" => FailureHandlerScope.ForkPath,
+            _ => throw new JsonException("Unknown FailureHandlerScope wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, FailureHandlerScope value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            FailureHandlerScope.Workflow => "workflow",
+            FailureHandlerScope.Step => "step",
+            FailureHandlerScope.ForkPath => "forkPath",
+            _ => throw new JsonException("Unknown FailureHandlerScope value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }

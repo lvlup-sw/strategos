@@ -21,5 +21,6 @@ public sealed record RunBuildkitePipelineAction : NextAction
     /// The pipeline params (the journeys to run).
     /// </summary>
     [JsonPropertyName("params")]
+    [JsonRequired]
     public BuildkitePipelineParams Params { get; init; } = default!;
 }

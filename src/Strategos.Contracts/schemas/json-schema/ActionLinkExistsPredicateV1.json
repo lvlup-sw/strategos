@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionLinkExistsPredicateV1.json",
+    "type": "object",
+    "properties": {
+        "kind": {
+            "type": "string",
+            "const": "link-exists"
+        },
+        "linkName": {
+            "type": "string",
+            "minLength": 1
+        }
+    },
+    "required": [
+        "kind",
+        "linkName"
+    ],
+    "description": "Assert that a named ontology link is present."
+}

@@ -17,6 +17,7 @@ namespace Strategos.Contracts.Generated;
 public sealed record TaskCompletedData
 {
     [JsonPropertyName("taskId")]
+    [JsonRequired]
     public string TaskId { get; init; } = default!;
 
     [JsonPropertyName("acceptanceTestRef")]

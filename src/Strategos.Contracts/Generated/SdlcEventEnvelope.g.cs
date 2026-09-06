@@ -26,24 +26,28 @@ public sealed record SdlcEventEnvelope
     /// Stream identifier for event routing (typically the feature/workflow ID).
     /// </summary>
     [JsonPropertyName("streamId")]
+    [JsonRequired]
     public string StreamId { get; init; } = default!;
 
     /// <summary>
     /// Monotonically increasing sequence number within the stream (int32, not int64).
     /// </summary>
     [JsonPropertyName("sequence")]
+    [JsonRequired]
     public int Sequence { get; init; }
 
     /// <summary>
     /// ISO 8601 UTC timestamp when the event occurred.
     /// </summary>
     [JsonPropertyName("timestamp")]
+    [JsonRequired]
     public string Timestamp { get; init; } = default!;
 
     /// <summary>
     /// Event type discriminator (dot-separated, lowercase). Unknown values are logged, not rejected.
     /// </summary>
     [JsonPropertyName("type")]
+    [JsonRequired]
     public string Type { get; init; } = default!;
 
     /// <summary>

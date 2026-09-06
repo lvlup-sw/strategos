@@ -6,6 +6,8 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Strategos.Contracts.Generated;
@@ -14,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// The merge-gate decision verdict (#63). Member names are PascalCase; the wire
 /// VALUES are the exact snake_case tokens cross-repo consumers match on.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<MergeDecision>))]
+[JsonConverter(typeof(MergeDecisionJsonConverter))]
 public enum MergeDecision
 {
     [JsonStringEnumMemberName("skip")]
@@ -28,4 +30,38 @@ public enum MergeDecision
 
     [JsonStringEnumMemberName("escalate_human")]
     EscalateHuman,
+}
+
+public sealed class MergeDecisionJsonConverter : JsonConverter<MergeDecision>
+{
+    public override MergeDecision Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("MergeDecision requires an exact string wire token.");
+        }
+
+        return reader.GetString() switch
+        {
+            "skip" => MergeDecision.Skip,
+            "run_e2e" => MergeDecision.RunE2e,
+            "run_e2e_focused" => MergeDecision.RunE2eFocused,
+            "escalate_human" => MergeDecision.EscalateHuman,
+            _ => throw new JsonException("Unknown MergeDecision wire token."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, MergeDecision value, JsonSerializerOptions options)
+    {
+        var token = value switch
+        {
+            MergeDecision.Skip => "skip",
+            MergeDecision.RunE2e => "run_e2e",
+            MergeDecision.RunE2eFocused => "run_e2e_focused",
+            MergeDecision.EscalateHuman => "escalate_human",
+            _ => throw new JsonException("Unknown MergeDecision value."),
+        };
+
+        writer.WriteStringValue(token);
+    }
 }
