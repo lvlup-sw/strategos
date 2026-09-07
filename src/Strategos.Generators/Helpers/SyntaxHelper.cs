@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Strategos.Generators.Helpers;
@@ -13,6 +14,70 @@ namespace Strategos.Generators.Helpers;
 /// </summary>
 internal static class SyntaxHelper
 {
+    /// <summary>
+    /// Removes syntax wrappers that do not change the fluent receiver represented by an expression.
+    /// </summary>
+    /// <param name="expression">The expression to unwrap.</param>
+    /// <returns>The innermost non-transparent expression.</returns>
+    public static ExpressionSyntax StripTransparent(ExpressionSyntax expression)
+    {
+        while (true)
+        {
+            switch (expression)
+            {
+                case ParenthesizedExpressionSyntax parenthesized:
+                    expression = parenthesized.Expression;
+                    continue;
+                case CastExpressionSyntax cast:
+                    expression = cast.Expression;
+                    continue;
+                case PostfixUnaryExpressionSyntax postfix
+                    when postfix.IsKind(SyntaxKind.SuppressNullableWarningExpression):
+                    expression = postfix.Operand;
+                    continue;
+                case CheckedExpressionSyntax checkedExpression:
+                    expression = checkedExpression.Expression;
+                    continue;
+                default:
+                    return expression;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Walks outward through syntax wrappers that do not change the fluent receiver.
+    /// </summary>
+    /// <param name="expression">The expression whose transparent parents should be included.</param>
+    /// <returns>The outermost transparently wrapped expression.</returns>
+    public static ExpressionSyntax IncludeTransparentParents(ExpressionSyntax expression)
+    {
+        while (true)
+        {
+            switch (expression.Parent)
+            {
+                case ParenthesizedExpressionSyntax parenthesized
+                    when parenthesized.Expression == expression:
+                    expression = parenthesized;
+                    continue;
+                case CastExpressionSyntax cast
+                    when cast.Expression == expression:
+                    expression = cast;
+                    continue;
+                case PostfixUnaryExpressionSyntax postfix
+                    when postfix.Operand == expression
+                        && postfix.IsKind(SyntaxKind.SuppressNullableWarningExpression):
+                    expression = postfix;
+                    continue;
+                case CheckedExpressionSyntax checkedExpression
+                    when checkedExpression.Expression == expression:
+                    expression = checkedExpression;
+                    continue;
+                default:
+                    return expression;
+            }
+        }
+    }
+
     /// <summary>
     /// Checks if the invocation is a method call with the specified name.
     /// </summary>

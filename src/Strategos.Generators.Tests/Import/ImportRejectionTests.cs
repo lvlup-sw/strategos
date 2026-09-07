@@ -35,6 +35,7 @@ public sealed class ImportRejectionTests
     private const string ForkTriggerEvidenceCode = "AGWF034";
     private const string DuplicatePermittedForkTriggerCode = "AGWF037";
     private const string DuplicateCompensationSeedCode = "AGWF038";
+    private const string WorkflowContractUnprovableCode = "AGWF042";
 
     /// <summary>
     /// Real step types so a NON-rejected import can resolve its monikers and lower a saga — the
@@ -166,6 +167,115 @@ public sealed class ImportRejectionTests
           "approvalPoints": [
             { "approvalPointId": "ap1", "approverType": "RejectStepC", "precedingStepId": "s1", "hasContext": true }
           ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // A root failure handler whose executable recovery steps are not carried by the import bridge.
+    private const string RootFailureHandlerJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-root-failure-handler",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [
+            {
+              "handlerId": "root-recovery",
+              "scope": "workflow",
+              "steps": [
+                { "kind": "handler", "stepId": "r1", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+              ],
+              "isTerminal": true
+            }
+          ],
+          "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // A fork-path failure handler currently reduced to flags by MapForks, losing its recovery steps.
+    private const string ForkPathFailureHandlerJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-path-failure-handler",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s4", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [],
+          "forkPoints": [
+            {
+              "forkPointId": "fork-1",
+              "fromStepId": "s1",
+              "joinStepId": "s4",
+              "paths": [
+                {
+                  "pathId": "primary",
+                  "pathIndex": 0,
+                  "steps": [
+                    { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": false, "stepType": "RejectStepB" }
+                  ],
+                  "failureHandler": {
+                    "handlerId": "path-recovery",
+                    "scope": "forkPath",
+                    "steps": [
+                      { "kind": "handler", "stepId": "r1", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+                    ],
+                    "isTerminal": false
+                  }
+                },
+                {
+                  "pathId": "secondary",
+                  "pathIndex": 1,
+                  "steps": [
+                    { "kind": "skill", "stepId": "s3", "stepName": "RejectStepC", "isTerminal": false, "stepType": "RejectStepC" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s4"
+        }
+        """;
+
+    // An approval step nested in a low-confidence handler used to make MapConfidence silently
+    // discard the handler because ApprovalStep has no executable step moniker.
+    private const string LowConfidenceApprovalStepJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-low-confidence-approval-step",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RejectStepA",
+              "isTerminal": false,
+              "stepType": "RejectStepA",
+              "configuration": {
+                "confidenceThreshold": 0.75,
+                "onLowConfidence": {
+                  "handlerId": "low-confidence-handler",
+                  "handlerSteps": [
+                    {
+                      "kind": "approval",
+                      "stepId": "low-confidence-approval",
+                      "stepName": "ManualReview",
+                      "isTerminal": true,
+                      "approverType": "RejectStepC"
+                    }
+                  ],
+                  "isTerminal": true
+                }
+              }
+            },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
           "entryStepId": "s1", "terminalStepId": "s2"
         }
         """;
@@ -413,6 +523,94 @@ public sealed class ImportRejectionTests
         await AssertRejected(result, ApprovalContextCode, "$.approvalPoints[0]", "ap1");
     }
 
+    /// <summary>An unbound root failure handler preserves the existing import/runtime contract.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task RootFailureHandler_WhenUnbound_RemainsImportable()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-root-failure-handler.workflow.json", RootFailureHandlerJson));
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id == WorkflowContractUnprovableCode))
+            .IsFalse()
+            .Because("ordinary import fidelity remains available when no action requests a closed proof.");
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("root failure-handler imports retain their existing best-effort runtime lowering.");
+    }
+
+    /// <summary>A bound imported root handler marks the proof topology unresolved.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task RootFailureHandler_WhenWorkflowBound_ReportsAgwf042AndStillLowersSaga()
+    {
+        const string boundDescriptor = """
+
+            public static class ImportedRootBinding
+            {
+                public static readonly Strategos.Ontology.Descriptors.ActionDescriptor Value = new(
+                    new Strategos.Ontology.Descriptors.ActionSubject("orders", "Order"),
+                    "recoverable-flow",
+                    "")
+                {
+                    BindingType = Strategos.Ontology.Descriptors.ActionBindingType.Workflow,
+                    BoundWorkflow = new Strategos.Ontology.Descriptors.WorkflowBindingReference(
+                        "reject-root-failure-handler"),
+                };
+            }
+            """;
+        var result = RunGenerator(
+            StepTypes + boundDescriptor,
+            ("reject-root-failure-handler.workflow.json", RootFailureHandlerJson));
+
+        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == WorkflowContractUnprovableCode);
+        await Assert.That(diagnostic).IsNotNull();
+        await Assert.That(diagnostic!.GetMessage()).Contains("$.failureHandlers[0]");
+        await Assert.That(diagnostic.GetMessage()).Contains("root-recovery");
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("proof fails closed without changing the ordinary import/runtime lowering contract.");
+    }
+
+    /// <summary>
+    /// A fork-path failure handler is rejected with AGWF042 instead of lowering only its Boolean
+    /// flags and silently discarding the executable recovery steps.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkPathFailureHandler_IsRejected_WithDiagnosticAndNoSaga()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-fork-path-failure-handler.workflow.json", ForkPathFailureHandlerJson));
+
+        await AssertRejected(
+            result,
+            WorkflowContractUnprovableCode,
+            "$.forkPoints[0].paths[0].failureHandler",
+            "path-recovery");
+    }
+
+    /// <summary>
+    /// An approval step nested in a low-confidence handler is rejected rather than silently
+    /// removing the complete handler during import lowering.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task LowConfidenceApprovalStep_IsRejected_WithDiagnosticAndNoSaga()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-low-confidence-approval-step.workflow.json", LowConfidenceApprovalStepJson));
+
+        await AssertRejected(
+            result,
+            WorkflowContractUnprovableCode,
+            "$.steps[0].configuration.onLowConfidence.handlerSteps[0]",
+            "low-confidence-approval");
+    }
+
     /// <summary>A dangling gateId is rejected with AGWF032 naming the gate id + its JSON path; no saga.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -657,6 +855,12 @@ public sealed class ImportRejectionTests
         if (!string.IsNullOrEmpty(abstractions.Location))
         {
             references.Add(MetadataReference.CreateFromFile(abstractions.Location));
+        }
+
+        var ontology = typeof(Strategos.Ontology.DomainOntology).Assembly;
+        if (!string.IsNullOrEmpty(ontology.Location))
+        {
+            references.Add(MetadataReference.CreateFromFile(ontology.Location));
         }
 
         return references;

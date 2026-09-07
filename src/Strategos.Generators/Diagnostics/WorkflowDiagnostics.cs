@@ -634,4 +634,54 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Two diagnostic-fork edges that sanitize to the same compensation-seed key cannot share a DiagnosticForkCount saga property; the pair is rejected rather than merged onto one counter.");
+
+    /// <summary>A bound action's workflow name does not resolve exactly once.</summary>
+    public static readonly DiagnosticDescriptor BoundWorkflowNotFound = new(
+        id: AgwfCodes.BoundWorkflowNotFound,
+        title: "Bound workflow name does not resolve exactly once",
+        messageFormat: "Ontology action '{0}' is bound to workflow '{1}', but that name resolves to {2} workflow definitions in this compilation. Declare exactly one C# or imported workflow with that ordinal name.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A workflow-bound ontology action must resolve exactly one compilation-wide C# or imported workflow model by ordinal workflow name.");
+
+    /// <summary>A reachable workflow step has no exact static action identity.</summary>
+    public static readonly DiagnosticDescriptor WorkflowActionReferenceInvalid = new(
+        id: AgwfCodes.WorkflowActionReferenceInvalid,
+        title: "Workflow step action reference is invalid",
+        messageFormat: "Reachable step '{0}' in workflow '{1}' has {2}. Every reachable step must carry one statically closed action reference that resolves exactly once by (DomainName, ObjectTypeName, ActionName).",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Every reachable occurrence in a workflow-bound action must declare one closed action reference whose ordinal three-part identity resolves exactly once.");
+
+    /// <summary>A closed workflow binding has a definite refinement counterexample.</summary>
+    public static readonly DiagnosticDescriptor WorkflowBindingRefinementFailed = new(
+        id: AgwfCodes.WorkflowBindingRefinementFailed,
+        title: "Workflow binding refinement proof failed",
+        messageFormat: "Workflow '{0}' does not refine bound action '{1}': {2}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A closed workflow binding violates a precondition, postcondition, frame, authority, subject, or fork noninterference refinement obligation.");
+
+    /// <summary>A workflow binding contains a contract outside the closed proof fragment.</summary>
+    public static readonly DiagnosticDescriptor WorkflowContractUnprovable = new(
+        id: AgwfCodes.WorkflowContractUnprovable,
+        title: "Workflow contract cannot be proved statically",
+        messageFormat: "Workflow '{0}' bound to action '{1}' cannot be proved statically: {2}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Workflow binding proof fails closed when an action contract, resource domain, or authority lattice is dynamic, opaque, invalid, or outside the exact finite proof fragment.");
+
+    /// <summary>Two workflow identities normalize to the same generated type and hint names.</summary>
+    public static readonly DiagnosticDescriptor WorkflowEmissionIdentityCollision = new(
+        id: AgwfCodes.WorkflowEmissionIdentityCollision,
+        title: "Workflow generated identity collision",
+        messageFormat: "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Distinct ordinal workflow identities must not normalize to the same generated PascalCase type and source-hint namespace.");
 }

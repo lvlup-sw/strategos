@@ -48,6 +48,7 @@ public class InvariantGuardTests
             "Strategos.Generators.Models.TimeoutModel",
             "Strategos.Generators.Models.CompensationModel",
             "Strategos.Generators.Models.ConfidenceModel",
+            "Strategos.Generators.Models.WorkflowActionReferenceModel",
 
             // Multi-step / rejoining OnLowConfidence handler chain IR (G-4 / #139) — sealed record.
             "Strategos.Generators.Models.LowConfidenceHandlerChainModel",
@@ -99,6 +100,7 @@ public class InvariantGuardTests
             "Strategos.Generators.Models.CompensationModel",
             "Strategos.Generators.Models.ConfidenceModel",
             "Strategos.Generators.Models.LowConfidenceHandlerChainModel",
+            "Strategos.Generators.Models.WorkflowActionReferenceModel",
         };
 
         var offenders = new List<string>();

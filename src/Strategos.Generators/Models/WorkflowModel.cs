@@ -86,6 +86,20 @@ internal sealed record WorkflowModel(
     public bool HasFluentDefinition { get; init; } = true;
 
     /// <summary>
+    /// Gets the stable reasons why the authored fluent topology could not be represented in full
+    /// by the generator's closed workflow grammar.
+    /// </summary>
+    /// <remarks>
+    /// Runtime emission intentionally keeps its existing best-effort behavior. Workflow/action
+    /// binding proof consumes this immutable signal and fails closed instead of proving a contract
+    /// over a topology from which legal, dynamically-authored paths were silently omitted.
+    /// JSON-imported workflows normally leave this empty; the import bridge adds a reason when a
+    /// schema-valid carrier (currently a root failure handler) is retained for runtime compatibility
+    /// but is not represented in the closed proof topology.
+    /// </remarks>
+    public ImmutableArray<string> TopologyClosureFailures { get; init; } = ImmutableArray<string>.Empty;
+
+    /// <summary>
     /// Gets the derived phase enum name.
     /// </summary>
     public string PhaseEnumName => $"{PascalName}Phase";

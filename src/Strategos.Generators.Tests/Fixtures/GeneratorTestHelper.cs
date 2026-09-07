@@ -27,6 +27,100 @@ public static class GeneratorTestHelper
     }
 
     /// <summary>
+    /// Runs the workflow generator only after proving that the authored fixture itself compiles.
+    /// </summary>
+    /// <param name="source">The source code to compile and run the generator against.</param>
+    /// <returns>The generator driver run result containing generated output and diagnostics.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the authored source or generated output has compiler errors, or when the
+    /// generator reports an unexpected error.
+    /// </exception>
+    /// <param name="allowedGeneratorErrorIds">
+    /// Generator error identifiers that the calling negative test will assert explicitly.
+    /// </param>
+    public static GeneratorDriverRunResult RunGeneratorWithValidInput(
+        string source,
+        params string[] allowedGeneratorErrorIds) =>
+        RunGeneratorWithValidInput(
+            source,
+            [new WorkflowIncrementalGenerator(), new StateReducerIncrementalGenerator()],
+            [],
+            allowedGeneratorErrorIds,
+            allowInvalidOutputAfterExpectedError: false);
+
+    /// <summary>
+    /// Runs the workflow generator with additional files after proving the complete fixture compiles.
+    /// </summary>
+    /// <param name="source">The source code to compile and run the generator against.</param>
+    /// <param name="additionalTexts">Additional files supplied to the generator.</param>
+    /// <param name="allowedGeneratorErrorIds">
+    /// Generator error identifiers that the calling negative test will assert explicitly.
+    /// </param>
+    /// <returns>The generator driver run result containing generated output and diagnostics.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the authored source or generated output has compiler errors, or when the
+    /// generator reports an unexpected error.
+    /// </exception>
+    public static GeneratorDriverRunResult RunGeneratorWithValidInput(
+        string source,
+        IEnumerable<AdditionalText> additionalTexts,
+        params string[] allowedGeneratorErrorIds) =>
+        RunGeneratorWithValidInput(
+            source,
+            [new WorkflowIncrementalGenerator(), new StateReducerIncrementalGenerator()],
+            additionalTexts,
+            allowedGeneratorErrorIds,
+            allowInvalidOutputAfterExpectedError: false);
+
+    /// <summary>
+    /// Runs a topology-rejection fixture whose expected error describes DSL that cannot be lowered.
+    /// </summary>
+    /// <param name="source">The source code to compile and run the generator against.</param>
+    /// <param name="allowedGeneratorErrorIds">
+    /// Generator error identifiers that the calling negative test will assert explicitly.
+    /// </param>
+    /// <returns>The generator driver run result containing generated output and diagnostics.</returns>
+    /// <remarks>
+    /// This is intentionally narrower than <see cref="RunGeneratorWithValidInput(string, string[])"/>.
+    /// It skips generated-output compilation only after an allowed generator error is actually
+    /// reported. Use it solely for fail-closed topology fixtures whose rejected DSL has no valid
+    /// lowering; ordinary binding and import proofs must use the authoritative overload above.
+    /// </remarks>
+    public static GeneratorDriverRunResult RunRejectedTopologyWithValidInput(
+        string source,
+        params string[] allowedGeneratorErrorIds) =>
+        RunGeneratorWithValidInput(
+            source,
+            [new WorkflowIncrementalGenerator(), new StateReducerIncrementalGenerator()],
+            [],
+            allowedGeneratorErrorIds,
+            allowInvalidOutputAfterExpectedError: true);
+
+    /// <summary>
+    /// Runs a specified generator after proving the authored source and generated output compile.
+    /// </summary>
+    /// <typeparam name="TGenerator">The incremental generator type.</typeparam>
+    /// <param name="source">The source code to compile and run the generator against.</param>
+    /// <param name="allowedGeneratorErrorIds">
+    /// Generator error identifiers that the calling negative test will assert explicitly.
+    /// </param>
+    /// <returns>The generator driver run result containing generated output and diagnostics.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the authored source or generated output has compiler errors, or when the
+    /// generator reports an unexpected error.
+    /// </exception>
+    public static GeneratorDriverRunResult RunGeneratorWithValidInput<TGenerator>(
+        string source,
+        params string[] allowedGeneratorErrorIds)
+        where TGenerator : IIncrementalGenerator, new() =>
+        RunGeneratorWithValidInput(
+            source,
+            [new TGenerator()],
+            [],
+            allowedGeneratorErrorIds,
+            allowInvalidOutputAfterExpectedError: false);
+
+    /// <summary>
     /// Runs the state reducer generator against the provided source code.
     /// </summary>
     /// <param name="source">The source code to compile and run the generator against.</param>
@@ -61,8 +155,8 @@ public static class GeneratorTestHelper
         GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
         driver = driver.RunGeneratorsAndUpdateCompilation(
             compilation,
-            out var outputCompilation,
-            out var diagnostics);
+            out _,
+            out _);
 
         return driver.GetRunResult();
     }
@@ -113,26 +207,126 @@ public static class GeneratorTestHelper
         return outputCompilation.GetDiagnostics();
     }
 
+    /// <summary>Gets compiler diagnostics for authored source before generated trees are added.</summary>
+    /// <param name="source">The source code to compile.</param>
+    /// <returns>The authored compilation diagnostics.</returns>
+    public static IEnumerable<Diagnostic> GetInputCompilationDiagnostics(string source)
+    {
+        ArgumentNullException.ThrowIfNull(source, nameof(source));
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees:
+            [
+                CSharpSyntaxTree.ParseText(source),
+                CSharpSyntaxTree.ParseText("global using System.Collections.Generic;"),
+            ],
+            references: GetMetadataReferences(),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return compilation.GetDiagnostics();
+    }
+
+    private static GeneratorDriverRunResult RunGeneratorWithValidInput(
+        string source,
+        IEnumerable<IIncrementalGenerator> generators,
+        IEnumerable<AdditionalText> additionalTexts,
+        IReadOnlyCollection<string> allowedGeneratorErrorIds,
+        bool allowInvalidOutputAfterExpectedError)
+    {
+        ArgumentNullException.ThrowIfNull(source, nameof(source));
+        ArgumentNullException.ThrowIfNull(generators, nameof(generators));
+        ArgumentNullException.ThrowIfNull(additionalTexts, nameof(additionalTexts));
+        ArgumentNullException.ThrowIfNull(allowedGeneratorErrorIds, nameof(allowedGeneratorErrorIds));
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees:
+            [
+                CSharpSyntaxTree.ParseText(source),
+                CSharpSyntaxTree.ParseText("global using System.Collections.Generic;"),
+            ],
+            references: GetMetadataReferences(),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        EnsureNoCompilerErrors(
+            compilation.GetDiagnostics(),
+            "The generator fixture does not compile before generation");
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generators: generators.Select(static generator => generator.AsSourceGenerator()),
+            additionalTexts: additionalTexts.ToArray(),
+            parseOptions: null,
+            optionsProvider: null);
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out var outputCompilation,
+            out var driverDiagnostics);
+
+        var allowedIds = new HashSet<string>(allowedGeneratorErrorIds, StringComparer.Ordinal);
+        var unexpectedDriverErrors = driverDiagnostics
+            .Where(diagnostic =>
+                (diagnostic.Severity == DiagnosticSeverity.Error
+                    && !allowedIds.Contains(diagnostic.Id))
+                || diagnostic.Id is "CS8784" or "CS8785")
+            .ToArray();
+        if (unexpectedDriverErrors.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "The generator fixture produced unexpected driver errors: "
+                + DescribeDiagnostics(unexpectedDriverErrors));
+        }
+
+        var hasExpectedGeneratorError = driverDiagnostics.Any(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && allowedIds.Contains(diagnostic.Id));
+        if (!hasExpectedGeneratorError || !allowInvalidOutputAfterExpectedError)
+        {
+            EnsureNoCompilerErrors(
+                outputCompilation.GetDiagnostics(),
+                "The generated output does not compile");
+        }
+
+        return driver.GetRunResult();
+    }
+
+    private static void EnsureNoCompilerErrors(
+        IEnumerable<Diagnostic> diagnostics,
+        string message)
+    {
+        var errors = diagnostics
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        if (errors.Length > 0)
+        {
+            throw new InvalidOperationException(message + ": " + DescribeDiagnostics(errors));
+        }
+    }
+
+    private static string DescribeDiagnostics(IEnumerable<Diagnostic> diagnostics) =>
+        string.Join(" | ", diagnostics.Select(static diagnostic =>
+            diagnostic.Id + ": " + diagnostic.GetMessage()));
+
     private static List<MetadataReference> GetMetadataReferences()
     {
         var references = new List<MetadataReference>();
+        var paths = new HashSet<string>(StringComparer.Ordinal);
 
-        // Add core runtime references
-        var runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-
-        var coreAssemblies = new[]
+        // Reference every dependency copied beside the test host. This is the consumer
+        // compile graph for the generated Wolverine/Marten saga, including assemblies
+        // that the current test has not happened to load yet.
+        foreach (var path in Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll"))
         {
-            "System.Runtime.dll",
-            "System.Private.CoreLib.dll",
-            "netstandard.dll",
-        };
+            AddReference(path);
+        }
 
-        foreach (var assembly in coreAssemblies)
+        // Reference the complete target-framework surface, including assemblies such as
+        // System.Text.Json and DiagnosticSource that generated code uses but the test host
+        // may not have loaded.
+        if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string platformAssemblies)
         {
-            var path = Path.Combine(runtimePath, assembly);
-            if (File.Exists(path))
+            foreach (var path in platformAssemblies.Split(Path.PathSeparator))
             {
-                references.Add(MetadataReference.CreateFromFile(path));
+                AddReference(path);
             }
         }
 
@@ -143,7 +337,7 @@ public static class GeneratorTestHelper
             {
                 try
                 {
-                    references.Add(MetadataReference.CreateFromFile(assembly.Location));
+                    AddReference(assembly.Location);
                 }
                 catch
                 {
@@ -156,9 +350,35 @@ public static class GeneratorTestHelper
         var workflowAssembly = typeof(Strategos.Abstractions.IWorkflowState).Assembly;
         if (!string.IsNullOrEmpty(workflowAssembly.Location))
         {
-            references.Add(MetadataReference.CreateFromFile(workflowAssembly.Location));
+            AddReference(workflowAssembly.Location);
+        }
+
+        // #167 workflow-binding proof reads ontology declarations from the same
+        // compilation as the workflow. Keep the test compilation representative
+        // by making the public ontology authoring surface resolvable.
+        var ontologyAssembly = typeof(Strategos.Ontology.DomainOntology).Assembly;
+        if (!string.IsNullOrEmpty(ontologyAssembly.Location))
+        {
+            AddReference(ontologyAssembly.Location);
         }
 
         return references;
+
+        void AddReference(string path)
+        {
+            if (!File.Exists(path) || !paths.Add(path))
+            {
+                return;
+            }
+
+            try
+            {
+                references.Add(MetadataReference.CreateFromFile(path));
+            }
+            catch (BadImageFormatException)
+            {
+                // Native or otherwise non-managed binaries are not metadata references.
+            }
+        }
     }
 }

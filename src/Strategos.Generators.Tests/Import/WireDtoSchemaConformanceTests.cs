@@ -164,6 +164,7 @@ public sealed class WireDtoSchemaConformanceTests
             nameof(GateStep),
             nameof(DelegateStep),
             nameof(ApprovalStep),
+            nameof(ActionReferenceV1),
             nameof(StepConfigurationDefinition),
             nameof(GateDeclaration),
             nameof(DiagnosticForkDefinition),
@@ -175,6 +176,44 @@ public sealed class WireDtoSchemaConformanceTests
 
         await Assert.That(absent).IsEmpty()
             .Because("the DR-12 import subset must model every critical wire twin.");
+    }
+
+    /// <summary>
+    /// The action-reference twin is proof-bearing input, so its three identity fields
+    /// remain required non-blank strings in the canonical schema and remain string
+    /// fields on the isolated-analyzer twin.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ActionReferenceTwin_PinsRequiredNonBlankIdentityContract()
+    {
+        var schema = LoadSchemaRoot(nameof(ActionReferenceV1));
+        var schemaProperties = schema.GetProperty("properties")
+            .EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
+        var required = schema.GetProperty("required")
+            .EnumerateArray()
+            .Select(element => element.GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+        var expected = new[] { "domainName", "objectTypeName", "actionName" };
+
+        await Assert.That(schemaProperties.Keys).IsEquivalentTo(expected)
+            .Because("ActionReferenceV1 must not gain or lose an identity component silently.");
+        await Assert.That(required).IsEquivalentTo(expected)
+            .Because("all three action identity components are required on the wire.");
+
+        var twinProperties = typeof(ActionReferenceV1)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .ToDictionary(property => ToWireName(property.Name), property => property, StringComparer.Ordinal);
+
+        foreach (var name in expected)
+        {
+            var property = schemaProperties[name];
+            await Assert.That(property.GetProperty("type").GetString()).IsEqualTo("string");
+            await Assert.That(property.GetProperty("minLength").GetInt32()).IsEqualTo(1);
+            await Assert.That(property.GetProperty("pattern").GetString()).IsEqualTo(".*\\S.*");
+            await Assert.That(twinProperties[name].PropertyType).IsEqualTo(typeof(string));
+        }
     }
 
     /// <summary>

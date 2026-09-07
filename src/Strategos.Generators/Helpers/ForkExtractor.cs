@@ -240,7 +240,7 @@ internal static class ForkExtractor
         // Walk backwards to find the previous step
         if (forkInvocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
                 if (StepExtractor.TryGetRoutingPhaseName(previousInvocation, semanticModel, loopPrefix: null, out var phaseName))
                 {
@@ -305,13 +305,14 @@ internal static class ForkExtractor
 
         while (current is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression == forkInvocation)
+            var receiver = SyntaxHelper.StripTransparent(memberAccess.Expression);
+            if (receiver == forkInvocation)
             {
                 return true;
             }
 
             distance++;
-            current = memberAccess.Expression switch
+            current = receiver switch
             {
                 InvocationExpressionSyntax inv => inv.Expression,
                 _ => null

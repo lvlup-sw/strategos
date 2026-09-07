@@ -4,6 +4,8 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Collections.Immutable;
+
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
@@ -35,13 +37,16 @@ internal static class LoopExtractor
 
         // Walk the invocation chain and collect loop models
         var loops = new List<LoopModel>();
-        var allSteps = new List<(string PhaseName, int Order)>();
+        var allSteps = new List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)>();
 
         // First pass: collect all steps with their order
         var stepInfos = StepExtractor.ExtractStepInfos(context);
         for (var i = 0; i < stepInfos.Count; i++)
         {
-            allSteps.Add((stepInfos[i].PhaseName, i));
+            allSteps.Add((
+                stepInfos[i].PhaseName,
+                stepInfos[i].StructuralLoopPath,
+                i));
         }
 
         // DR-5 (IR half): index the fully configured step models by phase name so each loop's
@@ -57,7 +62,16 @@ internal static class LoopExtractor
             stepModelsByPhase[stepModel.PhaseName] = stepModel;
         }
 
-        WalkInvocationChainForLoopModels(context.FinallyInvocation, loops, context.SemanticModel, context.WorkflowName ?? string.Empty, null, allSteps, stepModelsByPhase, context.CancellationToken);
+        WalkInvocationChainForLoopModels(
+            context.FinallyInvocation,
+            loops,
+            context.SemanticModel,
+            context.WorkflowName ?? string.Empty,
+            parentLoopPrefix: null,
+            parentLoopPath: ImmutableArray<int>.Empty,
+            allSteps,
+            stepModelsByPhase,
+            context.CancellationToken);
 
         return loops;
     }
@@ -67,15 +81,27 @@ internal static class LoopExtractor
         List<LoopModel> loops,
         SemanticModel semanticModel,
         string workflowName,
-        string? parentLoopName,
-        List<(string PhaseName, int Order)> allSteps,
+        string? parentLoopPrefix,
+        ImmutableArray<int> parentLoopPath,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> allSteps,
         IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Check if this is a RepeatUntil call
-        if (TryParseRepeatUntilForLoopModel(invocation, semanticModel, workflowName, parentLoopName, allSteps, stepModelsByPhase, out var loopModel, out var nestedPrefix, cancellationToken))
+        if (TryParseRepeatUntilForLoopModel(
+            invocation,
+            semanticModel,
+            workflowName,
+            parentLoopPrefix,
+            parentLoopPath,
+            allSteps,
+            stepModelsByPhase,
+            out var loopModel,
+            out var effectivePrefix,
+            out var effectiveLoopPath,
+            cancellationToken))
         {
             loops.Insert(0, loopModel);
 
@@ -90,16 +116,34 @@ internal static class LoopExtractor
 
             if (bodyLambda is not null)
             {
-                ParseLoopBodyForLoopModels(bodyLambda, loops, semanticModel, workflowName, loopModel.LoopName, allSteps, stepModelsByPhase, cancellationToken);
+                ParseLoopBodyForLoopModels(
+                    bodyLambda,
+                    loops,
+                    semanticModel,
+                    workflowName,
+                    effectivePrefix,
+                    effectiveLoopPath,
+                    allSteps,
+                    stepModelsByPhase,
+                    cancellationToken);
             }
         }
 
         // Walk to the receiver (previous call in the chain)
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
-                WalkInvocationChainForLoopModels(previousInvocation, loops, semanticModel, workflowName, parentLoopName, allSteps, stepModelsByPhase, cancellationToken);
+                WalkInvocationChainForLoopModels(
+                    previousInvocation,
+                    loops,
+                    semanticModel,
+                    workflowName,
+                    parentLoopPrefix,
+                    parentLoopPath,
+                    allSteps,
+                    stepModelsByPhase,
+                    cancellationToken);
             }
         }
     }
@@ -109,8 +153,9 @@ internal static class LoopExtractor
         List<LoopModel> loops,
         SemanticModel semanticModel,
         string workflowName,
-        string currentLoopName,
-        List<(string PhaseName, int Order)> allSteps,
+        string currentLoopPrefix,
+        ImmutableArray<int> currentLoopPath,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> allSteps,
         IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         CancellationToken cancellationToken)
     {
@@ -140,7 +185,18 @@ internal static class LoopExtractor
 
             if (SyntaxHelper.IsMethodCall(inv, "RepeatUntil"))
             {
-                if (TryParseRepeatUntilForLoopModel(inv, semanticModel, workflowName, currentLoopName, allSteps, stepModelsByPhase, out var nestedLoopModel, out _, cancellationToken))
+                if (TryParseRepeatUntilForLoopModel(
+                    inv,
+                    semanticModel,
+                    workflowName,
+                    currentLoopPrefix,
+                    currentLoopPath,
+                    allSteps,
+                    stepModelsByPhase,
+                    out var nestedLoopModel,
+                    out var nestedPrefix,
+                    out var nestedLoopPath,
+                    cancellationToken))
                 {
                     loops.Add(nestedLoopModel);
 
@@ -155,7 +211,16 @@ internal static class LoopExtractor
 
                     if (nestedBodyLambda is not null)
                     {
-                        ParseLoopBodyForLoopModels(nestedBodyLambda, loops, semanticModel, workflowName, nestedLoopModel.LoopName, allSteps, stepModelsByPhase, cancellationToken);
+                        ParseLoopBodyForLoopModels(
+                            nestedBodyLambda,
+                            loops,
+                            semanticModel,
+                            workflowName,
+                            nestedPrefix,
+                            nestedLoopPath,
+                            allSteps,
+                            stepModelsByPhase,
+                            cancellationToken);
                     }
                 }
             }
@@ -166,15 +231,18 @@ internal static class LoopExtractor
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         string workflowName,
-        string? parentLoopName,
-        List<(string PhaseName, int Order)> allSteps,
+        string? parentLoopPrefix,
+        ImmutableArray<int> parentLoopPath,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> allSteps,
         IReadOnlyDictionary<string, StepModel> stepModelsByPhase,
         out LoopModel loopModel,
         out string effectivePrefix,
+        out ImmutableArray<int> effectiveLoopPath,
         CancellationToken cancellationToken)
     {
         loopModel = default!;
         effectivePrefix = string.Empty;
+        effectiveLoopPath = ImmutableArray<int>.Empty;
 
         if (!SyntaxHelper.IsMethodCall(invocation, "RepeatUntil"))
         {
@@ -194,16 +262,19 @@ internal static class LoopExtractor
         }
 
         // Compute effective prefix
-        var computedPrefix = parentLoopName is null
+        var computedPrefix = parentLoopPrefix is null
             ? loopName
-            : $"{parentLoopName}_{loopName}";
+            : $"{parentLoopPrefix}_{loopName}";
         effectivePrefix = computedPrefix;
+        // A chained InvocationExpression starts at the beginning of its receiver, so sibling
+        // fluent calls can share SpanStart. The argument-list start belongs to this call alone.
+        effectiveLoopPath = parentLoopPath.Add(invocation.ArgumentList.SpanStart);
 
         // Extract max iterations from argument index 3 (if present), default to 10
         var maxIterations = ExtractMaxIterations(arguments, semanticModel);
 
         // Find loop body steps that are direct children of this loop
-        var bodySteps = FindDirectBodySteps(computedPrefix, allSteps);
+        var bodySteps = FindDirectBodySteps(effectiveLoopPath, allSteps);
 
         if (bodySteps.Count == 0)
         {
@@ -218,7 +289,10 @@ internal static class LoopExtractor
         var bodyStepModels = BuildBodyStepModels(bodySteps, stepModelsByPhase);
 
         // Find continuation step (first step after the loop body that is not a child of this loop)
-        var continuationStepName = FindContinuationStepName(computedPrefix, bodySteps, allSteps);
+        var continuationStepName = FindContinuationStepName(
+            effectiveLoopPath,
+            bodySteps,
+            allSteps);
 
         // Build condition ID
         var conditionId = $"{workflowName}-{loopName}";
@@ -232,7 +306,7 @@ internal static class LoopExtractor
             MaxIterations: maxIterations,
             BodySteps: bodyStepModels,
             ContinuationStepName: continuationStepName,
-            ParentLoopName: parentLoopName,
+            ParentLoopName: parentLoopPrefix,
             BranchOnExitId: branchOnExit?.BranchId,
             BranchOnExit: branchOnExit);
 
@@ -253,11 +327,11 @@ internal static class LoopExtractor
     /// the projection intact for any body phase name the step-model parse did not surface.
     /// </remarks>
     private static IReadOnlyList<StepModel> BuildBodyStepModels(
-        List<(string PhaseName, int Order)> bodySteps,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> bodySteps,
         IReadOnlyDictionary<string, StepModel> stepModelsByPhase)
     {
         var bodyStepModels = new List<StepModel>(bodySteps.Count);
-        foreach (var (phaseName, _) in bodySteps)
+        foreach (var (phaseName, _, _) in bodySteps)
         {
             bodyStepModels.Add(stepModelsByPhase.TryGetValue(phaseName, out var stepModel)
                 ? stepModel
@@ -322,23 +396,12 @@ internal static class LoopExtractor
     /// <summary>
     /// Finds the direct body steps of a loop (steps prefixed with the loop name but not nested deeper).
     /// </summary>
-    private static List<(string PhaseName, int Order)> FindDirectBodySteps(
-        string computedPrefix,
-        List<(string PhaseName, int Order)> allSteps)
+    private static List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> FindDirectBodySteps(
+        ImmutableArray<int> currentLoopPath,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> allSteps)
     {
-        var prefixWithUnderscore = $"{computedPrefix}_";
-
         return allSteps
-            .Where(s =>
-            {
-                if (!s.PhaseName.StartsWith(prefixWithUnderscore))
-                {
-                    return false;
-                }
-
-                var remainder = s.PhaseName.Substring(prefixWithUnderscore.Length);
-                return !remainder.Contains('_');
-            })
+            .Where(s => s.LoopPath.SequenceEqual(currentLoopPath))
             .OrderBy(s => s.Order)
             .ToList();
     }
@@ -347,17 +410,43 @@ internal static class LoopExtractor
     /// Finds the continuation step name (the first step after the loop body that is not a child of this loop).
     /// </summary>
     private static string? FindContinuationStepName(
-        string computedPrefix,
-        List<(string PhaseName, int Order)> bodySteps,
-        List<(string PhaseName, int Order)> allSteps)
+        ImmutableArray<int> currentLoopPath,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> bodySteps,
+        List<(string PhaseName, ImmutableArray<int> LoopPath, int Order)> allSteps)
     {
         var lastBodyOrder = bodySteps.Max(s => s.Order);
         var continuationStep = allSteps
-            .Where(s => s.Order > lastBodyOrder && !s.PhaseName.StartsWith($"{computedPrefix}_"))
+            .Where(s => s.Order > lastBodyOrder
+                && !IsOwnedByLoop(s.LoopPath, currentLoopPath))
             .OrderBy(s => s.Order)
             .FirstOrDefault();
 
         return continuationStep.PhaseName;
+    }
+
+    /// <summary>
+    /// Determines structural loop ownership from immutable RepeatUntil invocation identities.
+    /// Flattened display names are deliberately excluded: sibling and descendant names may have
+    /// the same underscore-delimited shape.
+    /// </summary>
+    private static bool IsOwnedByLoop(
+        ImmutableArray<int> candidatePath,
+        ImmutableArray<int> currentLoopPath)
+    {
+        if (candidatePath.Length < currentLoopPath.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < currentLoopPath.Length; i++)
+        {
+            if (candidatePath[i] != currentLoopPath[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -438,11 +527,6 @@ internal static class LoopExtractor
             }
         }
 
-        if (cases.Count == 0)
-        {
-            return null;
-        }
-
         // Find rejoin step (step after this branch in the chain)
         var rejoinStepName = FindRejoinStepName(branchInvocation, semanticModel);
 
@@ -454,7 +538,10 @@ internal static class LoopExtractor
             IsEnumDiscriminator: isEnum,
             IsMethodDiscriminator: isMethod,
             Cases: cases,
-            RejoinStepName: rejoinStepName);
+            RejoinStepName: rejoinStepName)
+        {
+            HasUnresolvedCases = cases.Count != arguments.Count - 1,
+        };
     }
 
     /// <summary>

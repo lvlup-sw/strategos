@@ -21,7 +21,20 @@ internal static class ParserTestHelper
     /// </summary>
     /// <param name="source">The source code containing a workflow definition.</param>
     /// <returns>A list of step models extracted from the workflow.</returns>
-    public static IReadOnlyList<StepModel> ExtractStepModels(string source)
+    public static IReadOnlyList<StepModel> ExtractStepModels(string source) =>
+        ExtractStepModelsCore(source, validateCompilation: false);
+
+    /// <summary>
+    /// Extracts step models after proving that the supplied parser fixture compiles.
+    /// </summary>
+    /// <param name="source">The source code containing a workflow definition.</param>
+    /// <returns>A list of step models extracted from the workflow.</returns>
+    public static IReadOnlyList<StepModel> ExtractStepModelsValidated(string source) =>
+        ExtractStepModelsCore(source, validateCompilation: true);
+
+    private static IReadOnlyList<StepModel> ExtractStepModelsCore(
+        string source,
+        bool validateCompilation)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
 
@@ -33,6 +46,10 @@ internal static class ParserTestHelper
             syntaxTrees: [syntaxTree],
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        if (validateCompilation)
+        {
+            EnsureCompiles(compilation);
+        }
 
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var root = syntaxTree.GetRoot();
@@ -43,7 +60,7 @@ internal static class ParserTestHelper
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault(t => t.AttributeLists
                 .SelectMany(al => al.Attributes)
-                .Any(a => a.Name.ToString().Contains("Workflow")));
+                .Any(IsWorkflowAttribute));
 
         if (workflowClass is null)
         {
@@ -81,7 +98,7 @@ internal static class ParserTestHelper
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault(t => t.AttributeLists
                 .SelectMany(al => al.Attributes)
-                .Any(a => a.Name.ToString().Contains("Workflow")));
+                .Any(IsWorkflowAttribute));
 
         if (workflowClass is null)
         {
@@ -119,7 +136,7 @@ internal static class ParserTestHelper
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault(t => t.AttributeLists
                 .SelectMany(al => al.Attributes)
-                .Any(a => a.Name.ToString().Contains("Workflow")));
+                .Any(IsWorkflowAttribute));
 
         if (workflowClass is null)
         {
@@ -138,7 +155,24 @@ internal static class ParserTestHelper
     /// <exception cref="InvalidOperationException">
     /// Thrown when the source carries no workflow-attributed type.
     /// </exception>
-    public static (TypeDeclarationSyntax WorkflowClass, SemanticModel SemanticModel) CompileWorkflow(string source)
+    public static (TypeDeclarationSyntax WorkflowClass, SemanticModel SemanticModel) CompileWorkflow(string source) =>
+        CompileWorkflowCore(source, validateCompilation: false);
+
+    /// <summary>
+    /// Compiles validated source and returns its workflow declaration and semantic model.
+    /// </summary>
+    /// <param name="source">The source code containing a workflow definition.</param>
+    /// <returns>The workflow type declaration and its semantic model.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the source does not compile or carries no workflow-attributed type.
+    /// </exception>
+    public static (TypeDeclarationSyntax WorkflowClass, SemanticModel SemanticModel) CompileWorkflowValidated(
+        string source) =>
+        CompileWorkflowCore(source, validateCompilation: true);
+
+    private static (TypeDeclarationSyntax WorkflowClass, SemanticModel SemanticModel) CompileWorkflowCore(
+        string source,
+        bool validateCompilation)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
 
@@ -150,6 +184,10 @@ internal static class ParserTestHelper
             syntaxTrees: [syntaxTree],
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        if (validateCompilation)
+        {
+            EnsureCompiles(compilation);
+        }
 
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var workflowClass = syntaxTree.GetRoot()
@@ -157,7 +195,7 @@ internal static class ParserTestHelper
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault(t => t.AttributeLists
                 .SelectMany(al => al.Attributes)
-                .Any(a => a.Name.ToString().Contains("Workflow", StringComparison.Ordinal)));
+                .Any(IsWorkflowAttribute));
 
         return workflowClass is null
             ? throw new InvalidOperationException("No workflow-attributed type declaration found in source.")
@@ -228,7 +266,7 @@ internal static class ParserTestHelper
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault(t => t.AttributeLists
                 .SelectMany(al => al.Attributes)
-                .Any(a => a.Name.ToString().Contains("Workflow")));
+                .Any(IsWorkflowAttribute));
 
         if (workflowClass is null)
         {
@@ -249,6 +287,7 @@ internal static class ParserTestHelper
         {
             "System.Runtime.dll",
             "System.Private.CoreLib.dll",
+            "System.Linq.Expressions.dll",
             "netstandard.dll",
         };
 
@@ -285,5 +324,29 @@ internal static class ParserTestHelper
         }
 
         return references;
+    }
+
+    private static void EnsureCompiles(CSharpCompilation compilation)
+    {
+        var errors = compilation.GetDiagnostics()
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        if (errors.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "The parser fixture does not compile: "
+            + string.Join(" | ", errors.Select(static diagnostic =>
+                diagnostic.Id + ": " + diagnostic.GetMessage())));
+    }
+
+    private static bool IsWorkflowAttribute(AttributeSyntax attribute)
+    {
+        var name = attribute.Name.ToString();
+        return name is "Workflow" or "WorkflowAttribute"
+            || name.EndsWith(".Workflow", StringComparison.Ordinal)
+            || name.EndsWith(".WorkflowAttribute", StringComparison.Ordinal);
     }
 }

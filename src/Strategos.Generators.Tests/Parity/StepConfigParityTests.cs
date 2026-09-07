@@ -32,6 +32,12 @@ namespace Strategos.Generators.Tests.Parity;
 /// </summary>
 /// <remarks>
 /// <para>
+/// Occurrence metadata methods listed in <see cref="OccurrenceMetadataMethods"/> are
+/// deliberately outside this runtime-tuning gate because they populate
+/// <see cref="StepDefinition"/> rather than <see cref="StepConfigurationDefinition"/>;
+/// their extraction and wire parity are guarded separately.
+/// </para>
+/// <para>
 /// This is a forcing function: when a new configuration member is added to either surface
 /// and is NOT classified here, the guard fails. The author must then either point it at a
 /// behavioral lowering proof (move it to <see cref="Lowered"/>) or file a deferral
@@ -47,6 +53,17 @@ namespace Strategos.Generators.Tests.Parity;
 [Property("Category", "Unit")]
 public sealed class StepConfigParityTests
 {
+    /// <summary>
+    /// Builder members that author occurrence identity on <see cref="StepDefinition"/>
+    /// rather than execution tuning on <see cref="StepConfigurationDefinition"/>.
+    /// They have their own extraction/projection/import parity suite.
+    /// </summary>
+    private static readonly IReadOnlySet<string> OccurrenceMetadataMethods =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Performs",
+        };
+
     /// <summary>
     /// The declared-but-inert diagnostic the negative deferral guard cites.
     /// </summary>
@@ -689,6 +706,10 @@ public sealed class StepConfigParityTests
         var builderMethods = typeof(IStepConfiguration<>)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
+            // Performs authors StepDefinition.Action occurrence identity. It is deliberately
+            // outside StepConfigurationDefinition's runtime-tuning parity contract and is
+            // guarded by StepExtractorActionReferenceTests + RoundTripIrFidelityTests instead.
+            .Where(m => !OccurrenceMetadataMethods.Contains(m.Name))
             .Select(m => m.Name);
 
         var definitionFields = typeof(StepConfigurationDefinition)

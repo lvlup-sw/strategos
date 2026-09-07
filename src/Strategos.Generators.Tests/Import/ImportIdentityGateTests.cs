@@ -68,6 +68,12 @@ public sealed class ImportIdentityGateTests
             public Task<StepResult<IdentityState>> ExecuteAsync(IdentityState s, StepContext c, CancellationToken ct)
                 => Task.FromResult(StepResult<IdentityState>.FromState(s));
         }
+
+        public sealed class CompensateStep : IWorkflowStep<IdentityState>
+        {
+            public Task<StepResult<IdentityState>> ExecuteAsync(IdentityState s, StepContext c, CancellationToken ct)
+                => Task.FromResult(StepResult<IdentityState>.FromState(s));
+        }
         """;
 
     private const string CollidingPathEndJson = """
@@ -205,6 +211,338 @@ public sealed class ImportIdentityGateTests
         await AssertRejected(result, "AGWF003", "AnalyzeStep");
     }
 
+    /// <summary>
+    /// A top-level occurrence is not the serialized echo of a fork-path occurrence merely
+    /// because both lower to the same phase and CLR type. Their stable step ids distinguish
+    /// the two occurrences, so the shared phase remains an ordinary AGWF003 collision.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_DifferentStepIdCannotMasqueradeAsForkPathEcho()
+    {
+        var json = ForkEchoJson(
+            topLevelStepId: "independent",
+            topLevelActionName: "inspect",
+            pathStepId: "fork-path",
+            pathActionName: "inspect");
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-id.workflow.json", json));
+
+        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+    }
+
+    /// <summary>
+    /// The two serialized representations of one fork-path occurrence must agree on its
+    /// occurrence-scoped ontology action. A conflicting action is not silently first-wins.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingActionCannotMasqueradeAsForkPathEcho()
+    {
+        var json = ForkEchoJson(
+            topLevelStepId: "fork-path",
+            topLevelActionName: "inspect-top-level",
+            pathStepId: "fork-path",
+            pathActionName: "inspect-nested");
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-action.workflow.json", json));
+
+        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+    }
+
+    /// <summary>
+    /// A compensation declaration on only one serialized copy is not an echo. Treating the
+    /// nested copy as authoritative would silently erase rollback behavior from the other copy.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingCompensationCannotMasqueradeAsForkPathEcho()
+    {
+        const string compensation = """
+            {
+              "compensation": {
+                "compensationStepType": "CompensateStep",
+                "requiredOnFailure": true,
+                "timeout": "PT30S"
+              }
+            }
+            """;
+        var json = ForkEchoJson(topLevelConfiguration: compensation);
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-compensation.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// Retry policy disagreement between duplicate serialized positions is rejected rather than
+    /// selecting whichever position happens to survive model composition.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingRetryCannotMasqueradeAsForkPathEcho()
+    {
+        const string retry = """
+            {
+              "retry": {
+                "maxAttempts": 3,
+                "initialDelay": "PT1S",
+                "backoffMultiplier": 2,
+                "maxDelay": "PT5S",
+                "useJitter": true
+              }
+            }
+            """;
+        var json = ForkEchoJson(topLevelConfiguration: retry);
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-retry.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// Timeout policy disagreement between duplicate serialized positions is rejected.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingTimeoutCannotMasqueradeAsForkPathEcho()
+    {
+        const string timeout = """{ "timeout": "PT10S" }""";
+        var json = ForkEchoJson(topLevelConfiguration: timeout);
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-timeout.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// Confidence-routing disagreement between duplicate serialized positions is rejected.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingConfidenceCannotMasqueradeAsForkPathEcho()
+    {
+        const string confidence = """
+            {
+              "confidenceThreshold": 0.8,
+              "onLowConfidence": {
+                "handlerId": "risk-handler",
+                "handlerSteps": [
+                  {
+                    "kind": "skill", "stepId": "risk", "stepName": "RiskStep",
+                    "isTerminal": true, "stepType": "RiskStep"
+                  }
+                ],
+                "isTerminal": true
+              }
+            }
+            """;
+        var json = ForkEchoJson(topLevelConfiguration: confidence);
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-confidence.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// A stable step id cannot name occurrences with different instance identities, even though
+    /// their distinct phase names would otherwise evade the duplicate-effective-name gate.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingInstanceNameCannotMasqueradeAsForkPathEcho()
+    {
+        var json = ForkEchoJson(
+            topLevelInstanceName: "TopLevel",
+            pathInstanceName: "Nested");
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-instance.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// Terminal and runtime metadata are part of the serialized occurrence. Conflicting copies
+    /// cannot be silently collapsed even where today's runtime lowering ignores a wire field.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingTerminalOrRuntimeCannotMasqueradeAsForkPathEcho()
+    {
+        var json = ForkEchoJson(
+            topLevelIsTerminal: true,
+            topLevelRuntime: "remote",
+            pathIsTerminal: false,
+            pathRuntime: "exarchos");
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-metadata.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// Gate back-references are occurrence semantics, so two copies with the same stable id must
+    /// agree on the gate declaration they reference.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ConflictingGateCannotMasqueradeAsForkPathEcho()
+    {
+        var json = ForkEchoJson(
+            stepKind: "gate",
+            topLevelGateId: "gate-a",
+            pathGateId: "gate-b",
+            gates: """
+                [
+                  { "class": "epistemic", "id": "gate-a" },
+                  { "class": "epistemic", "id": "gate-b" }
+                ]
+                """);
+
+        var result = RunGenerator(StepTypes, ("identity-false-echo-gate.workflow.json", json));
+
+        await AssertRejected(result, "AGWF042", "fork-path");
+    }
+
+    /// <summary>
+    /// The strict echo comparison still accepts the exact duplicate emitted by projection,
+    /// including nested resilience and confidence configuration.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task JsonImport_ExactFullyConfiguredForkPathEcho_IsAccepted()
+    {
+        const string configuration = """
+            {
+              "retry": {
+                "maxAttempts": 3,
+                "initialDelay": "PT1S",
+                "backoffMultiplier": 2,
+                "maxDelay": "PT5S",
+                "useJitter": true
+              },
+              "timeout": "PT10S",
+              "compensation": {
+                "compensationStepType": "CompensateStep",
+                "requiredOnFailure": true,
+                "timeout": "PT30S"
+              },
+              "confidenceThreshold": 0.8,
+              "onLowConfidence": {
+                "handlerId": "risk-handler",
+                "handlerSteps": [
+                  {
+                    "kind": "skill", "stepId": "risk", "stepName": "RiskStep",
+                    "isTerminal": true, "stepType": "RiskStep"
+                  }
+                ],
+                "isTerminal": true
+              }
+            }
+            """;
+        var json = ForkEchoJson(
+            topLevelConfiguration: configuration,
+            pathConfiguration: configuration,
+            topLevelInstanceName: "Shared",
+            pathInstanceName: "Shared",
+            topLevelRuntime: "exarchos",
+            pathRuntime: "exarchos");
+
+        var result = RunGenerator(StepTypes, ("identity-exact-configured-echo.workflow.json", json));
+
+        await Assert.That(result.Diagnostics.Any(d => d.Id is "AGWF003" or "AGWF042")).IsFalse();
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue();
+    }
+
+    private static string ForkEchoJson(
+        string topLevelStepId = "fork-path",
+        string topLevelActionName = "inspect",
+        string pathStepId = "fork-path",
+        string pathActionName = "inspect",
+        string? topLevelConfiguration = null,
+        string? pathConfiguration = null,
+        string? topLevelInstanceName = null,
+        string? pathInstanceName = null,
+        bool topLevelIsTerminal = false,
+        bool pathIsTerminal = false,
+        string? topLevelRuntime = null,
+        string? pathRuntime = null,
+        string stepKind = "skill",
+        string? topLevelGateId = null,
+        string? pathGateId = null,
+        string gates = "[]")
+    {
+        var topConfigurationProperty = OptionalObjectProperty("configuration", topLevelConfiguration);
+        var pathConfigurationProperty = OptionalObjectProperty("configuration", pathConfiguration);
+        var topInstanceProperty = OptionalStringProperty("instanceName", topLevelInstanceName);
+        var pathInstanceProperty = OptionalStringProperty("instanceName", pathInstanceName);
+        var topRuntimeProperty = OptionalStringProperty("runtime", topLevelRuntime);
+        var pathRuntimeProperty = OptionalStringProperty("runtime", pathRuntime);
+        var topGateProperty = OptionalStringProperty("gateId", topLevelGateId);
+        var pathGateProperty = OptionalStringProperty("gateId", pathGateId);
+        var topTerminal = topLevelIsTerminal ? "true" : "false";
+        var pathTerminal = pathIsTerminal ? "true" : "false";
+
+        return $$"""
+        {
+          "schemaVersion": "1.0",
+          "name": "import-identity-false-echo",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "PrepareStep", "isTerminal": false, "stepType": "PrepareStep" },
+            {
+              "kind": "{{stepKind}}", "stepId": "{{topLevelStepId}}", "stepName": "AnalyzeStep",
+              "isTerminal": {{topTerminal}}, "stepType": "AnalyzeStep",
+              "action": { "domainName": "orders", "objectTypeName": "Order", "actionName": "{{topLevelActionName}}" }
+              {{topInstanceProperty}}{{topRuntimeProperty}}{{topGateProperty}}{{topConfigurationProperty}}
+            },
+            { "kind": "skill", "stepId": "s2", "stepName": "SynthesizeStep", "isTerminal": false, "stepType": "SynthesizeStep" },
+            { "kind": "skill", "stepId": "s3", "stepName": "CompleteStep", "isTerminal": true, "stepType": "CompleteStep" }
+          ],
+          "transitions": [],
+          "branchPoints": [],
+          "loops": [],
+          "forkPoints": [
+            {
+              "forkPointId": "import-identity-false-echo-Fork0",
+              "fromStepId": "s1",
+              "joinStepId": "s2",
+              "paths": [
+                {
+                  "pathId": "p0", "pathIndex": 0,
+                  "steps": [
+                    {
+                      "kind": "{{stepKind}}", "stepId": "{{pathStepId}}", "stepName": "AnalyzeStep",
+                      "isTerminal": {{pathTerminal}}, "stepType": "AnalyzeStep",
+                      "action": { "domainName": "orders", "objectTypeName": "Order", "actionName": "{{pathActionName}}" }
+                      {{pathInstanceProperty}}{{pathRuntimeProperty}}{{pathGateProperty}}{{pathConfigurationProperty}}
+                    }
+                  ]
+                },
+                {
+                  "pathId": "p1", "pathIndex": 1,
+                  "steps": [
+                    { "kind": "skill", "stepId": "fp1", "stepName": "ScoreStep", "isTerminal": false, "stepType": "ScoreStep" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "failureHandlers": [],
+          "approvalPoints": [],
+          "gates": {{gates}},
+          "entryStepId": "s1",
+          "terminalStepId": "s3"
+        }
+        """;
+    }
+
+    private static string OptionalStringProperty(string propertyName, string? value) =>
+        value is null ? string.Empty : $", \"{propertyName}\": \"{value}\"";
+
+    private static string OptionalObjectProperty(string propertyName, string? value) =>
+        value is null ? string.Empty : $", \"{propertyName}\": {value}";
+
     private static async Task AssertQualifiedForkSaga(
         GeneratorDriverRunResult result,
         string firstHandleParameter,
@@ -232,12 +570,6 @@ public sealed class ImportIdentityGateTests
 
     private static async Task AssertRejected(GeneratorDriverRunResult result, string expectedId, string collidingType)
     {
-        if (!string.Equals(expectedId, "AGWF003", StringComparison.Ordinal))
-        {
-            await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull()
-                .Because("distinct instanceName values must survive import, so the collision is by type, not by name.");
-        }
-
         var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == expectedId);
         await Assert.That(diagnostic).IsNotNull()
             .Because($"the colliding import must surface {expectedId} before emission.");

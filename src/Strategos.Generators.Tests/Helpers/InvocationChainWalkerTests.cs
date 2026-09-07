@@ -9,6 +9,8 @@ using Strategos.Generators.Helpers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
+using TUnit.Assertions.Enums;
+
 namespace Strategos.Generators.Tests.Helpers;
 
 /// <summary>
@@ -94,6 +96,31 @@ public class InvocationChainWalkerTests
         await Assert.That(stepNodes.Count).IsEqualTo(3);
     }
 
+    /// <summary>
+    /// Verifies that transparent syntax around a fluent receiver does not truncate the walk.
+    /// </summary>
+    [Test]
+    public async Task WalkChain_ParenthesizedReceiver_ReturnsEarlierInvocations()
+    {
+        const string code = @"
+            public class Workflow
+            {
+                public void Define()
+                {
+                    (builder.StartWith<ValidateOrder>())
+                        .Then<ProcessPayment>()
+                        .Finally<SendConfirmation>();
+                }
+            }";
+        var context = CreateContext(code);
+
+        var stepNodes = InvocationChainWalker.WalkChain(context)
+            .Where(node => node.IsStepMethod)
+            .ToArray();
+
+        await Assert.That(stepNodes.Length).IsEqualTo(3);
+    }
+
     // =============================================================================
     // D. Loop Tests
     // =============================================================================
@@ -166,6 +193,43 @@ public class InvocationChainWalkerTests
 
         await Assert.That(outerSteps.Count).IsGreaterThan(0);
         await Assert.That(innerSteps.Count).IsGreaterThan(0);
+    }
+
+    /// <summary>
+    /// Verifies that separate statements and a nested fluent receiver both retain declaration
+    /// order. These two shapes have opposite Roslyn descendant order.
+    /// </summary>
+    [Test]
+    public async Task CollectInvocationsInLambda_MixedChains_PreservesDeclarationOrder()
+    {
+        const string code = """
+            class Test
+            {
+                void M()
+                {
+                    Use(path =>
+                    {
+                        path.Then<A>().Then<B>();
+                        path.Then<C>();
+                    });
+                }
+            }
+            """;
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.LambdaExpressionSyntax>()
+            .Single();
+
+        var invocations = InvocationChainWalker.CollectInvocationsInLambda(lambda)
+            .Select(invocation => invocation.Expression.ToString())
+            .ToArray();
+
+        await Assert.That(invocations).IsEquivalentTo(new[]
+        {
+            "path.Then<A>",
+            "path.Then<A>().Then<B>",
+            "path.Then<C>",
+        }, CollectionOrdering.Matching);
     }
 
     // =============================================================================

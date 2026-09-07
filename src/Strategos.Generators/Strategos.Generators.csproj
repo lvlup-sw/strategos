@@ -35,6 +35,24 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- #167 consumes the exact same dependency-free proof kernel and Roslyn
+         predicate parser as the ontology analyzer. Source links keep the two
+         analyzer assemblies isolated while preventing semantic drift. -->
+    <Compile Include="..\Strategos.Ontology\ActionLogic\LogicFormula.cs"
+             Link="ActionLogic\LogicFormula.cs" />
+    <Compile Include="..\Strategos.Ontology\ActionLogic\FiniteDomainSolver.cs"
+             Link="ActionLogic\FiniteDomainSolver.cs" />
+    <Compile Include="..\Strategos.Ontology.Generators\Analyzers\ActionCompositionAnalyzer.cs"
+             Link="SharedAnalyzers\ActionCompositionAnalyzer.cs" />
+    <Compile Include="..\Strategos.Ontology.Generators\Analyzers\ActionCompositionAnalyzer.WorkflowBridge.cs"
+             Link="SharedAnalyzers\ActionCompositionAnalyzer.WorkflowBridge.cs" />
+    <Compile Include="..\Strategos.Ontology.Generators\Diagnostics\OntologyDiagnosticIds.cs"
+             Link="SharedAnalyzers\OntologyDiagnosticIds.cs" />
+    <Compile Include="..\Strategos.Ontology.Generators\Diagnostics\OntologyDiagnostics.cs"
+             Link="SharedAnalyzers\OntologyDiagnostics.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers">
       <PrivateAssets>all</PrivateAssets>

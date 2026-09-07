@@ -38,6 +38,7 @@ public sealed class ImportFrontEndRobustnessTests
     private const string UnresolvableMonikerCode = "AGWF025";
     private const string EmptyWorkflowNameCode = "AGWF001";
     private const string NoStepsFoundCode = "AGWF002";
+    private const string MalformedWorkflowJsonCode = "AGWF023";
 
     /// <summary>
     /// Real step types so a primary step (and a resolvable compensation/approver) can bind and lower.
@@ -248,6 +249,57 @@ public sealed class ImportFrontEndRobustnessTests
     }
 
     /// <summary>
+    /// A present <c>action</c> token is never collapsed into the same state as an
+    /// omitted optional action. Null, scalar, array, incomplete-object, and blank
+    /// identity shapes all fail closed through the stable import diagnostic.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task PresentMalformedActionToken_FailsClosed_WithStableDiagnostic()
+    {
+        var cases = new (string Name, string Token, string ExpectedDetail)[]
+        {
+            ("null", "null", "property 'action'"),
+            ("scalar", "\"orders\"", "property 'action'"),
+            ("array", "[]", "property 'action'"),
+            ("incomplete-object", "{ \"domainName\": \"orders\", \"objectTypeName\": \"Order\" }", "action.actionName"),
+            ("blank-identity", "{ \"domainName\": \"   \", \"objectTypeName\": \"Order\", \"actionName\": \"run\" }", "action.domainName"),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var result = RunGenerator(
+                StepTypes,
+                ($"malformed-action-{testCase.Name}.workflow.json", WorkflowWithAction(testCase.Token)));
+            var diagnostic = result.Diagnostics.SingleOrDefault(
+                diagnostic => diagnostic.Id == MalformedWorkflowJsonCode);
+
+            await Assert.That(diagnostic).IsNotNull()
+                .Because($"a present {testCase.Name} action token must not be treated as omission.");
+            await Assert.That(diagnostic!.GetMessage()).Contains(testCase.ExpectedDetail)
+                .Because("the stable import diagnostic must identify the malformed action field.");
+            await Assert.That(result.GeneratedTrees.Any(
+                    tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+                .IsFalse()
+                .Because("a malformed proof-bearing action reference must not lower a saga.");
+        }
+    }
+
+    /// <summary>An omitted optional action remains importable and distinct from an explicit null.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task OmittedAction_RemainsImportable()
+    {
+        var result = RunGenerator(StepTypes, ("omitted-action.workflow.json", WorkflowWithoutAction()));
+
+        await Assert.That(result.Diagnostics.Any(diagnostic => diagnostic.Id == MalformedWorkflowJsonCode))
+            .IsFalse();
+        await Assert.That(result.GeneratedTrees.Any(
+                tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue();
+    }
+
+    /// <summary>
     /// Asserts the run failed CLOSED on an unresolvable moniker: it reported the stable
     /// <paramref name="expectedId"/> diagnostic naming the offending moniker, and emitted NO saga.
     /// </summary>
@@ -266,6 +318,45 @@ public sealed class ImportFrontEndRobustnessTests
             .IsFalse()
             .Because($"a workflow with an unresolvable moniker must not lower a saga (no model is produced).");
     }
+
+    private static string WorkflowWithAction(string actionToken) => $$"""
+        {
+          "schemaVersion": "1.0",
+          "name": "malformed-action",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RobustStepA",
+              "isTerminal": true,
+              "stepType": "RobustStepA",
+              "action": {{actionToken}}
+            }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s1"
+        }
+        """;
+
+    private static string WorkflowWithoutAction() => """
+        {
+          "schemaVersion": "1.0",
+          "name": "omitted-action",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RobustStepA",
+              "isTerminal": true,
+              "stepType": "RobustStepA"
+            }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s1"
+        }
+        """;
 
     /// <summary>
     /// Asserts the run reported the stable <paramref name="expectedId"/> diagnostic (a structurally

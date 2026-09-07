@@ -10,6 +10,11 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Verify.SourceGenerators" />
+    <!-- The authoritative generator harness compiles the emitted Wolverine/Marten saga. -->
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.Marten" />
+    <PackageReference Include="Marten" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,7 +42,14 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\Strategos\Strategos.csproj" />
+    <ProjectReference Include="..\Strategos.Agents\Strategos.Agents.csproj" />
+    <ProjectReference Include="..\Strategos.Ontology\Strategos.Ontology.csproj" />
     <ProjectReference Include="..\Strategos.Identity.Abstractions\Strategos.Identity.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Strategos.Ontology.Tests\Shared\ActionRefinementProofVectors.cs"
+             Link="Shared\ActionRefinementProofVectors.cs" />
   </ItemGroup>
 
 </Project>

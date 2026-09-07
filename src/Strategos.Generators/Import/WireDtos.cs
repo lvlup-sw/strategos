@@ -114,6 +114,22 @@ internal abstract class StepDefinition : IWireContractDto
 
     /// <summary>Gets or sets the optional step configuration (confidence / retry / compensation / …).</summary>
     public StepConfigurationDefinition? Configuration { get; set; }
+
+    /// <summary>Gets or sets the ontology action performed by this step occurrence.</summary>
+    public ActionReferenceV1? Action { get; set; }
+}
+
+/// <summary>Language-neutral ontology action identity twin.</summary>
+internal sealed class ActionReferenceV1 : IWireContractDto
+{
+    /// <summary>Gets or sets the ontology domain name.</summary>
+    public string? DomainName { get; set; }
+
+    /// <summary>Gets or sets the ontology object type name.</summary>
+    public string? ObjectTypeName { get; set; }
+
+    /// <summary>Gets or sets the ontology action name.</summary>
+    public string? ActionName { get; set; }
 }
 
 /// <summary>Skill-step twin — a CLR step type implementing the skill protocol.</summary>
