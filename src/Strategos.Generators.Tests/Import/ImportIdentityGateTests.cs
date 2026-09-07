@@ -7,6 +7,8 @@
 using System.Text;
 using System.Threading;
 
+using Strategos.Generators.Tests.Fixtures;
+
 using Microsoft.CodeAnalysis.Text;
 
 namespace Strategos.Generators.Tests.Import;
@@ -24,6 +26,7 @@ public sealed class ImportIdentityGateTests
         using System.Threading.Tasks;
         using Strategos.Abstractions;
         using Strategos.Attributes;
+        using Strategos.Steps;
 
         namespace IdentityNs;
 
@@ -207,8 +210,11 @@ public sealed class ImportIdentityGateTests
     [Test]
     public async Task JsonImport_IndependentTopLevelSameNameAsForkPath_ReportsAGWF003()
     {
-        var result = RunGenerator(StepTypes, ("identity-top-level-dup.workflow.json", IndependentTopLevelSameNameJson));
-        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-top-level-dup.workflow.json", IndependentTopLevelSameNameJson),
+            "AGWF003");
+        await AssertRejected(result, ["AGWF003"], "AnalyzeStep");
     }
 
     /// <summary>
@@ -226,9 +232,12 @@ public sealed class ImportIdentityGateTests
             pathStepId: "fork-path",
             pathActionName: "inspect");
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-id.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-id.workflow.json", json),
+            "AGWF003");
 
-        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+        await AssertRejected(result, ["AGWF003"], "AnalyzeStep");
     }
 
     /// <summary>
@@ -245,9 +254,13 @@ public sealed class ImportIdentityGateTests
             pathStepId: "fork-path",
             pathActionName: "inspect-nested");
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-action.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-action.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF003", "AnalyzeStep");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "AnalyzeStep");
     }
 
     /// <summary>
@@ -269,9 +282,13 @@ public sealed class ImportIdentityGateTests
             """;
         var json = ForkEchoJson(topLevelConfiguration: compensation);
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-compensation.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-compensation.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -295,9 +312,13 @@ public sealed class ImportIdentityGateTests
             """;
         var json = ForkEchoJson(topLevelConfiguration: retry);
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-retry.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-retry.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -310,9 +331,13 @@ public sealed class ImportIdentityGateTests
         const string timeout = """{ "timeout": "PT10S" }""";
         var json = ForkEchoJson(topLevelConfiguration: timeout);
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-timeout.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-timeout.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -339,9 +364,13 @@ public sealed class ImportIdentityGateTests
             """;
         var json = ForkEchoJson(topLevelConfiguration: confidence);
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-confidence.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-confidence.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -356,9 +385,12 @@ public sealed class ImportIdentityGateTests
             topLevelInstanceName: "TopLevel",
             pathInstanceName: "Nested");
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-instance.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-instance.workflow.json", json),
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -375,9 +407,13 @@ public sealed class ImportIdentityGateTests
             pathIsTerminal: false,
             pathRuntime: "exarchos");
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-metadata.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-metadata.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -399,9 +435,13 @@ public sealed class ImportIdentityGateTests
                 ]
                 """);
 
-        var result = RunGenerator(StepTypes, ("identity-false-echo-gate.workflow.json", json));
+        var result = RunGenerator(
+            StepTypes,
+            ("identity-false-echo-gate.workflow.json", json),
+            "AGWF003",
+            "AGWF042");
 
-        await AssertRejected(result, "AGWF042", "fork-path");
+        await AssertRejected(result, ["AGWF003", "AGWF042"], "fork-path");
     }
 
     /// <summary>
@@ -450,6 +490,7 @@ public sealed class ImportIdentityGateTests
 
         var result = RunGenerator(StepTypes, ("identity-exact-configured-echo.workflow.json", json));
 
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(d => d.Id is "AGWF003" or "AGWF042")).IsFalse();
         await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
             .IsTrue();
@@ -548,6 +589,7 @@ public sealed class ImportIdentityGateTests
         string firstHandleParameter,
         string secondHandleParameter)
     {
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF003")).IsNull();
         await Assert.That(result.Diagnostics.FirstOrDefault(d => d.Id == "AGWF036")).IsNull();
         var saga = GetSaga(result);
@@ -568,75 +610,48 @@ public sealed class ImportIdentityGateTests
             .Split('\n')
             .Count(line => string.Equals(line.Trim(), parameterDeclaration, StringComparison.Ordinal));
 
-    private static async Task AssertRejected(GeneratorDriverRunResult result, string expectedId, string collidingType)
+    private static async Task AssertRejected(
+        GeneratorDriverRunResult result,
+        IReadOnlyCollection<string> expectedIds,
+        string collidingType)
     {
-        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == expectedId);
-        await Assert.That(diagnostic).IsNotNull()
-            .Because($"the colliding import must surface {expectedId} before emission.");
-        await Assert.That(diagnostic!.GetMessage()).Contains(collidingType);
+        var errors = ErrorDiagnostics(result);
+        await Assert.That(errors).HasCount().EqualTo(expectedIds.Count)
+            .Because("the colliding import must fail with exactly its asserted identity diagnostics.");
+        await Assert.That(errors.Select(static diagnostic => diagnostic.Id))
+            .IsEquivalentTo(expectedIds)
+            .Because("no allowed identity diagnostic may escape the assertion boundary.");
+        await Assert.That(errors.Any(diagnostic => diagnostic.GetMessage().Contains(
+                collidingType,
+                StringComparison.Ordinal)))
+            .IsTrue()
+            .Because($"an identity diagnostic must name the colliding occurrence '{collidingType}'.");
         await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
             .IsFalse()
-            .Because($"a workflow rejected by {expectedId} must not emit a saga.");
+            .Because("a workflow rejected by the identity gate must not emit a saga.");
     }
 
-    private static GeneratorDriverRunResult RunGenerator(string source, params (string Path, string Content)[] additionalTexts)
+    private static GeneratorDriverRunResult RunGenerator(
+        string source,
+        (string Path, string Content) additionalText,
+        params string[] allowedGeneratorErrorIds)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "IdentityImportTestAssembly",
-            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
-            references: GetReferences(),
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        AdditionalText[] texts = [new InMemoryAdditionalText(additionalText.Path, additionalText.Content)];
 
-        var texts = additionalTexts
-            .Select(t => (AdditionalText)new InMemoryAdditionalText(t.Path, t.Content))
+        return GeneratorTestHelper.RunGeneratorWithValidInput(
+            source,
+            texts,
+            allowedGeneratorErrorIds);
+    }
+
+    private static Diagnostic[] ErrorDiagnostics(GeneratorDriverRunResult result) =>
+        result.Diagnostics
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
 
-        var driver = CSharpGeneratorDriver.Create(
-            generators: [new WorkflowIncrementalGenerator().AsSourceGenerator()],
-            additionalTexts: texts,
-            parseOptions: null,
-            optionsProvider: null);
-
-        return driver.RunGenerators(compilation).GetRunResult();
-    }
-
-    private static List<MetadataReference> GetReferences()
-    {
-        var references = new List<MetadataReference>();
-
-        var runtimePath = System.IO.Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        foreach (var assembly in new[] { "System.Runtime.dll", "System.Private.CoreLib.dll", "netstandard.dll" })
-        {
-            var path = System.IO.Path.Combine(runtimePath, assembly);
-            if (File.Exists(path))
-            {
-                references.Add(MetadataReference.CreateFromFile(path));
-            }
-        }
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            if (!assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            {
-                try
-                {
-                    references.Add(MetadataReference.CreateFromFile(assembly.Location));
-                }
-                catch
-                {
-                    // Ignore assemblies that can't be loaded as references.
-                }
-            }
-        }
-
-        var abstractions = typeof(Strategos.Abstractions.IWorkflowState).Assembly;
-        if (!string.IsNullOrEmpty(abstractions.Location))
-        {
-            references.Add(MetadataReference.CreateFromFile(abstractions.Location));
-        }
-
-        return references;
-    }
+    private static async Task AssertNoErrors(GeneratorDriverRunResult result) =>
+        await Assert.That(ErrorDiagnostics(result)).IsEmpty()
+            .Because("a legal import must not be accepted alongside an allowed error diagnostic.");
 
     private sealed class InMemoryAdditionalText : AdditionalText
     {

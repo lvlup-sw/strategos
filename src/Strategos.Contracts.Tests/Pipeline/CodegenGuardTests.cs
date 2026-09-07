@@ -134,6 +134,187 @@ public sealed class CodegenGuardTests
     }
 
     /// <summary>
+    /// Proves that the record emitter projects only the exact direct-property
+    /// non-whitespace pattern into executable JSON callbacks. Required and
+    /// optional properties have different null semantics, while unrelated
+    /// regular expressions and constraints inherited through scalar aliases
+    /// remain schema-only.
+    /// </summary>
+    [Test]
+    public async Task RecordEmitter_NonWhitespaceBoundary_IsExact()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory("record-emitter-boundary-").FullName;
+        var schemas = Path.Combine(tempRoot, "schemas");
+        var generated = Path.Combine(tempRoot, "generated");
+        var consumer = Path.Combine(tempRoot, "consumer");
+        Directory.CreateDirectory(schemas);
+        Directory.CreateDirectory(consumer);
+
+        try
+        {
+            var committedSchemas = Path.Combine(
+                RepoLayout.ContractsProjectDir,
+                "schemas",
+                "json-schema");
+            foreach (var schema in Directory.GetFiles(committedSchemas, "*.json"))
+            {
+                File.Copy(schema, Path.Combine(schemas, Path.GetFileName(schema)));
+            }
+
+            await File.WriteAllTextAsync(
+                Path.Combine(schemas, "NonWhitespaceBoundaryFixture.json"),
+                """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "requiredExact": {
+                      "type": "string",
+                      "pattern": ".*\\S.*"
+                    },
+                    "optionalExact": {
+                      "type": "string",
+                      "pattern": ".*\\S.*"
+                    },
+                    "unrelatedPattern": {
+                      "type": "string",
+                      "pattern": "^x+$"
+                    },
+                    "scalarAlias": {
+                      "$ref": "ScalarAliasBoundary.json"
+                    }
+                  },
+                  "required": ["requiredExact"]
+                }
+                """);
+            await File.WriteAllTextAsync(
+                Path.Combine(schemas, "ScalarAliasBoundary.json"),
+                """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "string",
+                  "pattern": ".*\\S.*"
+                }
+                """);
+
+            var codegenProject = Path.Combine(
+                RepoLayout.RepoRoot,
+                "src",
+                "Strategos.Contracts.Codegen",
+                "Strategos.Contracts.Codegen.csproj");
+            var emit = await Cli.RunAsync(
+                "dotnet",
+                $"run --project \"{codegenProject}\" -- \"{schemas}\" \"{generated}\"");
+            await Assert.That(emit.ExitCode).IsEqualTo(0).Because(emit.Output);
+
+            var emittedPath = Path.Combine(generated, "NonWhitespaceBoundaryFixture.g.cs");
+            var emitted = await File.ReadAllTextAsync(emittedPath);
+            await Assert.That(emitted).Contains(
+                "RequireNonWhitespace(RequiredExact, \"NonWhitespaceBoundaryFixture.requiredExact\", required: true)");
+            await Assert.That(emitted).Contains(
+                "RequireNonWhitespace(OptionalExact, \"NonWhitespaceBoundaryFixture.optionalExact\", required: false)");
+            await Assert.That(emitted).DoesNotContain("RequireNonWhitespace(UnrelatedPattern");
+            await Assert.That(emitted).DoesNotContain("RequireNonWhitespace(ScalarAlias");
+
+            File.Copy(emittedPath, Path.Combine(consumer, Path.GetFileName(emittedPath)));
+            File.Copy(
+                Path.Combine(
+                    RepoLayout.RepoRoot,
+                    "src",
+                    "Strategos.Contracts",
+                    "ContractJsonValidation.cs"),
+                Path.Combine(consumer, "ContractJsonValidation.cs"));
+
+            await File.WriteAllTextAsync(
+                Path.Combine(consumer, "BoundaryConsumer.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <OutputType>Exe</OutputType>
+                    <TargetFramework>net10.0</TargetFramework>
+                    <ImplicitUsings>enable</ImplicitUsings>
+                    <Nullable>enable</Nullable>
+                    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+                  </PropertyGroup>
+                </Project>
+                """);
+            await File.WriteAllTextAsync(
+                Path.Combine(consumer, "Program.cs"),
+                """
+                using System.Text.Json;
+                using Strategos.Contracts.Generated;
+
+                ExpectReadRejected("{}");
+                ExpectReadRejected("{\"requiredExact\":\"\"}");
+                ExpectReadRejected("{\"requiredExact\":\"   \"}");
+                ExpectWriteRejected(new() { RequiredExact = "" });
+                ExpectWriteRejected(new() { RequiredExact = "   " });
+
+                ExpectReadAccepted("{\"requiredExact\":\"ok\"}");
+                ExpectReadAccepted("{\"requiredExact\":\"ok\",\"optionalExact\":null}");
+                ExpectWriteAccepted(new() { RequiredExact = "ok", OptionalExact = null });
+                ExpectReadRejected("{\"requiredExact\":\"ok\",\"optionalExact\":\"\"}");
+                ExpectReadRejected("{\"requiredExact\":\"ok\",\"optionalExact\":\"   \"}");
+                ExpectWriteRejected(new() { RequiredExact = "ok", OptionalExact = "" });
+                ExpectWriteRejected(new() { RequiredExact = "ok", OptionalExact = "   " });
+
+                ExpectReadAccepted("{\"requiredExact\":\"ok\",\"unrelatedPattern\":\"\",\"scalarAlias\":\"   \"}");
+                ExpectWriteAccepted(new()
+                {
+                    RequiredExact = "ok",
+                    UnrelatedPattern = "",
+                    ScalarAlias = "   ",
+                });
+
+                static void ExpectReadAccepted(string json) =>
+                    _ = JsonSerializer.Deserialize<NonWhitespaceBoundaryFixture>(json)
+                        ?? throw new InvalidOperationException("Expected a value.");
+
+                static void ExpectReadRejected(string json)
+                {
+                    try
+                    {
+                        _ = JsonSerializer.Deserialize<NonWhitespaceBoundaryFixture>(json);
+                    }
+                    catch (JsonException)
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException($"Expected JSON read rejection: {json}");
+                }
+
+                static void ExpectWriteAccepted(NonWhitespaceBoundaryFixture value) =>
+                    _ = JsonSerializer.Serialize(value);
+
+                static void ExpectWriteRejected(NonWhitespaceBoundaryFixture value)
+                {
+                    try
+                    {
+                        _ = JsonSerializer.Serialize(value);
+                    }
+                    catch (JsonException)
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException("Expected JSON write rejection.");
+                }
+                """);
+
+            var execute = await Cli.RunAsync(
+                "dotnet",
+                "run --project BoundaryConsumer.csproj --configuration Release",
+                consumer);
+            await Assert.That(execute.ExitCode).IsEqualTo(0).Because(execute.Output);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// The Contracts tag workflow re-establishes codegen and test evidence at the
     /// checked-out tag before it packs immutable NuGet bytes.
     /// </summary>

@@ -18,7 +18,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DynamicWorkflowBinding_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(WorkflowNames.Resolve())"));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -29,7 +29,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task BindingThroughIntermediateBuilderLocal_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             string.Empty,
             declaration: "var bound = obj.Action(\"fulfill\"); bound.BoundToWorkflow(\"flow\");"));
 
@@ -41,7 +41,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task UnknownFluentHelper_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".Opaque().BoundToWorkflow(\"flow\")"));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -63,7 +63,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DynamicObjectName_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation:
                 "builder.Object<Order>(name: WorkflowNames.Resolve(), configure: obj => { ACTIONS });"));
@@ -77,7 +77,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task NullObjectName_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: "builder.Object<Order>(name: null, configure: obj => { ACTIONS });"));
 
@@ -90,7 +90,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task BlankObjectName_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: "builder.Object<Order>(name: \"   \" , configure: obj => { ACTIONS });"));
 
@@ -114,7 +114,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DirectDescriptorWithDynamicGuarantee_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             bindingSuffix: string.Empty,
             extraDeclaration: """
                 public static class DirectAction
@@ -157,7 +157,7 @@ public sealed class OntologyActionCatalogFailClosedTests
                     public static readonly ActionDescriptor Done = new(
                         new ActionSubject("orders", "Order"), "done", "");
                 }
-                """));
+                """), "AGWF040");
 
         await Assert.That(diagnostics).HasCount().EqualTo(2);
         foreach (var diagnostic in diagnostics)
@@ -184,11 +184,27 @@ public sealed class OntologyActionCatalogFailClosedTests
         await Assert.That(diagnostics).IsEmpty();
     }
 
+    /// <summary>
+    /// A valid rooted descriptor binding must activate occurrence resolution, so an omitted
+    /// descriptor action reports the exact missing occurrence rather than vacuously skipping proof.
+    /// </summary>
+    [Test]
+    public async Task InlineObjectTypeDescriptorBoundAction_WithMissingOccurrence_ReportsAgwf040()
+    {
+        var diagnostic = SingleBindingDiagnostic(
+            "AGWF040",
+            InlineDescriptorSource(includeLeafAction: false));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF040");
+        await Assert.That(diagnostic.GetMessage()).Contains("orders/Order/leaf");
+        await Assert.That(diagnostic.GetMessage()).Contains("resolving to 0 declarations");
+    }
+
     /// <summary>A rooted descriptor action must use its containing object descriptor's subject.</summary>
     [Test]
     public async Task InlineObjectTypeDescriptorSubjectMismatch_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             boundDomainName: "other-orders"));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -200,7 +216,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ConditionalInlineObjectTypeDescriptorRegistration_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             conditionalRegistration: true));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -212,7 +228,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ConditionalInlineObjectTypeDescriptorActions_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             conditionalActions: true));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -224,7 +240,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task EscapedInlineObjectTypeDescriptorBuilder_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             escapedBuilder: true));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -236,7 +252,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task CustomDescriptorActionsCarrier_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             customActionsCarrier: true));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -248,7 +264,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DefaultDescriptorBindingTypeWithWorkflow_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             boundBindingType: null));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -260,7 +276,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ToolDescriptorBindingTypeWithWorkflow_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(InlineDescriptorSource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
             boundBindingType: "ActionBindingType.Tool"));
 
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
@@ -272,7 +288,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ParenthesizedPostBindingGuarantee_IsIncludedInProof()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF041", Source(
             string.Empty,
             declaration: """
                 (obj.Action("fulfill")
@@ -295,7 +311,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ParenthesizedPostBindingRequirement_IsIncludedInProof()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF041", Source(
             string.Empty,
             declaration: """
                 (obj.Action("fulfill")
@@ -366,7 +382,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task BindingFactoredThroughOntologyBuilderHelper_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: "Register(builder);",
             ontologyMembers: """
@@ -385,7 +401,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task BindingFactoredThroughObjectBuilderHelper_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: "builder.Object<Order>(\"Order\", obj => ConfigureActions(obj));",
             ontologyMembers: """
@@ -403,7 +419,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ConditionalBoundAction_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: """
                 builder.Object<Order>("Order", obj =>
@@ -423,7 +439,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task ConditionalAuthorityDeclaration_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             objectInvocation: """
                 if (DateTime.UtcNow.Ticks > 0)
@@ -442,7 +458,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DynamicAuthorityCoordinateOverwrite_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(AuthoritySource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", AuthoritySource(
             """
             builder.AuthorityAxis("role", "reader", "manager");
             builder.Authority("reader").At("role", "reader");
@@ -460,7 +476,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DuplicateAuthorityAxisLevels_ReportAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(AuthoritySource(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", AuthoritySource(
             """
             builder.AuthorityAxis("role", "reader", "reader");
             builder.Authority("reader").At("role", "reader");
@@ -498,7 +514,7 @@ public sealed class OntologyActionCatalogFailClosedTests
                 });
                 """,
             ontologyMembers: "private static IOntologyBuilder OtherBuilder => null!;",
-            terminalActionDeclaration: string.Empty));
+            terminalActionDeclaration: string.Empty), "AGWF040");
 
         await Assert.That(diagnostics).HasCount().EqualTo(2);
         foreach (var diagnostic in diagnostics)
@@ -528,7 +544,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DynamicDomainName_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             domainPropertyOverride: "public override string DomainName => WorkflowNames.Resolve();"));
 
@@ -540,7 +556,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DomainNameGetterWithMultipleReturns_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             ".BoundToWorkflow(\"flow\")",
             domainPropertyOverride: """
                 public override string DomainName
@@ -578,7 +594,7 @@ public sealed class OntologyActionCatalogFailClosedTests
     [Test]
     public async Task DescriptorWithWorkflowBinding_ReportsAgwf042()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostic = SingleBindingDiagnostic("AGWF042", Source(
             bindingSuffix: string.Empty,
             extraDeclaration: """
                 public static class WithAction
@@ -600,38 +616,21 @@ public sealed class OntologyActionCatalogFailClosedTests
         await Assert.That(diagnostic.GetMessage()).Contains("ActionDescriptor with-expression");
     }
 
-    private static Diagnostic[] BindingDiagnostics(string source) =>
-        RunBindingGenerator(source).Diagnostics
+    private static Diagnostic[] BindingDiagnostics(
+        string source,
+        params string[] allowedGeneratorErrorIds) =>
+        RunBindingGenerator(source, allowedGeneratorErrorIds).Diagnostics
             .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
             .ToArray();
 
-    private static GeneratorDriverRunResult RunBindingGenerator(string source)
-    {
-        var result = GeneratorTestHelper.RunGeneratorWithValidInput(
-            source,
-            "AGWF039",
-            "AGWF040",
-            "AGWF041",
-            "AGWF042");
-        var unexpectedErrors = result.Diagnostics
-            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .Where(static diagnostic => diagnostic.Id is not (
-                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
-            .ToArray();
-        if (unexpectedErrors.Length > 0)
-        {
-            throw new InvalidOperationException(
-                "Ontology-catalog fixture produced unexpected generator errors: " +
-                string.Join(" | ", unexpectedErrors.Select(static diagnostic =>
-                    diagnostic.Id + ": " + diagnostic.GetMessage())));
-        }
+    private static GeneratorDriverRunResult RunBindingGenerator(
+        string source,
+        params string[] allowedGeneratorErrorIds) =>
+        GeneratorTestHelper.RunGeneratorWithValidInput(source, allowedGeneratorErrorIds);
 
-        return result;
-    }
-
-    private static Diagnostic SingleBindingDiagnostic(string source)
+    private static Diagnostic SingleBindingDiagnostic(string expectedId, string source)
     {
-        var diagnostics = BindingDiagnostics(source);
+        var diagnostics = BindingDiagnostics(source, expectedId);
         if (diagnostics.Length != 1)
         {
             throw new InvalidOperationException(
@@ -639,7 +638,14 @@ public sealed class OntologyActionCatalogFailClosedTests
                 + string.Join(" | ", diagnostics.Select(item => item.Id + ": " + item.GetMessage())));
         }
 
-        return diagnostics[0];
+        var diagnostic = diagnostics[0];
+        if (!string.Equals(diagnostic.Id, expectedId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Expected {expectedId}, found {diagnostic.Id}: {diagnostic.GetMessage()}");
+        }
+
+        return diagnostic;
     }
 
     private static string Source(
@@ -804,7 +810,8 @@ public sealed class OntologyActionCatalogFailClosedTests
         bool conditionalActions = false,
         bool escapedBuilder = false,
         bool customActionsCarrier = false,
-        string? boundBindingType = "ActionBindingType.Workflow")
+        string? boundBindingType = "ActionBindingType.Workflow",
+        bool includeLeafAction = true)
     {
         var receiver = escapedBuilder ? "Capture(builder)" : "builder";
         var registrationOpen = conditionalRegistration
@@ -825,6 +832,14 @@ public sealed class OntologyActionCatalogFailClosedTests
         var bindingTypeAssignment = boundBindingType is null
             ? string.Empty
             : $"BindingType = {boundBindingType},";
+        var leafAction = includeLeafAction
+            ? """
+                        new ActionDescriptor(
+                            new ActionSubject("orders", "Order"),
+                            "leaf",
+                            ""),
+                """
+            : string.Empty;
 
         return $$"""
         using System;
@@ -877,10 +892,7 @@ public sealed class OntologyActionCatalogFailClosedTests
                             {{bindingTypeAssignment}}
                             BoundWorkflow = new WorkflowBindingReference("flow"),
                         },
-                        new ActionDescriptor(
-                            new ActionSubject("orders", "Order"),
-                            "leaf",
-                            ""),
+                        {{leafAction}}
                         new ActionDescriptor(
                             new ActionSubject("orders", "Order"),
                             "done",

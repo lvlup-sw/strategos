@@ -7,6 +7,7 @@
 using System.Collections.Generic;
 using System.Text;
 
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
@@ -45,18 +46,21 @@ internal sealed class SagaNotFoundHandlersEmitter : ISagaComponentEmitter
         ThrowHelper.ThrowIfNull(model, nameof(model));
 
         var sagaClassName = $"{model.PascalName}Saga";
+        var naming = ForkPathCompletedNaming.For(model);
 
         // NotFound for StartCommand
         EmitStartCommandNotFoundHandler(sb, model, sagaClassName);
 
-        // NotFound for each step's completed event - use base step names (deduplicated)
-        // Workers return events using unprefixed step type names
+        // NotFound for each emitted completed event. Shared-type fork-path instances use
+        // ForkPathCompletedNaming stems; keep the unqualified type event only when the
+        // same type also has a linear/non-fork occurrence that EventsEmitter emits.
         var emittedStepEvents = new HashSet<string>(StringComparer.Ordinal);
         if (model.Steps is not null)
         {
             foreach (var step in model.Steps)
             {
-                if (emittedStepEvents.Add(step.StepName))
+                if (naming.HasUnqualifiedUse(step.StepName, model)
+                    && emittedStepEvents.Add(step.StepName))
                 {
                     sb.AppendLine();
                     EmitStepCompletedNotFoundHandler(sb, step.StepName, sagaClassName);
@@ -68,11 +72,43 @@ internal sealed class SagaNotFoundHandlersEmitter : ISagaComponentEmitter
             // Fallback for models without Step collection - extract base step names from phase names
             foreach (var phaseName in model.StepNames)
             {
+                if (naming.IsQualifiedPhase(phaseName))
+                {
+                    continue;
+                }
+
                 var baseStepName = ExtractBaseStepName(phaseName);
                 if (emittedStepEvents.Add(baseStepName))
                 {
                     sb.AppendLine();
                     EmitStepCompletedNotFoundHandler(sb, baseStepName, sagaClassName);
+                }
+            }
+        }
+
+        if (model.Forks is not null)
+        {
+            foreach (var fork in model.Forks)
+            {
+                foreach (var path in fork.Paths)
+                {
+                    foreach (var step in path.Steps)
+                    {
+                        var key = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, step.PhaseName);
+                        var stem = naming.StemFor(key, step.StepName);
+                        if (emittedStepEvents.Add(stem))
+                        {
+                            sb.AppendLine();
+                            EmitStepCompletedNotFoundHandler(sb, stem, sagaClassName);
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(fork.JoinStepName)
+                    && emittedStepEvents.Add(fork.JoinStepName))
+                {
+                    sb.AppendLine();
+                    EmitStepCompletedNotFoundHandler(sb, fork.JoinStepName, sagaClassName);
                 }
             }
         }

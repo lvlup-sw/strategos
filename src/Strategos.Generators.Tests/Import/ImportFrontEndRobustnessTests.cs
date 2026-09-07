@@ -7,6 +7,8 @@
 using System.Text;
 using System.Threading;
 
+using Strategos.Generators.Tests.Fixtures;
+
 using Microsoft.CodeAnalysis.Text;
 
 namespace Strategos.Generators.Tests.Import;
@@ -49,6 +51,7 @@ public sealed class ImportFrontEndRobustnessTests
         using System.Threading.Tasks;
         using Strategos.Abstractions;
         using Strategos.Attributes;
+        using Strategos.Steps;
 
         namespace RobustNs;
 
@@ -187,7 +190,10 @@ public sealed class ImportFrontEndRobustnessTests
     [Test]
     public async Task UnresolvableCompensationMoniker_FailsClosed_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("unresolvable-compensation.workflow.json", UnresolvableCompensationJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("unresolvable-compensation.workflow.json", UnresolvableCompensationJson),
+            UnresolvableMonikerCode);
         await AssertFailedClosed(result, UnresolvableMonikerCode, "GhostCompensationStep");
     }
 
@@ -205,7 +211,10 @@ public sealed class ImportFrontEndRobustnessTests
     [Test]
     public async Task UnresolvableApproverMoniker_FailsClosed_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("unresolvable-approver.workflow.json", UnresolvableApproverJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("unresolvable-approver.workflow.json", UnresolvableApproverJson),
+            UnresolvableMonikerCode);
         await AssertFailedClosed(result, UnresolvableMonikerCode, "GhostApprover");
     }
 
@@ -223,7 +232,10 @@ public sealed class ImportFrontEndRobustnessTests
     [Test]
     public async Task BlankWorkflowName_SurfacesStableDiagnostic_AndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("blank-name.workflow.json", BlankNameJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("blank-name.workflow.json", BlankNameJson),
+            EmptyWorkflowNameCode);
         await AssertReportsCodeAndNoSaga(result, EmptyWorkflowNameCode);
     }
 
@@ -232,7 +244,10 @@ public sealed class ImportFrontEndRobustnessTests
     [Test]
     public async Task MissingWorkflowName_SurfacesStableDiagnostic_AndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("missing-name.workflow.json", MissingNameJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("missing-name.workflow.json", MissingNameJson),
+            EmptyWorkflowNameCode);
         await AssertReportsCodeAndNoSaga(result, EmptyWorkflowNameCode);
     }
 
@@ -244,7 +259,10 @@ public sealed class ImportFrontEndRobustnessTests
     [Test]
     public async Task NonArraySteps_SurfacesStableDiagnostic_AndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("robust-nonarray-steps.workflow.json", NonArrayStepsJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("robust-nonarray-steps.workflow.json", NonArrayStepsJson),
+            NoStepsFoundCode);
         await AssertReportsCodeAndNoSaga(result, NoStepsFoundCode);
     }
 
@@ -270,8 +288,12 @@ public sealed class ImportFrontEndRobustnessTests
         {
             var result = RunGenerator(
                 StepTypes,
-                ($"malformed-action-{testCase.Name}.workflow.json", WorkflowWithAction(testCase.Token)));
-            var diagnostic = result.Diagnostics.SingleOrDefault(
+                ($"malformed-action-{testCase.Name}.workflow.json", WorkflowWithAction(testCase.Token)),
+                MalformedWorkflowJsonCode);
+            var errors = ErrorDiagnostics(result);
+            await Assert.That(errors).HasCount().EqualTo(1)
+                .Because("malformed action input must fail for exactly the stable import reason.");
+            var diagnostic = errors.SingleOrDefault(
                 diagnostic => diagnostic.Id == MalformedWorkflowJsonCode);
 
             await Assert.That(diagnostic).IsNotNull()
@@ -292,6 +314,7 @@ public sealed class ImportFrontEndRobustnessTests
     {
         var result = RunGenerator(StepTypes, ("omitted-action.workflow.json", WorkflowWithoutAction()));
 
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(diagnostic => diagnostic.Id == MalformedWorkflowJsonCode))
             .IsFalse();
         await Assert.That(result.GeneratedTrees.Any(
@@ -308,7 +331,10 @@ public sealed class ImportFrontEndRobustnessTests
         string expectedId,
         string expectedMoniker)
     {
-        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == expectedId);
+        var errors = ErrorDiagnostics(result);
+        await Assert.That(errors).HasCount().EqualTo(1)
+            .Because($"an unresolvable moniker must fail exclusively with {expectedId}.");
+        var diagnostic = errors.SingleOrDefault(d => d.Id == expectedId);
         await Assert.That(diagnostic).IsNotNull()
             .Because($"an unresolvable moniker must surface the stable {expectedId} diagnostic (fail closed).");
         await Assert.That(diagnostic!.GetMessage()).Contains(expectedMoniker)
@@ -364,9 +390,14 @@ public sealed class ImportFrontEndRobustnessTests
     /// </summary>
     private static async Task AssertReportsCodeAndNoSaga(GeneratorDriverRunResult result, string expectedId)
     {
-        await Assert.That(result.Diagnostics.Any(d => d.Id == expectedId))
-            .IsTrue()
+        var expectedDiagnostics = result.Diagnostics
+            .Where(diagnostic => diagnostic.Id == expectedId)
+            .ToArray();
+        await Assert.That(expectedDiagnostics).HasCount().EqualTo(1)
             .Because($"a structurally schema-invalid import must surface the stable {expectedId} diagnostic, not be silently swallowed.");
+        await Assert.That(ErrorDiagnostics(result).Where(diagnostic => diagnostic.Id != expectedId))
+            .IsEmpty()
+            .Because($"a structurally invalid import must not fail for a reason other than {expectedId}.");
 
         await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
             .IsFalse()
@@ -379,6 +410,7 @@ public sealed class ImportFrontEndRobustnessTests
     /// </summary>
     private static async Task AssertLoweredSaga(GeneratorDriverRunResult result, string forbiddenId)
     {
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(d => d.Id == forbiddenId))
             .IsFalse()
             .Because($"a resolvable moniker must NOT surface {forbiddenId} (the fail-closed check is additive).");
@@ -388,64 +420,27 @@ public sealed class ImportFrontEndRobustnessTests
             .Because("a workflow whose monikers all resolve must lower a saga.");
     }
 
-    private static GeneratorDriverRunResult RunGenerator(string source, params (string Path, string Content)[] additionalTexts)
+    private static GeneratorDriverRunResult RunGenerator(
+        string source,
+        (string Path, string Content) additionalText,
+        params string[] allowedGeneratorErrorIds)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "RobustnessTestAssembly",
-            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
-            references: GetReferences(),
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        AdditionalText[] texts = [new InMemoryAdditionalText(additionalText.Path, additionalText.Content)];
 
-        var texts = additionalTexts
-            .Select(t => (AdditionalText)new InMemoryAdditionalText(t.Path, t.Content))
+        return GeneratorTestHelper.RunGeneratorWithValidInput(
+            source,
+            texts,
+            allowedGeneratorErrorIds);
+    }
+
+    private static Diagnostic[] ErrorDiagnostics(GeneratorDriverRunResult result) =>
+        result.Diagnostics
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
 
-        var driver = CSharpGeneratorDriver.Create(
-            generators: [new WorkflowIncrementalGenerator().AsSourceGenerator()],
-            additionalTexts: texts,
-            parseOptions: null,
-            optionsProvider: null);
-
-        return driver.RunGenerators(compilation).GetRunResult();
-    }
-
-    private static List<MetadataReference> GetReferences()
-    {
-        var references = new List<MetadataReference>();
-
-        var runtimePath = System.IO.Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        foreach (var assembly in new[] { "System.Runtime.dll", "System.Private.CoreLib.dll", "netstandard.dll" })
-        {
-            var path = System.IO.Path.Combine(runtimePath, assembly);
-            if (System.IO.File.Exists(path))
-            {
-                references.Add(MetadataReference.CreateFromFile(path));
-            }
-        }
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            if (!assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            {
-                try
-                {
-                    references.Add(MetadataReference.CreateFromFile(assembly.Location));
-                }
-                catch
-                {
-                    // Ignore assemblies that can't be loaded as references.
-                }
-            }
-        }
-
-        var abstractions = typeof(Strategos.Abstractions.IWorkflowState).Assembly;
-        if (!string.IsNullOrEmpty(abstractions.Location))
-        {
-            references.Add(MetadataReference.CreateFromFile(abstractions.Location));
-        }
-
-        return references;
-    }
+    private static async Task AssertNoErrors(GeneratorDriverRunResult result) =>
+        await Assert.That(ErrorDiagnostics(result)).IsEmpty()
+            .Because("a legal import must not be accepted alongside an allowed error diagnostic.");
 
     /// <summary>An in-memory <see cref="AdditionalText"/> for driving the generator over synthetic import files.</summary>
     private sealed class InMemoryAdditionalText : AdditionalText

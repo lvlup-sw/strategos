@@ -685,8 +685,12 @@ public class DirectorApprover { }
         // Arrange
         var source = @"
 using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Strategos.Abstractions;
 using Strategos.Builders;
 using Strategos.Definitions;
+using Strategos.Steps;
 
 public class MyWorkflow
 {
@@ -706,15 +710,24 @@ public class MyWorkflow
 
 public class TestState : IWorkflowState
 {
+    public Guid WorkflowId { get; init; }
     public bool CanContinue { get; set; }
 }
-public class ValidateStep : IWorkflowStep<TestState> { }
-public class CompleteStep : IWorkflowStep<TestState> { }
-public class LogRejectionStep : IWorkflowStep<TestState> { }
-public class NotifyEscalationStep : IWorkflowStep<TestState> { }
+public abstract class TestStep : IWorkflowStep<TestState>
+{
+    public Task<StepResult<TestState>> ExecuteAsync(
+        TestState state,
+        StepContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(StepResult<TestState>.FromState(state));
+}
+public class ValidateStep : TestStep { }
+public class CompleteStep : TestStep { }
+public class LogRejectionStep : TestStep { }
+public class NotifyEscalationStep : TestStep { }
 public class ManagerApprover { }
 ";
-        var context = ParserTestHelper.CreateParseContext(source, "test");
+        var context = ParserTestHelper.CreateParseContextValidated(source, "test");
 
         // Act
         var approval = ApprovalExtractor.Extract(context).Single();
@@ -750,8 +763,13 @@ public class ManagerApprover { }
     {
         // Arrange
         var source = @"
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Strategos.Abstractions;
 using Strategos.Builders;
 using Strategos.Definitions;
+using Strategos.Steps;
 
 public class MyWorkflow
 {
@@ -770,16 +788,24 @@ public class MyWorkflow
         .Finally<CompleteStep>();
 }
 
-public class TestState : IWorkflowState { }
-public class ValidateStep : IWorkflowStep<TestState> { }
-public class CompleteStep : IWorkflowStep<TestState> { }
-public class NotifyEscalationStep : IWorkflowStep<TestState> { }
-public class ManualReviewStep : IWorkflowStep<TestState> { }
-public class NestedRejectionStep : IWorkflowStep<TestState> { }
+public class TestState : IWorkflowState { public Guid WorkflowId { get; init; } }
+public abstract class TestStep : IWorkflowStep<TestState>
+{
+    public Task<StepResult<TestState>> ExecuteAsync(
+        TestState state,
+        StepContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(StepResult<TestState>.FromState(state));
+}
+public class ValidateStep : TestStep { }
+public class CompleteStep : TestStep { }
+public class NotifyEscalationStep : TestStep { }
+public class ManualReviewStep : TestStep { }
+public class NestedRejectionStep : TestStep { }
 public class ManagerApprover { }
 public class DirectorApprover { }
 ";
-        var context = ParserTestHelper.CreateParseContext(source, "test");
+        var context = ParserTestHelper.CreateParseContextValidated(source, "test");
 
         // Act
         var approval = ApprovalExtractor.Extract(context).Single();

@@ -208,7 +208,24 @@ internal static class ParserTestHelper
     /// <param name="source">The source code containing a workflow definition.</param>
     /// <param name="workflowName">The workflow name for ID generation.</param>
     /// <returns>A FluentDslParseContext for the workflow.</returns>
-    public static FluentDslParseContext CreateParseContext(string source, string workflowName = "TestWorkflow")
+    public static FluentDslParseContext CreateParseContext(string source, string workflowName = "TestWorkflow") =>
+        CreateParseContextCore(source, workflowName, validateCompilation: false);
+
+    /// <summary>
+    /// Creates a <see cref="FluentDslParseContext"/> after proving that the supplied fixture compiles.
+    /// </summary>
+    /// <param name="source">The source code containing a workflow definition.</param>
+    /// <param name="workflowName">The workflow name for ID generation.</param>
+    /// <returns>A FluentDslParseContext for the workflow.</returns>
+    public static FluentDslParseContext CreateParseContextValidated(
+        string source,
+        string workflowName = "TestWorkflow") =>
+        CreateParseContextCore(source, workflowName, validateCompilation: true);
+
+    private static FluentDslParseContext CreateParseContextCore(
+        string source,
+        string workflowName,
+        bool validateCompilation)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
 
@@ -220,6 +237,10 @@ internal static class ParserTestHelper
             syntaxTrees: [syntaxTree],
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        if (validateCompilation)
+        {
+            EnsureCompiles(compilation);
+        }
 
         var semanticModel = compilation.GetSemanticModel(syntaxTree);
         var root = syntaxTree.GetRoot();
