@@ -74,7 +74,12 @@ echo "Expecting: $EXPECTED_NUPKG_NAME"
 rm -f "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.nupkg \
       "$FEED_DIR_ABS"/LevelUp.Strategos.Agents.*.snupkg
 
-# Pack at the synthetic prerelease SMOKE_VERSION. AgentsSmokeVersion is consumed
+# Pack at the synthetic prerelease SMOKE_VERSION. Serialize MSBuild and disable
+# shared build servers because this repository's parallel restore graph can exit
+# nonzero without diagnostics; the smoke gate must be controlled by package/API
+# correctness, not restore scheduling.
+#
+# AgentsSmokeVersion is consumed
 # only by Strategos.Agents.csproj (a guarded PropertyGroup), so the override does
 # NOT propagate to the core LevelUp.Strategos ProjectReference — core stays
 # MinVer-derived and the stamped dependency floats low (prerelease on tagless CI),
@@ -83,6 +88,8 @@ if ! dotnet pack "$AGENTS_CSPROJ" \
        -c Release \
        -o "$FEED_DIR_ABS" \
        --nologo \
+       --disable-build-servers \
+       -m:1 \
        -p:AgentsSmokeVersion="$SMOKE_VERSION" \
        -v:m; then
   echo "FAIL: dotnet pack of $AGENTS_CSPROJ failed." >&2
