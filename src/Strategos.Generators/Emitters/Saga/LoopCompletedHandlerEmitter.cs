@@ -91,6 +91,12 @@ internal sealed class LoopCompletedHandlerEmitter
             sb.AppendLine();
         }
 
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            stepName,
+            context.ForkPathKey);
+
         // Log loop iteration evaluation
         sb.AppendLine($"        logger.LogDebug(");
         sb.AppendLine($"            \"Loop {{LoopName}} evaluating iteration {{Iteration}} for workflow {{WorkflowId}}\",");

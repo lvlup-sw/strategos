@@ -86,6 +86,8 @@ internal sealed class ForkDispatchHandlerEmitter
             sb.AppendLine();
         }
 
+        CompensationJournalEmitter.EmitRecordCompletion(sb, model, stepName);
+
         // Set phase to forking
         sb.AppendLine($"        // Set phase to forking");
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Forking_{sanitizedId};");
@@ -103,6 +105,10 @@ internal sealed class ForkDispatchHandlerEmitter
         foreach (var path in fork.Paths)
         {
             sb.AppendLine($"        Fork_{sanitizedId}_Path{path.PathIndex}Status = Strategos.Definitions.ForkPathStatus.InProgress;");
+            if (CompensationTopology.UsesDerivedRuntime(model))
+            {
+                sb.AppendLine($"        Fork_{sanitizedId}_Path{path.PathIndex}CompensationQuiesced = false;");
+            }
         }
 
         sb.AppendLine();

@@ -61,7 +61,8 @@ internal static class WorkerHandlerEmitter
         // main-flow step then lowers a trigger-publishing Configure(HandlerChain) so
         // a thrown step routes into the OnFailure recovery chain (#140 Task 3.1).
         if ((model.Steps is not null && model.Steps.Any(s => s.Retry is not null || s.Compensation is not null))
-            || model.HasFailureHandlers)
+            || model.HasFailureHandlers
+            || model.HasCompensation)
         {
             usings.Add("Wolverine.ErrorHandling");
             usings.Add("Wolverine.Runtime.Handlers");
@@ -340,6 +341,11 @@ internal static class WorkerHandlerEmitter
         var completedEventName = $"{stepName}Completed";
         var handlerClassName = $"{stepName}Handler";
         var stateType = model.StateTypeName ?? "object";
+        var isInverseStepType = model.CompensationSteps.Any(compensatedStep =>
+            string.Equals(
+                NamingHelper.GetSimpleTypeName(compensatedStep.Compensation!.CompensationStepTypeName),
+                stepName,
+                StringComparison.Ordinal));
 
         // A step that declared .WithContext(...) gets its generated
         // {Step}ContextAssembler injected and invoked before execution (DR-6).
@@ -391,7 +397,15 @@ internal static class WorkerHandlerEmitter
         // path-qualified stem so T1c can bind Handle by CLR type.
         if (hasUnqualified)
         {
-            EmitHandleMethod(sb, model, stepName, workerCommandName, completedEventName, stateType, hasContext);
+            EmitHandleMethod(
+                sb,
+                model,
+                stepName,
+                workerCommandName,
+                completedEventName,
+                stateType,
+                hasContext,
+                isInverseStepType);
         }
 
         foreach (var instance in qualified)
@@ -408,7 +422,8 @@ internal static class WorkerHandlerEmitter
                 $"Execute{instance.Stem}WorkerCommand",
                 $"{instance.Stem}Completed",
                 stateType,
-                hasContext);
+                hasContext,
+                isInverseStepType);
             hasUnqualified = true; // subsequent overloads need a blank line
         }
 
@@ -419,10 +434,13 @@ internal static class WorkerHandlerEmitter
         // step (compensation already publishes the same trigger via its own path).
         // The failure-handler steps themselves are excluded — they ARE the recovery
         // path and must not re-trigger it.
+        var usesDerivedCompensation = CompensationTopology.UsesDerivedRuntime(model);
+        var isFailureHandlerStep = BuildFailureHandlerStepNames(model).Contains(stepName);
         var publishOnFailureTrigger =
-            model.HasFailureHandlers
-            && !BuildFailureHandlerStepNames(model).Contains(stepName)
-            && (step is null || step.Compensation is null);
+            (usesDerivedCompensation && isInverseStepType)
+            || (!isFailureHandlerStep
+                && (usesDerivedCompensation
+                    || (model.HasFailureHandlers && (step is null || step.Compensation is null))));
 
         // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation, plus the
         // OnFailure trigger publish above). Emitted when the step declared resilience
@@ -598,12 +616,43 @@ internal static class WorkerHandlerEmitter
 
             sb.AppendLine();
             sb.AppendLine($"{indent}    .CompensatingAction<{workerCommandName}>(");
-            sb.AppendLine($"{indent}        (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
-            sb.AppendLine($"{indent}            cmd.WorkflowId,");
-            sb.AppendLine($"{indent}            \"{stepName}\",");
-            sb.AppendLine($"{indent}            ex.Message,");
-            sb.AppendLine($"{indent}            ex.GetType().Name,");
-            sb.AppendLine($"{indent}            ex.StackTrace)),");
+            if (CompensationTopology.UsesDerivedRuntime(model))
+            {
+                sb.AppendLine($"{indent}        (cmd, ex, bus) => cmd.IsCompensation");
+                sb.AppendLine($"{indent}                ? bus.PublishAsync(new {model.PascalName}RollbackFailed(");
+                sb.AppendLine($"{indent}                    cmd.WorkflowId,");
+                sb.AppendLine($"{indent}                    cmd.RollbackId ?? cmd.StepExecutionId,");
+                sb.AppendLine($"{indent}                    cmd.RollbackJournalSequence ?? -1L,");
+                sb.AppendLine($"{indent}                    ex.GetType().Name,");
+                sb.AppendLine($"{indent}                    ex.Message,");
+                sb.AppendLine($"{indent}                    ex.StackTrace,");
+                sb.AppendLine($"{indent}                    DateTimeOffset.UtcNow))");
+                sb.AppendLine($"{indent}                : bus.PublishAsync(new {triggerCommandName}(");
+                sb.AppendLine($"{indent}                    cmd.WorkflowId,");
+                sb.AppendLine($"{indent}                    \"{stepName}\",");
+                sb.AppendLine($"{indent}                    ex.Message,");
+                sb.AppendLine($"{indent}                    ex.GetType().Name,");
+                sb.AppendLine($"{indent}                    ex.StackTrace)");
+                sb.AppendLine($"{indent}                {{");
+                sb.AppendLine($"{indent}                    ForwardOccurrenceKey = cmd.ForwardOccurrenceKey,");
+                sb.AppendLine($"{indent}                    CompensationScopeKey = cmd.CompensationScopeKey,");
+                sb.AppendLine($"{indent}                    CompensationScopeKind = cmd.CompensationScopeKind,");
+                sb.AppendLine($"{indent}                    CompensationLaneKey = cmd.CompensationLaneKey,");
+                sb.AppendLine($"{indent}                    CompensationForkId = cmd.CompensationForkId,");
+                sb.AppendLine($"{indent}                    CompensationForkPathIndex = cmd.CompensationForkPathIndex,");
+                sb.AppendLine($"{indent}                    CompensationJournalSequenceAtDispatch = cmd.CompensationJournalSequenceAtDispatch,");
+                sb.AppendLine($"{indent}                }}),");
+            }
+            else
+            {
+                sb.AppendLine($"{indent}        (cmd, ex, bus) => bus.PublishAsync(new {triggerCommandName}(");
+                sb.AppendLine($"{indent}            cmd.WorkflowId,");
+                sb.AppendLine($"{indent}            \"{stepName}\",");
+                sb.AppendLine($"{indent}            ex.Message,");
+                sb.AppendLine($"{indent}            ex.GetType().Name,");
+                sb.AppendLine($"{indent}            ex.StackTrace)),");
+            }
+
             sb.Append($"{indent}        InvokeResult.Stop)");
 
             if (compensation is not null)
@@ -676,7 +725,8 @@ internal static class WorkerHandlerEmitter
         string workerCommandName,
         string completedEventName,
         string stateType,
-        bool hasContext)
+        bool hasContext,
+        bool isInverseStepType)
     {
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Handles the {workerCommandName} by executing the step.");
@@ -685,7 +735,10 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine($"    /// <param name=\"ct\">The cancellation token.</param>");
         sb.AppendLine($"    /// <returns>The completion event for saga routing via cascading.</returns>");
         sb.AppendLine("    /// <exception cref=\"ArgumentNullException\">Thrown when <paramref name=\"command\"/> is null.</exception>");
-        sb.AppendLine($"    public async Task<{completedEventName}> Handle(");
+        var returnType = CompensationTopology.UsesDerivedRuntime(model) && isInverseStepType
+            ? "object"
+            : completedEventName;
+        sb.AppendLine($"    public async Task<{returnType}> Handle(");
         sb.AppendLine($"        {workerCommandName} command,");
         sb.AppendLine("        CancellationToken ct)");
         sb.AppendLine("    {");
@@ -701,7 +754,18 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine();
         sb.AppendLine("        try");
         sb.AppendLine("        {");
-        sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\") with");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // A retry or redelivery of one inverse keeps the same correlation id.");
+            sb.AppendLine("                CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),");
+            sb.AppendLine("            };");
+        }
+        else
+        {
+            sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+        }
 
         if (hasContext)
         {
@@ -731,6 +795,35 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("                command.WorkflowId,");
         sb.AppendLine("                sw.ElapsedMilliseconds);");
         sb.AppendLine();
+        if (CompensationTopology.UsesDerivedRuntime(model) && isInverseStepType)
+        {
+            sb.AppendLine("            if (command.IsCompensation)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                if (command.RollbackId is Guid rollbackId");
+            sb.AppendLine("                    && command.RollbackJournalSequence is long journalSequence)");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    // Inverse completion has its own message type and can never advance forward flow.");
+            sb.AppendLine($"                    return new {model.PascalName}{stepName}RollbackCompleted(");
+            sb.AppendLine("                        command.WorkflowId,");
+            sb.AppendLine("                        rollbackId,");
+            sb.AppendLine("                        journalSequence,");
+            sb.AppendLine("                        result.UpdatedState,");
+            sb.AppendLine("                        DateTimeOffset.UtcNow);");
+            sb.AppendLine("                }");
+            sb.AppendLine();
+            sb.AppendLine("                // Malformed inverse metadata must never fall through to forward completion.");
+            sb.AppendLine($"                return new {model.PascalName}RollbackFailed(");
+            sb.AppendLine("                    command.WorkflowId,");
+            sb.AppendLine("                    command.RollbackId ?? command.StepExecutionId,");
+            sb.AppendLine("                    command.RollbackJournalSequence ?? -1L,");
+            sb.AppendLine("                    nameof(InvalidOperationException),");
+            sb.AppendLine("                    \"Inverse command is missing durable rollback metadata.\",");
+            sb.AppendLine("                    null,");
+            sb.AppendLine("                    DateTimeOffset.UtcNow);");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("            // Return cascading: Wolverine routes via [SagaIdentity] on the event");
         sb.AppendLine($"            return new {completedEventName}(");
         sb.AppendLine("                command.WorkflowId,");

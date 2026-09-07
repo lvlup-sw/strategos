@@ -198,6 +198,30 @@ internal static class EventsEmitter
             EmitWorkflowFailedEvent(sb, model);
         }
 
+        // Inverse execution uses distinct completion/failure messages. Reusing the
+        // normal {Step}Completed event would let a rollback accidentally advance the
+        // forward saga and cannot correlate two journal entries that share an inverse
+        // type. The RollbackId is the stable forward StepExecutionId.
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var emittedRollbackEvents = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var compensatedStep in model.CompensationSteps)
+            {
+                var inverseStepName = NamingHelper.GetSimpleTypeName(
+                    compensatedStep.Compensation!.CompensationStepTypeName);
+                if (!emittedRollbackEvents.Add(inverseStepName))
+                {
+                    continue;
+                }
+
+                sb.AppendLine();
+                EmitRollbackCompletedEvent(sb, model, inverseStepName);
+            }
+
+            sb.AppendLine();
+            EmitRollbackFailedEvent(sb, model);
+        }
+
         // StepFailed audit STREAM event (#138 G-5 / OQ#1). Named, queryable Marten
         // stream event for terminal step failure — distinct from the saga document
         // properties + structured logs that already capture the same audit data.
@@ -292,6 +316,41 @@ internal static class EventsEmitter
         sb.AppendLine("    Guid StepExecutionId,");
         sb.AppendLine($"    {stateType} UpdatedState,");
         sb.AppendLine("    double? Confidence,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
+    private static void EmitRollbackCompletedEvent(
+        StringBuilder sb,
+        WorkflowModel model,
+        string inverseStepName)
+    {
+        var stateType = model.StateTypeName ?? "object";
+
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Event published when the {inverseStepName} inverse completes.");
+        sb.AppendLine("/// Kept distinct from forward completion so rollback cannot advance the workflow.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public sealed partial record {model.PascalName}{inverseStepName}RollbackCompleted(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    Guid RollbackId,");
+        sb.AppendLine("    long JournalSequence,");
+        sb.AppendLine($"    {stateType} UpdatedState,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
+    private static void EmitRollbackFailedEvent(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Event published when an inverse of the {model.WorkflowName} workflow fails.");
+        sb.AppendLine("/// The saga is deliberately retained for operator reconciliation.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public sealed partial record {model.PascalName}RollbackFailed(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    Guid RollbackId,");
+        sb.AppendLine("    long JournalSequence,");
+        sb.AppendLine("    string ExceptionType,");
+        sb.AppendLine("    string ExceptionMessage,");
+        sb.AppendLine("    string? StackTrace,");
         sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
     }
 

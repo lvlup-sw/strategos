@@ -70,6 +70,13 @@ internal sealed class ForkJoinHandlerEmitter
         var baseStepName = lastStep?.StepName ?? ExtractBaseStepName(stepName);
         var phaseName = lastStep?.PhaseName ?? stepName;
         var forkKey = PathRoutingKey.ForFork(fork.ForkId, path.PathIndex, phaseName);
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(phaseName, forkKey, out compensationOccurrence!);
+        }
+
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, phaseName, baseStepName, isForkPathStep: true, forkKey);
         var sanitizedId = fork.ForkId.Replace("-", "_");
@@ -108,6 +115,19 @@ internal sealed class ForkJoinHandlerEmitter
             sb.AppendLine($"        Fork_{sanitizedId}_Path{path.PathIndex}State = evt.UpdatedState;");
             sb.AppendLine();
         }
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        // A sibling failure owns routing from this completion boundary. Journal the
+        // in-flight result, then quiesce before confidence or join logic can dispatch
+        // any forward successor.
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         // Confidence gate (DR-4 / #145 gap A): a fork path's LAST step may declare
         // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()). Mirroring the

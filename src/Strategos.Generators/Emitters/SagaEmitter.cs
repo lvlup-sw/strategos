@@ -81,6 +81,11 @@ internal static class SagaEmitter
             "Wolverine.Persistence.Sagas",
         };
 
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            usings.Add("System.Linq");
+        }
+
         // Event-sourced mode needs IDocumentSession from Marten
         if (model.IsEventSourced)
         {

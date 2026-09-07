@@ -84,6 +84,10 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
                 // lowered from .WithRetry(2).Compensate<RollbackStep>() (DR-3).
                 opts.Services.AddCompensationProofWorkflow();
 
+                // #169 typed inverse fixture: A and B complete, C fails, and the
+                // generated durable journal derives UndoB then UndoA.
+                opts.Services.AddDerivedCompensationProofWorkflow();
+
                 opts.Services.AddSingleton(this.Invocations);
                 opts.Services.AddResourceSetupOnStartup();
             })

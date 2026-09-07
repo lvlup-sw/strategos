@@ -91,4 +91,36 @@ public sealed class CompensationBehaviorTests
         await Assert.That(this.host.Invocations.CountFor(nameof(CompensationPrepareStep))).IsEqualTo(1);
         await Assert.That(this.host.Invocations.CountFor(nameof(CompensationNeverReachedStep))).IsEqualTo(0);
     }
+
+    /// <summary>
+    /// Proves that typed rollback is derived from the completed prefix on a real
+    /// Wolverine and Marten host: C fails after A and B, so B's inverse runs
+    /// before A's inverse and C's inverse is excluded.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Saga_TypedCompensation_DerivesAndExecutesReversedCompletedPrefix()
+    {
+        var workflowId = Guid.NewGuid();
+        this.host.Invocations.Reset();
+
+        var initialState = new DerivedCompensationState { WorkflowId = workflowId };
+        var startCommand = new StartDerivedCompensationProofCommand(workflowId, initialState);
+
+        var reachedTerminal = await this.host.RunToTerminalAsync<DerivedCompensationProofSaga>(
+            workflowId,
+            startCommand);
+
+        await Assert.That(reachedTerminal).IsTrue();
+        await Assert.That(string.Join(",", this.host.Invocations.Invocations)).IsEqualTo(
+            string.Join(",",
+            [
+                nameof(DerivedForwardAStep),
+                nameof(DerivedForwardBStep),
+                nameof(DerivedFailingCStep),
+                nameof(DerivedUndoBStep),
+                nameof(DerivedUndoAStep),
+            ]));
+        await Assert.That(this.host.Invocations.CountFor(nameof(DerivedUndoCStep))).IsEqualTo(0);
+    }
 }

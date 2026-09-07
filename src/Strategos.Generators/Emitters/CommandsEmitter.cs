@@ -398,7 +398,18 @@ internal static class CommandsEmitter
         sb.AppendLine($"public sealed partial record Execute{stepName}WorkerCommand(");
         sb.AppendLine("    Guid WorkflowId,");
         sb.AppendLine("    Guid StepExecutionId,");
-        sb.AppendLine($"    {stateType} State);");
+        sb.Append($"    {stateType} State)");
+
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine(";");
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("{");
+        EmitCompensationMessageMetadataProperties(sb);
+        sb.AppendLine("}");
     }
 
     private static void EmitResumeApprovalCommand(StringBuilder sb, WorkflowModel model, ApprovalModel approval)
@@ -536,7 +547,75 @@ internal static class CommandsEmitter
         sb.AppendLine("    string FailedStepName,");
         sb.AppendLine("    string? ExceptionMessage,");
         sb.AppendLine("    string? ExceptionType,");
-        sb.AppendLine("    string? StackTrace);");
+        sb.Append("    string? StackTrace)");
+
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine(";");
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("{");
+        sb.AppendLine("    /// <summary>Gets the stable forward occurrence that failed.</summary>");
+        sb.AppendLine("    public string? ForwardOccurrenceKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the concrete structural compensation scope.</summary>");
+        sb.AppendLine("    public string? CompensationScopeKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the structural scope kind.</summary>");
+        sb.AppendLine("    public string? CompensationScopeKind { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the fork lane key, when the failed step is on a fork path.</summary>");
+        sb.AppendLine("    public string? CompensationLaneKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the owning fork id, when applicable.</summary>");
+        sb.AppendLine("    public string? CompensationForkId { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the owning fork path index, when applicable.</summary>");
+        sb.AppendLine("    public int? CompensationForkPathIndex { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the durable completion-journal high-water mark at forward dispatch.</summary>");
+        sb.AppendLine("    public long? CompensationJournalSequenceAtDispatch { get; init; }");
+        sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// Emits optional rollback-correlation metadata on a normal worker command.
+    /// The constructor remains backward compatible; saga dispatch fills these init
+    /// properties only for compensation-aware workflows.
+    /// </summary>
+    private static void EmitCompensationMessageMetadataProperties(StringBuilder sb)
+    {
+        sb.AppendLine("    /// <summary>Gets the stable forward occurrence being executed.</summary>");
+        sb.AppendLine("    public string? ForwardOccurrenceKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the concrete structural compensation scope.</summary>");
+        sb.AppendLine("    public string? CompensationScopeKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the structural scope kind.</summary>");
+        sb.AppendLine("    public string? CompensationScopeKind { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the fork lane key, when applicable.</summary>");
+        sb.AppendLine("    public string? CompensationLaneKey { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the owning fork id, when applicable.</summary>");
+        sb.AppendLine("    public string? CompensationForkId { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the owning fork path index, when applicable.</summary>");
+        sb.AppendLine("    public int? CompensationForkPathIndex { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the durable completion-journal high-water mark at forward dispatch.</summary>");
+        sb.AppendLine("    public long? CompensationJournalSequenceAtDispatch { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the stable rollback execution id for inverse dispatch.</summary>");
+        sb.AppendLine("    public Guid? RollbackId { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the durable journal sequence being rolled back.</summary>");
+        sb.AppendLine("    public long? RollbackJournalSequence { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets whether this dispatch is an inverse execution.</summary>");
+        sb.AppendLine("    public bool IsCompensation { get; init; }");
     }
 
     private static void EmitStartFailureHandlerStepCommand(

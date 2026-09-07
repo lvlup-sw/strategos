@@ -145,6 +145,15 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
                         sb.AppendLine($"    public {model.StateTypeName}? Fork_{sanitizedId}_Path{path.PathIndex}State {{ get; set; }}");
                         sb.AppendLine();
                     }
+
+                    if (CompensationTopology.UsesDerivedRuntime(model))
+                    {
+                        sb.AppendLine("    /// <summary>");
+                        sb.AppendLine($"    /// Gets or sets whether path {path.PathIndex} stopped at a rollback quiescence boundary.");
+                        sb.AppendLine("    /// </summary>");
+                        sb.AppendLine($"    public bool Fork_{sanitizedId}_Path{path.PathIndex}CompensationQuiesced {{ get; set; }}");
+                        sb.AppendLine();
+                    }
                 }
             }
         }
@@ -224,6 +233,57 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine("    /// Gets or sets the timestamp when the failure occurred.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public DateTimeOffset? FailureTimestamp { get; set; }");
+            sb.AppendLine();
+        }
+
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the durable completion-journal schema version.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public int CompensationJournalSchemaVersion { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the durable completion journal used to derive rollback work.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<CompensationJournalEntry> CompensationJournal { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the next monotonic completion-journal sequence.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public long CompensationJournalSequence { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the concrete scope currently being rolled back.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? ActiveCompensationScopeKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the fork awaiting path quiescence before inverse dispatch.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? PendingCompensationForkId { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the fork scope awaiting path quiescence.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? PendingCompensationScopeKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets whether an inverse timed out with an unknown external outcome.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public bool CompensationOutcomeUnknown { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the inverse failure that requires operator reconciliation.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? CompensationFailureMessage { get; set; }");
             sb.AppendLine();
         }
 

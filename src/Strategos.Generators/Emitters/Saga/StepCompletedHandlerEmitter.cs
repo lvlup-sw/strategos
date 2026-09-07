@@ -62,6 +62,12 @@ internal sealed class StepCompletedHandlerEmitter
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, stepName, baseStepName, context.IsForkPathStep, context.ForkPathKey);
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(stepName, context.ForkPathKey, out compensationOccurrence!);
+        }
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -83,19 +89,35 @@ internal sealed class StepCompletedHandlerEmitter
         var confidence = context.StepModel?.Confidence;
         if (context.ApprovalAtStep is not null)
         {
-            EmitApprovalWaitingHandler(sb, model, eventName, context.ApprovalAtStep);
+            EmitApprovalWaitingHandler(
+                sb,
+                model,
+                eventName,
+                context.ApprovalAtStep,
+                compensationOccurrence);
         }
         else if (confidence?.OnLowConfidenceHandlerStep is not null)
         {
-            EmitConfidenceGatedHandler(sb, model, eventName, confidence, context);
+            EmitConfidenceGatedHandler(
+                sb,
+                model,
+                eventName,
+                confidence,
+                context,
+                compensationOccurrence);
         }
         else if (context.IsTerminalStep || context.IsLastStep)
         {
-            EmitFinalStepHandler(sb, model, eventName);
+            EmitFinalStepHandler(sb, model, eventName, compensationOccurrence);
         }
         else
         {
-            EmitNonFinalStepHandler(sb, model, eventName, context.NextStepName!);
+            EmitNonFinalStepHandler(
+                sb,
+                model,
+                eventName,
+                context.NextStepName!,
+                compensationOccurrence);
         }
     }
 
@@ -113,7 +135,8 @@ internal sealed class StepCompletedHandlerEmitter
         WorkflowModel model,
         string eventName,
         ConfidenceModel confidence,
-        HandlerContext context)
+        HandlerContext context,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var handlerStepName = confidence.OnLowConfidenceHandlerStep!.StepName;
@@ -142,6 +165,16 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine();
 
         StateApplicationHelper.EmitStateApplication(sb, model);
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         // Failure-phase sync + route (F1): a confidence-gated step can ALSO drive
         // the saga into the Failed phase via its reducer/state application. The
@@ -244,7 +277,8 @@ internal sealed class StepCompletedHandlerEmitter
     private static void EmitFinalStepHandler(
         StringBuilder sb,
         WorkflowModel model,
-        string eventName)
+        string eventName,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -262,6 +296,16 @@ internal sealed class StepCompletedHandlerEmitter
 
         StateApplicationHelper.EmitStateApplication(sb, model);
 
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
+
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
         sb.AppendLine();
         sb.AppendLine("        logger.LogInformation(");
@@ -276,7 +320,8 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string nextStepName)
+        string nextStepName,
+        CompensationOccurrence? compensationOccurrence)
     {
         // Non-final step - apply reducer, returns StartNextStepCommand
         var nextStartCommand = $"Start{nextStepName}Command";
@@ -286,11 +331,22 @@ internal sealed class StepCompletedHandlerEmitter
         // - After reducer, check if Phase == Failed and route to FailedStep
         if (model.HasFailureHandlers)
         {
-            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, nextStepName, nextStartCommand);
+            EmitPhaseAwareNonFinalStepHandler(
+                sb,
+                model,
+                eventName,
+                nextStepName,
+                nextStartCommand,
+                compensationOccurrence);
         }
         else
         {
-            EmitSimpleNonFinalStepHandler(sb, model, eventName, nextStartCommand);
+            EmitSimpleNonFinalStepHandler(
+                sb,
+                model,
+                eventName,
+                nextStartCommand,
+                compensationOccurrence);
         }
     }
 
@@ -298,7 +354,8 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string nextStartCommand)
+        string nextStartCommand,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -316,6 +373,16 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine();
 
         StateApplicationHelper.EmitStateApplication(sb, model);
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
@@ -336,7 +403,8 @@ internal sealed class StepCompletedHandlerEmitter
         WorkflowModel model,
         string eventName,
         string nextStepName,
-        string nextStartCommand)
+        string nextStartCommand,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -360,6 +428,16 @@ internal sealed class StepCompletedHandlerEmitter
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
+
+            if (compensationOccurrence is not null)
+            {
+                CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+            }
+
+            CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+                sb,
+                model,
+                compensationOccurrence);
 
             // Sync saga Phase from state ONLY for state types that actually expose a
             // Phase property (mechanically detected via StateHasPhaseProperty). State
@@ -435,7 +513,8 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        ApprovalModel approval)
+        ApprovalModel approval,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var requestEventName = $"Request{approval.ApprovalPointName}ApprovalEvent";
@@ -459,6 +538,16 @@ internal sealed class StepCompletedHandlerEmitter
             StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
         }
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.{approval.PhaseName};");
         sb.AppendLine();

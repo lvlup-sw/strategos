@@ -4,83 +4,32 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
-using System.Linq;
 using System.Text;
 
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
+using Microsoft.CodeAnalysis;
+
 namespace Strategos.Generators.Emitters.Saga;
 
 /// <summary>
-/// Component emitter that lowers a step's <c>.Compensate&lt;T&gt;()</c> rollback
-/// into a runnable saga compensation chain (DR-3).
+/// Emits durable, topology-aware inverse execution for a generated saga.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This closes the long-standing dead path: the worker handler's generated
-/// <c>Configure(HandlerChain)</c> chain now PUBLISHES the
-/// <c>Trigger{Pascal}FailureHandlerCommand</c> on terminal step failure
-/// (see <see cref="WorkerHandlerEmitter"/>); this emitter is what RECEIVES that
-/// command in the saga and actually runs the compensation step. It emits, nested
-/// in the generated saga:
-/// <list type="bullet">
-///   <item><description>
-///     A <c>Handle(Trigger{Pascal}FailureHandlerCommand)</c> that stores the
-///     failure context, transitions to the <c>Compensating</c> phase, and
-///     dispatches the compensation step's <c>Execute{Comp}WorkerCommand</c>. The
-///     compensation step's worker handler is produced by the normal main-flow
-///     path because the compensation step type is folded into <c>model.Steps</c>,
-///     so the proven worker dispatch is reused (it RUNS the rollback step).
-///   </description></item>
-///   <item><description>
-///     A <c>Handle({Comp}Completed)</c> that folds the rollback's returned state
-///     (INV-7: the compensation step returns new state; the saga never mutates the
-///     input), then transitions the saga to its terminal <c>Failed</c> phase and
-///     calls <c>MarkCompleted()</c>.
-///   </description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <b>Mutual exclusion with <see cref="SagaFailureHandlerComponentEmitter"/>:</b>
-/// both emitters would produce a <c>Handle(Trigger{Pascal}FailureHandlerCommand)</c>
-/// overload. To avoid a duplicate-method (CS0111) collision this emitter is a NO-OP
-/// when the workflow ALSO declares an <c>OnFailure</c> block
-/// (<c>model.HasFailureHandlers</c>); in that case the <c>OnFailure</c> path owns the
-/// trigger handler. Compensation + OnFailure interop is a separate, larger concern
-/// tracked outside this vertical.
-/// </para>
-/// <para>
-/// <b>Single-compensation-step scope:</b> when multiple distinct compensation step
-/// types are declared, the trigger handler routes to the correct rollback worker on
-/// the <c>FailedStepName</c> carried by the trigger command.
-/// </para>
-/// <para>
-/// <b>Reuse of a main-flow step as a compensation target:</b> a compensation step
-/// TYPE may also appear as a normal main-flow step (rolling back to a step the happy
-/// path also runs). The main-flow completed handler (<see cref="SagaStepHandlersEmitter"/>)
-/// already declares that step's <c>Handle({Comp}Completed)</c> overload, so this
-/// emitter SKIPS the duplicate to avoid a CS0111 collision; the trigger/dispatch
-/// path is unaffected because the rollback's worker command is the same one the
-/// folded main-flow step model already produced.
-/// </para>
-/// <para>
-/// <b>Diagnostic-fork composition (DR-9, #151):</b> the fork decision site
-/// (<see cref="DiagnosticForkHandlerEmitter"/>) seeds compensation by routing its
-/// declared compensation seed into THIS same merged <c>Handle(Trigger…)</c> site — it
-/// yields a <c>Trigger{Pascal}FailureHandlerCommand</c> whose <c>FailedStepName</c> is
-/// the fork's seed moniker. The existing single/multi routing dispatches the matching
-/// rollback worker, so a fork's compensation composes additively with the
-/// Compensate/OnFailure merged trigger site with no change to this handler.
-/// </para>
+/// Completed forward occurrences are journaled on the persisted saga. A failure
+/// unwinds only its concrete innermost scope. Sequential scopes run in reverse
+/// order; a fork first quiesces, preserves its structural lanes, and conservatively
+/// folds their inverses through the shared state one at a time.
+/// Inverse messages have distinct completion/failure routes and a stable rollback id,
+/// so they cannot advance forward flow or recursively enter compensation.
 /// </remarks>
 internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
 {
+    internal const long DefaultTimeoutTicks = 3_000_000_000L;
+
     /// <inheritdoc />
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="sb"/> or <paramref name="model"/> is null.
-    /// </exception>
     public void Emit(StringBuilder sb, WorkflowModel model)
     {
         ThrowHelper.ThrowIfNull(sb, nameof(sb));
@@ -91,85 +40,190 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
             return;
         }
 
-        // #140 Task 3.2 — Compensate↔OnFailure interop. Previously this emitter was a
-        // NO-OP whenever the workflow ALSO declared OnFailure (to avoid a duplicate
-        // Handle(Trigger…) CS0111 collision), making step compensation and a
-        // workflow-level OnFailure mutually exclusive. They now COMPOSE in a fixed
-        // order from a SINGLE merged trigger site: this emitter owns the one
-        // Handle(Trigger…), dispatches the compensation rollback FIRST, and its
-        // compensation-completed handler chains into the OnFailure chain (instead of
-        // marking the saga Failed). The OnFailure emitter suppresses its own trigger
-        // handler when HasCompensation is true, so there is exactly one
-        // Handle(Trigger…).
-        var compensatedSteps = model.CompensationSteps;
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            EmitLegacyCompensation(sb, model);
+            return;
+        }
+
+        var topology = CompensationTopology.Build(model);
+        var inverseStepNames = model.CompensationSteps
+            .Select(step => NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
         sb.AppendLine();
-        EmitTriggerHandler(sb, model, compensatedSteps);
+        EmitJournalTypes(sb, model);
+        sb.AppendLine();
+        EmitScopeInstanceResolver(sb, model);
+        sb.AppendLine();
+        EmitScopeMembership(sb);
+        sb.AppendLine();
+        EmitJournalWriter(sb, model);
+        sb.AppendLine();
+        EmitTriggerHandler(sb, model, topology);
+        sb.AppendLine();
+        EmitRollbackPlanner(sb, model, inverseStepNames);
 
-        // A compensation step TYPE may also be a normal main-flow step (it is valid
-        // to roll back to a step the happy path already runs). In that case the
-        // main-flow completed handler (SagaStepHandlersEmitter) already declares the
-        // Handle({Comp}Completed) overload; emitting ours too would collide (CS0111).
-        // Mirror the HasFailureHandlers no-op above: skip the duplicate handler and
-        // let the existing main-flow one cover it. The trigger/dispatch path needs no
-        // change — it dispatches the rollback's worker command, which the folded
-        // step model already produced (no duplicate member there).
-        var mainFlowStepNames = new HashSet<string>(model.StepNames, StringComparer.Ordinal);
-
-        // Deduplicate by compensation step type: two steps rolling back to the same
-        // compensation type share a single {Comp}Completed handler.
-        var emittedCompletedHandlers = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var step in compensatedSteps)
+        foreach (var inverseStepName in inverseStepNames)
         {
-            var compStepName = NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName);
-
-            // Skip if the main flow already declares this step's completed handler.
-            if (mainFlowStepNames.Contains(compStepName))
-            {
-                continue;
-            }
-
-            if (emittedCompletedHandlers.Add(compStepName))
-            {
-                sb.AppendLine();
-                EmitCompensationCompletedHandler(sb, model, compStepName);
-            }
+            sb.AppendLine();
+            EmitRollbackCompletedHandler(sb, model, inverseStepName);
         }
+
+        sb.AppendLine();
+        EmitRollbackFailedHandler(sb, model);
+        sb.AppendLine();
+        EmitRollbackTimeoutHandler(sb, model);
     }
 
-    /// <summary>
-    /// Emits the saga handler for the trigger failure-handler command: stores
-    /// failure context, transitions to <c>Compensating</c>, and dispatches the
-    /// compensation step's worker command (routing on the failed step name when
-    /// more than one compensation step is declared).
-    /// </summary>
+    private static void EmitJournalTypes(StringBuilder sb, WorkflowModel model)
+    {
+        var stateType = model.StateTypeName ?? "object";
+
+        sb.AppendLine("    /// <summary>Durable state of one completed forward occurrence.</summary>");
+        sb.AppendLine("    public sealed class CompensationJournalEntry");
+        sb.AppendLine("    {");
+        EmitRequiredProperty(sb, "long", "Sequence");
+        EmitRequiredProperty(sb, "Guid", "ForwardExecutionId");
+        EmitRequiredProperty(sb, "Guid", "RollbackId");
+        EmitRequiredProperty(sb, "string", "OccurrenceKey");
+        EmitRequiredProperty(sb, "string", "ScopeKey");
+        EmitRequiredProperty(sb, "string", "ScopeKind");
+        EmitRequiredProperty(sb, "int", "ScopeOrdinal");
+        EmitNullableProperty(sb, "string", "LaneKey");
+        EmitNullableProperty(sb, "string", "ForkId");
+        EmitNullableProperty(sb, "int", "ForkPathIndex");
+        EmitRequiredProperty(sb, "string", "ForwardStepName");
+        EmitNullableProperty(sb, "string", "InverseStepName");
+        EmitNullableProperty(sb, "string", "ForwardActionIdentity");
+        EmitNullableProperty(sb, "string", "InverseActionIdentity");
+        EmitRequiredProperty(sb, "bool", "UsesIdentityInverse");
+        EmitRequiredProperty(sb, "long", "InverseTimeoutTicks");
+        EmitRequiredProperty(sb, stateType, "RollbackState");
+        sb.AppendLine("        /// <summary>Gets or sets the durable execution status.</summary>");
+        sb.AppendLine("        public string Status { get; set; } = \"Completed\";");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Fail-safe deadline for one inverse execution.</summary>");
+        sb.AppendLine("    public sealed record CompensationRollbackTimeout(");
+        sb.AppendLine("        [property: Wolverine.Persistence.Sagas.SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("        Guid RollbackId,");
+        sb.AppendLine("        long JournalSequence,");
+        sb.AppendLine("        long TimeoutTicks)");
+        sb.AppendLine("        : TimeoutMessage(TimeSpan.FromTicks(TimeoutTicks));");
+    }
+
+    private static void EmitRequiredProperty(StringBuilder sb, string type, string name)
+    {
+        sb.AppendLine($"        /// <summary>Gets or sets {name}.</summary>");
+        sb.AppendLine($"        public required {type} {name} {{ get; set; }}");
+    }
+
+    private static void EmitNullableProperty(StringBuilder sb, string type, string name)
+    {
+        sb.AppendLine($"        /// <summary>Gets or sets {name}, when applicable.</summary>");
+        sb.AppendLine($"        public {type}? {name} {{ get; set; }}");
+    }
+
+    private static void EmitScopeInstanceResolver(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("    private string ResolveCompensationScopeInstance(string template)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(template, nameof(template));");
+        sb.AppendLine("        var resolved = template;");
+
+        if (model.Loops is not null)
+        {
+            foreach (var loop in model.Loops
+                .GroupBy(static value => value.IterationPropertyName, StringComparer.Ordinal)
+                .Select(static values => values.First()))
+            {
+                sb.AppendLine("        resolved = resolved.Replace(");
+                sb.AppendLine($"            {Literal($"{{{loop.IterationPropertyName}}}")},");
+                sb.AppendLine($"            {loop.IterationPropertyName}.ToString(System.Globalization.CultureInfo.InvariantCulture),");
+                sb.AppendLine("            StringComparison.Ordinal);");
+            }
+        }
+
+        sb.AppendLine("        return resolved;");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitJournalWriter(StringBuilder sb, WorkflowModel model)
+    {
+        var stateType = model.StateTypeName ?? "object";
+
+        sb.AppendLine("    private void RecordCompensationCompletion(");
+        sb.AppendLine("        Guid forwardExecutionId,");
+        sb.AppendLine("        string occurrenceKey,");
+        sb.AppendLine("        string scopeKey,");
+        sb.AppendLine("        string scopeKind,");
+        sb.AppendLine("        int scopeOrdinal,");
+        sb.AppendLine("        string? laneKey,");
+        sb.AppendLine("        string? forkId,");
+        sb.AppendLine("        int? forkPathIndex,");
+        sb.AppendLine("        string forwardStepName,");
+        sb.AppendLine("        string? inverseStepName,");
+        sb.AppendLine("        string? forwardActionIdentity,");
+        sb.AppendLine("        string? inverseActionIdentity,");
+        sb.AppendLine("        bool usesIdentityInverse,");
+        sb.AppendLine("        long inverseTimeoutTicks,");
+        sb.AppendLine($"        {stateType} rollbackState)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (CompensationJournal.Any(entry =>");
+        sb.AppendLine("            entry.ForwardExecutionId == forwardExecutionId");
+        sb.AppendLine("            && string.Equals(entry.OccurrenceKey, occurrenceKey, StringComparison.Ordinal)))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        CompensationJournalSequence++;");
+        sb.AppendLine("        CompensationJournal.Add(new CompensationJournalEntry");
+        sb.AppendLine("        {");
+        sb.AppendLine("            Sequence = CompensationJournalSequence,");
+        sb.AppendLine("            ForwardExecutionId = forwardExecutionId,");
+        sb.AppendLine("            RollbackId = forwardExecutionId,");
+        sb.AppendLine("            OccurrenceKey = occurrenceKey,");
+        sb.AppendLine("            ScopeKey = scopeKey,");
+        sb.AppendLine("            ScopeKind = scopeKind,");
+        sb.AppendLine("            ScopeOrdinal = scopeOrdinal,");
+        sb.AppendLine("            LaneKey = laneKey,");
+        sb.AppendLine("            ForkId = forkId,");
+        sb.AppendLine("            ForkPathIndex = forkPathIndex,");
+        sb.AppendLine("            ForwardStepName = forwardStepName,");
+        sb.AppendLine("            InverseStepName = inverseStepName,");
+        sb.AppendLine("            ForwardActionIdentity = forwardActionIdentity,");
+        sb.AppendLine("            InverseActionIdentity = inverseActionIdentity,");
+        sb.AppendLine("            UsesIdentityInverse = usesIdentityInverse,");
+        sb.AppendLine("            InverseTimeoutTicks = inverseTimeoutTicks,");
+        sb.AppendLine("            RollbackState = rollbackState,");
+        sb.AppendLine("        });");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitScopeMembership(StringBuilder sb)
+    {
+        sb.AppendLine("    private static bool IsWithinCompensationScope(");
+        sb.AppendLine("        string candidateScopeKey,");
+        sb.AppendLine("        string selectedScopeKey)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        return string.Equals(candidateScopeKey, selectedScopeKey, StringComparison.Ordinal)");
+        sb.AppendLine("            || candidateScopeKey.StartsWith(selectedScopeKey + \"/\", StringComparison.Ordinal);");
+        sb.AppendLine("    }");
+    }
+
     private static void EmitTriggerHandler(
         StringBuilder sb,
         WorkflowModel model,
-        IReadOnlyList<StepModel> compensatedSteps)
+        CompensationTopology topology)
     {
-        var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
-        var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
-        var single = compensatedSteps.Count == 1;
+        var triggerName = $"Trigger{model.PascalName}FailureHandlerCommand";
 
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Handles the compensation trigger command (DR-3) - stores failure context");
-        sb.AppendLine("    /// and dispatches the failed step's compensation (rollback) worker so the");
-        sb.AppendLine("    /// compensation step actually runs.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    /// <param name=\"cmd\">The trigger command carrying the failure context.</param>");
-        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
-        sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
-        sb.AppendLine("    /// <returns>The compensation worker command(s) to dispatch.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
-        sb.AppendLine($"        {triggerCommandName} cmd,");
-
-        // #138 G-5: append the StepFailed audit STREAM event when event-sourced. The
-        // compensation trigger is the single ordered terminal-failure site for the
-        // Compensate path (and the merged Compensate↔OnFailure path), so it is where
-        // the named StepFailed event belongs. It needs an IDocumentSession to append.
+        sb.AppendLine($"        {triggerName} cmd,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
-        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
         StateApplicationHelper.EmitSessionGuard(sb, model);
@@ -184,8 +238,7 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
 
         if (model.IsEventSourced)
         {
-            sb.AppendLine();
-            sb.AppendLine($"        session.Events.Append(");
+            sb.AppendLine("        session.Events.Append(");
             sb.AppendLine("            WorkflowId,");
             sb.AppendLine($"            new {model.PascalName}StepFailed(");
             sb.AppendLine("                WorkflowId,");
@@ -196,157 +249,762 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         }
 
         sb.AppendLine();
-        sb.AppendLine("        logger.LogWarning(");
-        sb.AppendLine("            \"Step {FailedStepName} failed for workflow {WorkflowId}; running compensation\",");
-        sb.AppendLine("            cmd.FailedStepName,");
-        sb.AppendLine("            WorkflowId);");
+
+        sb.AppendLine("        if (CompensationJournalSchemaVersion != 1)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Typed rollback journal was not initialized by the #169 runtime; saga retained for migration.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
         sb.AppendLine();
 
-        foreach (var step in compensatedSteps)
+        if (CompensationTopology.GetProgramKind(model) == CompensationProgramKind.Mixed)
         {
-            var compStepName = NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName);
-            var workerCommandName = NamingHelper.GetWorkerCommandName(compStepName);
+            sb.AppendLine("        CompensationFailureMessage = \"Compensation declarations are mixed, dynamic, or unresolved and cannot form one derived rollback program; saga retained.\";");
+            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
+            sb.AppendLine("        yield break;");
+            sb.AppendLine();
+        }
 
-            if (single)
+        sb.AppendLine("        if (string.IsNullOrEmpty(cmd.ForwardOccurrenceKey)");
+        sb.AppendLine("            || string.IsNullOrEmpty(cmd.CompensationScopeKey)");
+        sb.AppendLine("            || string.IsNullOrEmpty(cmd.CompensationScopeKind)");
+        sb.AppendLine("            || cmd.CompensationJournalSequenceAtDispatch is not long journalHighWater)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Typed rollback trigger is missing #169 topology metadata; migrate the publisher and retain the saga.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var scopeKey = cmd.CompensationScopeKey;");
+        sb.AppendLine("        var scopeKind = cmd.CompensationScopeKind;");
+        sb.AppendLine("        if (journalHighWater < 0");
+        sb.AppendLine("            || CompensationJournalSequence < journalHighWater");
+        sb.AppendLine("            || !HasCompleteCompensationJournalThrough(journalHighWater))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Completion journal high-water mark is missing or corrupt for a typed rollback program; saga retained.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var expectedPrefixCount = ExpectedCompletedPrefixCount(cmd.ForwardOccurrenceKey);");
+        sb.AppendLine("        if (expectedPrefixCount < 0)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Rollback occurrence is absent from the closed topology; saga retained.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var recordedPrefixCount = CompensationJournal.Count(entry =>");
+        sb.AppendLine("            string.Equals(entry.ScopeKey, scopeKey, StringComparison.Ordinal)");
+        sb.AppendLine("            && string.Equals(entry.LaneKey, cmd.CompensationLaneKey, StringComparison.Ordinal));");
+        sb.AppendLine("        if (recordedPrefixCount < expectedPrefixCount)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Completion journal is missing history for a typed rollback program; saga retained.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var isForkFailure = string.Equals(scopeKind, \"Fork\", StringComparison.Ordinal)");
+        sb.AppendLine("            && cmd.CompensationForkId is not null;");
+        sb.AppendLine("        if (isForkFailure)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            // Every failing lane must become terminal before the selected fork can unwind.");
+        sb.AppendLine("            MarkFailedForkPath(cmd.CompensationForkId!, cmd.CompensationForkPathIndex);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (ActiveCompensationScopeKey is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (!string.Equals(ActiveCompensationScopeKey, scopeKey, StringComparison.Ordinal))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                CompensationFailureMessage = \"A second rollback scope was requested while compensation was active; saga retained.\";");
+        sb.AppendLine($"                Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            // Idempotent trigger redelivery never dispatches an inverse twice.");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (PendingCompensationScopeKey is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (!string.Equals(PendingCompensationScopeKey, scopeKey, StringComparison.Ordinal))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                CompensationFailureMessage = \"A second rollback scope was requested while fork quiescence was pending; saga retained.\";");
+        sb.AppendLine($"                Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("                yield break;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            if (PendingCompensationForkId is null");
+        sb.AppendLine("                || !IsCompensationForkQuiescent(PendingCompensationForkId))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                yield break;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            foreach (var message in BeginCompensationScope(scopeKey, logger))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                yield return message;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (isForkFailure)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            PendingCompensationForkId = cmd.CompensationForkId;");
+        sb.AppendLine("            PendingCompensationScopeKey = scopeKey;");
+        sb.AppendLine("            if (!IsCompensationForkQuiescent(cmd.CompensationForkId!))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                logger.LogWarning(");
+        sb.AppendLine("                    \"Fork {ForkId} failed for workflow {WorkflowId}; waiting for path quiescence\",");
+        sb.AppendLine("                    cmd.CompensationForkId,");
+        sb.AppendLine("                    WorkflowId);");
+        sb.AppendLine("                yield break;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        foreach (var message in BeginCompensationScope(scopeKey, logger))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            yield return message;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        EmitExpectedPrefixCount(sb, topology);
+        sb.AppendLine();
+        EmitJournalContinuityHelper(sb);
+        sb.AppendLine();
+        EmitForkQuiescenceHelpers(sb, model);
+        sb.AppendLine();
+        EmitForkJournalValidationHelpers(sb, model, topology);
+    }
+
+    private static void EmitJournalContinuityHelper(StringBuilder sb)
+    {
+        sb.AppendLine("    private bool HasCompleteCompensationJournalThrough(long highWater)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var sequences = CompensationJournal");
+        sb.AppendLine("            .Where(entry => entry.Sequence <= highWater)");
+        sb.AppendLine("            .Select(entry => entry.Sequence)");
+        sb.AppendLine("            .OrderBy(sequence => sequence)");
+        sb.AppendLine("            .ToList();");
+        sb.AppendLine("        if ((long)sequences.Count != highWater)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return false;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        for (var index = 0; index < sequences.Count; index++)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (sequences[index] != index + 1L)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return false;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return true;");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitExpectedPrefixCount(StringBuilder sb, CompensationTopology topology)
+    {
+        sb.AppendLine("    private static int ExpectedCompletedPrefixCount(string occurrenceKey)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        return occurrenceKey switch");
+        sb.AppendLine("        {");
+
+        foreach (var occurrence in topology.Occurrences)
+        {
+            var prefixCount = topology.Occurrences.Count(candidate =>
+                string.Equals(candidate.Scope.TemplateKey, occurrence.Scope.TemplateKey, StringComparison.Ordinal)
+                && string.Equals(candidate.Scope.LaneKey, occurrence.Scope.LaneKey, StringComparison.Ordinal)
+                && candidate.Ordinal < occurrence.Ordinal);
+            sb.AppendLine($"            {Literal(occurrence.StableKey)} => {prefixCount.ToString(System.Globalization.CultureInfo.InvariantCulture)},");
+        }
+
+        sb.AppendLine("            _ => -1,");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitForkQuiescenceHelpers(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("    private bool IsCompensationForkQuiescent(string forkId)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        return forkId switch");
+        sb.AppendLine("        {");
+        if (model.Forks is not null)
+        {
+            foreach (var fork in model.Forks)
             {
-                sb.AppendLine($"        yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+                sb.AppendLine($"            {Literal(fork.ForkId)} => CheckJoinReady_{Sanitize(fork.ForkId)}(),");
             }
-            else
+        }
+
+        sb.AppendLine("            _ => false,");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private void MarkFailedForkPath(string forkId, int? pathIndex)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        switch (forkId, pathIndex)");
+        sb.AppendLine("        {");
+        if (model.Forks is not null)
+        {
+            foreach (var fork in model.Forks)
             {
-                // Route on the failed step name so the correct rollback runs.
-                sb.AppendLine($"        if (cmd.FailedStepName == \"{step.StepName}\")");
+                foreach (var path in fork.Paths)
+                {
+                    sb.AppendLine($"            case ({Literal(fork.ForkId)}, {path.PathIndex}):");
+                    sb.AppendLine($"                Fork_{Sanitize(fork.ForkId)}_Path{path.PathIndex}Status = Strategos.Definitions.ForkPathStatus.Failed;");
+                    sb.AppendLine("                break;");
+                }
+            }
+        }
+
+        sb.AppendLine("            default:");
+        sb.AppendLine("                break;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitForkJournalValidationHelpers(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationTopology topology)
+    {
+        sb.AppendLine("    private bool AreForkHistoriesComplete(");
+        sb.AppendLine("        string selectedScopeKey,");
+        sb.AppendLine("        string? pendingForkId)");
+        sb.AppendLine("    {");
+
+        if (model.Forks is not null)
+        {
+            for (var forkIndex = 0; forkIndex < model.Forks.Count; forkIndex++)
+            {
+                var fork = model.Forks[forkIndex];
+                var scopeVariable = $"forkScopes{forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                var forkSegment = $"/fork:{fork.ForkId}";
+                sb.AppendLine($"        var {scopeVariable} = CompensationJournal");
+                sb.AppendLine("            .Where(entry => IsWithinCompensationScope(entry.ScopeKey, selectedScopeKey))");
+                sb.AppendLine($"            .Select(entry => ExtractForkScopeKey(entry.ScopeKey, {Literal(forkSegment)}))");
+                sb.AppendLine("            .Where(scopeKey => scopeKey is not null)");
+                sb.AppendLine("            .Select(scopeKey => scopeKey!)");
+                sb.AppendLine("            .Distinct(StringComparer.Ordinal)");
+                sb.AppendLine("            .ToList();");
+                sb.AppendLine($"        if (string.Equals(pendingForkId, {Literal(fork.ForkId)}, StringComparison.Ordinal)");
+                sb.AppendLine($"            && ExtractForkScopeKey(selectedScopeKey, {Literal(forkSegment)}) is {{ }} pendingForkScope{forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                sb.AppendLine($"            && !{scopeVariable}.Contains(pendingForkScope{forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}, StringComparer.Ordinal))");
                 sb.AppendLine("        {");
-                sb.AppendLine($"            yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
-                sb.AppendLine("            yield break;");
+                sb.AppendLine($"            {scopeVariable}.Add(pendingForkScope{forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)});");
+                sb.AppendLine("        }");
+                sb.AppendLine();
+                sb.AppendLine($"        if ({scopeVariable}.Any(scopeKey => !ValidateForkJournal{forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)}(");
+                sb.AppendLine("            scopeKey,");
+                sb.AppendLine($"            string.Equals(pendingForkId, {Literal(fork.ForkId)}, StringComparison.Ordinal)");
+                sb.AppendLine("                && string.Equals(scopeKey, selectedScopeKey, StringComparison.Ordinal))))");
+                sb.AppendLine("        {");
+                sb.AppendLine("            return false;");
                 sb.AppendLine("        }");
                 sb.AppendLine();
             }
         }
 
-        // Terminal fallback (F2): in multi-compensation routing an unmatched
-        // FailedStepName would fall through every branch yielding NO command,
-        // stranding the saga in the Compensating phase forever (no further event
-        // ever arrives). Transition to the terminal Failed phase and MarkCompleted()
-        // so an unexpected failed-step name cannot deadlock the saga. The single
-        // case always yields a worker command above, so it needs no fallback.
-        if (!single)
+        sb.AppendLine("        return true;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private static string? ExtractForkScopeKey(");
+        sb.AppendLine("        string candidateScopeKey,");
+        sb.AppendLine("        string forkSegment)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var segmentIndex = candidateScopeKey.IndexOf(forkSegment, StringComparison.Ordinal);");
+        sb.AppendLine("        if (segmentIndex < 0)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var scopeLength = segmentIndex + forkSegment.Length;");
+        sb.AppendLine("        if (candidateScopeKey.Length > scopeLength && candidateScopeKey[scopeLength] != '/')");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return candidateScopeKey.Substring(0, scopeLength);");
+        sb.AppendLine("    }");
+
+        if (model.Forks is not null)
         {
-            sb.AppendLine("        logger.LogError(");
-            sb.AppendLine("            \"No compensation registered for failed step {FailedStepName} in workflow {WorkflowId}; failing terminally\",");
-            sb.AppendLine("            cmd.FailedStepName,");
-            sb.AppendLine("            WorkflowId);");
-            sb.AppendLine();
+            for (var forkIndex = 0; forkIndex < model.Forks.Count; forkIndex++)
+            {
+                var fork = model.Forks[forkIndex];
+                var suffix = forkIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var sanitizedId = Sanitize(fork.ForkId);
+                sb.AppendLine();
+                sb.AppendLine($"    private bool ValidateForkJournal{suffix}(");
+                sb.AppendLine("        string scopeKey,");
+                sb.AppendLine("        bool isPendingInstance)");
+                sb.AppendLine("    {");
+                sb.AppendLine("        return");
+                for (var pathIndex = 0; pathIndex < fork.Paths.Count; pathIndex++)
+                {
+                    var path = fork.Paths[pathIndex];
+                    var expectedCount = topology.Occurrences.Count(occurrence =>
+                        occurrence.Scope.Kind == CompensationScopeKind.Fork
+                        && string.Equals(occurrence.Scope.ForkId, fork.ForkId, StringComparison.Ordinal)
+                        && occurrence.Scope.ForkPathIndex == path.PathIndex)
+                        .ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    var prefix = pathIndex == 0 ? "            " : "            && ";
+                    sb.AppendLine($"{prefix}(Fork_{sanitizedId}_Path{path.PathIndex}Status is Strategos.Definitions.ForkPathStatus.Success or Strategos.Definitions.ForkPathStatus.Failed)");
+                    sb.AppendLine($"            && HasContiguousForkLaneHistory(");
+                    sb.AppendLine("                scopeKey,");
+                    sb.AppendLine($"                {path.PathIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)},");
+                    sb.AppendLine("                isPendingInstance");
+                    sb.AppendLine($"                    ? (Fork_{sanitizedId}_Path{path.PathIndex}Status == Strategos.Definitions.ForkPathStatus.Success");
+                    sb.AppendLine($"                        && !Fork_{sanitizedId}_Path{path.PathIndex}CompensationQuiesced");
+                    sb.AppendLine($"                            ? {expectedCount}");
+                    sb.AppendLine("                            : (int?)null)");
+                    sb.AppendLine($"                    : {expectedCount},");
+                    sb.AppendLine($"                isPendingInstance");
+                    sb.AppendLine($"                    && Fork_{sanitizedId}_Path{path.PathIndex}Status == Strategos.Definitions.ForkPathStatus.Failed)");
+                }
+
+                sb.AppendLine("            && HasContiguousForkDescendantHistories(scopeKey)");
+                sb.AppendLine("            ;");
+                sb.AppendLine("    }");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("    private bool HasContiguousForkLaneHistory(");
+        sb.AppendLine("        string scopeKey,");
+        sb.AppendLine("        int pathIndex,");
+        sb.AppendLine("        int? expectedCompletedCount,");
+        sb.AppendLine("        bool allowEmpty)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var ordinals = CompensationJournal");
+        sb.AppendLine("            .Where(entry => string.Equals(entry.ScopeKey, scopeKey, StringComparison.Ordinal)");
+        sb.AppendLine("                && entry.ForkPathIndex == pathIndex)");
+        sb.AppendLine("            .Select(entry => entry.ScopeOrdinal)");
+        sb.AppendLine("            .OrderBy(ordinal => ordinal)");
+        sb.AppendLine("            .ToList();");
+        sb.AppendLine("        return IsContiguousScopeHistory(ordinals, expectedCompletedCount, allowEmpty);");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private bool HasContiguousForkDescendantHistories(string forkScopeKey)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var descendantGroups = CompensationJournal");
+        sb.AppendLine("            .Where(entry => entry.ScopeKey.StartsWith(forkScopeKey + \"/\", StringComparison.Ordinal))");
+        sb.AppendLine("            .GroupBy(");
+        sb.AppendLine("                entry => entry.ScopeKey + \"\\u001f\" + (entry.LaneKey ?? string.Empty),");
+        sb.AppendLine("                StringComparer.Ordinal);");
+        sb.AppendLine("        return descendantGroups.All(group => IsContiguousScopeHistory(");
+        sb.AppendLine("            group.Select(entry => entry.ScopeOrdinal).OrderBy(ordinal => ordinal).ToList(),");
+        sb.AppendLine("            expectedCompletedCount: null,");
+        sb.AppendLine("            allowEmpty: false));");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    private static bool IsContiguousScopeHistory(");
+        sb.AppendLine("        IReadOnlyList<int> ordinals,");
+        sb.AppendLine("        int? expectedCompletedCount,");
+        sb.AppendLine("        bool allowEmpty)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (ordinals.Count == 0)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return allowEmpty || expectedCompletedCount == 0;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (expectedCompletedCount is not null && ordinals.Count != expectedCompletedCount)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return false;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        for (var index = 0; index < ordinals.Count; index++)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (ordinals[index] != index)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                return false;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        return true;");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitRollbackPlanner(
+        StringBuilder sb,
+        WorkflowModel model,
+        IReadOnlyList<string> inverseStepNames)
+    {
+        sb.AppendLine("    private IEnumerable<object> BeginCompensationScope(");
+        sb.AppendLine("        string scopeKey,");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var pendingForkId = PendingCompensationForkId;");
+        sb.AppendLine("        if (!HasCompleteCompensationJournalThrough(CompensationJournalSequence))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Completion journal became non-contiguous before rollback planning; saga retained.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (!AreForkHistoriesComplete(scopeKey, pendingForkId))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"A quiescent fork has missing or non-contiguous completion journal history; saga retained.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        ActiveCompensationScopeKey = scopeKey;");
+        sb.AppendLine("        PendingCompensationForkId = null;");
+        sb.AppendLine("        PendingCompensationScopeKey = null;");
+        sb.AppendLine("        var pending = CompensationJournal");
+        sb.AppendLine("            .Where(entry => IsWithinCompensationScope(entry.ScopeKey, scopeKey)");
+        sb.AppendLine("                && string.Equals(entry.Status, \"Completed\", StringComparison.Ordinal))");
+        sb.AppendLine("            .OrderByDescending(entry => entry.Sequence)");
+        sb.AppendLine("            .ToList();");
+        sb.AppendLine("        if (pending.Count == 0)");
+        sb.AppendLine("        {");
+        EmitFinishRollback(sb, model, "            ");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        // Compensability propagates upward: preflight the whole selected scope.");
+        sb.AppendLine("        // A no-worker identity is safe only because the binding proof established an empty frame.");
+        sb.AppendLine("        if (pending.Any(entry => !entry.UsesIdentityInverse");
+        sb.AppendLine("            && (string.IsNullOrEmpty(entry.InverseStepName)");
+        sb.AppendLine("                || string.IsNullOrEmpty(entry.InverseActionIdentity))))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = \"Selected rollback scope contains a completed non-compensable occurrence.\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        foreach (var identityEntry in pending.Where(entry => entry.UsesIdentityInverse))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            identityEntry.Status = \"RolledBack\";");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        pending = pending.Where(entry => !entry.UsesIdentityInverse).ToList();");
+        sb.AppendLine("        if (pending.Count == 0)");
+        sb.AppendLine("        {");
+        EmitFinishRollback(sb, model, "            ");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var forkLaneHeads = pending");
+        sb.AppendLine("            .Where(entry => string.Equals(entry.ScopeKind, \"Fork\", StringComparison.Ordinal))");
+        sb.AppendLine("            .GroupBy(entry => entry.ScopeKey + \"\\u001f\" + (entry.LaneKey ?? string.Empty), StringComparer.Ordinal)");
+        sb.AppendLine("            .Select(group => group.OrderByDescending(entry => entry.Sequence).First())");
+        sb.AppendLine("            .ToList();");
+        sb.AppendLine("        logger.LogDebug(");
+        sb.AppendLine("            \"Rollback scope {ScopeKey} contains {ForkLaneCount} structural fork lanes\",");
+        sb.AppendLine("            scopeKey,");
+        sb.AppendLine("            forkLaneHeads.Count);");
+        sb.AppendLine("        // The topology preserves parallel lanes, but generic workflow state has no sound merge.");
+        sb.AppendLine("        // Serialize every inverse globally in reverse completion order.");
+        sb.AppendLine("        foreach (var entry in pending.Take(1))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            entry.RollbackState = State;");
+        sb.AppendLine("            foreach (var message in DispatchCompensationEntry(entry, logger))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                yield return message;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        EmitDispatchMethod(sb, model, inverseStepNames);
+    }
+
+    private static void EmitDispatchMethod(
+        StringBuilder sb,
+        WorkflowModel model,
+        IReadOnlyList<string> inverseStepNames)
+    {
+        sb.AppendLine("    private IEnumerable<object> DispatchCompensationEntry(");
+        sb.AppendLine("        CompensationJournalEntry entry,");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        entry.Status = \"InProgress\";");
+        sb.AppendLine("        logger.LogWarning(");
+        sb.AppendLine("            \"Rolling back {ForwardStep} with {InverseStep}; rollback {RollbackId}\",");
+        sb.AppendLine("            entry.ForwardStepName,");
+        sb.AppendLine("            entry.InverseStepName,");
+        sb.AppendLine("            entry.RollbackId);");
+        sb.AppendLine("        object worker = entry.InverseStepName switch");
+        sb.AppendLine("        {");
+
+        foreach (var inverseStepName in inverseStepNames)
+        {
+            sb.AppendLine($"            {Literal(inverseStepName)} => new Execute{inverseStepName}WorkerCommand(WorkflowId, entry.RollbackId, entry.RollbackState)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                RollbackId = entry.RollbackId,");
+            sb.AppendLine("                RollbackJournalSequence = entry.Sequence,");
+            sb.AppendLine("                IsCompensation = true,");
+            sb.AppendLine("                ForwardOccurrenceKey = entry.OccurrenceKey,");
+            sb.AppendLine("                CompensationScopeKey = entry.ScopeKey,");
+            sb.AppendLine("                CompensationScopeKind = entry.ScopeKind,");
+            sb.AppendLine("                CompensationLaneKey = entry.LaneKey,");
+            sb.AppendLine("                CompensationForkId = entry.ForkId,");
+            sb.AppendLine("                CompensationForkPathIndex = entry.ForkPathIndex,");
+            sb.AppendLine("            },");
+        }
+
+        sb.AppendLine("            _ => throw new InvalidOperationException($\"No inverse worker for {entry.InverseStepName}.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine("        yield return worker;");
+        sb.AppendLine("        yield return new CompensationRollbackTimeout(WorkflowId, entry.RollbackId, entry.Sequence, entry.InverseTimeoutTicks);");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitRollbackCompletedHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string inverseStepName)
+    {
+        var eventName = $"{model.PascalName}{inverseStepName}RollbackCompleted";
+
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {eventName} evt,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine("        var entry = CompensationJournal.FirstOrDefault(candidate =>");
+        sb.AppendLine("            candidate.Sequence == evt.JournalSequence");
+        sb.AppendLine("            && candidate.RollbackId == evt.RollbackId);");
+        sb.AppendLine("        if (entry is null || !string.Equals(entry.Status, \"InProgress\", StringComparison.Ordinal))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        StateApplicationHelper.EmitStateApplication(sb, model);
+        sb.AppendLine("        entry.RollbackState = State;");
+        sb.AppendLine("        entry.Status = \"RolledBack\";");
+        sb.AppendLine("        var next = ActiveCompensationScopeKey is null");
+        sb.AppendLine("            ? null");
+        sb.AppendLine("            : CompensationJournal");
+        sb.AppendLine("                .Where(candidate => IsWithinCompensationScope(candidate.ScopeKey, ActiveCompensationScopeKey)");
+        sb.AppendLine("                    && string.Equals(candidate.Status, \"Completed\", StringComparison.Ordinal))");
+        sb.AppendLine("                .OrderByDescending(candidate => candidate.Sequence)");
+        sb.AppendLine("                .FirstOrDefault();");
+        sb.AppendLine("        if (next is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            next.RollbackState = State;");
+        sb.AppendLine("            foreach (var message in DispatchCompensationEntry(next, logger))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                yield return message;");
+        sb.AppendLine("            }");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        var scopeStillRunning = ActiveCompensationScopeKey is not null");
+        sb.AppendLine("            && CompensationJournal.Any(candidate =>");
+        sb.AppendLine("            IsWithinCompensationScope(candidate.ScopeKey, ActiveCompensationScopeKey)");
+        sb.AppendLine("            && (string.Equals(candidate.Status, \"Completed\", StringComparison.Ordinal)");
+        sb.AppendLine("                || string.Equals(candidate.Status, \"InProgress\", StringComparison.Ordinal)));");
+        sb.AppendLine("        if (scopeStillRunning)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        EmitFinishRollback(sb, model, "        ");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitFinishRollback(StringBuilder sb, WorkflowModel model, string indent)
+    {
+        sb.AppendLine($"{indent}ActiveCompensationScopeKey = null;");
+        sb.AppendLine($"{indent}Phase = {model.PhaseEnumName}.Failed;");
+
+        if (model.HasFailureHandlers)
+        {
+            var firstHandler = model.FailureHandlers!.First();
+            var command = $"StartFailureHandler_{Sanitize(firstHandler.HandlerId)}_{firstHandler.FirstStepName}Command";
+            sb.AppendLine($"{indent}yield return new {command}(WorkflowId);");
+        }
+        else
+        {
+            sb.AppendLine($"{indent}MarkCompleted();");
+        }
+    }
+
+    private static void EmitRollbackFailedHandler(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("    public void Handle(");
+        sb.AppendLine($"        {model.PascalName}RollbackFailed evt,");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine("        var entry = CompensationJournal.FirstOrDefault(candidate =>");
+        sb.AppendLine("            candidate.Sequence == evt.JournalSequence");
+        sb.AppendLine("            && candidate.RollbackId == evt.RollbackId);");
+        sb.AppendLine("        if (entry is null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            CompensationFailureMessage = $\"Unmatched rollback failure {evt.RollbackId:N}/{evt.JournalSequence}: {evt.ExceptionMessage}\";");
+        sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("            logger.LogError(");
+        sb.AppendLine("                \"Unmatched rollback failure {RollbackId}/{JournalSequence} for workflow {WorkflowId}; saga retained\",");
+        sb.AppendLine("                evt.RollbackId,");
+        sb.AppendLine("                evt.JournalSequence,");
+        sb.AppendLine("                WorkflowId);");
+        sb.AppendLine("            return;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        if (entry.Status is \"RolledBack\" or \"Failed\" or \"OutcomeUnknown\")");
+        sb.AppendLine("        {");
+        sb.AppendLine("            // Idempotent redelivery of a terminal inverse outcome.");
+        sb.AppendLine("            return;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        entry.Status = \"Failed\";");
+        sb.AppendLine("        CompensationFailureMessage = evt.ExceptionMessage;");
+        sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("        logger.LogError(");
+        sb.AppendLine("            \"Inverse {InverseStep} failed for workflow {WorkflowId}; saga retained\",");
+        sb.AppendLine("            entry.InverseStepName,");
+        sb.AppendLine("            WorkflowId);");
+        sb.AppendLine("        // Do not call MarkCompleted: reconciliation must retain this journal.");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitRollbackTimeoutHandler(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("    public void Handle(");
+        sb.AppendLine("        CompensationRollbackTimeout timeout,");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(timeout, nameof(timeout));");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine("        var entry = CompensationJournal.FirstOrDefault(candidate =>");
+        sb.AppendLine("            candidate.Sequence == timeout.JournalSequence");
+        sb.AppendLine("            && candidate.RollbackId == timeout.RollbackId);");
+        sb.AppendLine("        if (entry is null || !string.Equals(entry.Status, \"InProgress\", StringComparison.Ordinal))");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+        sb.AppendLine("        entry.Status = \"OutcomeUnknown\";");
+        sb.AppendLine("        CompensationOutcomeUnknown = true;");
+        sb.AppendLine("        CompensationFailureMessage = \"Inverse outcome unknown after timeout.\";");
+        sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
+        sb.AppendLine("        logger.LogError(");
+        sb.AppendLine("            \"Inverse {InverseStep} outcome unknown for workflow {WorkflowId}; saga retained\",");
+        sb.AppendLine("            entry.InverseStepName,");
+        sb.AppendLine("            WorkflowId);");
+        sb.AppendLine("        // Never assume an unknown inverse succeeded; retain the saga.");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitLegacyCompensation(StringBuilder sb, WorkflowModel model)
+    {
+        var compensatedSteps = model.CompensationSteps;
+        sb.AppendLine();
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        Trigger{model.PascalName}FailureHandlerCommand cmd,");
+        StateApplicationHelper.EmitSessionParameter(sb, model);
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        StateApplicationHelper.EmitSessionGuard(sb, model);
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine("        FailedStepName = cmd.FailedStepName;");
+        sb.AppendLine("        FailureExceptionMessage = cmd.ExceptionMessage;");
+        sb.AppendLine("        FailureExceptionType = cmd.ExceptionType;");
+        sb.AppendLine("        FailureStackTrace = cmd.StackTrace;");
+        sb.AppendLine("        FailureTimestamp = DateTimeOffset.UtcNow;");
+        sb.AppendLine($"        Phase = {model.PhaseEnumName}.Compensating;");
+
+        if (model.IsEventSourced)
+        {
+            sb.AppendLine("        session.Events.Append(");
+            sb.AppendLine("            WorkflowId,");
+            sb.AppendLine($"            new {model.PascalName}StepFailed(");
+            sb.AppendLine("                WorkflowId,");
+            sb.AppendLine("                cmd.FailedStepName,");
+            sb.AppendLine("                cmd.ExceptionType,");
+            sb.AppendLine("                cmd.ExceptionMessage,");
+            sb.AppendLine("                FailureTimestamp.Value));");
+        }
+
+        if (compensatedSteps.Count == 1)
+        {
+            var inverse = NamingHelper.GetSimpleTypeName(
+                compensatedSteps[0].Compensation!.CompensationStepTypeName);
+            sb.AppendLine($"        yield return new Execute{inverse}WorkerCommand(WorkflowId, Guid.NewGuid(), State);");
+        }
+        else
+        {
+            foreach (var step in compensatedSteps)
+            {
+                var inverse = NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName);
+                sb.AppendLine($"        if (cmd.FailedStepName == {Literal(step.StepName)})");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            yield return new Execute{inverse}WorkerCommand(WorkflowId, Guid.NewGuid(), State);");
+                sb.AppendLine("            yield break;");
+                sb.AppendLine("        }");
+            }
+
             sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
             sb.AppendLine("        MarkCompleted();");
             sb.AppendLine("        yield break;");
         }
 
         sb.AppendLine("    }");
+
+        var mainFlowNames = new HashSet<string>(model.StepNames, StringComparer.Ordinal);
+        foreach (var inverse in compensatedSteps
+            .Select(step => NamingHelper.GetSimpleTypeName(step.Compensation!.CompensationStepTypeName))
+            .Distinct(StringComparer.Ordinal))
+        {
+            if (mainFlowNames.Contains(inverse))
+            {
+                continue;
+            }
+
+            sb.AppendLine();
+            EmitLegacyCompletedHandler(sb, model, inverse);
+        }
     }
 
-    /// <summary>
-    /// Emits the saga handler for a compensation step's completed event: folds the
-    /// rollback's returned state and then EITHER transitions the saga to its terminal
-    /// <c>Failed</c> phase (compensation-only) OR — when the workflow also declares an
-    /// <c>OnFailure</c> chain (#140 Task 3.2) — chains into that chain's first step,
-    /// enforcing the fixed compensation-then-OnFailure ordering.
-    /// </summary>
-    private static void EmitCompensationCompletedHandler(
+    private static void EmitLegacyCompletedHandler(
         StringBuilder sb,
         WorkflowModel model,
-        string compStepName)
+        string inverseStepName)
     {
-        var completedEventName = NamingHelper.GetCompletedEventName(compStepName);
-        var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
-
-        // When the workflow ALSO declares OnFailure, the rollback's completion chains
-        // into the OnFailure chain rather than ending the saga (fixed ordering:
-        // compensation FIRST, then OnFailure). Otherwise it is the terminal handler.
         if (model.HasFailureHandlers)
         {
-            EmitCompensationThenOnFailureCompletedHandler(sb, model, compStepName, completedEventName, sagaClassName);
+            var firstHandler = model.FailureHandlers!.First();
+            var command = $"StartFailureHandler_{Sanitize(firstHandler.HandlerId)}_{firstHandler.FirstStepName}Command";
+            sb.AppendLine($"    public {command} Handle(");
+            sb.AppendLine($"        {inverseStepName}Completed evt,");
+            StateApplicationHelper.EmitSessionParameter(sb, model);
+            sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
+            StateApplicationHelper.EmitSessionGuard(sb, model);
+            sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+            StateApplicationHelper.EmitStateApplication(sb, model);
+            sb.AppendLine($"        return new {command}(WorkflowId);");
+            sb.AppendLine("    }");
             return;
         }
 
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {completedEventName} event (DR-3) - folds the rollback's");
-        sb.AppendLine("    /// returned state and transitions the saga to its terminal Failed phase.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine($"    /// <param name=\"evt\">The {compStepName} compensation completed event.</param>");
-        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
-        sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
         sb.AppendLine("    public void Handle(");
-        sb.AppendLine($"        {completedEventName} evt,");
+        sb.AppendLine($"        {inverseStepName}Completed evt,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
-        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
         StateApplicationHelper.EmitSessionGuard(sb, model);
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
-        sb.AppendLine();
-
-        // INV-7: the compensation step returns NEW state; the saga only folds it,
-        // never mutates the input. This is the standard reducer application.
         StateApplicationHelper.EmitStateApplication(sb, model);
-
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
-        sb.AppendLine();
-        sb.AppendLine("        logger.LogInformation(");
-        sb.AppendLine("            \"Compensation completed for workflow {WorkflowId}; workflow Failed\",");
-        sb.AppendLine("            WorkflowId);");
-        sb.AppendLine();
         sb.AppendLine("        MarkCompleted();");
         sb.AppendLine("    }");
     }
 
-    /// <summary>
-    /// Emits the compensation-completed handler for the Compensate↔OnFailure interop
-    /// case (#140 Task 3.2): folds the rollback's returned state, then chains into the
-    /// workflow's OnFailure chain by returning its first step's start command. The
-    /// OnFailure chain's own (terminal) completed handler later marks the saga Failed,
-    /// so this handler must NOT mark completed.
-    /// </summary>
-    private static void EmitCompensationThenOnFailureCompletedHandler(
-        StringBuilder sb,
-        WorkflowModel model,
-        string compStepName,
-        string completedEventName,
-        string sagaClassName)
-    {
-        var firstHandler = model.FailureHandlers!.First();
-        var sanitizedId = firstHandler.HandlerId.Replace("-", "_");
-        var firstStepName = firstHandler.FirstStepName;
-        var startCommandName = $"StartFailureHandler_{sanitizedId}_{firstStepName}Command";
+    private static string Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
 
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Handles the {completedEventName} event (#140 Task 3.2) - folds the");
-        sb.AppendLine("    /// rollback's returned state, then chains into the workflow OnFailure chain");
-        sb.AppendLine("    /// (compensation runs FIRST, then OnFailure). Does NOT mark completed: the");
-        sb.AppendLine("    /// terminal OnFailure completed handler ends the saga in the Failed phase.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine($"    /// <param name=\"evt\">The {compStepName} compensation completed event.</param>");
-        StateApplicationHelper.EmitSessionParameterDoc(sb, model);
-        sb.AppendLine("    /// <param name=\"logger\">The injected logger.</param>");
-        sb.AppendLine("    /// <returns>The command to start the first OnFailure handler step.</returns>");
-        sb.AppendLine($"    public {startCommandName} Handle(");
-        sb.AppendLine($"        {completedEventName} evt,");
-        StateApplicationHelper.EmitSessionParameter(sb, model);
-        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
-        sb.AppendLine("    {");
-        sb.AppendLine("        ArgumentNullException.ThrowIfNull(evt, nameof(evt));");
-        StateApplicationHelper.EmitSessionGuard(sb, model);
-        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
-        sb.AppendLine();
+    private static string NullableLiteral(string? value) => value is null ? "null" : Literal(value);
 
-        // INV-7: the compensation step returns NEW state; the saga only folds it.
-        StateApplicationHelper.EmitStateApplication(sb, model);
-
-        sb.AppendLine();
-        sb.AppendLine("        logger.LogInformation(");
-        sb.AppendLine("            \"Compensation completed for workflow {WorkflowId}; running OnFailure chain\",");
-        sb.AppendLine("            WorkflowId);");
-        sb.AppendLine();
-        sb.AppendLine($"        return new {startCommandName}(WorkflowId);");
-        sb.AppendLine("    }");
-    }
+    private static string Sanitize(string value) => value.Replace("-", "_");
 }

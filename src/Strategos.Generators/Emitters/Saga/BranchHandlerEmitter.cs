@@ -116,6 +116,8 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine();
         }
 
+        CompensationJournalEmitter.EmitRecordCompletion(sb, model, stepName);
+
         // Log branch routing decision
         sb.AppendLine($"        logger.LogDebug(");
         sb.AppendLine($"            \"Branch routing for workflow {{WorkflowId}}, discriminator: {{Discriminator}}\",");
@@ -313,6 +315,12 @@ internal sealed class BranchHandlerEmitter
                 sb.AppendLine();
             }
 
+            CompensationJournalEmitter.EmitRecordCompletion(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
+
             // Log branch path completion
             sb.AppendLine($"        logger.LogDebug(");
             sb.AppendLine($"            \"Branch path {{BranchPath}} completed for workflow {{WorkflowId}}, rejoining at {{RejoinStep}}\",");
@@ -345,6 +353,12 @@ internal sealed class BranchHandlerEmitter
                 StateApplicationHelper.EmitStateApplication(sb, model);
                 sb.AppendLine();
             }
+
+            CompensationJournalEmitter.EmitRecordCompletion(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
 
             // Log branch path completion with workflow completion
             sb.AppendLine($"        logger.LogInformation(");
@@ -418,6 +432,15 @@ internal sealed class BranchHandlerEmitter
             StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
         }
+
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            branch.LoopPrefix is null ? branchCase.LastStepName : $"{branch.LoopPrefix}_{branchCase.LastStepName}",
+            PathRoutingKey.ForBranch(
+                branch.BranchId,
+                branchCase.BranchPathPrefix,
+                branch.LoopPrefix is null ? branchCase.LastStepName : $"{branch.LoopPrefix}_{branchCase.LastStepName}"));
 
         sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the branch-case");
         sb.AppendLine("        // step's result confidence is present and below the configured threshold.");
@@ -704,6 +727,16 @@ internal sealed class BranchHandlerEmitter
         BranchCaseStepOccurrence occurrence,
         string indent)
     {
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            occurrence.PhaseName,
+            PathRoutingKey.ForBranch(
+                occurrence.Branch.BranchId,
+                occurrence.Case.BranchPathPrefix,
+                occurrence.PhaseName),
+            indent);
+
         EmitLiveCaseConfidenceGate(sb, model, occurrence, indent);
 
         if (occurrence.SuccessorPhaseName is not null)
