@@ -1207,6 +1207,7 @@ internal sealed class OntologyActionContract
         OntologyPredicateContract guarantee,
         ImmutableArray<string> frame,
         string? requiredAuthority,
+        string? compensatingActionName,
         string? invalidReason,
         Location location)
     {
@@ -1217,6 +1218,7 @@ internal sealed class OntologyActionContract
         Guarantee = guarantee;
         Frame = frame;
         RequiredAuthority = requiredAuthority;
+        CompensatingActionName = compensatingActionName;
         InvalidReason = invalidReason;
         Location = location;
     }
@@ -1235,6 +1237,8 @@ internal sealed class OntologyActionContract
 
     internal string? RequiredAuthority { get; }
 
+    internal string? CompensatingActionName { get; }
+
     internal string? InvalidReason { get; }
 
     internal Location Location { get; }
@@ -1249,6 +1253,7 @@ internal sealed class OntologyActionContract
             OntologyPredicateContract.FromParsed(parsed.Guarantee),
             parsed.Frame,
             parsed.RequiredAuthority,
+            parsed.CompensatingActionName,
             parsed.InvalidReason ?? additionalInvalidReason,
             parsed.Location);
 
@@ -1264,6 +1269,7 @@ internal sealed class OntologyActionContract
             OntologyPredicateContract.True,
             ImmutableArray<string>.Empty,
             requiredAuthority: null,
+            compensatingActionName: null,
             invalidReason,
             location);
 }

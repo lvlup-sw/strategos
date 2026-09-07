@@ -1855,7 +1855,7 @@ internal static class StepExtractor
             return false;
         }
 
-        action = new WorkflowActionReferenceModel(domainName, objectTypeName, actionName);
+        action = new WorkflowActionReferenceModel(domainName!, objectTypeName!, actionName!);
         return true;
     }
 
@@ -1934,7 +1934,7 @@ internal static class StepExtractor
     }
 
     /// <summary>
-    /// Resolves a <c>Compensate&lt;TCompensation&gt;()</c> call into a <see cref="CompensationModel"/>,
+    /// Resolves a <c>Compensate&lt;TCompensation&gt;(inverseAction)</c> call into a <see cref="CompensationModel"/>,
     /// carrying the compensation step's fully qualified type name (INV-8: a string descriptor,
     /// never a CLR <see cref="System.Type"/>). Mirrors the <c>Join&lt;T&gt;</c> symbol resolution.
     /// </summary>
@@ -1961,7 +1961,28 @@ internal static class StepExtractor
         var symbol = semanticModel.GetSymbolInfo(typeArgument).Symbol as INamedTypeSymbol;
         var isRegisteredStep = symbol is null || ImplementsWorkflowStep(symbol);
 
-        return new CompensationModel(compensationTypeName, IsRegisteredStep: isRegisteredStep);
+        var inverseExpression = compensateInvocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+        if (inverseExpression is null)
+        {
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseActionResolution: WorkflowActionReferenceResolution.Missing);
+        }
+
+        if (TryExtractActionReference(inverseExpression, semanticModel, out var inverseAction))
+        {
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseAction: inverseAction,
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved);
+        }
+
+        return new CompensationModel(
+            compensationTypeName,
+            IsRegisteredStep: isRegisteredStep,
+            InverseActionResolution: WorkflowActionReferenceResolution.DynamicOrInvalid);
     }
 
     /// <summary>

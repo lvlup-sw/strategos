@@ -1,4 +1,6 @@
 #nullable enable
+static Strategos.Definitions.CompensationConfiguration.Create(System.Type! stepType) -> Strategos.Definitions.CompensationConfiguration!
+static Strategos.Definitions.CompensationConfiguration.Create<TStep>() -> Strategos.Definitions.CompensationConfiguration!
 static Strategos.Definitions.StepDefinition.Create(System.Type! stepType, string? customName = null, string? instanceName = null) -> Strategos.Definitions.StepDefinition!
 static Strategos.Definitions.StepDefinition.CreateFromLambda(string! stepName, System.Delegate! lambdaDelegate) -> Strategos.Definitions.StepDefinition!
 Strategos.Builders.IApprovalBuilder<TState, TApprover>
@@ -70,6 +72,14 @@ Strategos.Builders.IWorkflowBuilder<TState>.Then(string! stepName, Strategos.Ste
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Definitions.CompensationConfiguration
+Strategos.Definitions.CompensationConfiguration.CompensationStepType.get -> System.Type!
+Strategos.Definitions.CompensationConfiguration.CompensationStepType.init -> void
+Strategos.Definitions.CompensationConfiguration.RequiredOnFailure.get -> bool
+Strategos.Definitions.CompensationConfiguration.RequiredOnFailure.init -> void
+Strategos.Definitions.CompensationConfiguration.Timeout.get -> System.TimeSpan?
+Strategos.Definitions.CompensationConfiguration.Timeout.init -> void
+Strategos.Definitions.CompensationConfiguration.WithTimeout(System.TimeSpan timeout) -> Strategos.Definitions.CompensationConfiguration!
 Strategos.Definitions.StepDefinition
 Strategos.Definitions.StepDefinition.AsLoopBodyStep(string! loopId) -> Strategos.Definitions.StepDefinition!
 Strategos.Definitions.StepDefinition.AsTerminal() -> Strategos.Definitions.StepDefinition!

@@ -1,5 +1,6 @@
 import "@typespec/json-schema";
 import "./StepDefinition.tsp";
+import "./ActionReference.tsp";
 
 using JsonSchema;
 
@@ -37,6 +38,9 @@ model RetryConfiguration {
 model CompensationConfiguration {
   /** Simple-name CLR moniker of the compensation step type (LB-2). */
   compensationStepType: string;
+
+  /** Ontology action implemented by the authored compensation step. */
+  inverseAction?: ActionReferenceV1;
 
   /** Whether compensation is required on failure. */
   requiredOnFailure?: boolean;

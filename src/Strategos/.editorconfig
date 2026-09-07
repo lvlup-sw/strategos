@@ -7,7 +7,9 @@
 # strategos-api-mirror.test.ts. Issue #167 preserves that named historical
 # subset and additionally tracks the 3 continuation interfaces changed by the
 # typed-binding API plus its public WorkflowActionReference value object and
-# the StepDefinition occurrence slot that carries that identity.
+# the StepDefinition occurrence slot that carries that identity. Issue #169
+# additionally tracks CompensationConfiguration because its typed inverse slot
+# is the public bridge from rollback authoring to static proof.
 #
 # Mechanism: the analyzer is all-or-nothing per project, so we disable its
 # diagnostics assembly-wide here, then re-enable them ONLY for the 10 interface
@@ -67,6 +69,20 @@ dotnet_diagnostic.RS0041.severity = error
 # baseline. Track the full containing type so its new Action slot cannot be
 # removed or changed while the value object and builder overload stay green.
 [Definitions/StepDefinition.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error
+
+# Typed inverse identity is stored on the public compensation descriptor as
+# well as exposed by IStepConfiguration. Gate the descriptor so the two halves
+# of the authoring contract cannot drift independently.
+[Definitions/CompensationConfiguration.cs]
 dotnet_diagnostic.RS0016.severity = error
 dotnet_diagnostic.RS0017.severity = error
 dotnet_diagnostic.RS0024.severity = error

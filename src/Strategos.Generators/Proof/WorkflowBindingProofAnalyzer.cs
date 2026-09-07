@@ -108,6 +108,17 @@ internal static class WorkflowBindingProofAnalyzer
                 group => group.Key,
                 group => group.ToImmutableArray(),
                 StringComparer.Ordinal);
+        var typedCompensationBoundaryFailures = ReportTypedCompensationBindingBoundaries(
+            context,
+            catalog,
+            workflowGroups);
+        var boundRollbackClaims = catalog.Actions
+            .Where(action => action.HasWorkflowBinding
+                && action.BoundWorkflowName is not null
+                && action.CompensatingActionName is not null)
+            .Select(action => action.BoundWorkflowName!)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+        var compensationProofResults = new Dictionary<string, bool>(StringComparer.Ordinal);
         var cycleReasons = FindRecursiveBindings(catalog, workflowGroups, context.CancellationToken);
 
         foreach (var boundAction in catalog.Actions
@@ -129,6 +140,11 @@ internal static class WorkflowBindingProofAnalyzer
             }
 
             var workflowName = boundAction.BoundWorkflowName;
+            if (typedCompensationBoundaryFailures.Contains(workflowName))
+            {
+                continue;
+            }
+
             if (cycleReasons.TryGetValue(boundAction, out var cycleReason))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -154,8 +170,101 @@ internal static class WorkflowBindingProofAnalyzer
                 continue;
             }
 
-            AnalyzeBinding(context, catalog, boundAction, matches[0]);
+            AnalyzeBinding(
+                context,
+                catalog,
+                boundAction,
+                matches[0],
+                boundRollbackClaims.Contains(workflowName),
+                compensationProofResults);
         }
+    }
+
+    private static ImmutableHashSet<string> ReportTypedCompensationBindingBoundaries(
+        SourceProductionContext context,
+        OntologyActionCatalog catalog,
+        IReadOnlyDictionary<string, ImmutableArray<WorkflowModel>> workflowGroups)
+    {
+        var failures = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+        foreach (var workflowGroup in workflowGroups.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+            var typedOccurrences = workflowGroup.Value
+                .SelectMany(workflow => BuildOccurrenceMap(workflow))
+                .Where(item => item.Value.Compensation?.InverseActionResolution
+                    is WorkflowActionReferenceResolution.Resolved
+                    or WorkflowActionReferenceResolution.DynamicOrInvalid)
+                .OrderBy(item => item.Key, StringComparer.Ordinal)
+                .ToImmutableArray();
+            if (typedOccurrences.IsEmpty)
+            {
+                continue;
+            }
+
+            var boundMatches = catalog.Actions
+                .Where(action => action.HasWorkflowBinding
+                    && string.Equals(
+                        action.BoundWorkflowName,
+                        workflowGroup.Key,
+                        StringComparison.Ordinal))
+                .OrderBy(action => action.Identity.DomainName, StringComparer.Ordinal)
+                .ThenBy(action => action.Identity.ObjectTypeName, StringComparer.Ordinal)
+                .ThenBy(action => action.Identity.ActionName, StringComparer.Ordinal)
+                .ThenBy(action => action.Location.SourceSpan.Start)
+                .ToImmutableArray();
+
+            string? reason = null;
+            if (boundMatches.IsEmpty)
+            {
+                reason = "typed compensation requires at least one closed BoundToWorkflow action, but no declaration binds this workflow";
+            }
+            else
+            {
+                foreach (var boundMatch in boundMatches)
+                {
+                    if (TryProveContract(
+                        boundMatch,
+                        context.CancellationToken,
+                        out _,
+                        out var proofFailure))
+                    {
+                        continue;
+                    }
+
+                    reason = $"BoundToWorkflow action '{boundMatch.Identity}' is not a closed, provable contract: "
+                        + (proofFailure ?? "unknown proof failure");
+                    break;
+                }
+
+                var subjects = boundMatches
+                    .Select(match => Subject(match.Identity))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(subject => subject, StringComparer.Ordinal)
+                    .ToImmutableArray();
+                if (reason is null && subjects.Length != 1)
+                {
+                    reason = "BoundToWorkflow actions do not share one ontology subject: "
+                        + string.Join(", ", subjects.Select(subject => $"'{subject}'"));
+                }
+            }
+
+            if (reason is null)
+            {
+                continue;
+            }
+
+            failures.Add(workflowGroup.Key);
+            var workflow = workflowGroup.Value[0];
+            ReportNonCompensableScope(
+                context,
+                workflow,
+                boundMatches.IsEmpty ? Location.None : boundMatches[0].Location,
+                "workflow:" + workflow.WorkflowName,
+                typedOccurrences[0].Key,
+                reason);
+        }
+
+        return failures.ToImmutable();
     }
 
     private static void ReportEmissionIdentityCollisions(
@@ -301,7 +410,9 @@ internal static class WorkflowBindingProofAnalyzer
         SourceProductionContext context,
         OntologyActionCatalog catalog,
         OntologyActionContract boundAction,
-        WorkflowModel workflow)
+        WorkflowModel workflow,
+        bool hasBoundRollbackClaim,
+        IDictionary<string, bool> compensationProofResults)
     {
         var cancellationToken = context.CancellationToken;
         if (!workflow.TopologyClosureFailures.IsDefaultOrEmpty)
@@ -312,18 +423,6 @@ internal static class WorkflowBindingProofAnalyzer
                 boundAction,
                 "the authored workflow topology is not statically closed: "
                     + string.Join("; ", workflow.TopologyClosureFailures));
-            return;
-        }
-
-        var compensatedStep = workflow.Steps?
-            .FirstOrDefault(static step => step.Compensation is not null);
-        if (compensatedStep is not null)
-        {
-            ReportUnprovable(
-                context,
-                workflow,
-                boundAction,
-                $"step '{compensatedStep.PhaseName}' declares Compensate<T>; rollback proof is deferred to #169");
             return;
         }
 
@@ -468,6 +567,24 @@ internal static class WorkflowBindingProofAnalyzer
                 workflow,
                 boundAction,
                 $"step '{subjectMismatch.Key}' has subject '{Subject(subjectMismatch.Value.Action.Identity)}', expected the single bound subject '{Subject(boundAction.Identity)}'");
+            return;
+        }
+
+        if (!compensationProofResults.TryGetValue(workflow.WorkflowName, out var compensationProved))
+        {
+            compensationProved = ProveCompensationContracts(
+                context,
+                catalog,
+                workflow,
+                boundAction,
+                resolved,
+                hasBoundRollbackClaim,
+                cancellationToken);
+            compensationProofResults.Add(workflow.WorkflowName, compensationProved);
+        }
+
+        if (!compensationProved)
+        {
             return;
         }
 
@@ -657,6 +774,292 @@ internal static class WorkflowBindingProofAnalyzer
         failureReason = null;
         return true;
     }
+
+    private static bool ProveCompensationContracts(
+        SourceProductionContext context,
+        OntologyActionCatalog catalog,
+        WorkflowModel workflow,
+        OntologyActionContract boundAction,
+        IReadOnlyDictionary<string, ProvenOccurrence> occurrences,
+        bool hasBoundRollbackClaim,
+        CancellationToken cancellationToken)
+    {
+        var orderedOccurrences = occurrences
+            .OrderBy(item => item.Key, StringComparer.Ordinal)
+            .ToImmutableArray();
+
+        // Validate every compensation an author explicitly supplied before checking scope
+        // completeness. This keeps the authored-inverse disagreement witness stable even when an
+        // earlier sibling in the same scope is wholly uncompensated.
+        foreach (var pair in orderedOccurrences.Where(item => item.Value.Step.Compensation is not null))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var occurrence = pair.Value;
+            var compensation = occurrence.Step.Compensation!;
+
+            if (compensation.InverseActionResolution != WorkflowActionReferenceResolution.Resolved
+                || compensation.InverseAction is null)
+            {
+                var reason = compensation.InverseActionResolution
+                    == WorkflowActionReferenceResolution.Missing
+                        ? "the legacy Compensate<T>() form has no typed inverse identity"
+                        : "the inverse action identity is dynamic or invalid";
+                ReportInverseDisagreement(
+                    context,
+                    workflow,
+                    occurrence.Action,
+                    pair.Key,
+                    compensation.InverseIdentity ?? "<unresolved>",
+                    reason);
+                return false;
+            }
+
+            var inverseIdentity = new ActionIdentity(
+                compensation.InverseAction.DomainName,
+                compensation.InverseAction.ObjectTypeName,
+                compensation.InverseAction.ActionName);
+            var inverseMatches = catalog.Resolve(inverseIdentity);
+            if (inverseMatches.Length != 1)
+            {
+                ReportInverseDisagreement(
+                    context,
+                    workflow,
+                    occurrence.Action,
+                    pair.Key,
+                    inverseIdentity.ToString(),
+                    $"the inverse identity resolves to {inverseMatches.Length.ToString(CultureInfo.InvariantCulture)} action declarations");
+                return false;
+            }
+
+            var inverse = inverseMatches[0];
+            if (!TryProveContract(inverse, cancellationToken, out var inverseProof, out var proofFailure))
+            {
+                ReportInverseDisagreement(
+                    context,
+                    workflow,
+                    occurrence.Action,
+                    pair.Key,
+                    inverseIdentity.ToString(),
+                    proofFailure ?? "the inverse contract is not statically provable");
+                return false;
+            }
+
+            var disagreement = FindInverseDisagreement(
+                catalog,
+                occurrence.Action,
+                occurrence.Proof,
+                inverse,
+                inverseProof,
+                cancellationToken);
+            if (disagreement is not null)
+            {
+                ReportInverseDisagreement(
+                    context,
+                    workflow,
+                    occurrence.Action,
+                    pair.Key,
+                    inverseIdentity.ToString(),
+                    disagreement);
+                return false;
+            }
+        }
+
+        var hasRollbackClaim = hasBoundRollbackClaim
+            || orderedOccurrences.Any(item => item.Value.Step.Compensation is not null);
+        if (!hasRollbackClaim)
+        {
+            return true;
+        }
+
+        var topology = CompensationTopology.Build(workflow);
+        foreach (var pair in orderedOccurrences)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var occurrence = pair.Value;
+            if (occurrence.Action.Frame.Length == 0
+                || occurrence.Step.Compensation is not null)
+            {
+                continue;
+            }
+
+            ReportNonCompensableScope(
+                context,
+                workflow,
+                boundAction.Location,
+                CompensationScopeFor(topology, workflow, pair.Key),
+                pair.Key,
+                "no compensation step or inverse action is declared");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? FindInverseDisagreement(
+        OntologyActionCatalog catalog,
+        OntologyActionContract forward,
+        ProvenContract forwardProof,
+        OntologyActionContract inverse,
+        ProvenContract inverseProof,
+        CancellationToken cancellationToken)
+    {
+        if (!SameSubject(forward.Identity, inverse.Identity))
+        {
+            return $"subject '{Subject(inverse.Identity)}' does not match forward subject '{Subject(forward.Identity)}'";
+        }
+
+        if (forward.CompensatingActionName is not null
+            && !string.Equals(
+                forward.CompensatingActionName,
+                inverse.Identity.ActionName,
+                StringComparison.Ordinal))
+        {
+            return $"the forward contract names '{forward.CompensatingActionName}' as its compensating action";
+        }
+
+        if (!forward.Frame.ToImmutableHashSet(StringComparer.Ordinal)
+            .SetEquals(inverse.Frame))
+        {
+            return "the inverse frame differs from the forward frame";
+        }
+
+        var authorityDisagreement = FindAuthorityDisagreement(catalog, forward, inverse);
+        if (authorityDisagreement is not null)
+        {
+            return authorityDisagreement;
+        }
+
+        var requirementDisagreement = FindFormulaInequivalence(
+            inverseProof.Requirement,
+            forwardProof.EffectiveGuarantee,
+            "inverse requirement",
+            "forward effective guarantee",
+            cancellationToken);
+        if (requirementDisagreement is not null)
+        {
+            return requirementDisagreement;
+        }
+
+        return FindFormulaInequivalence(
+            inverseProof.EffectiveGuarantee,
+            forwardProof.Requirement,
+            "inverse effective guarantee",
+            "forward requirement",
+            cancellationToken);
+    }
+
+    private static string? FindAuthorityDisagreement(
+        OntologyActionCatalog catalog,
+        OntologyActionContract forward,
+        OntologyActionContract inverse)
+    {
+        if (forward.RequiredAuthority is null && inverse.RequiredAuthority is null)
+        {
+            return null;
+        }
+
+        var lattices = catalog.ResolveLattice(forward.Identity.DomainName);
+        if (lattices.Length != 1)
+        {
+            return $"subject domain '{forward.Identity.DomainName}' resolves to {lattices.Length.ToString(CultureInfo.InvariantCulture)} authority lattices";
+        }
+
+        var lattice = lattices[0];
+        if (!lattice.TryJoinAtMost(
+                [forward.RequiredAuthority],
+                inverse.RequiredAuthority,
+                out var forwardAtMostInverse,
+                out var failureReason))
+        {
+            return failureReason ?? "forward-to-inverse authority equivalence could not be resolved";
+        }
+
+        if (!lattice.TryJoinAtMost(
+                [inverse.RequiredAuthority],
+                forward.RequiredAuthority,
+                out var inverseAtMostForward,
+                out failureReason))
+        {
+            return failureReason ?? "inverse-to-forward authority equivalence could not be resolved";
+        }
+
+        return forwardAtMostInverse && inverseAtMostForward
+            ? null
+            : $"required authority differs semantically (forward={forward.RequiredAuthority ?? "<none>"}, inverse={inverse.RequiredAuthority ?? "<none>"})";
+    }
+
+    private static string CompensationScopeFor(
+        CompensationTopology topology,
+        WorkflowModel workflow,
+        string phaseName)
+    {
+        var scopes = topology.Occurrences
+            .Where(occurrence => string.Equals(
+                occurrence.PhaseName,
+                phaseName,
+                StringComparison.Ordinal))
+            .Select(occurrence => occurrence.Scope)
+            .Distinct()
+            .ToImmutableArray();
+        return scopes.Length == 1 && scopes[0].Kind != CompensationScopeKind.Root
+            ? scopes[0].TemplateKey
+            : "workflow:" + workflow.WorkflowName;
+    }
+
+    private static string? FindFormulaInequivalence(
+        LogicFormula left,
+        LogicFormula right,
+        string leftName,
+        string rightName,
+        CancellationToken cancellationToken)
+    {
+        var leftToRight = FiniteDomainSolver.Implies(left, right, cancellationToken);
+        if (leftToRight.Kind != LogicDecisionKind.Unsatisfiable)
+        {
+            return leftToRight.Kind == LogicDecisionKind.Satisfiable
+                ? $"{leftName} does not imply {rightName}; counterexample: {FormatWitness(leftToRight)}"
+                : $"{leftName} -> {rightName} could not be proved: {leftToRight.Reason ?? "unknown solver result"}";
+        }
+
+        var rightToLeft = FiniteDomainSolver.Implies(right, left, cancellationToken);
+        if (rightToLeft.Kind != LogicDecisionKind.Unsatisfiable)
+        {
+            return rightToLeft.Kind == LogicDecisionKind.Satisfiable
+                ? $"{rightName} does not imply {leftName}; counterexample: {FormatWitness(rightToLeft)}"
+                : $"{rightName} -> {leftName} could not be proved: {rightToLeft.Reason ?? "unknown solver result"}";
+        }
+
+        return null;
+    }
+
+    private static void ReportInverseDisagreement(
+        SourceProductionContext context,
+        WorkflowModel workflow,
+        OntologyActionContract forward,
+        string phaseName,
+        string inverseIdentity,
+        string reason) => context.ReportDiagnostic(Diagnostic.Create(
+            WorkflowDiagnostics.AuthoredInverseDisagrees,
+            forward.Location,
+            phaseName,
+            workflow.WorkflowName,
+            inverseIdentity,
+            forward.Identity.ToString(),
+            reason));
+
+    private static void ReportNonCompensableScope(
+        SourceProductionContext context,
+        WorkflowModel workflow,
+        Location location,
+        string scopeName,
+        string phaseName,
+        string reason) => context.ReportDiagnostic(Diagnostic.Create(
+            WorkflowDiagnostics.CompensationScopeNotDerivable,
+            location,
+            workflow.WorkflowName,
+            scopeName,
+            phaseName,
+            reason));
 
     private static Dictionary<string, StepModel> BuildOccurrenceMap(WorkflowModel workflow)
     {

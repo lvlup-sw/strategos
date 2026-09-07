@@ -1021,10 +1021,18 @@ internal static class WireToModelBridge
                 return false;
             }
 
+            var inverseAction = MapActionReference(c.InverseAction);
             compensation = new CompensationModel(
                 CompensationStepTypeName: compSymbol.ToDisplayString(NamespacedTypeFormat),
                 RequiredOnFailure: c.RequiredOnFailure ?? true,
-                IsRegisteredStep: true);
+                IsRegisteredStep: true,
+                InverseAction: inverseAction,
+                InverseActionResolution: c.InverseAction is null
+                    ? WorkflowActionReferenceResolution.Missing
+                    : inverseAction is null
+                        ? WorkflowActionReferenceResolution.DynamicOrInvalid
+                        : WorkflowActionReferenceResolution.Resolved,
+                Timeout: ParseIsoDuration(c.Timeout));
         }
 
         if (config.OnLowConfidence is { } handler)
@@ -1033,6 +1041,22 @@ internal static class WireToModelBridge
         }
 
         return true;
+    }
+
+    private static WorkflowActionReferenceModel? MapActionReference(ActionReferenceV1? action)
+    {
+        if (action is null
+            || string.IsNullOrWhiteSpace(action.DomainName)
+            || string.IsNullOrWhiteSpace(action.ObjectTypeName)
+            || string.IsNullOrWhiteSpace(action.ActionName))
+        {
+            return null;
+        }
+
+        return new WorkflowActionReferenceModel(
+            action.DomainName!,
+            action.ObjectTypeName!,
+            action.ActionName!);
     }
 
     /// <summary>

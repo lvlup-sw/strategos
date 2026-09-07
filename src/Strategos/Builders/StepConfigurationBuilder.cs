@@ -89,6 +89,17 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
     }
 
     /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(WorkflowActionReference inverseAction)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+
+        var compensation = CompensationConfiguration.Create<TCompensation>(inverseAction);
+        _configuration = _configuration.WithCompensation(compensation);
+        return this;
+    }
+
+    /// <inheritdoc/>
     public IStepConfiguration<TState> WithRetry(int maxAttempts)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1, nameof(maxAttempts));

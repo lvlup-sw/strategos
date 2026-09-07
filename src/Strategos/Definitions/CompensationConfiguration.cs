@@ -14,6 +14,7 @@ namespace Strategos.Definitions;
 /// Compensation configuration captures rollback step settings:
 /// <list type="bullet">
 ///   <item><description>CompensationStepType: The step type to execute for rollback</description></item>
+///   <item><description>InverseAction: The ontology action implemented by that rollback step</description></item>
 ///   <item><description>RequiredOnFailure: Whether compensation is required when the step fails</description></item>
 ///   <item><description>Timeout: Optional timeout for compensation execution</description></item>
 /// </list>
@@ -25,6 +26,16 @@ public sealed record CompensationConfiguration
     /// Gets the compensation step type.
     /// </summary>
     public required Type CompensationStepType { get; init; }
+
+    /// <summary>
+    /// Gets the language-neutral identity of the ontology action implemented by the
+    /// compensation step.
+    /// </summary>
+    /// <remarks>
+    /// A null value is the legacy, runtime-only form. Static rollback proof requires a
+    /// closed inverse identity supplied through <c>Compensate&lt;T&gt;(inverseAction)</c>.
+    /// </remarks>
+    public WorkflowActionReference? InverseAction { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether compensation is required on failure.
@@ -53,6 +64,26 @@ public sealed record CompensationConfiguration
     }
 
     /// <summary>
+    /// Creates a typed compensation configuration for the specified step and inverse action.
+    /// </summary>
+    /// <param name="stepType">The compensation step type.</param>
+    /// <param name="inverseAction">The ontology action implemented by the compensation step.</param>
+    /// <returns>A new typed compensation configuration.</returns>
+    public static CompensationConfiguration Create(
+        Type stepType,
+        WorkflowActionReference inverseAction)
+    {
+        ArgumentNullException.ThrowIfNull(stepType, nameof(stepType));
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+
+        return new CompensationConfiguration
+        {
+            CompensationStepType = stepType,
+            InverseAction = inverseAction,
+        };
+    }
+
+    /// <summary>
     /// Creates a compensation configuration for the specified step type.
     /// </summary>
     /// <typeparam name="TStep">The compensation step type.</typeparam>
@@ -63,6 +94,24 @@ public sealed record CompensationConfiguration
         return new CompensationConfiguration
         {
             CompensationStepType = typeof(TStep),
+        };
+    }
+
+    /// <summary>
+    /// Creates a typed compensation configuration for the specified step and inverse action.
+    /// </summary>
+    /// <typeparam name="TStep">The compensation step type.</typeparam>
+    /// <param name="inverseAction">The ontology action implemented by the compensation step.</param>
+    /// <returns>A new typed compensation configuration.</returns>
+    public static CompensationConfiguration Create<TStep>(WorkflowActionReference inverseAction)
+        where TStep : class
+    {
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+
+        return new CompensationConfiguration
+        {
+            CompensationStepType = typeof(TStep),
+            InverseAction = inverseAction,
         };
     }
 

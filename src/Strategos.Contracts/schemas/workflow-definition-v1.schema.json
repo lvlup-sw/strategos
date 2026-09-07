@@ -345,6 +345,10 @@
                     "type": "string",
                     "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
                 },
+                "inverseAction": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action implemented by the authored compensation step."
+                },
                 "requiredOnFailure": {
                     "type": "boolean",
                     "description": "Whether compensation is required on failure."

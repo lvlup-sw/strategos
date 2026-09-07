@@ -1,12 +1,17 @@
 #nullable enable
+static Strategos.Definitions.CompensationConfiguration.Create(System.Type! stepType, Strategos.Definitions.WorkflowActionReference! inverseAction) -> Strategos.Definitions.CompensationConfiguration!
+static Strategos.Definitions.CompensationConfiguration.Create<TStep>(Strategos.Definitions.WorkflowActionReference! inverseAction) -> Strategos.Definitions.CompensationConfiguration!
 Strategos.Builders.IApprovalEscalationBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IApprovalEscalationBuilder<TState!>!
 Strategos.Builders.IApprovalRejectionBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IApprovalRejectionBuilder<TState!>!
 Strategos.Builders.IForkJoinBuilder<TState>.Join<TJoinStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.ILoopForkJoinBuilder<TState>.Join<TJoinStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.ILoopBuilder<TState!>!
 Strategos.Builders.IStepConfiguration<TState>.Performs(Strategos.Definitions.WorkflowActionReference! action) -> Strategos.Builders.IStepConfiguration<TState!>!
+Strategos.Builders.IStepConfiguration<TState>.Compensate<TCompensation>(Strategos.Definitions.WorkflowActionReference! inverseAction) -> Strategos.Builders.IStepConfiguration<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.Finally<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Definitions.WorkflowDefinition<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.StartWith<TStep>(string! instanceName, System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Definitions.CompensationConfiguration.InverseAction.get -> Strategos.Definitions.WorkflowActionReference?
+Strategos.Definitions.CompensationConfiguration.InverseAction.init -> void
 Strategos.Definitions.StepDefinition.Action.get -> Strategos.Definitions.WorkflowActionReference?
 Strategos.Definitions.StepDefinition.Action.init -> void
 Strategos.Definitions.WorkflowActionReference

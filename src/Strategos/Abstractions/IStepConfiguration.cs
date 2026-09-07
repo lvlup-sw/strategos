@@ -84,6 +84,22 @@ public interface IStepConfiguration<TState>
         where TCompensation : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Sets the compensation step and declares the ontology action it implements.
+    /// </summary>
+    /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
+    /// <param name="inverseAction">The language-neutral inverse-action identity.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="inverseAction"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// This typed form enables the source generator to prove that the authored rollback
+    /// implements the inverse contract mechanically derived from the forward action.
+    /// </remarks>
+    IStepConfiguration<TState> Compensate<TCompensation>(WorkflowActionReference inverseAction)
+        where TCompensation : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Configures retry behavior for transient failures.
     /// </summary>
     /// <param name="maxAttempts">Maximum number of retry attempts.</param>

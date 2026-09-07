@@ -336,11 +336,26 @@ public sealed class RoundTripIrFidelityTests
     [Test]
     public async Task CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep()
     {
+        var inverse = new WorkflowActionReference("orders", "Order", "undo-process");
+        var authored = Workflow<FidState>.Create("rt-comp")
+            .StartWith<FidValidateStep>()
+            .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>(inverse))
+            .Finally<FidCompleteStep>();
+        var configuredSteps = authored.Steps
+            .Select(step => step.StepType != typeof(FidProcessStep)
+                ? step
+                : step with
+                {
+                    Configuration = step.Configuration! with
+                    {
+                        Compensation = step.Configuration!.Compensation!
+                            .WithTimeout(TimeSpan.FromSeconds(17)),
+                    },
+                })
+            .ToArray();
+
         var (dto, model) = BridgeRoundTrip(
-            Workflow<FidState>.Create("rt-comp")
-                .StartWith<FidValidateStep>()
-                .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>())
-                .Finally<FidCompleteStep>(),
+            authored with { Steps = configuredSteps },
             "rt-comp");
 
         var wireComp = FindSkill(dto, "FidProcessStep").Configuration?.Compensation;
@@ -348,6 +363,11 @@ public sealed class RoundTripIrFidelityTests
             .Because("the exported JSON must carry the compensation configuration.");
         await Assert.That(wireComp!.CompensationStepType).IsEqualTo("FidCompensateStep")
             .Because("the wire compensation moniker is the compensation step's simple type name (LB-2).");
+        await Assert.That(wireComp.InverseAction).IsNotNull();
+        await Assert.That(wireComp.InverseAction!.DomainName).IsEqualTo("orders");
+        await Assert.That(wireComp.InverseAction.ObjectTypeName).IsEqualTo("Order");
+        await Assert.That(wireComp.InverseAction.ActionName).IsEqualTo("undo-process");
+        await Assert.That(wireComp.Timeout).IsEqualTo("PT17S");
 
         var modelStep = model.Steps!.Single(s => s.StepName == "FidProcessStep");
         await Assert.That(modelStep.Compensation).IsNotNull()
@@ -360,6 +380,11 @@ public sealed class RoundTripIrFidelityTests
             .Because("the model's RequiredOnFailure must match the wire value (default true) field-for-field.");
         await Assert.That(modelStep.Compensation.IsRegisteredStep).IsTrue()
             .Because("the compensation moniker resolves to a real IWorkflowStep<FidState> in the test assembly.");
+        await Assert.That(modelStep.Compensation.InverseActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(modelStep.Compensation.InverseIdentity)
+            .IsEqualTo("orders/Order/undo-process");
+        await Assert.That(modelStep.Compensation.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
 
         // The compensation step type is folded into the model's step MODELS (for its worker command /
         // handler / DI registration) but NOT onto the linear phase-name chain (it is reached only via

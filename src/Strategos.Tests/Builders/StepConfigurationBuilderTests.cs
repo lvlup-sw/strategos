@@ -163,6 +163,36 @@ public class StepConfigurationBuilderTests
         await Assert.That(processStep.Configuration!.Compensation!.CompensationStepType).IsEqualTo(typeof(RollbackStep));
     }
 
+    /// <summary>The typed compensation overload snapshots its inverse action identity.</summary>
+    [Test]
+    public async Task Then_WithTypedCompensate_SetsInverseAction()
+    {
+        var inverse = new WorkflowActionReference("orders", "Order", "refund");
+
+        var workflow = Workflow<TestWorkflowState>
+            .Create("typed-compensation-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(inverse))
+            .Finally<CompleteStep>();
+
+        var compensation = workflow.Steps
+            .First(step => step.StepType == typeof(ProcessStep))
+            .Configuration!
+            .Compensation!;
+        await Assert.That(compensation.InverseAction).IsEqualTo(inverse);
+    }
+
+    /// <summary>The typed authoring overload rejects a null inverse at the fluent boundary.</summary>
+    [Test]
+    public async Task Then_WithNullTypedCompensate_ThrowsArgumentNullException()
+    {
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("invalid-typed-compensation")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(null!)))
+            .Throws<ArgumentNullException>();
+    }
+
     // =============================================================================
     // C. WithRetry Tests
     // =============================================================================

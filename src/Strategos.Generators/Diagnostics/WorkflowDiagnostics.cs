@@ -687,4 +687,24 @@ internal static class WorkflowDiagnostics
         isEnabledByDefault: true,
         description: "Distinct ordinal workflow identities must not normalize to the same generated PascalCase type and source-hint namespace.",
         customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>An authored compensation action does not implement the derived inverse contract.</summary>
+    public static readonly DiagnosticDescriptor AuthoredInverseDisagrees = new(
+        id: AgwfCodes.AuthoredInverseDisagrees,
+        title: "Authored compensation disagrees with derived inverse",
+        messageFormat: "Step '{0}' in workflow '{1}' declares inverse action '{2}' for forward action '{3}', but their contracts disagree: {4}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A typed compensation must have the same subject, frame, and authority as its forward action, require exactly the forward guarantee, and ensure exactly the forward requirement.");
+
+    /// <summary>A compensation scope contains a leaf without a mechanically proven inverse.</summary>
+    public static readonly DiagnosticDescriptor CompensationScopeNotDerivable = new(
+        id: AgwfCodes.CompensationScopeNotDerivable,
+        title: "Compensation scope is not mechanically derivable",
+        messageFormat: "Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Compensability is derived and propagates: a rollback scope is valid only when every forward leaf that can complete before failure has one statically closed, contract-correct inverse action.");
 }

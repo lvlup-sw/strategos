@@ -250,6 +250,16 @@ public sealed class WireStepFingerprintCoverageTests
             return steps;
         }
 
+        if (property.PropertyType == typeof(ActionReferenceV1))
+        {
+            return new ActionReferenceV1
+            {
+                DomainName = "inverse-domain",
+                ObjectTypeName = "InverseObject",
+                ActionName = "inverse-action",
+            };
+        }
+
         if (typeof(IWireContractDto).IsAssignableFrom(property.PropertyType) && current is not null)
         {
             return null;

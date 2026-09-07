@@ -133,6 +133,10 @@ public sealed class StepExtractorResilienceTests
         await Assert.That(assessStep.Compensation!.CompensationStepTypeName)
             .IsEqualTo("TestNamespace.RollbackAssessment");
         await Assert.That(assessStep.Compensation!.RequiredOnFailure).IsTrue();
+        await Assert.That(assessStep.Compensation!.InverseActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(assessStep.Compensation!.InverseIdentity)
+            .IsEqualTo("claims/Claim/rollback-assessment");
     }
 
     /// <summary>
@@ -491,7 +495,10 @@ public sealed class StepExtractorResilienceTests
                 .Then<AssessClaim>(step => step
                     .RequireConfidence(0.85)
                     .OnLowConfidence(alt => alt.Then<HumanReview>())
-                    .Compensate<RollbackAssessment>())
+                    .Compensate<RollbackAssessment>(new WorkflowActionReference(
+                        "claims",
+                        "Claim",
+                        "rollback-assessment")))
                 .Finally<SettleClaim>();
         }
         """;

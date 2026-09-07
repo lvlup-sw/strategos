@@ -52,6 +52,11 @@ internal sealed record TimeoutModel(TimeSpan Timeout);
 /// <see langword="true"/> so models created without a semantic-model check (e.g. tests, the
 /// compensation step-type fold) are not flagged.
 /// </param>
+/// <param name="InverseAction">The typed ontology action implemented by the rollback step.</param>
+/// <param name="InverseActionResolution">
+/// Whether the inverse identity is absent, statically resolved, or dynamic/invalid.
+/// </param>
+/// <param name="Timeout">The compensation deadline, if one was declared.</param>
 /// <remarks>
 /// Per INV-8, the compensation step's identity is carried as a descriptor string
 /// (its fully qualified type name), never as a CLR <see cref="System.Type"/>. Symbol
@@ -60,7 +65,24 @@ internal sealed record TimeoutModel(TimeSpan Timeout);
 internal sealed record CompensationModel(
     string CompensationStepTypeName,
     bool RequiredOnFailure = true,
-    bool IsRegisteredStep = true);
+    bool IsRegisteredStep = true,
+    WorkflowActionReferenceModel? InverseAction = null,
+    WorkflowActionReferenceResolution InverseActionResolution = WorkflowActionReferenceResolution.Missing,
+    TimeSpan? Timeout = null)
+{
+    /// <summary>
+    /// Gets the stable language-neutral inverse identity used by rollback journals and
+    /// generated plan entries.
+    /// </summary>
+    public string? InverseIdentity => InverseAction is null
+        ? null
+        : string.Concat(
+            InverseAction.DomainName,
+            "/",
+            InverseAction.ObjectTypeName,
+            "/",
+            InverseAction.ActionName);
+}
 
 /// <summary>
 /// Generator IR for an ordered chain of <c>OnLowConfidence</c> handler steps and

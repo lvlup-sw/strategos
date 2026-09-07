@@ -26,6 +26,12 @@ public sealed record CompensationConfiguration
     public string CompensationStepType { get; init; } = default!;
 
     /// <summary>
+    /// Ontology action implemented by the authored compensation step.
+    /// </summary>
+    [JsonPropertyName("inverseAction")]
+    public ActionReferenceV1? InverseAction { get; init; }
+
+    /// <summary>
     /// Whether compensation is required on failure.
     /// </summary>
     [JsonPropertyName("requiredOnFailure")]

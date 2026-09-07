@@ -416,9 +416,394 @@ public sealed class WorkflowBindingProofAnalyzerTests
         await Assert.That(diagnostic.GetMessage()).Contains("opaque custom predicate");
     }
 
-    /// <summary>Rollback semantics remain outside workflow/action refinement proof until #169.</summary>
+    /// <summary>A typed compensation whose contract is the exact inverse is proved.</summary>
     [Test]
-    public async Task ConfiguredCompensation_ReportsAgwf042()
+    public async Task TypedCompensation_WithExactInverse_IsProved()
+    {
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>
+    /// Untouched requirements survive the forward and inverse frames and therefore
+    /// participate in inverse equivalence through each contract's effective guarantee.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_WithPreservedRequirement_UsesEffectiveGuarantees()
+    {
+        var preservingPair = """
+            obj.Action("receive")
+                .Requires(order => order.Stage == 0 && order.Guard == 7)
+                .Ensures(order => order.Stage == 1)
+                .Modifies(order => order.Stage);
+            obj.Action("undo-receive")
+                .Requires(order => order.Stage == 1 && order.Guard == 7)
+                .Ensures(order => order.Stage == 0)
+                .Modifies(order => order.Stage);
+            """;
+        var completingPair = """
+            obj.Action("complete")
+                .Requires(order => order.Stage == 1 && order.Guard == 7)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage);
+            obj.Action("undo-complete")
+                .Requires(order => order.Stage == 2 && order.Guard == 7)
+                .Ensures(order => order.Stage == 1)
+                .Modifies(order => order.Stage);
+            """;
+
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: preservingPair,
+            secondAction: completingPair,
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """,
+            boundContract: """
+                .Requires(order => order.Guard == 7)
+                .Ensures(order => order.Guard == 7)
+                """));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>Authority aliases at the same lattice coordinate are semantically equivalent.</summary>
+    [Test]
+    public async Task TypedCompensation_WithEquivalentAuthorityAliases_IsProved()
+    {
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1, ".RequiresAuthority(\"operator\")")
+                + Action("undo-receive", 1, 0, ".RequiresAuthority(\"viewer\")"),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """,
+            boundContract: ".RequiresAuthority(\"manager\")",
+            domainSetup: """
+                builder.AuthorityAxis(
+                    levels: new[] { "reader", "manager" },
+                    name: "clearance");
+                builder.Authority(name: "operator")
+                    .At(levelName: "reader", axisName: "clearance");
+                builder.Authority(name: "viewer")
+                    .At(levelName: "reader", axisName: "clearance");
+                builder.Authority(name: "manager")
+                    .At(levelName: "manager", axisName: "clearance");
+                """));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>A typed rollback on one leaf makes partial rollback in its containing scope unsafe.</summary>
+    [Test]
+    public async Task TypedCompensation_WithUncompensatedWrittenSibling_ReportsAgwf045()
+    {
+        var diagnostic = SingleBindingDiagnostic(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: Performs("complete")));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostic.GetMessage()).Contains("CompleteStep");
+    }
+
+    /// <summary>
+    /// Typed compensation opts into static proof and therefore requires at least one
+    /// workflow-level ontology contract; otherwise leaf frame completeness is unknowable.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_WithoutBoundWorkflowContract_ReportsAgwf045()
+    {
+        var source = Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """)
+            .Replace(
+                ".BoundToWorkflow(\"fulfill-order\")",
+                string.Empty,
+                StringComparison.Ordinal);
+
+        var diagnostic = SingleBindingDiagnostic(source);
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostic.GetMessage()).Contains("at least one closed BoundToWorkflow action");
+        await Assert.That(diagnostic.GetMessage()).Contains("no declaration");
+    }
+
+    /// <summary>A single typed occurrence opts a mixed typed/legacy program into proof.</summary>
+    [Test]
+    public async Task MixedCompensation_WithoutBoundWorkflowContract_ReportsOneAgwf045()
+    {
+        var source = Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>()
+                """)
+            .Replace(
+                ".BoundToWorkflow(\"fulfill-order\")",
+                string.Empty,
+                StringComparison.Ordinal);
+
+        var diagnostics = BindingDiagnostics(source);
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+    }
+
+    /// <summary>
+    /// Multiple closed specifications may describe the same workflow when they share the
+    /// subject; each refinement is proved independently while the inverse program is proved once.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_WithMultipleSameSubjectBindings_IsProved()
+    {
+        var secondBinding = """
+            obj.Action("fulfill-alias")
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage)
+                .BoundToWorkflow("fulfill-order");
+            """;
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: secondBinding
+                + Action("receive", 0, 1)
+                + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>One invalid inverse produces one workflow diagnostic across multiple bindings.</summary>
+    [Test]
+    public async Task TypedCompensation_WithMultipleBindings_DeduplicatesAgwf044()
+    {
+        var secondBinding = """
+            obj.Action("fulfill-alias")
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage)
+                .BoundToWorkflow("fulfill-order");
+            """;
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: secondBinding
+                + Action("receive", 0, 1)
+                + Action("bad-undo", 9, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "bad-undo"))
+                """,
+            secondConfiguration: Performs("complete")));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF044");
+    }
+
+    /// <summary>One incomplete rollback scope produces one diagnostic across multiple bindings.</summary>
+    [Test]
+    public async Task TypedCompensation_WithMultipleBindings_DeduplicatesAgwf045()
+    {
+        var secondBinding = """
+            obj.Action("fulfill-alias")
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage)
+                .BoundToWorkflow("fulfill-order");
+            """;
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: secondBinding
+                + Action("receive", 0, 1)
+                + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: Performs("complete")));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+    }
+
+    /// <summary>Every workflow binding must be a closed contract before typed rollback is claimed.</summary>
+    [Test]
+    public async Task TypedCompensation_WithOpaqueSecondBinding_ReportsOneAgwf045()
+    {
+        var secondBinding = """
+            obj.Action("fulfill-opaque")
+                .Requires(ActionPredicate.Custom("orders.fulfill.opaque.v1"))
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage)
+                .BoundToWorkflow("fulfill-order");
+            """;
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: secondBinding
+                + Action("receive", 0, 1)
+                + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("orders.fulfill.opaque.v1");
+    }
+
+    /// <summary>Multiple workflow bindings cannot make one typed rollback claim across subjects.</summary>
+    [Test]
+    public async Task TypedCompensation_WithCrossSubjectBinding_ReportsOneAgwf045()
+    {
+        var diagnostics = BindingDiagnostics(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """,
+            domainSetup: """
+                builder.Object<Order>("OtherOrder", other =>
+                {
+                    other.Action("fulfill-other")
+                        .Requires(order => order.Stage == 0)
+                        .Ensures(order => order.Stage == 2)
+                        .Modifies(order => order.Stage)
+                        .BoundToWorkflow("fulfill-order");
+                });
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("do not share one ontology subject");
+    }
+
+    /// <summary>Legacy-only unbound compensation retains its runtime compatibility path.</summary>
+    [Test]
+    public async Task LegacyCompensation_WithoutBoundWorkflowContract_RemainsRuntimeOnly()
+    {
+        var source = Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>()
+                """,
+            secondConfiguration: Performs("complete"))
+            .Replace(
+                ".BoundToWorkflow(\"fulfill-order\")",
+                string.Empty,
+                StringComparison.Ordinal);
+
+        await Assert.That(BindingDiagnostics(source)).IsEmpty();
+    }
+
+    /// <summary>The legacy compensation facade cannot claim a statically proved inverse.</summary>
+    [Test]
+    public async Task LegacyCompensation_InBoundWorkflow_ReportsAgwf044()
     {
         var diagnostic = SingleBindingDiagnostic(Source(
             boundWorkflowName: "fulfill-order",
@@ -431,10 +816,70 @@ public sealed class WorkflowBindingProofAnalyzerTests
                 """,
             secondConfiguration: Performs("complete")));
 
-        await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
-        await Assert.That(diagnostic.GetMessage()).Contains("ReceiveStep");
-        await Assert.That(diagnostic.GetMessage()).Contains("Compensate<T>");
-        await Assert.That(diagnostic.GetMessage()).Contains("rollback proof is deferred");
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF044");
+        await Assert.That(diagnostic.GetMessage()).Contains("legacy Compensate<T>()");
+    }
+
+    /// <summary>A helper-produced inverse identity is runtime data and cannot enter static proof.</summary>
+    [Test]
+    public async Task DynamicCompensationActionReference_InBoundWorkflow_ReportsAgwf044()
+    {
+        var diagnostic = SingleBindingDiagnostic(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(CreateInverse())
+                """,
+            secondConfiguration: Performs("complete"),
+            workflowMembers: """
+                private static WorkflowActionReference CreateInverse() =>
+                    new("orders", "Order", "undo-receive");
+                """));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF044");
+        await Assert.That(diagnostic.GetMessage()).Contains("dynamic or invalid");
+    }
+
+    /// <summary>An authored compensation with a non-inverse requirement is rejected exactly.</summary>
+    [Test]
+    public async Task TypedCompensation_WithContradictoryContract_ReportsAgwf044()
+    {
+        var diagnostic = SingleBindingDiagnostic(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("bad-undo", 9, 0),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "bad-undo"))
+                """,
+            secondConfiguration: Performs("complete")));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF044");
+        await Assert.That(diagnostic.GetMessage()).Contains("inverse requirement");
+        await Assert.That(diagnostic.GetMessage()).Contains("counterexample");
+    }
+
+    /// <summary>A bound action claiming rollback safety propagates compensability to all written leaves.</summary>
+    [Test]
+    public async Task RollbackSafeBoundAction_WithUncompensatedWrittenLeaf_ReportsAgwf045()
+    {
+        var diagnostic = SingleBindingDiagnostic(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1),
+            secondAction: Action("complete", 1, 2),
+            firstConfiguration: Performs("receive"),
+            secondConfiguration: Performs("complete"),
+            boundCompensation: ".CompensatedBy(\"undo-fulfill\")"));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostic.GetMessage()).Contains("workflow:fulfill-order");
+        await Assert.That(diagnostic.GetMessage()).Contains("CompleteStep")
+            .Because("non-compensable witnesses are selected in stable ordinal phase order");
     }
 
     /// <summary>A confidence handler cannot reuse a main-flow phase for a different action.</summary>
@@ -487,14 +932,14 @@ public sealed class WorkflowBindingProofAnalyzerTests
 
     private static Diagnostic[] BindingDiagnostics(string source) =>
         RunBindingGenerator(source).Diagnostics
-            .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
+            .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
 
     private static Diagnostic SingleBindingDiagnostic(string source)
     {
         var result = RunBindingGenerator(source);
         var diagnostics = result.Diagnostics
-            .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
+            .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
         if (diagnostics.Length != 1)
         {
@@ -520,11 +965,13 @@ public sealed class WorkflowBindingProofAnalyzerTests
             "AGWF039",
             "AGWF040",
             "AGWF041",
-            "AGWF042");
+            "AGWF042",
+            "AGWF044",
+            "AGWF045");
         var unexpectedErrors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .Where(static diagnostic => diagnostic.Id is not (
-                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045"))
             .ToArray();
         if (unexpectedErrors.Length > 0)
         {
@@ -540,11 +987,16 @@ public sealed class WorkflowBindingProofAnalyzerTests
     private static string Performs(string actionName) =>
         $"step => step.Performs(new WorkflowActionReference(\"orders\", \"Order\", \"{actionName}\"))";
 
-    private static string Action(string actionName, int requirement, int guarantee) => $$"""
+    private static string Action(
+        string actionName,
+        int requirement,
+        int guarantee,
+        string contractSuffix = "") => $$"""
         obj.Action("{{actionName}}")
             .Requires(order => order.Stage == {{requirement}})
             .Ensures(order => order.Stage == {{guarantee}})
-            .Modifies(order => order.Stage);
+            .Modifies(order => order.Stage)
+            {{contractSuffix}};
         """;
 
     private static string Source(
@@ -554,6 +1006,9 @@ public sealed class WorkflowBindingProofAnalyzerTests
         string firstConfiguration,
         string secondConfiguration,
         int boundGuarantee = 2,
+        string boundCompensation = "",
+        string boundContract = "",
+        string domainSetup = "",
         string createWorkflowNameExpression = "\"fulfill-order\"",
         string intermediateChain = "",
         string workflowMembers = "",
@@ -576,6 +1031,7 @@ public sealed class WorkflowBindingProofAnalyzerTests
         public sealed class Order
         {
             public int Stage { get; set; }
+            public int Guard { get; set; }
         }
 
         public sealed class OrdersOntology : DomainOntology
@@ -584,12 +1040,16 @@ public sealed class WorkflowBindingProofAnalyzerTests
 
             protected override void Define(IOntologyBuilder builder)
             {
+                {{domainSetup}}
+
                 builder.Object<Order>("Order", obj =>
                 {
                     obj.Action("fulfill")
                         .Requires(order => order.Stage == 0)
                         .Ensures(order => order.Stage == {{boundGuarantee}})
                         .Modifies(order => order.Stage)
+                        {{boundCompensation}}
+                        {{boundContract}}
                         .BoundToWorkflow("{{boundWorkflowName}}");
 
                     {{firstAction}}

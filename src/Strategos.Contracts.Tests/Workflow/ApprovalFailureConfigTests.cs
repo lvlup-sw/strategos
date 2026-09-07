@@ -66,6 +66,9 @@ public class ApprovalFailureConfigTests
         await Assert.That(comp.GetProperty("properties").GetProperty("compensationStepType")
             .GetProperty("type").GetString()).IsEqualTo("string")
             .Because("compensationStepType is a simple-name moniker (LB-2).");
+        await Assert.That(comp.GetProperty("properties").GetProperty("inverseAction")
+            .GetProperty("$ref").GetString()).IsEqualTo("ActionReferenceV1.json")
+            .Because("inverseAction is the same language-neutral ontology identity used by forward occurrences.");
     }
 
     private static async Task AssertRequiredProps(string model, params string[] requiredNames)

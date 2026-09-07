@@ -307,6 +307,44 @@ public sealed class ImportFrontEndRobustnessTests
         }
     }
 
+    /// <summary>
+    /// A present typed inverse is proof-bearing data and follows the same fail-closed
+    /// object/identity rules as a forward occurrence action reference.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task PresentMalformedInverseActionToken_FailsClosed_WithStableDiagnostic()
+    {
+        var cases = new (string Name, string Token, string ExpectedDetail)[]
+        {
+            ("null", "null", "property 'inverseAction'"),
+            ("scalar", "\"orders\"", "property 'inverseAction'"),
+            ("array", "[]", "property 'inverseAction'"),
+            ("incomplete-object", "{ \"domainName\": \"orders\", \"objectTypeName\": \"Order\" }", "inverseAction.actionName"),
+            ("blank-identity", "{ \"domainName\": \"orders\", \"objectTypeName\": \"   \", \"actionName\": \"undo\" }", "inverseAction.objectTypeName"),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var result = RunGenerator(
+                StepTypes,
+                ($"malformed-inverse-{testCase.Name}.workflow.json", WorkflowWithInverseAction(testCase.Token)),
+                MalformedWorkflowJsonCode);
+            var errors = ErrorDiagnostics(result);
+            await Assert.That(errors).HasCount().EqualTo(1)
+                .Because("a malformed typed inverse must fail for exactly the stable import reason.");
+            var diagnostic = errors.SingleOrDefault(
+                item => item.Id == MalformedWorkflowJsonCode);
+
+            await Assert.That(diagnostic).IsNotNull();
+            await Assert.That(diagnostic!.GetMessage()).Contains(testCase.ExpectedDetail);
+            await Assert.That(result.GeneratedTrees.Any(
+                    tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+                .IsFalse()
+                .Because("a malformed inverse action must not lower a saga.");
+        }
+    }
+
     /// <summary>An omitted optional action remains importable and distinct from an explicit null.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -357,6 +395,31 @@ public sealed class ImportFrontEndRobustnessTests
               "isTerminal": true,
               "stepType": "RobustStepA",
               "action": {{actionToken}}
+            }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s1"
+        }
+        """;
+
+    private static string WorkflowWithInverseAction(string inverseActionToken) => $$"""
+        {
+          "schemaVersion": "1.0",
+          "name": "malformed-inverse",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RobustStepA",
+              "isTerminal": true,
+              "stepType": "RobustStepA",
+              "configuration": {
+                "compensation": {
+                  "compensationStepType": "RobustStepB",
+                  "inverseAction": {{inverseActionToken}}
+                }
+              }
             }
           ],
           "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
