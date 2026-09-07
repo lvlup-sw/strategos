@@ -49,3 +49,5 @@ from the generated `AgwfCode` enum; this table is generated from the same source
 | AGWF041 | error | Workflow binding refinement proof failed | Workflow '{0}' does not refine bound action '{1}': {2} | 2.13.0 |
 | AGWF042 | error | Workflow contract cannot be proved statically | Workflow '{0}' bound to action '{1}' cannot be proved statically: {2} | 2.13.0 |
 | AGWF043 | error | Workflow generated identity collision | Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique. | 2.13.0 |
+| AGWF044 | error | Authored compensation disagrees with derived inverse | Step '{0}' in workflow '{1}' declares inverse action '{2}' for forward action '{3}', but their contracts disagree: {4} | 2.13.0 |
+| AGWF045 | error | Compensation scope is not mechanically derivable | Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action. | 2.13.0 |

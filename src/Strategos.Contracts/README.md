@@ -175,7 +175,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.11.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.12.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -196,9 +196,13 @@ consumer preserves exact values. Unknown predicate discriminators are invalid,
 never an implicit custom predicate. Closed enums accept only their exact
 TypeSpec wire tokens, and schema-required fields fail deserialization when
 omitted; 0.11.0 adds the optional, occurrence-scoped `ActionReferenceV1` on
-workflow steps and `AGWF039`–`AGWF043` to the closed diagnostic vocabulary.
-Consumers must upgrade before receiving one of the new diagnostic tokens. The
-package embeds all schema
+workflow steps and `AGWF039`–`AGWF043` to the closed diagnostic vocabulary;
+0.12.0 adds an optional `inverseAction: ActionReferenceV1` to compensation and
+`AGWF044`–`AGWF045`. A closed authored inverse is required for static rollback
+proof because Strategos cannot reconstruct prior authoritative state from a
+property frame alone. The legacy compensation shape remains valid for
+runtime-only workflows, but it cannot establish rollback safety. Consumers must
+upgrade before receiving one of the new diagnostic tokens. The package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under
 `contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`

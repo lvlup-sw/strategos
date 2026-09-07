@@ -29,6 +29,14 @@ structural diff in CI.
 
 ### Added
 
+- **Typed workflow compensation (`0.12.0`):** the optional
+  `CompensationConfiguration.inverseAction` field carries the ontology identity
+  implemented by an authored compensation step. The field uses the existing
+  `ActionReferenceV1` wire shape and remains omitted for legacy, runtime-only
+  compensation. `AGWF044` reports an authored inverse that is missing,
+  unresolved, or semantically different from the inverse contract derived from
+  the forward action; `AGWF045` reports a rollback-safety claim whose executable
+  nonempty-frame leaves are not all compensable (#169).
 - **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
   ontology domain, object type, and action names on an optional `action` field
   shared by every workflow step kind. The field is occurrence-scoped and
@@ -157,5 +165,8 @@ version increment after 1.0 (per the T30 structural diff).
   legacy relation-only extensions are removed by the coordinated #168 contract
   migration.
 - **0.11.0:** None. Workflow-step action identity and `AGWF039`–`AGWF043` are
+  additive. Older generated closed-enum consumers must still upgrade before
+  receiving the new diagnostic codes.
+- **0.12.0:** None. Typed inverse-action identity and `AGWF044`–`AGWF045` are
   additive. Older generated closed-enum consumers must still upgrade before
   receiving the new diagnostic codes.

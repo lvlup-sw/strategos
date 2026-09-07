@@ -34,6 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mechanically derived compensation (#169).** `ActionCalculus.AnalyzeInverse`
+  derives `A^-1` from a closed forward contract and proves an authored inverse's
+  subject, effective requirement/guarantee, frame, and semantic authority in
+  both directions. Immutable rollback plans encode identity, leaf, reversed
+  sequence, parallel, and nested-scope structure. The workflow generator proves
+  `.Compensate<T>(WorkflowActionReference)` declarations and reports `AGWF044`
+  for inverse disagreement or `AGWF045` when compensability does not propagate
+  through a rollback-claimed scope.
+- **Durable completed-prefix rollback (#169).** Generated sagas journal completed
+  forward occurrences with stable topology and execution identity, derive the
+  rollback prefix after failure, keep nested failures inside their concrete
+  scope, and quiesce forks before rollback. Inverse completion/failure messages
+  are distinct from forward flow; reducer-applied state is folded between
+  inverses, and failed or timed-out inverse outcomes retain the saga for
+  reconciliation.
 - **Occurrence-scoped workflow action identity (#167).** Typed workflow-step
   occurrences can declare `.Performs(new WorkflowActionReference(domainName,
   objectTypeName, actionName))`. The immutable name-only reference survives every
@@ -64,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Contracts package 0.12.0.** Compensation metadata adds the optional
+  `inverseAction: ActionReferenceV1` field and the closed diagnostic vocabulary
+  adds `AGWF044`–`AGWF045`. Legacy compensation JSON remains valid and omits the
+  field, but the no-argument `.Compensate<T>()` form remains runtime-only and
+  cannot establish a statically proved inverse.
 - **Workflow descriptor bindings are typed.** The writable
   `ActionDescriptor.BoundWorkflowName` property is replaced by immutable
   `BoundWorkflow: WorkflowBindingReference`. The fluent

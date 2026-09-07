@@ -197,6 +197,39 @@ workflow JSON omits the additive field byte-for-byte. See
 [behavioral refinement and workflow bindings](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
 for the proof obligations and `AGWF039`–`AGWF043`.
 
+### Typed compensation
+
+Use the typed `Compensate` overload to identify the ontology action implemented
+by an inverse step:
+
+```csharp
+.Then<CapturePaymentStep>(step => step
+    .Performs(new WorkflowActionReference(
+        "Orders", "Order", "CapturePayment"))
+    .Compensate<RefundPaymentStep>(new WorkflowActionReference(
+        "Orders", "Order", "RefundPayment")))
+```
+
+The generator derives the required inverse contract from the forward action and
+proves that the authored inverse has the same subject, frame, and semantic
+authority, requires the forward effective guarantee, and restores the forward
+hard requirement. `AGWF044` reports a disagreement. If the workflow or a bound
+action claims rollback, `AGWF045` rejects a scope containing any completed leaf
+with a non-empty frame but no proved inverse.
+
+The existing no-argument `.Compensate<T>()` overload remains available for
+legacy runtime-only workflows. It carries no inverse action identity and cannot
+participate in static rollback proof. Contracts 0.12.0 projects the typed value
+as the optional `compensation.inverseAction` object using the same
+`ActionReferenceV1` shape. Legacy JSON continues to omit the field.
+
+At runtime, Strategos journals completed forward occurrences and derives the
+reverse plan from the completed prefix. The failed occurrence is excluded.
+Nested failures unwind their innermost concrete scope; fork rollback waits for
+all lanes to become terminal. See
+[mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
+for the exact contract and durability rules.
+
 ---
 
 ## StepResult\<TState\>

@@ -1,6 +1,6 @@
 ---
 title: Migrate action contracts to 2.13
-description: Upgrade string-shaped action preconditions to typed predicates, explicit guarantees, typed workflow bindings, ActionFacts, and tri-state discovery.
+description: Upgrade string-shaped action preconditions to typed predicates, explicit guarantees, typed workflow bindings and compensation, ActionFacts, and tri-state discovery.
 sidebar:
   order: 7
 ---
@@ -29,11 +29,12 @@ semantic authorities. The release therefore removes that surface in one step
 instead of carrying an obsolete parser through the 2.x line.
 
 This exception applies to the source API. The cross-language contracts package
-is independently versioned: 0.10.0 introduces the tagged predicate schema, and
-0.11.0 adds occurrence-scoped workflow action identity without making the
-workflow wire schema breaking. Contract consumers should adopt 0.11.0 before
-receiving workflow definitions that carry the new optional `action` field or
-diagnostics carrying one of the new `AGWF039`–`AGWF043` closed-enum tokens.
+is independently versioned: 0.10.0 introduces the tagged predicate schema,
+0.11.0 adds occurrence-scoped workflow action identity, and 0.12.0 adds typed
+inverse identity. Both workflow changes are additive. Contract consumers should
+adopt 0.12.0 before receiving workflow definitions that carry the new optional
+`action` or `compensation.inverseAction` fields, or diagnostics carrying one of
+the new `AGWF039`–`AGWF045` closed-enum tokens.
 
 ## 1. Give every action an ontology subject
 
@@ -359,8 +360,6 @@ duplicates also fail closed because the runtime builder uses last-wins semantics
 Nonterminal workflow `OnFailure`, fork-path `OnFailure`, and nested
 `EscalateTo` approval routing also remain outside the proved v2.13 subset because
 those routes are not yet represented by the closed proof graph.
-Steps configured with `Compensate<T>` likewise report `AGWF042`; rollback-path
-refinement is deferred to #169.
 No binding proof or runtime enforcement is added to an unbound workflow. The
 topology lowering fixes shipped with this release still apply to every workflow.
 
@@ -427,14 +426,75 @@ The new workflow diagnostics all have error severity and fail closed:
 | `AGWF041` | The closed workflow contract definitely fails a refinement, seam, subject, frame, authority, or fork-isolation obligation. Use the reported counterexample to strengthen the leaf contract or relax the bound specification only when that is semantically correct. |
 | `AGWF042` | The analyzer cannot construct a closed proof because a binding, workflow topology, contract, authority lattice, or predicate is dynamic, invalid, opaque, contradictory, absent from the closed proof representation, or otherwise unprovable. Replace the input with a supported closed form; runtime checking is not accepted as a binding proof. |
 | `AGWF043` | Distinct workflow ids normalize to the same generated PascalCase identity. Rename them so generated type and source-hint names are unique. |
+| `AGWF044` | An authored compensation is missing a closed inverse identity or disagrees with the mechanically derived inverse. Use the typed compensation overload and correct the reported subject, requirement, guarantee, frame, or authority obligation. |
+| `AGWF045` | A rollback-claimed scope contains a state-changing leaf without a proved inverse, or typed rollback lacks one closed same-subject binding boundary. Make the entire reported scope compensable. |
 
 See the [Workflow API](/reference/api/workflow/#workflow-action-identity) for
 occurrence authoring and [Typed action calculus](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
 for the complete proof rules.
 
-## 9. Upgrade TypeSpec and workflow wire metadata
 
-Upgrade `LevelUp.Strategos.Contracts` to 0.11.0. It includes the 0.10.0 change
+## 9. Replace authored rollback lists with typed inverse actions
+
+The no-argument compensation overload remains available for legacy,
+runtime-only workflows:
+
+```csharp
+.Then<CapturePaymentStep>(step => step
+    .Compensate<RefundPaymentStep>())
+```
+
+It names executable code but says nothing about the ontology contract that code
+implements. It therefore cannot establish rollback safety. For a proved
+workflow, give the forward occurrence a typed action and give the compensation
+step its typed inverse action:
+
+```csharp
+.Then<CapturePaymentStep>(step => step
+    .Performs(new WorkflowActionReference(
+        "Orders", "Order", "CapturePayment"))
+    .Compensate<RefundPaymentStep>(new WorkflowActionReference(
+        "Orders", "Order", "RefundPayment")))
+```
+
+Strategos mechanically derives the inverse of forward action `A`:
+
+- it requires `A`'s effective guarantee, including requirements preserved
+  outside `A`'s frame;
+- its effective guarantee equals `A`'s hard requirement;
+- it has the same subject, exact frame, and semantically equal authority.
+
+The authored inverse must be equivalent in both directions. A non-empty frame
+requires executable inverse code; an empty-frame action may use the distinct
+identity inverse. `AGWF044` reports a legacy, dynamic, unresolved, opaque, or
+semantically different authored inverse. `AGWF045` reports a rollback-claimed
+scope in which any state-changing leaf lacks a proved inverse. Do not mix typed
+and legacy compensation in one derived rollback program.
+
+Rollback is no longer inferred from the list of compensation declarations.
+Generated sagas persist a completion journal and derive the reverse plan from
+the completed prefix. If `C` fails after `A ; B` completed, only
+`B^-1 ; A^-1` runs. The failed `C` is never included. A failure inside a
+branch or loop iteration unwinds only that concrete inner scope; a later outer
+failure may include completed descendant scopes. Fork rollback waits for every
+lane to become terminal before it begins. The structural plan retains parallel
+lanes, while generic state updates are conservatively folded through inverse
+workers in reverse completion order after the #167 noninterference proof.
+
+Inverse success is applied through the configured state reducer before the next
+inverse dispatches. An inverse failure, unmatched outcome, or timeout fails
+closed and retains the saga journal for reconciliation; it does not recursively
+enter compensation. Update operational tooling so a retained failed saga and
+`CompensationOutcomeUnknown` are treated as operator-visible incidents rather
+than ordinary terminal completion.
+
+See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
+for the runtime and proof contract.
+
+
+## 10. Upgrade TypeSpec and workflow wire metadata
+
+Upgrade `LevelUp.Strategos.Contracts` to 0.12.0. It includes the 0.10.0 change
 from relation-only or consumer-parsed metadata to `ActionPredicateV1`:
 
 - `@requires(predicate, strength?, description?)` emits a typed requirement;
@@ -448,7 +508,7 @@ Integers and decimals are canonical strings on the wire. Do not round-trip them
 through JSON floating-point numbers. The `expression` field is presentation
 only and must not be parsed.
 
-Contracts 0.11 does not yet expose frame/effect decorators. A TypeSpec
+Contracts 0.12 does not yet expose frame/effect decorators. A TypeSpec
 `@ensures` fact must therefore already follow from a hard `@requires` fact;
 otherwise graph freeze rejects it as an unrealizable guarantee about untouched
 state. Use the CLR descriptor/fluent surface for actions that establish new
@@ -474,7 +534,114 @@ to the generated 0.11.0 models before producers begin populating it. The same
 release adds `AGWF039`–`AGWF043`; consumers of the generated closed `AgwfCode`
 enum must upgrade before Strategos can emit those tokens.
 
-## 10. Invalidate graph-version caches once
+Version 0.12.0 reuses `ActionReferenceV1` for the optional inverse action inside
+compensation metadata:
+
+```json
+{
+  "compensation": {
+    "compensationStepType": "RefundPaymentStep",
+    "inverseAction": {
+      "domainName": "Orders",
+      "objectTypeName": "Order",
+      "actionName": "RefundPayment"
+    }
+  }
+}
+```
+
+Omitting `inverseAction` retains the legacy runtime-only shape. The field is
+additive, but `AGWF044` and `AGWF045` are new members of the generated closed
+diagnostic enum; all consumers must upgrade before producers emit them.
+
+
+## 11. Invalidate graph-version caches once
+
+The canonical graph hash now includes action subjects, normalized typed
+requirements, guarantees, custom evaluator keys/arguments/read sets, and the
+expanded action contract metadata. Descriptions and display expressions remain
+excluded.
+
+Every existing action-bearing graph receives a different
+`OntologyGraph.Version` after this upgrade even when its apparent business
+meaning is unchanged. This is intentional. Treat the first 2.13 deployment as
+a cache-key rollover: discard stored MCP schema views, planner tool lists,
+action-availability snapshots, and any other artifact keyed by the old hash.
+Do not translate or pin the previous hash.
+
+The typed workflow-binding wrapper is not itself part of that rollover. For an
+unchanged binding, the hasher writes only `BoundWorkflow.WorkflowId` at the same
+byte position where it previously wrote `BoundWorkflowName`. Moving from the
+string property or overload to `new WorkflowBindingReference(sameId)` therefore
+preserves the legacy graph hash. Changing the identifier still changes the
+hash, as a routing change should.
+
+After the action-contract rollover, registration order and presentation-only
+edits remain hash-stable.
+
+## 10. Upgrade TypeSpec and workflow wire metadata
+
+Upgrade `LevelUp.Strategos.Contracts` to 0.12.0. It includes the 0.10.0 change
+from relation-only or consumer-parsed metadata to `ActionPredicateV1`:
+
+- `@requires(predicate, strength?, description?)` emits a typed requirement;
+- `@ensures(predicate, description?)` emits a typed guarantee;
+- `@relation(name, ...path)` remains sugar for a hard `relation-holds`
+  requirement;
+- `x-strategos-relation` and `x-strategos-link-path` are no longer emitted;
+- unknown predicate discriminators must be rejected.
+
+Integers and decimals are canonical strings on the wire. Do not round-trip them
+through JSON floating-point numbers. The `expression` field is presentation
+only and must not be parsed.
+
+Contracts 0.12 does not yet expose frame/effect decorators. A TypeSpec
+`@ensures` fact must therefore already follow from a hard `@requires` fact;
+otherwise graph freeze rejects it as an unrealizable guarantee about untouched
+state. Use the CLR descriptor/fluent surface for actions that establish new
+facts and need `TouchedResources` or postcondition effects.
+
+Version 0.11.0 also adds `ActionReferenceV1` as the optional `action` property
+shared by every workflow step kind:
+
+```json
+{
+  "action": {
+    "domainName": "Trading",
+    "objectTypeName": "Position",
+    "actionName": "Write"
+  }
+}
+```
+
+When `action` is present, all three name fields are required. The property is
+additive and occurrence-scoped; legacy or unconfigured workflow JSON continues
+to omit it byte-for-byte. Consumers that need the new identity should upgrade
+to the generated 0.11.0 models before producers begin populating it. The same
+release adds `AGWF039`–`AGWF043`; consumers of the generated closed `AgwfCode`
+enum must upgrade before Strategos can emit those tokens.
+
+Version 0.12.0 reuses `ActionReferenceV1` for the optional inverse action inside
+compensation metadata:
+
+```json
+{
+  "compensation": {
+    "compensationStepType": "RefundPaymentStep",
+    "inverseAction": {
+      "domainName": "Orders",
+      "objectTypeName": "Order",
+      "actionName": "RefundPayment"
+    }
+  }
+}
+```
+
+Omitting `inverseAction` retains the legacy runtime-only shape. The field is
+additive, but `AGWF044` and `AGWF045` are new members of the generated closed
+diagnostic enum; all consumers must upgrade before producers emit them.
+
+## 11. Invalidate graph-version caches once
 
 The canonical graph hash now includes action subjects, normalized typed
 requirements, guarantees, custom evaluator keys/arguments/read sets, and the
@@ -500,8 +667,8 @@ edits remain hash-stable.
 
 ## Upgrade checklist
 
-- Upgrade Strategos packages together and upgrade Contracts consumers to 0.11.0
-  before publishing typed action or workflow-step metadata.
+- Upgrade Strategos packages together and upgrade Contracts consumers to 0.12.0
+  before publishing typed action, workflow-step, or inverse-action metadata.
 - Add an ontology-named `ActionSubject` to every descriptor-first action.
 - Replace direct descriptor-name-only `ObjectSet<T>` construction with
   `IOntologyQuery` or the `ActionSubject` constructor.
@@ -526,7 +693,12 @@ edits remain hash-stable.
   stale `BoundWorkflow`.
 - Add one direct, constant `.Performs(new WorkflowActionReference(...))` to
   every reachable named step occurrence in each bound workflow.
-- Resolve `AGWF039` through `AGWF043`; opaque or dynamic workflow contracts do
+- Replace proved-workflow `.Compensate<T>()` calls with
+  `.Compensate<T>(new WorkflowActionReference(...))`, and make every
+  state-changing leaf in a rollback-claimed scope compensable.
+- Update reconciliation tooling for retained inverse failures and unknown
+  timeout outcomes.
+- Resolve `AGWF039` through `AGWF045`; opaque or dynamic workflow contracts do
   not pass the binding proof.
 - Resolve `AONT217` and `AONT221`; review `AONT218`, `AONT219`, and
   `AONT220` coverage.
