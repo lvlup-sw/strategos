@@ -51,7 +51,7 @@ public class ActionBuilderTests
     }
 
     [Test]
-    public async Task ActionBuilder_BoundToWorkflow_SetsBindingAndWorkflowName()
+    public async Task ActionBuilder_BoundToWorkflowString_SetsBindingAndReference()
     {
         var builder = new ActionBuilder("ExecuteTrade", Subject);
 
@@ -59,7 +59,38 @@ public class ActionBuilderTests
         var descriptor = builder.Build();
 
         await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Workflow);
-        await Assert.That(descriptor.BoundWorkflowName).IsEqualTo("execute-trade");
+        await Assert.That(descriptor.BoundWorkflow).IsEqualTo(new WorkflowBindingReference("execute-trade"));
+    }
+
+    [Test]
+    public async Task ActionBuilder_BoundToWorkflowReference_SetsBindingAndReference()
+    {
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
+        var workflow = new WorkflowBindingReference("execute-trade");
+
+        builder.BoundToWorkflow(workflow);
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Workflow);
+        await Assert.That(descriptor.BoundWorkflow).IsEqualTo(workflow);
+    }
+
+    [Test]
+    public async Task ActionBuilder_BoundToWorkflowReferenceNull_Throws()
+    {
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
+
+        await Assert.That(() => builder.BoundToWorkflow((WorkflowBindingReference)null!))
+            .Throws<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task ActionBuilder_BoundToWorkflowStringWhiteSpace_Throws()
+    {
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
+
+        await Assert.That(() => builder.BoundToWorkflow("   "))
+            .Throws<ArgumentException>();
     }
 
     [Test]

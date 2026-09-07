@@ -290,14 +290,14 @@ public class OntologyGraphVersionTests
     [Test]
     public async Task Version_RebindingActionWorkflow_ChangesHash()
     {
-        // Rebinding an action's BoundWorkflowName changes dispatch routing
+        // Rebinding an action's workflow reference changes dispatch routing
         // even though the action's surface (Name/Accepts/Returns) is identical.
         var tA = ObjectType("T", "d", actions:
         [
             new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Workflow,
-                BoundWorkflowName = "WorkflowA",
+                BoundWorkflow = new WorkflowBindingReference("WorkflowA"),
             },
         ]);
         var tB = ObjectType("T", "d", actions:
@@ -305,7 +305,7 @@ public class OntologyGraphVersionTests
             new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
             {
                 BindingType = ActionBindingType.Workflow,
-                BoundWorkflowName = "WorkflowB",
+                BoundWorkflow = new WorkflowBindingReference("WorkflowB"),
             },
         ]);
 
@@ -313,6 +313,28 @@ public class OntologyGraphVersionTests
         var graphB = Graph(domains: [Domain("d", tB)], objectTypes: [tB]);
 
         await Assert.That(graphA.Version).IsNotEqualTo(graphB.Version);
+    }
+
+    [Test]
+    public async Task Version_WorkflowBindingReference_PreservesSerializedHash()
+    {
+        // Provenance: independently executed this exact fixture against base revision
+        // 45c86a63a9437abd920240b4dc95b235c0f72d37 with the legacy
+        // BoundWorkflowName = "WorkflowA" initializer. Its public Graph.Version was
+        // 17f5...4a00, so this is a before/after compatibility oracle rather than a
+        // constant captured from the new typed serializer.
+        var objectType = ObjectType("T", "d", actions:
+        [
+            new ActionDescriptor(new ActionSubject("d", "T"), "DoIt", "desc")
+            {
+                BindingType = ActionBindingType.Workflow,
+                BoundWorkflow = new WorkflowBindingReference("WorkflowA"),
+            },
+        ]);
+        var graph = Graph(domains: [Domain("d", objectType)], objectTypes: [objectType]);
+
+        await Assert.That(graph.Version)
+            .IsEqualTo("17f5da54ed8eeb9aa31e2796c6f5dce69d07cbf36d6c289564f8a5f641fc4a00");
     }
 
     [Test]

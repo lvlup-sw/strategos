@@ -19,7 +19,7 @@ namespace Strategos.Ontology.Generators.Analyzers;
 /// sequences. The parser intentionally recognizes a closed construction
 /// vocabulary; unresolved helpers remain a runtime concern (AONT220).
 /// </summary>
-internal static class ActionCompositionAnalyzer
+internal static partial class ActionCompositionAnalyzer
 {
     private const string DescriptorNamespace = "Strategos.Ontology.Descriptors";
     private const string NoSubjectBearingOperandReason = "no subject-bearing operand was found";

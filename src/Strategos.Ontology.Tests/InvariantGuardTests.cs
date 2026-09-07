@@ -152,6 +152,17 @@ public class InvariantGuardTests
     }
 
     /// <summary>
+    /// INV-6 (sealed), #167 workflow binding surface: catalog references must
+    /// remain closed value objects so bindings cannot acquire subtype-specific
+    /// identity semantics.
+    /// </summary>
+    [Test]
+    public async Task WorkflowBindingReference_IsSealed()
+    {
+        await Assert.That(typeof(WorkflowBindingReference).IsSealed).IsTrue();
+    }
+
+    /// <summary>
     /// INV-6 (sealed), DR-2 edge surface: the relate-store edge types
     /// introduced for the Ontology Edge Foundation must be sealed. DR-2 left
     /// them sealed but uncovered by a guard; this closes that net mechanically

@@ -38,7 +38,7 @@ public sealed record ActionDescriptor
 
     public ActionBindingType BindingType { get; init; } = ActionBindingType.Unbound;
 
-    public string? BoundWorkflowName { get; init; }
+    public WorkflowBindingReference? BoundWorkflow { get; init; }
 
     public string? BoundToolName { get; init; }
 

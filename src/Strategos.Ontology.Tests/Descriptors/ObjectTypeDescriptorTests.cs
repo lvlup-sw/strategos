@@ -42,6 +42,30 @@ public class ObjectTypeDescriptorTests
     }
 
     [Test]
+    public async Task ObjectTypeDescriptor_Actions_SnapshotsAssignedCollection()
+    {
+        var original = new[]
+        {
+            new ActionDescriptor(
+                new ActionSubject("Trading", "Position"),
+                "open",
+                "Open the position."),
+        };
+        var descriptor = new ObjectTypeDescriptor("Position", typeof(string), "Trading")
+        {
+            Actions = original,
+        };
+
+        original[0] = new ActionDescriptor(
+            new ActionSubject("Trading", "Position"),
+            "close",
+            "Close the position.");
+
+        await Assert.That(descriptor.Actions).HasCount().EqualTo(1);
+        await Assert.That(descriptor.Actions[0].Name).IsEqualTo("open");
+    }
+
+    [Test]
     public async Task ObjectTypeDescriptor_Events_DefaultsEmpty()
     {
         var descriptor = new ObjectTypeDescriptor("Position", typeof(string), "Trading");

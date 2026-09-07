@@ -8,7 +8,7 @@ internal sealed class ActionBuilder(string name, ActionSubject? subject = null) 
     private Type? _acceptsType;
     private Type? _returnsType;
     private ActionBindingType _bindingType = ActionBindingType.Unbound;
-    private string? _boundWorkflowName;
+    private WorkflowBindingReference? _boundWorkflow;
     private string? _boundToolName;
     private string? _boundToolMethod;
     private bool _isReadOnly;
@@ -37,10 +37,14 @@ internal sealed class ActionBuilder(string name, ActionSubject? subject = null) 
         return this;
     }
 
-    public IActionBuilder BoundToWorkflow(string workflowName)
+    public IActionBuilder BoundToWorkflow(string workflowName) =>
+        BoundToWorkflow(new WorkflowBindingReference(workflowName));
+
+    public IActionBuilder BoundToWorkflow(WorkflowBindingReference workflow)
     {
+        ArgumentNullException.ThrowIfNull(workflow);
         _bindingType = ActionBindingType.Workflow;
-        _boundWorkflowName = workflowName;
+        _boundWorkflow = workflow;
         return this;
     }
 
@@ -141,7 +145,7 @@ internal sealed class ActionBuilder(string name, ActionSubject? subject = null) 
             AcceptsType = _acceptsType,
             ReturnsType = _returnsType,
             BindingType = _bindingType,
-            BoundWorkflowName = _boundWorkflowName,
+            BoundWorkflow = _boundWorkflow,
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
             IsReadOnly = _isReadOnly,
