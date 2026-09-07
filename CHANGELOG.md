@@ -13,8 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > predicates remain the sole semantic authority. See the
 > [2.13 migration guide](docs/src/content/docs/guide/ontology/migration-v2-13.md).
 
+### Cross-product breaking changes
+
+- **Workflow builder surface (#167).** `IStepConfiguration<TState>` adds
+  `Performs(WorkflowActionReference)`; `IForkJoinBuilder<TState>` and
+  `ILoopForkJoinBuilder<TState>` add `Join<TStep>(configure)`; and the approval
+  rejection and escalation builders add `Then<TStep>(configure)`. Existing
+  fluent call sites remain source-compatible, but external implementations of
+  these interfaces and the exarchos builder-surface mirror must adopt the added
+  members. The new signatures are staged in `PublicAPI.Unshipped.txt` until the
+  release process rolls them into the shipped baseline.
+
 ### Added
 
+- **Occurrence-scoped workflow action identity (#167).** Typed workflow-step
+  occurrences can declare `.Performs(new WorkflowActionReference(domainName,
+  objectTypeName, actionName))`. The immutable name-only reference survives every
+  fluent topology, source-generator extraction, wire projection, and JSON import;
+  missing declarations remain distinct from dynamic or invalid declarations.
+- **Proved workflow implementations (#167).** `WorkflowBindingReference` gives
+  workflow-bound ontology actions an immutable catalog identity. The generator
+  resolves each reachable occurrence against the ontology action catalog and
+  proves entry contravariance, internal seams, successful-exit covariance,
+  subject equality, frame and authority bounds, and fork noninterference.
+  `ActionCalculus.AnalyzeRefinement` exposes the same behavioral-subtyping rules
+  for runtime action and composite contracts. `AGWF039`–`AGWF043` reject missing,
+  ambiguous, refuted, opaque, unprovable, or emission-colliding bindings.
 - **Typed, sound action composition (#168).** Actions now have ontology-named
   subjects, immutable typed hard/soft predicates, explicit post-state
   guarantees, and exact sequential compatibility proofs across arbitrary
@@ -32,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Workflow descriptor bindings are typed.** The writable
+  `ActionDescriptor.BoundWorkflowName` property is replaced by immutable
+  `BoundWorkflow: WorkflowBindingReference`. The fluent
+  `BoundToWorkflow(string)` overload remains supported and constructs the typed
+  reference, preserving its exact ordinal identifier and graph-hash bytes.
+- **Contracts package 0.11.0.** Workflow step arms add the optional,
+  backward-compatible `ActionReferenceV1` wire field. Its three identity names
+  are required non-empty strings when the field is present. The closed AGWF
+  vocabulary also adds `AGWF039`–`AGWF043`; contract consumers must upgrade
+  before producers emit those diagnostics.
 - **Action contracts are source-breaking.** Every `ActionDescriptor` requires an
   `ActionSubject`; `ActionPrecondition` is constructor-based; and
   `PreconditionKind` plus writable legacy expression/relation/link fields are

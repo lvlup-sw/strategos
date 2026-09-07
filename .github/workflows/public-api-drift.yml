@@ -2,9 +2,9 @@ name: Public API drift (cross-repo notify)
 
 # #51 builder API-stability gate (PR-B), tasks T13/T14.
 #
-# On push to main, diff src/Strategos/PublicAPI/PublicAPI.Shipped.txt (the 7
-# Strategos.Builders interfaces baseline) against the previous release tag. If
-# the builder surface changed, file a tracking issue on lvlup-sw/exarchos so the
+# On push to main, diff src/Strategos/PublicAPI/PublicAPI.Shipped.txt (the
+# explicit cross-product API baseline) against the previous release tag. If the
+# guarded surface changed, file a tracking issue on lvlup-sw/exarchos so the
 # downstream strategos-api-mirror.test.ts mirror can re-baseline deliberately.
 #
 # FAIL-SOFT ON THE SECRET (design §6.3): if EXARCHOS_ISSUES_PAT is absent the
@@ -21,17 +21,19 @@ name: Public API drift (cross-repo notify)
 #   IApprovalBuilder, IBranchBuilder, IFailureBuilder, IForkJoinBuilder,
 #   ILoopBuilder, IStepConfiguration, IWorkflowBuilder.
 #
-# The FIVE continuation interfaces reachable THROUGH those entrypoints —
+# The FIVE continuation interfaces reachable THROUGH those entrypoints are
 #   IForkPathBuilder, ILoopForkJoinBuilder, IApprovalEscalationBuilder,
-#   IApprovalRejectionBuilder, IContextBuilder —
-# are intentionally NOT separately gated. The downstream exarchos
-# strategos-api-mirror parses only the seven entrypoint *signatures*,
-# not the transitive type graph: a change to a continuation interface therefore
-# surfaces through the entrypoint signature that references it (e.g. a return
-# type or parameter change on an entrypoint method). There is consequently no
-# cross-product blind spot from leaving the five continuations ungated.
+#   IApprovalRejectionBuilder, IContextBuilder.
+# The downstream exarchos strategos-api-mirror still parses only the seven
+# historical entrypoint *signatures*, not the transitive type graph. The
+# local analyzer allowlist additionally guards the three continuation interfaces
+# changed by #167 (ILoopForkJoinBuilder, IApprovalEscalationBuilder, and
+# IApprovalRejectionBuilder) plus WorkflowActionReference and the StepDefinition
+# carrier property. IForkPathBuilder and IContextBuilder remain transitively
+# represented by the historical entrypoints.
 #
-# Re-baseline scope is therefore the seven entrypoints (PublicAPI.Shipped.txt).
+# Downstream mirror scope is the seven entrypoints; the local baseline is the
+# reviewed allowlist documented in src/Strategos/.editorconfig.
 
 on:
   push:

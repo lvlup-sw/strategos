@@ -24,7 +24,7 @@ The hasher canonicalises the graph into a stable byte stream (length-prefixed UT
 - **Object types** (sorted by `DomainName`, then `Name`). Per type:
   - `Name`, `DomainName`, `ParentTypeName`, `Kind` (`ObjectKind` enum), `KeyProperty.Name`.
   - `Properties[*]` (sorted by `Name`): `Name`, `Kind`, `PropertyType.FullName`, `IsRequired`, `VectorDimensions`.
-  - `Actions[*]` (sorted by `Name`): `Subject.DomainName`, `Subject.ObjectTypeName`, `Name`, `AcceptsType.FullName`, `ReturnsType.FullName`, binding fields, read-only/idempotence/confirmation flags, required authority, compensation name, allowed clients, touched resources, normalized precondition canonical tokens and strengths, normalized guarantee canonical tokens, and postcondition effect fields.
+  - `Actions[*]` (sorted by `Name`): `Subject.DomainName`, `Subject.ObjectTypeName`, `Name`, `AcceptsType.FullName`, `ReturnsType.FullName`, `BoundWorkflow.WorkflowId` and tool binding fields, read-only/idempotence/confirmation flags, required authority, compensation name, allowed clients, touched resources, normalized precondition canonical tokens and strengths, normalized guarantee canonical tokens, and postcondition effect fields.
   - `Links[*]` (sorted by `Name`): `Name`, `TargetTypeName`, and `Cardinality`.
   - `Events[*]` (sorted by `EventType.FullName`): `EventType.FullName`, `Severity`, `MaterializedLinks`, `UpdatedProperties`.
   - `Lifecycle` (when present): `PropertyName`, `StateEnumTypeName`, `States[*]` (`Name`, `IsInitial`, `IsTerminal`), `Transitions[*]` (`FromState`, `ToState`, `TriggerActionName`, `TriggerEventTypeName`).
@@ -60,7 +60,7 @@ Any structural mutation of the included fields produces a new hash. Examples:
 
 - Adding, removing, or renaming an object type, property, link, action, event, lifecycle state, or transition.
 - Changing a property's `PropertyType`, `IsRequired`, `VectorDimensions`, or `Kind`.
-- Rebinding an action's `BoundWorkflowName`, `BoundToolName`, or `BoundToolMethod` (a dispatch-routing change).
+- Rebinding an action's `BoundWorkflow.WorkflowId`, `BoundToolName`, or `BoundToolMethod` (a dispatch-routing change).
 - Changing an action subject, hard/soft requirement, post-state guarantee,
   custom evaluator key/arguments/read set, frame, or effect postcondition.
 - Changing a link's `Cardinality`.
@@ -73,6 +73,20 @@ Examples that do *not* change the hash:
 - Reordering registration calls (canonicalisation sorts every collection).
 - Adding entries to `OntologyGraph.Warnings`.
 
+### Typed workflow-binding compatibility
+
+Strategos 2.13 replaces the descriptor's writable `BoundWorkflowName` string
+with an immutable `WorkflowBindingReference`. This API shape change does not add
+a field to the canonical byte stream: the hasher writes exactly
+`BoundWorkflow.WorkflowId` through the existing length-prefixed string slot.
+
+Consequently, changing only
+`.BoundToWorkflow("publish-position")` to
+`.BoundToWorkflow(new WorkflowBindingReference("publish-position"))` preserves
+the legacy graph hash. The string overload maps to the same reference, and the
+identifier is neither trimmed nor case-normalized. A different identifier still
+changes the hash because it changes dispatch routing.
+
 ## How consumers should react
 
 Treat `Version` as an opaque cache key. When a downstream cache (a planner's tool list, an agent's action-availability snapshot, a UI's type browser) is keyed by the hash and the current `OntologyGraph.Version` does not match the cached value, invalidate and rebuild. Two graphs with the same hash are guaranteed to share every hashed structural field; two graphs with different hashes differ in at least one such field.
@@ -84,7 +98,7 @@ Strategos 2.13 intentionally changes the action canonicalization once to add
 subjects, typed predicates, guarantees, and custom-predicate identity. Every
 existing action-bearing graph therefore receives a new version on its first
 2.13 build. Invalidate caches instead of attempting to translate an older hash.
-See the [2.13 migration guide](/guide/ontology/migration-v2-13/#9-invalidate-graph-version-caches-once).
+See the [2.13 migration guide](/guide/ontology/migration-v2-13/#10-invalidate-graph-version-caches-once).
 :::
 
 ## Determinism guarantees

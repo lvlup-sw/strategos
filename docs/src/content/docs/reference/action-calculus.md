@@ -1,6 +1,6 @@
 ---
 title: Typed action calculus
-description: Typed predicates, post-state guarantees, exact sequential proofs, and three-valued runtime enforcement for ontology actions.
+description: Typed predicates, post-state guarantees, sequential composition, behavioral refinement, workflow bindings, and three-valued runtime enforcement for ontology actions.
 ---
 
 An ontology action is an immutable state-transition contract. Its
@@ -260,6 +260,141 @@ state transfer is deferred. Composition is conservative across longer chains:
 facts do not survive an intervening action unless its own requirements and
 frame justify preserving them.
 
+## Behavioral refinement and workflow bindings
+
+Sequential composition proves that actions can follow one another. Behavioral
+refinement proves that one executable action or composite is a safe substitute
+for a declared action specification. Given specification `S` and implementation
+`I`, Strategos checks four variance and effect bounds:
+
+| Obligation | Proof | Why it is required |
+|---|---|---|
+| Requirements are contravariant | `R_S implies R_I` | An implementation may accept more states, but cannot demand a state the advertised action accepts. |
+| Guarantees are covariant | `G_I implies D_S` | Every state promised by the implementation must satisfy the specification's declared guarantee. |
+| Frame is bounded | `W_I` is a subset of `W_S` | An implementation cannot write a resource the specification did not permit it to change. |
+| Authority is bounded | `Authority_I <= Authority_S` pointwise | An implementation cannot require stronger authority than callers of the specification were told to provide. |
+
+Subjects must also be equal. `G_I` is the implementation's effective guarantee,
+including facts soundly preserved through its frame; `D_S` is the
+specification's declared guarantee. `ModifiesProperty` remains only a frame
+declaration and cannot satisfy a guarantee obligation. `CreatesLink` does
+contribute its sound `LinkExists` fact.
+
+Use `ActionCalculus.AnalyzeRefinement` with either an `ActionDescriptor` or a
+`CompositeActionContract` implementation:
+
+```csharp
+var implementation = ActionCalculus.Sequential(
+    authorityLattice,
+    validate,
+    write,
+    notify);
+
+var refinement = ActionCalculus.AnalyzeRefinement(
+    publishSpecification,
+    implementation,
+    authorityLattice);
+
+if (!refinement.IsRefinement)
+{
+    // Inspect Status and each failure's obligation and counterexample.
+}
+```
+
+`ActionRefinementStatus.Proven` is the only successful substitution result.
+`Refuted` carries concrete counterexamples or frame/authority failures;
+`Opaque` means a custom predicate prevented a complete proof; and `Invalid`
+means a contract was malformed, already refuted, or otherwise not decidable by
+the closed kernel.
+
+### Binding an ontology action to a workflow
+
+An action binds to a workflow catalog identity with the immutable
+`WorkflowBindingReference`:
+
+```csharp
+obj.Action("Publish")
+    .Requires(position => position.Status == PositionStatus.Draft)
+    .Ensures(position => position.Status == PositionStatus.Published)
+    .Modifies(position => position.Status)
+    .BoundToWorkflow(new WorkflowBindingReference("publish-position"));
+```
+
+`WorkflowId` is preserved exactly and resolved with ordinal comparison. The
+constructor rejects null, empty, or whitespace-only values. The string overload
+`.BoundToWorkflow("publish-position")` remains source compatible and maps to the
+same typed reference.
+
+Each reachable named workflow step occurrence identifies its leaf action with
+`WorkflowActionReference(DomainName, ObjectTypeName, ActionName)` and
+`.Performs(...)`:
+
+```csharp
+Workflow<PublishState>.Create("publish-position")
+    .StartWith<ValidatePositionStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Validate")))
+    .Then<WritePositionStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Write")))
+    .Finally<NotifyPublicationStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Notify")));
+```
+
+This identity belongs to the occurrence, not the CLR step type. All three names
+are required and ordinal. The closed proof graph is keyed by the occurrence's
+effective phase name, however, so two configured uses that collapse to the same
+phase name cannot claim different actions. Give them distinct CLR step types,
+or distinct instance names where the builder exposes a combined
+name-and-configuration overload. For analyzer-visible bindings, construct the
+reference directly from compile-time constant strings; factories, dynamic
+expressions, multiple declarations, and unnamed delegate steps do not provide a
+closed occurrence identity.
+
+The workflow-binding analyzer generalizes refinement across the workflow graph:
+
+- the bound action requirement implies the entry action requirement;
+- every non-failure internal transition satisfies the ordinary effective-guarantee to
+  next-requirement seam proof;
+- every successful completion's effective guarantee implies the bound action's
+  declared guarantee;
+- every leaf has the bound action's subject, the union of leaf frames stays
+  within the bound frame, and the pointwise join of leaf authorities stays at or
+  below the bound authority; and
+- fork paths have neither write/write interference nor write/predicate-read
+  interference.
+
+All reachable occurrences represented by the closed main, branch, loop, fork,
+approval, confidence, and failure-path graph participate. Custom predicates and
+other dynamic contract inputs fail closed for workflow bindings even though
+ordinary sequential analysis can report them as partially verified.
+
+Proof is limited to topology that the generator can close without executing
+user code. Branch cases, loops, fork paths, approval and confidence handlers,
+and failure handlers must use analyzer-visible inline forms. Dynamic callback or
+collection helpers produce `AGWF042`. Nonterminal workflow failure handlers,
+fork-path failure handlers, and nested `EscalateTo` approvals are also excluded
+from the proved v2.13 subset until those routes have an equivalent closed proof
+representation.
+
+### Static proof boundary
+
+The v2.13 binding proof is compilation-local. It sees C# workflow and
+`DomainOntology.Define` declarations in the current compilation, plus imported
+workflow JSON supplied as `AdditionalFiles`. It does not open declarations from
+referenced binaries and it does not execute runtime `IOntologySource`
+contributions. A bound action, its target workflow, and the leaf-action catalog
+needed for the proof must therefore be source-visible to the same generator
+invocation. There is no runtime re-proof fallback for a cross-assembly binding.
+
+The static action catalog treats each source-visible `DomainOntology.Define`
+body as a declaration root. A directly constructed `ActionDescriptor` counts
+only when it is placed inline in an `ObjectTypeDescriptor.Actions` collection
+passed to `ObjectTypeFromDescriptor` from that root; an unrelated descriptor
+construction elsewhere in the compilation cannot satisfy a workflow leaf.
+Whether a declared ontology is selected by a particular host remains a
+deployment concern. Portable referenced-assembly catalogs are tracked in
+[#204](https://github.com/lvlup-sw/strategos/issues/204), separately from this
+source-visible proof slice.
+
 ## Runtime three-valued evaluation
 
 Static proof establishes contract compatibility; runtime discovery evaluates a
@@ -338,10 +473,10 @@ that mark a read-only action as non-idempotent are rejected by `AONT213`.
 
 ## TypeSpec and MCP metadata
 
-`Strategos.Contracts` 0.10.0 defines the versioned tagged
+`Strategos.Contracts` 0.11.0 includes the versioned tagged
 `ActionPredicateV1`, `ActionLiteralV1`, `ActionRequirementV1`, and
-`ActionGuaranteeV1` wire types. Contract operations author hard or soft
-requirements and guarantees directly:
+`ActionGuaranteeV1` wire types introduced in 0.10.0. Contract operations author
+hard or soft requirements and guarantees directly:
 
 ```typespec
 @objectKind("Trading", "Position", "entity")
@@ -374,7 +509,7 @@ lowers to a hard `relation-holds` requirement; the old relation/link-path pair
 is no longer emitted. Unknown predicate discriminators are rejected rather
 than treated as `Custom` or `True`.
 
-The 0.10 contract decorator surface does not yet author effect/frame metadata.
+The 0.11 contract decorator surface does not yet author effect/frame metadata.
 Consequently, a TypeSpec guarantee must already follow from the operation's
 hard requirements; graph freeze rejects a contract that promises a new fact
 without declaring how that resource may change. Author state-changing
@@ -382,9 +517,14 @@ guarantees in the CLR descriptor/fluent surface, where `TouchedResources` and
 postcondition effects are available, until a versioned contract frame is
 introduced.
 
+Version 0.11.0 also adds the optional, occurrence-scoped `action` field to every
+workflow step kind. Its `ActionReferenceV1` value contains required
+`domainName`, `objectTypeName`, and `actionName` strings. Legacy workflow JSON
+continues to omit the optional field byte-for-byte.
+
 MCP action summaries expose schema-equivalent `requires` and `ensures` arrays.
 The MCP assembly keeps local wire records rather than depending on the
-contracts package, and parity is checked against the emitted 0.10 schemas.
+contracts package, and parity is checked against the current emitted schemas.
 
 ## Diagnostics
 
@@ -395,6 +535,11 @@ contracts package, and parity is checked against the emitted 0.10 schemas.
 | `AONT219` | Info | Graph or explicit-sequence composability coverage. Zero-action graphs suppress it. |
 | `AONT220` | Info | An explicit sequence is too dynamic for the analyzer and receives runtime-only verification. |
 | `AONT221` | Error | Invalid expression, subject mismatch, contradiction, or unrealizable frame. |
+| `AGWF039` | Error | A bound workflow identity resolves to zero or multiple exact ordinal workflow definitions. |
+| `AGWF040` | Error | A reachable workflow step occurrence has no single closed action reference, or its three-name identity does not resolve exactly once. |
+| `AGWF041` | Error | A closed workflow binding is definitely refuted, with a counterexample or a subject/frame/authority/fork-isolation failure. |
+| `AGWF042` | Error | A workflow binding cannot be proved because an identity, topology, contract, lattice, or predicate is dynamic, invalid, opaque, absent from the closed proof representation, or otherwise unprovable. |
+| `AGWF043` | Error | Distinct workflow ids collide after generated PascalCase normalization. |
 
 The analyzer recognizes direct constructions, immutable single-assignment
 locals, statically initialized immutable collections, nested `Sequential` calls,
@@ -403,4 +548,6 @@ locals, statically initialized immutable collections, nested `Sequential` calls,
 collections remain runtime checked. Graph freeze is the exact merged-graph
 backstop and reports coverage over concrete executable actions. See the
 [AONT200-series reference](/reference/diagnostics/aont-200-series/) for fixes
-and full messages.
+and full ontology messages. See the
+[workflow diagnostic reference](/reference/diagnostics/agwf-agsr/#workflow-binding-diagnostics)
+for the binding-specific remediations.
