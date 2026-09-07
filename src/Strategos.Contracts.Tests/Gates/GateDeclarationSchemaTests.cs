@@ -6,6 +6,7 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
 
 using NJsonSchema;
 using NJsonSchema.Validation;
@@ -223,25 +224,20 @@ public sealed class GateDeclarationSchemaTests
         await Assert.That(EventSchemas.Exists(GateDeclarationSchema)).IsTrue()
             .Because("`tsp compile` must emit GateDeclaration.json.");
 
-        // The pre-DR-2 core: the gate declaration BEFORE the reliability annotation
-        // existed (class + id only). The emitted schema adds `reliability` on top.
-        const string preReliability =
-            """
-            {
-              "$id": "GateDeclaration.json",
-              "type": "object",
-              "properties": {
-                "class": { "$ref": "GateClass.json" },
-                "id": { "type": "string" }
-              },
-              "required": ["class", "id"]
-            }
-            """;
-
         var emitted = await File.ReadAllTextAsync(
             Path.Combine(EventSchemas.SchemaDir, GateDeclarationSchema + ".json"));
+        var preReliability = JsonNode.Parse(emitted)?.DeepClone()
+            ?? throw new InvalidOperationException("The emitted gate-declaration schema is empty.");
+        var properties = preReliability["properties"]?.AsObject()
+            ?? throw new InvalidOperationException(
+                "The emitted gate-declaration schema has no properties object.");
+        if (!properties.Remove("reliability"))
+        {
+            throw new InvalidOperationException(
+                "The emitted gate-declaration schema has no reliability property.");
+        }
 
-        var result = JsonSchemaDiff.Compare(preReliability, emitted);
+        var result = JsonSchemaDiff.Compare(preReliability.ToJsonString(), emitted);
 
         await Assert.That(result.HasBreakingChanges).IsFalse()
             .Because("adding an OPTIONAL reliability annotation is additive — never breaking (DR-2).");
@@ -250,6 +246,8 @@ public sealed class GateDeclarationSchemaTests
         await Assert.That(result.Changes)
             .Contains(c => c.Severity == ChangeSeverity.NonBreaking
                 && c.Description.Contains("reliability", StringComparison.Ordinal));
+        await Assert.That(result.Changes).HasCount().EqualTo(1)
+            .Because("the comparison isolates reliability from every pre-existing nested constraint.");
     }
 
     private static IReadOnlyList<string> RequiredNames(System.Text.Json.JsonElement root)

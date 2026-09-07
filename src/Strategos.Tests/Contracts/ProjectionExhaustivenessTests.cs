@@ -243,6 +243,7 @@ public class ProjectionExhaustivenessTests
             StepName = "ProbeStepName",
             IsTerminal = true,
             Configuration = config,
+            Action = new WorkflowActionReference("ProbeDomain", "ProbeObject", "ProbeAction"),
         };
 
         var typedJson = ContractsJson.Serialize(ProjectStepViaReflection(typedStep));
@@ -253,6 +254,7 @@ public class ProjectionExhaustivenessTests
         Record(present, nameof(BuilderStep.IsTerminal), typedJson, "true");
         // Configuration surfaces structurally (its confidenceThreshold value).
         Record(present, nameof(BuilderStep.Configuration), typedJson, "0.42");
+        Record(present, nameof(BuilderStep.Action), typedJson, "ProbeAction");
 
         // --- A lambda step proves the IsLambdaStep member surfaces (lambda:true).
         var lambdaStep = BuilderStep.CreateFromLambda(

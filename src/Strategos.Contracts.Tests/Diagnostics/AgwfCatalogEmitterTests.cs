@@ -11,7 +11,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// <summary>
 /// T3 — the canonical <c>agwf-catalog.json</c> data artifact. After the full
 /// codegen pipeline runs, the catalog file exists under the contracts project,
-/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 31
+/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 36
 /// ground-truth entries ordered by ID, each with full metadata
 /// (<c>name</c>/<c>id</c>/<c>severity</c>/<c>summary</c>/<c>remediation</c>/
 /// <c>since</c>).
@@ -28,7 +28,9 @@ public sealed class AgwfCatalogEmitterTests
         "AGWF022", "AGWF023", "AGWF024", "AGWF025", "AGWF026",
         "AGWF027", "AGWF028", "AGWF029", "AGWF030", "AGWF031",
         "AGWF032", "AGWF033", "AGWF034", "AGWF035", "AGWF036",
-        "AGWF037", "AGWF038",
+        "AGWF037", "AGWF038", "AGWF039", "AGWF040", "AGWF041",
+        "AGWF042",
+        "AGWF043",
     ];
 
     /// <summary>
@@ -72,5 +74,34 @@ public sealed class AgwfCatalogEmitterTests
         await Assert.That(string.Join(",", ids))
             .IsEqualTo(string.Join(",", GroundTruthCodes))
             .Because("entries must be ordered by ID (ascending).");
+    }
+
+    /// <summary>The published enum schema and metadata-entry schemas have one code authority.</summary>
+    [Test]
+    public async Task AgwfCodeSchema_ExactlyMatchesCatalogEntryIds()
+    {
+        using var enumSchema = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(
+            RepoLayout.ContractsProjectDir,
+            "schemas",
+            "json-schema",
+            "AgwfCode.json")));
+        using var catalog = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(
+            RepoLayout.ContractsProjectDir,
+            "Generated",
+            "agwf-catalog.json")));
+
+        var enumCodes = enumSchema.RootElement.GetProperty("enum")
+            .EnumerateArray()
+            .Select(item => item.GetString())
+            .ToArray();
+        var entryCodes = catalog.RootElement.GetProperty("entries")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .ToArray();
+
+        await Assert.That(enumCodes).IsEquivalentTo(entryCodes)
+            .Because("AgwfCode and the literal entry models must never drift into two vocabularies.");
+        await Assert.That(string.Join(",", enumCodes)).IsEqualTo(string.Join(",", entryCodes))
+            .Because("the stable enum and generated-catalog ordering must also agree.");
     }
 }

@@ -16,6 +16,17 @@ structural diff in CI.
 
 ### Added
 
+- **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
+  ontology domain, object type, and action names on an optional `action` field
+  shared by every workflow step kind. The field is occurrence-scoped and
+  additive; legacy workflow JSON omits it byte-for-byte (#167).
+- **Workflow binding diagnostics (`0.11.0`):** the closed `AgwfCode` vocabulary
+  adds `AGWF039`–`AGWF043` for workflow lookup, occurrence action identity,
+  refuted behavioral refinement, unprovable workflow contracts, and generated
+  identity collisions. The schema
+  change is additive, but generated enum converters reject unknown members, so
+  Exarchos and Basileus must adopt 0.11.0 before Strategos emits these codes
+  (#167).
 - **Typed action contracts (`0.10.0`):** versioned, recursive
   `ActionPredicateV1` and `ActionLiteralV1` tagged unions; typed hard/soft
   `@requires` metadata; and explicit `@ensures` post-state guarantees. Integer
@@ -109,7 +120,8 @@ have, in this milestone; that is why this is 0.2.0 and not an earlier preview.
   package.
 - **Breaking-change schema diff (T30):** `JsonSchemaDiff` + CI workflow flag a
   removed / narrowed / newly-required property as breaking and an added optional
-  property as non-breaking, compared against the previous tag's schemas.
+  property as non-breaking, compared against the complete schemas in the latest
+  package actually published to NuGet.
 - **Cross-product round-trip harness (T31):** offline harness deriving Zod from
   our own JSON Schema and parsing every fixture against it. The external
   Exarchos pinned-Zod-snapshot step (exarchos#1247) is out of scope and marked
@@ -118,9 +130,13 @@ have, in this milestone; that is why this is 0.2.0 and not an earlier preview.
 ## Cross-product breaking changes
 
 Schema (wire-contract) changes that would break Exarchos or Basileus consumers
-are tracked here and gate a major version bump (per the T30 structural diff).
+are tracked here and gate a minor version increment before 1.0 or a major
+version increment after 1.0 (per the T30 structural diff).
 
 - **0.2.0:** None this release (initial published contract).
 - **0.10.0:** Ontology action metadata uses typed versioned predicate arrays;
   legacy relation-only extensions are removed by the coordinated #168 contract
   migration.
+- **0.11.0:** None. Workflow-step action identity and `AGWF039`–`AGWF043` are
+  additive. Older generated closed-enum consumers must still upgrade before
+  receiving the new diagnostic codes.

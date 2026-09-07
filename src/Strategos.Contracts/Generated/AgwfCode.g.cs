@@ -149,6 +149,26 @@ public enum AgwfCode
     /// <summary>AGWF038 — Duplicate diagnostic-fork compensation seed.</summary>
     [JsonStringEnumMemberName("AGWF038")]
     DuplicateCompensationSeed,
+
+    /// <summary>AGWF039 — Bound workflow name does not resolve exactly once.</summary>
+    [JsonStringEnumMemberName("AGWF039")]
+    BoundWorkflowNotFound,
+
+    /// <summary>AGWF040 — Workflow step action reference is invalid.</summary>
+    [JsonStringEnumMemberName("AGWF040")]
+    WorkflowActionReferenceInvalid,
+
+    /// <summary>AGWF041 — Workflow binding refinement proof failed.</summary>
+    [JsonStringEnumMemberName("AGWF041")]
+    WorkflowBindingRefinementFailed,
+
+    /// <summary>AGWF042 — Workflow contract cannot be proved statically.</summary>
+    [JsonStringEnumMemberName("AGWF042")]
+    WorkflowContractUnprovable,
+
+    /// <summary>AGWF043 — Workflow generated identity collision.</summary>
+    [JsonStringEnumMemberName("AGWF043")]
+    WorkflowEmissionIdentityCollision,
 }
 
 public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
@@ -197,6 +217,11 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             "AGWF036" => AgwfCode.PathEndTypeCollision,
             "AGWF037" => AgwfCode.DuplicatePermittedForkTrigger,
             "AGWF038" => AgwfCode.DuplicateCompensationSeed,
+            "AGWF039" => AgwfCode.BoundWorkflowNotFound,
+            "AGWF040" => AgwfCode.WorkflowActionReferenceInvalid,
+            "AGWF041" => AgwfCode.WorkflowBindingRefinementFailed,
+            "AGWF042" => AgwfCode.WorkflowContractUnprovable,
+            "AGWF043" => AgwfCode.WorkflowEmissionIdentityCollision,
             _ => throw new JsonException("Unknown AgwfCode wire token."),
         };
     }
@@ -240,6 +265,11 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             AgwfCode.PathEndTypeCollision => "AGWF036",
             AgwfCode.DuplicatePermittedForkTrigger => "AGWF037",
             AgwfCode.DuplicateCompensationSeed => "AGWF038",
+            AgwfCode.BoundWorkflowNotFound => "AGWF039",
+            AgwfCode.WorkflowActionReferenceInvalid => "AGWF040",
+            AgwfCode.WorkflowBindingRefinementFailed => "AGWF041",
+            AgwfCode.WorkflowContractUnprovable => "AGWF042",
+            AgwfCode.WorkflowEmissionIdentityCollision => "AGWF043",
             _ => throw new JsonException("Unknown AgwfCode value."),
         };
 

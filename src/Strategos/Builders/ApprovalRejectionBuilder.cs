@@ -43,6 +43,20 @@ public sealed class ApprovalRejectionBuilder<TState> : IApprovalRejectionBuilder
     }
 
     /// <inheritdoc/>
+    public IApprovalRejectionBuilder<TState> Then<TStep>(
+        Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        var configuration = new StepConfigurationBuilder<TState>();
+        configure(configuration);
+
+        _steps.Add(configuration.ApplyTo(StepDefinition.Create(typeof(TStep))));
+        return this;
+    }
+
+    /// <inheritdoc/>
     public void Complete()
     {
         _isTerminal = true;

@@ -7,6 +7,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Strategos.Contracts.SchemaDiff;
 
@@ -99,36 +100,18 @@ public sealed class GateSlotSchemaTests
         await Assert.That(EventSchemas.Exists(WorkflowRootSchema)).IsTrue()
             .Because("`tsp compile` must emit WorkflowDefinitionV1.json.");
 
-        // The pre-DR-3 root: the workflow IR BEFORE the gates slot existed.
-        const string preGates =
-            """
-            {
-              "$id": "WorkflowDefinitionV1.json",
-              "type": "object",
-              "properties": {
-                "schemaVersion": { "type": "string", "const": "1.0" },
-                "name": { "type": "string" },
-                "steps": { "type": "array" },
-                "transitions": { "type": "array" },
-                "branchPoints": { "type": "array" },
-                "loops": { "type": "array" },
-                "forkPoints": { "type": "array" },
-                "failureHandlers": { "type": "array" },
-                "approvalPoints": { "type": "array" },
-                "entryStepId": { "type": "string" },
-                "terminalStepId": { "type": "string" }
-              },
-              "required": [
-                "schemaVersion", "name", "steps", "transitions", "branchPoints",
-                "loops", "forkPoints", "failureHandlers", "approvalPoints"
-              ]
-            }
-            """;
-
         var emitted = await File.ReadAllTextAsync(
             Path.Combine(EventSchemas.SchemaDir, WorkflowRootSchema + ".json"));
+        var preGates = JsonNode.Parse(emitted)?.DeepClone()
+            ?? throw new InvalidOperationException("The emitted workflow schema is empty.");
+        var properties = preGates["properties"]?.AsObject()
+            ?? throw new InvalidOperationException("The emitted workflow schema has no properties object.");
+        if (!properties.Remove("gates"))
+        {
+            throw new InvalidOperationException("The emitted workflow schema has no gates property.");
+        }
 
-        var result = JsonSchemaDiff.Compare(preGates, emitted);
+        var result = JsonSchemaDiff.Compare(preGates.ToJsonString(), emitted);
 
         await Assert.That(result.HasBreakingChanges).IsFalse()
             .Because("adding an OPTIONAL gates slot is additive — never breaking (DR-3).");
@@ -138,6 +121,8 @@ public sealed class GateSlotSchemaTests
             .Contains(c => c.Severity == ChangeSeverity.NonBreaking
                 && c.Description.Contains("gates", StringComparison.Ordinal))
             .Because("the differ must report the added optional `gates` property.");
+        await Assert.That(result.Changes).HasCount().EqualTo(1)
+            .Because("the comparison isolates the gates slot from every pre-existing nested constraint.");
     }
 
     /// <summary>
@@ -151,30 +136,18 @@ public sealed class GateSlotSchemaTests
         await Assert.That(EventSchemas.Exists(GateStepSchema)).IsTrue()
             .Because("`tsp compile` must emit GateStep.json.");
 
-        // The pre-DR-3 gate step arm: BEFORE the gateId back-reference existed.
-        const string preGateId =
-            """
-            {
-              "$id": "GateStep.json",
-              "type": "object",
-              "properties": {
-                "kind": { "type": "string", "const": "gate" },
-                "stepId": { "type": "string" },
-                "stepName": { "type": "string" },
-                "instanceName": { "type": "string" },
-                "isTerminal": { "type": "boolean" },
-                "runtime": { "$ref": "StepRuntime.json" },
-                "configuration": { "$ref": "StepConfigurationDefinition.json" },
-                "stepType": { "type": "string" }
-              },
-              "required": ["kind", "stepId", "stepName", "isTerminal", "stepType"]
-            }
-            """;
-
         var emitted = await File.ReadAllTextAsync(
             Path.Combine(EventSchemas.SchemaDir, GateStepSchema + ".json"));
+        var preGateId = JsonNode.Parse(emitted)?.DeepClone()
+            ?? throw new InvalidOperationException("The emitted gate-step schema is empty.");
+        var properties = preGateId["properties"]?.AsObject()
+            ?? throw new InvalidOperationException("The emitted gate-step schema has no properties object.");
+        if (!properties.Remove("gateId"))
+        {
+            throw new InvalidOperationException("The emitted gate-step schema has no gateId property.");
+        }
 
-        var result = JsonSchemaDiff.Compare(preGateId, emitted);
+        var result = JsonSchemaDiff.Compare(preGateId.ToJsonString(), emitted);
 
         await Assert.That(result.HasBreakingChanges).IsFalse()
             .Because("adding an OPTIONAL gateId back-reference is additive — never breaking (DR-3).");
@@ -184,6 +157,8 @@ public sealed class GateSlotSchemaTests
             .Contains(c => c.Severity == ChangeSeverity.NonBreaking
                 && c.Description.Contains("gateId", StringComparison.Ordinal))
             .Because("the differ must report the added optional `gateId` property.");
+        await Assert.That(result.Changes).HasCount().EqualTo(1)
+            .Because("the comparison isolates gateId from every pre-existing nested constraint.");
     }
 
     /// <summary>

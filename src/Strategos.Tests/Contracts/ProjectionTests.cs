@@ -24,6 +24,54 @@ namespace Strategos.Tests.Contracts;
 public class ProjectionTests
 {
     /// <summary>
+    /// A configured step's occurrence-scoped ontology action projects to the shared
+    /// wire-step action slot with all three names unchanged.
+    /// </summary>
+    [Test]
+    public async Task ToContract_PerformsAction_ProjectsNameTripleWithoutLoss()
+    {
+        var action = new WorkflowActionReference("orders", "Order", "submit");
+        var workflow = Workflow<TestWorkflowState>
+            .Create("action-projection")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(step => step.Performs(action))
+            .Finally<CompleteStep>();
+
+        var wireStep = workflow.ToContract().Steps
+            .OfType<SkillStep>()
+            .Single(step => step.StepType == nameof(ProcessStep));
+
+        await Assert.That(wireStep.Action).IsNotNull();
+        await Assert.That(wireStep.Action!.DomainName).IsEqualTo(action.DomainName);
+        await Assert.That(wireStep.Action.ObjectTypeName).IsEqualTo(action.ObjectTypeName);
+        await Assert.That(wireStep.Action.ActionName).IsEqualTo(action.ActionName);
+    }
+
+    /// <summary>
+    /// Legacy steps that do not declare an action keep the existing JSON shape: the
+    /// optional field is null in the generated record and omitted by the canonical serializer.
+    /// </summary>
+    [Test]
+    public async Task ToContract_LegacyStepWithoutAction_OmitsActionFromJson()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("legacy-projection")
+            .StartWith<ValidateStep>()
+            .Finally<CompleteStep>();
+
+        var contract = workflow.ToContract();
+        var json = ContractsJson.Serialize(contract);
+
+        foreach (var step in contract.Steps.OfType<SkillStep>())
+        {
+            await Assert.That(step.Action).IsNull();
+        }
+
+        await Assert.That(json).DoesNotContain("\"action\"")
+            .Because("null optional action slots must not change legacy workflow JSON bytes.");
+    }
+
+    /// <summary>
     /// T18 — a simple skill-step workflow projects to a populated, correctly
     /// versioned <see cref="WorkflowDefinitionV1"/> with its steps in order.
     /// </summary>

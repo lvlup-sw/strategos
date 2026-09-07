@@ -18,13 +18,12 @@ public enum ChangeSeverity
 
     /// <summary>An additive change that is compatible on the wire but demands a
     /// consumer-notice release-notes line before producers may exercise it — the
-    /// DR-18 posture for a new closed-enum member. Permitted on a minor bump; does
-    /// not block the CI gate, but is surfaced (flagged) rather than silent, because
-    /// strict converters reject unknown members until consumers upgrade.</summary>
+    /// DR-18 posture for a new closed-enum or union member.</summary>
     Notice = 1,
 
     /// <summary>A change that invalidates previously-valid documents or removes a
-    /// guarantee a consumer relied on (requires a major version bump).</summary>
+    /// guarantee a consumer relied on. The release gate requires a minor version
+    /// increment before 1.0 and a major increment after 1.0.</summary>
     Breaking = 2,
 }
 
@@ -41,47 +40,61 @@ public sealed record SchemaDiffResult(IReadOnlyList<SchemaChange> Changes)
     public bool HasBreakingChanges => Changes.Any(c => c.Severity == ChangeSeverity.Breaking);
 
     /// <summary>Gets a value indicating whether any change is a flagged
-    /// <see cref="ChangeSeverity.Notice"/> (e.g. an added enum member) — non-breaking
-    /// but requiring a consumer-notice release-notes line under DR-18.</summary>
+    /// <see cref="ChangeSeverity.Notice"/>.</summary>
     public bool HasNotices => Changes.Any(c => c.Severity == ChangeSeverity.Notice);
 
-    /// <summary>Gets the overall severity: the highest severity of any single change
-    /// (<see cref="ChangeSeverity.Breaking"/> &gt; <see cref="ChangeSeverity.Notice"/>
-    /// &gt; <see cref="ChangeSeverity.NonBreaking"/>), or
+    /// <summary>Gets the highest severity, or
     /// <see cref="ChangeSeverity.NonBreaking"/> when there are no changes.</summary>
     public ChangeSeverity Severity =>
         Changes.Count == 0 ? ChangeSeverity.NonBreaking : Changes.Max(c => c.Severity);
 }
 
 /// <summary>
-/// A small, dependency-free structural diff over two JSON Schema (draft 2020-12)
-/// object schemas. It is deliberately conservative: it classifies the change
-/// classes the cross-product versioning contract cares about (design §Resilience
-/// item 3) and treats anything it cannot prove safe as breaking.
+/// Recursively compares the emitted JSON Schema subset used by Strategos
+/// Contracts. A change not proven compatible is classified as breaking.
 /// </summary>
 /// <remarks>
-/// Scope (intentionally narrow — this gate guards the cross-product wire contract,
-/// not arbitrary JSON Schema): top-level <c>properties</c> + <c>required</c>, each
-/// property's declared <c>type</c>, and closed-enum member lists (the schema itself,
-/// or a property's inline <c>enum</c>). Rules:
-/// <list type="bullet">
-///   <item>Removed property ⇒ BREAKING.</item>
-///   <item>Property newly added to <c>required</c> (existing or new) ⇒ BREAKING.</item>
-///   <item>Property's declared <c>type</c> changed ⇒ BREAKING (type narrowing/swap).</item>
-///   <item>Enum member removed ⇒ BREAKING (a rename is a removal + an add, so it is
-///   BREAKING too — DR-18 enum-evolution policy).</item>
-///   <item>Added optional property ⇒ NON-BREAKING.</item>
-///   <item>Property removed from <c>required</c> (relaxed) ⇒ NON-BREAKING.</item>
-///   <item>Enum member added ⇒ NOTICE (additive on a minor, but flagged: strict
-///   converters reject unknown members, so consumers must upgrade before producers
-///   emit the new member).</item>
-/// </list>
-/// CI compares the previous published tag's <c>schemas/json-schema/*.json</c>
-/// against the working tree's; the tests compare in-test fixtures so they stay
-/// deterministic and offline.
+/// The classifier understands nested properties and required members, declared
+/// types, enums, constants, references, minimum string/collection sizes,
+/// patterns, item schemas, discriminators, and composition keywords. Unknown
+/// validation keywords fail closed when their values change. Schema annotations
+/// such as descriptions and vendor extensions do not affect compatibility.
 /// </remarks>
 public static class JsonSchemaDiff
 {
+    private static readonly HashSet<string> HandledKeywords = new(StringComparer.Ordinal)
+    {
+        "properties",
+        "required",
+        "type",
+        "enum",
+        "const",
+        "$id",
+        "$schema",
+        "$ref",
+        "minLength",
+        "minItems",
+        "minProperties",
+        "pattern",
+        "items",
+        "anyOf",
+        "oneOf",
+        "allOf",
+        "discriminator",
+    };
+
+    private static readonly HashSet<string> AnnotationKeywords = new(StringComparer.Ordinal)
+    {
+        "$comment",
+        "title",
+        "description",
+        "default",
+        "examples",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+    };
+
     /// <summary>Compares two JSON Schema documents given as JSON text.</summary>
     /// <param name="previousJson">The previous (baseline) schema document.</param>
     /// <param name="nextJson">The next (candidate) schema document.</param>
@@ -91,9 +104,9 @@ public static class JsonSchemaDiff
         ArgumentNullException.ThrowIfNull(previousJson);
         ArgumentNullException.ThrowIfNull(nextJson);
 
-        using var prev = JsonDocument.Parse(previousJson);
+        using var previous = JsonDocument.Parse(previousJson);
         using var next = JsonDocument.Parse(nextJson);
-        return Compare(prev.RootElement, next.RootElement);
+        return Compare(previous.RootElement, next.RootElement);
     }
 
     /// <summary>Compares two parsed JSON Schema documents.</summary>
@@ -103,109 +116,438 @@ public static class JsonSchemaDiff
     public static SchemaDiffResult Compare(JsonElement previous, JsonElement next)
     {
         var changes = new List<SchemaChange>();
+        DiffSchema(previous, next, "$", changes);
+        return new SchemaDiffResult(changes);
+    }
 
-        var prevProps = ReadProperties(previous);
-        var nextProps = ReadProperties(next);
-        var prevRequired = ReadRequired(previous);
+    private static void DiffSchema(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        if (JsonElement.DeepEquals(previous, next))
+        {
+            return;
+        }
+
+        if (previous.ValueKind != JsonValueKind.Object || next.ValueKind != JsonValueKind.Object)
+        {
+            var relaxation = previous.ValueKind == JsonValueKind.False
+                || next.ValueKind == JsonValueKind.True;
+            AddChange(
+                changes,
+                relaxation ? ChangeSeverity.NonBreaking : ChangeSeverity.Breaking,
+                path,
+                "boolean or non-object schema changed");
+            return;
+        }
+
+        DiffProperties(previous, next, path, changes);
+        DiffType(previous, next, path, changes);
+        DiffEnum(previous, next, path, changes);
+        DiffExactConstraint(previous, next, "$id", path, removalIsBreaking: true, changes);
+        DiffExactConstraint(previous, next, "$schema", path, removalIsBreaking: true, changes);
+        DiffExactConstraint(previous, next, "$ref", path, removalIsBreaking: true, changes);
+        DiffExactConstraint(previous, next, "const", path, removalIsBreaking: true, changes);
+        DiffExactConstraint(previous, next, "pattern", path, removalIsBreaking: false, changes);
+        DiffExactConstraint(previous, next, "discriminator", path, removalIsBreaking: true, changes);
+        DiffMinimum(previous, next, "minLength", path, changes);
+        DiffMinimum(previous, next, "minItems", path, changes);
+        DiffMinimum(previous, next, "minProperties", path, changes);
+        DiffItems(previous, next, path, changes);
+        DiffUnion(previous, next, "anyOf", path, changes);
+        DiffUnion(previous, next, "oneOf", path, changes);
+        DiffUnion(previous, next, "allOf", path, changes);
+        DiffUnhandledKeywords(previous, next, path, changes);
+    }
+
+    private static void DiffProperties(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var previousProperties = ReadProperties(previous);
+        var nextProperties = ReadProperties(next);
+        var previousRequired = ReadRequired(previous);
         var nextRequired = ReadRequired(next);
 
-        // Removed properties — breaking.
-        foreach (var name in prevProps.Keys)
+        foreach (var name in previousProperties.Keys)
         {
-            if (!nextProps.ContainsKey(name))
+            if (!nextProperties.ContainsKey(name))
             {
-                changes.Add(new SchemaChange(
-                    ChangeSeverity.Breaking,
-                    $"property '{name}' was removed"));
+                AddChange(changes, ChangeSeverity.Breaking, path, $"property '{name}' was removed");
             }
         }
 
-        // Added properties — non-breaking unless they land in `required`.
-        foreach (var name in nextProps.Keys)
+        foreach (var name in nextProperties.Keys)
         {
-            if (!prevProps.ContainsKey(name))
+            if (!previousProperties.ContainsKey(name))
             {
                 var nowRequired = nextRequired.Contains(name);
-                changes.Add(new SchemaChange(
+                AddChange(
+                    changes,
                     nowRequired ? ChangeSeverity.Breaking : ChangeSeverity.NonBreaking,
+                    path,
                     nowRequired
                         ? $"property '{name}' was added as required"
-                        : $"optional property '{name}' was added"));
+                        : $"optional property '{name}' was added");
             }
         }
 
-        // Type narrowing/swap on retained properties — breaking.
-        foreach (var (name, prevSchema) in prevProps)
+        foreach (var (name, previousProperty) in previousProperties)
         {
-            if (!nextProps.TryGetValue(name, out var nextSchema))
+            if (nextProperties.TryGetValue(name, out var nextProperty))
+            {
+                DiffSchema(
+                    previousProperty,
+                    nextProperty,
+                    $"{path}.properties['{name}']",
+                    changes);
+            }
+        }
+
+        foreach (var name in nextRequired)
+        {
+            var reportedAsNewRequiredProperty = !previousProperties.ContainsKey(name)
+                && nextProperties.ContainsKey(name);
+            if (!previousRequired.Contains(name) && !reportedAsNewRequiredProperty)
+            {
+                AddChange(changes, ChangeSeverity.Breaking, path, $"property '{name}' became required");
+            }
+        }
+
+        foreach (var name in previousRequired)
+        {
+            if (nextProperties.ContainsKey(name) && !nextRequired.Contains(name))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.NonBreaking,
+                    path,
+                    $"property '{name}' is no longer required");
+            }
+        }
+    }
+
+    private static void DiffType(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadType = TryGetKeyword(previous, "type", out var previousType);
+        var hasType = TryGetKeyword(next, "type", out var nextType);
+        if (!hadType && !hasType)
+        {
+            return;
+        }
+
+        if (hadType && !hasType)
+        {
+            AddChange(changes, ChangeSeverity.NonBreaking, path, "declared type constraint was removed");
+        }
+        else if (!hadType && hasType)
+        {
+            AddChange(changes, ChangeSeverity.Breaking, path, "declared type constraint was added");
+        }
+        else if (!JsonElement.DeepEquals(previousType, nextType))
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.Breaking,
+                path,
+                $"declared type changed from {previousType.GetRawText()} to {nextType.GetRawText()}");
+        }
+    }
+
+    private static void DiffEnum(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadEnum = TryGetKeyword(previous, "enum", out var previousEnum);
+        var hasEnum = TryGetKeyword(next, "enum", out var nextEnum);
+        if (!hadEnum && !hasEnum)
+        {
+            return;
+        }
+
+        if (!hadEnum || !hasEnum)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.Breaking,
+                path,
+                "enum constraint was added or removed");
+            return;
+        }
+
+        if ((hadEnum && previousEnum.ValueKind != JsonValueKind.Array)
+            || (hasEnum && nextEnum.ValueKind != JsonValueKind.Array))
+        {
+            if (!hadEnum || !hasEnum || !JsonElement.DeepEquals(previousEnum, nextEnum))
+            {
+                AddChange(changes, ChangeSeverity.Breaking, path, "enum constraint changed shape");
+            }
+
+            return;
+        }
+
+        var previousMembers = previousEnum.EnumerateArray().ToArray();
+        var nextMembers = nextEnum.EnumerateArray().ToArray();
+
+        foreach (var member in previousMembers)
+        {
+            if (!ContainsEquivalent(nextMembers, member))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Breaking,
+                    path,
+                    $"enum member {member.GetRawText()} was removed");
+            }
+        }
+
+        foreach (var member in nextMembers)
+        {
+            if (!ContainsEquivalent(previousMembers, member))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Notice,
+                    path,
+                    $"enum member {member.GetRawText()} was added");
+            }
+        }
+    }
+
+    private static void DiffExactConstraint(
+        JsonElement previous,
+        JsonElement next,
+        string keyword,
+        string path,
+        bool removalIsBreaking,
+        List<SchemaChange> changes)
+    {
+        var hadConstraint = TryGetKeyword(previous, keyword, out var previousConstraint);
+        var hasConstraint = TryGetKeyword(next, keyword, out var nextConstraint);
+        if (!hadConstraint && !hasConstraint)
+        {
+            return;
+        }
+
+        if (hadConstraint
+            && hasConstraint
+            && JsonElement.DeepEquals(previousConstraint, nextConstraint))
+        {
+            return;
+        }
+
+        if (hadConstraint && !hasConstraint && !removalIsBreaking)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.NonBreaking,
+                path,
+                $"'{keyword}' constraint was removed");
+            return;
+        }
+
+        AddChange(changes, ChangeSeverity.Breaking, path, $"'{keyword}' constraint changed");
+    }
+
+    private static void DiffMinimum(
+        JsonElement previous,
+        JsonElement next,
+        string keyword,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadMinimum = TryGetKeyword(previous, keyword, out var previousMinimum);
+        var hasMinimum = TryGetKeyword(next, keyword, out var nextMinimum);
+        if (!hadMinimum && !hasMinimum)
+        {
+            return;
+        }
+
+        var validPrevious = !hadMinimum
+            || (previousMinimum.ValueKind == JsonValueKind.Number
+                && previousMinimum.TryGetInt64(out var previousValue)
+                && previousValue >= 0);
+        var validNext = !hasMinimum
+            || (nextMinimum.ValueKind == JsonValueKind.Number
+                && nextMinimum.TryGetInt64(out var nextValue)
+                && nextValue >= 0);
+        if (!validPrevious || !validNext)
+        {
+            if (!hadMinimum
+                || !hasMinimum
+                || !JsonElement.DeepEquals(previousMinimum, nextMinimum))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Breaking,
+                    path,
+                    $"'{keyword}' constraint changed shape");
+            }
+
+            return;
+        }
+
+        var previousResolved = hadMinimum ? previousMinimum.GetInt64() : 0;
+        var nextResolved = hasMinimum ? nextMinimum.GetInt64() : 0;
+        if (nextResolved > previousResolved)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.Breaking,
+                path,
+                $"'{keyword}' increased from {previousResolved} to {nextResolved}");
+        }
+        else if (nextResolved < previousResolved)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.NonBreaking,
+                path,
+                $"'{keyword}' decreased from {previousResolved} to {nextResolved}");
+        }
+    }
+
+    private static void DiffItems(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadItems = TryGetKeyword(previous, "items", out var previousItems);
+        var hasItems = TryGetKeyword(next, "items", out var nextItems);
+        if (!hadItems && !hasItems)
+        {
+            return;
+        }
+
+        if (!hadItems || !hasItems)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.Breaking,
+                path,
+                "'items' schema was added or removed");
+            return;
+        }
+
+        DiffSchema(previousItems, nextItems, $"{path}.items", changes);
+    }
+
+    private static void DiffUnion(
+        JsonElement previous,
+        JsonElement next,
+        string keyword,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadUnion = TryGetKeyword(previous, keyword, out var previousUnion);
+        var hasUnion = TryGetKeyword(next, keyword, out var nextUnion);
+        if (!hadUnion && !hasUnion)
+        {
+            return;
+        }
+
+        if (!hadUnion
+            || !hasUnion
+            || previousUnion.ValueKind != JsonValueKind.Array
+            || nextUnion.ValueKind != JsonValueKind.Array)
+        {
+            if (!hadUnion || !hasUnion || !JsonElement.DeepEquals(previousUnion, nextUnion))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Breaking,
+                    path,
+                    $"'{keyword}' union changed shape");
+            }
+
+            return;
+        }
+
+        var previousArms = previousUnion.EnumerateArray().ToArray();
+        var nextArms = nextUnion.EnumerateArray().ToArray();
+        foreach (var arm in previousArms)
+        {
+            if (!ContainsEquivalent(nextArms, arm))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Breaking,
+                    path,
+                    $"'{keyword}' union arm {arm.GetRawText()} was removed or narrowed");
+            }
+        }
+
+        foreach (var arm in nextArms)
+        {
+            if (!ContainsEquivalent(previousArms, arm))
+            {
+                AddChange(
+                    changes,
+                    keyword == "anyOf" ? ChangeSeverity.Notice : ChangeSeverity.Breaking,
+                    path,
+                    $"'{keyword}' union arm {arm.GetRawText()} was added");
+            }
+        }
+    }
+
+    private static void DiffUnhandledKeywords(
+        JsonElement previous,
+        JsonElement next,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var previousKeywords = ReadObjectMembers(previous);
+        var nextKeywords = ReadObjectMembers(next);
+        var keywords = previousKeywords.Keys
+            .Concat(nextKeywords.Keys)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var keyword in keywords)
+        {
+            if (HandledKeywords.Contains(keyword) || IsAnnotation(keyword))
             {
                 continue;
             }
 
-            var prevType = ReadType(prevSchema);
-            var nextType = ReadType(nextSchema);
-            if (prevType is not null && nextType is not null && prevType != nextType)
+            var hadKeyword = previousKeywords.TryGetValue(keyword, out var previousValue);
+            var hasKeyword = nextKeywords.TryGetValue(keyword, out var nextValue);
+            if (!hadKeyword || !hasKeyword || !JsonElement.DeepEquals(previousValue, nextValue))
             {
-                changes.Add(new SchemaChange(
+                AddChange(
+                    changes,
                     ChangeSeverity.Breaking,
-                    $"property '{name}' changed type from '{prevType}' to '{nextType}'"));
-            }
-
-            // Inline enum member evolution on a retained property.
-            DiffEnumMembers(ReadEnumValues(prevSchema), ReadEnumValues(nextSchema), name, changes);
-        }
-
-        // Enum member evolution (DR-18) — the schema itself may BE an enum: TypeSpec
-        // closed enums emit as a top-level `{ "type": "string", "enum": [...] }`
-        // referenced by $ref, so diff the root enum member list too.
-        DiffEnumMembers(ReadEnumValues(previous), ReadEnumValues(next), propertyName: null, changes);
-
-        // Newly-required existing properties — breaking.
-        foreach (var name in nextRequired)
-        {
-            if (prevProps.ContainsKey(name) && !prevRequired.Contains(name))
-            {
-                changes.Add(new SchemaChange(
-                    ChangeSeverity.Breaking,
-                    $"property '{name}' became required"));
+                    path,
+                    $"unsupported compatibility keyword '{keyword}' changed; safety cannot be proven");
             }
         }
-
-        // Relaxed-required (was required, now optional) — non-breaking.
-        foreach (var name in prevRequired)
-        {
-            if (!nextRequired.Contains(name) && nextProps.ContainsKey(name))
-            {
-                changes.Add(new SchemaChange(
-                    ChangeSeverity.NonBreaking,
-                    $"property '{name}' is no longer required"));
-            }
-        }
-
-        return new SchemaDiffResult(changes);
     }
 
     private static IReadOnlyDictionary<string, JsonElement> ReadProperties(JsonElement schema)
     {
-        var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        if (schema.ValueKind == JsonValueKind.Object
-            && schema.TryGetProperty("properties", out var props)
-            && props.ValueKind == JsonValueKind.Object)
+        if (TryGetKeyword(schema, "properties", out var properties)
+            && properties.ValueKind == JsonValueKind.Object)
         {
-            foreach (var prop in props.EnumerateObject())
-            {
-                result[prop.Name] = prop.Value;
-            }
+            return ReadObjectMembers(properties);
         }
 
-        return result;
+        return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
     }
 
     private static IReadOnlySet<string> ReadRequired(JsonElement schema)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
-        if (schema.ValueKind == JsonValueKind.Object
-            && schema.TryGetProperty("required", out var required)
+        if (TryGetKeyword(schema, "required", out var required)
             && required.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in required.EnumerateArray())
@@ -220,77 +562,45 @@ public static class JsonSchemaDiff
         return result;
     }
 
-    private static string? ReadType(JsonElement propertySchema)
+    private static IReadOnlyDictionary<string, JsonElement> ReadObjectMembers(JsonElement value)
     {
-        if (propertySchema.ValueKind == JsonValueKind.Object
-            && propertySchema.TryGetProperty("type", out var type)
-            && type.ValueKind == JsonValueKind.String)
+        var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (value.ValueKind == JsonValueKind.Object)
         {
-            return type.GetString();
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyList<string> ReadEnumValues(JsonElement schema)
-    {
-        var result = new List<string>();
-        if (schema.ValueKind == JsonValueKind.Object
-            && schema.TryGetProperty("enum", out var members)
-            && members.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var member in members.EnumerateArray())
+            foreach (var property in value.EnumerateObject())
             {
-                // Only string members are wire tokens for a closed enum; anything
-                // else is outside this contract's scope and is ignored.
-                if (member.ValueKind == JsonValueKind.String)
-                {
-                    result.Add(member.GetString()!);
-                }
+                result[property.Name] = property.Value;
             }
         }
 
         return result;
     }
 
-    private static void DiffEnumMembers(
-        IReadOnlyList<string> previous,
-        IReadOnlyList<string> next,
-        string? propertyName,
-        List<SchemaChange> changes)
+    private static bool TryGetKeyword(
+        JsonElement schema,
+        string keyword,
+        out JsonElement value)
     {
-        if (previous.Count == 0 && next.Count == 0)
+        if (schema.ValueKind == JsonValueKind.Object)
         {
-            return;
+            return schema.TryGetProperty(keyword, out value);
         }
 
-        var previousSet = new HashSet<string>(previous, StringComparer.Ordinal);
-        var nextSet = new HashSet<string>(next, StringComparer.Ordinal);
-        var prefix = propertyName is null ? string.Empty : $"property '{propertyName}' ";
-
-        // Removed (or renamed-away) member ⇒ BREAKING: a producer may still emit it
-        // and a consumer may still switch on it, yet it is gone from the closed set.
-        // (A rename surfaces as a removal + an add, so the removal makes it BREAKING.)
-        foreach (var member in previous)
-        {
-            if (!nextSet.Contains(member))
-            {
-                changes.Add(new SchemaChange(
-                    ChangeSeverity.Breaking,
-                    $"{prefix}enum member '{member}' was removed"));
-            }
-        }
-
-        // Added member ⇒ NOTICE: additive on a minor, but flagged — strict converters
-        // reject unknown members, so consumers must upgrade before producers emit it.
-        foreach (var member in next)
-        {
-            if (!previousSet.Contains(member))
-            {
-                changes.Add(new SchemaChange(
-                    ChangeSeverity.Notice,
-                    $"{prefix}enum member '{member}' was added"));
-            }
-        }
+        value = default;
+        return false;
     }
+
+    private static bool ContainsEquivalent(IEnumerable<JsonElement> values, JsonElement expected) =>
+        values.Any(value => JsonElement.DeepEquals(value, expected));
+
+    private static bool IsAnnotation(string keyword) =>
+        AnnotationKeywords.Contains(keyword)
+        || keyword.StartsWith("x-", StringComparison.Ordinal);
+
+    private static void AddChange(
+        List<SchemaChange> changes,
+        ChangeSeverity severity,
+        string path,
+        string description) =>
+        changes.Add(new SchemaChange(severity, $"{path}: {description}"));
 }

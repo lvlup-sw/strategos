@@ -1,0 +1,31 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionReferenceV1.json",
+    "type": "object",
+    "properties": {
+        "domainName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ontology domain name."
+        },
+        "objectTypeName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ontology object type name."
+        },
+        "actionName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ontology action name."
+        }
+    },
+    "required": [
+        "domainName",
+        "objectTypeName",
+        "actionName"
+    ],
+    "description": "Language-neutral identity of an ontology action performed by a workflow step\noccurrence. Every component is a name; no runtime or CLR type identity crosses\nthe wire boundary."
+}

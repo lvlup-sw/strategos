@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryWorkflowActionReferenceInvalid.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF040"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Workflow step action reference is invalid"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Reachable step '{0}' in workflow '{1}' has {2}. Every reachable step must carry one statically closed action reference that resolves exactly once by (DomainName, ObjectTypeName, ActionName)."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.13.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF040 — Workflow step action reference is invalid (#167)."
+}

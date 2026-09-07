@@ -97,6 +97,41 @@ public class ApprovalRejectionBuilderTests
         await Assert.That(builder.Steps[1].StepType).IsEqualTo(typeof(NotifyAdminStep));
     }
 
+    /// <summary>
+    /// Verifies that the configured overload carries ordinary configuration and the
+    /// occurrence-scoped ontology action onto the rejection step definition.
+    /// </summary>
+    [Test]
+    public async Task Then_WithConfiguration_PreservesConfigurationAndAction()
+    {
+        // Arrange
+        var builder = new ApprovalRejectionBuilder<TestWorkflowState>();
+        var action = new WorkflowActionReference("orders", "Order", "reject");
+
+        // Act
+        var result = builder.Then<NotifyAdminStep>(step => step
+            .WithRetry(3)
+            .Performs(action));
+
+        // Assert
+        await Assert.That(result).IsTypeOf<IApprovalRejectionBuilder<TestWorkflowState>>();
+        await Assert.That(builder.Steps).HasCount().EqualTo(1);
+        await Assert.That(builder.Steps[0].Configuration!.Retry!.MaxAttempts).IsEqualTo(3);
+        await Assert.That(builder.Steps[0].Action).IsEqualTo(action);
+    }
+
+    /// <summary>
+    /// Verifies that the configured overload rejects a null callback.
+    /// </summary>
+    [Test]
+    public async Task Then_WithNullConfiguration_ThrowsArgumentNullException()
+    {
+        var builder = new ApprovalRejectionBuilder<TestWorkflowState>();
+
+        await Assert.That(() => builder.Then<NotifyAdminStep>(null!))
+            .Throws<ArgumentNullException>();
+    }
+
     // =============================================================================
     // B. Complete Tests
     // =============================================================================

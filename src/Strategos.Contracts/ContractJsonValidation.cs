@@ -20,6 +20,29 @@ internal static class ContractJsonValidation
         }
     }
 
+    internal static void RequireNonWhitespace(
+        string? value,
+        string propertyName,
+        bool required)
+    {
+        if (value is null)
+        {
+            if (required)
+            {
+                throw new JsonException(
+                    $"Required contract property '{propertyName}' cannot be null.");
+            }
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new JsonException(
+                $"Contract property '{propertyName}' must contain at least one non-whitespace character.");
+        }
+    }
+
     internal static void RequireEnumTypeName(
         bool isEnum,
         string? value,

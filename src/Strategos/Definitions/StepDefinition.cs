@@ -72,6 +72,15 @@ public sealed record StepDefinition
     public StepConfigurationDefinition? Configuration { get; init; }
 
     /// <summary>
+    /// Gets the language-neutral ontology action performed by this step occurrence.
+    /// </summary>
+    /// <remarks>
+    /// This identity belongs to the occurrence rather than the CLR step type, allowing
+    /// the same implementation type to be reused for different ontology actions.
+    /// </remarks>
+    public WorkflowActionReference? Action { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether this step is part of a loop body.
     /// </summary>
     public bool IsLoopBodyStep { get; init; }

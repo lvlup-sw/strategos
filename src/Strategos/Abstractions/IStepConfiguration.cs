@@ -40,6 +40,21 @@ public interface IStepConfiguration<TState>
     where TState : class, IWorkflowState
 {
     /// <summary>
+    /// Declares the ontology action performed by this specific step occurrence.
+    /// </summary>
+    /// <param name="action">The language-neutral action identity.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an action has already been declared for this occurrence.
+    /// </exception>
+    /// <remarks>
+    /// The binding is occurrence-scoped: two uses of the same step type may perform
+    /// different actions.
+    /// </remarks>
+    IStepConfiguration<TState> Performs(WorkflowActionReference action);
+
+    /// <summary>
     /// Sets the minimum confidence threshold for automatic continuation.
     /// </summary>
     /// <param name="threshold">The confidence threshold (0.0 to 1.0).</param>

@@ -18,11 +18,41 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
     where TState : class, IWorkflowState
 {
     private StepConfigurationDefinition _configuration = StepConfigurationDefinition.Empty;
+    private WorkflowActionReference? _action;
+    private bool _hasActionDeclaration;
 
     /// <summary>
-    /// Gets the built step configuration definition.
+    /// Applies both the ordinary step configuration and occurrence-scoped action identity
+    /// accumulated by this builder to <paramref name="step"/>.
     /// </summary>
-    internal StepConfigurationDefinition Configuration => _configuration;
+    /// <param name="step">The step occurrence being configured.</param>
+    /// <returns>A new step definition carrying all accumulated values.</returns>
+    internal StepDefinition ApplyTo(StepDefinition step)
+    {
+        ArgumentNullException.ThrowIfNull(step, nameof(step));
+
+        return step with
+        {
+            Configuration = _configuration,
+            Action = _action,
+        };
+    }
+
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Performs(WorkflowActionReference action)
+    {
+        ArgumentNullException.ThrowIfNull(action, nameof(action));
+
+        if (_hasActionDeclaration)
+        {
+            throw new InvalidOperationException(
+                "Performs can be declared only once for a step occurrence.");
+        }
+
+        _action = action;
+        _hasActionDeclaration = true;
+        return this;
+    }
 
     /// <inheritdoc/>
     public IStepConfiguration<TState> RequireConfidence(double threshold)

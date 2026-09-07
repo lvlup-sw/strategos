@@ -59,6 +59,12 @@ public sealed record DelegateStep : StepDefinition
     public StepConfigurationDefinition? Configuration { get; init; }
 
     /// <summary>
+    /// Ontology action performed by this specific step occurrence.
+    /// </summary>
+    [JsonPropertyName("action")]
+    public ActionReferenceV1? Action { get; init; }
+
+    /// <summary>
     /// Declares this step was a lambda whose body was dropped (LB-1). Always true.
     /// </summary>
     [JsonPropertyName("lambda")]

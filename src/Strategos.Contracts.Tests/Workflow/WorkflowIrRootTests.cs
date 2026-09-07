@@ -4,8 +4,6 @@
 // </copyright>
 // =============================================================================
 
-using System.Text.Json;
-
 namespace Strategos.Contracts.Tests.Workflow;
 
 /// <summary>
@@ -44,6 +42,8 @@ public class WorkflowIrRootTests
         await Assert.That(required.Contains("schemaVersion")).IsTrue();
         await Assert.That(required.Contains("name")).IsTrue()
             .Because("the workflow name is the IR identity.");
+        var name = props.GetProperty("name");
+        await Assert.That(name.GetProperty("minLength").GetInt32()).IsEqualTo(1);
 
         // The ordered step collection is present.
         await Assert.That(props.TryGetProperty("steps", out var steps)).IsTrue();

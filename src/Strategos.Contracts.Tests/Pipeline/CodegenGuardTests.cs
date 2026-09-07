@@ -9,10 +9,9 @@ namespace Strategos.Contracts.Tests.Pipeline;
 /// <summary>
 /// T5 — the codegen-guard. The emitted <c>Generated/*.g.cs</c> are emitter-owned;
 /// a hand-edit must be mechanically detected (DIM-6), never trusted by
-/// convention. These tests assert (a) the guard workflow exists and runs the
-/// regenerate-then-<c>git diff --exit-code</c> contract, and (b) a hand-edit to a
-/// generated file diverges from freshly-emitted output (i.e. the guard's diff is
-/// non-empty), so CI fails.
+/// convention. These tests assert (a) the guard workflow checks both tracked
+/// diffs and newly emitted untracked files after regeneration, and (b) a hand-edit
+/// to a generated file diverges from freshly-emitted output, so CI fails.
 /// </summary>
 [Property("Category", "Pipeline")]
 [NotInParallel("tsp-compile")]
@@ -20,7 +19,8 @@ public sealed class CodegenGuardTests
 {
     /// <summary>
     /// Verifies the codegen-guard workflow exists and encodes the
-    /// regenerate-then-diff contract over <c>Generated/</c> and <c>schemas/</c>.
+    /// regenerate-then-diff contract over <c>Generated/</c> and <c>schemas/</c>, including
+    /// newly emitted files that are not yet tracked by Git.
     /// </summary>
     [Test]
     public async Task CodegenGuard_Workflow_RunsRegenerateThenDiff()
@@ -31,10 +31,41 @@ public sealed class CodegenGuardTests
             .Because($"expected guard workflow at {workflow}");
 
         var yaml = await File.ReadAllTextAsync(workflow);
-        await Assert.That(yaml).Contains("contracts-codegen.sh");
-        await Assert.That(yaml).Contains("git diff --exit-code");
+        var regenerate = yaml.IndexOf("contracts-codegen.sh", StringComparison.Ordinal);
+        var trackedDiff = yaml.IndexOf("git diff --exit-code", StringComparison.Ordinal);
+        var untrackedDiff = yaml.IndexOf(
+            "git status --porcelain --untracked-files=all",
+            StringComparison.Ordinal);
+
+        await Assert.That(regenerate >= 0).IsTrue();
+        await Assert.That(trackedDiff > regenerate).IsTrue();
+        await Assert.That(untrackedDiff > trackedDiff).IsTrue();
         await Assert.That(yaml).Contains("Generated");
         await Assert.That(yaml).Contains("schemas");
+    }
+
+    /// <summary>The two Contracts PR jobs must use the reviewed npm lockfile without fallback.</summary>
+    [Test]
+    public async Task ContractsPrWorkflows_UseLockedNodeRestore()
+    {
+        string[] workflows =
+        [
+            Path.Combine(RepoLayout.RepoRoot, ".github", "workflows", "ci.yml"),
+            Path.Combine(
+                RepoLayout.RepoRoot,
+                ".github",
+                "workflows",
+                "contracts-codegen-guard.yml"),
+        ];
+
+        foreach (var workflow in workflows)
+        {
+            var yaml = await File.ReadAllTextAsync(workflow);
+            await Assert.That(yaml).Contains("run: npm ci");
+            await Assert.That(yaml.Contains("npm ci || npm install", StringComparison.Ordinal))
+                .IsFalse()
+                .Because($"{Path.GetFileName(workflow)} must fail closed when its lockfile is invalid.");
+        }
     }
 
     /// <summary>
@@ -100,5 +131,58 @@ public sealed class CodegenGuardTests
         {
             Directory.Delete(tempOut, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// The Contracts tag workflow re-establishes codegen and test evidence at the
+    /// checked-out tag before it packs immutable NuGet bytes.
+    /// </summary>
+    [Test]
+    public async Task ContractsRelease_RegeneratesAndTestsBeforePack()
+    {
+        var workflow = Path.Combine(
+            RepoLayout.RepoRoot, ".github", "workflows", "publish-contracts.yml");
+        var yaml = await File.ReadAllTextAsync(workflow);
+
+        var tagBinding = yaml.IndexOf("git rev-list -n 1", StringComparison.Ordinal);
+        var lockedRestore = yaml.IndexOf("npm ci", StringComparison.Ordinal);
+        var regenerate = yaml.IndexOf("contracts-codegen.sh", StringComparison.Ordinal);
+        var tests = yaml.IndexOf("$CONTRACTS_TESTS_PROJECT", StringComparison.Ordinal);
+        var cleanDiff = yaml.IndexOf("git diff --exit-code", StringComparison.Ordinal);
+        var untrackedDiff = yaml.IndexOf(
+            "git status --porcelain --untracked-files=all",
+            StringComparison.Ordinal);
+        var publishedBaseline = yaml.IndexOf(
+            "api.nuget.org/v3-flatcontainer",
+            StringComparison.Ordinal);
+        var compatibility = yaml.IndexOf("contracts-schema-diff.mjs", StringComparison.Ordinal);
+        var pack = yaml.IndexOf("dotnet pack", StringComparison.Ordinal);
+        var candidateDigestStep = yaml.IndexOf(
+            "- name: Record candidate package digest",
+            StringComparison.Ordinal);
+        var candidateDigest = yaml.IndexOf(
+            "candidate_sha256=\"$(sha256sum",
+            StringComparison.Ordinal);
+        var push = yaml.IndexOf("dotnet nuget push", StringComparison.Ordinal);
+
+        await Assert.That(tagBinding >= 0).IsTrue();
+        await Assert.That(lockedRestore > tagBinding).IsTrue();
+        await Assert.That(regenerate > lockedRestore).IsTrue();
+        await Assert.That(tests > regenerate).IsTrue();
+        await Assert.That(cleanDiff > tests).IsTrue();
+        await Assert.That(untrackedDiff > cleanDiff).IsTrue();
+        await Assert.That(publishedBaseline > untrackedDiff).IsTrue();
+        await Assert.That(compatibility > publishedBaseline).IsTrue();
+        await Assert.That(pack > compatibility).IsTrue();
+        await Assert.That(candidateDigestStep > pack).IsTrue();
+        await Assert.That(candidateDigest > candidateDigestStep).IsTrue();
+        await Assert.That(push > candidateDigest).IsTrue();
+        await Assert.That(yaml).Contains("nupkg_sha256=$candidate_sha256");
+        await Assert.That(yaml.Contains("--skip-duplicate", StringComparison.Ordinal)).IsFalse()
+            .Because("a duplicate push must not turn different local package bytes into a green release.");
+        await Assert.That(yaml).Contains(
+            "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
+        await Assert.That(yaml.Contains("packages: write", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(yaml).Contains("persist-credentials: false");
     }
 }

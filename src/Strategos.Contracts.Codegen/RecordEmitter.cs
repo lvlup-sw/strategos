@@ -28,6 +28,7 @@ namespace Strategos.Contracts.Codegen;
 public static class RecordEmitter
 {
     private const string Namespace = "Strategos.Contracts.Generated";
+    private const string ContainsNonWhitespacePattern = ".*\\S.*";
 
     /// <summary>Generates records/enums for every <c>*.json</c> schema in <paramref name="schemasDir"/>.</summary>
     /// <param name="schemasDir">Directory containing emitted JSON Schema documents.</param>
@@ -380,6 +381,19 @@ public static class RecordEmitter
                 .Where(property => property.Required && IsReferenceProperty(property, docs))
                 .ToList()
             : [];
+        var nonWhitespaceProperties = emitProps
+            .Select(property => new
+            {
+                Property = property,
+                RequiresNonWhitespace = string.Equals(
+                    property.Pattern,
+                    ContainsNonWhitespacePattern,
+                    StringComparison.Ordinal),
+            })
+            .Where(item => item.RequiresNonWhitespace)
+            .ToList();
+        var requiresValidation = validatedReferenceProperties.Count > 0
+            || nonWhitespaceProperties.Count > 0;
 
         sb.Append("public sealed record ").Append(doc.TypeName);
         if (isUnionArm)
@@ -387,7 +401,7 @@ public static class RecordEmitter
             sb.Append(" : ").Append(binding!.BaseTypeName);
         }
 
-        if (validatedReferenceProperties.Count > 0)
+        if (requiresValidation)
         {
             sb.Append(isUnionArm ? ", " : " : ")
                 .Append("IJsonOnDeserialized, IJsonOnSerializing");
@@ -431,7 +445,7 @@ public static class RecordEmitter
             }
         }
 
-        if (validatedReferenceProperties.Count > 0)
+        if (requiresValidation)
         {
             sb.AppendLine();
             sb.AppendLine("    void IJsonOnDeserialized.OnDeserialized() =>");
@@ -448,6 +462,19 @@ public static class RecordEmitter
                     .Append(property.IsArray ? "RequireNoNullElements" : "RequireNotNull")
                     .Append('(').Append(ToPascalCase(property.WireName)).Append(", \"")
                     .Append(doc.TypeName).Append('.').Append(property.WireName).AppendLine("\");");
+            }
+
+            foreach (var item in nonWhitespaceProperties)
+            {
+                var property = item.Property;
+                if (item.RequiresNonWhitespace)
+                {
+                    sb.Append("        global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(")
+                        .Append(ToPascalCase(property.WireName)).Append(", \"")
+                        .Append(doc.TypeName).Append('.').Append(property.WireName)
+                        .Append("\", required: ").Append(property.Required ? "true" : "false")
+                        .AppendLine(");");
+                }
             }
 
             if (string.Equals(doc.TypeName, "ActionPropertyReferenceV1", StringComparison.Ordinal))
@@ -646,6 +673,9 @@ public static class RecordEmitter
 
         /// <summary>JSON scalar type of the array items, if not a ref.</summary>
         public string? ItemScalarType { get; init; }
+
+        /// <summary>JSON Schema <c>pattern</c> for a string property.</summary>
+        public string? Pattern { get; init; }
     }
 
     /// <summary>A classified JSON Schema document.</summary>
@@ -863,7 +893,14 @@ public static class RecordEmitter
                 Required = required,
                 ScalarType = scalar,
                 ConstValue = constValue,
+                Pattern = ReadPattern(prop),
             };
         }
+
+        private static string? ReadPattern(JsonElement schema) =>
+            schema.TryGetProperty("pattern", out var pattern)
+            && pattern.ValueKind == JsonValueKind.String
+                ? pattern.GetString()
+                : null;
     }
 }

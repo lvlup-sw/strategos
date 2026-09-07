@@ -31,6 +31,10 @@
             "$ref": "StepConfigurationDefinition.json",
             "description": "Optional step configuration (confidence / retry / compensation / …)."
         },
+        "action": {
+            "$ref": "ActionReferenceV1.json",
+            "description": "Ontology action performed by this specific step occurrence."
+        },
         "lambda": {
             "type": "boolean",
             "const": true,

@@ -111,6 +111,42 @@ public class ApprovalEscalationBuilderTests
         await Assert.That(builder.Steps[1].StepType).IsEqualTo(typeof(NotifyAdminStep));
     }
 
+    /// <summary>
+    /// Verifies that the configured overload carries ordinary configuration and the
+    /// occurrence-scoped ontology action onto the escalation step definition.
+    /// </summary>
+    [Test]
+    public async Task Then_WithConfiguration_PreservesConfigurationAndAction()
+    {
+        // Arrange
+        var builder = new ApprovalEscalationBuilder<TestWorkflowState>();
+        var action = new WorkflowActionReference("orders", "Order", "escalate");
+
+        // Act
+        var result = builder.Then<NotifyAdminStep>(step => step
+            .WithTimeout(TimeSpan.FromMinutes(2))
+            .Performs(action));
+
+        // Assert
+        await Assert.That(result).IsTypeOf<IApprovalEscalationBuilder<TestWorkflowState>>();
+        await Assert.That(builder.Steps).HasCount().EqualTo(1);
+        await Assert.That(builder.Steps[0].Configuration!.Timeout)
+            .IsEqualTo(TimeSpan.FromMinutes(2));
+        await Assert.That(builder.Steps[0].Action).IsEqualTo(action);
+    }
+
+    /// <summary>
+    /// Verifies that the configured overload rejects a null callback.
+    /// </summary>
+    [Test]
+    public async Task Then_WithNullConfiguration_ThrowsArgumentNullException()
+    {
+        var builder = new ApprovalEscalationBuilder<TestWorkflowState>();
+
+        await Assert.That(() => builder.Then<NotifyAdminStep>(null!))
+            .Throws<ArgumentNullException>();
+    }
+
     // =============================================================================
     // B. EscalateTo Tests
     // =============================================================================

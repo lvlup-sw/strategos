@@ -35,9 +35,22 @@ internal sealed class LoopForkJoinBuilder<TState> : ILoopForkJoinBuilder<TState>
     public ILoopBuilder<TState> Join<TJoinStep>()
         where TJoinStep : class, IWorkflowStep<TState>
     {
-        // Create the join step
-        var joinStep = StepDefinition.Create(typeof(TJoinStep));
+        return CompleteJoin(StepDefinition.Create(typeof(TJoinStep)));
+    }
 
+    /// <inheritdoc/>
+    public ILoopBuilder<TState> Join<TJoinStep>(Action<IStepConfiguration<TState>> configure)
+        where TJoinStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        var configuration = new StepConfigurationBuilder<TState>();
+        configure(configuration);
+        return CompleteJoin(configuration.ApplyTo(StepDefinition.Create(typeof(TJoinStep))));
+    }
+
+    private ILoopBuilder<TState> CompleteJoin(StepDefinition joinStep)
+    {
         // Complete the fork point with the join step ID
         var completedForkPoint = _pendingForkPoint with { JoinStepId = joinStep.StepId };
 
