@@ -162,10 +162,12 @@ cannot serve as a proved leaf in a bound workflow.
 For compile-time proof, use a direct
 `new WorkflowActionReference(domainName, objectTypeName, actionName)` with
 compile-time constant strings. The generator resolves that exact ordinal
-three-name tuple against the ontology action catalog. Missing references,
-factories, dynamic expressions, blank names, multiple declarations, and zero or
-multiple catalog matches fail with `AGWF040` rather than being accepted for
-runtime-only resolution. For imported workflow JSON, a malformed `action`
+three-name tuple against the ontology action catalog. In a workflow that an
+ontology action binds, missing references, factories, dynamic expressions,
+blank names, multiple declarations, and zero or multiple catalog matches fail
+with `AGWF040` rather than being accepted for runtime-only resolution. A
+workflow that no action binds is not proved, so its action references are
+carried but not checked. For imported workflow JSON, a malformed `action`
 object is rejected by the import front end as `AGWF023`; `AGWF040` applies only
 after an action reference has been accepted into the workflow model.
 

@@ -140,6 +140,33 @@ public class ActionBuilderOfTTests
     }
 
     [Test]
+    public async Task BoundToWorkflowThenBoundToTool_ClearsWorkflowCarrier()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);
+
+        builder.BoundToWorkflow("get-quote").BoundToTool("MarketData", "GetQuoteAsync");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Tool);
+        await Assert.That(descriptor.BoundWorkflow).IsNull();
+        await Assert.That(descriptor.BoundToolName).IsEqualTo("MarketData");
+    }
+
+    [Test]
+    public async Task BoundToToolThenBoundToWorkflow_ClearsToolCarrier()
+    {
+        var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);
+
+        builder.BoundToTool("MarketData", "GetQuoteAsync").BoundToWorkflow("get-quote");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Workflow);
+        await Assert.That(descriptor.BoundWorkflow).IsEqualTo(new WorkflowBindingReference("get-quote"));
+        await Assert.That(descriptor.BoundToolName).IsNull();
+        await Assert.That(descriptor.BoundToolMethod).IsNull();
+    }
+
+    [Test]
     public async Task BoundToTool_SetsBindingAndToolReference()
     {
         var builder = new ActionBuilder<TestPositionWithStatus>("GetQuote", Subject);

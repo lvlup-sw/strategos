@@ -45,6 +45,8 @@ internal sealed class ActionBuilder(string name, ActionSubject? subject = null) 
         ArgumentNullException.ThrowIfNull(workflow);
         _bindingType = ActionBindingType.Workflow;
         _boundWorkflow = workflow;
+        _boundToolName = null;
+        _boundToolMethod = null;
         return this;
     }
 
@@ -53,6 +55,7 @@ internal sealed class ActionBuilder(string name, ActionSubject? subject = null) 
         _bindingType = ActionBindingType.Tool;
         _boundToolName = toolName;
         _boundToolMethod = methodName;
+        _boundWorkflow = null;
         return this;
     }
 

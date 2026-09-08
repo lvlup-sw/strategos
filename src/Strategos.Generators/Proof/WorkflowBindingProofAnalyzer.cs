@@ -15,6 +15,85 @@ namespace Strategos.Generators.Proof;
 /// <summary>Proves compilation-local workflow action refinements.</summary>
 internal static class WorkflowBindingProofAnalyzer
 {
+    /// <summary>
+    /// Test-only fault seam. When set, it runs before the proof with the compilation under
+    /// analysis so a test can prove that an internal failure of the proof itself is reported
+    /// as a build error rather than as the Roslyn generator-crash warning. The delegate
+    /// receives the compilation so a test can throw only for its own fixture: the seam is a
+    /// process-wide static, and other generator tests run concurrently. Production never
+    /// assigns it.
+    /// </summary>
+    internal static Action<Compilation>? ProofFaultInjection { get; set; }
+
+    /// <summary>
+    /// Runs <see cref="Analyze"/> and converts any internal failure into one
+    /// <see cref="WorkflowDiagnostics.WorkflowContractUnprovable"/> error.
+    /// </summary>
+    /// <remarks>
+    /// Roslyn reports an exception escaping a source-output node as CS8785, a warning, and
+    /// discards every diagnostic the node would have produced. For a proof whose entire value
+    /// is that a refuted binding fails the build, that path would turn "could not prove" into
+    /// "nothing to report". The catch keeps the fail-closed contract: an unproved binding is an
+    /// error whether the analyzer refuted it or could not run.
+    /// </remarks>
+    /// <summary>
+    /// The builder method whose textual presence marks a compilation as one that binds; used
+    /// only on the fail-closed path, where the semantic binding set is unavailable.
+    /// </summary>
+    private const string BindingMethodName = "BoundToWorkflow";
+
+    internal static void AnalyzeFailClosed(
+        SourceProductionContext context,
+        Compilation compilation,
+        ImmutableArray<WorkflowModel> workflows)
+    {
+        try
+        {
+            ProofFaultInjection?.Invoke(compilation);
+            Analyze(context, compilation, workflows);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // An internal failure is an Error only for a compilation that has something to
+            // prove. The binding set itself is unknown once the scan has thrown, so the
+            // decision uses a conservative syntactic over-approximation: any tree that mentions
+            // the binding method. A compilation that never binds keeps building.
+            if (!MentionsWorkflowBinding(compilation, context.CancellationToken))
+            {
+                return;
+            }
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                WorkflowDiagnostics.WorkflowContractUnprovable,
+                Location.None,
+                "(every bound workflow)",
+                "(every bound action)",
+                $"the workflow binding proof failed internally with {exception.GetType().Name}: {exception.Message}"));
+        }
+    }
+
+    private static bool MentionsWorkflowBinding(Compilation compilation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return compilation.SyntaxTrees.Any(tree =>
+                tree.GetText(cancellationToken).ToString().Contains(BindingMethodName, StringComparison.Ordinal));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // If even the text scan fails, assume the compilation binds: silence is the wrong default.
+            return true;
+        }
+    }
+
     internal static void Analyze(
         SourceProductionContext context,
         Compilation compilation,

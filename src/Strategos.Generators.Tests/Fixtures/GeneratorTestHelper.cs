@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -287,6 +288,52 @@ public static class GeneratorTestHelper
         }
 
         return driver.GetRunResult();
+    }
+
+    /// <summary>
+    /// Runs <see cref="WorkflowIncrementalGenerator"/> over <paramref name="source"/> under the
+    /// given compilation options and returns the generator diagnostics as the consumer build
+    /// sees them: the driver applies the compilation's diagnostic options (<c>/nowarn</c>,
+    /// <c>#pragma warning</c>, rulesets) before recording them, so a suppressed diagnostic is
+    /// absent here. The fixture must compile on its own; a driver crash (CS8784/CS8785) is a
+    /// harness failure, never a result.
+    /// </summary>
+    /// <param name="source">The C# source to compile.</param>
+    /// <param name="options">The compilation options, including any specific diagnostic options.</param>
+    /// <returns>The generator diagnostics that survive the compilation options.</returns>
+    public static ImmutableArray<Diagnostic> RunWorkflowGeneratorThroughDriverFilter(
+        string source,
+        CSharpCompilationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(source, nameof(source));
+        ArgumentNullException.ThrowIfNull(options, nameof(options));
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references: GetMetadataReferences(),
+            options: options);
+
+        EnsureNoCompilerErrors(
+            compilation.GetDiagnostics(),
+            "The fixture source does not compile before generation");
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new WorkflowIncrementalGenerator());
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out _,
+            out var diagnostics);
+
+        var driverCrashes = diagnostics
+            .Where(static diagnostic => diagnostic.Id is "CS8784" or "CS8785")
+            .ToArray();
+        if (driverCrashes.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "The generator crashed inside the driver: " + DescribeDiagnostics(driverCrashes));
+        }
+
+        return diagnostics;
     }
 
     private static void EnsureNoCompilerErrors(

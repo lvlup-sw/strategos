@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **36 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **37 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.

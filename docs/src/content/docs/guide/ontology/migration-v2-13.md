@@ -10,6 +10,16 @@ immutable contract model and exact sequential proofs. This is an intentional
 source-breaking change: there is no compatibility initializer that accepts or
 parses a legacy expression string.
 
+## Upgrading from the last published release
+
+The examples below contrast 2.12 with 2.13 because the changes were staged
+that way, but 2.11 and 2.12 were never published: the last released package
+set is 2.10.0. A consumer that restores 2.13.0 absorbs the 2.11.0 changes in
+the same restore. Read the 2.11.0 section of the
+[CHANGELOG](https://github.com/lvlup-sw/strategos/blob/main/CHANGELOG.md)
+first; its action-calculus, identity-routing, and authentication changes are
+not repeated here.
+
 ## Approved versioning exception
 
 The maintainers approved issue #168 as a source-breaking **minor-version
@@ -368,6 +378,40 @@ is inline in the `ObjectTypeDescriptor.Actions` collection passed through
 Portable proof catalogs for referenced assemblies are deferred to
 [#204](https://github.com/lvlup-sw/strategos/issues/204).
 
+The proof runs inside the `LevelUp.Strategos.Generators` source generator. A
+project that references `LevelUp.Strategos.Ontology` but not the generator
+package compiles a `BoundToWorkflow(...)` binding with no diagnostic at all:
+nothing proves it and nothing reports that it is unproved. Add the generator
+package to every project that declares a workflow-bound action, or move the
+binding into the project that owns the workflow.
+
+The generator catalogs a binding only when the whole fluent chain from
+`obj.Action(...)` to `.BoundToWorkflow(...)` is one expression inside
+`DomainOntology.Define`. A `Define` body factored into helper methods, a
+binding applied to a builder held in a local, or a chain routed through an
+extension method fails closed as `AGWF042`. Inline the chain before upgrading.
+The same closure rule applies to the workflow side: a bound workflow's
+`Definition` must be one direct `Workflow<TState>.Create(...)...Finally<TStep>()`
+chain. A `Definition` that delegates to a helper method still generates the
+saga it generated on 2.12, but it cannot be proved and reports `AGWF042` while
+bound.
+
+The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), and `AGWF043`
+(emission collision) carry the `NotConfigurable` tag. `<NoWarn>`,
+`#pragma warning disable`, and `.editorconfig` severity entries do not suppress
+or downgrade them. The resolution diagnostics `AGWF039` (bound workflow not
+found) and `AGWF040` (action reference invalid) are Errors by default but stay
+configurable: a project whose workflow or ontology lives in another assembly,
+which the compilation-local proof cannot see until
+[#204](https://github.com/lvlup-sw/strategos/issues/204) lands, silences them
+explicitly with `<NoWarn>AGWF039</NoWarn>` in its project file. That entry is
+the visible, greppable record that the binding is declared but unproved; delete
+it when the cross-assembly proof ships. An internal failure of the proof itself
+is reported as `AGWF042` in any compilation that calls `BoundToWorkflow`, rather
+than as the Roslyn generator-crash warning, so a bound workflow never builds
+green because the analyzer did not run. A compilation that binds nothing is not
+affected by such a failure.
+
 The proof graph is keyed by effective phase name. Reusing one step type in
 multiple configured positions is valid only when the positions do not collapse
 to one phase identity with different action references. Use distinct step types,
@@ -471,8 +515,15 @@ edits remain hash-stable.
 - Register authoritative fact and custom predicate resolvers and test
   indeterminate, failure, and cancellation paths.
 - Replace direct `BoundWorkflowName` initializers with
-  `BoundWorkflow = new WorkflowBindingReference(...)`; existing
-  `.BoundToWorkflow(string)` calls may remain during staged adoption.
+  `BoundWorkflow = new WorkflowBindingReference(...)`, and replace every
+  reader of `descriptor.BoundWorkflowName` with `descriptor.BoundWorkflow?.WorkflowId`;
+  the string property no longer exists. Existing `.BoundToWorkflow(string)`
+  calls compile unchanged; they are proved (or rejected) once the project also
+  references `LevelUp.Strategos.Generators`.
+- Note that `.BoundToWorkflow(...)` and `.BoundToTool(...)` are now mutually
+  exclusive on a builder: the later call clears the other carrier, so a
+  descriptor can no longer report `BindingType.Tool` while still holding a
+  stale `BoundWorkflow`.
 - Add one direct, constant `.Performs(new WorkflowActionReference(...))` to
   every reachable named step occurrence in each bound workflow.
 - Resolve `AGWF039` through `AGWF043`; opaque or dynamic workflow contracts do

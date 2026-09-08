@@ -4,6 +4,7 @@
 // </copyright>
 // =============================================================================
 
+using System.Text.RegularExpressions;
 using Strategos.Contracts.SchemaDiff;
 
 namespace Strategos.Contracts.Tests.Pipeline;
@@ -912,6 +913,237 @@ public class SchemaDiffTests
         await Assert.That(workflow).Contains(
             "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
         await Assert.That(workflow).Contains("persist-credentials: false");
+    }
+
+    private const string DefinitionsBaseSchema =
+        """
+        {
+          "$id": "WorkflowDefinitionV1.json",
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/StepV1" }
+            }
+          },
+          "definitions": {
+            "StepV1": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" }
+              },
+              "required": ["name"]
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// A draft-07 <c>definitions</c> entry (and its 2019-09 twin <c>$defs</c>) is a
+    /// schema container, not an unsupported validation keyword: adding a definition
+    /// that nothing existing references narrows nothing, so it is NON-BREAKING in
+    /// both classifiers. This is the shape the bundled
+    /// <c>workflow-definition-v1.schema.json</c> takes when a new <c>$ref</c>
+    /// target such as <c>ActionReferenceV1</c> is introduced.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_AddedDefinition_IsNonBreakingInBothClassifiers()
+    {
+        const string next =
+            """
+            {
+              "$id": "WorkflowDefinitionV1.json",
+              "type": "object",
+              "properties": {
+                "steps": {
+                  "type": "array",
+                  "items": { "$ref": "#/definitions/StepV1" }
+                }
+              },
+              "definitions": {
+                "StepV1": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "action": { "$ref": "#/definitions/ActionReferenceV1" }
+                  },
+                  "required": ["name"]
+                },
+                "ActionReferenceV1": {
+                  "type": "object",
+                  "properties": {
+                    "actionName": { "type": "string", "minLength": 1 }
+                  },
+                  "required": ["actionName"]
+                }
+              }
+            }
+            """;
+
+        var authoritative = JsonSchemaDiff.Compare(DefinitionsBaseSchema, next);
+        var gate = await RunNodeSchemaDiffOnPair(DefinitionsBaseSchema, next, "1.2.3", "1.2.4");
+
+        await Assert.That(authoritative.HasBreakingChanges).IsFalse();
+        await Assert.That(authoritative.Changes)
+            .Contains(change => change.Severity == ChangeSeverity.NonBreaking
+                && change.Description.Contains("definition 'ActionReferenceV1' was added", StringComparison.Ordinal));
+        await Assert.That(authoritative.Changes)
+            .Contains(change => change.Severity == ChangeSeverity.NonBreaking
+                && change.Description.Contains("$.definitions['StepV1']", StringComparison.Ordinal)
+                && change.Description.Contains("optional property 'action' was added", StringComparison.Ordinal));
+        await Assert.That(authoritative.Changes.Any(change =>
+                change.Description.Contains("safety cannot be proven", StringComparison.Ordinal)))
+            .IsFalse();
+
+        await Assert.That(gate.ExitCode).IsEqualTo(0).Because(gate.Output);
+        await Assert.That(gate.Output).Contains("definition 'ActionReferenceV1' was added");
+        await Assert.That(gate.Output.Contains("[BREAKING]", StringComparison.Ordinal)).IsFalse().Because(gate.Output);
+        await Assert.That(gate.Output.Contains("safety cannot be proven", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// A constraint tightened inside a definition is classified by what changed
+    /// inside it, exactly as a nested property would be — the recursion attributes
+    /// the breaking change to the definition path rather than to the container.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_ChangedConstraintInsideDefinition_IsBreakingInBothClassifiers()
+    {
+        const string next =
+            """
+            {
+              "$id": "WorkflowDefinitionV1.json",
+              "type": "object",
+              "properties": {
+                "steps": {
+                  "type": "array",
+                  "items": { "$ref": "#/definitions/StepV1" }
+                }
+              },
+              "definitions": {
+                "StepV1": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string", "pattern": ".*\\S.*" }
+                  },
+                  "required": ["name"]
+                }
+              }
+            }
+            """;
+
+        var authoritative = JsonSchemaDiff.Compare(DefinitionsBaseSchema, next);
+        var gate = await RunNodeSchemaDiffOnPair(DefinitionsBaseSchema, next, "1.2.3", "1.2.4");
+
+        await Assert.That(authoritative.HasBreakingChanges).IsTrue();
+        await Assert.That(authoritative.Changes)
+            .Contains(change => change.Severity == ChangeSeverity.Breaking
+                && change.Description.Contains("$.definitions['StepV1'].properties['name']", StringComparison.Ordinal)
+                && change.Description.Contains("'pattern' constraint changed", StringComparison.Ordinal));
+        await Assert.That(authoritative.Changes.Any(change =>
+                change.Description.Contains("safety cannot be proven", StringComparison.Ordinal)))
+            .IsFalse();
+
+        await Assert.That(gate.ExitCode).IsEqualTo(1).Because(gate.Output);
+        await Assert.That(gate.Output).Contains(
+            "$.definitions[\"StepV1\"].properties[\"name\"]: 'pattern' constraint changed");
+        await Assert.That(gate.Output.Contains("safety cannot be proven", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>A removed definition invalidates every <c>$ref</c> to it: BREAKING.</summary>
+    [Test]
+    public async Task SchemaDiff_RemovedDefinition_IsBreakingInBothClassifiers()
+    {
+        const string next =
+            """
+            {
+              "$id": "WorkflowDefinitionV1.json",
+              "type": "object",
+              "properties": {
+                "steps": {
+                  "type": "array",
+                  "items": { "$ref": "#/definitions/StepV1" }
+                }
+              },
+              "definitions": {}
+            }
+            """;
+
+        var authoritative = JsonSchemaDiff.Compare(DefinitionsBaseSchema, next);
+        var gate = await RunNodeSchemaDiffOnPair(DefinitionsBaseSchema, next, "1.2.3", "1.2.4");
+
+        await Assert.That(authoritative.HasBreakingChanges).IsTrue();
+        await Assert.That(authoritative.Changes)
+            .Contains(change => change.Severity == ChangeSeverity.Breaking
+                && change.Description.Contains("definition 'StepV1' was removed", StringComparison.Ordinal));
+
+        await Assert.That(gate.ExitCode).IsEqualTo(1).Because(gate.Output);
+        await Assert.That(gate.Output).Contains("[BREAKING] Widget.json: $: definition 'StepV1' was removed");
+    }
+
+    /// <summary>
+    /// The Node gate (the classifier CI actually runs) and the C# classifier each
+    /// carry a literal keyword list. Policy is data: this test parses the two
+    /// arrays out of <c>scripts/contracts-schema-diff.mjs</c> and requires them to
+    /// equal the C# sets, so a keyword added to one classifier without the other
+    /// fails here rather than diverging silently on the release gate.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGateKeywordLists_MatchAuthoritativeClassifier()
+    {
+        var scriptPath = Path.Combine(RepoLayout.RepoRoot, "scripts", "contracts-schema-diff.mjs");
+        var script = await File.ReadAllTextAsync(scriptPath);
+
+        var nodeHandled = ReadNodeKeywordSet(script, "handledKeywords");
+        var nodeAnnotations = ReadNodeKeywordSet(script, "annotationKeywords");
+
+        await Assert.That(nodeHandled.Count).IsGreaterThan(0)
+            .Because("handledKeywords array must parse out of the Node gate");
+        await Assert.That(nodeAnnotations.Count).IsGreaterThan(0)
+            .Because("annotationKeywords array must parse out of the Node gate");
+        await Assert.That(nodeHandled.Order(StringComparer.Ordinal).ToArray())
+            .IsEquivalentTo(JsonSchemaDiff.SupportedKeywords.Order(StringComparer.Ordinal).ToArray());
+        await Assert.That(nodeAnnotations.Order(StringComparer.Ordinal).ToArray())
+            .IsEquivalentTo(JsonSchemaDiff.AnnotationOnlyKeywords.Order(StringComparer.Ordinal).ToArray());
+        await Assert.That(JsonSchemaDiff.SupportedKeywords).Contains("definitions");
+        await Assert.That(JsonSchemaDiff.SupportedKeywords).Contains("$defs");
+    }
+
+    private static HashSet<string> ReadNodeKeywordSet(string script, string constName)
+    {
+        var array = Regex.Match(
+            script,
+            $@"const\s+{Regex.Escape(constName)}\s*=\s*new\s+Set\(\s*\[(?<body>[^\]]*)\]\s*\)",
+            RegexOptions.Singleline);
+        if (!array.Success)
+        {
+            return [];
+        }
+
+        return Regex.Matches(array.Groups["body"].Value, "\"(?<keyword>[^\"]+)\"")
+            .Select(match => match.Groups["keyword"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static async Task<CliResult> RunNodeSchemaDiffOnPair(
+        string previous,
+        string next,
+        string previousVersion,
+        string candidateVersion)
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), previous);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), next);
+            return await RunNodeSchemaDiff(previousDirectory, nextDirectory, previousVersion, candidateVersion);
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
     }
 
     private static Task<CliResult> RunNodeSchemaDiff(

@@ -51,6 +51,8 @@ const handledKeywords = new Set([
   "oneOf",
   "allOf",
   "discriminator",
+  "$defs",
+  "definitions",
 ]);
 
 const annotationKeywords = new Set([
@@ -441,6 +443,50 @@ function diffUnion(file, prev, next, keyword, at, changes) {
   }
 }
 
+// `$defs` (2019-09+) and `definitions` (draft-07) are schema containers, not
+// validation keywords: each named entry is a schema in its own right, so the
+// classifier recurses per entry. An added definition is additive; a removed
+// definition is breaking; a changed definition is classified by what changed
+// inside it.
+function diffDefinitions(file, prev, next, keyword, at, changes) {
+  const hadDefinitions = hasOwn(prev, keyword);
+  const hasDefinitions = hasOwn(next, keyword);
+  if (!hadDefinitions && !hasDefinitions) return;
+  if ((hadDefinitions && !isObject(prev[keyword])) || (hasDefinitions && !isObject(next[keyword]))) {
+    if (!equivalent(prev[keyword], next[keyword])) {
+      addChange(changes, BREAKING, file, at, `'${keyword}' container changed shape`);
+    }
+    return;
+  }
+
+  const previous = hadDefinitions ? prev[keyword] : {};
+  const current = hasDefinitions ? next[keyword] : {};
+
+  for (const name of Object.keys(previous)) {
+    if (!hasOwn(current, name)) {
+      addChange(changes, BREAKING, file, at, `definition '${name}' was removed`);
+    }
+  }
+
+  for (const name of Object.keys(current)) {
+    if (!hasOwn(previous, name)) {
+      addChange(changes, NON_BREAKING, file, at, `definition '${name}' was added`);
+    }
+  }
+
+  for (const [name, previousDefinition] of Object.entries(previous)) {
+    if (hasOwn(current, name)) {
+      diffSchema(
+        file,
+        previousDefinition,
+        current[name],
+        `${at}.${keyword}[${JSON.stringify(name)}]`,
+        changes,
+      );
+    }
+  }
+}
+
 function isAnnotation(keyword) {
   return annotationKeywords.has(keyword) || keyword.startsWith("x-");
 }
@@ -492,6 +538,8 @@ function diffSchema(file, prev, next, at, changes) {
   diffUnion(file, prev, next, "anyOf", at, changes);
   diffUnion(file, prev, next, "oneOf", at, changes);
   diffUnion(file, prev, next, "allOf", at, changes);
+  diffDefinitions(file, prev, next, "$defs", at, changes);
+  diffDefinitions(file, prev, next, "definitions", at, changes);
   diffUnhandledKeywords(file, prev, next, at, changes);
 }
 

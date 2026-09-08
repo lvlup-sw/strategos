@@ -107,6 +107,34 @@ public class ActionBuilderTests
     }
 
     [Test]
+    public async Task ActionBuilder_BoundToWorkflowThenBoundToTool_ClearsWorkflowCarrier()
+    {
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
+
+        builder.BoundToWorkflow("execute-trade").BoundToTool("trading-tool", "execute");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Tool);
+        await Assert.That(descriptor.BoundWorkflow).IsNull();
+        await Assert.That(descriptor.BoundToolName).IsEqualTo("trading-tool");
+        await Assert.That(descriptor.BoundToolMethod).IsEqualTo("execute");
+    }
+
+    [Test]
+    public async Task ActionBuilder_BoundToToolThenBoundToWorkflow_ClearsToolCarrier()
+    {
+        var builder = new ActionBuilder("ExecuteTrade", Subject);
+
+        builder.BoundToTool("trading-tool", "execute").BoundToWorkflow("execute-trade");
+        var descriptor = builder.Build();
+
+        await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Workflow);
+        await Assert.That(descriptor.BoundWorkflow).IsEqualTo(new WorkflowBindingReference("execute-trade"));
+        await Assert.That(descriptor.BoundToolName).IsNull();
+        await Assert.That(descriptor.BoundToolMethod).IsNull();
+    }
+
+    [Test]
     public async Task ActionBuilder_Unbound_DefaultsToUnbound()
     {
         var builder = new ActionBuilder("ExecuteTrade", Subject);

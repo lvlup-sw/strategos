@@ -73,6 +73,8 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
         ArgumentNullException.ThrowIfNull(workflow);
         _bindingType = ActionBindingType.Workflow;
         _boundWorkflow = workflow;
+        _boundToolName = null;
+        _boundToolMethod = null;
         return this;
     }
 
@@ -81,6 +83,7 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
         _bindingType = ActionBindingType.Tool;
         _boundToolName = toolName;
         _boundToolMethod = methodName;
+        _boundWorkflow = null;
         return this;
     }
 

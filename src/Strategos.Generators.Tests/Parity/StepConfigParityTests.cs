@@ -32,10 +32,14 @@ namespace Strategos.Generators.Tests.Parity;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Occurrence metadata methods listed in <see cref="OccurrenceMetadataMethods"/> are
-/// deliberately outside this runtime-tuning gate because they populate
-/// <see cref="StepDefinition"/> rather than <see cref="StepConfigurationDefinition"/>;
-/// their extraction and wire parity are guarded separately.
+/// Occurrence metadata members registered in <see cref="OccurrenceMetadata"/> populate
+/// <see cref="StepDefinition"/> rather than <see cref="StepConfigurationDefinition"/>, so they
+/// sit outside the runtime-tuning classification — but not outside the forcing function. The
+/// registered set must EQUAL the reflected set of members that take a
+/// <see cref="WorkflowActionReference"/>, and each entry names an extraction proof and a wire
+/// round-trip proof that must actually run. A new occurrence member is therefore red until it
+/// is registered with proofs, and a member registered here that carries no action reference is
+/// red as an attempt to dodge the Lowered/Deferred rule.
 /// </para>
 /// <para>
 /// This is a forcing function: when a new configuration member is added to either surface
@@ -55,13 +59,19 @@ public sealed class StepConfigParityTests
 {
     /// <summary>
     /// Builder members that author occurrence identity on <see cref="StepDefinition"/>
-    /// rather than execution tuning on <see cref="StepConfigurationDefinition"/>.
-    /// They have their own extraction/projection/import parity suite.
+    /// rather than execution tuning on <see cref="StepConfigurationDefinition"/>, each mapped
+    /// to the stage proofs that carry the identity from the builder to the wire and back.
+    /// Keyed by reflected member name; must equal
+    /// <see cref="ReflectOccurrenceMetadataSurface"/>.
     /// </summary>
-    private static readonly IReadOnlySet<string> OccurrenceMetadataMethods =
-        new HashSet<string>(StringComparer.Ordinal)
+    private static readonly IReadOnlyDictionary<string, OccurrenceProof> OccurrenceMetadata =
+        new Dictionary<string, OccurrenceProof>(StringComparer.Ordinal)
         {
-            "Performs",
+            ["Performs"] = new(
+                ExtractionTest: "StepExtractorActionReferenceTests.Extract_PerformsLastAfterConfiguration_ResolvesOccurrenceAction",
+                ExtractionTestFile: "Strategos.Generators.Tests/Helpers/StepExtractorActionReferenceTests.cs",
+                WireRoundTripTest: "RoundTripIrFidelityTests.ActionIdentity_MatchesJsonFieldForField",
+                WireRoundTripTestFile: "Strategos.Generators.Tests/Import/RoundTripIrFidelityTests.cs"),
         };
 
     /// <summary>
@@ -583,6 +593,73 @@ public sealed class StepConfigParityTests
     }
 
     /// <summary>
+    /// Forcing function for occurrence metadata: the registered members equal the reflected
+    /// members that take a <see cref="WorkflowActionReference"/>, and every registered entry
+    /// names an extraction proof and a wire round-trip proof that actually run.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepConfigParity_OccurrenceMetadata_MatchesReflectedSurfaceAndNamesRunningProofs()
+    {
+        var reflected = ReflectOccurrenceMetadataSurface().ToList();
+
+        await Assert.That(reflected).IsNotEmpty()
+            .Because("the reflected occurrence surface is empty; the WorkflowActionReference probe no longer finds Performs");
+
+        var (unregistered, stale) = OccurrenceSurfaceDrift(reflected, OccurrenceMetadata.Keys);
+
+        await Assert.That(unregistered).IsEmpty()
+            .Because(
+                "an IStepConfiguration member that takes a WorkflowActionReference authors occurrence "
+                + "identity and must be registered in OccurrenceMetadata with stage proofs; unregistered: "
+                + string.Join(", ", unregistered));
+
+        await Assert.That(stale).IsEmpty()
+            .Because(
+                "only members that take a WorkflowActionReference may be registered as occurrence "
+                + "metadata (anything else belongs in Lowered/Deferred); stale: " + string.Join(", ", stale));
+
+        var solutionRoot = FindSolutionRoot();
+        foreach (var (member, proof) in OccurrenceMetadata)
+        {
+            foreach (var (stage, test, file) in new[]
+                     {
+                         ("extraction", proof.ExtractionTest, proof.ExtractionTestFile),
+                         ("wire round-trip", proof.WireRoundTripTest, proof.WireRoundTripTestFile),
+                     })
+            {
+                var inspection = BehavioralProofInspector.InspectFile(
+                    Path.Combine(solutionRoot, file), test.Split('.').Last());
+
+                await Assert.That(inspection.Status)
+                    .IsEqualTo(BehavioralProofStatus.Running)
+                    .Because(
+                        $"occurrence member '{member}' names {stage} proof '{test}' in '{file}', "
+                        + "which must be a test that actually runs — " + inspection.Detail);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Negative guard for the occurrence forcing function: a reflected occurrence member with
+    /// no registry entry is reported as unregistered, and a registry entry with no reflected
+    /// member is reported as stale.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task StepConfigParity_UnregisteredOrStaleOccurrenceMember_IsFlagged()
+    {
+        var (unregistered, stale) = OccurrenceSurfaceDrift(
+            reflected: ["Performs", "Requires"],
+            registered: ["Performs", "Retired"]);
+
+        await Assert.That(unregistered).IsEquivalentTo(new[] { "Requires" })
+            .Because("a second WorkflowActionReference-taking member must be flagged until registered");
+        await Assert.That(stale).IsEquivalentTo(new[] { "Retired" })
+            .Because("a registered member the surface no longer carries must be flagged");
+    }
+
+    /// <summary>
     /// A referenced proof file that is not on disk is reported as missing rather than being
     /// silently treated as containing the proof.
     /// </summary>
@@ -694,6 +771,37 @@ public sealed class StepConfigParityTests
     }
 
     /// <summary>
+    /// The reflected occurrence-metadata surface: distinct names of public instance methods
+    /// of <see cref="IStepConfiguration{TState}"/> with a <see cref="WorkflowActionReference"/>
+    /// parameter.
+    /// </summary>
+    /// <returns>The distinct member names.</returns>
+    private static IEnumerable<string> ReflectOccurrenceMetadataSurface() =>
+        typeof(IStepConfiguration<>)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .Where(m => m.GetParameters().Any(p => p.ParameterType == typeof(WorkflowActionReference)))
+            .Select(m => m.Name)
+            .Distinct(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Compares the reflected occurrence surface with the registry.
+    /// </summary>
+    /// <param name="reflected">Reflected occurrence member names.</param>
+    /// <param name="registered">Registered occurrence member names.</param>
+    /// <returns>Reflected-but-unregistered and registered-but-not-reflected names.</returns>
+    private static (List<string> Unregistered, List<string> Stale) OccurrenceSurfaceDrift(
+        IEnumerable<string> reflected,
+        IEnumerable<string> registered)
+    {
+        var reflectedSet = new HashSet<string>(reflected, StringComparer.Ordinal);
+        var registeredSet = new HashSet<string>(registered, StringComparer.Ordinal);
+        return (
+            reflectedSet.Where(m => !registeredSet.Contains(m)).OrderBy(m => m, StringComparer.Ordinal).ToList(),
+            registeredSet.Where(m => !reflectedSet.Contains(m)).OrderBy(m => m, StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>
     /// Enumerates the declared step-configuration surface: the public instance methods of
     /// <see cref="IStepConfiguration{TState}"/> and the public instance properties of
     /// <see cref="StepConfigurationDefinition"/> that represent configurable state. Static
@@ -706,10 +814,11 @@ public sealed class StepConfigParityTests
         var builderMethods = typeof(IStepConfiguration<>)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => !m.IsSpecialName)
-            // Performs authors StepDefinition.Action occurrence identity. It is deliberately
-            // outside StepConfigurationDefinition's runtime-tuning parity contract and is
-            // guarded by StepExtractorActionReferenceTests + RoundTripIrFidelityTests instead.
-            .Where(m => !OccurrenceMetadataMethods.Contains(m.Name))
+            // Occurrence-metadata members author StepDefinition.Action identity, not
+            // StepConfigurationDefinition tuning. Only a REGISTERED occurrence member leaves
+            // this surface; StepConfigParity_OccurrenceMetadata_MatchesReflectedSurface pins
+            // the registry to the reflected WorkflowActionReference-taking members.
+            .Where(m => !OccurrenceMetadata.ContainsKey(m.Name))
             .Select(m => m.Name);
 
         var definitionFields = typeof(StepConfigurationDefinition)
@@ -725,6 +834,21 @@ public sealed class StepConfigParityTests
     /// <param name="BehavioralTest">The behavioral test method that proves the lowering.</param>
     /// <param name="BehavioralTestFile">The behavioral test file (must be in the behavioral suite).</param>
     private sealed record LoweredProof(string BehavioralTest, string BehavioralTestFile);
+
+    /// <summary>
+    /// An occurrence-metadata proof pair: the extraction test that resolves the member into
+    /// <see cref="StepDefinition"/>, and the wire round-trip test that carries it through
+    /// projection, JSON and import unchanged.
+    /// </summary>
+    /// <param name="ExtractionTest">The extraction test ("Class.Method").</param>
+    /// <param name="ExtractionTestFile">The extraction test file, relative to the solution root.</param>
+    /// <param name="WireRoundTripTest">The wire round-trip test ("Class.Method").</param>
+    /// <param name="WireRoundTripTestFile">The wire round-trip test file, relative to the solution root.</param>
+    private sealed record OccurrenceProof(
+        string ExtractionTest,
+        string ExtractionTestFile,
+        string WireRoundTripTest,
+        string WireRoundTripTestFile);
 
     /// <summary>
     /// A deferred-member entry: the tracking issue, the compile-time diagnostic the deferral

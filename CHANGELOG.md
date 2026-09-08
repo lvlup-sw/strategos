@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   these interfaces and the exarchos builder-surface mirror must adopt the added
   members. The new signatures are staged in `PublicAPI.Unshipped.txt` until the
   release process rolls them into the shipped baseline.
+- **`ActionDescriptor.BoundWorkflowName` is removed (#167).** Readers of the
+  string property must switch to `BoundWorkflow?.WorkflowId`. The fluent
+  `.BoundToWorkflow(string)` overload is unchanged, but a project that
+  references `LevelUp.Strategos.Generators` now compiles a binding only when
+  the whole `obj.Action(...)...BoundToWorkflow(...)` chain is one inline
+  expression inside `DomainOntology.Define` and the named workflow exists in
+  the same compilation (`AGWF042` / `AGWF039` otherwise). A project without
+  the generator package receives no diagnostic; see the migration guide.
 
 ### Added
 
@@ -61,6 +69,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BoundWorkflow: WorkflowBindingReference`. The fluent
   `BoundToWorkflow(string)` overload remains supported and constructs the typed
   reference, preserving its exact ordinal identifier and graph-hash bytes.
+  `.BoundToWorkflow(...)` and `.BoundToTool(...)` are mutually exclusive on a
+  builder: the later call clears the other carrier instead of leaving a stale
+  binding beside the new `BindingType`.
+- **Workflow binding proof fails closed on its own failure.** The proof outcomes
+  `AGWF041`–`AGWF043` carry `NotConfigurable`, so `NoWarn` and `.editorconfig`
+  severities cannot suppress or downgrade them. The resolution diagnostics
+  `AGWF039`/`AGWF040` stay configurable as the explicit exit for a
+  cross-assembly layout until #204. An exception inside the proof is reported
+  as `AGWF042` instead of the Roslyn generator-crash warning in every
+  compilation that calls `BoundToWorkflow`; a compilation that binds nothing is
+  unaffected.
+- **Generator lowering for workflows without a binding.** Extraction is scoped
+  to the `Definition` value only when that value is one closed direct
+  `Finally<TStep>` chain; every other `Definition` shape keeps the 2.12
+  whole-type walk and emits the same saga as before. Seven lowering changes do
+  apply to every workflow, each verified against 2.12 output by execution: a
+  branch whose case values cannot be read statically is kept in the model with
+  no cases (it lowers to a default-only dispatcher and is `AGWF042` when bound)
+  instead of being dropped; fork paths that reuse one step type get
+  path-qualified `NotFound` handlers matching their path-qualified completed
+  events (2.12 emitted a `NotFound` handler on a type no emitter declared, so
+  the consumer build failed with CS0246); approval handler walks no longer
+  descend into nested lambdas, so a step declared inside a nested escalation
+  handler belongs to that handler only, and a `Complete()` inside that nested
+  handler no longer makes the outer escalation terminal (an outer escalation
+  without its own `Complete()` rejoins the main flow); for a `Branch` with no
+  `Otherwise` on a non-bool discriminator, the generated `ValidTransitions` row
+  of the dispatching step now includes the fall-through target the saga's
+  default arm already dispatched (the saga itself is unchanged); a `RepeatUntil`
+  body step whose instance name contains an underscore is now owned by its loop
+  (2.12 treated it as a nested-loop step and the loop's continue edge skipped
+  it); and a `Branch` declared inside a `RepeatUntil` body now lowers to a saga
+  whose branch-path handlers consume the completed events the worker handlers
+  publish (2.12 emitted handlers on non-existent `<Loop>_<Step>Completed` types
+  and the consumer build failed with CS0246). Retry, timeout, validation, and
+  confidence configuration on a failure-handler `Then` lowers exactly as it did
+  on 2.12.
 - **Contracts package 0.11.0.** Workflow step arms add the optional,
   backward-compatible `ActionReferenceV1` wire field. Its three identity names
   are required non-empty strings when the field is present. The closed AGWF

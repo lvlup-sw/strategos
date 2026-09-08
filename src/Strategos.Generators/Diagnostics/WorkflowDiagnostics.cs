@@ -643,7 +643,7 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A workflow-bound ontology action must resolve exactly one compilation-wide C# or imported workflow model by ordinal workflow name.");
+        description: "A workflow-bound ontology action must resolve exactly one compilation-wide C# or imported workflow model by ordinal workflow name. This resolution diagnostic stays configurable so a layout the compilation-local proof cannot see (a workflow defined in another assembly) can be silenced explicitly and visibly in the project file until cross-assembly bindings are supported.");
 
     /// <summary>A reachable workflow step has no exact static action identity.</summary>
     public static readonly DiagnosticDescriptor WorkflowActionReferenceInvalid = new(
@@ -653,7 +653,7 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Every reachable occurrence in a workflow-bound action must declare one closed action reference whose ordinal three-part identity resolves exactly once.");
+        description: "Every reachable occurrence in a workflow-bound action must declare one closed action reference whose ordinal three-part identity resolves exactly once. This resolution diagnostic stays configurable for the same cross-assembly reason as the bound-workflow-not-found diagnostic; the refinement, unprovable, and collision diagnostics are not configurable.");
 
     /// <summary>A closed workflow binding has a definite refinement counterexample.</summary>
     public static readonly DiagnosticDescriptor WorkflowBindingRefinementFailed = new(
@@ -663,7 +663,8 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A closed workflow binding violates a precondition, postcondition, frame, authority, subject, or fork noninterference refinement obligation.");
+        description: "A closed workflow binding violates a precondition, postcondition, frame, authority, subject, or fork noninterference refinement obligation.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>A workflow binding contains a contract outside the closed proof fragment.</summary>
     public static readonly DiagnosticDescriptor WorkflowContractUnprovable = new(
@@ -673,7 +674,8 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Workflow binding proof fails closed when an action contract, resource domain, or authority lattice is dynamic, opaque, invalid, or outside the exact finite proof fragment.");
+        description: "Workflow binding proof fails closed when an action contract, resource domain, or authority lattice is dynamic, opaque, invalid, or outside the exact finite proof fragment.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>Two workflow identities normalize to the same generated type and hint names.</summary>
     public static readonly DiagnosticDescriptor WorkflowEmissionIdentityCollision = new(
@@ -683,5 +685,6 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Distinct ordinal workflow identities must not normalize to the same generated PascalCase type and source-hint namespace.");
+        description: "Distinct ordinal workflow identities must not normalize to the same generated PascalCase type and source-hint namespace.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 }

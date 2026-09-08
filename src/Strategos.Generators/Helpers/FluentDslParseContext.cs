@@ -118,9 +118,14 @@ internal sealed class FluentDslParseContext
         var (definitionExpression, closedFinally, definitionClosureFailure) = typeDeclaration is TypeDeclarationSyntax type
             ? FindDefinitionFinally(type, semanticModel, cancellationToken)
             : (null, null, null);
-        var allInvocations = definitionExpression is null
+        // Scope extraction to the Definition value only when that value is a closed direct
+        // Finally<TStep> chain. Any other shape (a helper-method call, a block getter, a
+        // field initializer that could not be reduced) keeps the pre-2.13 whole-type walk so an
+        // unbound workflow generates exactly what it generated before; the proof still sees the
+        // closure failure through DefinitionClosureFailure and fails closed for bound workflows.
+        var allInvocations = closedFinally is null
             ? typeInvocations
-            : definitionExpression
+            : definitionExpression!
                 .DescendantNodesAndSelf()
                 .OfType<InvocationExpressionSyntax>()
                 .ToList();

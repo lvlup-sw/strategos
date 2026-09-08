@@ -56,8 +56,9 @@ public sealed record SchemaDiffResult(IReadOnlyList<SchemaChange> Changes)
 /// <remarks>
 /// The classifier understands nested properties and required members, declared
 /// types, enums, constants, references, minimum string/collection sizes,
-/// patterns, item schemas, discriminators, and composition keywords. Unknown
-/// validation keywords fail closed when their values change. Schema annotations
+/// patterns, item schemas, discriminators, and composition keywords, and
+/// recurses per entry through the <c>$defs</c> / <c>definitions</c> schema
+/// containers. Unknown validation keywords fail closed when their values change. Schema annotations
 /// such as descriptions and vendor extensions do not affect compatibility.
 /// </remarks>
 public static class JsonSchemaDiff
@@ -81,6 +82,8 @@ public static class JsonSchemaDiff
         "oneOf",
         "allOf",
         "discriminator",
+        "$defs",
+        "definitions",
     };
 
     private static readonly HashSet<string> AnnotationKeywords = new(StringComparer.Ordinal)
@@ -94,6 +97,15 @@ public static class JsonSchemaDiff
         "readOnly",
         "writeOnly",
     };
+
+    /// <summary>Gets the validation keywords the classifier has a compatibility rule
+    /// for. The Node gate (<c>scripts/contracts-schema-diff.mjs</c>) must carry the
+    /// same list; a test compares the two.</summary>
+    internal static IReadOnlySet<string> SupportedKeywords => HandledKeywords;
+
+    /// <summary>Gets the keywords treated as annotations (no compatibility effect).
+    /// The Node gate must carry the same list; a test compares the two.</summary>
+    internal static IReadOnlySet<string> AnnotationOnlyKeywords => AnnotationKeywords;
 
     /// <summary>Compares two JSON Schema documents given as JSON text.</summary>
     /// <param name="previousJson">The previous (baseline) schema document.</param>
@@ -159,6 +171,8 @@ public static class JsonSchemaDiff
         DiffUnion(previous, next, "anyOf", path, changes);
         DiffUnion(previous, next, "oneOf", path, changes);
         DiffUnion(previous, next, "allOf", path, changes);
+        DiffDefinitions(previous, next, "$defs", path, changes);
+        DiffDefinitions(previous, next, "definitions", path, changes);
         DiffUnhandledKeywords(previous, next, path, changes);
     }
 
@@ -497,6 +511,76 @@ public static class JsonSchemaDiff
                     keyword == "anyOf" ? ChangeSeverity.Notice : ChangeSeverity.Breaking,
                     path,
                     $"'{keyword}' union arm {arm.GetRawText()} was added");
+            }
+        }
+    }
+
+    /// <summary>
+    /// <c>$defs</c> (2019-09+) and <c>definitions</c> (draft-07) are schema
+    /// containers, not validation keywords: each named entry is a schema in its own
+    /// right, so the classifier recurses per entry. An added definition is
+    /// additive; a removed definition is breaking; a changed definition is
+    /// classified by what changed inside it.
+    /// </summary>
+    private static void DiffDefinitions(
+        JsonElement previous,
+        JsonElement next,
+        string keyword,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadDefinitions = TryGetKeyword(previous, keyword, out var previousDefinitions);
+        var hasDefinitions = TryGetKeyword(next, keyword, out var nextDefinitions);
+        if (!hadDefinitions && !hasDefinitions)
+        {
+            return;
+        }
+
+        if ((hadDefinitions && previousDefinitions.ValueKind != JsonValueKind.Object)
+            || (hasDefinitions && nextDefinitions.ValueKind != JsonValueKind.Object))
+        {
+            if (!hadDefinitions
+                || !hasDefinitions
+                || !JsonElement.DeepEquals(previousDefinitions, nextDefinitions))
+            {
+                AddChange(
+                    changes,
+                    ChangeSeverity.Breaking,
+                    path,
+                    $"'{keyword}' container changed shape");
+            }
+
+            return;
+        }
+
+        var previousEntries = ReadObjectMembers(previousDefinitions);
+        var nextEntries = ReadObjectMembers(nextDefinitions);
+
+        foreach (var name in previousEntries.Keys)
+        {
+            if (!nextEntries.ContainsKey(name))
+            {
+                AddChange(changes, ChangeSeverity.Breaking, path, $"definition '{name}' was removed");
+            }
+        }
+
+        foreach (var name in nextEntries.Keys)
+        {
+            if (!previousEntries.ContainsKey(name))
+            {
+                AddChange(changes, ChangeSeverity.NonBreaking, path, $"definition '{name}' was added");
+            }
+        }
+
+        foreach (var (name, previousDefinition) in previousEntries)
+        {
+            if (nextEntries.TryGetValue(name, out var nextDefinition))
+            {
+                DiffSchema(
+                    previousDefinition,
+                    nextDefinition,
+                    $"{path}.{keyword}['{name}']",
+                    changes);
             }
         }
     }

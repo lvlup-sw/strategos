@@ -148,7 +148,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(workflowProofInput, static (spc, input) =>
         {
             var workflows = input.Left.Left.AddRange(input.Left.Right);
-            WorkflowBindingProofAnalyzer.Analyze(spc, input.Right, workflows);
+            WorkflowBindingProofAnalyzer.AnalyzeFailClosed(spc, input.Right, workflows);
         });
     }
 
