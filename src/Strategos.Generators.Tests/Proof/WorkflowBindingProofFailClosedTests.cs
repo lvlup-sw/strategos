@@ -99,6 +99,93 @@ public sealed class WorkflowBindingProofFailClosedTests
         }
         """;
 
+    /// <summary>
+    /// A compilation that has something to prove without containing the literal
+    /// <c>BoundToWorkflow</c> anywhere: the workflow declares typed derived compensation, which
+    /// the proof rejects precisely because no ontology action binds the workflow. The fail-closed
+    /// gate must therefore not be a text scan for the binding builder method.
+    /// </summary>
+    private const string TypedCompensationWithoutBindingSource = """
+        using System;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Ontology;
+        using Strategos.Ontology.Builder;
+        using Strategos.Ontology.Descriptors;
+        using Strategos.Steps;
+
+        namespace FailClosedTypedProbe;
+
+        public sealed class Order { public int Stage { get; set; } }
+
+        public sealed class OrdersOntology : DomainOntology
+        {
+            public override string DomainName => "orders";
+
+            protected override void Define(IOntologyBuilder builder)
+            {
+                builder.Object<Order>("Order", obj =>
+                {
+                    obj.Action("leaf")
+                        .Requires(order => order.Stage == 0)
+                        .Ensures(order => order.Stage == 1)
+                        .Modifies(order => order.Stage);
+
+                    obj.Action("undo-leaf")
+                        .Requires(order => order.Stage == 1)
+                        .Ensures(order => order.Stage == 0)
+                        .Modifies(order => order.Stage);
+
+                    obj.Action("done")
+                        .Requires(order => order.Stage == 1)
+                        .Ensures(order => order.Stage == 2)
+                        .Modifies(order => order.Stage);
+                });
+            }
+        }
+
+        [WorkflowState]
+        public sealed record TypedState : IWorkflowState { public Guid WorkflowId { get; init; } }
+
+        public sealed class LeafStep : IWorkflowStep<TypedState>
+        {
+            public Task<StepResult<TypedState>> ExecuteAsync(
+                TypedState state, StepContext context, CancellationToken cancellationToken) =>
+                Task.FromResult(StepResult<TypedState>.FromState(state));
+        }
+
+        public sealed class UndoLeafStep : IWorkflowStep<TypedState>
+        {
+            public Task<StepResult<TypedState>> ExecuteAsync(
+                TypedState state, StepContext context, CancellationToken cancellationToken) =>
+                Task.FromResult(StepResult<TypedState>.FromState(state));
+        }
+
+        public sealed class DoneStep : IWorkflowStep<TypedState>
+        {
+            public Task<StepResult<TypedState>> ExecuteAsync(
+                TypedState state, StepContext context, CancellationToken cancellationToken) =>
+                Task.FromResult(StepResult<TypedState>.FromState(state));
+        }
+
+        [Workflow("typed-flow")]
+        public static partial class TypedFlowWorkflowDefinition
+        {
+            public static WorkflowDefinition<TypedState> Definition => Workflow<TypedState>
+                .Create("typed-flow")
+                .StartWith<LeafStep>(step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "leaf"))
+                    .Compensate<UndoLeafStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-leaf")))
+                .Finally<DoneStep>(step => step.Performs(
+                    new WorkflowActionReference("orders", "Order", "done")));
+        }
+        """;
+
     /// <summary>Control: the fixture is a legal binding that the proof accepts.</summary>
     [Test]
     [NotInParallel(nameof(WorkflowBindingProofAnalyzer.ProofFaultInjection))]
@@ -131,6 +218,67 @@ public sealed class WorkflowBindingProofFailClosedTests
                 .ToArray();
 
             await Assert.That(errors).HasCount().EqualTo(1);
+            await Assert.That(errors[0].Id).IsEqualTo("AGWF042");
+            await Assert.That(errors[0].GetMessage())
+                .Contains("failed internally with InvalidOperationException: injected proof fault");
+            await Assert.That(result.Diagnostics.Any(diagnostic => diagnostic.Id == "CS8785")).IsFalse()
+                .Because("the proof must not surface as a Roslyn generator-crash warning");
+        }
+        finally
+        {
+            WorkflowBindingProofAnalyzer.ProofFaultInjection = null;
+        }
+    }
+
+    /// <summary>
+    /// Control for the typed-compensation fail-closed fixture: with no fault injected the proof
+    /// rejects the compilation, and the fixture contains the literal <c>BoundToWorkflow</c>
+    /// nowhere. This is what the fault run must not be allowed to silence.
+    /// </summary>
+    [Test]
+    [NotInParallel(nameof(WorkflowBindingProofAnalyzer.ProofFaultInjection))]
+    public async Task TypedCompensationWithoutBinding_WithoutFault_ReportsAgwf045()
+    {
+        await Assert.That(TypedCompensationWithoutBindingSource.Contains("BoundToWorkflow", StringComparison.Ordinal))
+            .IsFalse()
+            .Because("the fixture only proves anything while the syntactic gate cannot see it");
+
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(
+            TypedCompensationWithoutBindingSource,
+            "AGWF045");
+
+        var errors = result.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        await Assert.That(errors).HasCount().EqualTo(1);
+        await Assert.That(errors[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(errors[0].GetMessage()).Contains("no declaration binds this workflow");
+    }
+
+    /// <summary>
+    /// Kill fixture for the fail-closed gate itself: a compilation whose typed compensation the
+    /// proof rejects, but which never mentions the binding builder method, must still fail closed
+    /// when the proof throws. Before the model-derived predicate this run reported nothing at all
+    /// while the derived-compensation saga was emitted unproved.
+    /// </summary>
+    [Test]
+    [NotInParallel(nameof(WorkflowBindingProofAnalyzer.ProofFaultInjection))]
+    public async Task ProofInternalFailure_WithTypedCompensationAndNoBindingText_ReportsAgwf042()
+    {
+        WorkflowBindingProofAnalyzer.ProofFaultInjection = FaultOnlyForTypedFixture;
+        try
+        {
+            var result = GeneratorTestHelper.RunGeneratorWithValidInput(
+                TypedCompensationWithoutBindingSource,
+                "AGWF042");
+
+            var errors = result.Diagnostics
+                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                .ToArray();
+
+            await Assert.That(errors).HasCount().EqualTo(1)
+                .Because("a compilation with typed compensation has something to prove even without a BoundToWorkflow mention");
             await Assert.That(errors[0].Id).IsEqualTo("AGWF042");
             await Assert.That(errors[0].GetMessage())
                 .Contains("failed internally with InvalidOperationException: injected proof fault");
@@ -299,6 +447,20 @@ public sealed class WorkflowBindingProofFailClosedTests
     {
         if (compilation.SyntaxTrees.Any(tree =>
                 tree.GetText().ToString().Contains("namespace FailClosedProbe", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("injected proof fault");
+        }
+    }
+
+    /// <summary>
+    /// Throws only for the typed-compensation fixture, whose namespace the fixture-scoped fault
+    /// above deliberately does not match.
+    /// </summary>
+    /// <param name="compilation">The compilation the proof is about to analyze.</param>
+    private static void FaultOnlyForTypedFixture(Compilation compilation)
+    {
+        if (compilation.SyntaxTrees.Any(tree =>
+                tree.GetText().ToString().Contains("namespace FailClosedTypedProbe", StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("injected proof fault");
         }

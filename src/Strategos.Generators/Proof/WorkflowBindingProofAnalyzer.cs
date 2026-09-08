@@ -60,10 +60,8 @@ internal static class WorkflowBindingProofAnalyzer
         catch (Exception exception)
         {
             // An internal failure is an Error only for a compilation that has something to
-            // prove. The binding set itself is unknown once the scan has thrown, so the
-            // decision uses a conservative syntactic over-approximation: any tree that mentions
-            // the binding method. A compilation that never binds keeps building.
-            if (!MentionsWorkflowBinding(compilation, context.CancellationToken))
+            // prove. A compilation with nothing to prove keeps building.
+            if (!HasSomethingToProve(compilation, workflows, context.CancellationToken))
             {
                 return;
             }
@@ -76,6 +74,64 @@ internal static class WorkflowBindingProofAnalyzer
                 $"the workflow binding proof failed internally with {exception.GetType().Name}: {exception.Message}"));
         }
     }
+
+    /// <summary>
+    /// Decides whether a compilation whose proof failed internally has an obligation the proof
+    /// would otherwise have discharged.
+    /// </summary>
+    /// <remarks>
+    /// Two disjunct sources, because either alone is unsound. The ontology binding set is
+    /// unknown once the scan has thrown, so bindings use a conservative syntactic
+    /// over-approximation: any tree that mentions the binding method. That scan is blind to the
+    /// other obligation, typed derived compensation, which <see
+    /// cref="ReportTypedCompensationBindingBoundaries"/> rejects precisely when nothing binds the
+    /// workflow — so a compilation that declares a typed inverse and never writes
+    /// <c>BoundToWorkflow</c> is exactly the compilation the text scan calls vacuous and the
+    /// proof calls refuted. That obligation is read from the workflow models, which the catch
+    /// path still holds intact, using the same predicate the proof itself applies.
+    /// </remarks>
+    /// <param name="compilation">The compilation under analysis.</param>
+    /// <param name="workflows">The workflow models the failed proof was given.</param>
+    /// <param name="cancellationToken">Cancels the scan.</param>
+    /// <returns><see langword="true"/> when an internal failure must fail the build.</returns>
+    private static bool HasSomethingToProve(
+        Compilation compilation,
+        ImmutableArray<WorkflowModel> workflows,
+        CancellationToken cancellationToken)
+    {
+        if (MentionsWorkflowBinding(compilation, cancellationToken))
+        {
+            return true;
+        }
+
+        try
+        {
+            return workflows.Any(workflow =>
+                BuildOccurrenceMap(workflow).Values.Any(DeclaresTypedOrDynamicCompensation));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // If the model walk fails too, assume the obligation exists: silence is the wrong default.
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Identifies a step occurrence whose compensation carries a typed or dynamic inverse, the
+    /// obligation <see cref="ReportTypedCompensationBindingBoundaries"/> discharges.
+    /// </summary>
+    /// <param name="step">The step occurrence to classify.</param>
+    /// <returns><see langword="true"/> when the occurrence declares such a compensation.</returns>
+    private static bool DeclaresTypedOrDynamicCompensation(StepModel step) =>
+        step.Compensation is { } compensation
+        && (compensation.HasTypedOrDynamicDeclaration
+            || compensation.InverseActionResolution
+                is WorkflowActionReferenceResolution.Resolved
+                or WorkflowActionReferenceResolution.DynamicOrInvalid);
 
     private static bool MentionsWorkflowBinding(Compilation compilation, CancellationToken cancellationToken)
     {
@@ -192,10 +248,7 @@ internal static class WorkflowBindingProofAnalyzer
             context.CancellationToken.ThrowIfCancellationRequested();
             var typedOccurrences = workflowGroup.Value
                 .SelectMany(workflow => BuildOccurrenceMap(workflow))
-                .Where(item => item.Value.Compensation?.InverseActionResolution
-                    is WorkflowActionReferenceResolution.Resolved
-                    or WorkflowActionReferenceResolution.DynamicOrInvalid
-                    || item.Value.Compensation?.HasTypedOrDynamicDeclaration == true)
+                .Where(item => DeclaresTypedOrDynamicCompensation(item.Value))
                 .OrderBy(item => item.Key, StringComparer.Ordinal)
                 .ToImmutableArray();
             if (typedOccurrences.IsEmpty)
