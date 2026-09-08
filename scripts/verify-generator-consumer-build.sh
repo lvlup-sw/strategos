@@ -6,10 +6,12 @@
 #
 # Builds a throwaway consumer project that PackageReferences only packed
 # Strategos artifacts from the given package source directory. The probe keeps
-# the original IPhaseAwareSaga dependency-flow check and also compiles a typed
-# workflow/action binding through the packaged source generator. A second build
-# deliberately introduces an illegal seam and must fail with AGWF041, proving
-# the packaged analyzer is loaded and enforcing #167 rather than merely present.
+# the original IPhaseAwareSaga dependency-flow check and compiles a typed
+# workflow/action binding with mechanically proved compensation through the
+# packaged source generator. Negative builds deliberately introduce an illegal
+# seam and a contradictory authored inverse; they must fail exclusively with
+# AGWF041 and AGWF044 respectively. This proves the packaged analyzer is loaded
+# and enforcing both #167 and #169 rather than merely present.
 #
 # Usage:
 #   scripts/verify-generator-consumer-build.sh <path-to-packages-dir>
@@ -207,6 +209,11 @@ public sealed class OrdersOntology : DomainOntology
                 .Ensures(order => order.Stage == 1)
                 .Modifies(order => order.Stage);
 
+            obj.Action("undo-receive")
+                .Requires(order => order.Stage == 1)
+                .Ensures(order => order.Stage == 0)
+                .Modifies(order => order.Stage);
+
 #if ILLEGAL_CONTRACT
             obj.Action("complete")
                 .Requires(order => order.Stage == 2)
@@ -215,6 +222,15 @@ public sealed class OrdersOntology : DomainOntology
                 .Requires(order => order.Stage == 1)
 #endif
                 .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage);
+
+            obj.Action("undo-complete")
+                .Requires(order => order.Stage == 2)
+#if ILLEGAL_CONTRACT
+                .Ensures(order => order.Stage == 2)
+#else
+                .Ensures(order => order.Stage == 1)
+#endif
                 .Modifies(order => order.Stage);
         });
     }
@@ -237,16 +253,27 @@ public class ProbeStep : IWorkflowStep<FlowState>
 
 public sealed class ReceiveStep : ProbeStep { }
 public sealed class CompleteStep : ProbeStep { }
+public sealed class UndoReceiveStep : ProbeStep { }
+public sealed class UndoCompleteStep : ProbeStep { }
 
 [Workflow("consumer-probe")]
 public static partial class ConsumerProbeWorkflowDefinition
 {
     public static WorkflowDefinition<FlowState> Definition => Workflow<FlowState>
         .Create("consumer-probe")
-        .StartWith<ReceiveStep>(step => step.Performs(
-            new WorkflowActionReference("orders", "Order", "receive")))
-        .Finally<CompleteStep>(step => step.Performs(
-            new WorkflowActionReference("orders", "Order", "complete")));
+        .StartWith<ReceiveStep>(step => step
+            .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+#if INVALID_COMPENSATION
+            .Compensate<UndoReceiveStep>(new WorkflowActionReference(
+                "orders", "Order", "undo-complete")))
+#else
+            .Compensate<UndoReceiveStep>(new WorkflowActionReference(
+                "orders", "Order", "undo-receive")))
+#endif
+        .Finally<CompleteStep>(step => step
+            .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+            .Compensate<UndoCompleteStep>(new WorkflowActionReference(
+                "orders", "Order", "undo-complete")));
 }
 EOF
 
@@ -297,7 +324,7 @@ verify_restored_artifact 'LevelUp.Strategos.Generators' "$VERSION" "$GEN_NUPKG"
 verify_restored_artifact 'LevelUp.Strategos.Identity.Abstractions' "$IDENTITY_VERSION" "$IDENTITY_NUPKG"
 verify_restored_artifact 'LevelUp.Strategos.Ontology' "$VERSION" "$ONTOLOGY_NUPKG"
 
-echo "OK: legal packed binding compiled and IPhaseAwareSaga is reachable transitively."
+echo "OK: legal packed binding and typed compensation compiled; IPhaseAwareSaga is reachable transitively."
 
 ILLEGAL_LOG="$PROBE_DIR/illegal-build.log"
 set +e
@@ -335,3 +362,42 @@ if ! grep -Fq "internal seam 'ReceiveStep' -> 'CompleteStep' is not composable" 
 fi
 
 echo "OK: illegal packed binding failed closed with AGWF041."
+
+INVALID_COMPENSATION_LOG="$PROBE_DIR/invalid-compensation-build.log"
+set +e
+dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+  --nologo \
+  -v:m \
+  --no-restore \
+  --no-incremental \
+  /p:DefineConstants=INVALID_COMPENSATION \
+  /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+  /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$INVALID_COMPENSATION_LOG" 2>&1
+invalid_compensation_status=$?
+set -e
+
+if [[ "$invalid_compensation_status" -eq 0 ]]; then
+  echo "FAIL: contradictory packed consumer inverse compiled; AGWF044 enforcement did not run." >&2
+  cat "$INVALID_COMPENSATION_LOG" >&2
+  exit 2
+fi
+
+mapfile -t invalid_compensation_error_codes < <(
+  sed -nE 's/.*[[:space:]]error[[:space:]]([[:alpha:]]+[[:digit:]]+):.*/\1/p' "$INVALID_COMPENSATION_LOG" \
+    | sort -u
+)
+if [[ ${#invalid_compensation_error_codes[@]} -ne 1 \
+   || "${invalid_compensation_error_codes[0]}" != 'AGWF044' ]]; then
+  echo "FAIL: contradictory packed consumer inverse did not fail exclusively with AGWF044." >&2
+  cat "$INVALID_COMPENSATION_LOG" >&2
+  exit 2
+fi
+
+if ! grep -Fq "declares inverse action 'orders/Order/undo-complete' for forward action 'orders/Order/receive'" \
+     "$INVALID_COMPENSATION_LOG"; then
+  echo "FAIL: AGWF044 did not identify the deliberately contradictory packed consumer inverse." >&2
+  cat "$INVALID_COMPENSATION_LOG" >&2
+  exit 2
+fi
+
+echo "OK: contradictory packed consumer inverse failed closed with AGWF044."
