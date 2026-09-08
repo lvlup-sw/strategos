@@ -176,6 +176,18 @@ allowlist entry** and accepts nothing. An unmatched BREAKING change exits 1 and
 prints the entry to add. Every entry also needs a line in
 [`CHANGELOG.md`](CHANGELOG.md).
 
+### Conditional keywords and validator support
+
+`CompensationConfiguration` states the typed-inverse rule as a JSON Schema
+conditional (`if` / `then`): when `inverseAction` is present, `requiredOnFailure`
+must be `true`. **A Draft 2020-12 validator enforces this; NJsonSchema 11.6.1 —
+the validator behind the in-repo equivalence gate — does not implement the
+conditional applicators and accepts a violating document.** In-repo the rule is
+therefore enforced by the analyzer (`AGWF044`); consumers validating against the
+published schema with a conforming validator get it for free.
+`ImportedWorkflowBindingProofTests.ImportedTypedCompensation_WireConditionalStatesTheAgwf044Rule`
+pins that limitation and goes red if NJsonSchema gains the support.
+
 ### `WorkflowDefinitionV1.schemaVersion` identity
 
 `schemaVersion` is a pinned literal `1.0`. While the Contracts package is pre-1.0

@@ -69,9 +69,13 @@ public class ApprovalFailureConfigTests
         await Assert.That(compensationStepType.GetProperty("type").GetString()).IsEqualTo("string")
             .Because("compensationStepType is a simple-name moniker (LB-2).");
         await Assert.That(compensationStepType.GetProperty("minLength").GetInt32()).IsEqualTo(1)
-            .Because("the importer rejects empty compensation step monikers.");
+            .Because("an empty moniker names no type; before 0.12.0 the importer silently dropped "
+                + "the whole compensation block for one.");
         await Assert.That(compensationStepType.GetProperty("pattern").GetString()).IsEqualTo(@".*\S.*")
-            .Because("the schema must reject whitespace-only compensation step monikers just like the importer.");
+            .Because("minLength alone admits a whitespace-only moniker. That the schema, the "
+                + "generated DTO and the vendored importer reader reach the SAME verdict on every "
+                + "blank form is proven by Strategos.Generators.Tests.Import."
+                + "CompensationIdentityCorpusTests, not asserted here.");
         await Assert.That(comp.GetProperty("properties").GetProperty("inverseAction")
             .GetProperty("$ref").GetString()).IsEqualTo("ActionReferenceV1.json")
             .Because("inverseAction is the same language-neutral ontology identity used by forward occurrences.");

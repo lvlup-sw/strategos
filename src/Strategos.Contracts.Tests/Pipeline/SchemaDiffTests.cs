@@ -4,6 +4,7 @@
 // </copyright>
 // =============================================================================
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Strategos.Contracts.SchemaDiff;
 
@@ -800,11 +801,19 @@ public class SchemaDiffTests
             await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
             await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), narrowed);
 
+            // The narrowing is allowlisted, so this fixture isolates the version
+            // policy: the rows that fail do so because the increment is wrong, not
+            // because the change is unaccounted for.
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, candidateVersion));
+
             var result = await RunNodeSchemaDiff(
                 previousDirectory,
                 nextDirectory,
                 previousVersion,
-                candidateVersion);
+                candidateVersion,
+                allowlist);
 
             await Assert.That(result.ExitCode).IsEqualTo(expectedExitCode).Because(result.Output);
             await Assert.That(result.Output).Contains(expectedOutput);
@@ -913,6 +922,39 @@ public class SchemaDiffTests
         await Assert.That(workflow).Contains(
             "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
         await Assert.That(workflow).Contains("persist-credentials: false");
+
+        // Second arm: the published baseline can be several minors behind, so a
+        // pre-1.0 minor bump already in ContractsVersion permits every narrowing
+        // there. The merge-base arm compares the versions this PR actually moves
+        // between.
+        await Assert.That(workflow).Contains("github.event.pull_request.base.sha")
+            .Because("the merge-base arm must materialise the PR base's schema tree");
+        await Assert.That(workflow).Contains("--allow-equal-versions")
+            .Because("base and head ContractsVersion are usually equal; the arm must still evaluate");
+        await Assert.That(workflow).Contains("Structural breaking-change diff vs merge base");
+        await Assert.That(Regex.Matches(workflow, @"--allowlist").Count).IsEqualTo(2)
+            .Because("both arms must pass the breaking-change allowlist");
+        await Assert.That(workflow).Contains("breaking-changes.allowlist.json");
+    }
+
+    /// <summary>
+    /// The publish gate runs the same script and must carry the same allowlist:
+    /// a release must not be able to ship a narrowing the PR gate would reject.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_PublishWorkflow_PassesTheBreakingChangeAllowlist()
+    {
+        var workflowPath = Path.Combine(
+            RepoLayout.RepoRoot,
+            ".github",
+            "workflows",
+            "publish-contracts.yml");
+        var workflow = await File.ReadAllTextAsync(workflowPath);
+
+        await Assert.That(workflow).Contains("scripts/contracts-schema-diff.mjs");
+        await Assert.That(workflow).Contains("--allowlist");
+        await Assert.That(workflow).Contains(
+            "src/Strategos.Contracts/schemas/breaking-changes.allowlist.json");
     }
 
     private const string DefinitionsBaseSchema =
@@ -1125,6 +1167,586 @@ public class SchemaDiffTests
             .ToHashSet(StringComparer.Ordinal);
     }
 
+    // -------------------------------------------------------------------------
+    // Breaking-change allowlist. A pre-1.0 minor bump permits EVERY narrowing, so
+    // the version increment on its own makes the gate unfailable: a PR that
+    // narrows the wire contract sails through as long as ContractsVersion is
+    // already ahead of the published baseline. The increment is therefore
+    // necessary but not sufficient — each BREAKING change must also be named by
+    // an allowlist entry.
+    // -------------------------------------------------------------------------
+
+    /// <summary>The schema that removes <c>size</c> from <see cref="BaseSchema"/> —
+    /// one BREAKING change under a permitting version increment.</summary>
+    private const string NarrowedSchema =
+        """
+        {
+          "$id": "Widget.json",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" }
+          },
+          "required": ["id"]
+        }
+        """;
+
+    /// <summary>The exact triple the classifier reports for
+    /// <see cref="NarrowedSchema"/>. An allowlist entry must match all three.</summary>
+    private static (string File, string Path, string Kind) SizeRemoved =>
+        ("Widget.json", "$", "property 'size' was removed");
+
+    /// <summary>
+    /// A narrowing under a permitting pre-1.0 minor bump with NO allowlist entry
+    /// must FAIL. This is the kill fixture for the defect: before the allowlist
+    /// gate this fixture exited 0 and the gate could not fail for a product reason.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_PermittedNarrowingWithoutAllowlistEntry_Fails()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlist = await WriteAllowlistAsync(nextDirectory);
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(1).Because(result.Output);
+            await Assert.That(result.Output).Contains("NOT accepted by the breaking-change");
+            await Assert.That(result.Output).Contains("and a Contracts CHANGELOG line");
+            await Assert.That(result.Output).Contains(SizeRemoved.Kind);
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Omitting <c>--allowlist</c> entirely is the same posture as an empty one:
+    /// nothing can match, so a permitted narrowing still fails. The gate is
+    /// fail-closed rather than opt-in.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_PermittedNarrowingWithNoAllowlistFlag_Fails()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+
+            var result = await RunNodeSchemaDiff(previousDirectory, nextDirectory, "0.4.0", "0.5.0");
+
+            await Assert.That(result.ExitCode).IsEqualTo(1).Because(result.Output);
+            await Assert.That(result.Output)
+                .Contains("src/Strategos.Contracts/schemas/breaking-changes.allowlist.json");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>A matching entry accepts the narrowing and is echoed in the log.</summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_PermittedNarrowingWithMatchingAllowlistEntry_Passes()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, "0.5.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(0).Because(result.Output);
+            await Assert.That(result.Output).Contains("[ALLOWED]");
+            await Assert.That(result.Output).Contains(SizeRemoved.Kind);
+            await Assert.That(result.Output).Contains("accepted by an entry in");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Matching is exact, not substring: an entry that names the right file and
+    /// version but a near-miss <c>path</c> or <c>kind</c> accepts nothing. Without
+    /// this the allowlist would be a wildcard.
+    /// </summary>
+    [Test]
+    [Arguments("$.properties[\"size\"]", "property 'size' was removed")]
+    [Arguments("$", "property 'size' was")]
+    [Arguments("$", "'size' was removed")]
+    public async Task SchemaDiff_NodeGate_NearMissAllowlistEntry_DoesNotMatch(
+        string entryPath,
+        string entryKind)
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, entryPath, entryKind, "0.5.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(1).Because(result.Output);
+            await Assert.That(result.Output).Contains("NOT accepted by the breaking-change");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// An entry whose <c>version</c> falls outside the compared
+    /// <c>(previous, candidate]</c> window is stale: it describes a narrowing that
+    /// is already baked into the baseline (or not yet shipped), so it accepts
+    /// nothing and is reported as a NOTICE. A stale entry on its own does not fail
+    /// the gate — it tells the maintainer the line can be pruned.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_StaleAllowlistEntry_IsNoticedAndAcceptsNothing()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), BaseSchema);
+
+            // 0.3.0 is below the compared window's lower bound: already published.
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, "0.3.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(0).Because(result.Output);
+            await Assert.That(result.Output).Contains("stale allowlist entry");
+            await Assert.That(result.Output).Contains("outside the compared window");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>A stale entry cannot accept a live narrowing.</summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_StaleAllowlistEntry_CannotAcceptANarrowing()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, "0.3.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(1).Because(result.Output);
+            await Assert.That(result.Output).Contains("stale allowlist entry");
+            await Assert.That(result.Output).Contains("NOT accepted by the breaking-change");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The merge-base arm compares a base and head <c>ContractsVersion</c> that are
+    /// usually equal. <c>--allow-equal-versions</c> lets that comparison run rather
+    /// than short-circuiting on "must be greater"; it does NOT relax the breaking
+    /// rule — with equal versions no increment permits a narrowing, so a BREAKING
+    /// change still exits 1 even with a matching allowlist entry.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_EqualVersionsEvaluateChangesAndFailOnBreaking()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, "0.12.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.12.0",
+                "0.12.0",
+                allowlist,
+                allowEqualVersions: true);
+
+            await Assert.That(result.ExitCode).IsEqualTo(1).Because(result.Output);
+            await Assert.That(result.Output).Contains(SizeRemoved.Kind);
+            await Assert.That(result.Output).Contains("requires a MINOR");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>An additive change at an unmoved version passes the merge-base arm.</summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_EqualVersionsPassWhenNothingNarrows()
+    {
+        const string widened =
+            """
+            {
+              "$id": "Widget.json",
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "size": { "type": "integer" },
+                "color": { "type": "string" }
+              },
+              "required": ["id"]
+            }
+            """;
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), widened);
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.12.0",
+                "0.12.0",
+                allowlistPath: null,
+                allowEqualVersions: true);
+
+            await Assert.That(result.ExitCode).IsEqualTo(0).Because(result.Output);
+            await Assert.That(result.Output).Contains("all non-breaking");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>A malformed allowlist is INDETERMINATE, never a silent pass.</summary>
+    [Test]
+    [Arguments("{ \"entries\": [ { \"file\": \"Widget.json\" } ] }", "missing a non-empty string")]
+    [Arguments("{ \"entries\": \"nope\" }", "must be a JSON array of entries")]
+    [Arguments("not json", "is not valid JSON")]
+    public async Task SchemaDiff_NodeGate_MalformedAllowlist_IsIndeterminate(
+        string allowlistBody,
+        string expectedOutput)
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), NarrowedSchema);
+            var allowlistPath = Path.Combine(nextDirectory, "breaking-changes.allowlist.json");
+            await File.WriteAllTextAsync(allowlistPath, allowlistBody);
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlistPath);
+
+            await Assert.That(result.ExitCode).IsEqualTo(2).Because(result.Output);
+            await Assert.That(result.Output).Contains("INDETERMINATE");
+            await Assert.That(result.Output).Contains(expectedOutput);
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The allowlist ships inside <c>schemas/</c> (and therefore inside the package
+    /// content the baseline is extracted from), but it is policy data, not a
+    /// schema: diffing it would make every allowlist edit register as a schema
+    /// change and eventually deadlock the gate against itself.
+    /// </summary>
+    [Test]
+    public async Task SchemaDiff_NodeGate_AllowlistFileIsNotDiffedAsASchema()
+    {
+        var previousDirectory = Directory.CreateTempSubdirectory("schema-diff-prev-").FullName;
+        var nextDirectory = Directory.CreateTempSubdirectory("schema-diff-next-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(previousDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(Path.Combine(nextDirectory, "Widget.json"), BaseSchema);
+            await File.WriteAllTextAsync(
+                Path.Combine(previousDirectory, "breaking-changes.allowlist.json"),
+                "{ \"entries\": [] }");
+            var allowlist = await WriteAllowlistAsync(
+                nextDirectory,
+                (SizeRemoved.File, SizeRemoved.Path, SizeRemoved.Kind, "0.5.0"));
+
+            var result = await RunNodeSchemaDiff(
+                previousDirectory,
+                nextDirectory,
+                "0.4.0",
+                "0.5.0",
+                allowlist);
+
+            await Assert.That(result.ExitCode).IsEqualTo(0).Because(result.Output);
+            await Assert.That(result.Output).DoesNotContain("breaking-changes.allowlist.json: $:");
+        }
+        finally
+        {
+            Directory.Delete(previousDirectory, recursive: true);
+            Directory.Delete(nextDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>The repository's own allowlist parses and every entry is well-formed.</summary>
+    [Test]
+    public async Task SchemaDiff_RepositoryAllowlist_IsWellFormed()
+    {
+        var allowlistPath = Path.Combine(
+            RepoLayout.ContractsProjectDir,
+            "schemas",
+            "breaking-changes.allowlist.json");
+
+        await Assert.That(File.Exists(allowlistPath)).IsTrue()
+            .Because($"the gate's allowlist must exist at {allowlistPath}");
+
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(allowlistPath));
+        var entries = document.RootElement.GetProperty("entries");
+        await Assert.That(entries.GetArrayLength()).IsGreaterThan(0);
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            foreach (var field in new[] { "file", "path", "kind", "version", "reason" })
+            {
+                await Assert.That(entry.TryGetProperty(field, out var value)).IsTrue()
+                    .Because($"every allowlist entry needs a '{field}'");
+                await Assert.That(value.GetString()).IsNotNullOrWhiteSpace();
+            }
+
+            await Assert.That(entry.GetProperty("version").GetString())
+                .Matches(@"^\d+\.\d+\.\d+$");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Conditional applicators. `if` / `then` / `else` / `dependentSchemas` /
+    // `dependentRequired` make a document's validity depend on its own shape, so
+    // adding or changing one can only reject documents the previous schema
+    // accepted. This is the shape CompensationConfiguration takes when the
+    // AGWF044 rule (a typed inverseAction requires requiredOnFailure = true) moves
+    // from the C# analyzer onto the wire.
+    // -------------------------------------------------------------------------
+
+    private const string ConditionalBaseSchema =
+        """
+        {
+          "$id": "CompensationConfiguration.json",
+          "type": "object",
+          "properties": {
+            "compensationStepType": { "type": "string" },
+            "inverseAction": { "$ref": "ActionReferenceV1.json" },
+            "requiredOnFailure": { "type": "boolean" }
+          },
+          "required": ["compensationStepType"]
+        }
+        """;
+
+    private const string ConditionalNarrowedSchema =
+        """
+        {
+          "$id": "CompensationConfiguration.json",
+          "type": "object",
+          "properties": {
+            "compensationStepType": { "type": "string" },
+            "inverseAction": { "$ref": "ActionReferenceV1.json" },
+            "requiredOnFailure": { "type": "boolean" }
+          },
+          "required": ["compensationStepType"],
+          "if": { "required": ["inverseAction"] },
+          "then": { "properties": { "requiredOnFailure": { "const": true } } }
+        }
+        """;
+
+    /// <summary>Adding a conditional rejects documents the previous schema accepted.</summary>
+    [Test]
+    public async Task SchemaDiff_AddedConditional_IsBreakingInBothClassifiers()
+    {
+        var result = JsonSchemaDiff.Compare(ConditionalBaseSchema, ConditionalNarrowedSchema);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Breaking);
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Breaking
+                && c.Description.Contains("'if' conditional was added or narrowed", StringComparison.Ordinal));
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.Breaking
+                && c.Description.Contains("'then' conditional was added or narrowed", StringComparison.Ordinal));
+
+        var gate = await RunNodeSchemaDiffOnPair(
+            ConditionalBaseSchema,
+            ConditionalNarrowedSchema,
+            "1.2.3",
+            "1.2.4");
+
+        await Assert.That(gate.ExitCode).IsEqualTo(1).Because(gate.Output);
+        await Assert.That(gate.Output).Contains("'if' conditional was added or narrowed");
+        await Assert.That(gate.Output).Contains("'then' conditional was added or narrowed");
+        await Assert.That(gate.Output).DoesNotContain("safety cannot be proven");
+    }
+
+    /// <summary>Removing a conditional only widens the accepted set.</summary>
+    [Test]
+    public async Task SchemaDiff_RemovedConditional_IsNonBreakingInBothClassifiers()
+    {
+        var result = JsonSchemaDiff.Compare(ConditionalNarrowedSchema, ConditionalBaseSchema);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.NonBreaking);
+        await Assert.That(result.Changes)
+            .Contains(c => c.Severity == ChangeSeverity.NonBreaking
+                && c.Description.Contains("'if' conditional was removed", StringComparison.Ordinal));
+
+        var gate = await RunNodeSchemaDiffOnPair(
+            ConditionalNarrowedSchema,
+            ConditionalBaseSchema,
+            "1.2.3",
+            "1.2.4");
+
+        await Assert.That(gate.ExitCode).IsEqualTo(0).Because(gate.Output);
+        await Assert.That(gate.Output).Contains("'if' conditional was removed");
+    }
+
+    /// <summary>Changing a conditional's body is a narrowing, not an annotation.</summary>
+    [Test]
+    public async Task SchemaDiff_ChangedConditional_IsBreakingInBothClassifiers()
+    {
+        const string retightened =
+            """
+            {
+              "$id": "CompensationConfiguration.json",
+              "type": "object",
+              "properties": {
+                "compensationStepType": { "type": "string" },
+                "inverseAction": { "$ref": "ActionReferenceV1.json" },
+                "requiredOnFailure": { "type": "boolean" }
+              },
+              "required": ["compensationStepType"],
+              "if": { "required": ["inverseAction", "requiredOnFailure"] },
+              "then": { "properties": { "requiredOnFailure": { "const": true } } }
+            }
+            """;
+
+        var result = JsonSchemaDiff.Compare(ConditionalNarrowedSchema, retightened);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Breaking);
+
+        var gate = await RunNodeSchemaDiffOnPair(
+            ConditionalNarrowedSchema,
+            retightened,
+            "1.2.3",
+            "1.2.4");
+
+        await Assert.That(gate.ExitCode).IsEqualTo(1).Because(gate.Output);
+        await Assert.That(gate.Output).Contains("'if' conditional was added or narrowed");
+    }
+
+    /// <summary>The whole conditional family is classified, not just if/then.</summary>
+    [Test]
+    [Arguments("else", "{ \"properties\": { \"requiredOnFailure\": { \"const\": false } } }")]
+    [Arguments("dependentSchemas", "{ \"inverseAction\": { \"required\": [\"requiredOnFailure\"] } }")]
+    [Arguments("dependentRequired", "{ \"inverseAction\": [\"requiredOnFailure\"] }")]
+    public async Task SchemaDiff_ConditionalFamily_IsClassifiedInBothClassifiers(
+        string keyword,
+        string body)
+    {
+        var next = $$"""
+            {
+              "$id": "CompensationConfiguration.json",
+              "type": "object",
+              "properties": {
+                "compensationStepType": { "type": "string" },
+                "inverseAction": { "$ref": "ActionReferenceV1.json" },
+                "requiredOnFailure": { "type": "boolean" }
+              },
+              "required": ["compensationStepType"],
+              "{{keyword}}": {{body}}
+            }
+            """;
+
+        var result = JsonSchemaDiff.Compare(ConditionalBaseSchema, next);
+
+        await Assert.That(result.Severity).IsEqualTo(ChangeSeverity.Breaking);
+        await Assert.That(result.Changes)
+            .Contains(c => c.Description.Contains(
+                $"'{keyword}' conditional was added or narrowed",
+                StringComparison.Ordinal));
+
+        var gate = await RunNodeSchemaDiffOnPair(ConditionalBaseSchema, next, "1.2.3", "1.2.4");
+
+        await Assert.That(gate.ExitCode).IsEqualTo(1).Because(gate.Output);
+        await Assert.That(gate.Output).Contains($"'{keyword}' conditional was added or narrowed");
+        await Assert.That(gate.Output).DoesNotContain("safety cannot be proven");
+    }
+
     private static async Task<CliResult> RunNodeSchemaDiffOnPair(
         string previous,
         string next,
@@ -1150,15 +1772,50 @@ public class SchemaDiffTests
         string previousDirectory,
         string nextDirectory,
         string previousVersion,
-        string candidateVersion)
+        string candidateVersion,
+        string? allowlistPath = null,
+        bool allowEqualVersions = false)
     {
         var scriptPath = Path.Combine(
             RepoLayout.RepoRoot,
             "scripts",
             "contracts-schema-diff.mjs");
-        return Cli.RunAsync(
-            "node",
+        var arguments =
             $"\"{scriptPath}\" \"{previousDirectory}\" \"{nextDirectory}\" "
-            + $"\"{previousVersion}\" \"{candidateVersion}\"");
+            + $"\"{previousVersion}\" \"{candidateVersion}\"";
+        if (allowlistPath is not null)
+        {
+            arguments += $" --allowlist \"{allowlistPath}\"";
+        }
+
+        if (allowEqualVersions)
+        {
+            arguments += " --allow-equal-versions";
+        }
+
+        return Cli.RunAsync("node", arguments);
+    }
+
+    /// <summary>Writes a breaking-change allowlist document and returns its path.
+    /// The caller owns the containing directory.</summary>
+    private static async Task<string> WriteAllowlistAsync(
+        string directory,
+        params (string File, string Path, string Kind, string Version)[] entries)
+    {
+        var body = string.Join(
+            ",\n",
+            entries.Select(entry =>
+                $$"""
+                    {
+                      "file": {{JsonSerializer.Serialize(entry.File)}},
+                      "path": {{JsonSerializer.Serialize(entry.Path)}},
+                      "kind": {{JsonSerializer.Serialize(entry.Kind)}},
+                      "version": {{JsonSerializer.Serialize(entry.Version)}},
+                      "reason": "fixture"
+                    }
+                """));
+        var allowlistPath = Path.Combine(directory, "breaking-changes.allowlist.json");
+        await File.WriteAllTextAsync(allowlistPath, $"{{\n  \"entries\": [\n{body}\n  ]\n}}\n");
+        return allowlistPath;
     }
 }
