@@ -101,6 +101,28 @@ internal static class ResilienceParser
         return new TimeoutModel(timeout);
     }
 
+    /// <summary>
+    /// Parses a syntactic <see cref="TimeSpan"/> argument (a <c>TimeSpan.From*(literal)</c>
+    /// factory call or <c>TimeSpan.Zero</c>) into a concrete value for the IR.
+    /// </summary>
+    /// <param name="expression">The argument expression to parse.</param>
+    /// <param name="value">The parsed duration when the method returns <see langword="true"/>.</param>
+    /// <returns>
+    /// <see langword="true"/> when the expression is a recognized duration literal; otherwise
+    /// <see langword="false"/>, so a caller can treat the argument as something else (for
+    /// example the inverse-action reference in a <c>Compensate</c> overload).
+    /// </returns>
+    /// <remarks>
+    /// Non-positive durations parse successfully on purpose: they must reach the IR so the
+    /// non-positive-timeout diagnostic can reject them, rather than vanishing silently.
+    /// </remarks>
+    public static bool TryGetTimeSpanArgument(ExpressionSyntax expression, out TimeSpan value)
+    {
+        ThrowHelper.ThrowIfNull(expression, nameof(expression));
+
+        return TryGetTimeSpan(expression, out value);
+    }
+
     private static bool TryGetIntLiteral(ExpressionSyntax expression, out int value)
     {
         value = 0;

@@ -140,6 +140,69 @@ public sealed class StepExtractorResilienceTests
     }
 
     /// <summary>
+    /// The timeout-only <c>Compensate&lt;T&gt;(TimeSpan)</c> overload lowers its argument into
+    /// <c>CompensationModel.Timeout</c> and leaves the inverse identity unresolved, so the
+    /// legacy runtime shape is preserved while the deadline reaches the IR.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task WalkInvocationChain_CompensateWithTimeoutOnly_CarriesInverseDeadline()
+    {
+        var stepModels = ParserTestHelper.ExtractStepModels(CompensationTimeoutOnlyWorkflow);
+
+        var assessStep = stepModels.Single(step => step.StepName == "AssessClaim");
+
+        await Assert.That(assessStep.Compensation).IsNotNull();
+        await Assert.That(assessStep.Compensation!.CompensationStepTypeName)
+            .IsEqualTo("TestNamespace.RollbackAssessment");
+        await Assert.That(assessStep.Compensation!.Timeout).IsEqualTo(TimeSpan.FromSeconds(9));
+        await Assert.That(assessStep.Compensation!.InverseActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Missing)
+            .Because("the timeout-only overload declares no inverse identity");
+    }
+
+    /// <summary>
+    /// The typed <c>Compensate&lt;T&gt;(inverseAction, TimeSpan)</c> overload lowers BOTH
+    /// arguments: the deadline in second position must not displace the inverse identity in
+    /// first position, which is what a fixed-position read of the argument list would do.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task WalkInvocationChain_TypedCompensateWithTimeout_CarriesBothIdentityAndDeadline()
+    {
+        var stepModels = ParserTestHelper.ExtractStepModels(TypedCompensationTimeoutWorkflow);
+
+        var assessStep = stepModels.Single(step => step.StepName == "AssessClaim");
+
+        await Assert.That(assessStep.Compensation).IsNotNull();
+        await Assert.That(assessStep.Compensation!.InverseActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(assessStep.Compensation!.InverseIdentity)
+            .IsEqualTo("claims/Claim/rollback-assessment");
+        await Assert.That(assessStep.Compensation!.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
+    }
+
+    /// <summary>
+    /// A NON-POSITIVE deadline in second position must still reach the IR rather than being
+    /// silently dropped: the non-positive-timeout diagnostic reads
+    /// <c>CompensationModel.Timeout</c>, so a value that never lands there is a value that
+    /// can never be rejected.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task WalkInvocationChain_TypedCompensateWithZeroTimeout_StillCarriesTheDeadline()
+    {
+        var stepModels = ParserTestHelper.ExtractStepModels(TypedZeroCompensationTimeoutWorkflow);
+
+        var assessStep = stepModels.Single(step => step.StepName == "AssessClaim");
+
+        await Assert.That(assessStep.Compensation).IsNotNull();
+        await Assert.That(assessStep.Compensation!.Timeout).IsEqualTo(TimeSpan.Zero);
+        await Assert.That(assessStep.Compensation!.InverseIdentity)
+            .IsEqualTo("claims/Claim/rollback-assessment");
+    }
+
+    /// <summary>
     /// A compensation call on a captured configuration object must not be attributed to
     /// the step whose configure callback merely contains that call.
     /// </summary>
@@ -515,6 +578,187 @@ public sealed class StepExtractorResilienceTests
                         "claims",
                         "Claim",
                         "rollback-assessment")))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose compensation is declared with the timeout-only overload, so the
+    /// inverse deadline sits in FIRST argument position.
+    /// </summary>
+    private const string CompensationTimeoutOnlyWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class RollbackAssessment : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("timeout-only-claim")]
+        public static partial class TimeoutOnlyClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("timeout-only-claim")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .Compensate<RollbackAssessment>(TimeSpan.FromSeconds(9)))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose compensation is declared with the typed overload plus a deadline, so
+    /// the inverse identity sits in first position and the deadline in second.
+    /// </summary>
+    private const string TypedCompensationTimeoutWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class RollbackAssessment : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("typed-timeout-claim")]
+        public static partial class TypedTimeoutClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("typed-timeout-claim")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .Compensate<RollbackAssessment>(
+                        new WorkflowActionReference("claims", "Claim", "rollback-assessment"),
+                        TimeSpan.FromSeconds(17)))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A workflow whose typed compensation declares a ZERO deadline, the shape the
+    /// non-positive-timeout diagnostic must be able to see.
+    /// </summary>
+    private const string TypedZeroCompensationTimeoutWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class RollbackAssessment : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        [Workflow("typed-zero-timeout-claim")]
+        public static partial class TypedZeroTimeoutClaimWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("typed-zero-timeout-claim")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step => step
+                    .Compensate<RollbackAssessment>(
+                        new WorkflowActionReference("claims", "Claim", "rollback-assessment"),
+                        TimeSpan.Zero))
                 .Finally<SettleClaim>();
         }
         """;

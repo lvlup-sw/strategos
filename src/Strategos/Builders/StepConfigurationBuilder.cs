@@ -105,6 +105,35 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
         return this;
     }
 
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(TimeSpan timeout)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ThrowIfCompensationAlreadyDeclared();
+
+        var compensation = CompensationConfiguration.Create<TCompensation>().WithTimeout(timeout);
+        _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
+        return this;
+    }
+
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(
+        WorkflowActionReference inverseAction,
+        TimeSpan timeout)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+        ThrowIfCompensationAlreadyDeclared();
+
+        var compensation = CompensationConfiguration
+            .Create<TCompensation>(inverseAction)
+            .WithTimeout(timeout);
+        _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
+        return this;
+    }
+
     private void ThrowIfCompensationAlreadyDeclared()
     {
         if (_hasCompensationDeclaration)

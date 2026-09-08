@@ -2062,8 +2062,18 @@ internal static class StepExtractor
         var symbol = semanticModel.GetSymbolInfo(typeArgument).Symbol as INamedTypeSymbol;
         var isRegisteredStep = symbol is null || ImplementsWorkflowStep(symbol);
 
-        var inverseExpression = compensateInvocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
-        if (inverseExpression is null)
+        // Four authoring overloads share this call site, so the inverse-action argument and
+        // the inverse-deadline argument are located by SHAPE, not by fixed position:
+        //   Compensate<T>()                            -> no arguments
+        //   Compensate<T>(timeout)                      -> duration in position 0
+        //   Compensate<T>(inverseAction)                -> reference in position 0
+        //   Compensate<T>(inverseAction, timeout)       -> reference then duration
+        // A duration literal and a WorkflowActionReference construction are disjoint shapes,
+        // so probing position 0 for a duration first cannot misread a typed declaration.
+        var arguments = compensateInvocation.ArgumentList.Arguments;
+        var firstExpression = arguments.Count > 0 ? arguments[0].Expression : null;
+
+        if (firstExpression is null)
         {
             return new CompensationModel(
                 compensationTypeName,
@@ -2071,19 +2081,38 @@ internal static class StepExtractor
                 InverseActionResolution: WorkflowActionReferenceResolution.Missing);
         }
 
-        if (TryExtractActionReference(inverseExpression, semanticModel, out var inverseAction))
+        if (ResilienceParser.TryGetTimeSpanArgument(firstExpression, out var timeoutOnly))
+        {
+            // Compensate<T>(timeout): legacy (untyped) inverse identity plus a deadline.
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseActionResolution: WorkflowActionReferenceResolution.Missing,
+                Timeout: timeoutOnly);
+        }
+
+        TimeSpan? inverseTimeout = null;
+        if (arguments.Count > 1
+            && ResilienceParser.TryGetTimeSpanArgument(arguments[1].Expression, out var typedTimeout))
+        {
+            inverseTimeout = typedTimeout;
+        }
+
+        if (TryExtractActionReference(firstExpression, semanticModel, out var inverseAction))
         {
             return new CompensationModel(
                 compensationTypeName,
                 IsRegisteredStep: isRegisteredStep,
                 InverseAction: inverseAction,
-                InverseActionResolution: WorkflowActionReferenceResolution.Resolved);
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved,
+                Timeout: inverseTimeout);
         }
 
         return new CompensationModel(
             compensationTypeName,
             IsRegisteredStep: isRegisteredStep,
-            InverseActionResolution: WorkflowActionReferenceResolution.DynamicOrInvalid);
+            InverseActionResolution: WorkflowActionReferenceResolution.DynamicOrInvalid,
+            Timeout: inverseTimeout);
     }
 
     /// <summary>

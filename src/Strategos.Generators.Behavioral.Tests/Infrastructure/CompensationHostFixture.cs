@@ -116,6 +116,11 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
                 // reach its terminal step (strategos#155).
                 opts.Services.AddRoundtripForkImportWorkflow();
 
+                // Inverse-deadline fixture: its first occurrence authors a one-second
+                // deadline through Compensate<T>(inverseAction, timeout) while its inverse
+                // takes twenty seconds, so the authored value decides the runtime outcome.
+                opts.Services.AddCompensationDeadlineProofWorkflow();
+
                 opts.Services.AddSingleton(this.Invocations);
                 opts.Services.AddSingleton(this.ExecutionIds);
                 opts.Services.AddResourceSetupOnStartup();
@@ -273,6 +278,63 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
         }
 
         return pending;
+    }
+
+    /// <summary>
+    /// Publishes a generated start command, then polls the saga document until
+    /// <paramref name="isSettled"/> accepts it or the budget elapses. Unlike
+    /// <see cref="RunToTerminalAsync{TSaga}"/> this is for workflows that deliberately do
+    /// NOT complete: a retained saga is the observable outcome.
+    /// </summary>
+    /// <typeparam name="TSaga">The generated saga document type.</typeparam>
+    /// <param name="workflowId">The workflow/saga identity to wait on.</param>
+    /// <param name="startCommand">The generated start command.</param>
+    /// <param name="isSettled">Predicate deciding whether the loaded saga has settled.</param>
+    /// <param name="budget">Total polling budget; defaults to 60 seconds.</param>
+    /// <returns>The settled saga document, or <see langword="null"/> if the budget elapsed.</returns>
+    public async Task<TSaga?> RunToSettledSagaAsync<TSaga>(
+        Guid workflowId,
+        object startCommand,
+        Func<TSaga, bool> isSettled,
+        TimeSpan? budget = null)
+        where TSaga : class
+    {
+        ArgumentNullException.ThrowIfNull(startCommand, nameof(startCommand));
+        ArgumentNullException.ThrowIfNull(isSettled, nameof(isSettled));
+
+        var runtime = this.RequireHost();
+        var window = budget ?? TimeSpan.FromSeconds(60);
+
+        try
+        {
+            await runtime
+                .TrackActivity()
+                .Timeout(window)
+                .DoNotAssertOnExceptionsDetected()
+                .PublishMessageAndWaitAsync(startCommand);
+        }
+        catch (TimeoutException)
+        {
+            // The slow inverse keeps the tracked session busy well past the point the saga
+            // has recorded its outcome; the poll below is the authoritative signal.
+        }
+
+        var store = runtime.Services.GetRequiredService<IDocumentStore>();
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed < window)
+        {
+            await using var query = store.QuerySession();
+            var saga = await query.LoadAsync<TSaga>(workflowId);
+            if (saga is not null && isSettled(saga))
+            {
+                return saga;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), CancellationToken.None);
+        }
+
+        return null;
     }
 
     /// <summary>

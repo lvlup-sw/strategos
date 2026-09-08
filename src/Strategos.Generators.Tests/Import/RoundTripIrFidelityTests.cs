@@ -337,27 +337,19 @@ public sealed class RoundTripIrFidelityTests
     [Test]
     public async Task CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep()
     {
+        // The inverse deadline is AUTHORED through the DSL overload, not stitched onto the
+        // definition afterwards: this test used to reach into StepDefinition.Configuration and
+        // call WithTimeout by hand because no authoring path could set it, which meant the
+        // whole C# -> export -> import -> saga chain was never exercised for that field.
         var inverse = new WorkflowActionReference("orders", "Order", "undo-process");
         var authored = Workflow<FidState>.Create("rt-comp")
             .StartWith<FidValidateStep>()
-            .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>(inverse))
+            .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>(
+                inverse,
+                TimeSpan.FromSeconds(17)))
             .Finally<FidCompleteStep>();
-        var configuredSteps = authored.Steps
-            .Select(step => step.StepType != typeof(FidProcessStep)
-                ? step
-                : step with
-                {
-                    Configuration = step.Configuration! with
-                    {
-                        Compensation = step.Configuration!.Compensation!
-                            .WithTimeout(TimeSpan.FromSeconds(17)),
-                    },
-                })
-            .ToArray();
 
-        var (dto, model) = BridgeRoundTrip(
-            authored with { Steps = configuredSteps },
-            "rt-comp");
+        var (dto, model) = BridgeRoundTrip(authored, "rt-comp");
 
         var wireComp = FindSkill(dto, "FidProcessStep").Configuration?.Compensation;
         await Assert.That(wireComp).IsNotNull()

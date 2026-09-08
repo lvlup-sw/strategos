@@ -255,58 +255,46 @@ public sealed class ResilienceDiagnosticsTests
     }
 
     /// <summary>
-    /// A zero or negative compensation deadline is rejected at the model diagnostic seam.
-    /// The current fluent step callback cannot set this nested value, but programmatically
-    /// assembled definitions and imported workflows can populate it.
+    /// A zero or negative INVERSE deadline authored through the fluent
+    /// <c>Compensate&lt;T&gt;(TimeSpan)</c> overload is rejected by the generator.
     /// </summary>
-    /// <param name="seconds">The non-positive compensation deadline in seconds.</param>
+    /// <remarks>
+    /// This ran against a hand-built <c>CompensationModel</c> until the authoring overloads
+    /// existed, and its own doc comment recorded that "the current fluent step callback
+    /// cannot set this nested value" — so the diagnostic guarded a value no DSL author could
+    /// produce. It now runs the real DSL through the generator, which is the only form that
+    /// proves the extractor populates <c>CompensationModel.Timeout</c> at all.
+    /// </remarks>
+    /// <param name="timeoutExpression">The non-positive deadline expression under test.</param>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    [Arguments(0)]
-    [Arguments(-1)]
-    public async Task Report_NonPositiveCompensationTimeout_Fires(int seconds)
+    [Arguments("TimeSpan.Zero")]
+    [Arguments("TimeSpan.FromSeconds(-1)")]
+    public async Task Analyze_NonPositiveCompensationTimeout_Fires(string timeoutExpression)
     {
-        var step = new StepModel("AssessClaim", "TestNamespace.AssessClaim")
-        {
-            Compensation = new CompensationModel(
-                "TestNamespace.RollbackStep",
-                Timeout: TimeSpan.FromSeconds(seconds)),
-        };
+        var source = WorkflowWithStepConfig(
+            stepConfig: $"step => step.Compensate<RollbackStep>({timeoutExpression})",
+            extraTypes: StepClass("RollbackStep"));
 
-        var diagnostics = new List<Diagnostic>();
-        WorkflowIncrementalGenerator.ReportResilienceDiagnostics(
-            [step],
-            [],
-            "resilience-claim",
-            Location.None,
-            diagnostics);
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(source, NonPositiveTimeoutId);
 
-        await Assert.That(diagnostics).HasCount().EqualTo(1);
-        await Assert.That(diagnostics.Single().Id).IsEqualTo(NonPositiveTimeoutId);
-        await Assert.That(diagnostics.Single().Severity).IsEqualTo(DiagnosticSeverity.Error);
+        var reported = result.Diagnostics.Where(d => d.Id == NonPositiveTimeoutId).ToList();
+        await Assert.That(reported).HasCount().EqualTo(1);
+        await Assert.That(reported.Single().Severity).IsEqualTo(DiagnosticSeverity.Error);
     }
 
-    /// <summary>A positive compensation deadline remains valid.</summary>
+    /// <summary>A positive inverse deadline authored through the DSL remains valid.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
-    public async Task Report_PositiveCompensationTimeout_DoesNotFire()
+    public async Task Analyze_PositiveCompensationTimeout_DoesNotFire()
     {
-        var step = new StepModel("AssessClaim", "TestNamespace.AssessClaim")
-        {
-            Compensation = new CompensationModel(
-                "TestNamespace.RollbackStep",
-                Timeout: TimeSpan.FromSeconds(30)),
-        };
+        var source = WorkflowWithStepConfig(
+            stepConfig: "step => step.Compensate<RollbackStep>(TimeSpan.FromSeconds(30))",
+            extraTypes: StepClass("RollbackStep"));
 
-        var diagnostics = new List<Diagnostic>();
-        WorkflowIncrementalGenerator.ReportResilienceDiagnostics(
-            [step],
-            [],
-            "resilience-claim",
-            Location.None,
-            diagnostics);
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(source);
 
-        await Assert.That(diagnostics).IsEmpty();
+        await Assert.That(result.Diagnostics.Any(d => d.Id == NonPositiveTimeoutId)).IsFalse();
     }
 
     // =========================================================================
@@ -374,6 +362,7 @@ public sealed class ResilienceDiagnosticsTests
 
         namespace TestNamespace;
 
+        [WorkflowState]
         public record ClaimState : IWorkflowState
         {
             public Guid WorkflowId { get; init; }
@@ -403,7 +392,7 @@ public sealed class ResilienceDiagnosticsTests
         {{extraTypes}}
 
         [Workflow("resilience-claim")]
-        public static partial class ResilienceClaimWorkflow
+        public static partial class ResilienceClaimWorkflowDefinition
         {
             public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
                 .Create("resilience-claim")
