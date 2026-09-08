@@ -25,7 +25,7 @@
     IApprovalBuilder, IFailureBuilder, IStepConfiguration). Issue #167 preserves
     that named subset and adds its 3 changed continuation interfaces plus
     WorkflowActionReference, the StepDefinition occurrence slot, and #169's
-    CompensationConfiguration inverse slot. The analyzer is all-or-nothing per project, so the
+    CompensationConfiguration inverse slot, and StepContext's rollback-identity seam. The analyzer is all-or-nothing per project, so the
     SCOPING is enforced in .editorconfig:
     RS0016/RS0017/RS0024/RS0025/RS0026/RS0027 are disabled assembly-wide and
     re-enabled ONLY for the explicit interface and definition files. The

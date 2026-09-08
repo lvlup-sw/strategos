@@ -478,9 +478,9 @@ public sealed class ActionInverseTests
             .Throws<ArgumentException>();
 
         await Assert.That(readerFirst!.Message)
-            .Contains("'Property:y' is restored by branch 1 and read by branch 0");
+            .Contains("'Property:y' is written during rollback by branch 1 and read by branch 0");
         await Assert.That(writerFirst!.Message)
-            .Contains("'Property:y' is restored by branch 0 and read by branch 1");
+            .Contains("'Property:y' is written during rollback by branch 0 and read by branch 1");
     }
 
     [Test]

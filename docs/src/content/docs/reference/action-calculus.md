@@ -476,13 +476,21 @@ handler. For a valid, closed forward action `A`, Strategos derives `A^-1` as:
 | Subject | The same `ActionSubject` as `A` |
 | Requirement | The effective guarantee of `A` |
 | Effective guarantee | The hard requirement of `A` |
-| Frame | Exactly the frame of `A` |
+| Frame | Exactly the same may-change frame as `A` |
 | Authority | Semantically equal in the domain authority lattice |
 
 Using the effective guarantee is important. It includes both explicit
 post-state facts and requirements preserved outside the forward frame. An
 authored inverse must be equivalent in both directions; merely accepting fewer
-states or promising a weaker restoration is not a valid inverse.
+states or promising weaker re-entry into the forward requirement set is not a
+valid inverse.
+
+`Proven` is a contract-level result. It proves that the inverse's effective
+guarantee re-enters the set of states described by the forward hard requirement
+`R_A`. It does not prove restoration of the exact concrete pre-forward state,
+equality of individual frame values with their earlier values, or reversal of
+external and event effects. When `R_A` admits several states, any of them can
+satisfy the inverse contract.
 
 `ActionCalculus.AnalyzeInverse` returns `Proven`, `Missing`, `Refuted`,
 `Opaque`, or `Invalid`, with an obligation-specific explanation and a stable
@@ -567,10 +575,21 @@ execution id for deterministic correlation and completed-delivery
 deduplication.
 Delivery remains at-least-once: inverse implementations that perform external
 effects must either be idempotent or use that rollback id as their durable
-idempotency key. An inverse failure, an unmatched outcome, or a timeout is never
-recursively compensated or assumed successful: the saga and its journal remain
-in `Failed` for reconciliation. Failure handlers run only after a successful
-rollback of the selected scope.
+idempotency key. Generated handlers expose it directly as
+`StepContext.RollbackId`, with `StepContext.IsCompensation` distinguishing an
+inverse delivery. `CorrelationId` retains the rollback id's N-format text for
+tracing compatibility, but compensation code should not parse it for identity.
+An inverse failure, an unmatched outcome, or a timeout is never recursively
+compensated or assumed successful: the saga and its journal remain in `Failed`
+for reconciliation. Failure handlers run only after a successful rollback of
+the selected scope.
+
+```csharp
+if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
+{
+    await payments.RefundOnceAsync(rollbackId, state.PaymentId, ct);
+}
+```
 
 Typed derived compensation is restricted to `SagaDocument` persistence in
 v2.13. An event-sourced state's consumer-defined `ApplyEvent` method may legally

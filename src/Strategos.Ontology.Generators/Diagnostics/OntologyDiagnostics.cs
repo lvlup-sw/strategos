@@ -22,7 +22,7 @@ internal static class OntologyDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A compensation must have the same subject, exact frame, and semantic authority as the forward action, require its effective guarantee, and restore its hard requirement.",
+        description: "A compensation must have the same subject, exact frame, and semantic authority as the forward action, require its effective guarantee, and re-enter its hard-requirement state set.",
         customTags: WellKnownDiagnosticTags.CompilationEnd);
 
     public static readonly DiagnosticDescriptor InvalidAuthorityLattice = new(

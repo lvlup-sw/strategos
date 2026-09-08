@@ -40,7 +40,7 @@ public interface IActionBuilder
     /// <summary>Adds a resource to the action's declared frame.</summary>
     IActionBuilder Touches(ActionResource resource);
 
-    /// <summary>Names the action that restores this action's declared frame.</summary>
+    /// <summary>Names the action declared to implement this action's contract inverse.</summary>
     IActionBuilder CompensatedBy(string actionName);
 
     /// <summary>Adds a hard typed precondition.</summary>

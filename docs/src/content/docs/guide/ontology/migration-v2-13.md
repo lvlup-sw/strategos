@@ -469,6 +469,13 @@ Strategos mechanically derives the inverse of forward action `A`:
 - its effective guarantee equals `A`'s hard requirement;
 - it has the same subject, exact frame, and semantically equal authority.
 
+An inverse reported as `Proven` re-enters the set of states described by `A`'s
+hard requirement. It does not restore a recorded concrete pre-forward state,
+prove that each property in the frame regained its earlier value, or reverse
+external and event effects. The shared frame is the same may-change boundary.
+If the hard requirement admits multiple states, any of them can satisfy the
+proved inverse contract.
+
 The authored inverse must be equivalent in both directions. A non-empty frame
 requires executable inverse code; an empty-frame action may use the distinct
 identity inverse. `AGWF044` reports a legacy, dynamic, unresolved, opaque, or
@@ -498,6 +505,22 @@ closed and retains the saga journal for reconciliation; it does not recursively
 enter compensation. Update operational tooling so a retained failed saga and
 `CompensationOutcomeUnknown` are treated as operator-visible incidents rather
 than ordinary terminal completion.
+
+Generated inverse handlers now set `StepContext.IsCompensation` and expose the
+stable delivery identity as `StepContext.RollbackId`. External effects remain
+at-least-once, so migrate inverse steps to use `RollbackId` as their durable
+idempotency key:
+
+```csharp
+if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
+{
+    await payments.RefundOnceAsync(rollbackId, state.PaymentId, ct);
+}
+```
+
+`CorrelationId` continues to contain the rollback id in N format for tracing
+compatibility. Do not parse it for idempotency. Ordinary forward contexts keep
+`IsCompensation == false` and `RollbackId == null`.
 
 In v2.13, typed derived compensation requires `SagaDocument` persistence.
 `EventSourced` workflows own their `ApplyEvent` implementation, and that method

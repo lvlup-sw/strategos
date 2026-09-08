@@ -7,9 +7,10 @@
 # Builds src/Strategos with Microsoft.CodeAnalysis.PublicApiAnalyzers. The
 # historical 7 Strategos.Builders entrypoints remain the downstream mirror's
 # named subset. The local allowlist also covers the 3 continuation interfaces
-# changed by #167, WorkflowActionReference, and its StepDefinition carrier. Any
-# change to that public surface without a matching PublicAPI.Unshipped.txt entry
-# raises RS0016/RS0017 and the build fails.
+# changed by #167, WorkflowActionReference, its StepDefinition carrier,
+# CompensationConfiguration, and StepContext's rollback-identity seam. Any
+# change to that public surface without a matching PublicAPI.Unshipped.txt
+# entry raises RS0016/RS0017 and the build fails.
 #
 # On such a failure this script prints the cross-product remediation protocol
 # VERBATIM (the exarchos strategos-api-mirror.test.ts consumer depends on this

@@ -47,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sequence, parallel, and nested-scope structure. The workflow generator proves
   `.Compensate<T>(WorkflowActionReference)` declarations and reports `AGWF044`
   for inverse disagreement or `AGWF045` when compensability does not propagate
-  through a rollback-claimed scope.
+  through a rollback-claimed scope. `Proven` means re-entry into the forward
+  hard-requirement set; it does not prove restoration of a concrete pre-state.
 - **Durable completed-prefix rollback (#169).** Generated sagas journal completed
   forward occurrences with stable topology and execution identity, backed by a
   persisted pre-dispatch authority claim that rejects forged and stale results.
@@ -55,7 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their concrete scope, and quiesce forks before rollback. Inverse
   completion/failure messages are distinct from forward flow; reducer-applied
   state is folded between inverses, and failed or timed-out inverse outcomes
-  retain the saga for reconciliation.
+  retain the saga for reconciliation. `StepContext.IsCompensation` and the
+  stable `StepContext.RollbackId` make inverse delivery explicit and provide a
+  durable idempotency key without parsing `CorrelationId`.
   Typed derived compensation is restricted to saga-document persistence in
   v2.13: event-sourced workflows receive `AGWF045` because a consumer-defined
   `ApplyEvent` method cannot yet be proved to fold generated rollback state

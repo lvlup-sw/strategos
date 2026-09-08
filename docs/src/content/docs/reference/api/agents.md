@@ -6,20 +6,22 @@ title: "Agents API"
 
 The `Strategos.Agents` package provides integration with Microsoft.Extensions.AI for LLM-powered workflow steps.
 
-## IAgentStep\<TState\>
+## IAgentStep\<TState, TResult\>
 
-Base interface for LLM-powered workflow steps. Extends `IWorkflowStep<TState>` with agent-specific context.
+Marker interface for LLM-powered workflow steps that produce a typed structured
+result. It extends `IWorkflowStep<TState>`; use `string` as `TResult` for
+unstructured output.
 
 ### Methods
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `ExecuteAsync` | `TState state`, `AgentStepContext context`, `CancellationToken ct` | `Task<StepResult<TState>>` | Executes the agent step |
+| `ExecuteAsync` | `TState state`, `StepContext context`, `CancellationToken ct` | `Task<StepResult<TState>>` | Executes the inherited workflow-step contract |
 
 ### Example
 
 ```csharp
-public class AnalyzeDocumentStep : IAgentStep<DocumentState>
+public class AnalyzeDocumentStep : IAgentStep<DocumentState, string>
 {
     private readonly IChatClient _chatClient;
 
@@ -30,7 +32,7 @@ public class AnalyzeDocumentStep : IAgentStep<DocumentState>
 
     public async Task<StepResult<DocumentState>> ExecuteAsync(
         DocumentState state,
-        AgentStepContext context,
+        StepContext context,
         CancellationToken ct)
     {
         var response = await _chatClient.GetResponseAsync(
@@ -48,47 +50,31 @@ public class AnalyzeDocumentStep : IAgentStep<DocumentState>
 
 ## AgentStepContext
 
-Extended execution context for agent steps. Inherits all properties from `StepContext`.
+Optional agent-services value used by integrations that assemble chat execution.
+It is a separate record and does not inherit `StepContext`; workflow-step
+implementations receive `StepContext` through `ExecuteAsync`.
 
 ### Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `WorkflowId` | `Guid` | Workflow instance identifier |
-| `CorrelationId` | `string` | Correlation ID for tracing |
-| `Timestamp` | `DateTimeOffset` | When the step execution started |
-| `Phase` | `string` | Current workflow phase name |
 | `StepName` | `string` | Current step name |
-| `Metadata` | `IReadOnlyDictionary<string, object>` | Additional context data |
-| `ConversationThread` | `IConversationThread?` | Conversation history access |
+| `StepExecutionId` | `Guid` | Unique identity for this step execution |
+| `ChatClient` | `IChatClient` | Chat client used for LLM interaction |
+| `ConversationThreadManager` | `IConversationThreadManager?` | Optional conversation-continuity service |
 | `StreamingCallback` | `IStreamingCallback?` | Real-time token streaming |
-| `BudgetStatus` | `BudgetStatus` | Current resource budget |
 
 ### Example
 
 ```csharp
-public async Task<StepResult<ChatState>> ExecuteAsync(
-    ChatState state,
-    AgentStepContext context,
-    CancellationToken ct)
-{
-    // Access conversation history
-    var history = context.ConversationThread?.GetMessages();
-
-    // Check budget before expensive operation
-    if (context.BudgetStatus.Level == ScarcityLevel.Critical)
-    {
-        return state.With(s => s.Response, "Budget exhausted").AsResult();
-    }
-
-    // Stream response tokens
-    await foreach (var chunk in _chatClient.GetStreamingResponseAsync(...))
-    {
-        context.StreamingCallback?.OnToken(chunk.Text);
-    }
-
-    // ...
-}
+var agentContext = new AgentStepContext(
+    chatClient,
+    workflowId,
+    stepName,
+    stepExecutionId,
+    streamingCallback,
+    conversationThreadManager);
 ```
 
 ---

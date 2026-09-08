@@ -2,16 +2,17 @@
 # -----------------------------------------------------------------------
 # verify-generator-consumer-build.sh
 #
-# G1 / F1 regression net (v2.7.0-preview.1).
+# G1 / F1 packed-artifact regression net.
 #
 # Builds a throwaway consumer project that PackageReferences only packed
 # Strategos artifacts from the given package source directory. The probe keeps
 # the original IPhaseAwareSaga dependency-flow check and compiles a typed
 # workflow/action binding with mechanically proved compensation through the
 # packaged source generator. Negative builds deliberately introduce an illegal
-# seam and a contradictory authored inverse; they must fail exclusively with
-# AGWF041 and AGWF044 respectively. This proves the packaged analyzer is loaded
-# and enforcing both #167 and #169 rather than merely present.
+# seam, a contradictory workflow inverse, and a contradictory ontology-authored
+# inverse; they must fail exclusively with AGWF041, AGWF044, and AONT216
+# respectively. This proves both packaged analyzer assemblies are restored,
+# loaded, and enforcing #167/#169 rather than merely present.
 #
 # Usage:
 #   scripts/verify-generator-consumer-build.sh <path-to-packages-dir>
@@ -79,9 +80,10 @@ GEN_NUPKG="$(find_exact_package 'LevelUp.Strategos.Generators')"
 CONTRACTS_NUPKG="$(find_exact_package 'LevelUp.Strategos.Contracts')"
 IDENTITY_NUPKG="$(find_exact_package 'LevelUp.Strategos.Identity.Abstractions')"
 ONTOLOGY_NUPKG="$(find_exact_package 'LevelUp.Strategos.Ontology')"
+ONTOLOGY_GEN_NUPKG="$(find_exact_package 'LevelUp.Strategos.Ontology.Generators')"
 
 VERSION="$(package_metadata_value "$CORE_NUPKG" version)"
-for package_path in "$AGENTS_NUPKG" "$GEN_NUPKG" "$ONTOLOGY_NUPKG"; do
+for package_path in "$AGENTS_NUPKG" "$GEN_NUPKG" "$ONTOLOGY_NUPKG" "$ONTOLOGY_GEN_NUPKG"; do
   package_version="$(package_metadata_value "$package_path" version)"
   if [[ "$package_version" != "$VERSION" ]]; then
     echo "packed Strategos versions disagree: expected $VERSION, found $package_version in $package_path" >&2
@@ -116,7 +118,8 @@ sha256sum \
   "$CONTRACTS_NUPKG" \
   "$GEN_NUPKG" \
   "$IDENTITY_NUPKG" \
-  "$ONTOLOGY_NUPKG"
+  "$ONTOLOGY_NUPKG" \
+  "$ONTOLOGY_GEN_NUPKG"
 
 PROBE_DIR="$(mktemp -d)"
 trap 'rm -rf "$PROBE_DIR"' EXIT
@@ -153,6 +156,7 @@ cat > "$PROBE_DIR/ConsumerProbe.csproj" <<EOF
     <PackageReference Include="LevelUp.Strategos.Agents" Version="$VERSION" />
     <PackageReference Include="LevelUp.Strategos.Generators" Version="$VERSION" />
     <PackageReference Include="LevelUp.Strategos.Ontology" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Ontology.Generators" Version="$VERSION" />
     <!-- The generated saga surface targets the same Wolverine/Marten compile-time
          runtime as Strategos.Generators.Behavioral.Tests. These are explicit
          consumer dependencies, not dependencies of the development-only analyzer. -->
@@ -189,6 +193,7 @@ public partial class ProbeSaga : IPhaseAwareSaga
 
 public sealed class Order
 {
+    public string Id { get; set; } = "";
     public int Stage { get; set; }
 }
 
@@ -198,8 +203,11 @@ public sealed class OrdersOntology : DomainOntology
 
     protected override void Define(IOntologyBuilder builder)
     {
-        builder.Object<Order>("Order", obj =>
+        builder.Object<Order>(obj =>
         {
+            obj.Key(order => order.Id);
+            obj.Property(order => order.Stage);
+
             obj.Action("fulfill")
                 .Requires(order => order.Stage == 0)
                 .Ensures(order => order.Stage == 2)
@@ -277,6 +285,33 @@ public static partial class ConsumerProbeWorkflowDefinition
             .Compensate<UndoCompleteStep>(new WorkflowActionReference(
                 "orders", "Order", "undo-complete")));
 }
+
+#if INVALID_AUTHORED_INVERSE
+public sealed class InvalidAuthoredInverseOntology : DomainOntology
+{
+    public override string DomainName => "aont216-probe";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<Order>(obj =>
+        {
+            obj.Key(order => order.Id);
+            obj.Property(order => order.Stage);
+
+            obj.Action("publish")
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 1)
+                .Modifies(order => order.Stage)
+                .CompensatedBy("unpublish");
+
+            obj.Action("unpublish")
+                .Requires(order => order.Stage == 2)
+                .Ensures(order => order.Stage == 0)
+                .Modifies(order => order.Stage);
+        });
+    }
+}
+#endif
 EOF
 
 # Use a project-local global-packages dir so this probe is hermetic and not
@@ -335,8 +370,49 @@ verify_restored_artifact 'LevelUp.Strategos.Contracts' "$CONTRACTS_VERSION" "$CO
 verify_restored_artifact 'LevelUp.Strategos.Generators' "$VERSION" "$GEN_NUPKG"
 verify_restored_artifact 'LevelUp.Strategos.Identity.Abstractions' "$IDENTITY_VERSION" "$IDENTITY_NUPKG"
 verify_restored_artifact 'LevelUp.Strategos.Ontology' "$VERSION" "$ONTOLOGY_NUPKG"
+verify_restored_artifact 'LevelUp.Strategos.Ontology.Generators' "$VERSION" "$ONTOLOGY_GEN_NUPKG"
 
 echo "OK: legal packed binding and typed compensation compiled; IPhaseAwareSaga is reachable transitively."
+
+INVALID_AUTHORED_INVERSE_LOG="$PROBE_DIR/invalid-authored-inverse-build.log"
+set +e
+dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+  --nologo \
+  -v:m \
+  --no-restore \
+  --no-incremental \
+  /p:DefineConstants=INVALID_AUTHORED_INVERSE \
+  /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+  /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$INVALID_AUTHORED_INVERSE_LOG" 2>&1
+invalid_authored_inverse_status=$?
+set -e
+
+if [[ "$invalid_authored_inverse_status" -eq 0 ]]; then
+  echo "FAIL: contradictory ontology-authored inverse compiled; AONT216 enforcement did not run." >&2
+  cat "$INVALID_AUTHORED_INVERSE_LOG" >&2
+  exit 2
+fi
+
+mapfile -t invalid_authored_inverse_error_codes < <(
+  sed -nE 's/.*[[:space:]]error[[:space:]]([[:alpha:]]+[[:digit:]]+):.*/\1/p' \
+    "$INVALID_AUTHORED_INVERSE_LOG" \
+    | sort -u
+)
+if [[ ${#invalid_authored_inverse_error_codes[@]} -ne 1 \
+   || "${invalid_authored_inverse_error_codes[0]}" != 'AONT216' ]]; then
+  echo "FAIL: contradictory ontology-authored inverse did not fail exclusively with AONT216." >&2
+  cat "$INVALID_AUTHORED_INVERSE_LOG" >&2
+  exit 2
+fi
+
+if ! grep -Fq "Action 'publish' names compensation 'unpublish'" \
+     "$INVALID_AUTHORED_INVERSE_LOG"; then
+  echo "FAIL: AONT216 did not identify the deliberately contradictory ontology-authored inverse." >&2
+  cat "$INVALID_AUTHORED_INVERSE_LOG" >&2
+  exit 2
+fi
+
+echo "OK: contradictory ontology-authored inverse failed closed with AONT216."
 
 ILLEGAL_LOG="$PROBE_DIR/illegal-build.log"
 set +e

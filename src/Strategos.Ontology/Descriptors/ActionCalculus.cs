@@ -752,9 +752,9 @@ public static class ActionCalculus
             .First();
         return conflict.IsWriteWrite
             ? "Parallel rollback branches must have pairwise-disjoint frames; resource "
-                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is restored by more than one branch."
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is written during rollback by more than one branch."
             : "Parallel rollback branches must be noninterfering; resource "
-                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is restored by branch "
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is written during rollback by branch "
                 + $"{conflict.WriterIndex} and read by branch {conflict.OtherIndex}.";
     }
 

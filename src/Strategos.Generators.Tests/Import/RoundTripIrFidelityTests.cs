@@ -11,6 +11,7 @@ using Strategos.Abstractions;
 using Strategos.Builders;
 using Strategos.Contracts;
 using Strategos.Definitions;
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Import;
 using Strategos.Generators.Models;
 using Strategos.Steps;
@@ -385,6 +386,13 @@ public sealed class RoundTripIrFidelityTests
         await Assert.That(modelStep.Compensation.InverseIdentity)
             .IsEqualTo("orders/Order/undo-process");
         await Assert.That(modelStep.Compensation.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
+
+        var generatedSaga = SagaEmitter.Emit(model);
+        await Assert.That(generatedSaga).Contains($"entry.InverseTimeoutTicks == {TimeSpan.FromSeconds(17).Ticks}L")
+            .Because("the imported compensation deadline must remain topology-bound in generated rollback code");
+        await Assert.That(generatedSaga).Contains(
+            "yield return new CompensationRollbackTimeout(WorkflowId, entry.RollbackId, entry.Sequence, entry.InverseTimeoutTicks);")
+            .Because("the scheduled rollback deadline must use the exact journaled inverse timeout");
 
         // The compensation step type is folded into the model's step MODELS (for its worker command /
         // handler / DI registration) but NOT onto the linear phase-name chain (it is reached only via

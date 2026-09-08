@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 
 using Strategos.Builders;
 using Strategos.Definitions;
+using Strategos.Steps;
 using Strategos.Tests.FixtureExport;
 
 namespace Strategos.Tests.PublicApi;
@@ -24,7 +25,8 @@ namespace Strategos.Tests.PublicApi;
 /// gate to the 3 continuations changed by typed occurrence configuration, the
 /// public <see cref="WorkflowActionReference"/> value object, its
 /// <see cref="StepDefinition"/> carrier property, and issue #169's reviewed
-/// <see cref="CompensationConfiguration"/> surface.
+/// <see cref="CompensationConfiguration"/> surface, and the explicit rollback
+/// identity carried by <see cref="StepContext"/>.
 /// </para>
 /// <para>
 /// These tests assert the historical subset remains intact, the expanded
@@ -112,6 +114,11 @@ public sealed class BuilderApiBaselineTests
         "WorkflowActionReference",
         "StepDefinition",
         "CompensationConfiguration",
+    ];
+
+    private static readonly string[] TrackedStepFileStems =
+    [
+        "StepContext",
     ];
 
     private static string ShippedBaselinePath { get; } = Path.Combine(
@@ -303,6 +310,23 @@ public sealed class BuilderApiBaselineTests
         await Assert.That(actual).IsEquivalentTo(TrackedDefinitionFileStems);
     }
 
+    [Test]
+    public async Task EditorConfig_StepReEnableSections_ExactlyMatchIssue169Surface()
+    {
+        var text = await File.ReadAllTextAsync(EditorConfigPath);
+        var matches = Regex.Matches(
+            text,
+            @"\[Steps/(?<stem>[^\]/{},]+)\.cs\]",
+            RegexOptions.None,
+            TimeSpan.FromSeconds(2));
+
+        var actual = matches
+            .Select(static match => match.Groups["stem"].Value)
+            .ToArray();
+
+        await Assert.That(actual).IsEquivalentTo(TrackedStepFileStems);
+    }
+
     /// <summary>
     /// DIM-5 guard: every file the <c>.editorconfig</c> glob names must actually
     /// exist under <c>Abstractions/</c>. A glob entry that matches no file is a
@@ -339,6 +363,22 @@ public sealed class BuilderApiBaselineTests
     }
 
     [Test]
+    public async Task TrackedStepFiles_Exist()
+    {
+        foreach (var fileStem in TrackedStepFileStems)
+        {
+            var path = Path.Combine(
+                FixturePaths.RepoRoot,
+                "src",
+                "Strategos",
+                "Steps",
+                fileStem + ".cs");
+
+            await Assert.That(File.Exists(path)).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task ApiBaselines_DeclareOnlyReviewedTopLevelTypes()
     {
         var shipped = await File.ReadAllTextAsync(ShippedBaselinePath);
@@ -355,6 +395,7 @@ public sealed class BuilderApiBaselineTests
                 typeof(StepDefinition).FullName!,
                 typeof(WorkflowActionReference).FullName!,
                 typeof(CompensationConfiguration).FullName!,
+                typeof(StepContext).FullName!,
             ])
             .ToArray();
 

@@ -118,6 +118,41 @@ public class StepContextTests
         await Assert.That(context.RetryCount).IsEqualTo(3);
     }
 
+    /// <summary>
+    /// Verifies that compensation metadata defaults to ordinary forward execution.
+    /// </summary>
+    [Test]
+    public async Task CompensationMetadata_DefaultsToForwardExecution()
+    {
+        // Arrange
+        var context = CreateValidContext();
+
+        // Assert
+        await Assert.That(context.IsCompensation).IsFalse();
+        await Assert.That(context.RollbackId).IsNull();
+    }
+
+    /// <summary>
+    /// Verifies that compensation metadata can be set explicitly and immutably.
+    /// </summary>
+    [Test]
+    public async Task CompensationMetadata_CanBeSetExplicitly()
+    {
+        // Arrange
+        var rollbackId = Guid.NewGuid();
+
+        // Act
+        var context = CreateValidContext() with
+        {
+            IsCompensation = true,
+            RollbackId = rollbackId,
+        };
+
+        // Assert
+        await Assert.That(context.IsCompensation).IsTrue();
+        await Assert.That(context.RollbackId).IsEqualTo(rollbackId);
+    }
+
     // =============================================================================
     // C. Factory Method Tests
     // =============================================================================
@@ -143,6 +178,8 @@ public class StepContextTests
         await Assert.That(context.CorrelationId).IsNotEmpty();
         await Assert.That(context.Timestamp).IsGreaterThanOrEqualTo(DateTimeOffset.UtcNow.AddSeconds(-1));
         await Assert.That(context.Timestamp).IsLessThanOrEqualTo(DateTimeOffset.UtcNow.AddSeconds(1));
+        await Assert.That(context.IsCompensation).IsFalse();
+        await Assert.That(context.RollbackId).IsNull();
     }
 
     /// <summary>
@@ -202,6 +239,8 @@ public class StepContextTests
         await Assert.That(modified.StepName).IsEqualTo(original.StepName);
         await Assert.That(modified.Timestamp).IsEqualTo(original.Timestamp);
         await Assert.That(modified.CurrentPhase).IsEqualTo(original.CurrentPhase);
+        await Assert.That(modified.IsCompensation).IsEqualTo(original.IsCompensation);
+        await Assert.That(modified.RollbackId).IsEqualTo(original.RollbackId);
     }
 
     // =============================================================================

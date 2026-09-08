@@ -93,13 +93,13 @@ public sealed record ActionInverseContract
     /// <summary>Gets the forward action's effective guarantee, required before rollback.</summary>
     public ActionPredicate Requirement { get; }
 
-    /// <summary>Gets the forward action's hard requirement, restored after rollback.</summary>
+    /// <summary>Gets the forward action's hard requirement set, re-entered after rollback.</summary>
     public ActionPredicate Guarantee { get; }
 
     /// <summary>Gets the forward action's semantic authority requirement.</summary>
     public AuthorityRequirement RequiredAuthority { get; }
 
-    /// <summary>Gets the exact frame the inverse must restore.</summary>
+    /// <summary>Gets the exact may-change frame the inverse must declare.</summary>
     public ActionFrame Frame { get; }
 }
 

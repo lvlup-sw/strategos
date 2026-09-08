@@ -47,7 +47,7 @@ public sealed record ActionRollbackLeaf
     /// <summary>Gets the completed forward action.</summary>
     public ActionContractIdentity ForwardAction { get; }
 
-    /// <summary>Gets the canonical frame restored by this rollback leaf.</summary>
+    /// <summary>Gets the rollback leaf's canonical may-change frame.</summary>
     public ActionFrame Frame { get; }
 
     internal ActionFrame ReadFootprint { get; }
@@ -212,7 +212,7 @@ public sealed class ActionRollbackPlan
     /// <summary>Gets nested plans in rollback execution order.</summary>
     public ImmutableArray<ActionRollbackPlan> Children { get; }
 
-    /// <summary>Gets the canonical union of resources restored by this plan.</summary>
+    /// <summary>Gets the canonical union of resources the plan may change.</summary>
     public ActionFrame Frame { get; }
 
     internal ActionFrame ReadFootprint { get; }

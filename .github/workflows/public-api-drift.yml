@@ -28,8 +28,9 @@ name: Public API drift (cross-repo notify)
 # historical entrypoint *signatures*, not the transitive type graph. The
 # local analyzer allowlist additionally guards the three continuation interfaces
 # changed by #167 (ILoopForkJoinBuilder, IApprovalEscalationBuilder, and
-# IApprovalRejectionBuilder) plus WorkflowActionReference and the StepDefinition
-# carrier property. IForkPathBuilder and IContextBuilder remain transitively
+# IApprovalRejectionBuilder) plus WorkflowActionReference, the StepDefinition
+# carrier property, CompensationConfiguration, and StepContext's rollback-
+# identity seam. IForkPathBuilder and IContextBuilder remain transitively
 # represented by the historical entrypoints.
 #
 # Downstream mirror scope is the seven entrypoints; the local baseline is the

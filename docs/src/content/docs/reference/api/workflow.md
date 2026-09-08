@@ -212,10 +212,13 @@ by an inverse step:
 
 The generator derives the required inverse contract from the forward action and
 proves that the authored inverse has the same subject, frame, and semantic
-authority, requires the forward effective guarantee, and restores the forward
-hard requirement. `AGWF044` reports a disagreement. If the workflow or a bound
-action claims rollback, `AGWF045` rejects a scope containing any completed leaf
-with a non-empty frame but no proved inverse. Typed compensation also rejects
+authority, requires the forward effective guarantee, and re-enters the set of
+states described by the forward hard requirement. This proof does not establish
+restoration of the exact concrete pre-forward state or reversal of external
+effects; the frame is the same declared may-change boundary, not a snapshot.
+`AGWF044` reports a disagreement. If the workflow or a bound action claims
+rollback, `AGWF045` rejects a scope containing any completed leaf with a
+non-empty frame but no proved inverse. Typed compensation also rejects
 `RequiredOnFailure = false`; completed-prefix rollback is mandatory once the
 typed program claims rollback safety.
 
@@ -289,12 +292,14 @@ Execution context passed to every step. Contains metadata about the current exec
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `CorrelationId` | `string` | Correlation ID for tracing; do not parse it as a durable identity |
 | `WorkflowId` | `Guid` | Unique identifier for this workflow instance |
-| `CorrelationId` | `string` | Correlation ID for tracing |
-| `Timestamp` | `DateTimeOffset` | When the step execution started |
-| `Phase` | `string` | Current workflow phase name |
 | `StepName` | `string` | Current step name |
-| `Metadata` | `IReadOnlyDictionary<string, object>` | Additional context data |
+| `Timestamp` | `DateTimeOffset` | When the step execution started |
+| `CurrentPhase` | `string` | Current workflow phase name |
+| `RetryCount` | `int` | Number of retry attempts; defaults to zero |
+| `IsCompensation` | `bool` | Whether this is an inverse execution; defaults to `false` |
+| `RollbackId` | `Guid?` | Stable identity shared by retries of one inverse execution; `null` during forward execution |
 
 ### Example
 
@@ -307,7 +312,13 @@ public async Task<StepResult<OrderState>> ExecuteAsync(
     _logger.LogInformation(
         "Processing order {WorkflowId} at phase {Phase}",
         context.WorkflowId,
-        context.Phase);
+        context.CurrentPhase);
+
+    if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
+    {
+        // At-least-once inverse delivery requires a durable idempotency key.
+        await _payments.RefundOnceAsync(rollbackId, state.PaymentId, ct);
+    }
 
     // Step logic...
 }

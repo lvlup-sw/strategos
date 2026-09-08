@@ -739,12 +739,36 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine();
         sb.AppendLine("        try");
         sb.AppendLine("        {");
+        if (CompensationTopology.UsesDerivedRuntime(model) && isInverseStepType)
+        {
+            sb.AppendLine("            if (command.IsCompensation");
+            sb.AppendLine("                && (command.RollbackId is not Guid rollbackId");
+            sb.AppendLine("                    || rollbackId == Guid.Empty");
+            sb.AppendLine("                    || command.StepExecutionId != rollbackId");
+            sb.AppendLine("                    || command.RollbackJournalSequence is not long journalSequence");
+            sb.AppendLine("                    || journalSequence <= 0))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                // Reject malformed inverse metadata before user code can perform effects.");
+            sb.AppendLine($"                return new {model.PascalName}RollbackFailed(");
+            sb.AppendLine("                    command.WorkflowId,");
+            sb.AppendLine("                    command.RollbackId ?? command.StepExecutionId,");
+            sb.AppendLine("                    command.RollbackJournalSequence ?? -1L,");
+            sb.AppendLine("                    nameof(InvalidOperationException),");
+            sb.AppendLine("                    \"Inverse command has missing or inconsistent durable rollback metadata.\",");
+            sb.AppendLine("                    null,");
+            sb.AppendLine("                    DateTimeOffset.UtcNow);");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+        }
+
         if (CompensationTopology.UsesDerivedRuntime(model))
         {
             sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\") with");
             sb.AppendLine("            {");
-            sb.AppendLine("                // A retry or redelivery of one inverse keeps the same correlation id.");
+            sb.AppendLine("                // Keep the historical correlation value while exposing compensation identity explicitly.");
             sb.AppendLine("                CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),");
+            sb.AppendLine("                IsCompensation = command.IsCompensation,");
+            sb.AppendLine("                RollbackId = command.IsCompensation ? command.RollbackId : null,");
             sb.AppendLine("            };");
         }
         else
@@ -784,26 +808,12 @@ internal static class WorkerHandlerEmitter
         {
             sb.AppendLine("            if (command.IsCompensation)");
             sb.AppendLine("            {");
-            sb.AppendLine("                if (command.RollbackId is Guid rollbackId");
-            sb.AppendLine("                    && command.RollbackJournalSequence is long journalSequence)");
-            sb.AppendLine("                {");
-            sb.AppendLine("                    // Inverse completion has its own message type and can never advance forward flow.");
-            sb.AppendLine($"                    return new {model.PascalName}{stepName}RollbackCompleted(");
-            sb.AppendLine("                        command.WorkflowId,");
-            sb.AppendLine("                        rollbackId,");
-            sb.AppendLine("                        journalSequence,");
-            sb.AppendLine("                        result.UpdatedState,");
-            sb.AppendLine("                        DateTimeOffset.UtcNow);");
-            sb.AppendLine("                }");
-            sb.AppendLine();
-            sb.AppendLine("                // Malformed inverse metadata must never fall through to forward completion.");
-            sb.AppendLine($"                return new {model.PascalName}RollbackFailed(");
+            sb.AppendLine("                // Inverse completion has its own message type and can never advance forward flow.");
+            sb.AppendLine($"                return new {model.PascalName}{stepName}RollbackCompleted(");
             sb.AppendLine("                    command.WorkflowId,");
-            sb.AppendLine("                    command.RollbackId ?? command.StepExecutionId,");
-            sb.AppendLine("                    command.RollbackJournalSequence ?? -1L,");
-            sb.AppendLine("                    nameof(InvalidOperationException),");
-            sb.AppendLine("                    \"Inverse command is missing durable rollback metadata.\",");
-            sb.AppendLine("                    null,");
+            sb.AppendLine("                    command.RollbackId.GetValueOrDefault(),");
+            sb.AppendLine("                    command.RollbackJournalSequence.GetValueOrDefault(),");
+            sb.AppendLine("                    result.UpdatedState,");
             sb.AppendLine("                    DateTimeOffset.UtcNow);");
             sb.AppendLine("            }");
             sb.AppendLine();

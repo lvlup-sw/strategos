@@ -66,6 +66,32 @@ public class DerivedCompensationRuntimeTests
         await Assert.That(handlers).Contains("CorrelationId = (command.RollbackId ?? command.StepExecutionId)");
     }
 
+    /// <summary>Configured inverse deadlines survive lowering into every durable timeout boundary.</summary>
+    [Test]
+    public async Task Emit_TypedProgram_PropagatesConfiguredAndDefaultInverseTimeoutsExactly()
+    {
+        var configuredTimeout = TimeSpan.FromSeconds(17);
+        var model = CreateLinearModel(configuredTimeout);
+
+        var saga = SagaEmitter.Emit(model);
+
+        await Assert.That(saga).Contains(
+            "\"root/step:A#0\" =>\n"
+            + "                MatchesCompensationScopeTemplate(entry.ScopeKey, \"root\")\n"
+            + "                && string.Equals(entry.ScopeKind, \"Root\", StringComparison.Ordinal)\n"
+            + "                && entry.ScopeOrdinal == 0");
+        await Assert.That(saga).Contains(
+            $"entry.InverseTimeoutTicks == {configuredTimeout.Ticks}L")
+            .Because("the topology validator must bind A to its configured inverse deadline");
+        await Assert.That(saga).Contains(
+            $"entry.InverseTimeoutTicks == {SagaCompensationComponentEmitter.DefaultTimeoutTicks}L")
+            .Because("an inverse without a configured deadline must retain the documented default");
+        await Assert.That(saga).Contains(
+            "yield return new CompensationRollbackTimeout(WorkflowId, entry.RollbackId, entry.Sequence, entry.InverseTimeoutTicks);");
+        await Assert.That(saga).Contains("if (timeout.TimeoutTicks != entry.InverseTimeoutTicks");
+        await Assert.That(saga).Contains("|| entry.InverseTimeoutTicks <= 0");
+    }
+
     /// <summary>A failed occurrence is scope metadata, never a fabricated completion.</summary>
     [Test]
     public async Task Emit_TypedLinearFailure_DoesNotSeedOrCompensateFailingOccurrence()
@@ -82,7 +108,7 @@ public class DerivedCompensationRuntimeTests
         await Assert.That(planner).DoesNotContain("UndoC");
     }
 
-    /// <summary>Malformed inverse metadata cannot recurse or emit forward completion.</summary>
+    /// <summary>Malformed inverse metadata cannot execute user code, recurse, or emit forward completion.</summary>
     [Test]
     public async Task Emit_TypedInverseWithMalformedMetadata_UsesRollbackFailureRouteOnly()
     {
@@ -92,8 +118,8 @@ public class DerivedCompensationRuntimeTests
         await Assert.That(handlers).DoesNotContain("cmd.IsCompensation\n            && cmd.RollbackId");
         await Assert.That(handlers).Contains("cmd.RollbackId ?? cmd.StepExecutionId");
         await Assert.That(handlers).Contains("cmd.RollbackJournalSequence ?? -1L");
-        await Assert.That(handlers).Contains("Malformed inverse metadata must never fall through to forward completion");
-        await Assert.That(handlers).Contains("Inverse command is missing durable rollback metadata.");
+        await Assert.That(handlers).Contains("Reject malformed inverse metadata before user code can perform effects");
+        await Assert.That(handlers).Contains("Inverse command has missing or inconsistent durable rollback metadata.");
     }
 
     /// <summary>An inverse type reused by OnFailure keeps its regular inverse error route.</summary>
@@ -2377,11 +2403,20 @@ public class DerivedCompensationRuntimeTests
         await Assert.That(saga).DoesNotContain("ResolveCompensationScopeInstance(");
     }
 
-    private static WorkflowModel CreateLinearModel()
+    private static WorkflowModel CreateLinearModel(TimeSpan? firstInverseTimeout = null)
     {
+        var first = TypedStep("A", "UndoA", "a", "undo-a");
+        if (firstInverseTimeout is not null)
+        {
+            first = first with
+            {
+                Compensation = first.Compensation! with { Timeout = firstInverseTimeout },
+            };
+        }
+
         var steps = new List<StepModel>
         {
-            TypedStep("A", "UndoA", "a", "undo-a"),
+            first,
             TypedStep("B", "UndoB", "b", "undo-b"),
             StepModel.Create("C", "TestNamespace.C"),
             StepModel.Create("UndoA", "TestNamespace.UndoA"),

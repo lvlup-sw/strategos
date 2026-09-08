@@ -217,6 +217,70 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     /// <summary>
+    /// Verifies that derived compensation exposes explicit rollback metadata to user step code.
+    /// </summary>
+    [Test]
+    public async Task Emit_DerivedCompensation_PopulatesExplicitStepContextMetadata()
+    {
+        // Arrange
+        var model = CreateTypedCompensationModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+
+        // Assert
+        await Assert.That(source).Contains(
+            "CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),\n"
+            + "                IsCompensation = command.IsCompensation,\n"
+            + "                RollbackId = command.IsCompensation ? command.RollbackId : null,");
+    }
+
+    /// <summary>
+    /// Verifies that malformed inverse metadata is rejected before context assembly or user step execution.
+    /// </summary>
+    [Test]
+    public async Task Emit_DerivedCompensation_RejectsMalformedMetadataBeforeUserCode()
+    {
+        // Arrange
+        var model = CreateTypedCompensationModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+        var inverseHandlerStart = source.IndexOf(
+            "public sealed partial class RefundPaymentHandler",
+            StringComparison.Ordinal);
+
+        await Assert.That(inverseHandlerStart).IsGreaterThanOrEqualTo(0);
+
+        var guardStart = source.IndexOf(
+            "if (command.IsCompensation\n                && (command.RollbackId is not Guid rollbackId",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+        var contextStart = source.IndexOf(
+            "var stepContext = StepContext.Create(",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+        var executeStart = source.IndexOf(
+            "var result = await _step.ExecuteAsync(",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+
+        // Assert
+        await Assert.That(guardStart).IsGreaterThan(inverseHandlerStart);
+        await Assert.That(contextStart).IsGreaterThan(guardStart);
+        await Assert.That(executeStart).IsGreaterThan(contextStart);
+
+        var preExecutionGuard = source.Substring(guardStart, contextStart - guardStart);
+        await Assert.That(preExecutionGuard).Contains("rollbackId == Guid.Empty");
+        await Assert.That(preExecutionGuard).Contains("command.StepExecutionId != rollbackId");
+        await Assert.That(preExecutionGuard).Contains(
+            "command.RollbackJournalSequence is not long journalSequence");
+        await Assert.That(preExecutionGuard).Contains("journalSequence <= 0");
+        await Assert.That(preExecutionGuard).Contains("return new CompensatingOrderRollbackFailed(");
+        await Assert.That(preExecutionGuard).DoesNotContain("RefundPaymentCompleted");
+    }
+
+    /// <summary>
     /// Verifies that Handle method calls ExecuteAsync on the step.
     /// </summary>
     [Test]
@@ -644,6 +708,37 @@ public class WorkerHandlerEmitterUnitTests
             Namespace: "TestNamespace",
             StepNames: ["ValidateOrder", "ProcessPayment", "SendConfirmation"],
             StateTypeName: "OrderState");
+    }
+
+    private static WorkflowModel CreateTypedCompensationModel()
+    {
+        var steps = new List<StepModel>
+        {
+            StepModel.Create(
+                "CapturePayment",
+                "TestNamespace.CapturePayment",
+                compensation: new CompensationModel(
+                    "TestNamespace.RefundPayment",
+                    InverseAction: new WorkflowActionReferenceModel(
+                        "Orders",
+                        "Order",
+                        "RefundPayment"),
+                    InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+                action: new WorkflowActionReferenceModel(
+                    "Orders",
+                    "Order",
+                    "CapturePayment"),
+                actionResolution: WorkflowActionReferenceResolution.Resolved),
+            StepModel.Create("RefundPayment", "TestNamespace.RefundPayment"),
+        };
+
+        return WorkflowModel.Create(
+            "compensating-order",
+            "CompensatingOrder",
+            "TestNamespace",
+            ["CapturePayment"],
+            "OrderState",
+            steps: steps);
     }
 
     private static int CountOccurrences(string source, string pattern)

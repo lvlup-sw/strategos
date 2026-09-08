@@ -49,7 +49,7 @@ The core package containing the fluent DSL for defining workflows and all founda
 | `IWorkflowStep<TState>` | Interface for implementing workflow steps |
 | `IWorkflowDefinition<TState>` | Interface for workflow definition classes |
 | `StepResult<TState>` | Result type returned from step execution |
-| `StepContext` | Execution context passed to steps (correlation ID, timestamp, metadata) |
+| `StepContext` | Execution context passed to steps, including workflow, phase, retry, and rollback-delivery identity |
 
 ### Thompson Sampling Types
 
