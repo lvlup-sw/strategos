@@ -20,6 +20,7 @@
 #   0  consumer build succeeded
 #   1  invalid arguments / setup error
 #   2  consumer build FAILED (regression detected)
+#   3  consumer verification INDETERMINATE (restore/infrastructure failure)
 # -----------------------------------------------------------------------
 set -euo pipefail
 
@@ -145,6 +146,7 @@ cat > "$PROBE_DIR/ConsumerProbe.csproj" <<EOF
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LevelUp.Strategos" Version="$VERSION" />
@@ -284,10 +286,20 @@ EOF
 PROBE_GLOBAL_PACKAGES="$PROBE_DIR/.nuget-packages"
 mkdir -p "$PROBE_GLOBAL_PACKAGES"
 
-if ! dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+if ! dotnet restore "$PROBE_DIR/ConsumerProbe.csproj" \
        --nologo \
        -v:m \
        --no-cache \
+       /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+       /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES"; then
+  echo "INDETERMINATE: packed consumer dependencies could not be restored; no product verdict was reached." >&2
+  exit 3
+fi
+
+if ! dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+       --nologo \
+       -v:m \
+       --no-restore \
        /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
        /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES"; then
   echo "FAIL: legal packed consumer build failed." >&2

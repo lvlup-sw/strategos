@@ -268,14 +268,21 @@ public class DerivedCompensationRuntimeTests
     [Test]
     public async Task Emit_TypedProgram_FullGeneratedOutputCompiles()
     {
-        var result = GeneratorTestHelper.RunGeneratorWithValidInput(CreateTypedCompilationWorkflow());
+        var source = CreateTypedCompilationWorkflow();
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(source);
         var saga = GeneratorTestHelper.GetGeneratedSource(result, "FulfillOrderSaga.g.cs");
+        var nullableWarnings = GeneratorTestHelper.GetCompilationDiagnostics(source)
+            .Where(diagnostic =>
+                diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Id.StartsWith("CS86", StringComparison.Ordinal))
+            .ToArray();
 
         await Assert.That(saga).Contains("using System.Linq;");
         await Assert.That(saga).Contains("CompensationJournalEntry");
         await Assert.That(saga).Contains("switch (forkId, pathIndex)");
         await Assert.That(saga).Contains("default:\n                break;");
         await Assert.That(saga).DoesNotContain("switch (forkId, pathIndex)\n        {\n        }");
+        await Assert.That(nullableWarnings).IsEmpty();
     }
 
     /// <summary>Both persistence modes apply inverse results through their configured state path.</summary>
