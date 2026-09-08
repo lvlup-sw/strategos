@@ -40,6 +40,7 @@ public sealed class ImportFrontEndRobustnessTests
     private const string UnresolvableMonikerCode = "AGWF025";
     private const string EmptyWorkflowNameCode = "AGWF001";
     private const string NoStepsFoundCode = "AGWF002";
+    private const string NonPositiveTimeoutCode = "AGWF021";
     private const string MalformedWorkflowJsonCode = "AGWF023";
 
     /// <summary>
@@ -389,6 +390,105 @@ public sealed class ImportFrontEndRobustnessTests
         }
     }
 
+    /// <summary>
+    /// A malformed compensation deadline nested in the importable low-confidence handler chain
+    /// is rejected as malformed input rather than silently becoming an absent timeout.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task MalformedNestedCompensationTimeout_FailsClosed_WithStableDiagnostic()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("malformed-nested-compensation-timeout.workflow.json",
+                WorkflowWithNestedCompensationTimeout("not-a-duration")),
+            MalformedWorkflowJsonCode);
+        var errors = ErrorDiagnostics(result);
+
+        await Assert.That(errors).HasCount().EqualTo(1)
+            .Because("a malformed compensation deadline must fail for exactly the stable import reason.");
+        var diagnostic = errors.SingleOrDefault(item => item.Id == MalformedWorkflowJsonCode);
+        await Assert.That(diagnostic).IsNotNull();
+        await Assert.That(diagnostic!.GetMessage()).Contains(
+            "$.steps[0].configuration.onLowConfidence.handlerSteps[0].configuration.compensation.timeout");
+        await Assert.That(result.GeneratedTrees.Any(
+                tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsFalse()
+            .Because("a malformed nested compensation deadline must not lower a saga.");
+    }
+
+    /// <summary>A present compensation deadline must retain its wire string type.</summary>
+    /// <param name="timeoutJson">The non-string JSON value in the timeout slot.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Arguments("42")]
+    [Arguments("true")]
+    [Arguments("null")]
+    [Arguments("{}")]
+    [Arguments("[]")]
+    public async Task NonStringCompensationTimeout_FailsClosedBeforeBinding(string timeoutJson)
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("non-string-compensation-timeout.workflow.json",
+                WorkflowWithRawCompensationTimeout(timeoutJson)),
+            MalformedWorkflowJsonCode);
+        var errors = ErrorDiagnostics(result);
+
+        await Assert.That(errors).HasCount().EqualTo(1);
+        await Assert.That(errors.Single().Id).IsEqualTo(MalformedWorkflowJsonCode);
+        await Assert.That(errors.Single().GetMessage())
+            .Contains("step 'compensation' property 'timeout' must be a string when present");
+        await Assert.That(result.GeneratedTrees.Any(
+                tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsFalse();
+    }
+
+    /// <summary>A zero or negative imported compensation deadline surfaces AGWF021 and lowers no saga.</summary>
+    /// <param name="timeout">The non-positive ISO-8601 duration.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Arguments("PT0S")]
+    [Arguments("-PT1S")]
+    public async Task NonPositiveCompensationTimeout_FailsClosed_WithDiagnosticAndNoSaga(string timeout)
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ($"non-positive-compensation-timeout-{timeout}.workflow.json",
+                WorkflowWithCompensationTimeout(timeout)),
+            NonPositiveTimeoutCode);
+        var errors = ErrorDiagnostics(result);
+
+        await Assert.That(errors).HasCount().EqualTo(1)
+            .Because("a non-positive compensation deadline must fail exclusively with AGWF021.");
+        var diagnostic = errors.SingleOrDefault(item => item.Id == NonPositiveTimeoutCode);
+        await Assert.That(diagnostic).IsNotNull();
+        await Assert.That(diagnostic!.GetMessage()).Contains(
+            "$.steps[0].configuration.compensation.timeout");
+        await Assert.That(result.GeneratedTrees.Any(
+                tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsFalse()
+            .Because("a non-positive compensation deadline must not lower a saga.");
+    }
+
+    /// <summary>A positive imported compensation deadline remains importable.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task PositiveCompensationTimeout_RemainsImportable()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("positive-compensation-timeout.workflow.json", WorkflowWithCompensationTimeout("PT17S")));
+
+        await AssertNoErrors(result);
+        await Assert.That(result.Diagnostics.Any(diagnostic =>
+                diagnostic.Id == NonPositiveTimeoutCode || diagnostic.Id == MalformedWorkflowJsonCode))
+            .IsFalse();
+        await Assert.That(result.GeneratedTrees.Any(
+                tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue();
+    }
+
     /// <summary>An omitted optional action remains importable and distinct from an explicit null.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -493,6 +593,56 @@ public sealed class ImportFrontEndRobustnessTests
           "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
           "failureHandlers": [], "approvalPoints": [],
           "entryStepId": "s1", "terminalStepId": "s1"
+        }
+        """;
+
+    private static string WorkflowWithCompensationTimeout(string timeout) =>
+        WorkflowWithCompensation(
+            $"\"compensationStepType\": \"RobustStepB\", \"timeout\": \"{timeout}\"");
+
+    private static string WorkflowWithRawCompensationTimeout(string timeoutJson) =>
+        WorkflowWithCompensation(
+            $"\"compensationStepType\": \"RobustStepB\", \"timeout\": {timeoutJson}");
+
+    private static string WorkflowWithNestedCompensationTimeout(string timeout) => $$"""
+        {
+          "schemaVersion": "1.0",
+          "name": "nested-compensation-timeout",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RobustStepA",
+              "isTerminal": false,
+              "stepType": "RobustStepA",
+              "configuration": {
+                "confidenceThreshold": 0.75,
+                "onLowConfidence": {
+                  "handlerId": "low-confidence-handler",
+                  "handlerSteps": [
+                    {
+                      "kind": "skill",
+                      "stepId": "h1",
+                      "stepName": "RobustStepC",
+                      "isTerminal": true,
+                      "stepType": "RobustStepC",
+                      "configuration": {
+                        "compensation": {
+                          "compensationStepType": "RobustStepB",
+                          "timeout": "{{timeout}}"
+                        }
+                      }
+                    }
+                  ],
+                  "isTerminal": true
+                }
+              }
+            },
+            { "kind": "skill", "stepId": "s2", "stepName": "RobustStepB", "isTerminal": true, "stepType": "RobustStepB" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s2"
         }
         """;
 

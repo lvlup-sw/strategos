@@ -254,6 +254,61 @@ public sealed class ResilienceDiagnosticsTests
         await Assert.That(result.Diagnostics.Any(d => d.Id == NonPositiveTimeoutId)).IsFalse();
     }
 
+    /// <summary>
+    /// A zero or negative compensation deadline is rejected at the model diagnostic seam.
+    /// The current fluent step callback cannot set this nested value, but programmatically
+    /// assembled definitions and imported workflows can populate it.
+    /// </summary>
+    /// <param name="seconds">The non-positive compensation deadline in seconds.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Arguments(0)]
+    [Arguments(-1)]
+    public async Task Report_NonPositiveCompensationTimeout_Fires(int seconds)
+    {
+        var step = new StepModel("AssessClaim", "TestNamespace.AssessClaim")
+        {
+            Compensation = new CompensationModel(
+                "TestNamespace.RollbackStep",
+                Timeout: TimeSpan.FromSeconds(seconds)),
+        };
+
+        var diagnostics = new List<Diagnostic>();
+        WorkflowIncrementalGenerator.ReportResilienceDiagnostics(
+            [step],
+            [],
+            "resilience-claim",
+            Location.None,
+            diagnostics);
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics.Single().Id).IsEqualTo(NonPositiveTimeoutId);
+        await Assert.That(diagnostics.Single().Severity).IsEqualTo(DiagnosticSeverity.Error);
+    }
+
+    /// <summary>A positive compensation deadline remains valid.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Report_PositiveCompensationTimeout_DoesNotFire()
+    {
+        var step = new StepModel("AssessClaim", "TestNamespace.AssessClaim")
+        {
+            Compensation = new CompensationModel(
+                "TestNamespace.RollbackStep",
+                Timeout: TimeSpan.FromSeconds(30)),
+        };
+
+        var diagnostics = new List<Diagnostic>();
+        WorkflowIncrementalGenerator.ReportResilienceDiagnostics(
+            [step],
+            [],
+            "resilience-claim",
+            Location.None,
+            diagnostics);
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
     // =========================================================================
     // F. Fully conformant workflow — none of the resilience diagnostics fire.
     // =========================================================================

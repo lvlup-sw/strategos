@@ -740,8 +740,25 @@ internal static class WireWorkflowReader
             CompensationStepType = ReadRequiredCompensationStepType(node),
             InverseAction = ReadOptionalCompensationActionReference(node),
             RequiredOnFailure = GetBool(node, "requiredOnFailure"),
-            Timeout = GetString(node, "timeout"),
+            Timeout = ReadOptionalCompensationTimeout(node),
         };
+
+    private static string? ReadOptionalCompensationTimeout(JsonValue compensation)
+    {
+        const string propertyName = "timeout";
+        if (!compensation.TryGetMember(propertyName, out var node))
+        {
+            return null;
+        }
+
+        if (node.Kind != JsonKind.String)
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must be a string when present");
+        }
+
+        return node.AsStringOrNull();
+    }
 
     private static string ReadRequiredCompensationStepType(JsonValue compensation)
     {

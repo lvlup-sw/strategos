@@ -1144,7 +1144,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
-    private static void ReportResilienceDiagnostics(
+    internal static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
         IReadOnlyList<ApprovalModel> approvalModels,
         string workflowName,
@@ -1201,6 +1201,19 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
             // NonPositiveTimeout — non-positive WithTimeout.
             if (step.Timeout is { } timeout && timeout.Timeout <= TimeSpan.Zero)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.NonPositiveTimeout,
+                    location,
+                    step.EffectiveName,
+                    workflowName));
+            }
+
+            // A compensation deadline is an independent execution bound. Letting a zero or
+            // negative value reach the rollback emitter would create a structurally invalid
+            // journal entry and defer an authoring error until runtime.
+            if (step.Compensation?.Timeout is { } compensationTimeout
+                && compensationTimeout <= TimeSpan.Zero)
             {
                 diagnostics.Add(Diagnostic.Create(
                     WorkflowDiagnostics.NonPositiveTimeout,

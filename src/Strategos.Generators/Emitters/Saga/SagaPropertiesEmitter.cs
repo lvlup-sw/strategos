@@ -263,7 +263,8 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine();
 
             sb.AppendLine("    /// <summary>");
-            sb.AppendLine("    /// Gets or sets consumed failure-trigger authority retained for exact idempotent redelivery.");
+            sb.AppendLine("    /// Gets or sets consumed failure-trigger authority retained for idempotent");
+            sb.AppendLine("    /// terminal signals from the same dispatch and topology.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public List<FailureTriggerClaim> ConsumedFailureTriggerClaims { get; set; } = [];");
             sb.AppendLine();

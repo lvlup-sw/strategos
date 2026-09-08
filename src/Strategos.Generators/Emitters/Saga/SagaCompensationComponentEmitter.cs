@@ -759,6 +759,9 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("                cmd.FailedStepName,");
         sb.AppendLine("                journalHighWater);");
         sb.AppendLine("            consumedFailureClaim = FindFailureTriggerClaim(");
+        sb.AppendLine("                // Once consumed, authority belongs to the exact dispatch and topology.");
+        sb.AppendLine("                // The first failure kind remains audit data; a losing terminal signal");
+        sb.AppendLine("                // for that dispatch is an idempotent redelivery, not a new claim.");
         sb.AppendLine("                ConsumedFailureTriggerClaims,");
         sb.AppendLine("                failedForwardExecutionId,");
         sb.AppendLine("                cmd.ForwardOccurrenceKey,");
@@ -769,7 +772,7 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("                cmd.CompensationForkPathIndex,");
         sb.AppendLine("                cmd.FailedStepName,");
         sb.AppendLine("                journalHighWater,");
-        sb.AppendLine("                cmd.ExceptionType,");
+        sb.AppendLine("                requiredFailureKind: null,");
         sb.AppendLine("                failureOccurredAfterForwardCompletion: false);");
         sb.AppendLine("            if (failureDispatchClaim is null && consumedFailureClaim is null)");
         sb.AppendLine("            {");
@@ -791,9 +794,11 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("                cmd.CompensationForkPathIndex,");
         sb.AppendLine("                cmd.FailedStepName,");
         sb.AppendLine("                journalHighWater,");
-        sb.AppendLine("                cmd.ExceptionType,");
+        sb.AppendLine("                requiredFailureKind: cmd.ExceptionType,");
         sb.AppendLine("                failureOccurredAfterForwardCompletion: true);");
         sb.AppendLine("            consumedFailureClaim = FindFailureTriggerClaim(");
+        sb.AppendLine("                // Preserve the first accepted cause while making later terminal");
+        sb.AppendLine("                // signals for the same completed dispatch idempotent.");
         sb.AppendLine("                ConsumedFailureTriggerClaims,");
         sb.AppendLine("                failedForwardExecutionId,");
         sb.AppendLine("                cmd.ForwardOccurrenceKey,");
@@ -804,7 +809,7 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("                cmd.CompensationForkPathIndex,");
         sb.AppendLine("                cmd.FailedStepName,");
         sb.AppendLine("                journalHighWater,");
-        sb.AppendLine("                cmd.ExceptionType,");
+        sb.AppendLine("                requiredFailureKind: null,");
         sb.AppendLine("                failureOccurredAfterForwardCompletion: true);");
         sb.AppendLine("            if (pendingPostCompletionClaim is null && consumedFailureClaim is null)");
         sb.AppendLine("            {");
@@ -1204,7 +1209,7 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("        int? forkPathIndex,");
         sb.AppendLine("        string forwardStepName,");
         sb.AppendLine("        long journalSequenceAtDispatch,");
-        sb.AppendLine("        string failureKind,");
+        sb.AppendLine("        string? requiredFailureKind,");
         sb.AppendLine("        bool failureOccurredAfterForwardCompletion)");
         sb.AppendLine("    {");
         sb.AppendLine("        return claims.FirstOrDefault(claim =>");
@@ -1217,7 +1222,8 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("            && claim.ForkPathIndex == forkPathIndex");
         sb.AppendLine("            && string.Equals(claim.ForwardStepName, forwardStepName, StringComparison.Ordinal)");
         sb.AppendLine("            && claim.JournalSequenceAtDispatch == journalSequenceAtDispatch");
-        sb.AppendLine("            && string.Equals(claim.FailureKind, failureKind, StringComparison.Ordinal)");
+        sb.AppendLine("            && (requiredFailureKind is null");
+        sb.AppendLine("                || string.Equals(claim.FailureKind, requiredFailureKind, StringComparison.Ordinal))");
         sb.AppendLine("            && claim.FailureOccurredAfterForwardCompletion == failureOccurredAfterForwardCompletion);");
         sb.AppendLine("    }");
         sb.AppendLine();

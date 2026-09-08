@@ -1686,40 +1686,43 @@ public class DerivedCompensationRuntimeTests
             .Contains("lacks its exact saga-minted capability");
     }
 
-    /// <summary>Consumed authority is idempotent only for the exact failure boundary.</summary>
+    /// <summary>Competing terminal signals for one dispatch share consumed authority.</summary>
     [Test]
-    public async Task Execute_GeneratedSaga_ConsumedFailureClaimRejectsAlteredFailureKind()
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task Execute_GeneratedSaga_CompetingFailureSignalsAreIdempotent(
+        bool timeoutArrivesFirst)
     {
         var fixture = CreateLinearFailureFixture();
-        var firstMessages = Materialize(InvokeHandle(fixture.Saga, fixture.Trigger, fixture.Logger));
-        var acceptedTimestamp = GetProperty<DateTimeOffset?>(fixture.Saga, "FailureTimestamp");
-        var exactRedelivery = Materialize(InvokeHandle(fixture.Saga, fixture.Trigger, fixture.Logger));
-        var altered = CreateMessage(
-            RequiredType(fixture.Assembly, "RuntimeCompensationExecution.TriggerRuntimeOrderFailureHandlerCommand"),
-            fixture.WorkflowId,
-            "CStep",
-            "altered",
-            "TimeoutException",
-            null);
-        CopyFailureTriggerMetadata(fixture.Trigger, altered);
+        var firstSignal = timeoutArrivesFirst ? fixture.Timeout : fixture.Trigger;
+        var secondSignal = timeoutArrivesFirst ? fixture.Trigger : fixture.Timeout;
+        var expectedFailureKind = timeoutArrivesFirst
+            ? "TimeoutException"
+            : "InvalidOperationException";
 
-        var alteredMessages = Materialize(InvokeHandle(fixture.Saga, altered, fixture.Logger));
+        var firstMessages = Materialize(InvokeHandle(fixture.Saga, firstSignal, fixture.Logger));
+        var acceptedTimestamp = GetProperty<DateTimeOffset?>(fixture.Saga, "FailureTimestamp");
+        var secondMessages = Materialize(InvokeHandle(fixture.Saga, secondSignal, fixture.Logger));
         var consumed = Materialize(GetProperty<object>(fixture.Saga, "ConsumedFailureTriggerClaims"));
         var journal = Materialize(GetProperty<object>(fixture.Saga, "CompensationJournal"));
 
-        await Assert.That(firstMessages.Any(message =>
-            message.GetType().Name == "ExecuteUndoBStepWorkerCommand")).IsTrue();
-        await Assert.That(exactRedelivery).IsEmpty();
-        await Assert.That(alteredMessages).IsEmpty();
+        await Assert.That(firstMessages.Count(message =>
+            message.GetType().Name == "ExecuteUndoBStepWorkerCommand")).IsEqualTo(1);
+        await Assert.That(secondMessages).IsEmpty();
         await Assert.That(consumed).HasCount().EqualTo(1);
+        await Assert.That(GetProperty<Guid>(consumed.Single(), "ForwardExecutionId"))
+            .IsEqualTo(GetProperty<Guid>(fixture.FailedWorker, "StepExecutionId"));
         await Assert.That(GetProperty<string>(consumed.Single(), "FailureKind"))
-            .IsEqualTo("InvalidOperationException");
+            .IsEqualTo(expectedFailureKind);
         await Assert.That(journal.Count(entry => GetProperty<string>(entry, "Status") == "InProgress"))
             .IsEqualTo(1);
         await Assert.That(GetProperty<DateTimeOffset?>(fixture.Saga, "FailureTimestamp"))
             .IsEqualTo(acceptedTimestamp);
-        await Assert.That(GetProperty<string>(fixture.Saga, "CompensationFailureMessage"))
-            .Contains("does not match an active durable forward dispatch");
+        await Assert.That(GetProperty<string>(fixture.Saga, "FailureExceptionType"))
+            .IsEqualTo(expectedFailureKind);
+        await Assert.That(GetProperty<object>(fixture.Saga, "CompensationFailureMessage")).IsNull();
+        await Assert.That(GetProperty<object>(fixture.Saga, "Phase").ToString())
+            .IsEqualTo("Compensating");
     }
 
     /// <summary>Malformed, high-water-corrupt, and cross-ledger claims all fail closed.</summary>
@@ -2828,19 +2831,6 @@ public class DerivedCompensationRuntimeTests
             trigger,
             "FailedForwardExecutionId",
             GetProperty<Guid>(worker, "StepExecutionId"));
-    }
-
-    private static void CopyFailureTriggerMetadata(object source, object target)
-    {
-        CopyProperty(source, target, "ForwardOccurrenceKey");
-        CopyProperty(source, target, "CompensationScopeKey");
-        CopyProperty(source, target, "CompensationScopeKind");
-        CopyProperty(source, target, "CompensationLaneKey");
-        CopyProperty(source, target, "CompensationForkId");
-        CopyProperty(source, target, "CompensationForkPathIndex");
-        CopyProperty(source, target, "CompensationJournalSequenceAtDispatch");
-        CopyProperty(source, target, "FailedForwardExecutionId");
-        CopyProperty(source, target, "FailureOccurredAfterForwardCompletion");
     }
 
     private static void AddToCollection(object collection, object value) =>
