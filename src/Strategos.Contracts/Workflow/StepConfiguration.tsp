@@ -35,6 +35,8 @@ model RetryConfiguration {
  * simple-name moniker (LB-2).
  */
 @jsonSchema
+@extension("if", #{ required: #["inverseAction"] })
+@extension("then", #{ properties: #{ requiredOnFailure: #{ `const`: true } } })
 model CompensationConfiguration {
   /** Simple-name CLR moniker of the compensation step type (LB-2). */
   @minLength(1)
@@ -44,10 +46,16 @@ model CompensationConfiguration {
   /** Ontology action implemented by the authored compensation step. */
   inverseAction?: ActionReferenceV1;
 
-  /** Whether compensation is required on failure. Typed inverse programs require true. */
-  requiredOnFailure?: boolean;
+  /**
+   * Whether compensation is required on failure. Defaults to `true` when the
+   * property is omitted. A typed `inverseAction` requires `true` (AGWF044).
+   */
+  requiredOnFailure?: boolean = true;
 
-  /** Compensation timeout (ISO-8601 duration), if set. */
+  /**
+   * Compensation timeout (ISO-8601 duration), if set. When omitted the
+   * generated runtime applies a 300-second inverse deadline.
+   */
   timeout?: string;
 }
 

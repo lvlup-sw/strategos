@@ -10,12 +10,34 @@ and this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 the wire contracts (JSON Schema + emitted C# records) are the public surface. A
 breaking schema change advances the minor while this package is pre-1.0 and will
 require a major bump after 1.0; additive-only minors are enforced by the T30
-structural diff in CI.
+structural diff in CI. The version increment alone does not accept a narrowing:
+every breaking change must also be named in
+[`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
+and carry a line here.
 
 ## [Unreleased]
 
 ### Fixed
 
+- **The schema-diff gate can fail again (tooling, no wire impact):** while the
+  candidate `ContractsVersion` carried a pre-1.0 minor bump over the published
+  baseline, `scripts/contracts-schema-diff.mjs` reported every BREAKING change as
+  "allowed by the pre-1.0 minor version increment" and exited 0 — the failing exit
+  was unreachable for a product reason, and the last CI run waved through eight
+  narrowings without review. The version increment is now a necessary but not
+  sufficient condition: each BREAKING change must also match an entry in
+  `schemas/breaking-changes.allowlist.json` (exact `file` / `path` / `kind`, with a
+  `version` inside the compared window), or the gate exits 1 and names the entry to
+  add. An entry outside the window is reported as a stale allowlist entry.
+  `contracts-schema-diff.yml` gained a second arm that diffs the pull request's
+  merge-base schema tree against the head tree, so a narrowing introduced by the PR
+  is compared against the versions the PR actually moves between rather than
+  against a baseline several minors old.
+- **Conditional keywords are classified rather than fenced off (tooling):** `if`,
+  `then`, `else`, `dependentSchemas`, and `dependentRequired` were unhandled, so a
+  change to one was reported as "safety cannot be proven". Both classifiers now
+  carry the rule: adding or changing a conditional is BREAKING (it can only reject
+  documents the previous schema accepted); removing one is NON-BREAKING.
 - **Schema-diff classifier recurses `definitions` / `$defs` (tooling, no wire
   impact):** both the Node release gate (`scripts/contracts-schema-diff.mjs`)
   and the C# classifier (`JsonSchemaDiff`) treated the draft-07 `definitions`
@@ -29,6 +51,24 @@ structural diff in CI.
 
 ### Added
 
+- **Compensation defaults and the inverse rule are on the wire (`0.12.0`):**
+  `CompensationConfiguration.requiredOnFailure` now carries `"default": true` in
+  the emitted schema, so a consumer reading the contract sees the value Strategos
+  applies when the property is omitted rather than having to read the C# builder.
+  The rule that a typed `inverseAction` requires `requiredOnFailure = true` — until
+  now enforced only by the C# analyzer as `AGWF044` — is stated as a JSON Schema
+  conditional (`if: { required: ["inverseAction"] }`,
+  `then: { properties: { requiredOnFailure: { const: true } } }`) that any
+  validator enforces. `timeout` documents the 300-second inverse deadline the
+  generated runtime applies when the property is omitted. The conditional is a
+  narrowing and is listed in `schemas/breaking-changes.allowlist.json` (#169).
+- **`schemaVersion` narrowing policy is stated on the contract (`0.12.0`):**
+  `WorkflowDefinitionV1.schemaVersion` is a pinned literal `1.0`. While the
+  Contracts package is pre-1.0 a minor may narrow this document in place and every
+  narrowing must be listed in `schemas/breaking-changes.allowlist.json`; after 1.0
+  a breaking change requires a V2 root. The previous wording ("additive minors,
+  breaking ⇒ V2") promised consumers something the pre-1.0 releases were not
+  delivering (#169).
 - **Typed workflow compensation (`0.12.0`):** the optional
   `CompensationConfiguration.inverseAction` field carries the ontology identity
   implemented by an authored compensation step. The field uses the existing
@@ -42,9 +82,16 @@ structural diff in CI.
 - **Compensation step identity is non-blank (`0.12.0`, narrowing):**
   `CompensationConfiguration.compensationStepType` gains `minLength: 1` and the
   `.*\S.*` pattern, and the generated record rejects empty or whitespace-only
-  values. The importer and runtime already rejected such a value, but the wire
-  schema previously admitted it. The structural diff correctly classifies this
-  as breaking under the pre-1.0 minor-bump policy (#169).
+  values. The two blank forms were **not** treated alike before this release. A
+  whitespace-only moniker reached step-symbol resolution and failed the build. An
+  **empty string** did not: `WireToModelBridge` guarded the compensation block
+  with `!string.IsNullOrEmpty(compensationStepType)`, so an empty moniker made the
+  importer **silently drop the entire compensation block** — the document
+  validated, the build succeeded, and the generated saga carried no compensation
+  at all. Importing that document is now a build error instead of a silent drop.
+  The structural diff classifies the narrowing as breaking; it ships under the
+  pre-1.0 minor-bump policy and is listed in
+  `schemas/breaking-changes.allowlist.json` (#169).
 - **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
   ontology domain, object type, and action names on an optional `action` field
   shared by every workflow step kind. The field is occurrence-scoped and

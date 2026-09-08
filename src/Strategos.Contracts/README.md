@@ -136,12 +136,52 @@ not a code change:
 ## Breaking-change schema diff (T30)
 
 `scripts/contracts-schema-diff.mjs` + `.github/workflows/contracts-schema-diff.yml`
-classify a removed / narrowed / newly-required property as **BREAKING** and an
-added optional property as **NON-BREAKING** against the complete schema tree in
-the latest package actually published to NuGet. A breaking change advances the
-minor before 1.0 and the major after 1.0. The classification rules are
-unit-tested in C# by `SchemaDiffTests` / `JsonSchemaDiff` — the authoritative
-spec — and mirrored by the Node CI driver over the packaged schema file set.
+classify a removed / narrowed / newly-required property, and an added or changed
+conditional (`if` / `then` / `else` / `dependentSchemas` / `dependentRequired`),
+as **BREAKING**; an added optional property and a removed conditional are
+**NON-BREAKING**. A breaking change advances the minor before 1.0 and the major
+after 1.0. The classification rules are unit-tested in C# by `SchemaDiffTests` /
+`JsonSchemaDiff` — the authoritative spec — and mirrored by the Node CI driver
+over the packaged schema file set.
+
+The workflow runs **two arms**, and both must pass:
+
+1. **Published baseline** — the schema tree inside the latest package actually
+   published to NuGet.
+2. **Merge base** — the schema tree at the pull request's base commit, compared
+   using the base and head `ContractsVersion` values. When the two versions are
+   equal, any BREAKING change fails: the narrowing needs a version bump.
+
+**The version increment alone does not accept a narrowing.** A pre-1.0 minor bump
+permits *every* breaking change, so on its own it makes the gate unfailable. Each
+BREAKING change must therefore also be named by an entry in
+[`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json),
+passed to the script as `--allowlist`:
+
+```json
+{
+    "file": "json-schema/CompensationConfiguration.json",
+    "path": "$.properties[\"compensationStepType\"]",
+    "kind": "'minLength' increased from 0 to 1",
+    "version": "0.12.0",
+    "reason": "compensationStepType is a CLR simple-name moniker; an empty string names no type."
+}
+```
+
+`file`, `path`, and `kind` are compared with **exact string equality** against
+what the classifier reports, so a near-miss accepts nothing. `version` is the
+Contracts version that introduced the narrowing; an entry whose version falls
+outside the compared `(previous, candidate]` window is reported as a **stale
+allowlist entry** and accepts nothing. An unmatched BREAKING change exits 1 and
+prints the entry to add. Every entry also needs a line in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+### `WorkflowDefinitionV1.schemaVersion` identity
+
+`schemaVersion` is a pinned literal `1.0`. While the Contracts package is pre-1.0
+a minor may narrow this document in place and every narrowing must be listed in
+`schemas/breaking-changes.allowlist.json`; after 1.0 a breaking change requires a
+V2 root.
 
 ## Gate wire slots & the dangling-`gateId` rule (DR-3, #150 → #100)
 

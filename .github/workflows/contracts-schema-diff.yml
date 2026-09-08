@@ -11,12 +11,22 @@ name: Contracts schema breaking-change diff
 # The classification rules are unit-tested in C# (JsonSchemaDiff /
 # SchemaDiffTests); this workflow drives the same rules over the file set via
 # scripts/contracts-schema-diff.mjs.
+#
+# Two arms run, and both must pass:
+#   1. published baseline — the schema tree in the latest package on nuget.org.
+#   2. merge base        — the schema tree at this pull request's base commit.
+# The published arm alone cannot fail for a product reason while ContractsVersion
+# already carries a pre-1.0 minor bump over the published version, because that
+# bump permits every narrowing. The merge-base arm compares the versions the PR
+# actually moves between, and both arms require every BREAKING change to be named
+# by an entry in schemas/breaking-changes.allowlist.json.
 
 on:
   pull_request:
     branches: [main]
     paths:
       - 'src/Strategos.Contracts/schemas/**'
+      - 'src/Strategos.Contracts/Strategos.Contracts.csproj'
       - 'scripts/contracts-schema-diff.mjs'
       - '.github/workflows/contracts-schema-diff.yml'
 
@@ -25,10 +35,12 @@ permissions:
 
 env:
   CONTRACTS_PROJECT: 'src/Strategos.Contracts/Strategos.Contracts.csproj'
+  CONTRACTS_SCHEMAS: 'src/Strategos.Contracts/schemas'
+  BREAKING_ALLOWLIST: 'src/Strategos.Contracts/schemas/breaking-changes.allowlist.json'
 
 jobs:
   schema-diff:
-    name: Structural diff vs published package
+    name: Structural diff vs published package and merge base
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history for tags)
@@ -95,10 +107,61 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "comparing candidate $candidate_version against published Contracts $previous_version ($published_nupkg_sha256)"
 
-      - name: Structural breaking-change diff
+      - name: Structural breaking-change diff vs published package
         run: |
           node scripts/contracts-schema-diff.mjs \
             "${{ steps.prev.outputs.prev_dir }}" \
-            "src/Strategos.Contracts/schemas" \
+            "$CONTRACTS_SCHEMAS" \
             "${{ steps.prev.outputs.previous_version }}" \
-            "${{ steps.prev.outputs.candidate_version }}"
+            "${{ steps.prev.outputs.candidate_version }}" \
+            --allowlist "$BREAKING_ALLOWLIST"
+
+      - name: Materialise the merge-base schema tree
+        id: base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE_SHA" ]]; then
+            echo "::error::No pull request base SHA; the merge-base comparison is indeterminate."
+            exit 2
+          fi
+
+          base_dir="$(mktemp -d)"
+          if ! git archive "$BASE_SHA" "$CONTRACTS_SCHEMAS" | tar -x -C "$base_dir"; then
+            echo "::error::Merge base $BASE_SHA has no readable schema tree; compatibility is indeterminate."
+            exit 2
+          fi
+
+          base_schemas="$base_dir/$CONTRACTS_SCHEMAS"
+          if [[ ! -d "$base_schemas" ]]; then
+            echo "::error::Merge base $BASE_SHA has no $CONTRACTS_SCHEMAS directory; compatibility is indeterminate."
+            exit 2
+          fi
+
+          base_version="$(git show "$BASE_SHA:$CONTRACTS_PROJECT" \
+            | grep -oP '(?<=<ContractsVersion>)[^<]+' || true)"
+          if [[ ! "$base_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Merge-base ContractsVersion '$base_version' is not strict stable SemVer; compatibility is indeterminate."
+            exit 2
+          fi
+
+          {
+            echo "base_dir=$base_schemas"
+            echo "base_version=$base_version"
+          } >> "$GITHUB_OUTPUT"
+          echo "comparing candidate ${{ steps.prev.outputs.candidate_version }} against merge base $BASE_SHA ($base_version)"
+
+      - name: Structural breaking-change diff vs merge base
+        # --allow-equal-versions lets an additive PR that does not move
+        # ContractsVersion pass. It does NOT relax the breaking rule: with equal
+        # versions permitsBreakingChange() is false, so any BREAKING change here
+        # still exits 1 and demands a ContractsVersion bump plus an allowlist entry.
+        run: |
+          node scripts/contracts-schema-diff.mjs \
+            "${{ steps.base.outputs.base_dir }}" \
+            "$CONTRACTS_SCHEMAS" \
+            "${{ steps.base.outputs.base_version }}" \
+            "${{ steps.prev.outputs.candidate_version }}" \
+            --allowlist "$BREAKING_ALLOWLIST" \
+            --allow-equal-versions

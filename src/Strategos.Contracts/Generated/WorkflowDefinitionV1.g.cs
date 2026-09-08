@@ -21,13 +21,18 @@ namespace Strategos.Contracts.Generated;
 /// the projection drops executable code (LB-1) and reduces CLR `System.Type`
 /// handles to simple-name string monikers (LB-2).
 /// 
-/// `schemaVersion` is pinned to the literal `&quot;1.0&quot;`. Future minors are
-/// additive-only; a breaking change requires a `WorkflowDefinitionV2` root.
+/// `schemaVersion` is a pinned literal `1.0`. While the Contracts package is
+/// pre-1.0 a minor may narrow this document in place, and every narrowing must
+/// be listed in `schemas/breaking-changes.allowlist.json`; after 1.0 a breaking
+/// change requires a V2 root.
 /// </summary>
 public sealed record WorkflowDefinitionV1 : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
-    /// Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2.
+    /// Wire-IR schema version: pinned literal `1.0`. While the Contracts package
+    /// is pre-1.0 a minor may narrow this document in place and every narrowing
+    /// must be listed in `schemas/breaking-changes.allowlist.json`; after 1.0 a
+    /// breaking change requires a V2 root.
     /// </summary>
     [JsonPropertyName("schemaVersion")]
     [JsonRequired]

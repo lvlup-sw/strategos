@@ -32,13 +32,15 @@ public sealed record CompensationConfiguration : IJsonOnDeserialized, IJsonOnSer
     public ActionReferenceV1? InverseAction { get; init; }
 
     /// <summary>
-    /// Whether compensation is required on failure. Typed inverse programs require true.
+    /// Whether compensation is required on failure. Defaults to `true` when the
+    /// property is omitted. A typed `inverseAction` requires `true` (AGWF044).
     /// </summary>
     [JsonPropertyName("requiredOnFailure")]
     public bool? RequiredOnFailure { get; init; }
 
     /// <summary>
-    /// Compensation timeout (ISO-8601 duration), if set.
+    /// Compensation timeout (ISO-8601 duration), if set. When omitted the
+    /// generated runtime applies a 300-second inverse deadline.
     /// </summary>
     [JsonPropertyName("timeout")]
     public string? Timeout { get; init; }

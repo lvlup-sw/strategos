@@ -1,0 +1,89 @@
+{
+    "$comment": "Accepted breaking (narrowing) changes to the Contracts JSON Schema tree. scripts/contracts-schema-diff.mjs accepts a BREAKING change ONLY when the candidate version carries the required increment AND an entry here matches the reported change exactly. 'file' is the schema path relative to the schema root, 'path' is the location the classifier reports, and 'kind' is its verbatim message; all three are compared with exact string equality. 'version' is the Contracts version that introduced the narrowing — an entry outside the compared (previous, candidate] window is reported as a stale allowlist entry and accepts nothing. Every entry needs a matching line in src/Strategos.Contracts/CHANGELOG.md.",
+    "entries": [
+        {
+            "file": "json-schema/AgwfEntryDuplicateStepName.json",
+            "path": "$.properties[\"remediation\"]",
+            "kind": "'const' constraint changed",
+            "version": "0.6.0",
+            "reason": "AGWF003's remediation text was corrected to name EffectiveName (the instance name, or the step type when none is given) rather than the step type, so the published remediation matched what the analyzer actually enforces. The catalog remediation is a pinned const, so any wording fix reads as a narrowing."
+        },
+        {
+            "file": "json-schema/WorkflowDefinitionV1.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.11.0",
+            "reason": "Workflow name gained the non-blank pattern '.*\\\\S.*' alongside its existing minLength of 1. A whitespace-only workflow name has no IR identity and was already rejected downstream; the schema now states the rule the importer enforces."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.11.0",
+            "reason": "Bundled twin of the WorkflowDefinitionV1 'name' non-blank pattern; bundle-workflow-schema.mjs inlines the root model body at the top level."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"WorkflowDefinitionV1\"].properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.11.0",
+            "reason": "Bundled twin of the WorkflowDefinitionV1 'name' non-blank pattern, retained under definitions for completeness."
+        },
+        {
+            "file": "json-schema/CompensationConfiguration.json",
+            "path": "$.properties[\"compensationStepType\"]",
+            "kind": "'minLength' increased from 0 to 1",
+            "version": "0.12.0",
+            "reason": "compensationStepType is a CLR simple-name moniker (LB-2); an empty string names no type. At 0.11.0 the importer silently dropped the whole compensation block for an empty moniker, so a document that validated produced a workflow with no compensation at all. The schema now rejects it and the importer raises a build error."
+        },
+        {
+            "file": "json-schema/CompensationConfiguration.json",
+            "path": "$.properties[\"compensationStepType\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.12.0",
+            "reason": "Companion to the minLength narrowing: '.*\\\\S.*' also rejects a whitespace-only moniker, which minLength alone admits. Whitespace-only already reached importer rejection at 0.11.0; the schema now states the same rule."
+        },
+        {
+            "file": "json-schema/CompensationConfiguration.json",
+            "path": "$",
+            "kind": "'if' conditional was added or narrowed",
+            "version": "0.12.0",
+            "reason": "Encodes on the wire the rule previously enforced only by the C# analyzer (AGWF044): a typed inverseAction requires requiredOnFailure = true. The 'if' arm selects documents that carry inverseAction."
+        },
+        {
+            "file": "json-schema/CompensationConfiguration.json",
+            "path": "$",
+            "kind": "'then' conditional was added or narrowed",
+            "version": "0.12.0",
+            "reason": "The 'then' arm of the AGWF044 rule: when inverseAction is present, requiredOnFailure must be the const true. A document that set it to false named a typed inverse the runtime would not run."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"CompensationConfiguration\"].properties[\"compensationStepType\"]",
+            "kind": "'minLength' increased from 0 to 1",
+            "version": "0.12.0",
+            "reason": "Bundled twin of the per-model compensationStepType minLength narrowing."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"CompensationConfiguration\"].properties[\"compensationStepType\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.12.0",
+            "reason": "Bundled twin of the per-model compensationStepType non-blank pattern."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"CompensationConfiguration\"]",
+            "kind": "'if' conditional was added or narrowed",
+            "version": "0.12.0",
+            "reason": "Bundled twin of the AGWF044 'if' arm on CompensationConfiguration."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"CompensationConfiguration\"]",
+            "kind": "'then' conditional was added or narrowed",
+            "version": "0.12.0",
+            "reason": "Bundled twin of the AGWF044 'then' arm on CompensationConfiguration."
+        }
+    ]
+}

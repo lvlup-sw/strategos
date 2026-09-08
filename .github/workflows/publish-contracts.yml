@@ -161,12 +161,16 @@ jobs:
           echo "candidate $candidate_version is bound to published Contracts $previous_version ($nupkg_sha256)"
 
       - name: Enforce schema compatibility and version policy
+        # Every BREAKING change must be named by an entry in the allowlist whose
+        # `version` falls inside (published, candidate]. The version increment on
+        # its own does not accept a narrowing.
         run: |
           node scripts/contracts-schema-diff.mjs \
             "${{ steps.published.outputs.schemas_dir }}" \
             "src/Strategos.Contracts/schemas" \
             "${{ steps.published.outputs.version }}" \
-            "${GITHUB_REF_NAME#contracts-v}"
+            "${GITHUB_REF_NAME#contracts-v}" \
+            --allowlist "src/Strategos.Contracts/schemas/breaking-changes.allowlist.json"
 
       - name: Generate builder-fixture corpus (T24/#53)
         # The package embeds the >=100-case WorkflowDefinitionV1 fixture corpus
