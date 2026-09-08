@@ -217,8 +217,8 @@ states described by the forward hard requirement. This proof does not establish
 restoration of the exact concrete pre-forward state or reversal of external
 effects; the frame is the same declared may-change boundary, not a snapshot.
 `AGWF044` reports a disagreement. If the workflow or a bound action claims
-rollback, `AGWF045` rejects a scope containing any completed leaf with a
-non-empty frame but no proved inverse. Typed compensation also rejects
+rollback, `AGWF045` rejects a scope containing any rollback-reachable occurrence
+with a non-empty frame but no proved inverse. Typed compensation also rejects
 `RequiredOnFailure = false`; completed-prefix rollback is mandatory once the
 typed program claims rollback safety.
 

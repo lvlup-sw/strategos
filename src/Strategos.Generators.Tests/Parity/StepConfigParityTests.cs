@@ -72,6 +72,11 @@ public sealed class StepConfigParityTests
                 ExtractionTestFile: "Strategos.Generators.Tests/Helpers/StepExtractorActionReferenceTests.cs",
                 WireRoundTripTest: "RoundTripIrFidelityTests.ActionIdentity_MatchesJsonFieldForField",
                 WireRoundTripTestFile: "Strategos.Generators.Tests/Import/RoundTripIrFidelityTests.cs"),
+            ["Compensate"] = new(
+                ExtractionTest: "StepExtractorResilienceTests.WalkInvocationChain_CompensateOfT_CarriesCompensationStepSymbolKey",
+                ExtractionTestFile: "Strategos.Generators.Tests/Helpers/StepExtractorResilienceTests.cs",
+                WireRoundTripTest: "RoundTripIrFidelityTests.CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep",
+                WireRoundTripTestFile: "Strategos.Generators.Tests/Import/RoundTripIrFidelityTests.cs"),
         };
 
     /// <summary>

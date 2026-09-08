@@ -806,10 +806,12 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine();
         if (CompensationTopology.UsesDerivedRuntime(model) && isInverseStepType)
         {
+            var rollbackCompletedEventName = NamingHelper.GetCompletedEventName(
+                $"{model.PascalName}{stepName}Rollback");
             sb.AppendLine("            if (command.IsCompensation)");
             sb.AppendLine("            {");
             sb.AppendLine("                // Inverse completion has its own message type and can never advance forward flow.");
-            sb.AppendLine($"                return new {model.PascalName}{stepName}RollbackCompleted(");
+            sb.AppendLine($"                return new {rollbackCompletedEventName}(");
             sb.AppendLine("                    command.WorkflowId,");
             sb.AppendLine("                    command.RollbackId.GetValueOrDefault(),");
             sb.AppendLine("                    command.RollbackJournalSequence.GetValueOrDefault(),");

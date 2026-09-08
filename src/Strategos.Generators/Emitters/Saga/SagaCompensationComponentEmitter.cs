@@ -1827,7 +1827,8 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         WorkflowModel model,
         string inverseStepName)
     {
-        var eventName = $"{model.PascalName}{inverseStepName}RollbackCompleted";
+        var eventName = NamingHelper.GetCompletedEventName(
+            $"{model.PascalName}{inverseStepName}Rollback");
 
         sb.AppendLine("    public IEnumerable<object> Handle(");
         sb.AppendLine($"        {eventName} evt,");
@@ -2167,12 +2168,14 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         WorkflowModel model,
         string inverseStepName)
     {
+        var eventName = NamingHelper.GetCompletedEventName(inverseStepName);
+
         if (model.HasFailureHandlers)
         {
             var firstHandler = model.FailureHandlers!.First();
             var command = $"StartFailureHandler_{Sanitize(firstHandler.HandlerId)}_{firstHandler.FirstStepPhaseName}Command";
             sb.AppendLine($"    public {command} Handle(");
-            sb.AppendLine($"        {inverseStepName}Completed evt,");
+            sb.AppendLine($"        {eventName} evt,");
             StateApplicationHelper.EmitSessionParameter(sb, model);
             sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
             sb.AppendLine("    {");
@@ -2186,7 +2189,7 @@ internal sealed class SagaCompensationComponentEmitter : ISagaComponentEmitter
         }
 
         sb.AppendLine("    public void Handle(");
-        sb.AppendLine($"        {inverseStepName}Completed evt,");
+        sb.AppendLine($"        {eventName} evt,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{model.SagaClassName}> logger)");
         sb.AppendLine("    {");

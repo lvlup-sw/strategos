@@ -251,14 +251,17 @@ public sealed class WorkflowBindingProofFailClosedTests
     }
 
     /// <summary>
-    /// The proof outcomes (refuted, unprovable, emission collision) are the machine-checked
-    /// guarantee of #167. A consumer must not be able to switch that guarantee off with
-    /// <c>NoWarn</c> or an <c>.editorconfig</c> severity.
+    /// The proof outcomes (refuted, unprovable, emission collision, invalid inverse, and
+    /// underivable rollback scope) are the machine-checked guarantees of #167 and #169.
+    /// A consumer must not be able to switch those guarantees off with <c>NoWarn</c> or an
+    /// <c>.editorconfig</c> severity.
     /// </summary>
     [Test]
     [Arguments("AGWF041")]
     [Arguments("AGWF042")]
     [Arguments("AGWF043")]
+    [Arguments("AGWF044")]
+    [Arguments("AGWF045")]
     public async Task ProofOutcomeDiagnostics_AreNotConfigurable(string id)
     {
         var descriptor = ProofDescriptor(id);
@@ -309,5 +312,7 @@ public sealed class WorkflowBindingProofFailClosedTests
             WorkflowDiagnostics.WorkflowBindingRefinementFailed,
             WorkflowDiagnostics.WorkflowContractUnprovable,
             WorkflowDiagnostics.WorkflowEmissionIdentityCollision,
+            WorkflowDiagnostics.AuthoredInverseDisagrees,
+            WorkflowDiagnostics.CompensationScopeNotDerivable,
         }.Single(candidate => candidate.Id == id);
 }

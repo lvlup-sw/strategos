@@ -395,11 +395,12 @@ chain. A `Definition` that delegates to a helper method still generates the
 saga it generated on 2.12, but it cannot be proved and reports `AGWF042` while
 bound.
 
-The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), and `AGWF043`
-(emission collision) carry the `NotConfigurable` tag. `<NoWarn>`,
-`#pragma warning disable`, and `.editorconfig` severity entries do not suppress
-or downgrade them. The resolution diagnostics `AGWF039` (bound workflow not
-found) and `AGWF040` (action reference invalid) are Errors by default but stay
+The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), `AGWF043`
+(emission collision), `AGWF044` (invalid inverse), and `AGWF045` (underivable
+rollback scope) carry the `NotConfigurable` tag. `<NoWarn>`, `#pragma warning
+disable`, and `.editorconfig` severity entries do not suppress or downgrade
+them. The resolution diagnostics `AGWF039` (bound workflow not found) and
+`AGWF040` (action reference invalid) are Errors by default but stay
 configurable: a project whose workflow or ontology lives in another assembly,
 which the compilation-local proof cannot see until
 [#204](https://github.com/lvlup-sw/strategos/issues/204) lands, silences them
@@ -540,92 +541,6 @@ persisted derived saga with missing or unknown journal metadata is retained in
 
 See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the runtime and proof contract.
-
-## 10. Upgrade TypeSpec and workflow wire metadata
-
-Upgrade `LevelUp.Strategos.Contracts` to 0.12.0. It includes the 0.10.0 change
-from relation-only or consumer-parsed metadata to `ActionPredicateV1`:
-
-- `@requires(predicate, strength?, description?)` emits a typed requirement;
-- `@ensures(predicate, description?)` emits a typed guarantee;
-- `@relation(name, ...path)` remains sugar for a hard `relation-holds`
-  requirement;
-- `x-strategos-relation` and `x-strategos-link-path` are no longer emitted;
-- unknown predicate discriminators must be rejected.
-
-Integers and decimals are canonical strings on the wire. Do not round-trip them
-through JSON floating-point numbers. The `expression` field is presentation
-only and must not be parsed.
-
-Contracts 0.12 does not yet expose frame/effect decorators. A TypeSpec
-`@ensures` fact must therefore already follow from a hard `@requires` fact;
-otherwise graph freeze rejects it as an unrealizable guarantee about untouched
-state. Use the CLR descriptor/fluent surface for actions that establish new
-facts and need `TouchedResources` or postcondition effects.
-
-Version 0.11.0 also adds `ActionReferenceV1` as the optional `action` property
-shared by every workflow step kind:
-
-```json
-{
-  "action": {
-    "domainName": "Trading",
-    "objectTypeName": "Position",
-    "actionName": "Write"
-  }
-}
-```
-
-When `action` is present, all three name fields are required. The property is
-additive and occurrence-scoped; legacy or unconfigured workflow JSON continues
-to omit it byte-for-byte. Consumers that need the new identity should upgrade
-to the generated 0.11.0 models before producers begin populating it. The same
-release adds `AGWF039`–`AGWF043`; consumers of the generated closed `AgwfCode`
-enum must upgrade before Strategos can emit those tokens.
-
-Version 0.12.0 reuses `ActionReferenceV1` for the optional inverse action inside
-compensation metadata:
-
-```json
-{
-  "compensation": {
-    "compensationStepType": "RefundPaymentStep",
-    "inverseAction": {
-      "domainName": "Orders",
-      "objectTypeName": "Order",
-      "actionName": "RefundPayment"
-    }
-  }
-}
-```
-
-Omitting `inverseAction` retains the legacy runtime-only shape. The field is
-additive, but `AGWF044` and `AGWF045` are new members of the generated closed
-diagnostic enum; all consumers must upgrade before producers emit them.
-
-## 11. Invalidate graph-version caches once
-
-The canonical graph hash now includes action subjects, normalized typed
-requirements, guarantees, custom evaluator keys/arguments/read sets, and the
-expanded action contract metadata. Descriptions and display expressions remain
-excluded.
-
-Every existing action-bearing graph receives a different
-`OntologyGraph.Version` after this upgrade even when its apparent business
-meaning is unchanged. This is intentional. Treat the first 2.13 deployment as
-a cache-key rollover: discard stored MCP schema views, planner tool lists,
-action-availability snapshots, and any other artifact keyed by the old hash.
-Do not translate or pin the previous hash.
-
-The typed workflow-binding wrapper is not itself part of that rollover. For an
-unchanged binding, the hasher writes only `BoundWorkflow.WorkflowId` at the same
-byte position where it previously wrote `BoundWorkflowName`. Moving from the
-string property or overload to `new WorkflowBindingReference(sameId)` therefore
-preserves the legacy graph hash. Changing the identifier still changes the
-hash, as a routing change should.
-
-After the action-contract rollover, registration order and presentation-only
-edits remain hash-stable.
 
 ## 10. Upgrade TypeSpec and workflow wire metadata
 

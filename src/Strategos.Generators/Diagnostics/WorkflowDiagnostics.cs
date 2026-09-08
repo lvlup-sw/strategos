@@ -696,7 +696,8 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A typed compensation must have the same subject, frame, and authority as its forward action, require exactly the forward guarantee, and ensure exactly the forward requirement.");
+        description: "A typed compensation must have the same subject, frame, and authority as its forward action, require exactly the forward guarantee, and ensure exactly the forward requirement.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>A compensation scope contains a leaf without a mechanically proven inverse.</summary>
     public static readonly DiagnosticDescriptor CompensationScopeNotDerivable = new(
@@ -706,5 +707,6 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Compensability is derived and propagates: a rollback scope is valid only when every forward leaf that can complete before failure has one statically closed, contract-correct inverse action.");
+        description: "Compensability is derived and propagates: a rollback scope is valid only when every forward leaf that can complete before failure has one statically closed, contract-correct inverse action.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 }

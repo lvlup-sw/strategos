@@ -95,11 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Contracts package 0.12.0.** Compensation metadata adds the optional
   `inverseAction: ActionReferenceV1` field and the closed diagnostic vocabulary
-  adds `AGWF044`–`AGWF045`. Legacy compensation JSON remains valid and omits the
-  field, but the no-argument `.Compensate<T>()` form remains runtime-only and
-  cannot establish a statically proved inverse. A typed inverse cannot set
-  `requiredOnFailure` to `false`, because its derived completed-prefix rollback
-  is mandatory.
+  adds `AGWF044`–`AGWF045`. Valid, nonblank legacy compensation JSON remains
+  valid and omits the field; 0.12.0 now rejects an empty or whitespace-only
+  `compensationStepType`, matching the importer and runtime identity rules. The
+  no-argument `.Compensate<T>()` form remains runtime-only and cannot establish
+  a statically proved inverse. A typed inverse cannot set `requiredOnFailure`
+  to `false`, because its derived completed-prefix rollback is mandatory.
 - **Workflow descriptor bindings are typed.** The writable
   `ActionDescriptor.BoundWorkflowName` property is replaced by immutable
   `BoundWorkflow: WorkflowBindingReference`. The fluent

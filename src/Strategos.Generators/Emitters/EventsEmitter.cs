@@ -326,12 +326,14 @@ internal static class EventsEmitter
         string inverseStepName)
     {
         var stateType = model.StateTypeName ?? "object";
+        var eventName = NamingHelper.GetCompletedEventName(
+            $"{model.PascalName}{inverseStepName}Rollback");
 
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Event published when the {inverseStepName} inverse completes.");
         sb.AppendLine("/// Kept distinct from forward completion so rollback cannot advance the workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine($"public sealed partial record {model.PascalName}{inverseStepName}RollbackCompleted(");
+        sb.AppendLine($"public sealed partial record {eventName}(");
         sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
         sb.AppendLine("    Guid RollbackId,");
         sb.AppendLine("    long JournalSequence,");

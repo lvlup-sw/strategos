@@ -39,6 +39,12 @@ structural diff in CI.
   nonempty-frame leaves are not all compensable. When `inverseAction` is present,
   `requiredOnFailure` must not be `false`: derived completed-prefix rollback is
   mandatory rather than a per-leaf opt-out (#169).
+- **Compensation step identity is non-blank (`0.12.0`, narrowing):**
+  `CompensationConfiguration.compensationStepType` gains `minLength: 1` and the
+  `.*\S.*` pattern, and the generated record rejects empty or whitespace-only
+  values. The importer and runtime already rejected such a value, but the wire
+  schema previously admitted it. The structural diff correctly classifies this
+  as breaking under the pre-1.0 minor-bump policy (#169).
 - **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
   ontology domain, object type, and action names on an optional `action` field
   shared by every workflow step kind. The field is occurrence-scoped and
@@ -169,6 +175,8 @@ version increment after 1.0 (per the T30 structural diff).
 - **0.11.0:** None. Workflow-step action identity and `AGWF039`–`AGWF043` are
   additive. Older generated closed-enum consumers must still upgrade before
   receiving the new diagnostic codes.
-- **0.12.0:** None. Typed inverse-action identity and `AGWF044`–`AGWF045` are
-  additive. Older generated closed-enum consumers must still upgrade before
-  receiving the new diagnostic codes.
+- **0.12.0:** `CompensationConfiguration.compensationStepType` is narrowed to a
+  non-empty, non-whitespace string, matching the importer and runtime identity
+  rules. Typed inverse-action identity and `AGWF044`–`AGWF045` are additive.
+  Older generated closed-enum consumers must still upgrade before receiving the
+  new diagnostic codes.
