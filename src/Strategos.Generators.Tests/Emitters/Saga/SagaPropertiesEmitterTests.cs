@@ -116,14 +116,22 @@ public class SagaPropertiesEmitterTests
     }
 
     // =============================================================================
-    // C. Version Property Tests
+    // C. Revisioning (no Version property) Tests
     // =============================================================================
 
     /// <summary>
-    /// Verifies that Emit generates Version property.
+    /// Verifies that no Version property is emitted at all: revisioning is carried
+    /// by <c>JasperFx.IRevisioned</c> over the inherited <c>Saga.Version</c> (int).
     /// </summary>
+    /// <remarks>
+    /// The old emit was <c>[Version] public new long Version</c>. That shadow hid
+    /// the base int property, satisfied Marten's document mapping, and failed
+    /// Wolverine's <c>MartenPersistenceFrameProvider.DetermineUpdateFrame</c>
+    /// interface test, so <c>UpdateRevision</c> was never emitted and concurrent
+    /// saga transitions were last-write-wins.
+    /// </remarks>
     [Test]
-    public async Task Emit_ValidModel_GeneratesVersionProperty()
+    public async Task Emit_ValidModel_EmitsNoVersionShadowProperty()
     {
         // Arrange
         var emitter = new SagaPropertiesEmitter();
@@ -135,28 +143,8 @@ public class SagaPropertiesEmitterTests
         var result = sb.ToString();
 
         // Assert
-        // long (not int): Marten 9 widened numeric document revisions to long
-        // and rejects an int [Version] property at document-mapping time.
-        await Assert.That(result).Contains("public new long Version { get; set; }");
-    }
-
-    /// <summary>
-    /// Verifies that Version has Version attribute.
-    /// </summary>
-    [Test]
-    public async Task Emit_ValidModel_VersionHasVersionAttribute()
-    {
-        // Arrange
-        var emitter = new SagaPropertiesEmitter();
-        var sb = new StringBuilder();
-        var model = CreateMinimalModel();
-
-        // Act
-        emitter.Emit(sb, model);
-        var result = sb.ToString();
-
-        // Assert
-        await Assert.That(result).Contains("[Version]");
+        await Assert.That(result).DoesNotContain("new long Version");
+        await Assert.That(result).DoesNotContain("[Version]");
     }
 
     // =============================================================================

@@ -4,14 +4,13 @@ Provenance for LinearWorkflowSaga.baseline.txt
 WHAT IT IS
   The complete non-event-sourced (SagaDocument) saga emit for a linear workflow —
   no fork, no branch, no loop, no failure handler, no approval point, no
-  confidence gate — captured from the generator BEFORE any off-main-flow
-  classification or step-list reordering work was applied.
+  confidence gate.
 
-  It is the "before" half of the linear-workflow output-equality guard. The
-  classification and reordering work must be INERT for a workflow that has no
-  off-main-flow steps, and this file is what makes that claim falsifiable
-  instead of assertable. Writing the expectation after the change instead would
-  embed post-change output and be green by construction.
+  It is the "before" half of the linear-workflow output-equality guard: any
+  later change to the generator that is supposed to be inert for a workflow
+  with no off-main-flow steps must leave this file byte-identical. Writing the
+  expectation after such a change instead would embed post-change output and be
+  green by construction.
 
 HOW IT WAS CAPTURED
   Fixture      : SourceTexts.LinearWorkflow
@@ -19,20 +18,51 @@ HOW IT WAS CAPTURED
                   -> Finally<SendConfirmation>, persistence mode SagaDocument)
   Emit         : hint name "ProcessOrderSaga.g.cs" from
                  GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow)
-  Verified     : two runs in the same process produced byte-identical output
-                 before the file was written.
+  Verified     : LinearWorkflowSaga_RepeatedGeneratorRuns_ProduceIdenticalOutput
+                 asserts run-to-run byte equality, so a mismatch here is always
+                 attributable to a change and never to generator nondeterminism.
 
 COMMIT PROVENANCE
-  Captured at commit          : 92e3e676a0f8a8cc6ea08f994fb740b885743471
-                                (branch feat/v2110-oracles)
-  Slice integration tip then  : bc93ac3a37d7840fc0aa00df7d8f9ac31e2874b7
-  Generator source last moved : 38854c0eff662f4aa083c07f4b7b0de06da3d8b2
-                                ("feat: strategy-compiler contract layer (v2.10.0)", 2026-07-08)
-  Capture date                : 2026-08-22
+  Captured at commit          : 71b004730d9618d747e5ed86978c3f3a8c65d3fa
+                                (the saga-revisioning change is applied on top
+                                 of this commit, in the working tree)
+  Generator source last moved : 263cc5720818b13268214c5df84d7575fd74a6d7
+  Capture date                : 2026-09-08
 
-  The capture commit contains only test-side changes; nothing under
-  src/Strategos.Generators/ had moved since 38854c0, which is the commit the
-  CONTENT of this baseline is actually a function of.
+WHY IT WAS RE-CAPTURED (supersedes the 2026-08-22 capture)
+  Re-capture reason (b) of the previous provenance note: linear output changed
+  deliberately, for a reason unrelated to off-main-flow classification or
+  step-list ordering.
+
+  The previous baseline was captured at 92e3e676a0f8a8cc6ea08f994fb740b885743471
+  (2026-08-22) as the "before" for the off-main-flow classification and
+  step-list reordering work. That work has landed and this file matched it
+  byte-for-byte, so the inertness claim it existed to falsify is discharged.
+
+  The change that forced the re-capture is the saga concurrency fix. It alters
+  the linear emit in exactly four places, all of them intended and all of them
+  visible in the diff against the previous baseline:
+
+    1. `using Marten.Schema;` is dropped. It existed solely to bring
+       Marten's [Version] attribute into scope.
+    2. `using Wolverine.ErrorHandling;` and `using Wolverine.Runtime.Handlers;`
+       are added, for the emitted error policy.
+    3. The `[Version] public new long Version { get; set; }` property is gone,
+       and the class declaration gains `, JasperFx.IRevisioned`. The shadow
+       property satisfied Marten's document mapping but NOT the
+       `CanBeCastTo<JasperFx.IRevisioned>` test in
+       Wolverine.Marten.Persistence.Sagas.MartenPersistenceFrameProvider
+       .DetermineUpdateFrame, so Wolverine emitted a plain
+       `documentSession.Update(saga)` and concurrent saga transitions were
+       last-write-wins. The interface is implemented by the inherited
+       `Wolverine.Saga.Version` (int), which Marten's default VersionedPolicy
+       maps to numeric revisions with no attribute needed.
+    4. A `public static void Configure(HandlerChain chain)` is added, applying
+       `chain.OnException<JasperFx.ConcurrencyException>().RetryTimes(3)`.
+       Wolverine has no default rule for ConcurrencyException, so without it the
+       first lost race dead-letters immediately.
+
+  Nothing else in the emit moved.
 
 THE ONE NORMALIZATION
   The emitted [GeneratedCode("LevelUp.Strategos", "<version>")] argument is
@@ -48,15 +78,12 @@ THE ONE NORMALIZATION
   both sides. Every other byte is compared exactly.
 
 RE-CAPTURING
-  Do NOT re-capture this file to make a failing comparison pass. A baseline
-  captured after any of the off-main-flow classification or step-list ordering
-  work has landed is worthless: it records the very output it is supposed to be
-  independent of.
+  Do NOT re-capture this file to make a failing comparison pass.
 
   A difference against this baseline means one of two things, and only reading
   the diff tells you which:
-    (a) the change leaked into linear-workflow output, which the requirement
-        forbids — fix the change, not the baseline; or
-    (b) linear output changed deliberately for an unrelated, stated reason — in
-        which case re-capture, and replace this whole file with the new
-        provenance and the reason.
+    (a) a change that was supposed to be inert for a linear workflow leaked into
+        its output — fix the change, not the baseline; or
+    (b) linear output changed deliberately for a stated reason — in which case
+        re-capture, and replace this whole file with the new provenance and the
+        reason, as was done here.

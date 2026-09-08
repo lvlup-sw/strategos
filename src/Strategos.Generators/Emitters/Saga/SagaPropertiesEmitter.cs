@@ -19,7 +19,6 @@ namespace Strategos.Generators.Emitters.Saga;
 /// This emitter generates the following properties:
 /// <list type="bullet">
 ///   <item><description>WorkflowId - The saga identity with both [SagaIdentity] and [Identity] attributes</description></item>
-///   <item><description>Version - Optimistic concurrency control with [Version] attribute</description></item>
 ///   <item><description>Phase - Current workflow phase with NotStarted default</description></item>
 ///   <item><description>State - Workflow state (if StateTypeName is specified)</description></item>
 ///   <item><description>Iteration counters - One per loop (if loops are defined)</description></item>
@@ -55,16 +54,17 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
         sb.AppendLine("    public Guid WorkflowId { get; set; }");
         sb.AppendLine();
 
-        // Version for optimistic concurrency.
-        // Typed as long: Marten 9 widened numeric document revisions from int to
-        // long and rejects an int [Version] property at mapping time. This
-        // shadows the Wolverine Saga.Version (int) base property with `new`.
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Gets or sets the version for optimistic concurrency control.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    [Version]");
-        sb.AppendLine("    public new long Version { get; set; }");
-        sb.AppendLine();
+        // No Version property is emitted. Revisioning comes from the
+        // `JasperFx.IRevisioned` interface on the saga class declaration
+        // (SagaEmitter.EmitClassDeclaration) over the inherited `Saga.Version`
+        // (int), which Marten's default VersionedPolicy maps to numeric
+        // revisions with no [Version] attribute needed.
+        //
+        // The previous `[Version] public new long Version` shadow satisfied
+        // Marten's document mapping but NOT Wolverine's interface test in
+        // MartenPersistenceFrameProvider.DetermineUpdateFrame, so
+        // `UpdateRevision` was never emitted and concurrent saga transitions
+        // were last-write-wins.
 
         // Phase property
         sb.AppendLine("    /// <summary>");

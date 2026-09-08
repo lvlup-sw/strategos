@@ -30,7 +30,7 @@ public class SagaIdentityEmitterTests
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
-        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga");
+        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga, JasperFx.IRevisioned");
     }
 
     /// <summary>

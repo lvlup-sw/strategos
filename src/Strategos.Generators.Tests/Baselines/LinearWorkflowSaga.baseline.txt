@@ -5,10 +5,11 @@ using System;
 using System.Collections.Generic;
 using Strategos.Identity.Abstractions;
 using Strategos.Services;
-using Marten.Schema;
 using Microsoft.Extensions.Logging;
 using Wolverine;
+using Wolverine.ErrorHandling;
 using Wolverine.Persistence.Sagas;
+using Wolverine.Runtime.Handlers;
 using TestNamespace;
 
 namespace TestNamespace;
@@ -16,9 +17,17 @@ namespace TestNamespace;
 /// <summary>
 /// Wolverine saga for the process-order workflow.
 /// </summary>
+/// <remarks>
+/// Implements <c>JasperFx.IRevisioned</c> over the inherited <c>Saga.Version</c>
+/// (int). Wolverine's MartenPersistenceFrameProvider.DetermineUpdateFrame tests the
+/// saga type for that interface and only then emits
+/// <c>documentSession.UpdateRevision(saga, expectedSagaRevision)</c>; without it the
+/// emitted persistence call is a plain <c>Update</c>, which leaves Marten's numeric
+/// revision guard at 0 and makes concurrent saga transitions last-write-wins.
+/// </remarks>
 [global::System.CodeDom.Compiler.GeneratedCode("LevelUp.Strategos", "{generator-version}")]
 [global::System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-public partial class ProcessOrderSaga : Saga, IPhaseAwareSaga
+public partial class ProcessOrderSaga : Saga, IPhaseAwareSaga, JasperFx.IRevisioned
 {
     /// <summary>
     /// Gets or sets the workflow identifier.
@@ -26,12 +35,6 @@ public partial class ProcessOrderSaga : Saga, IPhaseAwareSaga
     [SagaIdentity]
     [JasperFx.Identity]
     public Guid WorkflowId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the version for optimistic concurrency control.
-    /// </summary>
-    [Version]
-    public new long Version { get; set; }
 
     /// <summary>
     /// Gets or sets the current workflow phase.
@@ -52,6 +55,26 @@ public partial class ProcessOrderSaga : Saga, IPhaseAwareSaga
     /// Gets or sets the timestamp when the workflow started.
     /// </summary>
     public DateTimeOffset StartedAt { get; set; }
+
+    /// <summary>
+    /// Configures the Wolverine error policy for every message chain handled by
+    /// this saga. Wolverine discovers this static method by convention and calls
+    /// it once per chain.
+    /// </summary>
+    /// <remarks>
+    /// The saga implements <c>JasperFx.IRevisioned</c>, so its persistence call is
+    /// <c>UpdateRevision</c> under Marten's numeric revision guard. A delivery that
+    /// loses a concurrent transition race throws <c>JasperFx.ConcurrencyException</c>;
+    /// Wolverine has no default rule for it and would dead-letter on the first loss.
+    /// Retrying re-loads the saga at the winner's revision and re-applies the
+    /// transition.
+    /// </remarks>
+    /// <param name="chain">The handler chain to apply the error policy to.</param>
+    public static void Configure(HandlerChain chain)
+    {
+        chain.OnException<JasperFx.ConcurrencyException>().RetryTimes(3);
+    }
+
     /// <summary>
     /// Starts a new process-order workflow.
     /// </summary>

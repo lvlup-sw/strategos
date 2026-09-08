@@ -68,7 +68,7 @@ public class SagaSnapshotInspectionTests
         await Assert.That(sagaSource).IsNotNull().And.IsNotEmpty();
 
         // Additive emit
-        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga");
+        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga, JasperFx.IRevisioned");
         await Assert.That(sagaSource).Contains("public string CurrentPhaseName => Phase.ToString();");
 
         // The contract is "exactly once" — duplicate emits (e.g., a regression where
@@ -79,6 +79,13 @@ public class SagaSnapshotInspectionTests
         await Assert.That(currentPhaseNameOccurrences).IsEqualTo(1);
 
         await Assert.That(sagaSource).Contains("using Strategos.Identity.Abstractions;");
+
+        // Concurrency: the IRevisioned interface (not a [Version] shadow) is what
+        // MartenPersistenceFrameProvider.DetermineUpdateFrame tests for.
+        await Assert.That(sagaSource).DoesNotContain("new long Version");
+        await Assert.That(sagaSource).DoesNotContain("[Version]");
+        await Assert.That(sagaSource)
+            .Contains("chain.OnException<JasperFx.ConcurrencyException>().RetryTimes(3);");
 
         // DR-7 negations: no Option-C state leaked into emit
         await Assert.That(sagaSource).DoesNotContain("CurrentAgentIdentity");
