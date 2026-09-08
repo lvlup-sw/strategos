@@ -67,6 +67,34 @@ public sealed class ImportedWorkflowBindingProofTests
             .Because("the illegal seam must fail through AGWF041 without an unrelated generator error.");
     }
 
+    /// <summary>
+    /// The wire compatibility bit cannot weaken a typed rollback program: once an inverse
+    /// action identity is present, rollback on failure is mandatory.
+    /// </summary>
+    [Test]
+    public async Task ImportedTypedCompensation_WithRequiredOnFailureFalse_ReportsAgwf044()
+    {
+        var result = RunGenerator(
+            Source(
+                secondRequirement: 1,
+                compensationActions: """
+                    obj.Action("undo-receive")
+                        .Requires(order => order.Stage == 1)
+                        .Ensures(order => order.Stage == 0)
+                        .Modifies(order => order.Stage);
+                    obj.Action("undo-complete")
+                        .Requires(order => order.Stage == 2)
+                        .Ensures(order => order.Stage == 1)
+                        .Modifies(order => order.Stage);
+                    """),
+            ("imported-typed-compensation.workflow.json", ImportedTypedCompensationWorkflowJson));
+        var diagnostic = SingleBindingDiagnostic(result);
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF044");
+        await Assert.That(diagnostic.GetMessage()).Contains("RequiredOnFailure");
+        await Assert.That(diagnostic.GetMessage()).Contains("cannot set");
+    }
+
     /// <summary>A C# and JSON definition with the same ordinal identity make the binding ambiguous.</summary>
     [Test]
     public async Task MixedCSharpAndJsonDuplicateWorkflowIdentity_ReportsAgwf039()
@@ -249,10 +277,81 @@ public sealed class ImportedWorkflowBindingProofTests
         }
         """;
 
+    private const string ImportedTypedCompensationWorkflowJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "imported-flow",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "receive",
+              "stepName": "ReceiveStep",
+              "isTerminal": false,
+              "stepType": "ReceiveStep",
+              "action": {
+                "domainName": "orders",
+                "objectTypeName": "Order",
+                "actionName": "receive"
+              },
+              "configuration": {
+                "compensation": {
+                  "compensationStepType": "CompleteStep",
+                  "inverseAction": {
+                    "domainName": "orders",
+                    "objectTypeName": "Order",
+                    "actionName": "undo-receive"
+                  },
+                  "requiredOnFailure": false
+                }
+              }
+            },
+            {
+              "kind": "skill",
+              "stepId": "complete",
+              "stepName": "CompleteStep",
+              "isTerminal": true,
+              "stepType": "CompleteStep",
+              "action": {
+                "domainName": "orders",
+                "objectTypeName": "Order",
+                "actionName": "complete"
+              },
+              "configuration": {
+                "compensation": {
+                  "compensationStepType": "ReceiveStep",
+                  "inverseAction": {
+                    "domainName": "orders",
+                    "objectTypeName": "Order",
+                    "actionName": "undo-complete"
+                  },
+                  "requiredOnFailure": true
+                }
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "transitionId": "receive-complete",
+              "fromStepId": "receive",
+              "toStepId": "complete",
+              "isDefault": true
+            }
+          ],
+          "branchPoints": [],
+          "loops": [],
+          "forkPoints": [],
+          "failureHandlers": [],
+          "approvalPoints": [],
+          "entryStepId": "receive",
+          "terminalStepId": "complete"
+        }
+        """;
+
     private static string Source(
         int secondRequirement,
         bool includeAuthoredWorkflow = false,
-        string bindingExpression = "\"imported-flow\"") => $$"""
+        string bindingExpression = "\"imported-flow\"",
+        string compensationActions = "") => $$"""
         using System;
         using System.Threading;
         using System.Threading.Tasks;
@@ -299,6 +398,8 @@ public sealed class ImportedWorkflowBindingProofTests
                         .Requires(order => order.Stage == {{secondRequirement}})
                         .Ensures(order => order.Stage == 2)
                         .Modifies(order => order.Stage);
+
+                    {{compensationActions}}
                 });
             }
         }
@@ -385,7 +486,9 @@ public sealed class ImportedWorkflowBindingProofTests
             "AGWF040",
             "AGWF041",
             "AGWF042",
-            "AGWF043");
+            "AGWF043",
+            "AGWF044",
+            "AGWF045");
     }
 
     private static async Task AssertDynamicCollisionFailsCleanly(GeneratorDriverRunResult result)
@@ -420,7 +523,7 @@ public sealed class ImportedWorkflowBindingProofTests
         var unexpectedErrors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .Where(static diagnostic => diagnostic.Id is not (
-                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045"))
             .ToArray();
         if (unexpectedErrors.Length > 0)
         {
@@ -431,7 +534,8 @@ public sealed class ImportedWorkflowBindingProofTests
         }
 
         var diagnostics = result.Diagnostics
-            .Where(static diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
+            .Where(static diagnostic => diagnostic.Id is
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
         if (diagnostics.Length != 1)
         {

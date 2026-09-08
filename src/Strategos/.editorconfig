@@ -13,7 +13,7 @@
 #
 # Mechanism: the analyzer is all-or-nothing per project, so we disable its
 # diagnostics assembly-wide here, then re-enable them ONLY for the 10 interface
-# files under Abstractions/ and two exact files under Definitions/.
+# files under Abstractions/ and three exact files under Definitions/.
 # The PublicAPI.{Shipped,Unshipped}.txt baseline therefore remains a deliberate
 # allowlist and cannot absorb unrelated public or generated types.
 #

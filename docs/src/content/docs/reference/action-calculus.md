@@ -504,7 +504,10 @@ Rollback plans are immutable syntax trees:
 so a failed action is never included in its own rollback. Sequential plans
 reverse and flatten; parallel plans preserve independent branches; scoped plans
 retain nested compensation boundaries; and an empty plan is the subject-typed
-rollback identity.
+rollback identity. Every plan exposes `Frame` as the canonical union of its leaf
+frames. `DeriveParallelRollbackPlan` rejects branches whose aggregate frames
+overlap, or whose frame can change a resource read by another branch's inverse
+contract; shared reads alone remain valid.
 
 ### Typed workflow compensation
 
@@ -512,13 +515,12 @@ Name both the forward action and the executable inverse at each step
 occurrence:
 
 ```csharp
-var capture = new WorkflowActionReference("Orders", "Order", "CapturePayment");
-var refund = new WorkflowActionReference("Orders", "Order", "RefundPayment");
-
 Workflow<OrderState>.Create("process-order")
     .StartWith<CapturePaymentStep>(step => step
-        .Performs(capture)
-        .Compensate<RefundPaymentStep>(refund));
+        .Performs(new WorkflowActionReference(
+            "Orders", "Order", "CapturePayment"))
+        .Compensate<RefundPaymentStep>(new WorkflowActionReference(
+            "Orders", "Order", "RefundPayment")));
 ```
 
 The generator resolves both identities from the same compilation-local action
@@ -537,11 +539,14 @@ closed rather than running the provable subset.
 
 ### Durable completed-prefix rollback
 
-Generated Wolverine sagas journal a forward occurrence only after it completes.
-The journal carries stable occurrence, scope, lane, action, execution, and
-inverse identities plus the state needed by the inverse worker. On failure,
-the generator derives the rollback from that persisted journal rather than an
-author-maintained list:
+Generated Wolverine sagas first persist a forward-dispatch claim containing
+the execution id and exact compiled occurrence, scope, lane, and journal
+high-water mark. A completion or pre-completion failure must consume that
+claim; topology-shaped messages that were never dispatched cannot claim
+rollback authority. After a forward occurrence completes, its claim becomes a
+completion-journal entry carrying the action and inverse identities plus the
+state needed by the inverse worker. On failure, the generator derives rollback
+from that persisted journal rather than an author-maintained list:
 
 - a failure at `C` after `A ; B` completed runs `B^-1 ; A^-1`; `C` is absent;
 - a failure inside a nested branch or loop iteration unwinds only that concrete
@@ -554,13 +559,27 @@ author-maintained list:
   generic workflow state has no sound merge operation. The workflow-binding
   proof has already established that the lane frames do not interfere.
 
-Inverse completion has a separate message route from forward completion and
-applies the returned state through the configured saga-document or event-sourced
-reducer before the next inverse starts. A stable rollback id makes redelivery
-idempotent. An inverse failure, an unmatched outcome, or a timeout is never
+Inverse completion has a separate message route from forward completion and,
+for saga-document workflows, applies the returned state through the configured
+reducer before the next inverse starts. Each inverse delivery carries a stable
+rollback id that is distinct from, and injectively derived from, its forward
+execution id for deterministic correlation and completed-delivery
+deduplication.
+Delivery remains at-least-once: inverse implementations that perform external
+effects must either be idempotent or use that rollback id as their durable
+idempotency key. An inverse failure, an unmatched outcome, or a timeout is never
 recursively compensated or assumed successful: the saga and its journal remain
 in `Failed` for reconciliation. Failure handlers run only after a successful
 rollback of the selected scope.
+
+Typed derived compensation is restricted to `SagaDocument` persistence in
+v2.13. An event-sourced state's consumer-defined `ApplyEvent` method may legally
+pass through an unfamiliar generated rollback-completed event. Strategos cannot
+therefore prove that `UpdatedState` is folded identically during live handling
+and Marten replay. The source generator reports `AGWF045` for a typed inverse
+program declared with `PersistenceMode.EventSourced`; it does not accept a
+compile-only or no-op `ApplyEvent` method as rollback proof. Legacy untyped
+compensation keeps its existing event-sourced behavior.
 
 ## TypeSpec and MCP metadata
 
@@ -600,7 +619,7 @@ lowers to a hard `relation-holds` requirement; the old relation/link-path pair
 is no longer emitted. Unknown predicate discriminators are rejected rather
 than treated as `Custom` or `True`.
 
-The 0.11 contract decorator surface does not yet author effect/frame metadata.
+The 0.12 contract decorator surface does not yet author effect/frame metadata.
 Consequently, a TypeSpec guarantee must already follow from the operation's
 hard requirements; graph freeze rejects a contract that promises a new fact
 without declaring how that resource may change. Author state-changing

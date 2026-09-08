@@ -38,6 +38,73 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Finds the phase names that have at least one occurrence on the workflow's main flow.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The distinct main-flow phase names in declaration order.</returns>
+    public static IReadOnlyList<string> ExtractMainFlowStepPhaseNames(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return StepExtractor.ExtractStepInfos(context)
+            .Where(static step => step.Context == StepContext.Linear)
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds the CLR step types that have at least one authored forward occurrence.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The distinct forward CLR step type names in declaration order.</returns>
+    public static IReadOnlyList<string> ExtractForwardStepTypeNames(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return StepExtractor.ExtractStepInfos(context)
+            .Select(static step => step.StepName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds the phase names that have at least one authored forward occurrence.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for type resolution.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The distinct forward phase names in declaration order.</returns>
+    public static IReadOnlyList<string> ExtractForwardStepPhaseNames(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+
+        var context = FluentDslParseContext.Create(typeDeclaration, semanticModel, null, cancellationToken);
+        return StepExtractor.ExtractStepInfos(context)
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// Extracts the state type name from the workflow definition (e.g., "OrderState" from Workflow&lt;OrderState&gt;).
     /// </summary>
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>

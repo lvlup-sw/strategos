@@ -72,9 +72,11 @@ public interface IFailureBuilder<TState>
     /// </code>
     /// </para>
     /// <para>
-    /// Enforcement parity is partial today: the configuration is captured in the workflow definition
-    /// and threaded into the generator's step IR, but the source generator does not yet emit Wolverine
-    /// retry/timeout/compensation for failure-handler steps (tracked by issue #135).
+    /// Failure-handler steps execute through a dedicated recovery role, not as forward workflow
+    /// occurrences. Their configuration is retained in the workflow definition, but the dedicated
+    /// recovery worker does not recursively enter the forward retry/timeout/compensation program.
+    /// In particular, typed compensation on a recovery-only occurrence cannot establish a closed
+    /// rollback topology and is rejected by static compensation proof.
     /// </para>
     /// </remarks>
     IFailureBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)

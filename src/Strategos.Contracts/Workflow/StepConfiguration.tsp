@@ -42,7 +42,7 @@ model CompensationConfiguration {
   /** Ontology action implemented by the authored compensation step. */
   inverseAction?: ActionReferenceV1;
 
-  /** Whether compensation is required on failure. */
+  /** Whether compensation is required on failure. Typed inverse programs require true. */
   requiredOnFailure?: boolean;
 
   /** Compensation timeout (ISO-8601 duration), if set. */

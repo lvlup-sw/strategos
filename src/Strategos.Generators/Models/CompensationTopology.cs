@@ -170,6 +170,13 @@ internal sealed class CompensationTopology
             return CompensationProgramKind.None;
         }
 
+        if (compensations.Any(static compensation =>
+            compensation.HasConflictingDeclarations
+            && compensation.HasTypedOrDynamicDeclaration))
+        {
+            return CompensationProgramKind.Mixed;
+        }
+
         if (compensations.All(static compensation =>
             compensation.InverseActionResolution == WorkflowActionReferenceResolution.Missing))
         {
@@ -247,12 +254,23 @@ internal sealed class CompensationTopology
 
         foreach (var group in deepest.GroupBy(static occurrence => occurrence.PhaseName, StringComparer.Ordinal))
         {
-            if (group.Count() <= 1 || group.All(static occurrence => occurrence.PathKey is not null))
+            if (group.Count() <= 1)
             {
                 continue;
             }
 
-            AddIssue(issues, $"Phase '{group.Key}' maps to multiple compensation occurrences without an identity-carrying path key.");
+            if (group.Any(static occurrence => occurrence.PathKey is null))
+            {
+                AddIssue(issues, $"Phase '{group.Key}' maps to multiple compensation occurrences without an identity-carrying path key.");
+                continue;
+            }
+
+            if (group.Any(static occurrence => occurrence.PathKey?.Construct == PathConstructKind.Branch))
+            {
+                AddIssue(
+                    issues,
+                    $"Phase '{group.Key}' maps to multiple branch compensation occurrences, but its shared forward start command carries no branch path identity.");
+            }
         }
 
         return new CompensationTopology(deepest, issues);

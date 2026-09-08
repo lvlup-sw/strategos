@@ -455,6 +455,10 @@ public sealed class RoundTripIrFidelityTests
         var modelStepNames = model.Steps!.Select(s => s.StepName).ToList();
         await Assert.That(modelStepNames).Contains("FidAutoStep");
         await Assert.That(modelStepNames).Contains("FidManualStep");
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidAutoStep");
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidManualStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidAutoStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidManualStep");
     }
 
     /// <summary>
@@ -522,6 +526,17 @@ public sealed class RoundTripIrFidelityTests
             model.Steps!.Select(s => s.StepName),
             wireMonikers,
             "every top-level wire step maps to a model step, field-for-field and in order.");
+
+        // Failure routing is outside the current import subset, so the recovery step remains in
+        // the legacy top-level lowering. Its authored role is nevertheless explicit and excluded
+        // from forward-worker provenance. If imported failure routing is added later, the recovery
+        // worker therefore cannot inherit the recursive OnFailure trigger policy through a null
+        // fallback.
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidLogStep");
+        await Assert.That(model.ForwardStepTypeNames!).DoesNotContain("FidLogStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidValidateStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidProcessStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidCompleteStep");
 
         // The failure-ROUTING construct is not lowered by the import subset (documented follow-on).
         await Assert.That(model.FailureHandlers).IsNull()

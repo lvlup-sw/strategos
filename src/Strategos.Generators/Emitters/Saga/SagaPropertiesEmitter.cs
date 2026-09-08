@@ -251,6 +251,24 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine();
 
             sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets durable authority claims for in-flight forward dispatches.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<ForwardDispatchClaim> ForwardDispatchClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets saga-minted capabilities for failures observed after forward completion.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<FailureTriggerClaim> PendingPostCompletionFailureClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets consumed failure-trigger authority retained for exact idempotent redelivery.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<FailureTriggerClaim> ConsumedFailureTriggerClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// Gets or sets the next monotonic completion-journal sequence.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public long CompensationJournalSequence { get; set; }");
@@ -260,6 +278,12 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine("    /// Gets or sets the concrete scope currently being rolled back.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public string? ActiveCompensationScopeKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the compiled occurrence whose failure claimed rollback.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? FailedCompensationOccurrenceKey { get; set; }");
             sb.AppendLine();
 
             sb.AppendLine("    /// <summary>");
@@ -284,6 +308,12 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine("    /// Gets or sets the inverse failure that requires operator reconciliation.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public string? CompensationFailureMessage { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets whether the active rollback reached its terminal success path.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public bool CompensationRollbackFinished { get; set; }");
             sb.AppendLine();
         }
 

@@ -108,6 +108,11 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            "yield break;");
+
         // Apply state change and store path state if state type is specified
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
@@ -128,6 +133,28 @@ internal sealed class ForkJoinHandlerEmitter
             sb,
             model,
             compensationOccurrence);
+
+        // The path completion is an inclusive rollback boundary when its reducer
+        // enters Failed. Route it before confidence, Success status, or Join can
+        // overwrite the failure and start a forward successor.
+        if (model.HasFailureHandlers || CompensationTopology.UsesDerivedRuntime(model))
+        {
+            if (model.StateHasPhaseProperty && !string.IsNullOrEmpty(model.StateTypeName))
+            {
+                sb.AppendLine("        Phase = State.Phase;");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence,
+                phaseName);
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
 
         // Confidence gate (DR-4 / #145 gap A): a fork path's LAST step may declare
         // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()). Mirroring the
@@ -305,13 +332,37 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine($"    /// <returns>The start command for {fork.JoinStepName}.</returns>");
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-        sb.AppendLine($"    public {joinStepCommand} Handle(");
+        var usesDerivedRuntime = CompensationTopology.UsesDerivedRuntime(model);
+        sb.AppendLine(usesDerivedRuntime
+            ? $"    public {joinStepCommand}? Handle("
+            : $"    public {joinStepCommand} Handle(");
         sb.AppendLine($"        JoinFork_{sanitizedId}_Command cmd,");
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
+        if (usesDerivedRuntime)
+        {
+            sb.AppendLine("        // A join is valid only at its persisted synchronization phase. This also");
+            sb.AppendLine("        // makes duplicate and rollback-racing join deliveries monotonic no-ops.");
+            sb.AppendLine($"        if (Phase != {model.PhaseEnumName}.Joining_{sanitizedId}");
+            sb.AppendLine("            || !HasStructurallyValidCompensationJournal()");
+            sb.AppendLine("            || !HasStructurallyValidForwardDispatchClaims()");
+            sb.AppendLine("            || !HasStructurallyValidFailureTriggerClaims()");
+            sb.AppendLine("            || PendingPostCompletionFailureClaims.Count > 0");
+            sb.AppendLine("            || PendingCompensationForkId is not null");
+            sb.AppendLine("            || ActiveCompensationScopeKey is not null");
+            sb.AppendLine("            || CompensationRollbackFinished");
+            sb.AppendLine("            || CompensationOutcomeUnknown");
+            sb.AppendLine("            || CompensationFailureMessage is not null");
+            sb.AppendLine("            || CompensationJournal?.Any(entry => entry?.Status is \"Failed\" or \"OutcomeUnknown\") == true)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return null;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"        logger.LogDebug(");
         sb.AppendLine($"            \"Dispatching join step {{JoinStep}} for workflow {{WorkflowId}}\",");
         sb.AppendLine($"            \"{fork.JoinStepName}\",");

@@ -1690,6 +1690,7 @@ Strategos.Ontology.Descriptors.ActionInverseObligation.Requirements = 4 -> Strat
 Strategos.Ontology.Descriptors.ActionInverseObligation.Subject = 3 -> Strategos.Ontology.Descriptors.ActionInverseObligation
 Strategos.Ontology.Descriptors.ActionRollbackLeaf
 Strategos.Ontology.Descriptors.ActionRollbackLeaf.Failures.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionInverseFailure!>
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
 Strategos.Ontology.Descriptors.ActionRollbackLeaf.ForwardAction.get -> Strategos.Ontology.Descriptors.ActionContractIdentity!
 Strategos.Ontology.Descriptors.ActionRollbackLeaf.InverseAction.get -> Strategos.Ontology.Descriptors.ActionContractIdentity?
 Strategos.Ontology.Descriptors.ActionRollbackLeaf.IsCompensable.get -> bool
@@ -1697,6 +1698,7 @@ Strategos.Ontology.Descriptors.ActionRollbackLeaf.Status.get -> Strategos.Ontolo
 Strategos.Ontology.Descriptors.ActionRollbackLeaf.UsesIdentityInverse.get -> bool
 Strategos.Ontology.Descriptors.ActionRollbackPlan
 Strategos.Ontology.Descriptors.ActionRollbackPlan.Children.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionRollbackPlan!>
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
 Strategos.Ontology.Descriptors.ActionRollbackPlan.IsCompensable.get -> bool
 Strategos.Ontology.Descriptors.ActionRollbackPlan.Kind.get -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
 Strategos.Ontology.Descriptors.ActionRollbackPlan.Leaf.get -> Strategos.Ontology.Descriptors.ActionRollbackLeaf?

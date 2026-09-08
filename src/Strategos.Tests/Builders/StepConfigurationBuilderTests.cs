@@ -193,6 +193,26 @@ public class StepConfigurationBuilderTests
             .Throws<ArgumentNullException>();
     }
 
+    /// <summary>
+    /// A step occurrence has one inverse; a second declaration must not silently replace
+    /// the first declaration selected by static extraction.
+    /// </summary>
+    [Test]
+    public async Task Then_WithDuplicateCompensate_ThrowsInvalidOperationException()
+    {
+        var firstInverse = new WorkflowActionReference("orders", "Order", "undo-first");
+        var secondInverse = new WorkflowActionReference("orders", "Order", "undo-second");
+
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("duplicate-compensation")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg
+                    .Compensate<RollbackStep>(firstInverse)
+                    .Compensate<RollbackStep>(secondInverse)))
+            .Throws<InvalidOperationException>()
+            .WithMessage("Compensate can be declared only once for a step occurrence.");
+    }
+
     // =============================================================================
     // C. WithRetry Tests
     // =============================================================================

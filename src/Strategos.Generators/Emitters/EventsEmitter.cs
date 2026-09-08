@@ -164,7 +164,7 @@ internal static class EventsEmitter
         {
             foreach (var handler in model.FailureHandlers)
             {
-                foreach (var stepName in handler.StepNames)
+                foreach (var stepName in handler.StepTypeNames)
                 {
                     if (emittedStepEvents.Add(stepName))
                     {
@@ -201,7 +201,8 @@ internal static class EventsEmitter
         // Inverse execution uses distinct completion/failure messages. Reusing the
         // normal {Step}Completed event would let a rollback accidentally advance the
         // forward saga and cannot correlate two journal entries that share an inverse
-        // type. The RollbackId is the stable forward StepExecutionId.
+        // type. RollbackId is a stable, distinct, injective derivative of the
+        // forward StepExecutionId.
         if (CompensationTopology.UsesDerivedRuntime(model))
         {
             var emittedRollbackEvents = new HashSet<string>(StringComparer.Ordinal);
@@ -431,7 +432,7 @@ internal static class EventsEmitter
         {
             var sanitizedId = handler.HandlerId.Replace("-", "_");
 
-            foreach (var stepName in handler.StepNames)
+            foreach (var stepName in handler.StepPhaseNames)
             {
                 sb.AppendLine();
                 EmitFailureHandlerStepCompletedEvent(sb, model, handler, stepName, sanitizedId);

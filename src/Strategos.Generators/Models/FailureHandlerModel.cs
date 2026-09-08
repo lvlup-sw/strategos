@@ -56,6 +56,41 @@ internal sealed record FailureHandlerModel(
     IReadOnlyList<StepModel>? Steps = null)
 {
     /// <summary>
+    /// Gets the ordered, occurrence-scoped phase names of the recovery steps.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StepNames"/> predates instance-named failure steps and therefore carries
+    /// CLR step type names. When full step models are available, their phase names preserve
+    /// the instance identity required by dedicated command, event, phase, and handler names.
+    /// </remarks>
+    public IReadOnlyList<string> StepPhaseNames =>
+        Steps is not null && Steps.Count == StepNames.Count
+            ? Steps.Select(static step => step.PhaseName).ToList()
+            : StepNames;
+
+    /// <summary>
+    /// Gets the ordered CLR step type names of the recovery steps.
+    /// </summary>
+    public IReadOnlyList<string> StepTypeNames =>
+        Steps is not null && Steps.Count == StepNames.Count
+            ? Steps.Select(static step => step.StepName).ToList()
+            : StepNames;
+
+    /// <summary>
+    /// Gets the first occurrence-scoped phase name in the failure handler path.
+    /// </summary>
+    public string FirstStepPhaseName => StepPhaseNames.Count > 0
+        ? StepPhaseNames[0]
+        : throw new InvalidOperationException("Cannot access FirstStepPhaseName: StepNames is empty.");
+
+    /// <summary>
+    /// Gets the last occurrence-scoped phase name in the failure handler path.
+    /// </summary>
+    public string LastStepPhaseName => StepPhaseNames.Count > 0
+        ? StepPhaseNames[StepPhaseNames.Count - 1]
+        : throw new InvalidOperationException("Cannot access LastStepPhaseName: StepNames is empty.");
+
+    /// <summary>
     /// Gets the first step name in the failure handler path.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="StepNames"/> is empty.</exception>

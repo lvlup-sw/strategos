@@ -198,7 +198,7 @@ internal static class ExtensionsEmitter
             foreach (var failureHandler in model.FailureHandlers)
             {
                 var sanitizedId = failureHandler.HandlerId.Replace("-", "_");
-                foreach (var stepName in failureHandler.StepNames)
+                foreach (var stepName in failureHandler.StepPhaseNames)
                 {
                     sb.AppendLine($"        services.AddTransient<FailureHandler_{sanitizedId}_{stepName}Handler>();");
                 }
@@ -285,7 +285,7 @@ internal static class ExtensionsEmitter
             {
                 foreach (var handler in model.FailureHandlers)
                 {
-                    foreach (var stepName in handler.StepNames)
+                    foreach (var stepName in handler.StepTypeNames)
                     {
                         RegisterAssembler(stepName);
                     }

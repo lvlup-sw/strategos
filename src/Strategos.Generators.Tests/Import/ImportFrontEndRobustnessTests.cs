@@ -345,6 +345,50 @@ public sealed class ImportFrontEndRobustnessTests
         }
     }
 
+    /// <summary>
+    /// A present compensation object must carry the schema-required, non-blank string
+    /// <c>compensationStepType</c>. The reader must not collapse a missing or malformed step type
+    /// into the same state as an omitted compensation object, especially when the object also
+    /// carries a proof-bearing <c>inverseAction</c>.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task MissingOrMalformedCompensationStepType_FailsClosed_WithStableDiagnostic()
+    {
+        const string inverseAction =
+            "\"inverseAction\": { \"domainName\": \"orders\", \"objectTypeName\": \"Order\", \"actionName\": \"undo\" }";
+        var cases = new (string Name, string Properties, string ExpectedDetail)[]
+        {
+            ("omitted", inverseAction, "property 'compensationStepType' must be a string"),
+            ("blank", "\"compensationStepType\": \"   \", " + inverseAction,
+                "property 'compensationStepType' must contain at least one non-whitespace character"),
+            ("non-string", "\"compensationStepType\": 17, " + inverseAction,
+                "property 'compensationStepType' must be a string"),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var result = RunGenerator(
+                StepTypes,
+                ($"malformed-compensation-step-type-{testCase.Name}.workflow.json",
+                    WorkflowWithCompensation(testCase.Properties)),
+                MalformedWorkflowJsonCode);
+            var errors = ErrorDiagnostics(result);
+            await Assert.That(errors).HasCount().EqualTo(1)
+                .Because("an invalid required compensation step type must fail for exactly the stable import reason.");
+            var diagnostic = errors.SingleOrDefault(
+                item => item.Id == MalformedWorkflowJsonCode);
+
+            await Assert.That(diagnostic).IsNotNull();
+            await Assert.That(diagnostic!.GetMessage()).Contains(testCase.ExpectedDetail)
+                .Because("the stable import diagnostic must identify the malformed required field.");
+            await Assert.That(result.GeneratedTrees.Any(
+                    tree => tree.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+                .IsFalse()
+                .Because("an invalid compensation object must not lower a saga.");
+        }
+    }
+
     /// <summary>An omitted optional action remains importable and distinct from an explicit null.</summary>
     /// <returns>A task representing the asynchronous test.</returns>
     [Test]
@@ -418,6 +462,30 @@ public sealed class ImportFrontEndRobustnessTests
                 "compensation": {
                   "compensationStepType": "RobustStepB",
                   "inverseAction": {{inverseActionToken}}
+                }
+              }
+            }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s1"
+        }
+        """;
+
+    private static string WorkflowWithCompensation(string compensationProperties) => $$"""
+        {
+          "schemaVersion": "1.0",
+          "name": "malformed-compensation-step-type",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RobustStepA",
+              "isTerminal": true,
+              "stepType": "RobustStepA",
+              "configuration": {
+                "compensation": {
+                  {{compensationProperties}}
                 }
               }
             }

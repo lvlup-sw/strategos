@@ -457,6 +457,11 @@ step its typed inverse action:
         "Orders", "Order", "RefundPayment")))
 ```
 
+`IStepConfiguration<TState>` therefore has a new abstract typed overload;
+external implementations and API mirrors must add it. Each occurrence accepts
+exactly one compensation declaration. A second call to either overload now
+throws `InvalidOperationException` instead of replacing the first declaration.
+
 Strategos mechanically derives the inverse of forward action `A`:
 
 - it requires `A`'s effective guarantee, including requirements preserved
@@ -469,11 +474,17 @@ requires executable inverse code; an empty-frame action may use the distinct
 identity inverse. `AGWF044` reports a legacy, dynamic, unresolved, opaque, or
 semantically different authored inverse. `AGWF045` reports a rollback-claimed
 scope in which any state-changing leaf lacks a proved inverse. Do not mix typed
-and legacy compensation in one derived rollback program.
+and legacy compensation in one derived rollback program. A typed compensation
+also requires `RequiredOnFailure` (wire `requiredOnFailure`) to remain `true`:
+rollback of the completed prefix is derived and mandatory, not an optional
+per-leaf declaration.
 
 Rollback is no longer inferred from the list of compensation declarations.
-Generated sagas persist a completion journal and derive the reverse plan from
-the completed prefix. If `C` fails after `A ; B` completed, only
+Generated sagas persist a forward-dispatch authority claim before external
+work starts, convert that exact claim into a completion-journal entry, and
+derive the reverse plan from the completed prefix. A completion, timeout, or
+failure whose execution identity was never dispatched fails closed. If `C`
+fails after `A ; B` completed, only
 `B^-1 ; A^-1` runs. The failed `C` is never included. A failure inside a
 branch or loop iteration unwinds only that concrete inner scope; a later outer
 failure may include completed descendant scopes. Fork rollback waits for every
@@ -488,9 +499,24 @@ enter compensation. Update operational tooling so a retained failed saga and
 `CompensationOutcomeUnknown` are treated as operator-visible incidents rather
 than ordinary terminal completion.
 
+In v2.13, typed derived compensation requires `SagaDocument` persistence.
+`EventSourced` workflows own their `ApplyEvent` implementation, and that method
+may legally ignore an unfamiliar generated rollback-completed event. Strategos
+cannot use method presence as proof that the inverse `UpdatedState` will be
+folded identically in the live saga and during Marten replay, so the source
+generator reports `AGWF045` instead of emitting a rollback-safety claim. Keep an
+event-sourced workflow on legacy untyped compensation, or migrate it to
+`SagaDocument`, until replay-safe generated inverse folding is available.
+
+The derived runtime uses completion-journal schema version 1. Legacy,
+untyped compensation continues to use the legacy runtime. When converting an
+existing workflow definition to typed compensation, drain its in-flight legacy
+instances or publish the typed definition under a new workflow version; a
+persisted derived saga with missing or unknown journal metadata is retained in
+`Failed` for reconciliation rather than guessed or upgraded in place.
+
 See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the runtime and proof contract.
-
 
 ## 10. Upgrade TypeSpec and workflow wire metadata
 
@@ -553,7 +579,6 @@ compensation metadata:
 Omitting `inverseAction` retains the legacy runtime-only shape. The field is
 additive, but `AGWF044` and `AGWF045` are new members of the generated closed
 diagnostic enum; all consumers must upgrade before producers emit them.
-
 
 ## 11. Invalidate graph-version caches once
 
@@ -696,6 +721,9 @@ edits remain hash-stable.
 - Replace proved-workflow `.Compensate<T>()` calls with
   `.Compensate<T>(new WorkflowActionReference(...))`, and make every
   state-changing leaf in a rollback-claimed scope compensable.
+- Update external `IStepConfiguration<TState>` implementations and API mirrors
+  for the typed `Compensate<T>(WorkflowActionReference)` overload, and remove
+  repeated compensation calls that previously relied on last-write-wins.
 - Update reconciliation tooling for retained inverse failures and unknown
   timeout outcomes.
 - Resolve `AGWF039` through `AGWF045`; opaque or dynamic workflow contracts do

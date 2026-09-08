@@ -466,11 +466,12 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     /// <summary>
-    /// Verifies that the OnFailure handler step itself does NOT publish the trigger
-    /// (it is the recovery path and must not re-trigger the OnFailure chain).
+    /// Verifies that a CLR step type reused in the main flow and OnFailure keeps the
+    /// two command roles distinct: its normal forward handler publishes a trigger,
+    /// while its dedicated recovery handler cannot recursively trigger OnFailure.
     /// </summary>
     [Test]
-    public async Task Emit_WorkflowWithOnFailure_HandlerStep_DoesNotPublishTrigger()
+    public async Task Emit_WorkflowWithOnFailure_SharedStepType_PublishesOnlyFromForwardRole()
     {
         // Arrange
         var model = CreateOnFailureModel();
@@ -478,11 +479,24 @@ public class WorkerHandlerEmitterUnitTests
         // Act
         var source = WorkerHandlerEmitter.Emit(model);
 
-        // Assert - the NotifyFailure step's plain main-flow handler has no Configure
-        // that publishes the trigger; only the dedicated failure-handler worker class
-        // references NotifyFailure as a recovery step. Confirm exactly the main-flow
-        // steps (ValidateOrder) carry the trigger publish but the OnFailure step's
-        // dedicated worker class never publishes a trigger.
+        // The normal forward role must not lose rollback ingress merely because its
+        // CLR type also appears in the recovery chain.
+        const string forwardWorkerDecl = "class NotifyFailureHandler";
+        var forwardWorkerStart = source.IndexOf(forwardWorkerDecl, StringComparison.Ordinal);
+        await Assert.That(forwardWorkerStart).IsGreaterThan(-1);
+        var recoveryWorkerStart = source.IndexOf(
+            "class FailureHandler_recovery_NotifyFailureHandler",
+            forwardWorkerStart,
+            StringComparison.Ordinal);
+        await Assert.That(recoveryWorkerStart).IsGreaterThan(forwardWorkerStart);
+        var forwardWorkerBody = source.Substring(
+            forwardWorkerStart,
+            recoveryWorkerStart - forwardWorkerStart);
+        await Assert.That(forwardWorkerBody).Contains(
+            "PublishAsync(new TriggerOnFailureProofFailureHandlerCommand");
+
+        // The dedicated recovery role has no Wolverine compensating policy and
+        // therefore cannot recursively publish the trigger.
         const string notifyWorkerDecl = "class FailureHandler_recovery_NotifyFailureHandler";
         var notifyWorkerStart = source.IndexOf(notifyWorkerDecl, StringComparison.Ordinal);
         await Assert.That(notifyWorkerStart).IsGreaterThan(-1);

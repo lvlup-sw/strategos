@@ -18,11 +18,12 @@ internal static class OntologyDiagnostics
     public static readonly DiagnosticDescriptor CompensationDisagreesWithInverse = new(
         OntologyDiagnosticIds.CompensationDisagreesWithInverse,
         "Compensation disagrees with the derived inverse",
-        "Action '{0}' names compensation '{1}', but their frames differ or the compensation is undeclared",
+        "Action '{0}' names compensation '{1}', but it does not implement the derived inverse: {2}",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A compensation must exist and restore exactly the forward action's frame.");
+        description: "A compensation must have the same subject, exact frame, and semantic authority as the forward action, require its effective guarantee, and restore its hard requirement.",
+        customTags: WellKnownDiagnosticTags.CompilationEnd);
 
     public static readonly DiagnosticDescriptor InvalidAuthorityLattice = new(
         OntologyDiagnosticIds.InvalidAuthorityLattice,

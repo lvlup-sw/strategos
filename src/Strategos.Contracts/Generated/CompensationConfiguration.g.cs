@@ -32,7 +32,7 @@ public sealed record CompensationConfiguration
     public ActionReferenceV1? InverseAction { get; init; }
 
     /// <summary>
-    /// Whether compensation is required on failure.
+    /// Whether compensation is required on failure. Typed inverse programs require true.
     /// </summary>
     [JsonPropertyName("requiredOnFailure")]
     public bool? RequiredOnFailure { get; init; }

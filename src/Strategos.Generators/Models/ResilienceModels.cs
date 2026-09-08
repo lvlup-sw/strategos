@@ -71,6 +71,20 @@ internal sealed record CompensationModel(
     TimeSpan? Timeout = null)
 {
     /// <summary>
+    /// Gets whether repeated occurrences collapsed to one phase authored different
+    /// compensation programs. A conflicted phase is never statically closed.
+    /// </summary>
+    public bool HasConflictingDeclarations { get; init; }
+
+    /// <summary>
+    /// Gets whether any declaration collapsed into this phase used the typed
+    /// compensation overload (including a dynamic or invalid inverse identity).
+    /// This aggregate bit prevents a legacy-first representative from erasing a
+    /// later typed declaration and downgrading a mixed program to legacy runtime.
+    /// </summary>
+    public bool HasTypedOrDynamicDeclaration { get; init; }
+
+    /// <summary>
     /// Gets the stable language-neutral inverse identity used by rollback journals and
     /// generated plan entries.
     /// </summary>

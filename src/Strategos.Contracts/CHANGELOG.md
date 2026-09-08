@@ -36,7 +36,9 @@ structural diff in CI.
   compensation. `AGWF044` reports an authored inverse that is missing,
   unresolved, or semantically different from the inverse contract derived from
   the forward action; `AGWF045` reports a rollback-safety claim whose executable
-  nonempty-frame leaves are not all compensable (#169).
+  nonempty-frame leaves are not all compensable. When `inverseAction` is present,
+  `requiredOnFailure` must not be `false`: derived completed-prefix rollback is
+  mandatory rather than a per-leaf opt-out (#169).
 - **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
   ontology domain, object type, and action names on an optional `action` field
   shared by every workflow step kind. The field is occurrence-scoped and

@@ -83,17 +83,12 @@ public interface IForkPathBuilder<TState>
     /// </code>
     /// </para>
     /// <para>
-    /// Enforcement parity is partial today. <see cref="IStepConfiguration{TState}.ValidateState"/>
-    /// is lowered into the generated saga as a Guard-Then-Dispatch guard for fork-path steps,
-    /// matching top-level and loop steps. <see cref="IStepConfiguration{TState}.WithRetry(int)"/>,
-    /// <see cref="IStepConfiguration{TState}.WithTimeout"/>, and
-    /// <see cref="IStepConfiguration{TState}.Compensate{TCompensation}"/> are <b>declared but
-    /// not yet enforced</b> — they are captured in the workflow definition and the declarative
-    /// export, but the source generator does not yet emit Wolverine retry/timeout/compensation
-    /// for any step kind (tracked by issue #135). <see cref="IStepConfiguration{TState}.WithContext"/>
-    /// and <see cref="IStepConfiguration{TState}.RequireConfidence"/> /
-    /// <see cref="IStepConfiguration{TState}.OnLowConfidence"/> are likewise not yet lowered for
-    /// fork-path steps.
+    /// Fork-path forward occurrences receive the same generated validation, retry, timeout,
+    /// and worker policies as other executable forward steps. The typed
+    /// <c>Compensate&lt;TCompensation&gt;(WorkflowActionReference)</c> overload additionally
+    /// participates in whole-program inverse proof and durable completed-prefix rollback for
+    /// saga-document workflows. A typed rollback topology that the generator cannot represent
+    /// is rejected at compile time instead of falling back to legacy compensation.
     /// </para>
     /// </remarks>
     IForkPathBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)

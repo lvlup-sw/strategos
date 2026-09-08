@@ -6,6 +6,7 @@
 
 using System.Globalization;
 
+using Strategos.Analyzers.Proof;
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Models;
 using Strategos.Ontology.ActionLogic;
@@ -193,7 +194,8 @@ internal static class WorkflowBindingProofAnalyzer
                 .SelectMany(workflow => BuildOccurrenceMap(workflow))
                 .Where(item => item.Value.Compensation?.InverseActionResolution
                     is WorkflowActionReferenceResolution.Resolved
-                    or WorkflowActionReferenceResolution.DynamicOrInvalid)
+                    or WorkflowActionReferenceResolution.DynamicOrInvalid
+                    || item.Value.Compensation?.HasTypedOrDynamicDeclaration == true)
                 .OrderBy(item => item.Key, StringComparer.Ordinal)
                 .ToImmutableArray();
             if (typedOccurrences.IsEmpty)
@@ -213,12 +215,24 @@ internal static class WorkflowBindingProofAnalyzer
                 .ThenBy(action => action.Location.SourceSpan.Start)
                 .ToImmutableArray();
 
-            string? reason = null;
-            if (boundMatches.IsEmpty)
+            var closureFailures = workflowGroup.Value
+                .SelectMany(static workflow => workflow.TopologyClosureFailures)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static failure => failure, StringComparer.Ordinal)
+                .ToImmutableArray();
+            string? reason = !closureFailures.IsEmpty
+                ? "the authored workflow topology is not statically closed: "
+                    + string.Join("; ", closureFailures)
+                : workflowGroup.Value.Any(static workflow => workflow.IsEventSourced)
+                    ? "typed derived compensation is not supported for EventSourced persistence: "
+                    + "the generated rollback event cannot guarantee that a consumer-defined "
+                    + "ApplyEvent fold applies UpdatedState during live handling and Marten replay"
+                    : null;
+            if (reason is null && boundMatches.IsEmpty)
             {
                 reason = "typed compensation requires at least one closed BoundToWorkflow action, but no declaration binds this workflow";
             }
-            else
+            else if (reason is null)
             {
                 foreach (var boundMatch in boundMatches)
                 {
@@ -797,6 +811,21 @@ internal static class WorkflowBindingProofAnalyzer
             var occurrence = pair.Value;
             var compensation = occurrence.Step.Compensation!;
 
+            if (!compensation.RequiredOnFailure
+                && compensation.InverseActionResolution
+                    is WorkflowActionReferenceResolution.Resolved
+                    or WorkflowActionReferenceResolution.DynamicOrInvalid)
+            {
+                ReportInverseDisagreement(
+                    context,
+                    workflow,
+                    occurrence.Action,
+                    pair.Key,
+                    compensation.InverseIdentity ?? "<unresolved>",
+                    "typed compensation is a mandatory rollback program and cannot set RequiredOnFailure to false");
+                return false;
+            }
+
             if (compensation.InverseActionResolution != WorkflowActionReferenceResolution.Resolved
                 || compensation.InverseAction is null)
             {
@@ -872,6 +901,68 @@ internal static class WorkflowBindingProofAnalyzer
         }
 
         var topology = CompensationTopology.Build(workflow);
+        var hasTypedProgram = orderedOccurrences.Any(item =>
+            item.Value.Step.Compensation is not null);
+        if (hasTypedProgram && !topology.IsClosed)
+        {
+            var issue = topology.Issues
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .FirstOrDefault() ?? "unknown compensation topology ambiguity";
+            var phaseName = orderedOccurrences
+                .First(item => item.Value.Step.Compensation is not null)
+                .Key;
+            ReportNonCompensableScope(
+                context,
+                workflow,
+                boundAction.Location,
+                "workflow:" + workflow.WorkflowName,
+                phaseName,
+                "the typed compensation topology is not closed: " + issue);
+            return false;
+        }
+
+        if (hasTypedProgram)
+        {
+            var journaledPhases = topology.Occurrences
+                .Select(static occurrence => occurrence.PhaseName)
+                .ToImmutableHashSet(StringComparer.Ordinal);
+            var unjournaledOccurrence = orderedOccurrences
+                .FirstOrDefault(item => !journaledPhases.Contains(item.Key));
+            if (!string.IsNullOrEmpty(unjournaledOccurrence.Key))
+            {
+                ReportNonCompensableScope(
+                    context,
+                    workflow,
+                    boundAction.Location,
+                    "workflow:" + workflow.WorkflowName,
+                    unjournaledOccurrence.Key,
+                    "the executable action occurrence is outside the closed compensation topology; "
+                    + "its failure metadata cannot identify a journal or rollback scope");
+                return false;
+            }
+
+            foreach (var approval in EnumerateApprovals(workflow.ApprovalPoints)
+                .Where(static candidate => !candidate.HasRejection || !candidate.HasEscalation)
+                .OrderBy(static candidate => candidate.ApprovalPointName, StringComparer.Ordinal)
+                .ThenBy(static candidate => candidate.PrecedingStepName, StringComparer.Ordinal))
+            {
+                var reason = FindTerminalApprovalAnchorFailure(topology, approval);
+                if (reason is null)
+                {
+                    continue;
+                }
+
+                ReportNonCompensableScope(
+                    context,
+                    workflow,
+                    boundAction.Location,
+                    "workflow:" + workflow.WorkflowName,
+                    approval.PhaseName,
+                    reason);
+                return false;
+            }
+        }
+
         foreach (var pair in orderedOccurrences)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -893,6 +984,48 @@ internal static class WorkflowBindingProofAnalyzer
         }
 
         return true;
+    }
+
+    internal static string? FindTerminalApprovalAnchorFailure(
+        CompensationTopology topology,
+        ApprovalModel approval)
+    {
+        var anchors = topology.Occurrences
+            .Where(occurrence => string.Equals(
+                occurrence.PhaseName,
+                approval.PrecedingStepName,
+                StringComparison.Ordinal))
+            .ToImmutableArray();
+        if (anchors.Length != 1)
+        {
+            return "terminal approval failure cannot select one compensation anchor: "
+                + $"preceding phase '{approval.PrecedingStepName}' maps to "
+                + $"{anchors.Length.ToString(CultureInfo.InvariantCulture)} compiled occurrences";
+        }
+
+        return anchors[0].Scope.Kind == CompensationScopeKind.Fork
+            ? "terminal approval failure is anchored inside a fork scope, but approval "
+                + "resume messages carry neither the fork occurrence identity nor an "
+                + "authoritative per-lane phase"
+            : null;
+    }
+
+    private static IEnumerable<ApprovalModel> EnumerateApprovals(
+        IEnumerable<ApprovalModel>? approvals)
+    {
+        if (approvals is null)
+        {
+            yield break;
+        }
+
+        foreach (var approval in approvals)
+        {
+            yield return approval;
+            foreach (var nested in EnumerateApprovals(approval.NestedEscalationApprovals))
+            {
+                yield return nested;
+            }
+        }
     }
 
     private static string? FindInverseDisagreement(
@@ -1253,7 +1386,7 @@ internal static class WorkflowBindingProofAnalyzer
         }
 
         var handlerSteps = workflow.FailureHandlers
-            .SelectMany(handler => handler.StepNames)
+            .SelectMany(handler => handler.StepPhaseNames)
             .ToImmutableHashSet(StringComparer.Ordinal);
         var workflowSources = resolved
             .Where(pair => !handlerSteps.Contains(pair.Key))
@@ -1265,8 +1398,8 @@ internal static class WorkflowBindingProofAnalyzer
             .OrderBy(item => item.HandlerId, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (handler.StepNames.Count == 0
-                || !resolved.TryGetValue(handler.FirstStepName, out var entry))
+            if (handler.StepPhaseNames.Count == 0
+                || !resolved.TryGetValue(handler.FirstStepPhaseName, out var entry))
             {
                 ReportUnprovable(
                     context,
@@ -1614,7 +1747,7 @@ internal static class WorkflowBindingProofAnalyzer
 
         return workflow.FailureHandlers
             .Where(handler => handler.IsWorkflowScoped)
-            .SelectMany(handler => handler.StepNames)
+            .SelectMany(handler => handler.StepPhaseNames)
             .Distinct(StringComparer.Ordinal)
             .Where(resolved.ContainsKey)
             .Select(phaseName => resolved[phaseName])

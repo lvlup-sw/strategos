@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Cross-product breaking changes
 
 - **Workflow builder surface (#167).** `IStepConfiguration<TState>` adds
-  `Performs(WorkflowActionReference)`; `IForkJoinBuilder<TState>` and
+  `Performs(WorkflowActionReference)` and #169's
+  `Compensate<TCompensation>(WorkflowActionReference)`; `IForkJoinBuilder<TState>` and
   `ILoopForkJoinBuilder<TState>` add `Join<TStep>(configure)`; and the approval
   rejection and escalation builders add `Then<TStep>(configure)`. Existing
   fluent call sites remain source-compatible, but external implementations of
@@ -31,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expression inside `DomainOntology.Define` and the named workflow exists in
   the same compilation (`AGWF042` / `AGWF039` otherwise). A project without
   the generator package receives no diagnostic; see the migration guide.
+- **One compensation per occurrence (#169).** Calling either `Compensate<T>()`
+  overload after compensation was already configured now throws
+  `InvalidOperationException` instead of silently replacing the earlier
+  declaration. This keeps the executable inverse and proved inverse identity
+  from diverging through last-write-wins configuration.
 
 ### Added
 
@@ -43,12 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for inverse disagreement or `AGWF045` when compensability does not propagate
   through a rollback-claimed scope.
 - **Durable completed-prefix rollback (#169).** Generated sagas journal completed
-  forward occurrences with stable topology and execution identity, derive the
-  rollback prefix after failure, keep nested failures inside their concrete
-  scope, and quiesce forks before rollback. Inverse completion/failure messages
-  are distinct from forward flow; reducer-applied state is folded between
-  inverses, and failed or timed-out inverse outcomes retain the saga for
-  reconciliation.
+  forward occurrences with stable topology and execution identity, backed by a
+  persisted pre-dispatch authority claim that rejects forged and stale results.
+  They derive the rollback prefix after failure, keep nested failures inside
+  their concrete scope, and quiesce forks before rollback. Inverse
+  completion/failure messages are distinct from forward flow; reducer-applied
+  state is folded between inverses, and failed or timed-out inverse outcomes
+  retain the saga for reconciliation.
+  Typed derived compensation is restricted to saga-document persistence in
+  v2.13: event-sourced workflows receive `AGWF045` because a consumer-defined
+  `ApplyEvent` method cannot yet be proved to fold generated rollback state
+  consistently during live handling and Marten replay.
 - **Occurrence-scoped workflow action identity (#167).** Typed workflow-step
   occurrences can declare `.Performs(new WorkflowActionReference(domainName,
   objectTypeName, actionName))`. The immutable name-only reference survives every
@@ -83,7 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `inverseAction: ActionReferenceV1` field and the closed diagnostic vocabulary
   adds `AGWF044`–`AGWF045`. Legacy compensation JSON remains valid and omits the
   field, but the no-argument `.Compensate<T>()` form remains runtime-only and
-  cannot establish a statically proved inverse.
+  cannot establish a statically proved inverse. A typed inverse cannot set
+  `requiredOnFailure` to `false`, because its derived completed-prefix rollback
+  is mandatory.
 - **Workflow descriptor bindings are typed.** The writable
   `ActionDescriptor.BoundWorkflowName` property is replaced by immutable
   `BoundWorkflow: WorkflowBindingReference`. The fluent

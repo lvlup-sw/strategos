@@ -4,16 +4,25 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading;
+
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Operations;
 
 using Strategos.Ontology.ActionLogic;
 using Strategos.Ontology.Generators.Analyzers;
 
-namespace Strategos.Generators.Proof;
+namespace Strategos.Analyzers.Proof;
 
 /// <summary>
 /// Builds the compilation-wide, ordinal ontology-action catalog consumed by
-/// workflow binding refinement proof.
+/// ontology inverse validation and workflow binding refinement proof.
 /// </summary>
 internal sealed class OntologyActionCatalog
 {
@@ -57,7 +66,8 @@ internal sealed class OntologyActionCatalog
             foreach (var declaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var type = semanticModel.GetDeclaredSymbol(declaration, cancellationToken);
+                var type = semanticModel.GetDeclaredSymbol(declaration, cancellationToken)
+                    as INamedTypeSymbol;
                 if (!DerivesFrom(type, DomainOntologyTypeName))
                 {
                     continue;
@@ -65,8 +75,9 @@ internal sealed class OntologyActionCatalog
 
                 var define = declaration.Members.OfType<MethodDeclarationSyntax>()
                     .FirstOrDefault(method =>
-                        method.Identifier.ValueText == "Define"
-                        && method.ParameterList.Parameters.Count == 1);
+                        semanticModel.GetDeclaredSymbol(method, cancellationToken)
+                            is IMethodSymbol methodSymbol
+                        && IsDomainOntologyDefineOverride(methodSymbol));
                 if (define is null)
                 {
                     continue;
@@ -349,10 +360,13 @@ internal sealed class OntologyActionCatalog
                 continue;
             }
 
-            var descriptorExpression = Unwrap(descriptorArgument.Expression);
-            if (descriptorExpression is not BaseObjectCreationExpressionSyntax descriptorCreation
-                || semanticModel.GetTypeInfo(descriptorCreation, cancellationToken).Type?.ToDisplayString()
-                    != ObjectTypeDescriptorTypeName)
+            if (!TryResolveObjectTypeDescriptorCreation(
+                    descriptorArgument.Expression,
+                    define,
+                    semanticModel,
+                    builderParameter,
+                    cancellationToken,
+                    out var descriptorCreation))
             {
                 continue;
             }
@@ -568,7 +582,14 @@ internal sealed class OntologyActionCatalog
 
         if (define.ExpressionBody is null
             && (define.Body is null
-                || define.Body.Statements.Any(statement => statement is not ExpressionStatementSyntax)))
+                || define.Body.Statements.Any(statement =>
+                    statement is not ExpressionStatementSyntax
+                    && !IsClosedObjectDescriptorLocal(
+                        statement,
+                        define,
+                        semanticModel,
+                        parameter,
+                        cancellationToken))))
         {
             return "the ontology Define method contains conditional or non-linear control flow";
         }
@@ -675,6 +696,146 @@ internal sealed class OntologyActionCatalog
         for (var current = type; current is not null; current = current.BaseType)
         {
             if (current.ToDisplayString() == baseTypeName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsClosedObjectDescriptorLocal(
+        StatementSyntax statement,
+        MethodDeclarationSyntax define,
+        SemanticModel semanticModel,
+        IParameterSymbol builderParameter,
+        CancellationToken cancellationToken)
+    {
+        if (statement is not LocalDeclarationStatementSyntax localDeclaration
+            || localDeclaration.UsingKeyword != default
+            || localDeclaration.AwaitKeyword != default
+            || localDeclaration.Declaration.Variables.Count != 1)
+        {
+            return false;
+        }
+
+        var declarator = localDeclaration.Declaration.Variables[0];
+        if (declarator.Initializer is null
+            || semanticModel.GetDeclaredSymbol(declarator, cancellationToken)
+                is not ILocalSymbol local
+            || local.RefKind != RefKind.None
+            || Unwrap(declarator.Initializer.Value)
+                is not BaseObjectCreationExpressionSyntax descriptorCreation
+            || semanticModel.GetTypeInfo(descriptorCreation, cancellationToken).Type?.ToDisplayString()
+                != ObjectTypeDescriptorTypeName)
+        {
+            return false;
+        }
+
+        var references = define.DescendantNodes().OfType<IdentifierNameSyntax>()
+            .Where(identifier =>
+                SymbolEqualityComparer.Default.Equals(
+                    semanticModel.GetSymbolInfo(identifier, cancellationToken).Symbol,
+                    local))
+            .ToImmutableArray();
+        if (references.Length != 1)
+        {
+            return false;
+        }
+
+        var argument = references[0].AncestorsAndSelf().OfType<ArgumentSyntax>().FirstOrDefault();
+        if (argument?.Parent?.Parent is not InvocationExpressionSyntax invocation
+            || semanticModel.GetOperation(invocation, cancellationToken)
+                is not IInvocationOperation operation
+            || operation.TargetMethod.ContainingType.ToDisplayString() != OntologyBuilderTypeName
+            || operation.TargetMethod.Name != "ObjectTypeFromDescriptor"
+            || !ReferencesParameter(operation.Instance, builderParameter))
+        {
+            return false;
+        }
+
+        var descriptorArgument = operation.Arguments.FirstOrDefault(candidate =>
+            candidate.Parameter?.Name == "descriptor");
+        return descriptorArgument is not null
+            && ReferencesLocal(descriptorArgument.Value, local);
+    }
+
+    private static bool TryResolveObjectTypeDescriptorCreation(
+        ExpressionSyntax expression,
+        MethodDeclarationSyntax define,
+        SemanticModel semanticModel,
+        IParameterSymbol builderParameter,
+        CancellationToken cancellationToken,
+        out BaseObjectCreationExpressionSyntax descriptorCreation)
+    {
+        var unwrapped = Unwrap(expression);
+        if (unwrapped is BaseObjectCreationExpressionSyntax inlineCreation
+            && semanticModel.GetTypeInfo(inlineCreation, cancellationToken).Type?.ToDisplayString()
+                == ObjectTypeDescriptorTypeName)
+        {
+            descriptorCreation = inlineCreation;
+            return true;
+        }
+
+        var operation = semanticModel.GetOperation(unwrapped, cancellationToken);
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        if (operation is not ILocalReferenceOperation reference
+            || reference.Local.DeclaringSyntaxReferences.Length != 1
+            || reference.Local.DeclaringSyntaxReferences[0].GetSyntax(cancellationToken)
+                is not VariableDeclaratorSyntax declarator
+            || declarator.Parent?.Parent is not LocalDeclarationStatementSyntax declaration
+            || !ReferenceEquals(declaration.Parent, define.Body)
+            || !IsClosedObjectDescriptorLocal(
+                declaration,
+                define,
+                semanticModel,
+                builderParameter,
+                cancellationToken)
+            || declarator.Initializer is null
+            || Unwrap(declarator.Initializer.Value)
+                is not BaseObjectCreationExpressionSyntax localCreation)
+        {
+            descriptorCreation = null!;
+            return false;
+        }
+
+        descriptorCreation = localCreation;
+        return true;
+    }
+
+    private static bool ReferencesLocal(IOperation? operation, ILocalSymbol local)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        return operation is ILocalReferenceOperation reference
+            && SymbolEqualityComparer.Default.Equals(reference.Local, local);
+    }
+
+    private static bool IsDomainOntologyDefineOverride(IMethodSymbol method)
+    {
+        if (!method.IsOverride
+            || method.Name != "Define"
+            || method.Parameters.Length != 1)
+        {
+            return false;
+        }
+
+        for (var overridden = method.OverriddenMethod;
+             overridden is not null;
+             overridden = overridden.OverriddenMethod)
+        {
+            if (overridden.Name == "Define"
+                && overridden.ReturnsVoid
+                && overridden.Parameters.Length == 1
+                && overridden.Parameters[0].Type.ToDisplayString() == OntologyBuilderTypeName
+                && overridden.ContainingType.ToDisplayString() == DomainOntologyTypeName)
             {
                 return true;
             }

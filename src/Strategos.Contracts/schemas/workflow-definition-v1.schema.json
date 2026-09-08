@@ -351,7 +351,7 @@
                 },
                 "requiredOnFailure": {
                     "type": "boolean",
-                    "description": "Whether compensation is required on failure."
+                    "description": "Whether compensation is required on failure. Typed inverse programs require true."
                 },
                 "timeout": {
                     "type": "string",

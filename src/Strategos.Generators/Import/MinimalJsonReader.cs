@@ -737,11 +737,30 @@ internal static class WireWorkflowReader
     private static CompensationConfiguration ReadCompensation(JsonValue node) =>
         new CompensationConfiguration
         {
-            CompensationStepType = GetString(node, "compensationStepType"),
+            CompensationStepType = ReadRequiredCompensationStepType(node),
             InverseAction = ReadOptionalCompensationActionReference(node),
             RequiredOnFailure = GetBool(node, "requiredOnFailure"),
             Timeout = GetString(node, "timeout"),
         };
+
+    private static string ReadRequiredCompensationStepType(JsonValue compensation)
+    {
+        const string propertyName = "compensationStepType";
+        if (!compensation.TryGetMember(propertyName, out var node) || node.Kind != JsonKind.String)
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must be a string");
+        }
+
+        var value = node.AsStringOrNull();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must contain at least one non-whitespace character");
+        }
+
+        return value!;
+    }
 
     private static ActionReferenceV1? ReadOptionalCompensationActionReference(JsonValue compensation)
     {

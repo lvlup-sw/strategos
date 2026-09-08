@@ -119,7 +119,7 @@ internal static class CommandsEmitter
         {
             foreach (var handler in model.FailureHandlers)
             {
-                foreach (var stepName in handler.StepNames)
+                foreach (var stepName in handler.StepTypeNames)
                 {
                     if (emittedWorkerCommands.Add(stepName))
                     {
@@ -524,7 +524,7 @@ internal static class CommandsEmitter
         {
             var sanitizedId = handler.HandlerId.Replace("-", "_");
 
-            foreach (var stepName in handler.StepNames)
+            foreach (var stepName in handler.StepPhaseNames)
             {
                 // Start command for internal saga routing
                 sb.AppendLine();
@@ -577,6 +577,12 @@ internal static class CommandsEmitter
         sb.AppendLine();
         sb.AppendLine("    /// <summary>Gets the durable completion-journal high-water mark at forward dispatch.</summary>");
         sb.AppendLine("    public long? CompensationJournalSequenceAtDispatch { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets the execution identity authorized by the durable forward-dispatch claim.</summary>");
+        sb.AppendLine("    public Guid? FailedForwardExecutionId { get; init; }");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>Gets whether failure occurred after the named forward occurrence completed.</summary>");
+        sb.AppendLine("    public bool FailureOccurredAfterForwardCompletion { get; init; }");
         sb.AppendLine("}");
     }
 

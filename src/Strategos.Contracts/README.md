@@ -201,7 +201,9 @@ workflow steps and `AGWF039`–`AGWF043` to the closed diagnostic vocabulary;
 `AGWF044`–`AGWF045`. A closed authored inverse is required for static rollback
 proof because Strategos cannot reconstruct prior authoritative state from a
 property frame alone. The legacy compensation shape remains valid for
-runtime-only workflows, but it cannot establish rollback safety. Consumers must
+runtime-only workflows, but it cannot establish rollback safety. Typed inverse
+metadata requires `requiredOnFailure` to be true because derived prefix rollback
+is mandatory. Consumers must
 upgrade before receiving one of the new diagnostic tokens. The package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under

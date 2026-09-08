@@ -215,20 +215,34 @@ proves that the authored inverse has the same subject, frame, and semantic
 authority, requires the forward effective guarantee, and restores the forward
 hard requirement. `AGWF044` reports a disagreement. If the workflow or a bound
 action claims rollback, `AGWF045` rejects a scope containing any completed leaf
-with a non-empty frame but no proved inverse.
+with a non-empty frame but no proved inverse. Typed compensation also rejects
+`RequiredOnFailure = false`; completed-prefix rollback is mandatory once the
+typed program claims rollback safety.
 
 The existing no-argument `.Compensate<T>()` overload remains available for
 legacy runtime-only workflows. It carries no inverse action identity and cannot
 participate in static rollback proof. Contracts 0.12.0 projects the typed value
 as the optional `compensation.inverseAction` object using the same
 `ActionReferenceV1` shape. Legacy JSON continues to omit the field.
+Each step occurrence accepts one compensation declaration; a second call to
+either overload throws `InvalidOperationException` rather than replacing the
+first executable/inverse pair.
 
-At runtime, Strategos journals completed forward occurrences and derives the
-reverse plan from the completed prefix. The failed occurrence is excluded.
+At runtime, Strategos records an exact durable dispatch claim before each
+forward worker starts, consumes it into the completion journal, and derives the
+reverse plan from the completed prefix. A forged or stale execution identity
+cannot claim rollback. The failed occurrence is excluded.
 Nested failures unwind their innermost concrete scope; fork rollback waits for
 all lanes to become terminal. See
 [mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the exact contract and durability rules.
+
+Typed derived compensation currently requires `PersistenceMode.SagaDocument`.
+For `PersistenceMode.EventSourced`, the application owns `ApplyEvent`, so the
+generator cannot prove that a generated rollback-completed event applies its
+`UpdatedState` during both live handling and Marten replay. Such a typed program
+receives `AGWF045`; a no-op or pass-through `ApplyEvent` method is not accepted as
+proof. Legacy untyped compensation retains its existing event-sourced path.
 
 ---
 

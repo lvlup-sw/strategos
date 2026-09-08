@@ -80,6 +80,10 @@ public interface IStepConfiguration<TState>
     /// </summary>
     /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
     /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
+    /// <remarks>Each step occurrence accepts exactly one compensation declaration.</remarks>
     IStepConfiguration<TState> Compensate<TCompensation>()
         where TCompensation : class, IWorkflowStep<TState>;
 
@@ -92,9 +96,13 @@ public interface IStepConfiguration<TState>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="inverseAction"/> is null.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
     /// <remarks>
-    /// This typed form enables the source generator to prove that the authored rollback
-    /// implements the inverse contract mechanically derived from the forward action.
+    /// Each step occurrence accepts exactly one compensation declaration. This typed
+    /// form enables the source generator to prove that the authored rollback implements
+    /// the inverse contract mechanically derived from the forward action.
     /// </remarks>
     IStepConfiguration<TState> Compensate<TCompensation>(WorkflowActionReference inverseAction)
         where TCompensation : class, IWorkflowStep<TState>;

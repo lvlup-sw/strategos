@@ -15,7 +15,7 @@ namespace Strategos.Definitions;
 /// <list type="bullet">
 ///   <item><description>CompensationStepType: The step type to execute for rollback</description></item>
 ///   <item><description>InverseAction: The ontology action implemented by that rollback step</description></item>
-///   <item><description>RequiredOnFailure: Whether compensation is required when the step fails</description></item>
+///   <item><description>RequiredOnFailure: Whether legacy compensation is required when the step fails; typed rollback programs require true</description></item>
 ///   <item><description>Timeout: Optional timeout for compensation execution</description></item>
 /// </list>
 /// </para>
@@ -40,6 +40,11 @@ public sealed record CompensationConfiguration
     /// <summary>
     /// Gets a value indicating whether compensation is required on failure.
     /// </summary>
+    /// <remarks>
+    /// Typed inverse programs derive mandatory completed-prefix rollback and therefore
+    /// require this value to remain <see langword="true"/>. The optional value is retained
+    /// for the legacy runtime-only compensation shape.
+    /// </remarks>
     public bool RequiredOnFailure { get; init; } = true;
 
     /// <summary>

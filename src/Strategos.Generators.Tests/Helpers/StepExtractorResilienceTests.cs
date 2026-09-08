@@ -140,6 +140,22 @@ public sealed class StepExtractorResilienceTests
     }
 
     /// <summary>
+    /// A compensation call on a captured configuration object must not be attributed to
+    /// the step whose configure callback merely contains that call.
+    /// </summary>
+    [Test]
+    public async Task WalkInvocationChain_CompensateUsesExactConfigureParameterReceiver()
+    {
+        var stepModels = ParserTestHelper.ExtractStepModels(ReceiverRootedCompensationWorkflow);
+
+        var assessStep = stepModels.Single(step => step.StepName == "AssessClaim");
+
+        await Assert.That(assessStep.Compensation).IsNotNull();
+        await Assert.That(assessStep.Compensation!.InverseIdentity)
+            .IsEqualTo("claims/Claim/actual-rollback");
+    }
+
+    /// <summary>
     /// Verifies that <c>.RequireConfidence(double)</c> + <c>.OnLowConfidence(alt =&gt; alt.Then&lt;T&gt;())</c>
     /// populate the step's <see cref="ConfidenceModel"/> with the threshold and the
     /// low-confidence handler's step identifier.
@@ -499,6 +515,75 @@ public sealed class StepExtractorResilienceTests
                         "claims",
                         "Claim",
                         "rollback-assessment")))
+                .Finally<SettleClaim>();
+        }
+        """;
+
+    /// <summary>
+    /// A block-bodied callback containing both a captured configuration receiver and its own
+    /// parameter. Only the exact callback parameter owns the occurrence configuration.
+    /// </summary>
+    private const string ReceiverRootedCompensationWorkflow = """
+        using System;
+        using Strategos.Abstractions;
+        using Strategos.Attributes;
+        using Strategos.Builders;
+        using Strategos.Definitions;
+        using Strategos.Steps;
+
+        namespace TestNamespace;
+
+        public record ClaimState : IWorkflowState
+        {
+            public Guid WorkflowId { get; init; }
+        }
+
+        public class IntakeClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class AssessClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class RollbackAssessment : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public class SettleClaim : IWorkflowStep<ClaimState>
+        {
+            public Task<StepResult<ClaimState>> ExecuteAsync(
+                ClaimState state, StepContext context, CancellationToken ct)
+                => Task.FromResult(StepResult<ClaimState>.FromState(state));
+        }
+
+        public static class CapturedConfiguration
+        {
+            public static IStepConfiguration<ClaimState> Value => null!;
+        }
+
+        [Workflow("receiver-rooted-compensation")]
+        public static partial class ReceiverRootedCompensationWorkflow
+        {
+            public static WorkflowDefinition<ClaimState> Definition => Workflow<ClaimState>
+                .Create("receiver-rooted-compensation")
+                .StartWith<IntakeClaim>()
+                .Then<AssessClaim>(step =>
+                {
+                    CapturedConfiguration.Value.Compensate<RollbackAssessment>(
+                        new WorkflowActionReference("claims", "Claim", "decoy-rollback"));
+                    step.Compensate<RollbackAssessment>(
+                        new WorkflowActionReference("claims", "Claim", "actual-rollback"));
+                })
                 .Finally<SettleClaim>();
         }
         """;

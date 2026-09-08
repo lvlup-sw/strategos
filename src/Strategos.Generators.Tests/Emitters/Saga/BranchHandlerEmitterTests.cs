@@ -212,6 +212,51 @@ public class BranchHandlerEmitterTests
         await Assert.That(result).Contains("State = TestStateReducer.Reduce(State, evt.UpdatedState)");
     }
 
+    /// <summary>A typed branch router sends reducer failure to rollback before selecting a case.</summary>
+    [Test]
+    public async Task EmitRoutingHandler_WithTypedCompensation_RoutesReducedFailureBeforeBranchDispatch()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var branch = CreateBranch();
+        var model = CreateTypedCompensationModel(branch);
+
+        emitter.EmitRoutingHandler(sb, model, "ValidateStep", branch);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+        var branchDispatch = result.IndexOf("yield return State.Status switch", StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+        await Assert.That(result).Contains("Phase = State.Phase;");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(branchDispatch).IsGreaterThan(failureRoute);
+    }
+
+    /// <summary>An OnFailure-only branch router does not dispatch a case after reducer failure.</summary>
+    [Test]
+    public async Task EmitRoutingHandler_WithFailureHandler_RoutesReducedFailureBeforeBranchDispatch()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var branch = CreateBranch();
+        var model = CreateFailureHandlerModel();
+
+        emitter.EmitRoutingHandler(sb, model, "ValidateStep", branch);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf(
+            "yield return new TriggerTestWorkflowFailureHandlerCommand(",
+            StringComparison.Ordinal);
+        var branchDispatch = result.IndexOf(
+            "yield return State.Status switch",
+            StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+        await Assert.That(result).Contains("\"ValidateStep\"");
+        await Assert.That(result).Contains("\"StateTransitionFailure\"");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(branchDispatch).IsGreaterThan(failureRoute);
+    }
+
     // =============================================================================
     // C. Guard Tests - EmitPathEndHandler
     // =============================================================================
@@ -308,6 +353,239 @@ public class BranchHandlerEmitterTests
         await Assert.That(result).Contains("MarkCompleted()");
     }
 
+    /// <summary>A typed rejoining path rolls back reducer failure before dispatching the rejoin.</summary>
+    [Test]
+    public async Task EmitPathEndHandler_WithTypedCompensation_RoutesReducedFailureBeforeRejoin()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var branch = CreateBranchWithRejoin();
+        var branchCase = CreateBranchCase();
+        var model = CreateTypedCompensationModel(branch);
+
+        emitter.EmitPathEndHandler(sb, model, "Approved_Complete", branch, branchCase);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+        var rejoin = result.IndexOf(
+            "yield return new StartFinalizeStepCommand(WorkflowId)",
+            StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(rejoin).IsGreaterThan(failureRoute);
+    }
+
+    /// <summary>A typed terminal path rolls back reducer failure instead of completing the saga.</summary>
+    [Test]
+    public async Task EmitPathEndHandler_WithTypedCompensation_RoutesReducedFailureBeforeCompletion()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var branch = CreateBranch();
+        var branchCase = CreateBranchCase();
+        var model = CreateTypedCompensationModel(branch);
+
+        emitter.EmitPathEndHandler(sb, model, "Approved_Complete", branch, branchCase);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+        var completion = result.IndexOf("Phase = TestWorkflowPhase.Completed", StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(completion).IsGreaterThan(failureRoute);
+    }
+
+    /// <summary>A typed confidence-gated path checks reducer failure before confidence routing.</summary>
+    [Test]
+    public async Task EmitPathEndHandler_WithTypedCompensation_RoutesReducedFailureBeforeConfidenceGate()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var branch = CreateBranchWithRejoin();
+        var branchCase = CreateBranchCase();
+        var model = CreateTypedCompensationModel(branch);
+        var lowConfidenceStep = StepModel.Create("ManualReviewStep", "TestNamespace.ManualReviewStep");
+        var confidence = new ConfidenceModel(
+            0.8,
+            "ManualReviewStep",
+            lowConfidenceStep,
+            new LowConfidenceHandlerChainModel([lowConfidenceStep]));
+
+        emitter.EmitPathEndHandler(
+            sb,
+            model,
+            "Approved_Complete",
+            branch,
+            branchCase,
+            confidence);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+        var confidenceGate = result.IndexOf("if (evt.Confidence", StringComparison.Ordinal);
+
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(confidenceGate).IsGreaterThan(failureRoute);
+    }
+
+    /// <summary>OnFailure-only branch endings stop before rejoin, completion, or confidence routing.</summary>
+    [Test]
+    public async Task EmitPathEndHandler_WithFailureHandler_RoutesBeforeEverySuccessorShape()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var branchCase = CreateBranchCase();
+        var model = CreateFailureHandlerModel();
+        var lowConfidenceStep = StepModel.Create("ManualReviewStep", "TestNamespace.ManualReviewStep");
+        var confidence = new ConfidenceModel(
+            0.8,
+            "ManualReviewStep",
+            lowConfidenceStep,
+            new LowConfidenceHandlerChainModel([lowConfidenceStep]));
+        var scenarios = new (BranchModel Branch, ConfidenceModel? Confidence, string Successor)[]
+        {
+            (CreateBranchWithRejoin(), null, "yield return new StartFinalizeStepCommand(WorkflowId)"),
+            (CreateBranch(), null, "Phase = TestWorkflowPhase.Completed;"),
+            (CreateBranchWithRejoin(), confidence, "if (evt.Confidence"),
+        };
+
+        foreach (var scenario in scenarios)
+        {
+            var sb = new StringBuilder();
+            emitter.EmitPathEndHandler(
+                sb,
+                model,
+                "Approved_Complete",
+                scenario.Branch,
+                branchCase,
+                scenario.Confidence);
+            var result = sb.ToString();
+            var failureRoute = result.IndexOf(
+                "yield return new TriggerTestWorkflowFailureHandlerCommand(",
+                StringComparison.Ordinal);
+            var successor = result.IndexOf(scenario.Successor, StringComparison.Ordinal);
+
+            await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+            await Assert.That(result).Contains("\"Approved_Complete\"");
+            await Assert.That(result).Contains("\"StateTransitionFailure\"");
+            await Assert.That(failureRoute).IsGreaterThan(-1);
+            await Assert.That(successor).IsGreaterThan(failureRoute);
+        }
+    }
+
+    /// <summary>A shared branch completion keeps its pre-reducer case identity for rollback.</summary>
+    [Test]
+    public async Task EmitLiveCaseCompletedHandler_WithTypedCompensation_CapturesDiscriminatorBeforeReducer()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var sharedStep = StepModel.Create(
+            "SharedStep",
+            "TestNamespace.SharedStep",
+            compensation: new CompensationModel(
+                "TestNamespace.UndoSharedStep",
+                InverseAction: new WorkflowActionReferenceModel("orders", "Order", "undo-shared"),
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+            action: new WorkflowActionReferenceModel("orders", "Order", "shared"));
+        var approved = BranchCaseModel.Create(
+            "OrderStatus.Approved",
+            "Approved",
+            ["SharedStep"],
+            isTerminal: true);
+        var rejected = BranchCaseModel.Create(
+            "OrderStatus.Rejected",
+            "Rejected",
+            ["SharedStep"],
+            isTerminal: true);
+        var branch = BranchModel.Create(
+            "Test-Shared",
+            "ValidateStep",
+            "Status",
+            "OrderStatus",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            [approved, rejected]);
+        var model = new WorkflowModel(
+            "test-workflow",
+            "TestWorkflow",
+            "TestNamespace",
+            ["ValidateStep", "SharedStep"],
+            "TestState",
+            Steps:
+            [
+                StepModel.Create("ValidateStep", "TestNamespace.ValidateStep"),
+                sharedStep,
+            ],
+            Branches: [branch])
+        {
+            StateHasPhaseProperty = true,
+        };
+        var occurrences = new[]
+        {
+            new BranchCaseStepOccurrence(branch, approved, "SharedStep", null, sharedStep),
+            new BranchCaseStepOccurrence(branch, rejected, "SharedStep", null, sharedStep),
+        };
+
+        emitter.EmitLiveCaseCompletedHandler(sb, model, "SharedStepCompleted", occurrences);
+        var result = sb.ToString();
+        var capture = result.IndexOf(
+            "var liveCaseDiscriminator = State.Status;",
+            StringComparison.Ordinal);
+        var reducer = result.IndexOf(
+            "State = TestStateReducer.Reduce(State, evt.UpdatedState);",
+            StringComparison.Ordinal);
+
+        await Assert.That(capture).IsGreaterThan(-1);
+        await Assert.That(reducer).IsGreaterThan(capture);
+        await Assert.That(result).Contains("if (liveCaseDiscriminator == OrderStatus.Approved)");
+        await Assert.That(result).Contains("if (liveCaseDiscriminator == OrderStatus.Rejected)");
+    }
+
+    /// <summary>An OnFailure-only shared branch completion routes reducer failure before any case arm.</summary>
+    [Test]
+    public async Task EmitLiveCaseCompletedHandler_WithFailureHandler_TriggersRecoveryBeforeCaseRouting()
+    {
+        var emitter = new BranchHandlerEmitter();
+        var sb = new StringBuilder();
+        var approved = BranchCaseModel.Create(
+            "OrderStatus.Approved",
+            "Approved",
+            ["Approved_SharedStep"],
+            isTerminal: true);
+        var rejected = BranchCaseModel.Create(
+            "OrderStatus.Rejected",
+            "Rejected",
+            ["Rejected_SharedStep"],
+            isTerminal: true);
+        var branch = BranchModel.Create(
+            "Test-Shared",
+            "ValidateStep",
+            "Status",
+            "OrderStatus",
+            isEnumDiscriminator: true,
+            isMethodDiscriminator: false,
+            [approved, rejected]);
+        var model = CreateFailureHandlerModel() with { Branches = [branch] };
+        var occurrences = new[]
+        {
+            new BranchCaseStepOccurrence(branch, approved, "Approved_SharedStep", null),
+            new BranchCaseStepOccurrence(branch, rejected, "Rejected_SharedStep", null),
+        };
+
+        emitter.EmitLiveCaseCompletedHandler(sb, model, "SharedStepCompleted", occurrences);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf(
+            "yield return new TriggerTestWorkflowFailureHandlerCommand(",
+            StringComparison.Ordinal);
+        var firstCaseArm = result.IndexOf(
+            "if (liveCasePhase == TestWorkflowPhase.Approved_SharedStep)",
+            StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("var liveCasePhase = Phase;");
+        await Assert.That(result).Contains("Phase = State.Phase;");
+        await Assert.That(result).Contains("\"SharedStep\"");
+        await Assert.That(result).Contains("\"StateTransitionFailure\"");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(firstCaseArm).IsGreaterThan(failureRoute);
+    }
+
     // =============================================================================
     // F. XML Documentation Tests
     // =============================================================================
@@ -348,6 +626,66 @@ public class BranchHandlerEmitterTests
             StepNames: ["ValidateStep", "Approved_Process", "Rejected_Handle", "FinalizeStep"],
             StateTypeName: "TestState",
             Loops: null);
+    }
+
+    private static WorkflowModel CreateTypedCompensationModel(BranchModel branch)
+    {
+        var inverse = new WorkflowActionReferenceModel("orders", "Order", "undo-validate");
+        var compensation = new CompensationModel(
+            "TestNamespace.UndoValidateStep",
+            InverseAction: inverse,
+            InverseActionResolution: WorkflowActionReferenceResolution.Resolved);
+        var steps = new[]
+        {
+            StepModel.Create(
+                "ValidateStep",
+                "TestNamespace.ValidateStep",
+                compensation: compensation,
+                action: new WorkflowActionReferenceModel("orders", "Order", "validate")),
+            StepModel.Create(
+                "Approved_Process",
+                "TestNamespace.ApprovedProcessStep",
+                action: new WorkflowActionReferenceModel("orders", "Order", "process")),
+            StepModel.Create(
+                "Approved_Complete",
+                "TestNamespace.ApprovedCompleteStep",
+                action: new WorkflowActionReferenceModel("orders", "Order", "complete")),
+            StepModel.Create(
+                "Rejected_Handle",
+                "TestNamespace.RejectedHandleStep",
+                action: new WorkflowActionReferenceModel("orders", "Order", "reject")),
+            StepModel.Create(
+                "FinalizeStep",
+                "TestNamespace.FinalizeStep",
+                action: new WorkflowActionReferenceModel("orders", "Order", "finalize")),
+        };
+
+        return new WorkflowModel(
+            WorkflowName: "test-workflow",
+            PascalName: "TestWorkflow",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateStep", "Approved_Process", "Approved_Complete", "Rejected_Handle", "FinalizeStep"],
+            StateTypeName: "TestState",
+            Steps: steps,
+            Branches: [branch])
+        {
+            StateHasPhaseProperty = true,
+        };
+    }
+
+    private static WorkflowModel CreateFailureHandlerModel()
+    {
+        var failureHandler = FailureHandlerModel.Create(
+            handlerId: "workflow-failure",
+            scope: FailureHandlerScope.Workflow,
+            stepNames: ["FailedStep"],
+            isTerminal: true);
+
+        return CreateMinimalModel() with
+        {
+            FailureHandlers = [failureHandler],
+            StateHasPhaseProperty = true,
+        };
     }
 
     private static BranchModel CreateBranch()

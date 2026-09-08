@@ -29,8 +29,8 @@
 
   <ItemGroup>
     <!-- The exact, dependency-free finite-domain kernel is source-linked so
-         runtime and analyzer proofs cannot drift. It has no ontology/runtime,
-         source-generator, Wolverine, Marten, Z3, or native dependency. -->
+         runtime and analyzer proofs cannot drift. It has no downstream
+         orchestration, code-emission, solver, or native dependency. -->
     <Compile Include="..\Strategos.Ontology\ActionLogic\LogicFormula.cs"
              Link="ActionLogic\LogicFormula.cs" />
     <Compile Include="..\Strategos.Ontology\ActionLogic\FiniteDomainSolver.cs"
@@ -38,10 +38,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- This workflow-only partial is source-linked explicitly into
-         Strategos.Generators. It has no call site in this ontology analyzer
-         assembly, so compiling it here would ship a dead duplicate. -->
-    <Compile Remove="Analyzers\ActionCompositionAnalyzer.WorkflowBridge.cs" />
+    <!-- AONT216 and workflow binding consume one neutral Roslyn action catalog.
+         Neither analyzer package references the other: both source-link this
+         dependency-free proof input from the shared analyzer source boundary.
+         ActionCompositionAnalyzer.WorkflowBridge.cs remains intentional here:
+         the shared catalog directly consumes its source-safe action projections. -->
+    <Compile Include="..\Shared\Analyzers\Proof\OntologyActionCatalog.cs"
+             Link="SharedProof\OntologyActionCatalog.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -122,6 +122,27 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine("        // A diagnostic fork cannot race in-flight forward work or open a second");
+            sb.AppendLine("        // rollback authority. Guard before bounds, counters, audit, claims, or Phase.");
+            sb.AppendLine("        if (!HasStructurallyValidCompensationJournal()");
+            sb.AppendLine("            || !HasStructurallyValidForwardDispatchClaims()");
+            sb.AppendLine("            || !HasStructurallyValidFailureTriggerClaims()");
+            sb.AppendLine("            || ForwardDispatchClaims.Count > 0");
+            sb.AppendLine("            || PendingPostCompletionFailureClaims.Count > 0");
+            sb.AppendLine("            || PendingCompensationForkId is not null");
+            sb.AppendLine("            || ActiveCompensationScopeKey is not null");
+            sb.AppendLine("            || CompensationRollbackFinished");
+            sb.AppendLine("            || CompensationOutcomeUnknown");
+            sb.AppendLine("            || CompensationFailureMessage is not null");
+            sb.AppendLine("            || CompensationJournal?.Any(entry => entry?.Status is \"Failed\" or \"OutcomeUnknown\") == true)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
         for (var i = 0; i < forks.Count; i++)
         {
             EmitEdgeBlock(sb, model, forks[i], i, eventName, triggerCommandName, canSeedCompensation);
@@ -203,6 +224,15 @@ internal sealed class DiagnosticForkHandlerEmitter
         // hostile value cannot break out of the generated string literal (M5) - the same
         // pattern StepStartHandlerEmitter uses for the validation message.
         var seedLiteral = SymbolDisplay.FormatLiteral(fork.CompensationSeedMoniker, quote: true);
+        CompensationOccurrence? compensationSeedOccurrence = null;
+        if (canSeedCompensation && CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(
+                fork.CompensationSeedMoniker,
+                pathKey: null,
+                out compensationSeedOccurrence!);
+        }
 
         sb.AppendLine($"        // Diagnostic fork edge {edgeIndex} - admissible at anchor(s): {string.Join(", ", fork.AnchorStepMonikers)}.");
         sb.Append("        if (");
@@ -294,6 +324,35 @@ internal sealed class DiagnosticForkHandlerEmitter
         sb.AppendLine("                yield break;");
         sb.AppendLine("            }");
         sb.AppendLine();
+
+        if (canSeedCompensation && CompensationTopology.UsesDerivedRuntime(model))
+        {
+            if (compensationSeedOccurrence is null)
+            {
+                sb.AppendLine("            CompensationFailureMessage = \"Diagnostic-fork compensation seed is absent from the compiled topology; saga retained.\";");
+                sb.AppendLine($"            Phase = {model.PhaseEnumName}.Failed;");
+                sb.AppendLine("            yield break;");
+                sb.AppendLine();
+            }
+            else
+            {
+                sb.AppendLine("            if (!TryMintPostCompletionFailureClaim(");
+                sb.AppendLine($"                    {Literal(compensationSeedOccurrence.StableKey)},");
+                sb.AppendLine($"                    ResolveCompensationScopeInstance({Literal(compensationSeedOccurrence.Scope.TemplateKey)}),");
+                sb.AppendLine($"                    {Literal(compensationSeedOccurrence.Scope.Kind.ToString())},");
+                sb.AppendLine($"                    {NullableLiteral(compensationSeedOccurrence.Scope.LaneKey)},");
+                sb.AppendLine($"                    {NullableLiteral(compensationSeedOccurrence.Scope.ForkId)},");
+                sb.AppendLine($"                    {NullableIntLiteral(compensationSeedOccurrence.Scope.ForkPathIndex)},");
+                sb.AppendLine($"                    {Literal(compensationSeedOccurrence.Step.StepName)},");
+                sb.AppendLine("                    \"DiagnosticFork\",");
+                sb.AppendLine($"                    out var edge{edgeIndex}FailureClaim))");
+                sb.AppendLine("            {");
+                sb.AppendLine("                yield break;");
+                sb.AppendLine("            }");
+                sb.AppendLine();
+            }
+        }
+
         sb.AppendLine($"            {countVar} = {admittedVar} + 1;");
 
         if (model.IsEventSourced)
@@ -328,7 +387,25 @@ internal sealed class DiagnosticForkHandlerEmitter
             sb.AppendLine($"                {seedLiteral},");
             sb.AppendLine("                \"Diagnostic fork remediation seeded by a permitted fork trigger.\",");
             sb.AppendLine("                \"DiagnosticFork\",");
-            sb.AppendLine("                null);");
+            if (compensationSeedOccurrence is null)
+            {
+                sb.AppendLine("                null);");
+            }
+            else
+            {
+                sb.AppendLine("                null)");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                ForwardOccurrenceKey = {Literal(compensationSeedOccurrence.StableKey)},");
+                sb.AppendLine($"                CompensationScopeKey = ResolveCompensationScopeInstance({Literal(compensationSeedOccurrence.Scope.TemplateKey)}),");
+                sb.AppendLine($"                CompensationScopeKind = {Literal(compensationSeedOccurrence.Scope.Kind.ToString())},");
+                sb.AppendLine($"                CompensationLaneKey = {NullableLiteral(compensationSeedOccurrence.Scope.LaneKey)},");
+                sb.AppendLine($"                CompensationForkId = {NullableLiteral(compensationSeedOccurrence.Scope.ForkId)},");
+                sb.AppendLine($"                CompensationForkPathIndex = {NullableIntLiteral(compensationSeedOccurrence.Scope.ForkPathIndex)},");
+                sb.AppendLine($"                CompensationJournalSequenceAtDispatch = edge{edgeIndex}FailureClaim.JournalSequenceAtDispatch,");
+                sb.AppendLine($"                FailedForwardExecutionId = edge{edgeIndex}FailureClaim.ForwardExecutionId,");
+                sb.AppendLine("                FailureOccurredAfterForwardCompletion = true,");
+                sb.AppendLine("            };");
+            }
         }
 
         sb.AppendLine("            yield break;");
@@ -366,4 +443,11 @@ internal sealed class DiagnosticForkHandlerEmitter
 
         return sb.ToString();
     }
+
+    private static string Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
+
+    private static string NullableLiteral(string? value) => value is null ? "null" : Literal(value);
+
+    private static string NullableIntLiteral(int? value) => value?.ToString(
+        System.Globalization.CultureInfo.InvariantCulture) ?? "null";
 }

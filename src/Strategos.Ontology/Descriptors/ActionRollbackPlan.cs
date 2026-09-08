@@ -30,6 +30,9 @@ public sealed record ActionRollbackLeaf
         ForwardAction = new ActionContractIdentity(
             analysis.ForwardAction.Subject,
             analysis.ForwardAction.Name);
+        Frame = new ActionFrame(
+            analysis.ForwardAction.TouchedResources.Where(static resource => resource is not null));
+        ReadFootprint = CreateReadFootprint(analysis);
         InverseAction = analysis.Status != ActionInverseAnalysisStatus.Proven
             || analysis.AuthoredInverse is null
             ? null
@@ -43,6 +46,11 @@ public sealed record ActionRollbackLeaf
 
     /// <summary>Gets the completed forward action.</summary>
     public ActionContractIdentity ForwardAction { get; }
+
+    /// <summary>Gets the canonical frame restored by this rollback leaf.</summary>
+    public ActionFrame Frame { get; }
+
+    internal ActionFrame ReadFootprint { get; }
 
     /// <summary>Gets the authored inverse to execute, when one is required and proved.</summary>
     public ActionContractIdentity? InverseAction { get; }
@@ -58,6 +66,60 @@ public sealed record ActionRollbackLeaf
 
     /// <summary>Gets whether this leaf has an executable, proved inverse.</summary>
     public bool IsCompensable => Status == ActionInverseAnalysisStatus.Proven;
+
+    private static ActionFrame CreateReadFootprint(ActionInverseAnalysis analysis)
+    {
+        var resources = new List<ActionResource>();
+        if (analysis.DerivedContract is { } derived)
+        {
+            resources.AddRange(derived.Requirement.ReferencedResources);
+            resources.AddRange(derived.Guarantee.ReferencedResources);
+        }
+        else
+        {
+            AddContractReads(analysis.ForwardAction, resources);
+        }
+
+        if (analysis.AuthoredInverse is { } authored)
+        {
+            AddContractReads(authored, resources);
+        }
+
+        return new ActionFrame(resources);
+    }
+
+    private static void AddContractReads(
+        ActionDescriptor action,
+        ICollection<ActionResource> resources)
+    {
+        foreach (var precondition in action.Preconditions.Where(static item => item is not null))
+        {
+            if (precondition.Strength == ConstraintStrength.Hard)
+            {
+                foreach (var resource in precondition.Predicate.ReferencedResources)
+                {
+                    resources.Add(resource);
+                }
+            }
+        }
+
+        foreach (var guarantee in action.Ensures.Where(static item => item is not null))
+        {
+            foreach (var resource in guarantee.Predicate.ReferencedResources)
+            {
+                resources.Add(resource);
+            }
+        }
+
+        foreach (var postcondition in action.Postconditions.Where(static item => item is not null))
+        {
+            if (postcondition.Kind == PostconditionKind.CreatesLink
+                && !string.IsNullOrWhiteSpace(postcondition.LinkName))
+            {
+                resources.Add(ActionResource.Link(postcondition.LinkName));
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -115,6 +177,22 @@ public sealed class ActionRollbackPlan
         Kind = kind;
         Leaf = leaf;
         Children = childArray;
+        Frame = kind switch
+        {
+            ActionRollbackPlanKind.Identity => ActionFrame.Empty,
+            ActionRollbackPlanKind.Leaf => leaf!.Frame,
+            _ => childArray.Aggregate(
+                ActionFrame.Empty,
+                static (frame, child) => frame.Union(child.Frame)),
+        };
+        ReadFootprint = kind switch
+        {
+            ActionRollbackPlanKind.Identity => ActionFrame.Empty,
+            ActionRollbackPlanKind.Leaf => leaf!.ReadFootprint,
+            _ => childArray.Aggregate(
+                ActionFrame.Empty,
+                static (footprint, child) => footprint.Union(child.ReadFootprint)),
+        };
         IsCompensable = kind == ActionRollbackPlanKind.Identity
             || (leaf?.IsCompensable ?? childArray.All(child => child.IsCompensable));
         NonCompensableLeaves = kind == ActionRollbackPlanKind.Leaf && leaf is { IsCompensable: false }
@@ -133,6 +211,11 @@ public sealed class ActionRollbackPlan
 
     /// <summary>Gets nested plans in rollback execution order.</summary>
     public ImmutableArray<ActionRollbackPlan> Children { get; }
+
+    /// <summary>Gets the canonical union of resources restored by this plan.</summary>
+    public ActionFrame Frame { get; }
+
+    internal ActionFrame ReadFootprint { get; }
 
     /// <summary>Gets whether every leaf in this plan has an executable, proved inverse.</summary>
     public bool IsCompensable { get; }

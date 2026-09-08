@@ -441,6 +441,39 @@ public sealed class WorkflowBindingProofAnalyzerTests
     }
 
     /// <summary>
+    /// Event-sourced state owns its replay fold, so a typed inverse cannot assume that a
+    /// generated rollback-completed event applies its <c>UpdatedState</c>. A conforming
+    /// pass-through fold must fail closed instead of compiling an unsound rollback program.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_WithEventSourcedNoOpFold_ReportsAgwf045()
+    {
+        var diagnostic = SingleBindingDiagnostic(Source(
+            boundWorkflowName: "fulfill-order",
+            firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+            secondAction: Action("complete", 1, 2) + Action("undo-complete", 2, 1),
+            firstConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                    .Compensate<CompleteStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-receive"))
+                """,
+            secondConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "complete"))
+                    .Compensate<ReceiveStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-complete"))
+                """,
+            stateInterface: "IEventSourcedState<FlowState>",
+            stateMembers: "public FlowState ApplyEvent(IProgressEvent evt) => this;",
+            workflowAttributeSuffix: ", Persistence = PersistenceMode.EventSourced"));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostic.GetMessage()).Contains("EventSourced persistence");
+        await Assert.That(diagnostic.GetMessage()).Contains("Marten replay");
+    }
+
+    /// <summary>
     /// Untouched requirements survive the forward and inverse frames and therefore
     /// participate in inverse equivalence through each contract's effective guarantee.
     /// </summary>
@@ -612,6 +645,34 @@ public sealed class WorkflowBindingProofAnalyzerTests
 
         await Assert.That(diagnostics).HasCount().EqualTo(1);
         await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+    }
+
+    /// <summary>
+    /// A repeated phase cannot erase a typed declaration merely because its legacy
+    /// declaration appears first in forward source order.
+    /// </summary>
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task CollapsedTypedLegacyCompensation_WithoutBinding_FailsClosedInBothOrders(
+        bool typedDeclarationFirst)
+    {
+        var source = CollapsedMixedCompensationSource(typedDeclarationFirst);
+        var result = RunBindingGenerator(source);
+        var diagnostics = result.Diagnostics
+            .Where(diagnostic => diagnostic.Id is "AGWF044" or "AGWF045")
+            .ToArray();
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("not statically closed");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("conflicting Compensate declarations");
+
+        var saga = GeneratorTestHelper.GetGeneratedSource(result, "FulfillOrderSaga.g.cs");
+        await Assert.That(saga).Contains("CompensationJournalEntry");
+        await Assert.That(saga).Contains("mixed, dynamic, or unresolved");
+        await Assert.That(saga).DoesNotContain(
+            "new ExecuteCompleteStepWorkerCommand(WorkflowId, Guid.NewGuid(), State)");
     }
 
     /// <summary>
@@ -999,6 +1060,41 @@ public sealed class WorkflowBindingProofAnalyzerTests
             {{contractSuffix}};
         """;
 
+    private static string CollapsedMixedCompensationSource(bool typedDeclarationFirst)
+    {
+        const string legacy = """
+            step => step
+                .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                .Compensate<CompleteStep>()
+            """;
+        const string typed = """
+            step => step
+                .Performs(new WorkflowActionReference("orders", "Order", "receive"))
+                .Compensate<CompleteStep>(new WorkflowActionReference(
+                    "orders", "Order", "undo-receive"))
+            """;
+        var first = typedDeclarationFirst ? typed : legacy;
+        var second = typedDeclarationFirst ? legacy : typed;
+        return Source(
+                boundWorkflowName: "fulfill-order",
+                firstAction: Action("receive", 0, 1) + Action("undo-receive", 1, 0),
+                secondAction: Action("complete", 1, 2),
+                firstConfiguration: "\"RootReceive\", " + Performs("complete"),
+                secondConfiguration: Performs("complete"),
+                intermediateChain: $$"""
+                    .Branch(state => state.Route,
+                        BranchCase<FlowState, int>.When(0, path => path
+                            .Then<ReceiveStep>({{first}})),
+                        BranchCase<FlowState, int>.Otherwise(path => path
+                            .Then<ReceiveStep>({{second}})))
+                    """,
+                stateMembers: "public int Route { get; init; }")
+            .Replace(
+                ".BoundToWorkflow(\"fulfill-order\")",
+                string.Empty,
+                StringComparison.Ordinal);
+    }
+
     private static string Source(
         string boundWorkflowName,
         string firstAction,
@@ -1013,11 +1109,15 @@ public sealed class WorkflowBindingProofAnalyzerTests
         string intermediateChain = "",
         string workflowMembers = "",
         string workflowChainPrefix = "",
-        string afterStartWithSuffix = "") => $$"""
+        string afterStartWithSuffix = "",
+        string stateInterface = "IWorkflowState",
+        string stateMembers = "",
+        string workflowAttributeSuffix = "") => $$"""
         using System;
         using System.Threading;
         using System.Threading.Tasks;
         using Strategos.Abstractions;
+        using Strategos.Agents.Abstractions;
         using Strategos.Attributes;
         using Strategos.Builders;
         using Strategos.Definitions;
@@ -1059,9 +1159,11 @@ public sealed class WorkflowBindingProofAnalyzerTests
         }
 
         [WorkflowState]
-        public sealed record FlowState : IWorkflowState
+        public sealed record FlowState : {{stateInterface}}
         {
             public Guid WorkflowId { get; init; }
+
+            {{stateMembers}}
         }
 
         public class TestStep : IWorkflowStep<FlowState>
@@ -1082,7 +1184,7 @@ public sealed class WorkflowBindingProofAnalyzerTests
                 new("orders", "Order", "receive");
         }
 
-        [Workflow("fulfill-order")]
+        [Workflow("fulfill-order"{{workflowAttributeSuffix}})]
         public static partial class FulfillOrderWorkflowDefinition
         {
             private const string WorkflowIdentity = "fulfill-order";

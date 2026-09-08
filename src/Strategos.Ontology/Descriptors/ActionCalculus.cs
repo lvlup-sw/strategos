@@ -695,6 +695,14 @@ public static class ActionCalculus
         var branches = MaterializeRollbackChildren(subject, completedForwardBranches)
             .Where(child => child.Kind != ActionRollbackPlanKind.Identity)
             .ToImmutableArray();
+        var interference = FindParallelRollbackInterference(branches);
+        if (interference is not null)
+        {
+            throw new ArgumentException(
+                interference,
+                nameof(completedForwardBranches));
+        }
+
         return branches.IsEmpty
             ? RollbackIdentity(subject)
             : new ActionRollbackPlan(
@@ -702,6 +710,52 @@ public static class ActionCalculus
                 subject,
                 null,
                 branches);
+    }
+
+    private static string? FindParallelRollbackInterference(
+        ImmutableArray<ActionRollbackPlan> branches)
+    {
+        var conflicts = new List<(
+            ActionResource Resource,
+            bool IsWriteWrite,
+            int WriterIndex,
+            int OtherIndex)>();
+        for (var leftIndex = 0; leftIndex < branches.Length; leftIndex++)
+        {
+            var left = branches[leftIndex];
+            for (var rightIndex = leftIndex + 1; rightIndex < branches.Length; rightIndex++)
+            {
+                var right = branches[rightIndex];
+                conflicts.AddRange(left.Frame.Resources
+                    .Intersect(right.Frame.Resources)
+                    .Select(resource => (resource, true, leftIndex, rightIndex)));
+                conflicts.AddRange(left.Frame.Resources
+                    .Intersect(right.ReadFootprint.Resources)
+                    .Select(resource => (resource, false, leftIndex, rightIndex)));
+                conflicts.AddRange(right.Frame.Resources
+                    .Intersect(left.ReadFootprint.Resources)
+                    .Select(resource => (resource, false, rightIndex, leftIndex)));
+            }
+        }
+
+        if (conflicts.Count == 0)
+        {
+            return null;
+        }
+
+        var conflict = conflicts
+            .OrderBy(static item => item.Resource.Kind)
+            .ThenBy(static item => item.Resource.Name, StringComparer.Ordinal)
+            .ThenBy(static item => item.IsWriteWrite ? 0 : 1)
+            .ThenBy(static item => item.WriterIndex)
+            .ThenBy(static item => item.OtherIndex)
+            .First();
+        return conflict.IsWriteWrite
+            ? "Parallel rollback branches must have pairwise-disjoint frames; resource "
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is restored by more than one branch."
+            : "Parallel rollback branches must be noninterfering; resource "
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is restored by branch "
+                + $"{conflict.WriterIndex} and read by branch {conflict.OtherIndex}.";
     }
 
     /// <summary>Preserves a nested compensation boundary around a derived body plan.</summary>

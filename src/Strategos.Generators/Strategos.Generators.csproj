@@ -50,6 +50,8 @@
              Link="SharedAnalyzers\OntologyDiagnosticIds.cs" />
     <Compile Include="..\Strategos.Ontology.Generators\Diagnostics\OntologyDiagnostics.cs"
              Link="SharedAnalyzers\OntologyDiagnostics.cs" />
+    <Compile Include="..\Shared\Analyzers\Proof\OntologyActionCatalog.cs"
+             Link="SharedProof\OntologyActionCatalog.cs" />
   </ItemGroup>
 
   <ItemGroup>

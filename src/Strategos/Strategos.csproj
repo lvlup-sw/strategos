@@ -39,7 +39,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Explicit cross-product API baseline (historical 7-entrypoint subset + #167 surface). -->
+    <!-- Explicit cross-product API baseline (historical 7-entrypoint subset + #167/#169 surfaces). -->
     <AdditionalFiles Include="PublicAPI\PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI\PublicAPI.Unshipped.txt" />
     <!-- Layer 1 of the INV-1 scoping: globally silence PublicApiAnalyzers so

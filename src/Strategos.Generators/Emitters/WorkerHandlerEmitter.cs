@@ -179,9 +179,16 @@ internal static class WorkerHandlerEmitter
             foreach (var handler in model.FailureHandlers)
             {
                 var sanitizedId = handler.HandlerId.Replace("-", "_");
-                foreach (var stepName in handler.StepNames)
+                var phaseNames = handler.StepPhaseNames;
+                var stepTypeNames = handler.StepTypeNames;
+                for (var i = 0; i < phaseNames.Count; i++)
                 {
-                    EmitFailureHandlerWorkerClass(sb, model, stepName, sanitizedId);
+                    EmitFailureHandlerWorkerClass(
+                        sb,
+                        model,
+                        phaseNames[i],
+                        stepTypeNames[i],
+                        sanitizedId);
                     sb.AppendLine();
                 }
             }
@@ -200,15 +207,16 @@ internal static class WorkerHandlerEmitter
     private static void EmitFailureHandlerWorkerClass(
         StringBuilder sb,
         WorkflowModel model,
-        string stepName,
+        string phaseName,
+        string stepTypeName,
         string sanitizedId)
     {
-        var workerCommandName = $"ExecuteFailureHandler_{sanitizedId}_{stepName}WorkerCommand";
-        var completedEventName = $"FailureHandler_{sanitizedId}_{stepName}Completed";
-        var handlerClassName = $"FailureHandler_{sanitizedId}_{stepName}Handler";
+        var workerCommandName = $"ExecuteFailureHandler_{sanitizedId}_{phaseName}WorkerCommand";
+        var completedEventName = $"FailureHandler_{sanitizedId}_{phaseName}Completed";
+        var handlerClassName = $"FailureHandler_{sanitizedId}_{phaseName}Handler";
 
         sb.AppendLine("/// <summary>");
-        sb.AppendLine($"/// Worker handler for the {stepName} workflow-level OnFailure handler step.");
+        sb.AppendLine($"/// Worker handler for the {phaseName} workflow-level OnFailure handler step.");
         sb.AppendLine("/// </summary>");
         sb.AppendLine("/// <remarks>");
         sb.AppendLine("/// <para>");
@@ -220,10 +228,10 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine("/// </para>");
         sb.AppendLine("/// </remarks>");
         sb.AppendLine($"public sealed partial class {handlerClassName}(");
-        sb.AppendLine($"    {stepName} step,");
+        sb.AppendLine($"    {stepTypeName} step,");
         sb.AppendLine($"    ILogger<{handlerClassName}> logger)");
         sb.AppendLine("{");
-        sb.AppendLine($"    private readonly {stepName} _step = step;");
+        sb.AppendLine($"    private readonly {stepTypeName} _step = step;");
         sb.AppendLine($"    private readonly ILogger<{handlerClassName}> _logger = logger;");
         sb.AppendLine();
 
@@ -242,13 +250,13 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine();
         sb.AppendLine("        _logger.LogDebug(");
         sb.AppendLine("            \"Executing failure handler step {StepName} for workflow {WorkflowId}\",");
-        sb.AppendLine($"            \"{stepName}\",");
+        sb.AppendLine($"            \"{phaseName}\",");
         sb.AppendLine("            command.WorkflowId);");
         sb.AppendLine();
-        sb.AppendLine($"        using var activity = WorkflowTelemetry.StartStepSpan(\"{stepName}\", command.WorkflowId);");
+        sb.AppendLine($"        using var activity = WorkflowTelemetry.StartStepSpan(\"{phaseName}\", command.WorkflowId);");
         sb.AppendLine("        var sw = Stopwatch.StartNew();");
         sb.AppendLine();
-        sb.AppendLine($"        var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\");");
+        sb.AppendLine($"        var stepContext = StepContext.Create(command.WorkflowId, \"{stepTypeName}\", \"{phaseName}\");");
         sb.AppendLine("        var result = await _step.ExecuteAsync(command.State, stepContext, ct);");
         sb.AppendLine();
         sb.AppendLine("        sw.Stop();");
@@ -257,7 +265,7 @@ internal static class WorkerHandlerEmitter
         sb.AppendLine();
         sb.AppendLine("        _logger.LogDebug(");
         sb.AppendLine("            \"Failure handler step {StepName} completed for workflow {WorkflowId} in {ElapsedMs}ms\",");
-        sb.AppendLine($"            \"{stepName}\",");
+        sb.AppendLine($"            \"{phaseName}\",");
         sb.AppendLine("            command.WorkflowId,");
         sb.AppendLine("            sw.ElapsedMilliseconds);");
         sb.AppendLine();
@@ -296,31 +304,6 @@ internal static class WorkerHandlerEmitter
         ForkPathCompletedNaming naming)
     {
         EmitHandlerClassCore(sb, model, stepName, step: null, naming);
-    }
-
-    /// <summary>
-    /// Builds the set of step names that belong to a workflow-level OnFailure
-    /// recovery chain. These steps must NOT publish the failure-handler trigger
-    /// themselves (they ARE the recovery path); only main-flow steps route into the
-    /// OnFailure chain on failure.
-    /// </summary>
-    private static HashSet<string> BuildFailureHandlerStepNames(WorkflowModel model)
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        if (model.FailureHandlers is null)
-        {
-            return set;
-        }
-
-        foreach (var handler in model.FailureHandlers)
-        {
-            foreach (var stepName in handler.StepNames)
-            {
-                set.Add(stepName);
-            }
-        }
-
-        return set;
     }
 
     private static void EmitHandlerClassCore(
@@ -432,15 +415,16 @@ internal static class WorkerHandlerEmitter
         // Trigger{Pascal}FailureHandlerCommand so the saga starts the OnFailure
         // chain. This is the previously-missing publish for a NON-compensated failing
         // step (compensation already publishes the same trigger via its own path).
-        // The failure-handler steps themselves are excluded — they ARE the recovery
-        // path and must not re-trigger it.
+        // Recovery workers are emitted as distinct handler/command roles above and
+        // never receive this policy. Do not suppress a normal forward handler merely
+        // because its CLR step type is also reused inside an OnFailure chain.
         var usesDerivedCompensation = CompensationTopology.UsesDerivedRuntime(model);
-        var isFailureHandlerStep = BuildFailureHandlerStepNames(model).Contains(stepName);
-        var publishOnFailureTrigger =
-            (usesDerivedCompensation && isInverseStepType)
-            || (!isFailureHandlerStep
-                && (usesDerivedCompensation
-                    || (model.HasFailureHandlers && (step is null || step.Compensation is null))));
+        var hasNormalForwardRole = model.ForwardStepTypeNames is null
+            || model.ForwardStepTypeNames.Any(name => string.Equals(name, stepName, StringComparison.Ordinal));
+        var publishOnFailureTrigger = usesDerivedCompensation
+            || (model.HasFailureHandlers
+                && hasNormalForwardRole
+                && (step is null || step.Compensation is null));
 
         // Per-handler Wolverine error policy (DR-2 retry, DR-3 compensation, plus the
         // OnFailure trigger publish above). Emitted when the step declared resilience
@@ -641,6 +625,7 @@ internal static class WorkerHandlerEmitter
                 sb.AppendLine($"{indent}                    CompensationForkId = cmd.CompensationForkId,");
                 sb.AppendLine($"{indent}                    CompensationForkPathIndex = cmd.CompensationForkPathIndex,");
                 sb.AppendLine($"{indent}                    CompensationJournalSequenceAtDispatch = cmd.CompensationJournalSequenceAtDispatch,");
+                sb.AppendLine($"{indent}                    FailedForwardExecutionId = cmd.StepExecutionId,");
                 sb.AppendLine($"{indent}                }}),");
             }
             else

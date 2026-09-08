@@ -234,6 +234,49 @@ internal static class WireToModelBridge
         // Both orders must be reproduced or the generated saga diverges from a C# twin.
         var stepNames = ComposeStepNames(definition, baseStepModels, forkModels);
         var stepModels = ComposeStepModels(definition, baseStepModels, forkModels);
+
+        // Preserve authored forward-role provenance before approval, confidence-handler, and
+        // compensation lowering append off-main worker types to the shared step collections.
+        // The import subset currently lowers top-level wire steps as its linear flow and supports
+        // fork paths; both are forward roles, while the later folds are not. Keep these collections
+        // non-null so emitters never have to apply the legacy "unknown means forward" fallback to
+        // an imported model.
+        var forkPathStepIds = new HashSet<string>(
+            definition.ForkPoints
+                .SelectMany(static fork => fork.Paths.SelectMany(static path => path.Steps))
+                .Select(static step => step.StepId)
+                .Where(static stepId => !string.IsNullOrEmpty(stepId))
+                .Select(static stepId => stepId!),
+            StringComparer.Ordinal);
+        var recoveryStepIds = new HashSet<string>(
+            definition.FailureHandlers
+                .SelectMany(static handler => handler.Steps)
+                .Concat(definition.Steps.SelectMany(static step =>
+                    step.Configuration?.OnLowConfidence?.HandlerSteps ?? []))
+                .Select(static step => step.StepId)
+                .Where(static stepId => !string.IsNullOrEmpty(stepId))
+                .Select(static stepId => stepId!),
+            StringComparer.Ordinal);
+        var mainFlowStepPhaseNames = baseStepModels
+            .Where((_, index) => definition.Steps[index].StepId is not { } stepId
+                || (!forkPathStepIds.Contains(stepId) && !recoveryStepIds.Contains(stepId)))
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var forwardStepModels = baseStepModels
+            .Where((_, index) => definition.Steps[index].StepId is not { } stepId
+                || !recoveryStepIds.Contains(stepId))
+            .Concat(forkModels.SelectMany(static fork => fork.Paths.SelectMany(static path => path.Steps)))
+            .ToList();
+        var forwardStepPhaseNames = forwardStepModels
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var forwardStepTypeNames = forwardStepModels
+            .Select(static step => step.StepName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
         (stepNames, stepModels) = AppendApprovalSteps(stepNames, stepModels, approvalModels);
         var confidenceHandlerStepNames = AppendConfidenceHandlerSteps(ref stepNames, ref stepModels);
         stepModels = FoldCompensationSteps(stepModels);
@@ -260,6 +303,9 @@ internal static class WireToModelBridge
             // A JSON import has no fluent {Pascal}WorkflowDefinition class, so the DI extension must
             // NOT emit the definition-evaluation line that references it (it would not compile).
             HasFluentDefinition = false,
+            MainFlowStepPhaseNames = mainFlowStepPhaseNames,
+            ForwardStepPhaseNames = forwardStepPhaseNames,
+            ForwardStepTypeNames = forwardStepTypeNames,
             TopologyClosureFailures = CollectImportedTopologyClosureFailures(definition, jsonFilePath),
         };
 

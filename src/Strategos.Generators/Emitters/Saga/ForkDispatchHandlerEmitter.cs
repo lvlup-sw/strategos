@@ -54,6 +54,14 @@ internal sealed class ForkDispatchHandlerEmitter
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, stepName, baseStepName, isForkPathStep: false);
         var sanitizedId = fork.ForkId.Replace("-", "_");
+        var needsReducedFailureRouting = model.HasFailureHandlers
+            || CompensationTopology.UsesDerivedRuntime(model);
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(stepName, pathKey: null, out compensationOccurrence!);
+        }
 
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -79,6 +87,13 @@ internal sealed class ForkDispatchHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            model,
+            stepName,
+            pathKey: null,
+            exitStatement: "yield break;");
+
         // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
@@ -87,6 +102,28 @@ internal sealed class ForkDispatchHandlerEmitter
         }
 
         CompensationJournalEmitter.EmitRecordCompletion(sb, model, stepName);
+
+        // A reducer-driven failure is an inclusive completed boundary: persist the
+        // occurrence, mint its exact post-completion authority, and stop before any
+        // fork phase/status mutation or lane dispatch.
+        if (needsReducedFailureRouting)
+        {
+            if (model.StateHasPhaseProperty && !string.IsNullOrEmpty(model.StateTypeName))
+            {
+                sb.AppendLine("        Phase = State.Phase;");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence,
+                stepName);
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
 
         // Set phase to forking
         sb.AppendLine($"        // Set phase to forking");

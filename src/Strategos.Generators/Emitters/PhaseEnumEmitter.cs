@@ -200,7 +200,7 @@ internal static class PhaseEnumEmitter
             // Sanitize HandlerId for valid C# identifier (replace hyphens with underscores)
             var sanitizedId = handler.HandlerId.Replace("-", "_");
 
-            foreach (var stepName in handler.StepNames)
+            foreach (var stepName in handler.StepPhaseNames)
             {
                 sb.AppendLine($"    /// <summary>Executing failure handler step {stepName}.</summary>");
                 sb.AppendLine($"    FailureHandler_{sanitizedId}_{stepName},");

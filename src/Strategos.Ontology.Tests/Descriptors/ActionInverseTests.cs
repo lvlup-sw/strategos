@@ -341,6 +341,22 @@ public sealed class ActionInverseTests
     }
 
     [Test]
+    public async Task InvalidNullFrameStillProducesANonCompensableRollbackLeaf()
+    {
+        var analysis = ActionCalculus.AnalyzeInverse(
+            Action("invalid-frame", frame: [null!]),
+            EmptyLattice);
+
+        var plan = ActionCalculus.DeriveRollbackPlan(analysis);
+
+        await Assert.That(analysis.Status).IsEqualTo(ActionInverseAnalysisStatus.Invalid);
+        await Assert.That(plan.Kind).IsEqualTo(ActionRollbackPlanKind.Leaf);
+        await Assert.That(plan.IsCompensable).IsFalse();
+        await Assert.That(plan.Frame.Resources).IsEmpty();
+        await Assert.That(plan.NonCompensableLeaves).HasSingleItem();
+    }
+
+    [Test]
     public async Task SequentialRollbackReversesTheSuppliedCompletedPrefix()
     {
         var first = ProvenPair("first", "undo-first", "a");
@@ -386,6 +402,8 @@ public sealed class ActionInverseTests
             [innerScope, ActionCalculus.RollbackIdentity(Subject)]);
 
         await Assert.That(parallel.Kind).IsEqualTo(ActionRollbackPlanKind.Parallel);
+        await Assert.That(parallel.Frame.Resources).IsEquivalentTo(
+            [ActionResource.Property("left-state"), ActionResource.Property("right-state")]);
         await Assert.That(string.Join(",", parallel.Children.Select(child =>
                 child.Leaf!.ForwardAction.ActionName)))
             .IsEqualTo("left,right");
@@ -396,6 +414,135 @@ public sealed class ActionInverseTests
         await Assert.That(nestedScope.Children.Single().Kind)
             .IsEqualTo(ActionRollbackPlanKind.Scope);
         await Assert.That(outer.Kind).IsEqualTo(ActionRollbackPlanKind.Scope);
+        await Assert.That(outer.Frame.Resources).IsEquivalentTo(parallel.Frame.Resources);
+    }
+
+    [Test]
+    public async Task ParallelRollbackRejectsOverlappingNestedFrames()
+    {
+        var first = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("first", "undo-first", "shared"));
+        var nested = ActionCalculus.DeriveScopedRollbackPlan(
+            ActionCalculus.DeriveSequentialRollbackPlan(
+                Subject,
+                [
+                    ActionCalculus.DeriveRollbackPlan(
+                        ProvenPair("nested-a", "undo-nested-a", "nested")),
+                    ActionCalculus.DeriveRollbackPlan(
+                        ProvenPair("nested-shared", "undo-nested-shared", "shared")),
+                ]));
+
+        var exception = await Assert.That(() => ActionCalculus.DeriveParallelRollbackPlan(
+                Subject,
+                [nested, first]))
+            .Throws<ArgumentException>();
+        await Assert.That(exception!.Message).Contains("'Property:shared'");
+        await Assert.That(nested.Frame.Resources).IsEquivalentTo(
+            [ActionResource.Property("nested"), ActionResource.Property("shared")]);
+    }
+
+    [Test]
+    public async Task DisjointParallelRollbackCarriesCanonicalAggregateFrame()
+    {
+        var zeta = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("zeta", "undo-zeta", "zeta"));
+        var alpha = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("alpha", "undo-alpha", "alpha"));
+
+        var plan = ActionCalculus.DeriveParallelRollbackPlan(Subject, [zeta, alpha]);
+
+        await Assert.That(plan.Kind).IsEqualTo(ActionRollbackPlanKind.Parallel);
+        await Assert.That(string.Join(",", plan.Frame.Resources.Select(static resource => resource.Name)))
+            .IsEqualTo("alpha,zeta");
+        await Assert.That(plan.Children.Select(static child => child.Frame.Resources.Single()))
+            .IsEquivalentTo([ActionResource.Property("alpha"), ActionResource.Property("zeta")]);
+    }
+
+    [Test]
+    public async Task ParallelRollbackRejectsWriteReadInterferenceInBothDirections()
+    {
+        // A requires y=0 and writes x; B writes y. Both inverse contracts prove in
+        // isolation and their frames are disjoint, but A^-1 still reads y.
+        var actionA = ActionCalculus.DeriveRollbackPlan(
+            ProvenPairWithRead("set-x", "restore-x", "x", "y"));
+        var actionB = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("set-y", "restore-y", "y"));
+
+        var readerFirst = await Assert.That(() => ActionCalculus.DeriveParallelRollbackPlan(
+                Subject,
+                [actionA, actionB]))
+            .Throws<ArgumentException>();
+        var writerFirst = await Assert.That(() => ActionCalculus.DeriveParallelRollbackPlan(
+                Subject,
+                [actionB, actionA]))
+            .Throws<ArgumentException>();
+
+        await Assert.That(readerFirst!.Message)
+            .Contains("'Property:y' is restored by branch 1 and read by branch 0");
+        await Assert.That(writerFirst!.Message)
+            .Contains("'Property:y' is restored by branch 0 and read by branch 1");
+    }
+
+    [Test]
+    public async Task ParallelRollbackPropagatesNestedReadFootprintsAndSnapshotsChildren()
+    {
+        var mutableChildren = new List<ActionRollbackPlan>
+        {
+            ActionCalculus.DeriveRollbackPlan(
+                ProvenPairWithRead("nested-reader", "undo-nested-reader", "x", "y")),
+        };
+        var nested = ActionCalculus.DeriveScopedRollbackPlan(
+            ActionCalculus.DeriveSequentialRollbackPlan(Subject, mutableChildren));
+        mutableChildren.Clear();
+        var writer = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("writer", "undo-writer", "y"));
+
+        var exception = await Assert.That(() => ActionCalculus.DeriveParallelRollbackPlan(
+                Subject,
+                [nested, writer]))
+            .Throws<ArgumentException>();
+
+        await Assert.That(exception!.Message).Contains("'Property:y'");
+        await Assert.That(nested.Children).HasSingleItem();
+        await Assert.That(nested.Children.Single().Leaf).IsNotNull();
+    }
+
+    [Test]
+    public async Task ParallelRollbackAllowsReadReadSharingAcrossDisjointFrames()
+    {
+        var left = ActionCalculus.DeriveRollbackPlan(
+            ProvenPairWithRead("left", "undo-left", "left-state", "shared"));
+        var right = ActionCalculus.DeriveRollbackPlan(
+            ProvenPairWithRead("right", "undo-right", "right-state", "shared"));
+
+        var plan = ActionCalculus.DeriveParallelRollbackPlan(Subject, [left, right]);
+
+        await Assert.That(plan.Kind).IsEqualTo(ActionRollbackPlanKind.Parallel);
+        await Assert.That(plan.IsCompensable).IsTrue();
+        await Assert.That(plan.Frame.Resources).IsEquivalentTo(
+            [ActionResource.Property("left-state"), ActionResource.Property("right-state")]);
+    }
+
+    [Test]
+    public async Task ParallelRollbackAllowsRepeatedResourcesWithinOneSequentialBranch()
+    {
+        var serial = ActionCalculus.DeriveSequentialRollbackPlan(
+            Subject,
+            [
+                ActionCalculus.DeriveRollbackPlan(
+                    ProvenPair("first", "undo-first", "serial")),
+                ActionCalculus.DeriveRollbackPlan(
+                    ProvenPair("second", "undo-second", "serial")),
+            ]);
+        var independent = ActionCalculus.DeriveRollbackPlan(
+            ProvenPair("independent", "undo-independent", "other"));
+
+        var plan = ActionCalculus.DeriveParallelRollbackPlan(Subject, [serial, independent]);
+
+        await Assert.That(plan.Kind).IsEqualTo(ActionRollbackPlanKind.Parallel);
+        await Assert.That(serial.Frame.Resources).HasSingleItem();
+        await Assert.That(plan.Frame.Resources).IsEquivalentTo(
+            [ActionResource.Property("other"), ActionResource.Property("serial")]);
     }
 
     [Test]
@@ -484,6 +631,8 @@ public sealed class ActionInverseTests
         var foreign = ActionCalculus.RollbackIdentity(new ActionSubject("billing", "Order"));
 
         await Assert.That(parallel.Children).HasSingleItem();
+        await Assert.That(parallel.Frame.Resources).IsEquivalentTo(
+            [ActionResource.Property("a")]);
         await Assert.That(() => ActionCalculus.DeriveSequentialRollbackPlan(
                 Subject,
                 [parallel, foreign]))
@@ -517,6 +666,38 @@ public sealed class ActionInverseTests
         var inverse = Action(
             inverseName,
             requires: Integer(property, 1),
+            ensures: Integer(property, 0),
+            frame: [ActionResource.Property(property)]);
+        var analysis = ActionCalculus.AnalyzeInverse(forward, inverse, EmptyLattice);
+        if (!analysis.IsCompensable)
+        {
+            throw new InvalidOperationException(string.Join(" ", analysis.Failures.Select(item => item.Message)));
+        }
+
+        return analysis;
+    }
+
+    private static ActionInverseAnalysis ProvenPairWithRead(
+        string forwardName,
+        string inverseName,
+        string property,
+        string readProperty)
+    {
+        var forwardRequirement = ActionPredicate.All(
+            Integer(property, 0),
+            Integer(readProperty, 0));
+        var inverseRequirement = ActionPredicate.All(
+            Integer(property, 1),
+            Integer(readProperty, 0));
+        var forward = Action(
+            forwardName,
+            requires: forwardRequirement,
+            ensures: Integer(property, 1),
+            frame: [ActionResource.Property(property)],
+            compensatingActionName: inverseName);
+        var inverse = Action(
+            inverseName,
+            requires: inverseRequirement,
             ensures: Integer(property, 0),
             frame: [ActionResource.Property(property)]);
         var analysis = ActionCalculus.AnalyzeInverse(forward, inverse, EmptyLattice);

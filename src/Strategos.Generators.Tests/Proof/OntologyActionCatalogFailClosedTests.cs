@@ -185,6 +185,50 @@ public sealed class OntologyActionCatalogFailClosedTests
     }
 
     /// <summary>
+    /// A single-assignment local keeps SymbolKey-only descriptor ownership explicit and provable.
+    /// </summary>
+    [Test]
+    public async Task ImmutableLocalObjectTypeDescriptorActions_AreProved()
+    {
+        var diagnostics = BindingDiagnostics(InlineDescriptorSource(descriptorLocal: true));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>An escaped descriptor local is not treated as an immutable catalog declaration.</summary>
+    [Test]
+    public async Task EscapedLocalObjectTypeDescriptor_ReportsAgwf042()
+    {
+        var diagnostic = SingleBindingDiagnostic("AGWF042", InlineDescriptorSource(
+            descriptorLocal: true,
+            escapeDescriptorLocal: true));
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF042");
+        await Assert.That(diagnostic.GetMessage()).Contains(
+            "direct ActionDescriptor workflow binding is not rooted");
+    }
+
+    /// <summary>
+    /// Catalog discovery binds the actual DomainOntology override instead of a same-named overload,
+    /// and therefore does not depend on declaration order.
+    /// </summary>
+    [Test]
+    public async Task DefineOverload_DoesNotHideWorkflowBindings_RegardlessOfSourceOrder()
+    {
+        const string decoy = "private void Define(int _) { }";
+
+        var before = BindingDiagnostics(Source(
+            ".BoundToWorkflow(\"flow\")",
+            ontologyMembersBeforeDefine: decoy));
+        var after = BindingDiagnostics(Source(
+            ".BoundToWorkflow(\"flow\")",
+            ontologyMembers: decoy));
+
+        await Assert.That(before).IsEmpty();
+        await Assert.That(after).IsEmpty();
+    }
+
+    /// <summary>
     /// A valid rooted descriptor binding must activate occurrence resolution, so an omitted
     /// descriptor action reports the exact missing occurrence rather than vacuously skipping proof.
     /// </summary>
@@ -655,6 +699,7 @@ public sealed class OntologyActionCatalogFailClosedTests
         bool partialDomain = false,
         string? extraDeclaration = null,
         string? ontologyMembers = null,
+        string? ontologyMembersBeforeDefine = null,
         bool expressionBodiedDefine = false,
         string? domainPropertyOverride = null,
         string workflowObjectTypeName = "Order",
@@ -682,6 +727,8 @@ public sealed class OntologyActionCatalogFailClosedTests
             ?? "builder.Object<Order>(\"Order\", obj => { ACTIONS });")
             .Replace("ACTIONS", actions, StringComparison.Ordinal);
         var additionalOntologyMembers = (ontologyMembers ?? string.Empty)
+            .Replace("ACTIONS", actions, StringComparison.Ordinal);
+        var precedingOntologyMembers = (ontologyMembersBeforeDefine ?? string.Empty)
             .Replace("ACTIONS", actions, StringComparison.Ordinal);
         var defineMethod = expressionBodiedDefine
             ? $"protected override void Define(IOntologyBuilder builder) => {objectStatement}"
@@ -729,6 +776,8 @@ public sealed class OntologyActionCatalogFailClosedTests
             public sealed partial class OrdersOntology : DomainOntology
             {
                 {{domainProperty}}
+
+                {{precedingOntologyMembers}}
 
                 {{defineMethod}}
 
@@ -811,7 +860,9 @@ public sealed class OntologyActionCatalogFailClosedTests
         bool escapedBuilder = false,
         bool customActionsCarrier = false,
         string? boundBindingType = "ActionBindingType.Workflow",
-        bool includeLeafAction = true)
+        bool includeLeafAction = true,
+        bool descriptorLocal = false,
+        bool escapeDescriptorLocal = false)
     {
         var receiver = escapedBuilder ? "Capture(builder)" : "builder";
         var registrationOpen = conditionalRegistration
@@ -828,6 +879,19 @@ public sealed class OntologyActionCatalogFailClosedTests
             : conditionalActions ? "] : []" : "]";
         var captureMember = escapedBuilder
             ? "private static IOntologyBuilder Capture(IOntologyBuilder builder) => builder;"
+            : string.Empty;
+        var descriptorPrefix = descriptorLocal
+            ? "var descriptor = new ObjectTypeDescriptor"
+            : $"{receiver}.ObjectTypeFromDescriptor(new ObjectTypeDescriptor";
+        var descriptorSuffix = descriptorLocal
+            ? $$"""
+                ;
+                {{(escapeDescriptorLocal ? "CaptureDescriptor(descriptor);" : string.Empty)}}
+                {{receiver}}.ObjectTypeFromDescriptor(descriptor);
+                """
+            : ");";
+        var descriptorCaptureMember = escapeDescriptorLocal
+            ? "private static void CaptureDescriptor(ObjectTypeDescriptor descriptor) { }"
             : string.Empty;
         var bindingTypeAssignment = boundBindingType is null
             ? string.Empty
@@ -876,7 +940,7 @@ public sealed class OntologyActionCatalogFailClosedTests
             protected override void Define(IOntologyBuilder builder)
             {
                 {{registrationOpen}}
-                {{receiver}}.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+                {{descriptorPrefix}}
                 {
                     Name = "Order",
                     DomainName = "orders",
@@ -898,11 +962,12 @@ public sealed class OntologyActionCatalogFailClosedTests
                             "done",
                             ""),
                     {{actionsClose}},
-                });
+                }{{descriptorSuffix}}
                 {{registrationClose}}
             }
 
             {{captureMember}}
+            {{descriptorCaptureMember}}
         }
 
         [WorkflowState]

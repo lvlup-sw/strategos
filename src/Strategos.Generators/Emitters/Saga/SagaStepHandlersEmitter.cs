@@ -54,10 +54,19 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         var context = SagaEmissionContext.Create(model);
         var naming = ForkPathCompletedNaming.For(model);
         var emittedSharedBranchTypes = new HashSet<string>(StringComparer.Ordinal);
+        var recoveryOnlyPhases = GetRecoveryOnlyPhases(model);
 
         for (int i = 0; i < model.StepNames.Count; i++)
         {
             var stepName = model.StepNames[i];
+            if (recoveryOnlyPhases.Contains(stepName))
+            {
+                // Dedicated failure-handler start/completed methods own this occurrence.
+                // Emitting a generic completed handler as well would collapse two instance-named
+                // uses of one CLR type back onto the same {StepType}Completed signature.
+                continue;
+            }
+
             if (HasPathQualifiedPhase(naming, stepName))
             {
                 continue;
@@ -688,6 +697,29 @@ internal sealed class SagaStepHandlersEmitter : ISagaComponentEmitter
         }
 
         return false;
+    }
+
+    private static HashSet<string> GetRecoveryOnlyPhases(WorkflowModel model)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (model.FailureHandlers is null || model.ForwardStepPhaseNames is null)
+        {
+            return result;
+        }
+
+        var forwardPhases = new HashSet<string>(model.ForwardStepPhaseNames, StringComparer.Ordinal);
+        foreach (var handler in model.FailureHandlers)
+        {
+            foreach (var phaseName in handler.StepPhaseNames)
+            {
+                if (!forwardPhases.Contains(phaseName))
+                {
+                    result.Add(phaseName);
+                }
+            }
+        }
+
+        return result;
     }
 
     private static bool TryGetForkPath(

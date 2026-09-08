@@ -22,8 +22,9 @@ namespace Strategos.Tests.PublicApi;
 /// historical 7-entrypoint subset remains the surface exarchos's
 /// <c>strategos-api-mirror.test.ts</c> consumes. Issue #167 extends the local
 /// gate to the 3 continuations changed by typed occurrence configuration, the
-/// public <see cref="WorkflowActionReference"/> value object, and its
-/// <see cref="StepDefinition"/> carrier property.
+/// public <see cref="WorkflowActionReference"/> value object, its
+/// <see cref="StepDefinition"/> carrier property, and issue #169's reviewed
+/// <see cref="CompensationConfiguration"/> surface.
 /// </para>
 /// <para>
 /// These tests assert the historical subset remains intact, the expanded
@@ -110,6 +111,7 @@ public sealed class BuilderApiBaselineTests
     [
         "WorkflowActionReference",
         "StepDefinition",
+        "CompensationConfiguration",
     ];
 
     private static string ShippedBaselinePath { get; } = Path.Combine(
@@ -159,28 +161,32 @@ public sealed class BuilderApiBaselineTests
             .ToArray();
 
         // Every non-directive line belongs either to one of the 10 tracked
-        // builder interfaces or to the pre-existing StepDefinition surface
-        // that was shipped before this analyzer gate began tracking the file.
+        // builder interfaces or to one of the explicitly reviewed definition
+        // surfaces covered by this analyzer gate.
         foreach (var line in nonDirectiveLines)
         {
             var hasReviewedOwner = line.StartsWith("Strategos.Builders.", StringComparison.Ordinal) ||
                 line.StartsWith("Strategos.Definitions.StepDefinition", StringComparison.Ordinal) ||
-                line.StartsWith("static Strategos.Definitions.StepDefinition", StringComparison.Ordinal);
+                line.StartsWith("static Strategos.Definitions.StepDefinition", StringComparison.Ordinal) ||
+                line.StartsWith("Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal) ||
+                line.StartsWith("static Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal);
 
             await Assert.That(hasReviewedOwner).IsTrue();
         }
 
         // The hard INV-1 contract still tracks exactly the 10 reviewed builder
-        // types. StepDefinition is the sole reviewed non-builder declaration.
+        // types plus the two reviewed non-builder definition declarations.
         // A type-declaration line is a bare fully-qualified type name with no
         // member ('.' after the type) and no signature arrow ('->').
         var typeDeclarationLines = nonDirectiveLines
             .Where(static l => !l.Contains("->", StringComparison.Ordinal))
             .ToArray();
 
-        await Assert.That(typeDeclarationLines.Length).IsEqualTo(11);
+        await Assert.That(typeDeclarationLines.Length).IsEqualTo(12);
         await Assert.That(typeDeclarationLines)
             .Contains("Strategos.Definitions.StepDefinition");
+        await Assert.That(typeDeclarationLines)
+            .Contains("Strategos.Definitions.CompensationConfiguration");
 
         var builderDeclarations = typeDeclarationLines
             .Where(static declaration => declaration.StartsWith("Strategos.Builders.", StringComparison.Ordinal))
@@ -281,7 +287,7 @@ public sealed class BuilderApiBaselineTests
     }
 
     [Test]
-    public async Task EditorConfig_DefinitionReEnableSections_ExactlyMatchIssue167Surface()
+    public async Task EditorConfig_DefinitionReEnableSections_ExactlyMatchIssues167And169Surface()
     {
         var text = await File.ReadAllTextAsync(EditorConfigPath);
         var matches = Regex.Matches(
@@ -348,6 +354,7 @@ public sealed class BuilderApiBaselineTests
             [
                 typeof(StepDefinition).FullName!,
                 typeof(WorkflowActionReference).FullName!,
+                typeof(CompensationConfiguration).FullName!,
             ])
             .ToArray();
 
