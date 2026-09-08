@@ -136,10 +136,11 @@ jobs:
         # vstest host — invoke via `dotnet run` (the project sets
         # OutputType=Exe). `dotnet test` was rejected by the .NET 10 SDK
         # ("Specifying a project for 'dotnet test' should be via '--project'")
-        # AND would not surface TUnit's source-generated test list anyway.
-        run: |
-          dotnet restore tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj
-          dotnet run --project tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj --configuration Release --no-restore
+        # AND would not surface TUnit's source-generated test list anyway. The
+        # verification script creates an empty per-run NuGet package directory
+        # and byte-compares the restored Strategos closure with ./local-feed,
+        # preventing a runner-wide fixed-version cache from masking the pack.
+        run: bash scripts/verify-basileus-smoke.sh ./local-feed
 
   coverage-gate:
     needs: build-test

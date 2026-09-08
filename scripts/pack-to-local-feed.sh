@@ -21,12 +21,10 @@
 #   * Re-running first removes stale Contracts, Identity.Abstractions,
 #     Strategos, and Agents artifacts from feed-dir, then repacks and verifies
 #     exactly one artifact at every required identity/version.
-#   * The smoke project consumes the feed via its own local
-#     tests/basileus-smoke/Basileus.Smoke.Tests/nuget.config — this
-#     script intentionally does NOT mutate the user's global
-#     NuGet.Config. (Earlier drafts used `dotnet nuget add source`; we
-#     dropped it because it leaves persistent state on the host and
-#     because the smoke project's nuget.config makes it unnecessary.)
+#   * scripts/verify-basileus-smoke.sh consumes the feed through an ephemeral
+#     source-mapped NuGet.Config and an empty per-run global-packages directory.
+#     The checked-in smoke-project nuget.config remains a local-development
+#     convenience. Neither script mutates the user's global NuGet.Config.
 #
 # Exit codes:
 #   0  the complete closure was packed and its exact metadata was verified
@@ -246,4 +244,4 @@ printf '  %s %s\n' \
   'LevelUp.Strategos.Identity.Abstractions' "$IDENTITY_VERSION" \
   'LevelUp.Strategos' "$CORE_VERSION" \
   'LevelUp.Strategos.Agents' "$AGENTS_VERSION"
-echo "OK: $AGENTS_NUPKG and its complete in-repository dependency closure are ready for a fresh smoke-project restore."
+echo "OK: $AGENTS_NUPKG and its complete in-repository dependency closure are ready for a hermetic smoke-project restore."
