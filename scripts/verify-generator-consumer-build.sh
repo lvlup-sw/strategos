@@ -8,11 +8,39 @@
 # Strategos artifacts from the given package source directory. The probe keeps
 # the original IPhaseAwareSaga dependency-flow check and compiles a typed
 # workflow/action binding with mechanically proved compensation through the
-# packaged source generator. Negative builds deliberately introduce an illegal
-# seam, a contradictory workflow inverse, and a contradictory ontology-authored
-# inverse; they must fail exclusively with AGWF041, AGWF044, and AONT216
-# respectively. This proves both packaged analyzer assemblies are restored,
-# loaded, and enforcing #167/#169 rather than merely present.
+# packaged source generator. This proves both packaged analyzer assemblies are
+# restored, loaded, and enforcing #167/#169 rather than merely present.
+#
+# Arms, in the order they run:
+#
+#   1. legal            - restores, builds warning-free under -warnaserror, and
+#                         byte-compares every restored nupkg against the feed.
+#   2. INVALID_AUTHORED_INVERSE - an ontology CompensatedBy whose named action is
+#                         not the derived inverse; must fail with AONT216 only.
+#   3. ILLEGAL_CONTRACT - a workflow seam whose upstream guarantee does not imply
+#                         the downstream requirement; must fail with AGWF041 only.
+#   4. INVALID_COMPENSATION - a typed Compensate() naming a contradictory inverse
+#                         action; must fail with AGWF044 only.
+#   5. MISSING_INVERSE  - a rollback-reachable, state-changing occurrence with no
+#                         inverse at all while a sibling occurrence has a typed
+#                         one, so the compensation scope is not mechanically
+#                         derivable; must fail with AGWF045 only.
+#   6. suppression matrix - arms 2, 4 and 5 rebuilt under <NoWarn> and under an
+#                         .editorconfig "dotnet_diagnostic.<id>.severity = none".
+#                         All three descriptors carry NotConfigurable, so each
+#                         refutation must still be the sole build error. Both
+#                         channels are first shown to REMOVE a configurable
+#                         diagnostic (AGWF039 for the generator path via the
+#                         UNRESOLVED_BINDING variant, AONT004 for the analyzer
+#                         path), so no arm can pass on an inert build flag.
+#
+# Out of reach of any descriptor tag: -p:RunAnalyzers=false and
+# -p:RunAnalyzersDuringBuild=false unload EVERY analyzer, so NotConfigurable
+# cannot survive them and no compile-time arm can assert against them.
+# (-p:SkipAnalyzers=true is a no-op here and does not disable them.) A consumer
+# that builds that way is caught at host start instead, when OntologyGraphBuilder
+# refuses to freeze a graph whose authored compensation disagrees with the
+# derived inverse.
 #
 # Usage:
 #   scripts/verify-generator-consumer-build.sh <path-to-packages-dir>
@@ -150,9 +178,13 @@ cat > "$PROBE_DIR/ConsumerProbe.csproj" <<EOF
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <WarningsAsErrors>nullable</WarningsAsErrors>
-    <!-- The four leaf actions are occurrence contracts consumed by the workflow;
-         only the aggregate fulfill action legitimately binds the whole workflow. -->
-    <NoWarn>AONT004</NoWarn>
+    <!-- NoWarn is driven entirely by the script so a suppression arm can point it at a
+         different id. The default (passed by every arm below) is AONT004: the four leaf
+         actions are occurrence contracts consumed by the workflow; only the aggregate
+         fulfill action legitimately binds the whole workflow. When an arm redirects
+         NoWarn, AONT004 reappears as a warning, and that reappearance is the control
+         proving the NoWarn channel really reached the packaged analyzers. -->
+    <NoWarn>\$(ProbeNoWarn)</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LevelUp.Strategos" Version="$VERSION" />
@@ -215,7 +247,17 @@ public sealed class OrdersOntology : DomainOntology
                 .Requires(order => order.Stage == 0)
                 .Ensures(order => order.Stage == 2)
                 .Modifies(order => order.Stage)
+#if UNRESOLVED_BINDING
+                // The suppression matrix's channel control. AGWF039 is an Error from
+                // the same generator that deliberately does NOT carry NotConfigurable:
+                // a cross-assembly workflow layout needs a visible, explicit exit. If a
+                // suppression channel cannot remove AGWF039 either, that channel never
+                // reached the packaged generator and the AGWF044/AGWF045 arms below
+                // would prove nothing.
+                .BoundToWorkflow(new WorkflowBindingReference("consumer-probe-elsewhere"));
+#else
                 .BoundToWorkflow(new WorkflowBindingReference("consumer-probe"));
+#endif
 
             obj.Action("receive")
                 .Requires(order => order.Stage == 0)
@@ -283,10 +325,18 @@ public static partial class ConsumerProbeWorkflowDefinition
             .Compensate<UndoReceiveStep>(new WorkflowActionReference(
                 "orders", "Order", "undo-receive")))
 #endif
+#if MISSING_INVERSE
+        // 'receive' keeps its typed inverse, so the workflow claims rollback; the
+        // rollback-reachable 'complete' occurrence has a non-empty frame and no
+        // compensation at all, so the scope is not mechanically derivable (AGWF045).
+        .Finally<CompleteStep>(step => step
+            .Performs(new WorkflowActionReference("orders", "Order", "complete")));
+#else
         .Finally<CompleteStep>(step => step
             .Performs(new WorkflowActionReference("orders", "Order", "complete"))
             .Compensate<UndoCompleteStep>(new WorkflowActionReference(
                 "orders", "Order", "undo-complete")));
+#endif
 }
 
 #if INVALID_AUTHORED_INVERSE
@@ -339,6 +389,7 @@ if ! dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
        -v:m \
        -warnaserror \
        --no-restore \
+       /p:ProbeNoWarn=AONT004 \
        /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
        /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES"; then
   echo "FAIL: legal packed consumer build failed or emitted a warning." >&2
@@ -385,6 +436,7 @@ dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
   -v:m \
   --no-restore \
   --no-incremental \
+  /p:ProbeNoWarn=AONT004 \
   /p:DefineConstants=INVALID_AUTHORED_INVERSE \
   /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
   /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$INVALID_AUTHORED_INVERSE_LOG" 2>&1
@@ -425,6 +477,7 @@ dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
   -v:m \
   --no-restore \
   --no-incremental \
+  /p:ProbeNoWarn=AONT004 \
   /p:DefineConstants=ILLEGAL_CONTRACT \
   /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
   /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$ILLEGAL_LOG" 2>&1
@@ -462,6 +515,7 @@ dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
   -v:m \
   --no-restore \
   --no-incremental \
+  /p:ProbeNoWarn=AONT004 \
   /p:DefineConstants=INVALID_COMPENSATION \
   /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
   /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$INVALID_COMPENSATION_LOG" 2>&1
@@ -493,3 +547,255 @@ if ! grep -Fq "declares inverse action 'orders/Order/undo-complete' for forward 
 fi
 
 echo "OK: contradictory packed consumer inverse failed closed with AGWF044."
+
+# ---------------------------------------------------------------------------
+# MISSING_INVERSE: a rollback-reachable occurrence with no proven inverse.
+#
+# 'receive' keeps its typed compensation, so the workflow claims rollback, but
+# the terminal 'complete' occurrence declares none. The compensation scope is
+# therefore not mechanically derivable and must fail with AGWF045.
+# ---------------------------------------------------------------------------
+MISSING_INVERSE_LOG="$PROBE_DIR/missing-inverse-build.log"
+set +e
+dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+  --nologo \
+  -v:m \
+  --no-restore \
+  --no-incremental \
+  /p:ProbeNoWarn=AONT004 \
+  /p:DefineConstants=MISSING_INVERSE \
+  /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+  /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$MISSING_INVERSE_LOG" 2>&1
+missing_inverse_status=$?
+set -e
+
+if [[ "$missing_inverse_status" -eq 0 ]]; then
+  echo "FAIL: non-derivable packed consumer rollback scope compiled; AGWF045 enforcement did not run." >&2
+  cat "$MISSING_INVERSE_LOG" >&2
+  exit 2
+fi
+
+mapfile -t missing_inverse_error_codes < <(
+  sed -nE 's/.*[[:space:]]error[[:space:]]([[:alpha:]]+[[:digit:]]+):.*/\1/p' "$MISSING_INVERSE_LOG" \
+    | sort -u
+)
+if [[ ${#missing_inverse_error_codes[@]} -ne 1 \
+   || "${missing_inverse_error_codes[0]}" != 'AGWF045' ]]; then
+  echo "FAIL: non-derivable packed consumer rollback scope did not fail exclusively with AGWF045." >&2
+  cat "$MISSING_INVERSE_LOG" >&2
+  exit 2
+fi
+
+if ! grep -Fq "step 'CompleteStep' is not compensable (no compensation step or inverse action is declared)" "$MISSING_INVERSE_LOG"; then
+  echo "FAIL: AGWF045 did not identify the deliberately uncompensated packed consumer occurrence." >&2
+  cat "$MISSING_INVERSE_LOG" >&2
+  exit 2
+fi
+
+echo "OK: non-derivable packed consumer rollback scope failed closed with AGWF045."
+
+
+# ---------------------------------------------------------------------------
+# Suppression matrix.
+#
+# AONT216, AGWF044 and AGWF045 all carry WellKnownDiagnosticTags.NotConfigurable,
+# so a consumer cannot silence a refuted inverse. These arms rebuild the negative
+# probes with the two suppression channels a packaged consumer actually owns and
+# require each refutation to remain the sole build error:
+#
+#   * <NoWarn> / -p:NoWarn -> routed here through the ProbeNoWarn property
+#   * .editorconfig        -> dotnet_diagnostic.<id>.severity = none
+#
+# Every arm is controlled, because "the build still failed" is worthless if the
+# channel never applied. Two control subjects are needed because the two
+# refutation families travel different compiler paths:
+#
+#   * AONT216 is an ANALYZER diagnostic, so analyzers run and the configurable
+#     AONT004 warning from the same analyzer is the control.
+#   * AGWF044/AGWF045 are SOURCE GENERATOR diagnostics. csc reports generator
+#     errors and then skips analyzer execution entirely, so no analyzer warning
+#     can serve as their control. AGWF039 -- an Error from the same generator
+#     that deliberately omits NotConfigurable -- is used instead, and each
+#     channel must be shown to remove it before the AGWF044/AGWF045 arms count.
+#
+# Out of reach of any descriptor tag: -p:RunAnalyzers=false and
+# -p:RunAnalyzersDuringBuild=false unload EVERY analyzer and generator, so no
+# CustomTags value can survive them and no compile-time arm can assert against
+# them. That case is caught at host start, when OntologyGraphBuilder refuses to
+# freeze a graph whose authored compensation disagrees with the derived inverse.
+# ---------------------------------------------------------------------------
+PROBE_EDITORCONFIG="$PROBE_DIR/.editorconfig"
+
+write_severity_none_editorconfig() {
+  cat > "$PROBE_EDITORCONFIG" <<EDITORCONFIG_EOF
+root = true
+
+[*.cs]
+dotnet_diagnostic.$1.severity = none
+EDITORCONFIG_EOF
+}
+
+# Runs one probe build. Sets probe_arm_status; the caller decides what that means.
+run_probe_arm() {
+  # $1 log path, $2 DefineConstants symbol; remaining args are extra msbuild properties.
+  local log="$1" symbol="$2"
+  shift 2
+
+  set +e
+  dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
+    --nologo \
+    -v:m \
+    --no-restore \
+    --no-incremental \
+    "$@" \
+    "/p:DefineConstants=$symbol" \
+    /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+    /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" >"$log" 2>&1
+  probe_arm_status=$?
+  set -e
+}
+
+probe_arm_error_codes() {
+  sed -nE 's/.*[[:space:]]error[[:space:]]([[:alpha:]]+[[:digit:]]+):.*/\1/p' "$1" | sort -u
+}
+
+require_sole_error() {
+  # $1 log, $2 expected id, $3 message substring, $4 description of the arm.
+  local log="$1" expected="$2" needle="$3" label="$4"
+  local codes
+
+  if [[ "$probe_arm_status" -eq 0 ]]; then
+    echo "FAIL: $label compiled; $expected was silenced." >&2
+    cat "$log" >&2
+    exit 2
+  fi
+
+  mapfile -t codes < <(probe_arm_error_codes "$log")
+  if [[ ${#codes[@]} -ne 1 || "${codes[0]}" != "$expected" ]]; then
+    echo "FAIL: $label did not fail exclusively with $expected (saw: ${codes[*]:-none})." >&2
+    cat "$log" >&2
+    exit 2
+  fi
+
+  if ! grep -Fq "$needle" "$log"; then
+    echo "FAIL: $label produced $expected but not for the deliberate defect." >&2
+    cat "$log" >&2
+    exit 2
+  fi
+}
+
+require_error_removed() {
+  # $1 log, $2 id that the channel had to remove, $3 description of the arm.
+  if grep -Eq "error $2:" "$1"; then
+    echo "FAIL: $3 did not remove $2, so that channel is inert and the arms relying on it prove nothing." >&2
+    cat "$1" >&2
+    exit 2
+  fi
+}
+
+# --- Channel control: a configurable generator Error must be silenceable ----
+# UNRESOLVED_BINDING also strands the workflow's typed compensation, so AGWF045
+# accompanies AGWF039 here. That is harmless: the control asks only whether each
+# channel can remove AGWF039, not whether the probe builds.
+run_probe_arm "$PROBE_DIR/control-agwf039.log" UNRESOLVED_BINDING /p:ProbeNoWarn=AONT004
+if ! grep -Fq "error AGWF039" "$PROBE_DIR/control-agwf039.log"; then
+  echo "FAIL: the unresolved-binding control did not produce AGWF039; the suppression matrix has no control subject." >&2
+  cat "$PROBE_DIR/control-agwf039.log" >&2
+  exit 2
+fi
+
+run_probe_arm "$PROBE_DIR/control-agwf039-nowarn.log" UNRESOLVED_BINDING \
+  '/p:ProbeNoWarn=AONT004%3BAGWF039'
+require_error_removed \
+  "$PROBE_DIR/control-agwf039-nowarn.log" \
+  AGWF039 \
+  "<NoWarn>AGWF039"
+
+write_severity_none_editorconfig AGWF039
+run_probe_arm "$PROBE_DIR/control-agwf039-editorconfig.log" UNRESOLVED_BINDING /p:ProbeNoWarn=AONT004
+rm -f "$PROBE_EDITORCONFIG"
+require_error_removed \
+  "$PROBE_DIR/control-agwf039-editorconfig.log" \
+  AGWF039 \
+  ".editorconfig severity=none for AGWF039"
+
+echo "OK: control -- both suppression channels do remove a configurable generator error (AGWF039)."
+
+# --- AONT216: the ontology analyzer path ----------------------------------
+# NoWarn is pointed at AONT216 instead of AONT004; AONT004 must therefore
+# reappear, proving the redirected NoWarn value really reached the analyzer.
+run_probe_arm "$PROBE_DIR/nowarn-AONT216.log" INVALID_AUTHORED_INVERSE /p:ProbeNoWarn=AONT216
+require_sole_error \
+  "$PROBE_DIR/nowarn-AONT216.log" \
+  AONT216 \
+  "Action 'publish' names compensation 'unpublish'" \
+  "the contradictory ontology-authored inverse under <NoWarn>AONT216"
+if ! grep -Fq 'warning AONT004' "$PROBE_DIR/nowarn-AONT216.log"; then
+  echo "FAIL: NoWarn control is inert; redirecting NoWarn away from AONT004 did not surface it." >&2
+  cat "$PROBE_DIR/nowarn-AONT216.log" >&2
+  exit 2
+fi
+echo "OK: AONT216 survived <NoWarn>AONT216 (control AONT004 reappeared)."
+
+# severity = none is applied to AONT216 and to AONT004 while NoWarn is empty;
+# AONT004 must therefore be absent, proving the .editorconfig was read.
+cat > "$PROBE_EDITORCONFIG" <<'EDITORCONFIG_EOF'
+root = true
+
+[*.cs]
+dotnet_diagnostic.AONT216.severity = none
+dotnet_diagnostic.AONT004.severity = none
+EDITORCONFIG_EOF
+run_probe_arm "$PROBE_DIR/editorconfig-AONT216.log" INVALID_AUTHORED_INVERSE /p:ProbeNoWarn=
+rm -f "$PROBE_EDITORCONFIG"
+require_sole_error \
+  "$PROBE_DIR/editorconfig-AONT216.log" \
+  AONT216 \
+  "Action 'publish' names compensation 'unpublish'" \
+  "the contradictory ontology-authored inverse under .editorconfig severity=none"
+if grep -Fq 'warning AONT004' "$PROBE_DIR/editorconfig-AONT216.log"; then
+  echo "FAIL: .editorconfig control is inert; AONT004 survived severity=none with an empty NoWarn." >&2
+  cat "$PROBE_DIR/editorconfig-AONT216.log" >&2
+  exit 2
+fi
+echo "OK: AONT216 survived .editorconfig severity=none (control AONT004 was removed)."
+
+# --- AGWF044 / AGWF045: the source generator path -------------------------
+GENERATOR_SUPPRESSION_CASES=(
+  "INVALID_COMPENSATION:AGWF044:declares inverse action 'orders/Order/undo-complete' for forward action 'orders/Order/receive'"
+  "MISSING_INVERSE:AGWF045:step 'CompleteStep' is not compensable (no compensation step or inverse action is declared)"
+)
+
+for suppression_case in "${GENERATOR_SUPPRESSION_CASES[@]}"; do
+  suppression_symbol="${suppression_case%%:*}"
+  suppression_rest="${suppression_case#*:}"
+  suppression_id="${suppression_rest%%:*}"
+  suppression_needle="${suppression_rest#*:}"
+
+  run_probe_arm "$PROBE_DIR/nowarn-$suppression_id.log" "$suppression_symbol" \
+    "/p:ProbeNoWarn=AONT004%3B$suppression_id"
+  require_sole_error \
+    "$PROBE_DIR/nowarn-$suppression_id.log" \
+    "$suppression_id" \
+    "$suppression_needle" \
+    "the $suppression_symbol probe under <NoWarn>$suppression_id"
+  echo "OK: $suppression_id survived <NoWarn>$suppression_id."
+
+  write_severity_none_editorconfig "$suppression_id"
+  run_probe_arm "$PROBE_DIR/editorconfig-$suppression_id.log" "$suppression_symbol" \
+    /p:ProbeNoWarn=AONT004
+  rm -f "$PROBE_EDITORCONFIG"
+  require_sole_error \
+    "$PROBE_DIR/editorconfig-$suppression_id.log" \
+    "$suppression_id" \
+    "$suppression_needle" \
+    "the $suppression_symbol probe under .editorconfig severity=none"
+  echo "OK: $suppression_id survived .editorconfig severity=none."
+done
+
+if [[ -e "$PROBE_EDITORCONFIG" ]]; then
+  echo "FAIL: the suppression matrix left an .editorconfig behind in the probe directory." >&2
+  exit 2
+fi
+
+echo "OK: AONT216, AGWF044 and AGWF045 all survived <NoWarn> and .editorconfig severity=none."

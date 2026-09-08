@@ -23,7 +23,13 @@ internal static class OntologyDiagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "A compensation must have the same subject, exact frame, and semantic authority as the forward action, require its effective guarantee, and re-enter its hard-requirement state set.",
-        customTags: WellKnownDiagnosticTags.CompilationEnd);
+        // NotConfigurable puts AONT216 on the same footing as its workflow-side
+        // inverse-refutation counterparts: a refuted inverse is a proof failure,
+        // not a style preference, so <NoWarn>, .editorconfig severity, and
+        // #pragma cannot silence it. (Only RunAnalyzers=false removes it,
+        // because that unloads every analyzer; that case is caught at host start
+        // by graph freeze in OntologyGraphBuilder.)
+        customTags: [WellKnownDiagnosticTags.CompilationEnd, WellKnownDiagnosticTags.NotConfigurable]);
 
     public static readonly DiagnosticDescriptor InvalidAuthorityLattice = new(
         OntologyDiagnosticIds.InvalidAuthorityLattice,

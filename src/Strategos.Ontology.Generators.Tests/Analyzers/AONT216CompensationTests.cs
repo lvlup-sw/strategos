@@ -195,6 +195,145 @@ public sealed class AONT216CompensationTests
         await Assert.That(before[0].GetMessage()).Contains("unpublish");
     }
 
+    /// <summary>
+    /// AONT216 is a refutation, not a preference. Its descriptor must say so: an error that is
+    /// on by default and carries <see cref="WellKnownDiagnosticTags.NotConfigurable"/>, matching
+    /// its workflow-side counterparts AGWF044/AGWF045.
+    /// </summary>
+    [Test]
+    public async Task Descriptor_IsANonConfigurableCompilationEndError()
+    {
+        var descriptor = OntologyDiagnostics.CompensationDisagreesWithInverse;
+
+        await Assert.That(descriptor.Id).IsEqualTo(OntologyDiagnosticIds.CompensationDisagreesWithInverse);
+        await Assert.That(descriptor.DefaultSeverity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(descriptor.IsEnabledByDefault).IsTrue();
+        await Assert.That(descriptor.CustomTags).Contains(WellKnownDiagnosticTags.NotConfigurable)
+            .Because("a consumer must not be able to ship a refuted inverse by writing NoWarn");
+        await Assert.That(descriptor.CustomTags).Contains(WellKnownDiagnosticTags.CompilationEnd)
+            .Because("the check needs the whole compilation's actions before it can decide");
+    }
+
+    /// <summary>
+    /// Control for <see cref="RefutedInverse_UnderEveryConsumerSuppressionChannel_StillFailsTheBuild"/>:
+    /// without suppression both the refutation and the configurable control diagnostic are reported.
+    /// </summary>
+    [Test]
+    public async Task RefutedInverse_WithoutSuppression_ReportsRefutationAndControlDiagnostic()
+    {
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsUnderSuppressionAsync(
+            SuppressionProbeSource,
+            noWarn: [],
+            editorConfigNone: []);
+
+        await Assert.That(diagnostics.Count(diagnostic =>
+                diagnostic.Id == OntologyDiagnosticIds.CompensationDisagreesWithInverse))
+            .IsEqualTo(1);
+        await Assert.That(diagnostics.Count(diagnostic =>
+                diagnostic.Id == OntologyDiagnosticIds.MissingKey))
+            .IsEqualTo(1)
+            .Because("the control must exist before its removal can prove the suppression channels ran");
+    }
+
+    /// <summary>
+    /// Each suppression channel a packaged consumer owns — <c>&lt;NoWarn&gt;</c>,
+    /// <c>.editorconfig</c> <c>severity = none</c>, <c>#pragma warning disable</c>, and all three
+    /// together — removes the configurable control (AONT001) and leaves AONT216 standing. Every
+    /// case asserts the control disappeared first, so a channel that silently failed to apply
+    /// cannot make the surviving refutation look like proof. Only <c>RunAnalyzers=false</c>
+    /// removes AONT216, because it unloads every analyzer; that case is outside any descriptor
+    /// tag's reach and is caught at host start by ontology graph freeze.
+    /// </summary>
+    /// <param name="channel">The suppression channel under test.</param>
+    [Test]
+    [Arguments("nowarn")]
+    [Arguments("editorconfig")]
+    [Arguments("pragma")]
+    [Arguments("all")]
+    public async Task RefutedInverse_UnderConsumerSuppressionChannel_StillFailsTheBuild(string channel)
+    {
+        string[] suppressed =
+        [
+            OntologyDiagnosticIds.CompensationDisagreesWithInverse,
+            OntologyDiagnosticIds.MissingKey,
+        ];
+        var usesNoWarn = channel is "nowarn" or "all";
+        var usesEditorConfig = channel is "editorconfig" or "all";
+        var usesPragma = channel is "pragma" or "all";
+
+        var source = usesPragma
+            ? $"""
+              #pragma warning disable {OntologyDiagnosticIds.CompensationDisagreesWithInverse}
+              #pragma warning disable {OntologyDiagnosticIds.MissingKey}
+              {SuppressionProbeSource}
+              """
+            : SuppressionProbeSource;
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsUnderSuppressionAsync(
+            source,
+            noWarn: usesNoWarn ? suppressed : [],
+            editorConfigNone: usesEditorConfig ? suppressed : []);
+
+        await Assert.That(diagnostics.Any(diagnostic =>
+                diagnostic.Id == OntologyDiagnosticIds.MissingKey))
+            .IsFalse()
+            .Because($"the configurable control must vanish, proving the '{channel}' channel was applied");
+
+        var refutations = diagnostics
+            .Where(diagnostic => diagnostic.Id == OntologyDiagnosticIds.CompensationDisagreesWithInverse)
+            .ToArray();
+        await Assert.That(refutations).HasCount().EqualTo(1)
+            .Because($"NotConfigurable must carry AONT216 past the '{channel}' channel");
+        await Assert.That(refutations[0].Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(refutations[0].IsSuppressed).IsFalse();
+    }
+
+    /// <summary>
+    /// A domain whose authored inverse is refuted (different frame), plus a second object type
+    /// with no <c>Key()</c> so the compilation also carries the configurable AONT001 control.
+    /// </summary>
+    private const string SuppressionProbeSource = """
+        using Strategos.Ontology;
+        using Strategos.Ontology.Builder;
+
+        public sealed class SuppressionModel
+        {
+            public string Id { get; set; } = "";
+            public string Status { get; set; } = "";
+            public string Title { get; set; } = "";
+        }
+
+        public sealed class KeylessModel
+        {
+            public string Name { get; set; } = "";
+        }
+
+        public sealed class SuppressionDomain : DomainOntology
+        {
+            public override string DomainName => "suppression";
+
+            protected override void Define(IOntologyBuilder builder)
+            {
+                builder.Object<SuppressionModel>(obj =>
+                {
+                    obj.Key(item => item.Id);
+                    obj.Property(item => item.Status);
+                    obj.Property(item => item.Title);
+
+                    obj.Action("publish")
+                        .Modifies(item => item.Status)
+                        .CompensatedBy("unpublish");
+                    obj.Action("unpublish").Modifies(item => item.Title);
+                });
+
+                builder.Object<KeylessModel>(obj =>
+                {
+                    obj.Property(item => item.Name);
+                });
+            }
+        }
+        """;
+
     private static Task<System.Collections.Immutable.ImmutableArray<Diagnostic>> AnalyzeAsync(
         string actions,
         string domainDeclarations = "",
