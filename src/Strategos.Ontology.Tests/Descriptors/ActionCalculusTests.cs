@@ -125,6 +125,23 @@ public sealed class ActionCalculusTests
         await Assert.That(graph.GetObjectType("frame", "Document")!.Actions).HasCount(2);
     }
 
+    /// <summary>
+    /// Graph freeze admits an authored inverse only when the analysis is <c>Proven</c>. A
+    /// custom predicate evaluator in the forward contract yields <c>Opaque</c>, which is not a
+    /// disagreement at all, and is fatal through the same branch. Base checked only frame
+    /// set-equality, so this graph froze before this release.
+    /// </summary>
+    /// <returns>A task representing the assertion.</returns>
+    [Test]
+    public async Task Build_OpaqueForwardContractWithNamedCompensation_FailsAont216()
+    {
+        var exception = BuildFailure<OpaqueForwardCompensationOntology>();
+
+        var diagnostic = exception.Diagnostics.Single(item => item.Id == "AONT216");
+        await Assert.That(diagnostic.Message).Contains("Custom predicate");
+        await Assert.That(diagnostic.Message).Contains("tenant-quota-ok");
+    }
+
     [Test]
     public async Task Build_InvalidForwardWithNamedCompensationReportsOnlyAont221()
     {
@@ -341,6 +358,36 @@ public sealed class ActionCalculusTests
                     Action(
                         "publish",
                         requires: ActionPredicate.All(Status(0), Status(1)),
+                        ensures: Status(1),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: Status(1),
+                        ensures: Status(0)),
+                ],
+            });
+        }
+    }
+
+    private sealed class OpaqueForwardCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: ActionPredicate.All(
+                            Status(0),
+                            ActionPredicate.Custom("tenant-quota-ok")),
                         ensures: Status(1),
                         compensatingActionName: "unpublish"),
                     Action(

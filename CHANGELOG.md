@@ -32,6 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expression inside `DomainOntology.Define` and the named workflow exists in
   the same compilation (`AGWF042` / `AGWF039` otherwise). A project without
   the generator package receives no diagnostic; see the migration guide.
+- **Graph freeze rejects every unproved authored inverse (#169).** An action
+  with `CompensatedBy` is admitted only when `ActionCalculus.AnalyzeInverse`
+  returns `Proven`; every other status is fatal, and
+  `OntologyGraphBuilder.Build()` throws `OntologyCompositionException` carrying
+  `AONT216` at host start. Before this release the graph checked only that the
+  forward and compensating frames were set-equal, so an authored inverse that
+  was frame-equal without being the mechanical transpose was accepted.
+  `Refuted` and a missing named compensator are fatal, and so are two statuses
+  that are not disagreements at all: `Opaque`, produced by a forward contract
+  carrying an `ActionPredicate.Custom(...)` evaluator, and `Invalid`, produced
+  by a comparison outside the decidable finite-domain fragment — a `String`,
+  `Enum`, `Symbol`, or `Boolean` property compared with an operator other than
+  `Equal`/`NotEqual`, a literal whose kind does not match the property, or an
+  enum-type mismatch. To upgrade, author the compensating action as the exact
+  transpose of the forward contract (its requirement is the forward guarantee,
+  its guarantee the forward requirement, over the same frame), or remove
+  `CompensatedBy` from actions whose contract cannot be decided. The analyzer
+  also reports `AONT216` at build time, where it is configurable; a project
+  that silences it there still throws at graph freeze.
+<!-- PLACEHOLDER:AREA-C-AONT216 -->
 - **One compensation per occurrence (#169).** Calling either `Compensate<T>()`
   overload after compensation was already configured now throws
   `InvalidOperationException` instead of silently replacing the earlier
@@ -53,16 +73,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forward occurrences with stable topology and execution identity, backed by a
   persisted pre-dispatch authority claim that rejects forged and stale results.
   They derive the rollback prefix after failure, keep nested failures inside
-  their concrete scope, and quiesce forks before rollback. Inverse
-  completion/failure messages are distinct from forward flow; reducer-applied
-  state is folded between inverses, and failed or timed-out inverse outcomes
-  retain the saga for reconciliation. `StepContext.IsCompensation` and the
+  their concrete scope, and quiesce forks before rollback. The rollback prefix
+  depends on which failure ingress reports the failure. An in-flight failure at
+  `C` after `A ; B` completed runs `B^-1 ; A^-1`, and `C` is absent because it
+  never journaled a completed entry. A post-completion failure — the reducer
+  flags `Failed` on an occurrence whose journal entry already reads
+  `Completed` — runs `C^-1 ; B^-1 ; A^-1`, because the plan reverses every
+  `Completed` entry in the selected scope and the post-completion failure claim
+  requires and preserves that entry. An inverse can therefore be dispatched for
+  a forward step that did complete; author inverses so that path is safe.
+  Inverse completion/failure messages are distinct from forward flow;
+  reducer-applied state is folded between inverses, and failed or timed-out
+  inverse outcomes retain the saga for reconciliation. `StepContext.IsCompensation` and the
   stable `StepContext.RollbackId` make inverse delivery explicit and provide a
   durable idempotency key without parsing `CorrelationId`.
   Typed derived compensation is restricted to saga-document persistence in
   v2.13: event-sourced workflows receive `AGWF045` because a consumer-defined
   `ApplyEvent` method cannot yet be proved to fold generated rollback state
   consistently during live handling and Marten replay.
+  `AllowDiagnosticFork` is subject to the same composition restriction. The
+  edge is not represented in the statically closed workflow proof, so a
+  workflow that declares it is a topology-closure failure: `AGWF042` for any
+  workflow a `BoundToWorkflow` action names, and `AGWF045` — which carries
+  `NotConfigurable` and cannot be suppressed — when that workflow also declares
+  typed or dynamic compensation. `AllowDiagnosticFork` shipped in v2.10.0 under
+  #151 and still lowers unchanged in a workflow that is neither bound nor
+  typed-compensated; remove the edge from a workflow you want to bind or to
+  compensate.
 - **Occurrence-scoped workflow action identity (#167).** Typed workflow-step
   occurrences can declare `.Performs(new WorkflowActionReference(domainName,
   objectTypeName, actionName))`. The immutable name-only reference survives every
@@ -99,8 +136,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid and omits the field; 0.12.0 now rejects an empty or whitespace-only
   `compensationStepType`, matching the importer and runtime identity rules. The
   no-argument `.Compensate<T>()` form remains runtime-only and cannot establish
-  a statically proved inverse. A typed inverse cannot set `requiredOnFailure`
-  to `false`, because its derived completed-prefix rollback is mandatory.
+  a statically proved inverse — in an unbound workflow. In a workflow named by
+  a `BoundToWorkflow` action it is `AGWF044`, a `NotConfigurable` build error
+  that `NoWarn` and `.editorconfig` severities cannot suppress, and legacy,
+  dynamic, and typed compensation declarations cannot be mixed in one derived
+  program. Migrating such a workflow means authoring an ontology inverse action
+  for every compensated occurrence, not deleting a call. A typed inverse
+  cannot set `requiredOnFailure` to `false`, because its derived
+  completed-prefix rollback is mandatory.
 - **Workflow descriptor bindings are typed.** The writable
   `ActionDescriptor.BoundWorkflowName` property is replaced by immutable
   `BoundWorkflow: WorkflowBindingReference`. The fluent
@@ -163,6 +206,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graph-version rollover.** Canonical action hashing now includes subjects,
   predicates, guarantees, and opaque semantic keys/read sets. Action-bearing
   graphs change hash once on upgrade; presentation descriptions remain excluded.
+<!-- PLACEHOLDER:AREA-A-IREVISIONED -->
+<!-- PLACEHOLDER:AREA-GH-STEPCONTEXT-WITHTIMEOUT -->
+<!-- PLACEHOLDER:AREA-DE-CONTRACTS -->
+
+### Removed (unreleased API)
+
+- **Two `ActionCalculus` members added earlier in this unreleased window are
+  removed (#169).** `AuthoredRollbackAgrees(IEnumerable<ActionDescriptor>,
+  IEnumerable<string>)` and the
+  `DeriveRollbackPlan(IEnumerable<ActionDescriptor>)` overload that returned
+  `ImmutableArray<string>` are deleted from `PublicAPI.Unshipped.txt`. Neither
+  member appears in a published package, so no released consumer is affected; a
+  source consumer tracking `main` or a `2.10.1-alpha` prerelease sees an
+  overload-resolution error rather than a missing method, because
+  `DeriveRollbackPlan` still exists with different parameters. Replace a
+  comparison against an authored rollback list with
+  `ActionCalculus.AnalyzeInverse`, and replace the string projection with the
+  `DeriveRollbackPlan` overloads that take an `ActionInverseAnalysis`, or an
+  `ActionSubject` with the completed forward prefix; both return an
+  `ActionRollbackPlan`, which carries the structure a string list could not.
+
+### Fixed
+
+<!-- PLACEHOLDER:AREA-B-PROOF -->
 
 ## [2.11.0] - Unreleased
 

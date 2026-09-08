@@ -438,7 +438,8 @@ for the complete proof rules.
 ## 9. Replace authored rollback lists with typed inverse actions
 
 The no-argument compensation overload remains available for legacy,
-runtime-only workflows:
+runtime-only workflows — that is, for a workflow no `BoundToWorkflow` action
+names:
 
 ```csharp
 .Then<CapturePaymentStep>(step => step
@@ -446,9 +447,16 @@ runtime-only workflows:
 ```
 
 It names executable code but says nothing about the ontology contract that code
-implements. It therefore cannot establish rollback safety. For a proved
-workflow, give the forward occurrence a typed action and give the compensation
-step its typed inverse action:
+implements. It therefore cannot establish rollback safety. In a workflow that a
+`BoundToWorkflow` action does name, the same call is `AGWF044`, a
+`NotConfigurable` build error that `NoWarn` and `.editorconfig` severities
+cannot suppress; and legacy, dynamic, and typed compensation declarations
+cannot be mixed in one derived program. Binding such a workflow therefore means
+authoring an ontology inverse action for every compensated occurrence, not
+deleting a call.
+
+For a proved workflow, give the forward occurrence a typed action and give the
+compensation step its typed inverse action:
 
 ```csharp
 .Then<CapturePaymentStep>(step => step
@@ -491,14 +499,21 @@ Rollback is no longer inferred from the list of compensation declarations.
 Generated sagas persist a forward-dispatch authority claim before external
 work starts, convert that exact claim into a completion-journal entry, and
 derive the reverse plan from the completed prefix. A completion, timeout, or
-failure whose execution identity was never dispatched fails closed. If `C`
-fails after `A ; B` completed, only
-`B^-1 ; A^-1` runs. The failed `C` is never included. A failure inside a
-branch or loop iteration unwinds only that concrete inner scope; a later outer
-failure may include completed descendant scopes. Fork rollback waits for every
-lane to become terminal before it begins. The structural plan retains parallel
-lanes, while generic state updates are conservatively folded through inverse
-workers in reverse completion order after the #167 noninterference proof.
+failure whose execution identity was never dispatched fails closed. Which
+prefix is selected depends on the failure ingress. If `C` fails in flight after
+`A ; B` completed, only `B^-1 ; A^-1` runs: `C` never journaled a completed
+entry, so it is absent. If the failure is reported after `C` completed — a
+post-completion failure, where the reducer flags `Failed` on an occurrence
+whose journal entry already reads `Completed` — the rollback is
+`C^-1 ; B^-1 ; A^-1`, because the plan reverses every `Completed` entry in the
+selected scope and the post-completion failure claim requires and preserves
+that entry. Write each inverse so that it is safe to run against a forward step
+that did complete. A failure inside a branch or loop iteration unwinds only
+that concrete inner scope; a later outer failure may include completed
+descendant scopes. Fork rollback waits for every lane to become terminal before
+it begins. The structural plan retains parallel lanes, while generic state
+updates are conservatively folded through inverse workers in reverse completion
+order after the #167 noninterference proof.
 
 Inverse success is applied through the configured state reducer before the next
 inverse dispatches. An inverse failure, unmatched outcome, or timeout fails
@@ -528,9 +543,18 @@ In v2.13, typed derived compensation requires `SagaDocument` persistence.
 may legally ignore an unfamiliar generated rollback-completed event. Strategos
 cannot use method presence as proof that the inverse `UpdatedState` will be
 folded identically in the live saga and during Marten replay, so the source
-generator reports `AGWF045` instead of emitting a rollback-safety claim. Keep an
-event-sourced workflow on legacy untyped compensation, or migrate it to
-`SagaDocument`, until replay-safe generated inverse folding is available.
+generator reports `AGWF045` instead of emitting a rollback-safety claim.
+
+There is no in-place migration from event-sourced persistence to
+`SagaDocument` persistence. The two substrates have different identity and
+different replay semantics, and this release ships no procedure, tool, or
+supported query for converting a live event stream into a saga document. An
+event-sourced workflow has two options in v2.13: keep it on legacy untyped
+compensation, or publish a *new* `SagaDocument`-persisted workflow under a
+different workflow name or a new workflow version, direct new instances to it,
+and let the in-flight event-sourced instances drain on the old definition.
+Do not change the `Persistence` mode of a definition that has instances in
+flight.
 
 The derived runtime uses completion-journal schema version 1. Legacy,
 untyped compensation continues to use the legacy runtime. When converting an
@@ -538,6 +562,48 @@ existing workflow definition to typed compensation, drain its in-flight legacy
 instances or publish the typed definition under a new workflow version; a
 persisted derived saga with missing or unknown journal metadata is retained in
 `Failed` for reconciliation rather than guessed or upgraded in place.
+
+### Rollout across the derived-runtime boundary
+
+The derived runtime adds a block of persisted members to a typed workflow's
+saga document, among them `CompensationJournal`, `CompensationJournalSequence`,
+`CompensationJournalSchemaVersion`, and `ForwardDispatchClaims`. Marten's
+default serializer is `System.Text.Json` with the default
+`JsonUnmappedMemberHandling.Skip`, so a host that does not know those members
+does not fail on them — it drops them.
+
+That makes a rolling deploy across this boundary lossy. An instance still
+running a build without derived compensation loads a typed saga document, those
+members are dropped from the in-memory document, and its next
+`session.Update(...)` writes the row back without them. A newer instance then
+picks up the same saga, `CompensationJournalSchemaVersion` reads `0` rather
+than `1`, the structural-validity check fails, and the saga is parked in
+`Failed` with `CompensationFailureMessage` set to *"Completion journal changed
+or became corrupt before a forward result; saga retained."* Nothing is reported
+during the window: the older build succeeds on every message it handles, and
+the message an operator finally reads names the journal, not the deploy. A
+stripped saga does not recover, because the completed-prefix journal its
+rollback needed is gone.
+
+Three rollouts are supported for a host running typed workflows:
+
+1. **Drain, then deploy.** Stop starting new instances of the typed workflows,
+   let the in-flight ones reach a terminal state, then roll the build.
+2. **Stop the world.** Take every instance that handles those workflows out of
+   service, deploy, and bring them back. No two builds share the database.
+3. **Publish under a new workflow version.** Generated saga class names come
+   from `NamingHelper.GetSagaClassName(pascalName, version)`, so a new version
+   is a new CLR type and therefore a new Marten table. Old documents stay on
+   the old table and the old build; new instances start on the new one. This is
+   the only option that keeps both builds live at once.
+
+A package rollback has the same shape in reverse and is one-way: rolling back
+after typed sagas exist strips their journals silently, and rolling forward
+again finds them unusable. Treat the boundary as a versioned data migration,
+not a code deploy.
+
+<!-- PLACEHOLDER:AREA-A-MIGRATION -->
+<!-- PLACEHOLDER:AREA-GH-MIGRATION -->
 
 See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the runtime and proof contract.
@@ -666,8 +732,27 @@ edits remain hash-stable.
   timeout outcomes.
 - Resolve `AGWF039` through `AGWF045`; opaque or dynamic workflow contracts do
   not pass the binding proof.
-- Resolve `AONT217` and `AONT221`; review `AONT218`, `AONT219`, and
-  `AONT220` coverage.
+- Keep each bound workflow, the ontology that binds it, and every action it
+  names in one compilation. The binding and compensation proofs read the
+  action catalog of the compilation being built, so a `BoundToWorkflow`
+  declaration in another project is invisible and reports `AGWF039`,
+  `AGWF042`, or `AGWF045` even though the declaration exists and is correct.
+- Remove `AllowDiagnosticFork` from any workflow you bind with
+  `BoundToWorkflow` or give typed compensation. The edge is not represented in
+  the statically closed workflow proof, so it reports `AGWF042` in a bound
+  workflow and the unsuppressible `AGWF045` when typed or dynamic compensation
+  is also present. It keeps working in workflows that are neither.
+- Resolve `AONT216`, `AONT217`, and `AONT221`; review `AONT218`, `AONT219`,
+  and `AONT220` coverage. `AONT216` is the one that also throws at host start:
+  graph freeze now requires every `CompensatedBy` action to have a `Proven`
+  inverse, so an authored compensator that is merely frame-equal, or a forward
+  contract carrying a custom predicate evaluator or a comparison outside the
+  decidable finite-domain fragment, throws `OntologyCompositionException` even
+  when the build-time diagnostic was configured away.
+- Plan the rollout across the derived-runtime boundary before deploying: drain
+  in-flight typed workflows, stop the world for the hosts that run them, or
+  publish the typed definition under a new workflow version. A rolling window
+  in which two builds share one Marten database strips live journals.
 - Invalidate caches keyed by the pre-2.13 graph hash.
 - Run the full solution and documentation builds before deployment.
 

@@ -515,7 +515,12 @@ retain nested compensation boundaries; and an empty plan is the subject-typed
 rollback identity. Every plan exposes `Frame` as the canonical union of its leaf
 frames. `DeriveParallelRollbackPlan` rejects branches whose aggregate frames
 overlap, or whose frame can change a resource read by another branch's inverse
-contract; shared reads alone remain valid.
+contract; shared reads alone remain valid. This is a property of the pure
+function, not of the runtime's failure routing: the saga's post-completion
+failure ingress places an occurrence that completed and was later flagged
+`Failed` into the completed prefix it passes here, so that occurrence's own
+inverse is in the plan. See
+[Durable completed-prefix rollback](#durable-completed-prefix-rollback).
 
 ### Typed workflow compensation
 
@@ -556,7 +561,14 @@ completion-journal entry carrying the action and inverse identities plus the
 state needed by the inverse worker. On failure, the generator derives rollback
 from that persisted journal rather than an author-maintained list:
 
-- a failure at `C` after `A ; B` completed runs `B^-1 ; A^-1`; `C` is absent;
+- an in-flight failure at `C` after `A ; B` completed runs `B^-1 ; A^-1`; `C`
+  is absent, because it never journaled a completed entry;
+- a post-completion failure at `C` — the reducer flags `Failed` on an
+  occurrence whose journal entry already reads `Completed` — runs
+  `C^-1 ; B^-1 ; A^-1`. The plan reverses every `Completed` entry in the
+  selected scope, and the post-completion failure claim requires and preserves
+  that entry, so the failing occurrence's own inverse is dispatched. Write each
+  inverse to be safe against a forward step that did complete;
 - a failure inside a nested branch or loop iteration unwinds only that concrete
   inner scope, while a later enclosing failure can include its completed
   descendant scopes;
@@ -570,8 +582,9 @@ from that persisted journal rather than an author-maintained list:
 Inverse completion has a separate message route from forward completion and,
 for saga-document workflows, applies the returned state through the configured
 reducer before the next inverse starts. Each inverse delivery carries a stable
-rollback id that is distinct from, and injectively derived from, its forward
-execution id for deterministic correlation and completed-delivery
+rollback id that is distinct from its forward execution id and derived from it
+by a map that is injective on the non-empty GUID space — `Guid.Empty` is
+excluded from the domain — for deterministic correlation and completed-delivery
 deduplication.
 Delivery remains at-least-once: inverse implementations that perform external
 effects must either be idempotent or use that rollback id as their durable

@@ -89,7 +89,7 @@ internal static class TopologyClosureInspector
             {
                 case "AllowDiagnosticFork":
                     failures.Add(
-                        "AllowDiagnosticFork is not represented in the current statically closed workflow proof; workflow-wide dynamic-path analysis is deferred to #167");
+                        "AllowDiagnosticFork is not represented in the current statically closed workflow proof; diagnostic fork paths are not admitted in a bound or typed-compensation workflow");
                     break;
 
                 case "Branch" when containingType is "IWorkflowBuilder" or "ILoopBuilder":
