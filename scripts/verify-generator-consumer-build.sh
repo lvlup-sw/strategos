@@ -150,6 +150,9 @@ cat > "$PROBE_DIR/ConsumerProbe.csproj" <<EOF
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <WarningsAsErrors>nullable</WarningsAsErrors>
+    <!-- The four leaf actions are occurrence contracts consumed by the workflow;
+         only the aggregate fulfill action legitimately binds the whole workflow. -->
+    <NoWarn>AONT004</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LevelUp.Strategos" Version="$VERSION" />
@@ -334,10 +337,11 @@ fi
 if ! dotnet build "$PROBE_DIR/ConsumerProbe.csproj" \
        --nologo \
        -v:m \
+       -warnaserror \
        --no-restore \
        /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
        /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES"; then
-  echo "FAIL: legal packed consumer build failed." >&2
+  echo "FAIL: legal packed consumer build failed or emitted a warning." >&2
   exit 2
 fi
 
@@ -372,7 +376,7 @@ verify_restored_artifact 'LevelUp.Strategos.Identity.Abstractions' "$IDENTITY_VE
 verify_restored_artifact 'LevelUp.Strategos.Ontology' "$VERSION" "$ONTOLOGY_NUPKG"
 verify_restored_artifact 'LevelUp.Strategos.Ontology.Generators' "$VERSION" "$ONTOLOGY_GEN_NUPKG"
 
-echo "OK: legal packed binding and typed compensation compiled; IPhaseAwareSaga is reachable transitively."
+echo "OK: legal packed binding and typed compensation compiled warning-free; IPhaseAwareSaga is reachable transitively."
 
 INVALID_AUTHORED_INVERSE_LOG="$PROBE_DIR/invalid-authored-inverse-build.log"
 set +e
