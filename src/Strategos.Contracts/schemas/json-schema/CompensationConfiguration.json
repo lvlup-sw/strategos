@@ -5,6 +5,8 @@
     "properties": {
         "compensationStepType": {
             "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
             "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
         },
         "inverseAction": {

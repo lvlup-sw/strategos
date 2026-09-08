@@ -37,6 +37,8 @@ model RetryConfiguration {
 @jsonSchema
 model CompensationConfiguration {
   /** Simple-name CLR moniker of the compensation step type (LB-2). */
+  @minLength(1)
+  @pattern(".*\\S.*")
   compensationStepType: string;
 
   /** Ontology action implemented by the authored compensation step. */

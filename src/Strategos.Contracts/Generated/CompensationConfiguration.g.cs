@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// `CompensationConfiguration`). The compensation step CLR type reduces to a
 /// simple-name moniker (LB-2).
 /// </summary>
-public sealed record CompensationConfiguration
+public sealed record CompensationConfiguration : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Simple-name CLR moniker of the compensation step type (LB-2).
@@ -42,4 +42,15 @@ public sealed record CompensationConfiguration
     /// </summary>
     [JsonPropertyName("timeout")]
     public string? Timeout { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(CompensationStepType, "CompensationConfiguration.compensationStepType", required: true);
+    }
 }

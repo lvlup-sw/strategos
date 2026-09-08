@@ -6,6 +6,8 @@
 
 using System.Text.Json;
 
+using Strategos.Contracts.Generated;
+
 namespace Strategos.Contracts.Tests.Workflow;
 
 /// <summary>
@@ -63,12 +65,45 @@ public class ApprovalFailureConfigTests
 
         // Compensation carries a simple-name moniker, not a CLR Type (LB-2).
         var comp = await EventSchemas.LoadAsync("CompensationConfiguration");
-        await Assert.That(comp.GetProperty("properties").GetProperty("compensationStepType")
-            .GetProperty("type").GetString()).IsEqualTo("string")
+        var compensationStepType = comp.GetProperty("properties").GetProperty("compensationStepType");
+        await Assert.That(compensationStepType.GetProperty("type").GetString()).IsEqualTo("string")
             .Because("compensationStepType is a simple-name moniker (LB-2).");
+        await Assert.That(compensationStepType.GetProperty("minLength").GetInt32()).IsEqualTo(1)
+            .Because("the importer rejects empty compensation step monikers.");
+        await Assert.That(compensationStepType.GetProperty("pattern").GetString()).IsEqualTo(@".*\S.*")
+            .Because("the schema must reject whitespace-only compensation step monikers just like the importer.");
         await Assert.That(comp.GetProperty("properties").GetProperty("inverseAction")
             .GetProperty("$ref").GetString()).IsEqualTo("ActionReferenceV1.json")
             .Because("inverseAction is the same language-neutral ontology identity used by forward occurrences.");
+    }
+
+    /// <summary>
+    /// The generated contract applies the same nonblank compensation-step moniker
+    /// rule during serialization and deserialization as the workflow importer.
+    /// </summary>
+    /// <param name="compensationStepType">Invalid compensation-step moniker.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Arguments("")]
+    [Arguments("   ")]
+    public async Task CompensationConfiguration_GeneratedContract_RejectsBlankStepType(
+        string compensationStepType)
+    {
+        var json = $$"""
+            {
+              "compensationStepType": "{{compensationStepType}}"
+            }
+            """;
+        var value = new CompensationConfiguration
+        {
+            CompensationStepType = compensationStepType,
+        };
+
+        var read = () => JsonSerializer.Deserialize<CompensationConfiguration>(json, ContractsJson.Options);
+        var write = () => JsonSerializer.Serialize(value, ContractsJson.Options);
+
+        await Assert.That(read).Throws<JsonException>();
+        await Assert.That(write).Throws<JsonException>();
     }
 
     private static async Task AssertRequiredProps(string model, params string[] requiredNames)
