@@ -48,6 +48,20 @@ public sealed class ApprovalEscalationBuilder<TState> : IApprovalEscalationBuild
     }
 
     /// <inheritdoc/>
+    public IApprovalEscalationBuilder<TState> Then<TStep>(
+        Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(configure, nameof(configure));
+
+        var configuration = new StepConfigurationBuilder<TState>();
+        configure(configuration);
+
+        _steps.Add(configuration.ApplyTo(StepDefinition.Create(typeof(TStep))));
+        return this;
+    }
+
+    /// <inheritdoc/>
     public IApprovalEscalationBuilder<TState> EscalateTo<TNextApprover>(
         Action<IApprovalBuilder<TState, TNextApprover>> configure)
         where TNextApprover : class

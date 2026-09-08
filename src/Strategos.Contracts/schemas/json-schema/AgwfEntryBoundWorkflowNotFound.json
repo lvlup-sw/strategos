@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryBoundWorkflowNotFound.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF039"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Bound workflow name does not resolve exactly once"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Ontology action '{0}' is bound to workflow '{1}', but that name resolves to {2} workflow definitions in this compilation. Declare exactly one C# or imported workflow with that ordinal name."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.13.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF039 — Bound workflow name does not resolve exactly once (#167)."
+}

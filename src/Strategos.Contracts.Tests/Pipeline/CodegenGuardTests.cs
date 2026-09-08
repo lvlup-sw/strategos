@@ -9,10 +9,9 @@ namespace Strategos.Contracts.Tests.Pipeline;
 /// <summary>
 /// T5 — the codegen-guard. The emitted <c>Generated/*.g.cs</c> are emitter-owned;
 /// a hand-edit must be mechanically detected (DIM-6), never trusted by
-/// convention. These tests assert (a) the guard workflow exists and runs the
-/// regenerate-then-<c>git diff --exit-code</c> contract, and (b) a hand-edit to a
-/// generated file diverges from freshly-emitted output (i.e. the guard's diff is
-/// non-empty), so CI fails.
+/// convention. These tests assert (a) the guard workflow checks both tracked
+/// diffs and newly emitted untracked files after regeneration, and (b) a hand-edit
+/// to a generated file diverges from freshly-emitted output, so CI fails.
 /// </summary>
 [Property("Category", "Pipeline")]
 [NotInParallel("tsp-compile")]
@@ -20,7 +19,8 @@ public sealed class CodegenGuardTests
 {
     /// <summary>
     /// Verifies the codegen-guard workflow exists and encodes the
-    /// regenerate-then-diff contract over <c>Generated/</c> and <c>schemas/</c>.
+    /// regenerate-then-diff contract over <c>Generated/</c> and <c>schemas/</c>, including
+    /// newly emitted files that are not yet tracked by Git.
     /// </summary>
     [Test]
     public async Task CodegenGuard_Workflow_RunsRegenerateThenDiff()
@@ -31,10 +31,41 @@ public sealed class CodegenGuardTests
             .Because($"expected guard workflow at {workflow}");
 
         var yaml = await File.ReadAllTextAsync(workflow);
-        await Assert.That(yaml).Contains("contracts-codegen.sh");
-        await Assert.That(yaml).Contains("git diff --exit-code");
+        var regenerate = yaml.IndexOf("contracts-codegen.sh", StringComparison.Ordinal);
+        var trackedDiff = yaml.IndexOf("git diff --exit-code", StringComparison.Ordinal);
+        var untrackedDiff = yaml.IndexOf(
+            "git status --porcelain --untracked-files=all",
+            StringComparison.Ordinal);
+
+        await Assert.That(regenerate >= 0).IsTrue();
+        await Assert.That(trackedDiff > regenerate).IsTrue();
+        await Assert.That(untrackedDiff > trackedDiff).IsTrue();
         await Assert.That(yaml).Contains("Generated");
         await Assert.That(yaml).Contains("schemas");
+    }
+
+    /// <summary>The two Contracts PR jobs must use the reviewed npm lockfile without fallback.</summary>
+    [Test]
+    public async Task ContractsPrWorkflows_UseLockedNodeRestore()
+    {
+        string[] workflows =
+        [
+            Path.Combine(RepoLayout.RepoRoot, ".github", "workflows", "ci.yml"),
+            Path.Combine(
+                RepoLayout.RepoRoot,
+                ".github",
+                "workflows",
+                "contracts-codegen-guard.yml"),
+        ];
+
+        foreach (var workflow in workflows)
+        {
+            var yaml = await File.ReadAllTextAsync(workflow);
+            await Assert.That(yaml).Contains("run: npm ci");
+            await Assert.That(yaml.Contains("npm ci || npm install", StringComparison.Ordinal))
+                .IsFalse()
+                .Because($"{Path.GetFileName(workflow)} must fail closed when its lockfile is invalid.");
+        }
     }
 
     /// <summary>
@@ -100,5 +131,239 @@ public sealed class CodegenGuardTests
         {
             Directory.Delete(tempOut, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Proves that the record emitter projects only the exact direct-property
+    /// non-whitespace pattern into executable JSON callbacks. Required and
+    /// optional properties have different null semantics, while unrelated
+    /// regular expressions and constraints inherited through scalar aliases
+    /// remain schema-only.
+    /// </summary>
+    [Test]
+    public async Task RecordEmitter_NonWhitespaceBoundary_IsExact()
+    {
+        var tempRoot = Directory.CreateTempSubdirectory("record-emitter-boundary-").FullName;
+        var schemas = Path.Combine(tempRoot, "schemas");
+        var generated = Path.Combine(tempRoot, "generated");
+        var consumer = Path.Combine(tempRoot, "consumer");
+        Directory.CreateDirectory(schemas);
+        Directory.CreateDirectory(consumer);
+
+        try
+        {
+            var committedSchemas = Path.Combine(
+                RepoLayout.ContractsProjectDir,
+                "schemas",
+                "json-schema");
+            foreach (var schema in Directory.GetFiles(committedSchemas, "*.json"))
+            {
+                File.Copy(schema, Path.Combine(schemas, Path.GetFileName(schema)));
+            }
+
+            await File.WriteAllTextAsync(
+                Path.Combine(schemas, "NonWhitespaceBoundaryFixture.json"),
+                """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "requiredExact": {
+                      "type": "string",
+                      "pattern": ".*\\S.*"
+                    },
+                    "optionalExact": {
+                      "type": "string",
+                      "pattern": ".*\\S.*"
+                    },
+                    "unrelatedPattern": {
+                      "type": "string",
+                      "pattern": "^x+$"
+                    },
+                    "scalarAlias": {
+                      "$ref": "ScalarAliasBoundary.json"
+                    }
+                  },
+                  "required": ["requiredExact"]
+                }
+                """);
+            await File.WriteAllTextAsync(
+                Path.Combine(schemas, "ScalarAliasBoundary.json"),
+                """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "string",
+                  "pattern": ".*\\S.*"
+                }
+                """);
+
+            var codegenProject = Path.Combine(
+                RepoLayout.RepoRoot,
+                "src",
+                "Strategos.Contracts.Codegen",
+                "Strategos.Contracts.Codegen.csproj");
+            var emit = await Cli.RunAsync(
+                "dotnet",
+                $"run --project \"{codegenProject}\" -- \"{schemas}\" \"{generated}\"");
+            await Assert.That(emit.ExitCode).IsEqualTo(0).Because(emit.Output);
+
+            var emittedPath = Path.Combine(generated, "NonWhitespaceBoundaryFixture.g.cs");
+            var emitted = await File.ReadAllTextAsync(emittedPath);
+            await Assert.That(emitted).Contains(
+                "RequireNonWhitespace(RequiredExact, \"NonWhitespaceBoundaryFixture.requiredExact\", required: true)");
+            await Assert.That(emitted).Contains(
+                "RequireNonWhitespace(OptionalExact, \"NonWhitespaceBoundaryFixture.optionalExact\", required: false)");
+            await Assert.That(emitted).DoesNotContain("RequireNonWhitespace(UnrelatedPattern");
+            await Assert.That(emitted).DoesNotContain("RequireNonWhitespace(ScalarAlias");
+
+            File.Copy(emittedPath, Path.Combine(consumer, Path.GetFileName(emittedPath)));
+            File.Copy(
+                Path.Combine(
+                    RepoLayout.RepoRoot,
+                    "src",
+                    "Strategos.Contracts",
+                    "ContractJsonValidation.cs"),
+                Path.Combine(consumer, "ContractJsonValidation.cs"));
+
+            await File.WriteAllTextAsync(
+                Path.Combine(consumer, "BoundaryConsumer.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <OutputType>Exe</OutputType>
+                    <TargetFramework>net10.0</TargetFramework>
+                    <ImplicitUsings>enable</ImplicitUsings>
+                    <Nullable>enable</Nullable>
+                    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+                  </PropertyGroup>
+                </Project>
+                """);
+            await File.WriteAllTextAsync(
+                Path.Combine(consumer, "Program.cs"),
+                """
+                using System.Text.Json;
+                using Strategos.Contracts.Generated;
+
+                ExpectReadRejected("{}");
+                ExpectReadRejected("{\"requiredExact\":\"\"}");
+                ExpectReadRejected("{\"requiredExact\":\"   \"}");
+                ExpectWriteRejected(new() { RequiredExact = "" });
+                ExpectWriteRejected(new() { RequiredExact = "   " });
+
+                ExpectReadAccepted("{\"requiredExact\":\"ok\"}");
+                ExpectReadAccepted("{\"requiredExact\":\"ok\",\"optionalExact\":null}");
+                ExpectWriteAccepted(new() { RequiredExact = "ok", OptionalExact = null });
+                ExpectReadRejected("{\"requiredExact\":\"ok\",\"optionalExact\":\"\"}");
+                ExpectReadRejected("{\"requiredExact\":\"ok\",\"optionalExact\":\"   \"}");
+                ExpectWriteRejected(new() { RequiredExact = "ok", OptionalExact = "" });
+                ExpectWriteRejected(new() { RequiredExact = "ok", OptionalExact = "   " });
+
+                ExpectReadAccepted("{\"requiredExact\":\"ok\",\"unrelatedPattern\":\"\",\"scalarAlias\":\"   \"}");
+                ExpectWriteAccepted(new()
+                {
+                    RequiredExact = "ok",
+                    UnrelatedPattern = "",
+                    ScalarAlias = "   ",
+                });
+
+                static void ExpectReadAccepted(string json) =>
+                    _ = JsonSerializer.Deserialize<NonWhitespaceBoundaryFixture>(json)
+                        ?? throw new InvalidOperationException("Expected a value.");
+
+                static void ExpectReadRejected(string json)
+                {
+                    try
+                    {
+                        _ = JsonSerializer.Deserialize<NonWhitespaceBoundaryFixture>(json);
+                    }
+                    catch (JsonException)
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException($"Expected JSON read rejection: {json}");
+                }
+
+                static void ExpectWriteAccepted(NonWhitespaceBoundaryFixture value) =>
+                    _ = JsonSerializer.Serialize(value);
+
+                static void ExpectWriteRejected(NonWhitespaceBoundaryFixture value)
+                {
+                    try
+                    {
+                        _ = JsonSerializer.Serialize(value);
+                    }
+                    catch (JsonException)
+                    {
+                        return;
+                    }
+
+                    throw new InvalidOperationException("Expected JSON write rejection.");
+                }
+                """);
+
+            var execute = await Cli.RunAsync(
+                "dotnet",
+                "run --project BoundaryConsumer.csproj --configuration Release",
+                consumer);
+            await Assert.That(execute.ExitCode).IsEqualTo(0).Because(execute.Output);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The Contracts tag workflow re-establishes codegen and test evidence at the
+    /// checked-out tag before it packs immutable NuGet bytes.
+    /// </summary>
+    [Test]
+    public async Task ContractsRelease_RegeneratesAndTestsBeforePack()
+    {
+        var workflow = Path.Combine(
+            RepoLayout.RepoRoot, ".github", "workflows", "publish-contracts.yml");
+        var yaml = await File.ReadAllTextAsync(workflow);
+
+        var tagBinding = yaml.IndexOf("git rev-list -n 1", StringComparison.Ordinal);
+        var lockedRestore = yaml.IndexOf("npm ci", StringComparison.Ordinal);
+        var regenerate = yaml.IndexOf("contracts-codegen.sh", StringComparison.Ordinal);
+        var tests = yaml.IndexOf("$CONTRACTS_TESTS_PROJECT", StringComparison.Ordinal);
+        var cleanDiff = yaml.IndexOf("git diff --exit-code", StringComparison.Ordinal);
+        var untrackedDiff = yaml.IndexOf(
+            "git status --porcelain --untracked-files=all",
+            StringComparison.Ordinal);
+        var publishedBaseline = yaml.IndexOf(
+            "api.nuget.org/v3-flatcontainer",
+            StringComparison.Ordinal);
+        var compatibility = yaml.IndexOf("contracts-schema-diff.mjs", StringComparison.Ordinal);
+        var pack = yaml.IndexOf("dotnet pack", StringComparison.Ordinal);
+        var candidateDigestStep = yaml.IndexOf(
+            "- name: Record candidate package digest",
+            StringComparison.Ordinal);
+        var candidateDigest = yaml.IndexOf(
+            "candidate_sha256=\"$(sha256sum",
+            StringComparison.Ordinal);
+        var push = yaml.IndexOf("dotnet nuget push", StringComparison.Ordinal);
+
+        await Assert.That(tagBinding >= 0).IsTrue();
+        await Assert.That(lockedRestore > tagBinding).IsTrue();
+        await Assert.That(regenerate > lockedRestore).IsTrue();
+        await Assert.That(tests > regenerate).IsTrue();
+        await Assert.That(cleanDiff > tests).IsTrue();
+        await Assert.That(untrackedDiff > cleanDiff).IsTrue();
+        await Assert.That(publishedBaseline > untrackedDiff).IsTrue();
+        await Assert.That(compatibility > publishedBaseline).IsTrue();
+        await Assert.That(pack > compatibility).IsTrue();
+        await Assert.That(candidateDigestStep > pack).IsTrue();
+        await Assert.That(candidateDigest > candidateDigestStep).IsTrue();
+        await Assert.That(push > candidateDigest).IsTrue();
+        await Assert.That(yaml).Contains("nupkg_sha256=$candidate_sha256");
+        await Assert.That(yaml.Contains("--skip-duplicate", StringComparison.Ordinal)).IsFalse()
+            .Because("a duplicate push must not turn different local package bytes into a green release.");
+        await Assert.That(yaml).Contains(
+            "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
+        await Assert.That(yaml.Contains("packages: write", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(yaml).Contains("persist-credentials: false");
     }
 }

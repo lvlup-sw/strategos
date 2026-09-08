@@ -91,6 +91,52 @@ public sealed class AuthorityLattice
     }
 
     /// <summary>
+    /// Returns whether <paramref name="candidate"/> is pointwise no stronger than
+    /// <paramref name="limit"/>. This is the authority arm of action refinement.
+    /// </summary>
+    public bool IsAtMost(AuthorityRequirement candidate, AuthorityRequirement limit)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(limit);
+
+        ValidateRequirement(candidate, nameof(candidate));
+        ValidateRequirement(limit, nameof(limit));
+
+        foreach (var axis in Axes)
+        {
+            var candidateRank = RankOf(candidate, axis);
+            var limitRank = RankOf(limit, axis);
+            if (candidateRank > limitRank)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void ValidateRequirement(AuthorityRequirement requirement, string parameterName)
+    {
+        foreach (var coordinate in requirement.Coordinates)
+        {
+            if (!_ranks.TryGetValue(coordinate.Key, out var levels))
+            {
+                throw new ArgumentException(
+                    $"Requirement names unknown authority axis '{coordinate.Key}'.",
+                    parameterName);
+            }
+
+            if (!levels.ContainsKey(coordinate.Value))
+            {
+                throw new ArgumentException(
+                    $"Requirement names unknown level '{coordinate.Value}' on authority axis "
+                    + $"'{coordinate.Key}'.",
+                    parameterName);
+            }
+        }
+    }
+
+    /// <summary>
     /// Computes the least requirement at least as strong as every named authority.
     /// </summary>
     public AuthorityRequirement Join(params string[] authorityNames) =>
@@ -147,6 +193,23 @@ public sealed class AuthorityLattice
         return _authorities.TryGetValue(authorityName, out var authority)
             ? authority
             : throw new KeyNotFoundException($"Unknown authority '{authorityName}'.");
+    }
+
+    private int RankOf(AuthorityRequirement requirement, AuthorityAxisDescriptor axis)
+    {
+        if (!requirement.Coordinates.TryGetValue(axis.Name, out var level))
+        {
+            return -1;
+        }
+
+        if (!_ranks[axis.Name].TryGetValue(level, out var rank))
+        {
+            throw new ArgumentException(
+                $"Requirement names unknown level '{level}' on authority axis '{axis.Name}'.",
+                nameof(requirement));
+        }
+
+        return rank;
     }
 
     private static void Validate(

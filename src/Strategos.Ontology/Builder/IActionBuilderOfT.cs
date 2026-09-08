@@ -15,6 +15,8 @@ public interface IActionBuilder<T> : IActionBuilder
 
     new IActionBuilder<T> BoundToWorkflow(string workflowName);
 
+    new IActionBuilder<T> BoundToWorkflow(WorkflowBindingReference workflow);
+
     new IActionBuilder<T> BoundToTool(string toolName, string methodName);
 
     /// <summary>

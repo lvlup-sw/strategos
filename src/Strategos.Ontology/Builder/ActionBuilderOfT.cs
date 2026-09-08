@@ -10,7 +10,7 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
     private Type? _acceptsType;
     private Type? _returnsType;
     private ActionBindingType _bindingType = ActionBindingType.Unbound;
-    private string? _boundWorkflowName;
+    private WorkflowBindingReference? _boundWorkflow;
     private string? _boundToolName;
     private string? _boundToolMethod;
     private bool _isReadOnly;
@@ -31,6 +31,7 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
     IActionBuilder IActionBuilder.Accepts<TAccepts>() => Accepts<TAccepts>();
     IActionBuilder IActionBuilder.Returns<TReturns>() => Returns<TReturns>();
     IActionBuilder IActionBuilder.BoundToWorkflow(string workflowName) => BoundToWorkflow(workflowName);
+    IActionBuilder IActionBuilder.BoundToWorkflow(WorkflowBindingReference workflow) => BoundToWorkflow(workflow);
     IActionBuilder IActionBuilder.BoundToTool(string toolName, string methodName) => BoundToTool(toolName, methodName);
     IActionBuilder IActionBuilder.ReadOnly() => ReadOnly();
     IActionBuilder IActionBuilder.Idempotent() => Idempotent();
@@ -64,10 +65,16 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
         return this;
     }
 
-    public IActionBuilder<T> BoundToWorkflow(string workflowName)
+    public IActionBuilder<T> BoundToWorkflow(string workflowName) =>
+        BoundToWorkflow(new WorkflowBindingReference(workflowName));
+
+    public IActionBuilder<T> BoundToWorkflow(WorkflowBindingReference workflow)
     {
+        ArgumentNullException.ThrowIfNull(workflow);
         _bindingType = ActionBindingType.Workflow;
-        _boundWorkflowName = workflowName;
+        _boundWorkflow = workflow;
+        _boundToolName = null;
+        _boundToolMethod = null;
         return this;
     }
 
@@ -76,6 +83,7 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
         _bindingType = ActionBindingType.Tool;
         _boundToolName = toolName;
         _boundToolMethod = methodName;
+        _boundWorkflow = null;
         return this;
     }
 
@@ -245,7 +253,7 @@ internal sealed class ActionBuilder<T>(string name, ActionSubject subject) : IAc
             AcceptsType = _acceptsType,
             ReturnsType = _returnsType,
             BindingType = _bindingType,
-            BoundWorkflowName = _boundWorkflowName,
+            BoundWorkflow = _boundWorkflow,
             BoundToolName = _boundToolName,
             BoundToolMethod = _boundToolMethod,
             IsReadOnly = _isReadOnly,

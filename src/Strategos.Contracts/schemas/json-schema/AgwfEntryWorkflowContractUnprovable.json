@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryWorkflowContractUnprovable.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF042"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Workflow contract cannot be proved statically"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow '{0}' bound to action '{1}' cannot be proved statically: {2}"
+        },
+        "since": {
+            "type": "string",
+            "const": "2.13.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF042 — Workflow contract cannot be proved statically (#167)."
+}

@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Strategos.Ontology.Builder;
+using Strategos.Ontology.Descriptors;
 
 namespace Strategos.Ontology.Tests.Builder;
 
@@ -46,6 +47,18 @@ public class IActionBuilderTests
         substitute.BoundToWorkflow("execute-trade").Returns(substitute);
 
         var result = substitute.BoundToWorkflow("execute-trade");
+
+        await Assert.That(result).IsEqualTo(substitute);
+    }
+
+    [Test]
+    public async Task IActionBuilder_BoundToWorkflowReference_ReturnsSelf()
+    {
+        var substitute = Substitute.For<IActionBuilder>();
+        var workflow = new WorkflowBindingReference("execute-trade");
+        substitute.BoundToWorkflow(workflow).Returns(substitute);
+
+        var result = substitute.BoundToWorkflow(workflow);
 
         await Assert.That(result).IsEqualTo(substitute);
     }

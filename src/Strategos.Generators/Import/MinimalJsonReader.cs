@@ -660,7 +660,48 @@ internal static class WireWorkflowReader
         step.IsTerminal = GetBool(node, "isTerminal") ?? false;
         step.Runtime = GetString(node, "runtime");
         step.Configuration = ReadObject(node, "configuration", ReadStepConfiguration);
+        step.Action = ReadOptionalActionReference(node, step.StepId);
         return step;
+    }
+
+    private static ActionReferenceV1? ReadOptionalActionReference(JsonValue step, string? stepId)
+    {
+        if (!step.TryGetMember("action", out var node))
+        {
+            return null;
+        }
+
+        var identity = string.IsNullOrWhiteSpace(stepId) ? "<unnamed>" : stepId;
+        if (node.Kind != JsonKind.Object)
+        {
+            throw new JsonParseException(
+                $"step '{identity}' property 'action' must be a JSON object when present");
+        }
+
+        return new ActionReferenceV1
+        {
+            DomainName = ReadRequiredActionIdentity(node, "domainName", identity),
+            ObjectTypeName = ReadRequiredActionIdentity(node, "objectTypeName", identity),
+            ActionName = ReadRequiredActionIdentity(node, "actionName", identity),
+        };
+    }
+
+    private static string ReadRequiredActionIdentity(JsonValue action, string name, string stepId)
+    {
+        if (!action.TryGetMember(name, out var node) || node.Kind != JsonKind.String)
+        {
+            throw new JsonParseException(
+                $"step '{stepId}' property 'action.{name}' must be a string");
+        }
+
+        var value = node.AsStringOrNull();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new JsonParseException(
+                $"step '{stepId}' property 'action.{name}' must contain at least one non-whitespace character");
+        }
+
+        return value!;
     }
 
     private static StepConfigurationDefinition ReadStepConfiguration(JsonValue node) =>

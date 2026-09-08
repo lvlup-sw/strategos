@@ -154,6 +154,7 @@ public static class WorkflowDefinitionProjection
                 InstanceName = step.InstanceName,
                 IsTerminal = step.IsTerminal,
                 Configuration = ProjectConfiguration(step.Configuration),
+                Action = ProjectAction(step.Action),
                 Lambda = true,
             },
 
@@ -164,6 +165,7 @@ public static class WorkflowDefinitionProjection
                 InstanceName = step.InstanceName,
                 IsTerminal = step.IsTerminal,
                 Configuration = ProjectConfiguration(step.Configuration),
+                Action = ProjectAction(step.Action),
 
                 // LB-2: simple type name, not assembly- or namespace-qualified.
                 StepType = step.StepType.Name,
@@ -177,6 +179,16 @@ public static class WorkflowDefinitionProjection
                 "Add an explicit arm to WorkflowDefinitionProjection.ProjectMappedKind; " +
                 "the projection must never silently default an unrecognized kind."),
         };
+
+    private static Wire.ActionReferenceV1? ProjectAction(WorkflowActionReference? action) =>
+        action is null
+            ? null
+            : new Wire.ActionReferenceV1
+            {
+                DomainName = action.DomainName,
+                ObjectTypeName = action.ObjectTypeName,
+                ActionName = action.ActionName,
+            };
 
     /// <summary>
     /// Projects a builder diagnostic-fork edge (DR-7, #151) to its wire form. Every

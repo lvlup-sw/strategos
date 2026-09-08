@@ -24,7 +24,7 @@ namespace Strategos.Contracts.Generated;
 /// `schemaVersion` is pinned to the literal `&quot;1.0&quot;`. Future minors are
 /// additive-only; a breaking change requires a `WorkflowDefinitionV2` root.
 /// </summary>
-public sealed record WorkflowDefinitionV1
+public sealed record WorkflowDefinitionV1 : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Wire-IR schema version. Pinned literal; additive minors, breaking ⇒ V2.
@@ -128,4 +128,15 @@ public sealed record WorkflowDefinitionV1
     /// </summary>
     [JsonPropertyName("terminalStepId")]
     public string? TerminalStepId { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(Name, "WorkflowDefinitionV1.name", required: true);
+    }
 }

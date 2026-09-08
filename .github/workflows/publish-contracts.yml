@@ -18,13 +18,13 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_QUALITY: 'preview'
   CONTRACTS_PROJECT: 'src/Strategos.Contracts/Strategos.Contracts.csproj'
+  CONTRACTS_TESTS_PROJECT: 'src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj'
   TESTS_PROJECT: 'src/Strategos.Tests/Strategos.Tests.csproj'
 
 # Mirrors the product publish workflow's trusted-publishing setup.
 permissions:
   id-token: write   # OIDC token for NuGet trusted publishing
   contents: write   # Create the GitHub Release
-  packages: write   # Push packages
 
 jobs:
   publish-contracts:
@@ -37,12 +37,28 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify checkout is the tagged revision
+        run: |
+          checked_out="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          echo "tag=$GITHUB_REF_NAME commit=$tag_commit checkout=$checked_out"
+          if [[ "$checked_out" != "$tag_commit" ]]; then
+            echo "::error::Checkout $checked_out does not match tagged commit $tag_commit."
+            exit 2
+          fi
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           dotnet-quality: ${{ env.DOTNET_QUALITY }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
 
       - name: Verify tag matches pinned ContractsVersion
         # The package version is pinned in the csproj, not derived from the tag.
@@ -59,6 +75,98 @@ jobs:
 
       - name: Restore
         run: dotnet restore "$CONTRACTS_PROJECT"
+
+      - name: Restore locked TypeSpec toolchain
+        working-directory: src/Strategos.Contracts
+        run: npm ci
+
+      - name: Regenerate TypeSpec schemas and C# contracts
+        run: bash scripts/contracts-codegen.sh
+
+      - name: Run Contracts validation suite
+        run: dotnet run --project "$CONTRACTS_TESTS_PROJECT" --configuration Release
+
+      - name: Require generated artifacts to match the tag
+        run: |
+          git diff --exit-code -- \
+            src/Strategos.Contracts/Generated \
+            src/Strategos.Contracts/schemas \
+            src/Strategos.Ontology/Contracts/Generated \
+            docs/diagnostics
+          unexpected="$(git status --porcelain --untracked-files=all -- \
+            src/Strategos.Contracts/Generated \
+            src/Strategos.Contracts/schemas \
+            src/Strategos.Ontology/Contracts/Generated \
+            docs/diagnostics)"
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::Regeneration produced untracked contract artifacts:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+      - name: Extract latest published Contracts schemas
+        id: published
+        run: |
+          set -euo pipefail
+          package_id=levelup.strategos.contracts
+          package_index="https://api.nuget.org/v3-flatcontainer/$package_id/index.json"
+          candidate_version="${GITHUB_REF_NAME#contracts-v}"
+          baseline_dir="$(mktemp -d)"
+
+          if ! curl --fail --silent --show-error "$package_index" --output "$baseline_dir/index.json"; then
+            echo "::error::Published Contracts package index is unavailable; schema compatibility is indeterminate."
+            exit 2
+          fi
+
+          previous_version="$(jq -r '.versions[]' "$baseline_dir/index.json" \
+            | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+            | sort -V \
+            | tail -1 || true)"
+          if [[ -z "$previous_version" ]]; then
+            echo "::error::No stable published Contracts package exists; schema compatibility is indeterminate."
+            exit 2
+          fi
+
+          # The current source tag is deliberately not a baseline. The baseline
+          # is the latest immutable package that NuGet already serves. A rerun
+          # of an already-published version is rejected by the version gate.
+          if [[ "contracts-v$previous_version" == "$GITHUB_REF_NAME" ]]; then
+            echo "Published package $previous_version matches the current tag; the version gate will reject the non-forward release."
+          fi
+
+          nupkg="$baseline_dir/$package_id.$previous_version.nupkg"
+          if ! curl --fail --silent --show-error \
+            "https://api.nuget.org/v3-flatcontainer/$package_id/$previous_version/$package_id.$previous_version.nupkg" \
+            --output "$nupkg"; then
+            echo "::error::Published Contracts $previous_version package is unavailable; schema compatibility is indeterminate."
+            exit 2
+          fi
+          if ! unzip -q "$nupkg" 'contentFiles/any/any/schemas/*' -d "$baseline_dir/package"; then
+            echo "::error::Published Contracts $previous_version package has no readable schema payload; compatibility is indeterminate."
+            exit 2
+          fi
+
+          published_schemas="$baseline_dir/package/contentFiles/any/any/schemas"
+          if [[ ! -d "$published_schemas" ]]; then
+            echo "::error::Published Contracts $previous_version has no packaged schemas; compatibility is indeterminate."
+            exit 2
+          fi
+
+          nupkg_sha256="$(sha256sum "$nupkg" | cut -d' ' -f1)"
+          {
+            echo "schemas_dir=$published_schemas"
+            echo "version=$previous_version"
+            echo "nupkg_sha256=$nupkg_sha256"
+          } >> "$GITHUB_OUTPUT"
+          echo "candidate $candidate_version is bound to published Contracts $previous_version ($nupkg_sha256)"
+
+      - name: Enforce schema compatibility and version policy
+        run: |
+          node scripts/contracts-schema-diff.mjs \
+            "${{ steps.published.outputs.schemas_dir }}" \
+            "src/Strategos.Contracts/schemas" \
+            "${{ steps.published.outputs.version }}" \
+            "${GITHUB_REF_NAME#contracts-v}"
 
       - name: Generate builder-fixture corpus (T24/#53)
         # The package embeds the >=100-case WorkflowDefinitionV1 fixture corpus
@@ -85,10 +193,24 @@ jobs:
           fi
 
       - name: Pack
-        # No --no-build: pack builds the contracts project (committed Generated/
-        # records + schemas; no TypeSpec/Node needed) and globs the now-present
-        # fixture corpus into the package.
+        # No --no-build: pack builds the contracts project after the tagged
+        # revision's TypeSpec/codegen outputs and Contracts tests were revalidated,
+        # then globs the now-present fixture corpus into the package.
         run: dotnet pack "$CONTRACTS_PROJECT" --configuration Release --output ./packages
+
+      - name: Record candidate package digest
+        id: candidate
+        run: |
+          set -euo pipefail
+          mapfile -t candidates < <(find ./packages -maxdepth 1 -type f \
+            -name 'LevelUp.Strategos.Contracts.*.nupkg' -print | sort)
+          if [[ "${#candidates[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one Contracts nupkg; found ${#candidates[@]}."
+            exit 2
+          fi
+          candidate_sha256="$(sha256sum "${candidates[0]}" | cut -d' ' -f1)"
+          echo "nupkg_sha256=$candidate_sha256" >> "$GITHUB_OUTPUT"
+          echo "candidate Contracts nupkg ${candidates[0]} sha256=$candidate_sha256"
 
       - name: List packages
         run: ls -la ./packages/
@@ -108,8 +230,7 @@ jobs:
             echo "Pushing $package..."
             dotnet nuget push "$package" \
               --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
-              --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
+              --source https://api.nuget.org/v3/index.json
           done
 
       - name: Push symbols
@@ -119,8 +240,7 @@ jobs:
               echo "Pushing symbols $package..."
               dotnet nuget push "$package" \
                 --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
-                --source https://api.nuget.org/v3/index.json \
-                --skip-duplicate
+                --source https://api.nuget.org/v3/index.json
             fi
           done
 

@@ -43,4 +43,21 @@ public interface IForkJoinBuilder<TState>
     /// </remarks>
     IWorkflowBuilder<TState> Join<TJoinStep>()
         where TJoinStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Specifies and configures the join step that merges results from all fork paths.
+    /// </summary>
+    /// <typeparam name="TJoinStep">The join step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the join-step occurrence.</param>
+    /// <returns>The workflow builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configure"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// The configuration is occurrence-scoped and supports the same resilience,
+    /// validation, context, and ontology-action identity declarations as other
+    /// class-based workflow steps.
+    /// </remarks>
+    IWorkflowBuilder<TState> Join<TJoinStep>(Action<IStepConfiguration<TState>> configure)
+        where TJoinStep : class, IWorkflowStep<TState>;
 }

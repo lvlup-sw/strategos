@@ -56,6 +56,12 @@ public sealed record GateStep : StepDefinition
     public StepConfigurationDefinition? Configuration { get; init; }
 
     /// <summary>
+    /// Ontology action performed by this specific step occurrence.
+    /// </summary>
+    [JsonPropertyName("action")]
+    public ActionReferenceV1? Action { get; init; }
+
+    /// <summary>
     /// Simple-name CLR moniker of the step type (LB-2).
     /// </summary>
     [JsonPropertyName("stepType")]

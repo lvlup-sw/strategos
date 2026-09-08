@@ -4,6 +4,7 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Strategos.Generators.Models;
 using Strategos.Generators.Tests.Fixtures;
 
 namespace Strategos.Generators.Tests.Emitters;
@@ -333,6 +334,85 @@ public class TransitionGraphLoweringTests
     // =============================================================================
     // B. Branch Graph Tests
     // =============================================================================
+
+    /// <summary>
+    /// A non-matching value passes through each consecutive branch and then reaches the rejoin.
+    /// The original dispatcher therefore has all nested case entries and the final rejoin as
+    /// possible successors.
+    /// </summary>
+    [Test]
+    public async Task PhaseGraph_NonExhaustiveConsecutiveBranches_ModelsRuntimeFallThrough()
+    {
+        var second = new BranchModel(
+            "second",
+            string.Empty,
+            "SecondCondition",
+            "Boolean",
+            false,
+            false,
+            [new BranchCaseModel("true", "second_true", ["SecondCase"], false)],
+            "Continue");
+        var first = new BranchModel(
+            "first",
+            "Dispatch",
+            "FirstCondition",
+            "Boolean",
+            false,
+            false,
+            [new BranchCaseModel("true", "first_true", ["FirstCase"], false)],
+            "Continue",
+            NextConsecutiveBranch: second);
+        var model = new WorkflowModel(
+            "flow",
+            "Flow",
+            "Tests",
+            ["Dispatch", "FirstCase", "SecondCase", "Continue"],
+            Branches: [first, second]);
+
+        var successors = PhaseGraph.Build(model).SuccessorsOf("Dispatch");
+
+        await Assert.That(successors).IsEquivalentTo(
+            ["FirstCase", "SecondCase", "Continue", PhaseGraph.FailedPhase]);
+    }
+
+    /// <summary>An exhaustive head branch never evaluates a following branch or fall-through.</summary>
+    [Test]
+    public async Task PhaseGraph_ExhaustiveBranch_DoesNotPublishImpossibleFallThrough()
+    {
+        var second = new BranchModel(
+            "second",
+            string.Empty,
+            "SecondCondition",
+            "Boolean",
+            false,
+            false,
+            [new BranchCaseModel("true", "second_true", ["ImpossibleCase"], false)],
+            "Continue");
+        var first = new BranchModel(
+            "first",
+            "Dispatch",
+            "FirstCondition",
+            "Boolean",
+            false,
+            false,
+            [
+                new BranchCaseModel("true", "first_true", ["TrueCase"], false),
+                new BranchCaseModel("false", "first_false", ["FalseCase"], false),
+            ],
+            "Continue",
+            NextConsecutiveBranch: second);
+        var model = new WorkflowModel(
+            "flow",
+            "Flow",
+            "Tests",
+            ["Dispatch", "TrueCase", "FalseCase", "ImpossibleCase", "Continue"],
+            Branches: [first, second]);
+
+        var successors = PhaseGraph.Build(model).SuccessorsOf("Dispatch");
+
+        await Assert.That(successors).IsEquivalentTo(
+            ["TrueCase", "FalseCase", PhaseGraph.FailedPhase]);
+    }
 
     /// <summary>
     /// Verifies that mutually exclusive branch cases are not chained to one another: every case's

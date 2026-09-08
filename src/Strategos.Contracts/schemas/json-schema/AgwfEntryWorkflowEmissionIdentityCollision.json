@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryWorkflowEmissionIdentityCollision.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF043"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Workflow generated identity collision"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique."
+        },
+        "since": {
+            "type": "string",
+            "const": "2.13.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF043 — Distinct workflow identities collide after generated-name normalization (#167)."
+}

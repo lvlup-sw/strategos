@@ -12,6 +12,7 @@ using Strategos.Builders;
 using Strategos.Contracts;
 using Strategos.Definitions;
 using Strategos.Generators.Import;
+using Strategos.Generators.Models;
 using Strategos.Steps;
 
 namespace Strategos.Generators.Tests.Import;
@@ -87,6 +88,9 @@ public sealed class RoundTripIrFidelityTests
         {
             await Assert.That(step.StepTypeName.EndsWith("." + step.StepName, StringComparison.Ordinal)).IsTrue()
                 .Because($"the model's StepTypeName must be the namespaced form of the wire moniker '{step.StepName}'.");
+            await Assert.That(step.Action).IsNull()
+                .Because("legacy steps without Performs must retain an omitted action identity.");
+            await Assert.That(step.ActionResolution).IsEqualTo(WorkflowActionReferenceResolution.Missing);
         }
 
         // No construct is invented for a plain linear chain.
@@ -124,6 +128,61 @@ public sealed class RoundTripIrFidelityTests
             model.StepNames,
             ["Entry", "Work", "FidCompleteStep"],
             "the effective phase names must match the wire order.");
+    }
+
+    /// <summary>
+    /// Two named occurrences of the same CLR step type remain two executable models. Action
+    /// binding is occurrence-scoped, so deduplicating imported models by type would both lose the
+    /// second action and make an otherwise valid binding fail with a missing-occurrence diagnostic.
+    /// </summary>
+    [Test]
+    public async Task ReusedStepType_DistinctNamedOccurrences_PreserveBothActions()
+    {
+        var workflow = Workflow<FidState>.Create("rt-reused-action")
+            .StartWith<FidProcessStep>("First")
+            .Then<FidProcessStep>("Second")
+            .Finally<FidCompleteStep>();
+        var dto = WireWorkflowReader.Read(ContractsJson.Serialize(workflow.ToContract()));
+        var occurrences = dto.Steps
+            .OfType<SkillStep>()
+            .Where(step => step.StepType == "FidProcessStep")
+            .ToDictionary(step => step.InstanceName!, StringComparer.Ordinal);
+        occurrences["First"].Action = new ActionReferenceV1
+        {
+            DomainName = "orders",
+            ObjectTypeName = "Order",
+            ActionName = "first",
+        };
+        occurrences["Second"].Action = new ActionReferenceV1
+        {
+            DomainName = "orders",
+            ObjectTypeName = "Order",
+            ActionName = "second",
+        };
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "RoundTripReusedActionBridgeAssembly",
+            syntaxTrees: [],
+            references: GetReferences(),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var result = WireToModelBridge.Bridge(
+            dto,
+            compilation,
+            "rt-reused-action.workflow.json",
+            CancellationToken.None);
+
+        await Assert.That(result.Model).IsNotNull();
+        var reused = result.Model!.Steps!
+            .Where(step => step.StepName == "FidProcessStep")
+            .ToList();
+        await AssertOrderedEqual(
+            reused.Select(step => step.PhaseName),
+            ["First", "Second"],
+            "each named occurrence must retain its own executable model.");
+        await AssertOrderedEqual(
+            reused.Select(step => step.Action?.ActionName),
+            ["first", "second"],
+            "each named occurrence must retain its own action identity.");
     }
 
     /// <summary>
@@ -169,6 +228,72 @@ public sealed class RoundTripIrFidelityTests
             .Because("the model's BackoffMultiplier must match the wire value field-for-field.");
         await Assert.That(modelStep.Retry.UseJitter).IsEqualTo(wireRetry.UseJitter ?? false)
             .Because("the model's UseJitter must match the wire value field-for-field.");
+    }
+
+    /// <summary>
+    /// An occurrence-scoped action identity survives builder projection, canonical JSON,
+    /// the dependency-free wire reader, and the import bridge without changing a name.
+    /// </summary>
+    [Test]
+    public async Task ActionIdentity_MatchesJsonFieldForField()
+    {
+        var (dto, model) = BridgeRoundTrip(
+            Workflow<FidState>.Create("rt-action")
+                .StartWith<FidValidateStep>()
+                .Then<FidProcessStep>(step => step.Performs(
+                    new WorkflowActionReference("orders", "Order", "process")))
+                .Finally<FidCompleteStep>(),
+            "rt-action");
+
+        var wireAction = FindSkill(dto, "FidProcessStep").Action;
+        await Assert.That(wireAction).IsNotNull();
+        await Assert.That(wireAction!.DomainName).IsEqualTo("orders");
+        await Assert.That(wireAction.ObjectTypeName).IsEqualTo("Order");
+        await Assert.That(wireAction.ActionName).IsEqualTo("process");
+
+        var modelStep = model.Steps!.Single(s => s.StepName == "FidProcessStep");
+        await Assert.That(modelStep.ActionResolution).IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(modelStep.Action).IsNotNull();
+        await Assert.That(modelStep.Action!.DomainName).IsEqualTo(wireAction.DomainName);
+        await Assert.That(modelStep.Action.ObjectTypeName).IsEqualTo(wireAction.ObjectTypeName);
+        await Assert.That(modelStep.Action.ActionName).IsEqualTo(wireAction.ActionName);
+    }
+
+    /// <summary>
+    /// An authored wire action with a blank identity component stays distinguishable
+    /// from an omitted action and is never promoted to a resolved reference.
+    /// </summary>
+    [Test]
+    public async Task ActionIdentity_BlankWireName_IsDynamicOrInvalid()
+    {
+        var workflow = Workflow<FidState>.Create("rt-action-invalid")
+            .StartWith<FidValidateStep>()
+            .Then<FidProcessStep>()
+            .Finally<FidCompleteStep>();
+        var dto = WireWorkflowReader.Read(ContractsJson.Serialize(workflow.ToContract()));
+        FindSkill(dto, "FidProcessStep").Action = new ActionReferenceV1
+        {
+            DomainName = "orders",
+            ObjectTypeName = " ",
+            ActionName = "process",
+        };
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "RoundTripInvalidActionBridgeAssembly",
+            syntaxTrees: [],
+            references: GetReferences(),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var result = WireToModelBridge.Bridge(
+            dto,
+            compilation,
+            "rt-action-invalid.workflow.json",
+            CancellationToken.None);
+
+        await Assert.That(result.Model).IsNotNull();
+        var modelStep = result.Model!.Steps!.Single(s => s.StepName == "FidProcessStep");
+        await Assert.That(modelStep.Action).IsNull();
+        await Assert.That(modelStep.ActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.DynamicOrInvalid);
     }
 
     /// <summary>

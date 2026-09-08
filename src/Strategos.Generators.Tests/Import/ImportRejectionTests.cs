@@ -7,6 +7,8 @@
 using System.Text;
 using System.Threading;
 
+using Strategos.Generators.Tests.Fixtures;
+
 using Microsoft.CodeAnalysis.Text;
 
 namespace Strategos.Generators.Tests.Import;
@@ -35,6 +37,7 @@ public sealed class ImportRejectionTests
     private const string ForkTriggerEvidenceCode = "AGWF034";
     private const string DuplicatePermittedForkTriggerCode = "AGWF037";
     private const string DuplicateCompensationSeedCode = "AGWF038";
+    private const string WorkflowContractUnprovableCode = "AGWF042";
 
     /// <summary>
     /// Real step types so a NON-rejected import can resolve its monikers and lower a saga — the
@@ -45,6 +48,7 @@ public sealed class ImportRejectionTests
         using System.Threading.Tasks;
         using Strategos.Abstractions;
         using Strategos.Attributes;
+        using Strategos.Steps;
 
         namespace RejectNs;
 
@@ -166,6 +170,115 @@ public sealed class ImportRejectionTests
           "approvalPoints": [
             { "approvalPointId": "ap1", "approverType": "RejectStepC", "precedingStepId": "s1", "hasContext": true }
           ],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // A root failure handler whose executable recovery steps are not carried by the import bridge.
+    private const string RootFailureHandlerJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-root-failure-handler",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [
+            {
+              "handlerId": "root-recovery",
+              "scope": "workflow",
+              "steps": [
+                { "kind": "handler", "stepId": "r1", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+              ],
+              "isTerminal": true
+            }
+          ],
+          "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s2"
+        }
+        """;
+
+    // A fork-path failure handler currently reduced to flags by MapForks, losing its recovery steps.
+    private const string ForkPathFailureHandlerJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-fork-path-failure-handler",
+          "steps": [
+            { "kind": "skill", "stepId": "s1", "stepName": "RejectStepA", "isTerminal": false, "stepType": "RejectStepA" },
+            { "kind": "skill", "stepId": "s4", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [],
+          "forkPoints": [
+            {
+              "forkPointId": "fork-1",
+              "fromStepId": "s1",
+              "joinStepId": "s4",
+              "paths": [
+                {
+                  "pathId": "primary",
+                  "pathIndex": 0,
+                  "steps": [
+                    { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": false, "stepType": "RejectStepB" }
+                  ],
+                  "failureHandler": {
+                    "handlerId": "path-recovery",
+                    "scope": "forkPath",
+                    "steps": [
+                      { "kind": "handler", "stepId": "r1", "stepName": "RejectStepC", "isTerminal": true, "stepType": "RejectStepC" }
+                    ],
+                    "isTerminal": false
+                  }
+                },
+                {
+                  "pathId": "secondary",
+                  "pathIndex": 1,
+                  "steps": [
+                    { "kind": "skill", "stepId": "s3", "stepName": "RejectStepC", "isTerminal": false, "stepType": "RejectStepC" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "failureHandlers": [], "approvalPoints": [],
+          "entryStepId": "s1", "terminalStepId": "s4"
+        }
+        """;
+
+    // An approval step nested in a low-confidence handler used to make MapConfidence silently
+    // discard the handler because ApprovalStep has no executable step moniker.
+    private const string LowConfidenceApprovalStepJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "reject-low-confidence-approval-step",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "s1",
+              "stepName": "RejectStepA",
+              "isTerminal": false,
+              "stepType": "RejectStepA",
+              "configuration": {
+                "confidenceThreshold": 0.75,
+                "onLowConfidence": {
+                  "handlerId": "low-confidence-handler",
+                  "handlerSteps": [
+                    {
+                      "kind": "approval",
+                      "stepId": "low-confidence-approval",
+                      "stepName": "ManualReview",
+                      "isTerminal": true,
+                      "approverType": "RejectStepC"
+                    }
+                  ],
+                  "isTerminal": true
+                }
+              }
+            },
+            { "kind": "skill", "stepId": "s2", "stepName": "RejectStepB", "isTerminal": true, "stepType": "RejectStepB" }
+          ],
+          "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
+          "failureHandlers": [], "approvalPoints": [],
           "entryStepId": "s1", "terminalStepId": "s2"
         }
         """;
@@ -373,7 +486,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task DelegateStep_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-delegate.workflow.json", DelegateJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-delegate.workflow.json", DelegateJson),
+            DelegateCode);
         await AssertRejected(result, DelegateCode, "$.steps[1]", "d1");
     }
 
@@ -382,7 +498,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task BranchPoint_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-branch.workflow.json", BranchPointJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-branch.workflow.json", BranchPointJson),
+            BranchPointCode);
         await AssertRejected(result, BranchPointCode, "$.branchPoints[0]", "b1");
     }
 
@@ -391,7 +510,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task Loop_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-loop.workflow.json", LoopJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-loop.workflow.json", LoopJson),
+            LoopCode);
         await AssertRejected(result, LoopCode, "$.loops[0]", "Retry");
     }
 
@@ -400,7 +522,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ValidationPredicate_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-validation.workflow.json", ValidationJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-validation.workflow.json", ValidationJson),
+            ValidationCode);
         await AssertRejected(result, ValidationCode, "$.steps[0].configuration.validation", "s1");
     }
 
@@ -409,8 +534,106 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ApprovalWithContext_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-approval-context.workflow.json", ApprovalContextJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-approval-context.workflow.json", ApprovalContextJson),
+            ApprovalContextCode);
         await AssertRejected(result, ApprovalContextCode, "$.approvalPoints[0]", "ap1");
+    }
+
+    /// <summary>An unbound root failure handler preserves the existing import/runtime contract.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task RootFailureHandler_WhenUnbound_RemainsImportable()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-root-failure-handler.workflow.json", RootFailureHandlerJson));
+
+        await AssertNoErrors(result);
+        await Assert.That(result.Diagnostics.Any(d => d.Id == WorkflowContractUnprovableCode))
+            .IsFalse()
+            .Because("ordinary import fidelity remains available when no action requests a closed proof.");
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("root failure-handler imports retain their existing best-effort runtime lowering.");
+    }
+
+    /// <summary>A bound imported root handler marks the proof topology unresolved.</summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task RootFailureHandler_WhenWorkflowBound_ReportsAgwf042AndStillLowersSaga()
+    {
+        const string boundDescriptor = """
+
+            public static class ImportedRootBinding
+            {
+                public static readonly Strategos.Ontology.Descriptors.ActionDescriptor Value = new(
+                    new Strategos.Ontology.Descriptors.ActionSubject("orders", "Order"),
+                    "recoverable-flow",
+                    "")
+                {
+                    BindingType = Strategos.Ontology.Descriptors.ActionBindingType.Workflow,
+                    BoundWorkflow = new Strategos.Ontology.Descriptors.WorkflowBindingReference(
+                        "reject-root-failure-handler"),
+                };
+            }
+            """;
+        var result = RunGenerator(
+            StepTypes + boundDescriptor,
+            ("reject-root-failure-handler.workflow.json", RootFailureHandlerJson),
+            WorkflowContractUnprovableCode);
+
+        var errors = ErrorDiagnostics(result);
+        await Assert.That(errors).HasCount().EqualTo(1)
+            .Because($"a bound unsupported root handler must fail exclusively with {WorkflowContractUnprovableCode}.");
+        var diagnostic = errors.SingleOrDefault(d => d.Id == WorkflowContractUnprovableCode);
+        await Assert.That(diagnostic).IsNotNull();
+        await Assert.That(diagnostic!.GetMessage()).Contains("$.failureHandlers[0]");
+        await Assert.That(diagnostic.GetMessage()).Contains("root-recovery");
+        await Assert.That(result.GeneratedTrees.Any(t => t.FilePath.EndsWith("Saga.g.cs", StringComparison.Ordinal)))
+            .IsTrue()
+            .Because("proof fails closed without changing the ordinary import/runtime lowering contract.");
+    }
+
+    /// <summary>
+    /// A fork-path failure handler is rejected with AGWF042 instead of lowering only its Boolean
+    /// flags and silently discarding the executable recovery steps.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ForkPathFailureHandler_IsRejected_WithDiagnosticAndNoSaga()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-fork-path-failure-handler.workflow.json", ForkPathFailureHandlerJson),
+            WorkflowContractUnprovableCode);
+
+        await AssertRejected(
+            result,
+            WorkflowContractUnprovableCode,
+            "$.forkPoints[0].paths[0].failureHandler",
+            "path-recovery");
+    }
+
+    /// <summary>
+    /// An approval step nested in a low-confidence handler is rejected rather than silently
+    /// removing the complete handler during import lowering.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task LowConfidenceApprovalStep_IsRejected_WithDiagnosticAndNoSaga()
+    {
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-low-confidence-approval-step.workflow.json", LowConfidenceApprovalStepJson),
+            WorkflowContractUnprovableCode);
+
+        await AssertRejected(
+            result,
+            WorkflowContractUnprovableCode,
+            "$.steps[0].configuration.onLowConfidence.handlerSteps[0]",
+            "low-confidence-approval");
     }
 
     /// <summary>A dangling gateId is rejected with AGWF032 naming the gate id + its JSON path; no saga.</summary>
@@ -418,7 +641,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task DanglingGateId_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-dangling-gate.workflow.json", DanglingGateJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-dangling-gate.workflow.json", DanglingGateJson),
+            DanglingGateIdCode);
         await AssertRejected(result, DanglingGateIdCode, "$.steps[1].gateId", "gX");
     }
 
@@ -427,7 +653,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ReliabilityBearingGate_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-reliability-gate.workflow.json", ReliabilityGateJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-reliability-gate.workflow.json", ReliabilityGateJson),
+            ReliabilityGateCode);
         await AssertRejected(result, ReliabilityGateCode, "$.gates[0].reliability", "g1");
     }
 
@@ -441,7 +670,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ForkTriggerWithEmptyEvidence_IsRejected_WithDiagnosticAndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-fork-empty-evidence.workflow.json", ForkEmptyEvidenceJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-fork-empty-evidence.workflow.json", ForkEmptyEvidenceJson),
+            ForkTriggerEvidenceCode);
         await AssertRejected(result, ForkTriggerEvidenceCode, "$.diagnosticForks[0].permittedTriggers[0]", "RatificationFailure");
     }
 
@@ -458,6 +690,7 @@ public sealed class ImportRejectionTests
     {
         var result = RunGenerator(StepTypes, ("reject-fork-with-evidence-ok.workflow.json", ForkWithEvidenceJson));
 
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(d => d.Id == ForkTriggerEvidenceCode))
             .IsFalse()
             .Because("a fork trigger declaring at least one required evidence field satisfies the DR-8 floor, not rejected.");
@@ -475,7 +708,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ForkDuplicateTrigger_IsRejected_WithAgwf037AndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-fork-duplicate-trigger.workflow.json", ForkDuplicateTriggerJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-fork-duplicate-trigger.workflow.json", ForkDuplicateTriggerJson),
+            DuplicatePermittedForkTriggerCode);
         await AssertRejected(
             result,
             DuplicatePermittedForkTriggerCode,
@@ -491,7 +727,10 @@ public sealed class ImportRejectionTests
     [Test]
     public async Task ForkDuplicateCompensationSeed_IsRejected_WithAgwf038AndNoSaga()
     {
-        var result = RunGenerator(StepTypes, ("reject-fork-duplicate-seed.workflow.json", ForkDuplicateSeedJson));
+        var result = RunGenerator(
+            StepTypes,
+            ("reject-fork-duplicate-seed.workflow.json", ForkDuplicateSeedJson),
+            DuplicateCompensationSeedCode);
         await AssertRejected(
             result,
             DuplicateCompensationSeedCode,
@@ -509,6 +748,7 @@ public sealed class ImportRejectionTests
     {
         var result = RunGenerator(StepTypes, ("reject-fork-distinct-triggers-ok.workflow.json", ForkDistinctTriggersJson));
 
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(d => d.Id == DuplicatePermittedForkTriggerCode))
             .IsFalse()
             .Because("distinct permitted triggers on one imported edge must stay silent.");
@@ -541,14 +781,11 @@ public sealed class ImportRejectionTests
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (path, json, code) in cases)
         {
-            var result = RunGenerator(StepTypes, (path, json));
-            var ids = result.Diagnostics
-                .Where(d => d.Id.StartsWith("AGWF", StringComparison.Ordinal))
-                .Select(d => d.Id)
-                .Distinct()
-                .ToList();
-
-            await Assert.That(ids).Contains(code)
+            var result = RunGenerator(StepTypes, (path, json), code);
+            var errors = ErrorDiagnostics(result);
+            await Assert.That(errors).HasCount().EqualTo(1)
+                .Because($"{path} must fail for exactly its own rejection reason.");
+            await Assert.That(errors[0].Id).IsEqualTo(code)
                 .Because($"{path} must surface its own {code} diagnostic.");
 
             seen.Add(code);
@@ -569,6 +806,7 @@ public sealed class ImportRejectionTests
     {
         var result = RunGenerator(StepTypes, ("reject-gate-ok.workflow.json", WellDeclaredGateJson));
 
+        await AssertNoErrors(result);
         await Assert.That(result.Diagnostics.Any(d => d.Id == DanglingGateIdCode || d.Id == ReliabilityGateCode))
             .IsFalse()
             .Because("a gate with a resolvable gateId and no reliability block is tolerated (DR-3), not rejected.");
@@ -588,7 +826,10 @@ public sealed class ImportRejectionTests
         string expectedJsonPath,
         string expectedConstruct)
     {
-        var diagnostic = result.Diagnostics.FirstOrDefault(d => d.Id == expectedId);
+        var errors = ErrorDiagnostics(result);
+        await Assert.That(errors).HasCount().EqualTo(1)
+            .Because($"the rejected carrier/violation must fail exclusively with {expectedId}.");
+        var diagnostic = errors.SingleOrDefault(d => d.Id == expectedId);
         await Assert.That(diagnostic).IsNotNull()
             .Because($"the rejected carrier/violation must surface the stable {expectedId} diagnostic.");
 
@@ -603,64 +844,27 @@ public sealed class ImportRejectionTests
             .Because($"a workflow rejected by {expectedId} must not emit a saga (no model is lowered).");
     }
 
-    private static GeneratorDriverRunResult RunGenerator(string source, params (string Path, string Content)[] additionalTexts)
+    private static GeneratorDriverRunResult RunGenerator(
+        string source,
+        (string Path, string Content) additionalText,
+        params string[] allowedGeneratorErrorIds)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "RejectTestAssembly",
-            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
-            references: GetReferences(),
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        AdditionalText[] texts = [new InMemoryAdditionalText(additionalText.Path, additionalText.Content)];
 
-        var texts = additionalTexts
-            .Select(t => (AdditionalText)new InMemoryAdditionalText(t.Path, t.Content))
+        return GeneratorTestHelper.RunGeneratorWithValidInput(
+            source,
+            texts,
+            allowedGeneratorErrorIds);
+    }
+
+    private static Diagnostic[] ErrorDiagnostics(GeneratorDriverRunResult result) =>
+        result.Diagnostics
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
 
-        var driver = CSharpGeneratorDriver.Create(
-            generators: [new WorkflowIncrementalGenerator().AsSourceGenerator()],
-            additionalTexts: texts,
-            parseOptions: null,
-            optionsProvider: null);
-
-        return driver.RunGenerators(compilation).GetRunResult();
-    }
-
-    private static List<MetadataReference> GetReferences()
-    {
-        var references = new List<MetadataReference>();
-
-        var runtimePath = System.IO.Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        foreach (var assembly in new[] { "System.Runtime.dll", "System.Private.CoreLib.dll", "netstandard.dll" })
-        {
-            var path = System.IO.Path.Combine(runtimePath, assembly);
-            if (System.IO.File.Exists(path))
-            {
-                references.Add(MetadataReference.CreateFromFile(path));
-            }
-        }
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            if (!assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            {
-                try
-                {
-                    references.Add(MetadataReference.CreateFromFile(assembly.Location));
-                }
-                catch
-                {
-                    // Ignore assemblies that can't be loaded as references.
-                }
-            }
-        }
-
-        var abstractions = typeof(Strategos.Abstractions.IWorkflowState).Assembly;
-        if (!string.IsNullOrEmpty(abstractions.Location))
-        {
-            references.Add(MetadataReference.CreateFromFile(abstractions.Location));
-        }
-
-        return references;
-    }
+    private static async Task AssertNoErrors(GeneratorDriverRunResult result) =>
+        await Assert.That(ErrorDiagnostics(result)).IsEmpty()
+            .Because("a legal import must not be accepted alongside an allowed error diagnostic.");
 
     /// <summary>An in-memory <see cref="AdditionalText"/> for driving the generator over synthetic import files.</summary>
     private sealed class InMemoryAdditionalText : AdditionalText

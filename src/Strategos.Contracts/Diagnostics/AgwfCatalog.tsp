@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **32 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **37 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.
@@ -54,6 +54,11 @@ enum AgwfCode {
   PathEndTypeCollision: "AGWF036",
   DuplicatePermittedForkTrigger: "AGWF037",
   DuplicateCompensationSeed: "AGWF038",
+  BoundWorkflowNotFound: "AGWF039",
+  WorkflowActionReferenceInvalid: "AGWF040",
+  WorkflowBindingRefinementFailed: "AGWF041",
+  WorkflowContractUnprovable: "AGWF042",
+  WorkflowEmissionIdentityCollision: "AGWF043",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -374,4 +379,54 @@ model AgwfEntryDuplicateCompensationSeed {
   summary: "Duplicate diagnostic-fork compensation seed";
   remediation: "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.";
   since: "2.11.0";
+}
+
+/** AGWF039 — Bound workflow name does not resolve exactly once (#167). */
+@jsonSchema
+model AgwfEntryBoundWorkflowNotFound {
+  id: "AGWF039";
+  severity: "error";
+  summary: "Bound workflow name does not resolve exactly once";
+  remediation: "Ontology action '{0}' is bound to workflow '{1}', but that name resolves to {2} workflow definitions in this compilation. Declare exactly one C# or imported workflow with that ordinal name.";
+  since: "2.13.0";
+}
+
+/** AGWF040 — Workflow step action reference is invalid (#167). */
+@jsonSchema
+model AgwfEntryWorkflowActionReferenceInvalid {
+  id: "AGWF040";
+  severity: "error";
+  summary: "Workflow step action reference is invalid";
+  remediation: "Reachable step '{0}' in workflow '{1}' has {2}. Every reachable step must carry one statically closed action reference that resolves exactly once by (DomainName, ObjectTypeName, ActionName).";
+  since: "2.13.0";
+}
+
+/** AGWF041 — Workflow binding refinement proof failed (#167). */
+@jsonSchema
+model AgwfEntryWorkflowBindingRefinementFailed {
+  id: "AGWF041";
+  severity: "error";
+  summary: "Workflow binding refinement proof failed";
+  remediation: "Workflow '{0}' does not refine bound action '{1}': {2}";
+  since: "2.13.0";
+}
+
+/** AGWF042 — Workflow contract cannot be proved statically (#167). */
+@jsonSchema
+model AgwfEntryWorkflowContractUnprovable {
+  id: "AGWF042";
+  severity: "error";
+  summary: "Workflow contract cannot be proved statically";
+  remediation: "Workflow '{0}' bound to action '{1}' cannot be proved statically: {2}";
+  since: "2.13.0";
+}
+
+/** AGWF043 — Distinct workflow identities collide after generated-name normalization (#167). */
+@jsonSchema
+model AgwfEntryWorkflowEmissionIdentityCollision {
+  id: "AGWF043";
+  severity: "error";
+  summary: "Workflow generated identity collision";
+  remediation: "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique.";
+  since: "2.13.0";
 }

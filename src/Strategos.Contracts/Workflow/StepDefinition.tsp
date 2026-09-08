@@ -1,4 +1,5 @@
 import "@typespec/json-schema";
+import "./ActionReference.tsp";
 import "./StepConfiguration.tsp";
 
 using JsonSchema;
@@ -41,6 +42,9 @@ alias StepCommon = {
 
   /** Optional step configuration (confidence / retry / compensation / …). */
   configuration?: StepConfigurationDefinition;
+
+  /** Ontology action performed by this specific step occurrence. */
+  action?: ActionReferenceV1;
 };
 
 /**

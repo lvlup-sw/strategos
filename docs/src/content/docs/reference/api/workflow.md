@@ -83,6 +83,122 @@ public static partial class ProcessOrderWorkflow : IWorkflowDefinition<OrderStat
 
 ---
 
+## Workflow action identity
+
+`WorkflowActionReference` in `Strategos.Definitions` is the immutable,
+language-neutral identity of the ontology action performed by one workflow step
+occurrence.
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `DomainName` | `string` | Exact ontology domain name |
+| `ObjectTypeName` | `string` | Exact ontology object descriptor name |
+| `ActionName` | `string` | Exact ontology action name |
+
+The constructor rejects null, empty, and whitespace-only components and
+otherwise preserves each ordinal string as supplied. It carries no CLR type,
+so the identity can cross the workflow contract boundary without coupling a
+consumer to the producer's runtime type system.
+
+### Performs
+
+Use `IStepConfiguration<TState>.Performs(WorkflowActionReference)` on a
+class-based generic step occurrence:
+
+```csharp
+Workflow<OrderState>.Create("process-order")
+    .StartWith<ValidateOrderStep>(step => step
+        .Performs(new WorkflowActionReference(
+            "Orders",
+            "Order",
+            "Validate")))
+    .Then<ProcessPaymentStep>(step => step
+        .Performs(new WorkflowActionReference(
+            "Orders",
+            "Order",
+            "CapturePayment"))
+        .WithRetry(3))
+    .Finally<FulfillOrderStep>(step => step
+        .Performs(new WorkflowActionReference(
+            "Orders",
+            "Order",
+            "Fulfill")));
+```
+
+`Performs` returns the same configuration builder, so it chains with retry,
+timeout, compensation, and confidence configuration. A step occurrence may
+declare it only once; a null reference throws `ArgumentNullException` and a
+second declaration throws `InvalidOperationException`.
+
+Configured overloads are available wherever a class-based structural or
+handler step needs an occurrence identity, including top-level and loop fork
+joins plus approval rejection and timeout paths:
+
+```csharp
+.Fork(
+    path => path.Then<ReserveInventoryStep>(),
+    path => path.Then<AuthorizePaymentStep>())
+.Join<MergeOrderStep>(step => step.Performs(
+    new WorkflowActionReference("Orders", "Order", "Merge")))
+```
+
+The identity is occurrence-scoped. Reusing the same CLR step type in two fork,
+branch, loop, failure, or confidence-handler positions does not imply that both
+occurrences perform the same ontology action. The proof graph is keyed by the
+effective phase name, so occurrences that collapse to one phase identity cannot
+carry different references. Use distinct CLR step types, or distinct instance
+names where the builder exposes a combined name-and-configuration overload.
+There is no type-level/default action attribute.
+
+`StepDefinition.Action` exposes the resulting nullable reference. Ordinary
+unbound workflows may leave it null. When an ontology action is bound to the
+workflow, however, every reachable named step occurrence must supply one closed
+reference so the generator can prove the workflow implementation against the
+action contract. Lambda/delegate steps do not expose `Performs` and therefore
+cannot serve as a proved leaf in a bound workflow.
+
+For compile-time proof, use a direct
+`new WorkflowActionReference(domainName, objectTypeName, actionName)` with
+compile-time constant strings. The generator resolves that exact ordinal
+three-name tuple against the ontology action catalog. In a workflow that an
+ontology action binds, missing references, factories, dynamic expressions,
+blank names, multiple declarations, and zero or multiple catalog matches fail
+with `AGWF040` rather than being accepted for runtime-only resolution. A
+workflow that no action binds is not proved, so its action references are
+carried but not checked. For imported workflow JSON, a malformed `action`
+object is rejected by the import front end as `AGWF023`; `AGWF040` applies only
+after an action reference has been accepted into the workflow model.
+
+Static binding proof is compilation-local. It sees source declarations in the
+current compilation and imported workflow JSON supplied as `AdditionalFiles`,
+not declarations inside referenced binaries or runtime `IOntologySource`
+contributions. Keep the bound action, target workflow, and leaf-action catalog
+source-visible to the same generator invocation. The proof is not repeated at
+runtime for cross-assembly bindings. Portable referenced-assembly catalogs are
+tracked in [#204](https://github.com/lvlup-sw/strategos/issues/204).
+
+The Contracts 0.11.0 workflow schema projects the value as the optional
+occurrence-level `action` object on every step kind:
+
+```json
+{
+  "action": {
+    "domainName": "Orders",
+    "objectTypeName": "Order",
+    "actionName": "CapturePayment"
+  }
+}
+```
+
+All three fields are required when `action` is present. Legacy and unconfigured
+workflow JSON omits the additive field byte-for-byte. See
+[behavioral refinement and workflow bindings](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
+for the proof obligations and `AGWF039`–`AGWF043`.
+
+---
+
 ## StepResult\<TState\>
 
 Result type returned from step execution. Contains the updated state and optional routing information.
@@ -247,6 +363,7 @@ Methods available on the workflow builder for constructing workflow definitions.
 |--------|-------------|
 | `Fork(paths...)` | Execute paths in parallel |
 | `Join<TStep>()` | Merge parallel results |
+| `Join<TStep>(configure)` | Merge parallel results and configure the join occurrence |
 
 ### Loops
 

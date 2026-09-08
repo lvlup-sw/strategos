@@ -89,7 +89,7 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
         {
             var configBuilder = new StepConfigurationBuilder<TState>();
             configure(configBuilder);
-            step = step.WithConfiguration(configBuilder.Configuration);
+            step = configBuilder.ApplyTo(step);
         }
 
         _entryStep = step;
@@ -177,8 +177,7 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
         configure(configBuilder);
 
         // Create step with configuration
-        var step = StepDefinition.Create(typeof(TStep))
-            .WithConfiguration(configBuilder.Configuration);
+        var step = configBuilder.ApplyTo(StepDefinition.Create(typeof(TStep)));
 
         _steps.Add(step);
 
@@ -301,7 +300,7 @@ internal sealed class WorkflowBuilder<TState> : IWorkflowBuilder<TState>
         {
             var configBuilder = new StepConfigurationBuilder<TState>();
             configure(configBuilder);
-            terminalStep = terminalStep.WithConfiguration(configBuilder.Configuration);
+            terminalStep = configBuilder.ApplyTo(terminalStep);
         }
 
         _steps.Add(terminalStep);

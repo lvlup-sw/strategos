@@ -110,5 +110,20 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF038 — Duplicate diagnostic-fork compensation seed.</summary>
         public const string DuplicateCompensationSeed = "AGWF038";
+
+        /// <summary>AGWF039 — Bound workflow name does not resolve exactly once.</summary>
+        public const string BoundWorkflowNotFound = "AGWF039";
+
+        /// <summary>AGWF040 — Workflow step action reference is invalid.</summary>
+        public const string WorkflowActionReferenceInvalid = "AGWF040";
+
+        /// <summary>AGWF041 — Workflow binding refinement proof failed.</summary>
+        public const string WorkflowBindingRefinementFailed = "AGWF041";
+
+        /// <summary>AGWF042 — Workflow contract cannot be proved statically.</summary>
+        public const string WorkflowContractUnprovable = "AGWF042";
+
+        /// <summary>AGWF043 — Workflow generated identity collision.</summary>
+        public const string WorkflowEmissionIdentityCollision = "AGWF043";
     }
 }

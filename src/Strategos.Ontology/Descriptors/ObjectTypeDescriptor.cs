@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 
@@ -24,6 +25,7 @@ public sealed record ObjectTypeDescriptor
 {
     private readonly Type? _clrType;
     private readonly string? _symbolKey;
+    private ImmutableArray<ActionDescriptor> _actions = [];
 
     /// <summary>Canonical descriptor name (per-domain unique).</summary>
     public required string Name { get; init; }
@@ -146,7 +148,19 @@ public sealed record ObjectTypeDescriptor
 
     public IReadOnlyList<LinkDescriptor> Links { get; init; } = [];
 
-    public IReadOnlyList<ActionDescriptor> Actions { get; init; } = [];
+    /// <summary>
+    /// Gets the executable actions declared for this object type. The assigned sequence is
+    /// snapshotted so callers cannot mutate a frozen graph through their original collection.
+    /// </summary>
+    public IReadOnlyList<ActionDescriptor> Actions
+    {
+        get => _actions;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _actions = value.ToImmutableArray();
+        }
+    }
 
     public IReadOnlyList<EventDescriptor> Events { get; init; } = [];
 

@@ -137,11 +137,11 @@ not a code change:
 
 `scripts/contracts-schema-diff.mjs` + `.github/workflows/contracts-schema-diff.yml`
 classify a removed / narrowed / newly-required property as **BREAKING** and an
-added optional property as **NON-BREAKING** against the previous tag's emitted
-schemas (design §Resilience item 3: additive-only minors; breaking ⇒ major
-bump). The classification rules are unit-tested in C# by `SchemaDiffTests` /
-`JsonSchemaDiff` — the authoritative spec — and mirrored by the Node CI driver
-over the schema file set.
+added optional property as **NON-BREAKING** against the complete schema tree in
+the latest package actually published to NuGet. A breaking change advances the
+minor before 1.0 and the major after 1.0. The classification rules are
+unit-tested in C# by `SchemaDiffTests` / `JsonSchemaDiff` — the authoritative
+spec — and mirrored by the Node CI driver over the packaged schema file set.
 
 ## Gate wire slots & the dangling-`gateId` rule (DR-3, #150 → #100)
 
@@ -175,7 +175,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.10.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.11.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -195,7 +195,10 @@ metadata. Integer and decimal predicate values use canonical strings so every
 consumer preserves exact values. Unknown predicate discriminators are invalid,
 never an implicit custom predicate. Closed enums accept only their exact
 TypeSpec wire tokens, and schema-required fields fail deserialization when
-omitted. The package embeds all schema
+omitted; 0.11.0 adds the optional, occurrence-scoped `ActionReferenceV1` on
+workflow steps and `AGWF039`–`AGWF043` to the closed diagnostic vocabulary.
+Consumers must upgrade before receiving one of the new diagnostic tokens. The
+package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under
 `contentFiles/any/any/fixtures/` so Exarchos can extract both. See `CHANGELOG.md`

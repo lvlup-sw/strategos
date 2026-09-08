@@ -287,6 +287,67 @@ public class SagaNotFoundHandlersEmitterTests
         await Assert.That(result).Contains("NotFound(CompleteCompleted evt");
     }
 
+    /// <summary>
+    /// Shared-type fork paths use the same qualified completed-event stems as the event emitter,
+    /// and never leave a NotFound handler for an event type that was suppressed.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkPaths_UsesQualifiedCompletedEventsOnly()
+    {
+        var emitter = new SagaNotFoundHandlersEmitter();
+        var sb = new StringBuilder();
+
+        emitter.Emit(sb, ForkPathMessageFixtures.SharedTypeInstanceNamed());
+        var result = sb.ToString();
+
+        await Assert.That(CountNotFoundHandlers(result, "TechnicalCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "FundamentalCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "AnalyzeStepCompleted")).IsEqualTo(0);
+    }
+
+    /// <summary>
+    /// Fork paths whose phase names also collide retain both path-qualified completed-event
+    /// NotFound handlers without emitting their unavailable unqualified base event.
+    /// </summary>
+    [Test]
+    public async Task Emit_CollidingForkPhaseNames_UsesEachPathQualifiedEventOnce()
+    {
+        var emitter = new SagaNotFoundHandlersEmitter();
+        var sb = new StringBuilder();
+
+        emitter.Emit(sb, ForkPathMessageFixtures.SharedPhaseName());
+        var result = sb.ToString();
+
+        await Assert.That(CountNotFoundHandlers(result, "Path0_AnalyzeStepCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "Path1_AnalyzeStepCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "AnalyzeStepCompleted")).IsEqualTo(0);
+    }
+
+    /// <summary>
+    /// A shared fork-path type that is also used linearly retains its unqualified completed-event
+    /// NotFound handler while each qualified fork-path event is emitted exactly once.
+    /// </summary>
+    [Test]
+    public async Task Emit_SharedTypeForkPaths_WithLinearReuse_KeepsEveryEmittedEvent()
+    {
+        var forkOnly = ForkPathMessageFixtures.SharedTypeInstanceNamed();
+        var linear = StepModel.Create("AnalyzeStep", "TestNamespace.AnalyzeStep");
+        var model = forkOnly with
+        {
+            StepNames = ["AnalyzeStep", .. forkOnly.StepNames],
+            Steps = [linear, .. forkOnly.Steps!],
+        };
+        var emitter = new SagaNotFoundHandlersEmitter();
+        var sb = new StringBuilder();
+
+        emitter.Emit(sb, model);
+        var result = sb.ToString();
+
+        await Assert.That(CountNotFoundHandlers(result, "AnalyzeStepCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "TechnicalCompleted")).IsEqualTo(1);
+        await Assert.That(CountNotFoundHandlers(result, "FundamentalCompleted")).IsEqualTo(1);
+    }
+
     // =============================================================================
     // Helper Methods
     // =============================================================================
@@ -301,4 +362,11 @@ public class SagaNotFoundHandlersEmitterTests
             StateTypeName: "TestState",
             Loops: null);
     }
+
+    private static int CountNotFoundHandlers(string generatedSource, string eventName) =>
+        generatedSource
+            .Split('\n')
+            .Count(line => line.Contains(
+                $"public static void NotFound({eventName} evt,",
+                StringComparison.Ordinal));
 }

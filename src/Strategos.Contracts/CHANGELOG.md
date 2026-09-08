@@ -14,8 +14,38 @@ structural diff in CI.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Schema-diff classifier recurses `definitions` / `$defs` (tooling, no wire
+  impact):** both the Node release gate (`scripts/contracts-schema-diff.mjs`)
+  and the C# classifier (`JsonSchemaDiff`) treated the draft-07 `definitions`
+  container as an unsupported keyword and reported the bundled
+  `workflow-definition-v1.schema.json` as BREAKING ("safety cannot be proven")
+  whenever any definition changed, including purely additive ones. The
+  container is now diffed per entry: an added definition is non-breaking, a
+  removed definition is breaking, and a changed definition is classified by
+  what changed inside it. A test reads the Node keyword lists and requires them
+  to equal the C# classifier's, so the two gates cannot drift again.
+
 ### Added
 
+- **Workflow step action identity (`0.11.0`):** `ActionReferenceV1` carries the
+  ontology domain, object type, and action names on an optional `action` field
+  shared by every workflow step kind. The field is occurrence-scoped and
+  additive; legacy workflow JSON omits it byte-for-byte (#167).
+- **Workflow name is non-blank (`0.11.0`, narrowing):** `WorkflowDefinitionV1.name`
+  gains the `.*\S.*` pattern that every runtime and import lookup already
+  required, and the generated record rejects a whitespace-only name on read and
+  write. The structural diff classifies a new `pattern` as breaking; the change
+  ships under the pre-1.0 minor-bump policy. A document with a blank workflow
+  name was never loadable by Strategos, so no known producer is affected (#167).
+- **Workflow binding diagnostics (`0.11.0`):** the closed `AgwfCode` vocabulary
+  adds `AGWF039`–`AGWF043` for workflow lookup, occurrence action identity,
+  refuted behavioral refinement, unprovable workflow contracts, and generated
+  identity collisions. The schema
+  change is additive, but generated enum converters reject unknown members, so
+  Exarchos and Basileus must adopt 0.11.0 before Strategos emits these codes
+  (#167).
 - **Typed action contracts (`0.10.0`):** versioned, recursive
   `ActionPredicateV1` and `ActionLiteralV1` tagged unions; typed hard/soft
   `@requires` metadata; and explicit `@ensures` post-state guarantees. Integer
@@ -109,7 +139,8 @@ have, in this milestone; that is why this is 0.2.0 and not an earlier preview.
   package.
 - **Breaking-change schema diff (T30):** `JsonSchemaDiff` + CI workflow flag a
   removed / narrowed / newly-required property as breaking and an added optional
-  property as non-breaking, compared against the previous tag's schemas.
+  property as non-breaking, compared against the complete schemas in the latest
+  package actually published to NuGet.
 - **Cross-product round-trip harness (T31):** offline harness deriving Zod from
   our own JSON Schema and parsing every fixture against it. The external
   Exarchos pinned-Zod-snapshot step (exarchos#1247) is out of scope and marked
@@ -118,9 +149,13 @@ have, in this milestone; that is why this is 0.2.0 and not an earlier preview.
 ## Cross-product breaking changes
 
 Schema (wire-contract) changes that would break Exarchos or Basileus consumers
-are tracked here and gate a major version bump (per the T30 structural diff).
+are tracked here and gate a minor version increment before 1.0 or a major
+version increment after 1.0 (per the T30 structural diff).
 
 - **0.2.0:** None this release (initial published contract).
 - **0.10.0:** Ontology action metadata uses typed versioned predicate arrays;
   legacy relation-only extensions are removed by the coordinated #168 contract
   migration.
+- **0.11.0:** None. Workflow-step action identity and `AGWF039`–`AGWF043` are
+  additive. Older generated closed-enum consumers must still upgrade before
+  receiving the new diagnostic codes.

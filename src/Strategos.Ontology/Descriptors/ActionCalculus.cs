@@ -7,6 +7,83 @@ namespace Strategos.Ontology.Descriptors;
 /// <summary>Pure composition operations over action contracts.</summary>
 public static class ActionCalculus
 {
+    /// <summary>
+    /// Proves that an executable action is a behavioral refinement of a declared
+    /// action specification.
+    /// </summary>
+    public static ActionRefinementAnalysis AnalyzeRefinement(
+        ActionDescriptor specification,
+        ActionDescriptor implementation,
+        AuthorityLattice authorityLattice,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(specification);
+        ArgumentNullException.ThrowIfNull(implementation);
+        ArgumentNullException.ThrowIfNull(authorityLattice);
+        cancellationToken.ThrowIfCancellationRequested();
+        var proof = ActionContractProofEngine.Analyze(implementation, cancellationToken);
+        AuthorityRequirement implementationAuthority;
+        try
+        {
+            implementationAuthority = implementation.RequiredAuthority is null
+                ? authorityLattice.Join([])
+                : authorityLattice.Join(implementation.RequiredAuthority);
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return RefinementResult(
+                ActionRefinementStatus.Invalid,
+                ActionRefinementObligation.ImplementationContract,
+                exception.Message);
+        }
+
+        return AnalyzeRefinement(
+            specification,
+            proof.Action.Subject,
+            proof.Requirement,
+            proof.Kind == ActionContractProofKind.Closed ? proof.EffectiveGuarantee : null,
+            implementationAuthority,
+            new ActionFrame(implementation.TouchedResources),
+            proof.Kind switch
+            {
+                ActionContractProofKind.Closed => ActionContractVerificationStatus.Proven,
+                ActionContractProofKind.Opaque => ActionContractVerificationStatus.PartiallyVerified,
+                _ => ActionContractVerificationStatus.Refuted,
+            },
+            proof.Reason,
+            authorityLattice,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Proves that a composed workflow contract is a behavioral refinement of a
+    /// declared action specification.
+    /// </summary>
+    public static ActionRefinementAnalysis AnalyzeRefinement(
+        ActionDescriptor specification,
+        CompositeActionContract implementation,
+        AuthorityLattice authorityLattice,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(specification);
+        ArgumentNullException.ThrowIfNull(implementation);
+        ArgumentNullException.ThrowIfNull(authorityLattice);
+        cancellationToken.ThrowIfCancellationRequested();
+        return AnalyzeRefinement(
+            specification,
+            implementation.Subject,
+            implementation.FirstRequirement,
+            implementation.FinalGuarantee,
+            implementation.RequiredAuthority,
+            implementation.Frame,
+            implementation.VerificationStatus,
+            implementation.VerificationStatus == ActionContractVerificationStatus.Refuted
+                ? "The implementation composite contains a refuted seam."
+                : null,
+            authorityLattice,
+            cancellationToken);
+    }
+
     /// <summary>Creates the distinct empty sequential operand for a subject.</summary>
     public static ActionCompositionOperand Identity(ActionSubject subject) =>
         ActionCompositionOperand.Identity(subject);
@@ -332,6 +409,237 @@ public static class ActionCalculus
         null,
         [],
         [message]);
+
+    private static ActionRefinementAnalysis AnalyzeRefinement(
+        ActionDescriptor specification,
+        ActionSubject implementationSubject,
+        ActionPredicate implementationRequirement,
+        ActionPredicate? implementationGuarantee,
+        AuthorityRequirement implementationAuthority,
+        ActionFrame implementationFrame,
+        ActionContractVerificationStatus implementationStatus,
+        string? implementationFailure,
+        AuthorityLattice authorityLattice,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(specification);
+        ArgumentNullException.ThrowIfNull(implementationSubject);
+        ArgumentNullException.ThrowIfNull(implementationRequirement);
+        ArgumentNullException.ThrowIfNull(implementationAuthority);
+        ArgumentNullException.ThrowIfNull(implementationFrame);
+        ArgumentNullException.ThrowIfNull(authorityLattice);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var specificationProof = ActionContractProofEngine.Analyze(specification, cancellationToken);
+        if (specificationProof.Kind == ActionContractProofKind.Invalid)
+        {
+            return RefinementResult(
+                ActionRefinementStatus.Invalid,
+                ActionRefinementObligation.SpecificationContract,
+                specificationProof.Reason ?? "The specification contract is invalid.");
+        }
+
+        if (implementationStatus == ActionContractVerificationStatus.Refuted)
+        {
+            return RefinementResult(
+                ActionRefinementStatus.Invalid,
+                ActionRefinementObligation.ImplementationContract,
+                implementationFailure ?? "The implementation contract is invalid or refuted.");
+        }
+
+        if (!Enum.IsDefined(implementationStatus))
+        {
+            return RefinementResult(
+                ActionRefinementStatus.Invalid,
+                ActionRefinementObligation.ImplementationContract,
+                $"The implementation contract has unknown verification status '{implementationStatus}'.");
+        }
+
+        var failures = ImmutableArray.CreateBuilder<ActionRefinementFailure>();
+        var hasInvalidObligation = false;
+        var hasRefutedObligation = false;
+        var hasOpaqueObligation = false;
+        if (implementationStatus == ActionContractVerificationStatus.PartiallyVerified)
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.ImplementationContract,
+                "A custom predicate leaves part of the implementation contract runtime-only."));
+            hasOpaqueObligation = true;
+        }
+
+        if (!specification.Subject.Equals(implementationSubject))
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.Subject,
+                $"Implementation subject '{implementationSubject}' does not match specification subject "
+                + $"'{specification.Subject}'."));
+            hasRefutedObligation = true;
+        }
+
+        var adapter = new ActionPredicateLogicAdapter();
+        var implementationRequirementFormula = adapter.ToLogic(
+            implementationRequirement,
+            cancellationToken);
+        if (specificationProof.RequirementFormula.ContainsOpaque
+            || implementationRequirementFormula.ContainsOpaque)
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.Requirements,
+                "A custom predicate prevents a complete requirements-refinement proof."));
+            hasOpaqueObligation = true;
+        }
+        else
+        {
+            AddImplicationFailure(
+                failures,
+                ActionRefinementObligation.Requirements,
+                FiniteDomainSolver.Implies(
+                    specificationProof.RequirementFormula,
+                    implementationRequirementFormula,
+                    cancellationToken),
+                "The specification requirement does not imply the implementation requirement.",
+                ref hasInvalidObligation,
+                ref hasRefutedObligation,
+                ref hasOpaqueObligation);
+        }
+
+        if (implementationGuarantee is null
+            || specificationProof.DeclaredGuaranteeFormula.ContainsOpaque)
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.Guarantees,
+                "A custom predicate prevents a complete guarantees-refinement proof."));
+            hasOpaqueObligation = true;
+        }
+        else
+        {
+            var implementationGuaranteeFormula = adapter.ToLogic(
+                implementationGuarantee,
+                cancellationToken);
+            if (implementationGuaranteeFormula.ContainsOpaque)
+            {
+                failures.Add(new ActionRefinementFailure(
+                    ActionRefinementObligation.Guarantees,
+                    "A custom predicate prevents a complete guarantees-refinement proof."));
+                hasOpaqueObligation = true;
+            }
+            else
+            {
+                AddImplicationFailure(
+                    failures,
+                    ActionRefinementObligation.Guarantees,
+                    FiniteDomainSolver.Implies(
+                        implementationGuaranteeFormula,
+                        specificationProof.DeclaredGuaranteeFormula,
+                        cancellationToken),
+                    "The implementation guarantee does not imply the specification guarantee.",
+                    ref hasInvalidObligation,
+                    ref hasRefutedObligation,
+                    ref hasOpaqueObligation);
+            }
+        }
+
+        AuthorityRequirement? specificationAuthority = null;
+        try
+        {
+            specificationAuthority = specification.RequiredAuthority is null
+                ? authorityLattice.Join([])
+                : authorityLattice.Join(specification.RequiredAuthority);
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or ArgumentException)
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.SpecificationContract,
+                exception.Message));
+            hasInvalidObligation = true;
+        }
+
+        if (specificationAuthority is not null)
+        {
+            try
+            {
+                if (!authorityLattice.IsAtMost(implementationAuthority, specificationAuthority))
+                {
+                    failures.Add(new ActionRefinementFailure(
+                        ActionRefinementObligation.Authority,
+                        "The implementation requires more authority than the specification permits."));
+                    hasRefutedObligation = true;
+                }
+            }
+            catch (ArgumentException exception)
+            {
+                failures.Add(new ActionRefinementFailure(
+                    ActionRefinementObligation.ImplementationContract,
+                    exception.Message));
+                hasInvalidObligation = true;
+            }
+        }
+
+        var specificationFrame = new ActionFrame(specification.TouchedResources);
+        var outsideFrame = implementationFrame.Resources
+            .Where(resource => !specificationFrame.Contains(resource))
+            .ToArray();
+        if (outsideFrame.Length != 0)
+        {
+            failures.Add(new ActionRefinementFailure(
+                ActionRefinementObligation.Frame,
+                "The implementation writes outside the specification frame: "
+                + string.Join(", ", outsideFrame.Select(resource => $"{resource.Kind}:{resource.Name}"))
+                + "."));
+            hasRefutedObligation = true;
+        }
+
+        return new ActionRefinementAnalysis(
+            hasInvalidObligation
+                ? ActionRefinementStatus.Invalid
+                : hasRefutedObligation
+                    ? ActionRefinementStatus.Refuted
+                    : hasOpaqueObligation
+                        ? ActionRefinementStatus.Opaque
+                        : ActionRefinementStatus.Proven,
+            failures);
+    }
+
+    private static ActionRefinementAnalysis RefinementResult(
+        ActionRefinementStatus status,
+        ActionRefinementObligation obligation,
+        string message) => new(
+            status,
+            [new ActionRefinementFailure(obligation, message)]);
+
+    private static void AddImplicationFailure(
+        ICollection<ActionRefinementFailure> failures,
+        ActionRefinementObligation obligation,
+        LogicDecision decision,
+        string fallbackMessage,
+        ref bool hasInvalidObligation,
+        ref bool hasRefutedObligation,
+        ref bool hasOpaqueObligation)
+    {
+        if (decision.Kind == LogicDecisionKind.Unsatisfiable)
+        {
+            return;
+        }
+
+        failures.Add(new ActionRefinementFailure(
+            obligation,
+            decision.Kind == LogicDecisionKind.Satisfiable
+                ? fallbackMessage
+                : decision.Reason ?? "The implication could not be decided.",
+            decision.Witness.Select(pair => new ActionCounterexampleFact(pair.Key, pair.Value))));
+        switch (decision.Kind)
+        {
+            case LogicDecisionKind.Satisfiable:
+                hasRefutedObligation = true;
+                break;
+            case LogicDecisionKind.Opaque:
+                hasOpaqueObligation = true;
+                break;
+            default:
+                hasInvalidObligation = true;
+                break;
+        }
+    }
 
     private static string IllegalSeamMessage(
         ActionDescriptor upstream,

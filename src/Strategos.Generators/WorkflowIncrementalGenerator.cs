@@ -9,6 +9,7 @@ using Strategos.Generators.Emitters;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Import;
 using Strategos.Generators.Models;
+using Strategos.Generators.Proof;
 
 namespace Strategos.Generators;
 
@@ -70,22 +71,9 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 WorkflowAttributeFullName,
                 predicate: static (node, _) => IsValidTargetNode(node),
                 transform: static (ctx, ct) => TransformToResult(ctx, ct));
-
-        // Register source output for each workflow
-        context.RegisterSourceOutput(workflowDeclarations, static (spc, result) =>
-        {
-            // Report diagnostics
-            foreach (var diagnostic in result.Diagnostics)
-            {
-                spc.ReportDiagnostic(diagnostic);
-            }
-
-            // Generate source if model is valid
-            if (result.Model is not null)
-            {
-                EmitWorkflowSources(spc, result.Model);
-            }
-        });
+        var authoredWorkflowModels = workflowDeclarations
+            .Where(static result => result.Model is not null)
+            .Select(static (result, _) => result.Model!);
 
         // DR-12 (#100), task 017 — the JSON import BRIDGE half. Combine each parsed
         // workflow-definition AdditionalFile with the compilation (needed to resolve wire
@@ -98,19 +86,86 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         var bridgedImports = importReads
             .Combine(context.CompilationProvider)
             .Select(static (pair, ct) => BridgeImportFile(pair.Left, pair.Right, ct));
+        var importedWorkflowModels = bridgedImports
+            .Where(static result => result.Model is not null)
+            .Select(static (result, _) => result.Model!);
 
-        context.RegisterSourceOutput(bridgedImports, static (spc, bridged) =>
+        // Register source output only after both front ends are available. Generated source hints
+        // are global to the driver, so every C#/JSON model whose PascalCase emission identity
+        // collides must be withheld before AddSource; the aggregate proof output reports the
+        // stable build diagnostic.
+        var authoredEmissionInput = workflowDeclarations
+            .Combine(authoredWorkflowModels.Collect())
+            .Combine(importedWorkflowModels.Collect());
+        context.RegisterSourceOutput(authoredEmissionInput, static (spc, input) =>
         {
+            var result = input.Left.Left;
+
+            foreach (var diagnostic in result.Diagnostics)
+            {
+                spc.ReportDiagnostic(diagnostic);
+            }
+
+            if (result.Model is not null
+                && !HasEmissionCollision(
+                    result.Model,
+                    input.Left.Right,
+                    input.Right))
+            {
+                EmitWorkflowSources(spc, result.Model);
+            }
+        });
+
+        var importedEmissionInput = bridgedImports
+            .Combine(authoredWorkflowModels.Collect())
+            .Combine(importedWorkflowModels.Collect());
+        context.RegisterSourceOutput(importedEmissionInput, static (spc, input) =>
+        {
+            var bridged = input.Left.Left;
             foreach (var diagnostic in bridged.Diagnostics)
             {
                 spc.ReportDiagnostic(diagnostic);
             }
 
-            if (bridged.Model is not null)
+            if (bridged.Model is not null
+                && !HasEmissionCollision(
+                    bridged.Model,
+                    input.Left.Right,
+                    input.Right))
             {
                 EmitWorkflowSources(spc, bridged.Model);
             }
         });
+
+        // #167 — bind ontology actions to the merged C#/JSON workflow catalog and
+        // prove every reachable action occurrence against the bound contract. The
+        // proof consumes WorkflowModel rather than either authoring syntax so both
+        // front ends share one fail-closed analysis path (INV-1).
+        var workflowProofInput = authoredWorkflowModels.Collect()
+            .Combine(importedWorkflowModels.Collect())
+            .Combine(context.CompilationProvider);
+
+        context.RegisterSourceOutput(workflowProofInput, static (spc, input) =>
+        {
+            var workflows = input.Left.Left.AddRange(input.Left.Right);
+            WorkflowBindingProofAnalyzer.AnalyzeFailClosed(spc, input.Right, workflows);
+        });
+    }
+
+    private static bool HasEmissionCollision(
+        WorkflowModel workflow,
+        ImmutableArray<WorkflowModel> authored,
+        ImmutableArray<WorkflowModel> imported)
+    {
+        var authoredCount = authored.Count(candidate => string.Equals(
+            candidate.PascalName,
+            workflow.PascalName,
+            StringComparison.Ordinal));
+        var importedCount = imported.Count(candidate => string.Equals(
+            candidate.PascalName,
+            workflow.PascalName,
+            StringComparison.Ordinal));
+        return authoredCount + importedCount > 1;
     }
 
     /// <summary>
@@ -486,6 +541,16 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
         // Extract approval models for approval handler generation
         var approvalModels = FluentDslParser.ExtractApprovalModels(
+            context.TargetNode,
+            context.SemanticModel,
+            validName,
+            ct);
+
+        // A workflow-bound action may only be proved against a topology the generator captured
+        // in full. Keep this as inert IR metadata: runtime emission retains its established
+        // best-effort behavior, while WorkflowBindingProofAnalyzer consumes the signal and fails
+        // closed for dynamic callbacks/case collections that an extractor would otherwise drop.
+        var topologyClosureFailures = FluentDslParser.ExtractTopologyClosureFailures(
             context.TargetNode,
             context.SemanticModel,
             validName,
@@ -1013,6 +1078,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             DiagnosticForks: diagnosticForkModels)
         {
             StateHasPhaseProperty = stateHasPhaseProperty,
+            TopologyClosureFailures = topologyClosureFailures,
         };
 
         // Termination reachability (#155). The model now carries both the declared terminal and
@@ -1121,7 +1187,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         //
         // Top-level only, by construction — do NOT recurse into NestedEscalationApprovals here,
         // even though the neighbouring approval walks (CountApprovalSteps, AddApprovalSteps,
-        // MainFlowClassification.ClassifyApprovalSteps) all do. Three independent reasons:
+        // MainFlowClassification.ClassifyApprovalSteps) all do. Two independent reasons:
         //   1. A nested approval's PrecedingStepName is the literal placeholder "Escalation"
         //      (ApprovalExtractor.cs:352), not a step name, so the lookup below would search for
         //      a phase no construct ever creates and report nothing.
@@ -1129,8 +1195,6 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         //      handler is replaced by an approval-request handler, which is true only for
         //      approvals in model.ApprovalPoints. A nested approval is entered from the parent's
         //      timeout cascade instead.
-        //   3. The input cannot be authored: IApprovalEscalationBuilder<TState>.Then<TStep>() has
-        //      no configure overload, so no escalation-chain step can carry RequireConfidence.
         foreach (var approval in approvalModels)
         {
             var precedingStep = FindStepByPhaseName(stepModels, approval.PrecedingStepName);

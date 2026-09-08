@@ -278,6 +278,33 @@ internal static class FluentDslParser
     }
 
     /// <summary>
+    /// Finds legal fluent topology that the generator cannot represent in its closed syntax
+    /// grammar and would otherwise omit from the workflow model.
+    /// </summary>
+    /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>
+    /// <param name="semanticModel">The semantic model for symbol-safe DSL identification.</param>
+    /// <param name="workflowName">The exact workflow identity declared by <c>[Workflow]</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Stable failure reasons in authored source order.</returns>
+    public static ImmutableArray<string> ExtractTopologyClosureFailures(
+        SyntaxNode typeDeclaration,
+        SemanticModel semanticModel,
+        string workflowName,
+        CancellationToken cancellationToken)
+    {
+        ThrowHelper.ThrowIfNull(typeDeclaration, nameof(typeDeclaration));
+        ThrowHelper.ThrowIfNull(semanticModel, nameof(semanticModel));
+        ThrowHelper.ThrowIfNullOrWhiteSpace(workflowName, nameof(workflowName));
+
+        var context = FluentDslParseContext.Create(
+            typeDeclaration,
+            semanticModel,
+            workflowName,
+            cancellationToken);
+        return TopologyClosureInspector.Extract(context);
+    }
+
+    /// <summary>
     /// Extracts diagnostic-fork models from the workflow DSL (DR-9, #151).
     /// </summary>
     /// <param name="typeDeclaration">The type declaration containing the workflow definition.</param>

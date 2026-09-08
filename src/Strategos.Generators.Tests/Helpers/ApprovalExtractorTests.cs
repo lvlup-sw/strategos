@@ -676,6 +676,161 @@ public class DirectorApprover { }
     }
 
     /// <summary>
+    /// Verifies that configured continuation steps use the shared step extractor and
+    /// retain their full generator IR instead of collapsing to a bare name/type pair.
+    /// </summary>
+    [Test]
+    public async Task Extract_WithConfiguredContinuationSteps_PreservesFullStepModels()
+    {
+        // Arrange
+        var source = @"
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Strategos.Abstractions;
+using Strategos.Builders;
+using Strategos.Definitions;
+using Strategos.Steps;
+
+public class MyWorkflow
+{
+    public WorkflowDefinition<TestState> Definition = Workflow<TestState>
+        .Create(""test"")
+        .StartWith<ValidateStep>()
+        .AwaitApproval<ManagerApprover>(a => a
+            .OnRejection(r => r.Then<LogRejectionStep>(step => step
+                .WithRetry(3)
+                .ValidateState(state => state.CanContinue, ""Rejection state is invalid"")
+                .Performs(new WorkflowActionReference(""orders"", ""Order"", ""reject""))))
+            .OnTimeout(e => e.Then<NotifyEscalationStep>(step => step
+                .WithTimeout(TimeSpan.FromSeconds(45))
+                .Performs(new WorkflowActionReference(""orders"", ""Order"", ""escalate"")))))
+        .Finally<CompleteStep>();
+}
+
+public class TestState : IWorkflowState
+{
+    public Guid WorkflowId { get; init; }
+    public bool CanContinue { get; set; }
+}
+public abstract class TestStep : IWorkflowStep<TestState>
+{
+    public Task<StepResult<TestState>> ExecuteAsync(
+        TestState state,
+        StepContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(StepResult<TestState>.FromState(state));
+}
+public class ValidateStep : TestStep { }
+public class CompleteStep : TestStep { }
+public class LogRejectionStep : TestStep { }
+public class NotifyEscalationStep : TestStep { }
+public class ManagerApprover { }
+";
+        var context = ParserTestHelper.CreateParseContextValidated(source, "test");
+
+        // Act
+        var approval = ApprovalExtractor.Extract(context).Single();
+
+        // Assert
+        var rejection = approval.RejectionSteps!.Single();
+        await Assert.That(rejection.Retry).IsNotNull();
+        await Assert.That(rejection.Retry!.MaxAttempts).IsEqualTo(3);
+        await Assert.That(rejection.ValidationPredicate).IsNotNull();
+        await Assert.That(rejection.ValidationErrorMessage)
+            .IsEqualTo("Rejection state is invalid");
+        await Assert.That(rejection.ActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(rejection.Action).IsNotNull();
+        await Assert.That(rejection.Action!.ActionName).IsEqualTo("reject");
+
+        var escalation = approval.EscalationSteps!.Single();
+        await Assert.That(escalation.Timeout).IsNotNull();
+        await Assert.That(escalation.Timeout!.Timeout)
+            .IsEqualTo(TimeSpan.FromSeconds(45));
+        await Assert.That(escalation.ActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(escalation.Action).IsNotNull();
+        await Assert.That(escalation.Action!.ActionName).IsEqualTo("escalate");
+    }
+
+    /// <summary>
+    /// Verifies that nested continuation lambdas remain owned by their parent model and
+    /// are not hoisted into the enclosing approval's step or handler collections.
+    /// </summary>
+    [Test]
+    public async Task Extract_WithNestedContinuationLambdas_DoesNotHoistNestedConfiguration()
+    {
+        // Arrange
+        var source = @"
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Strategos.Abstractions;
+using Strategos.Builders;
+using Strategos.Definitions;
+using Strategos.Steps;
+
+public class MyWorkflow
+{
+    public WorkflowDefinition<TestState> Definition = Workflow<TestState>
+        .Create(""test"")
+        .StartWith<ValidateStep>()
+        .AwaitApproval<ManagerApprover>(a => a
+            .OnTimeout(e => e
+                .Then<NotifyEscalationStep>(step => step
+                    .Performs(new WorkflowActionReference(""orders"", ""Order"", ""escalate""))
+                    .RequireConfidence(0.8)
+                    .OnLowConfidence(path => path.Then<ManualReviewStep>(nested => nested
+                        .Performs(new WorkflowActionReference(""orders"", ""Order"", ""review"")))))
+                .EscalateTo<DirectorApprover>(director => director
+                    .OnRejection(r => r.Then<NestedRejectionStep>()))))
+        .Finally<CompleteStep>();
+}
+
+public class TestState : IWorkflowState { public Guid WorkflowId { get; init; } }
+public abstract class TestStep : IWorkflowStep<TestState>
+{
+    public Task<StepResult<TestState>> ExecuteAsync(
+        TestState state,
+        StepContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(StepResult<TestState>.FromState(state));
+}
+public class ValidateStep : TestStep { }
+public class CompleteStep : TestStep { }
+public class NotifyEscalationStep : TestStep { }
+public class ManualReviewStep : TestStep { }
+public class NestedRejectionStep : TestStep { }
+public class ManagerApprover { }
+public class DirectorApprover { }
+";
+        var context = ParserTestHelper.CreateParseContextValidated(source, "test");
+
+        // Act
+        var approval = ApprovalExtractor.Extract(context).Single();
+
+        // Assert
+        await Assert.That(approval.RejectionSteps).IsNull();
+        await Assert.That(approval.EscalationSteps!).HasCount().EqualTo(1);
+
+        var escalation = approval.EscalationSteps![0];
+        await Assert.That(escalation.StepName).IsEqualTo("NotifyEscalationStep");
+        await Assert.That(escalation.Action!.ActionName).IsEqualTo("escalate");
+        await Assert.That(escalation.Confidence).IsNotNull();
+
+        var nestedHandler = escalation.Confidence!
+            .OnLowConfidenceHandlerChain!
+            .Steps
+            .Single();
+        await Assert.That(nestedHandler.StepName).IsEqualTo("ManualReviewStep");
+        await Assert.That(nestedHandler.Action!.ActionName).IsEqualTo("review");
+
+        await Assert.That(approval.NestedEscalationApprovals!).HasCount().EqualTo(1);
+        await Assert.That(approval.NestedEscalationApprovals![0].HasRejection).IsFalse();
+    }
+
+    /// <summary>
     /// Verifies that Extract captures nested approval with correct approver type name.
     /// </summary>
     [Test]

@@ -45,7 +45,7 @@ jobs:
 
       - name: Restore TypeSpec toolchain
         working-directory: src/Strategos.Contracts
-        run: npm ci || npm install --no-audit --no-fund
+        run: npm ci
 
       - name: Regenerate schemas + C# records
         run: bash scripts/contracts-codegen.sh
@@ -61,3 +61,13 @@ jobs:
             src/Strategos.Contracts/schemas \
             src/Strategos.Ontology/Contracts/Generated \
             docs/diagnostics
+          unexpected="$(git status --porcelain --untracked-files=all -- \
+            src/Strategos.Contracts/Generated \
+            src/Strategos.Contracts/schemas \
+            src/Strategos.Ontology/Contracts/Generated \
+            docs/diagnostics)"
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::Regeneration produced untracked contract artifacts:"
+            echo "$unexpected"
+            exit 1
+          fi

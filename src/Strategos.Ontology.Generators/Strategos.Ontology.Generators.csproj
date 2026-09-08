@@ -38,6 +38,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- This workflow-only partial is source-linked explicitly into
+         Strategos.Generators. It has no call site in this ontology analyzer
+         assembly, so compiling it here would ship a dead duplicate. -->
+    <Compile Remove="Analyzers\ActionCompositionAnalyzer.WorkflowBridge.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Strategos.Ontology.Generators.Tests" />
   </ItemGroup>
 

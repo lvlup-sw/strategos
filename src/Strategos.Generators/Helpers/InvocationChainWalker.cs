@@ -140,10 +140,14 @@ internal static class InvocationChainWalker
             .Where(l => l != lambda)
             .ToList();
 
-        // Filter to only invocations not inside nested lambdas, then reverse for source order
+        // Filter to invocations owned by this lambda and order by completion position. Fluent
+        // receiver calls share the same start token, but the inner (earlier) call ends first;
+        // separate expression statements also end in authored order. Reversing the syntax walk
+        // fixes the first shape while inverting the second.
         return allInvocations
             .Where(inv => !nestedLambdas.Any(nested => nested.Span.Contains(inv.Span)))
-            .Reverse()
+            .OrderBy(inv => inv.Span.End)
+            .ThenBy(inv => inv.SpanStart)
             .ToList();
     }
 
@@ -193,7 +197,7 @@ internal static class InvocationChainWalker
 
         // Walk to the receiver (previous call in the chain)
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess
-            && memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            && SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
         {
             WalkChainRecursive(previousInvocation, nodes, currentLoopPrefix, cancellationToken);
         }

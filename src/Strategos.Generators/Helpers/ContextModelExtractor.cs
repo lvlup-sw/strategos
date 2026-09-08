@@ -479,7 +479,7 @@ internal static class ContextModelExtractor
         // so we walk back through the member-access chain to find it.
         if (withContextInvocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            var previousExpression = memberAccess.Expression;
+            var previousExpression = SyntaxHelper.StripTransparent(memberAccess.Expression);
 
             while (previousExpression is InvocationExpressionSyntax previousInvocation)
             {
@@ -497,7 +497,7 @@ internal static class ContextModelExtractor
                 // Continue walking back
                 if (previousInvocation.Expression is MemberAccessExpressionSyntax prevMemberAccess)
                 {
-                    previousExpression = prevMemberAccess.Expression;
+                    previousExpression = SyntaxHelper.StripTransparent(prevMemberAccess.Expression);
                 }
                 else
                 {

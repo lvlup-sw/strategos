@@ -22,7 +22,7 @@ internal static class OntologyGraphHasher
         //   - For each ObjectType (sorted by domain, name): Name, DomainName,
         //     ParentTypeName, Kind (ObjectKind enum), KeyProperty name,
         //     Properties (Name/Kind/PropertyType/IsRequired/VectorDimensions),
-        //     Actions (Name/AcceptsType/ReturnsType/BindingType/BoundWorkflowName/
+        //     Actions (Name/AcceptsType/ReturnsType/BindingType/BoundWorkflow.WorkflowId/
         //     BoundToolName/BoundToolMethod/Preconditions/Postconditions),
         //     Links (Name/TargetTypeName/Cardinality),
         //     Events (EventType/Severity/MaterializedLinks/UpdatedProperties),
@@ -248,7 +248,7 @@ internal static class OntologyGraphHasher
         // Action dispatch routing: rebinding from one workflow/tool to another
         // is a structural behavior change for cache invalidation, even if the
         // surface shape (Name/Accepts/Returns) is unchanged.
-        WriteString(writer, a.BoundWorkflowName ?? string.Empty);
+        WriteString(writer, a.BoundWorkflow?.WorkflowId ?? string.Empty);
         WriteString(writer, a.BoundToolName ?? string.Empty);
         WriteString(writer, a.BoundToolMethod ?? string.Empty);
         writer.Write(a.IsReadOnly);

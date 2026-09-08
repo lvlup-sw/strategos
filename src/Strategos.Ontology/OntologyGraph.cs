@@ -60,11 +60,11 @@ public sealed class OntologyGraph
         IReadOnlyList<string>? warnings = null,
         ImmutableArray<OntologyDiagnostic> nonFatalDiagnostics = default)
     {
-        Domains = domains;
-        ObjectTypes = objectTypes;
-        Interfaces = interfaces;
-        CrossDomainLinks = crossDomainLinks;
-        WorkflowChains = workflowChains;
+        Domains = domains.ToImmutableArray();
+        ObjectTypes = objectTypes.ToImmutableArray();
+        Interfaces = interfaces.ToImmutableArray();
+        CrossDomainLinks = crossDomainLinks.ToImmutableArray();
+        WorkflowChains = workflowChains.ToImmutableArray();
         // Defensive snapshot: copy the outer dictionary and wrap each inner list as a
         // ReadOnlyCollection so external callers cannot downcast and mutate the graph's
         // reverse index after construction.
@@ -74,14 +74,14 @@ public sealed class OntologyGraph
                 objectTypeNamesByType.ToDictionary(
                     kvp => kvp.Key,
                     kvp => (IReadOnlyList<string>)kvp.Value.ToList().AsReadOnly()));
-        Warnings = warnings ?? [];
+        Warnings = warnings?.ToImmutableArray() ?? ImmutableArray<string>.Empty;
         NonFatalDiagnostics = nonFatalDiagnostics.IsDefault
             ? ImmutableArray<OntologyDiagnostic>.Empty
             : nonFatalDiagnostics;
 
-        _objectTypeLookup = BuildObjectTypeLookup(objectTypes);
-        _implementorsLookup = BuildImplementorsLookup(objectTypes);
-        _workflowChainLookup = BuildWorkflowChainLookup(workflowChains);
+        _objectTypeLookup = BuildObjectTypeLookup(ObjectTypes);
+        _implementorsLookup = BuildImplementorsLookup(ObjectTypes);
+        _workflowChainLookup = BuildWorkflowChainLookup(WorkflowChains);
 
         Version = OntologyGraphHasher.ComputeVersion(this);
     }

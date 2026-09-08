@@ -68,8 +68,7 @@ internal sealed class BranchBuilder<TState> : IBranchBuilder<TState>
         configure(configBuilder);
 
         // Create step with configuration
-        var step = StepDefinition.Create(typeof(TStep))
-            .WithConfiguration(configBuilder.Configuration);
+        var step = configBuilder.ApplyTo(StepDefinition.Create(typeof(TStep)));
 
         _steps.Add(step);
         return this;

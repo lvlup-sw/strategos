@@ -91,6 +91,33 @@ public static class AgwfCatalogEmitter
         // all share so regeneration is idempotent.
         entries.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
 
+        var enumSchemaPath = Path.Combine(schemasDir, EnumSchemaFileName);
+        if (!File.Exists(enumSchemaPath))
+        {
+            await Console.Error.WriteLineAsync(
+                $"AGWF enum schema not found: {enumSchemaPath}").ConfigureAwait(false);
+            return 1;
+        }
+
+        using (var enumSchema = JsonDocument.Parse(
+                   await File.ReadAllTextAsync(enumSchemaPath).ConfigureAwait(false)))
+        {
+            var enumCodes = enumSchema.RootElement.GetProperty("enum")
+                .EnumerateArray()
+                .Select(item => item.GetString())
+                .ToArray();
+            var entryCodes = entries.Select(entry => entry.Id).ToArray();
+            if (!enumCodes.SequenceEqual(entryCodes, StringComparer.Ordinal))
+            {
+                await Console.Error.WriteLineAsync(
+                    "AGWF authority mismatch: AgwfCode.json and AgwfEntry*.json "
+                    + "must declare the same codes in the same stable order. "
+                    + $"enum=[{string.Join(",", enumCodes)}], "
+                    + $"entries=[{string.Join(",", entryCodes)}]").ConfigureAwait(false);
+                return 1;
+            }
+        }
+
         Directory.CreateDirectory(outputDir);
         await File.WriteAllTextAsync(
             Path.Combine(outputDir, "AgwfCode.g.cs"), EmitEnum(entries)).ConfigureAwait(false);

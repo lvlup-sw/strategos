@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 32,
+  "count": 37,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -257,6 +257,46 @@
       "summary": "Duplicate diagnostic-fork compensation seed",
       "remediation": "Workflow '{0}' declares compensation seed '{2}' more than once on diagnostic-fork edges at {1}. Two edges that share a seed cannot share a DiagnosticForkCount counter; use distinct compensation seeds.",
       "since": "2.11.0"
+    },
+    {
+      "name": "BoundWorkflowNotFound",
+      "id": "AGWF039",
+      "severity": "error",
+      "summary": "Bound workflow name does not resolve exactly once",
+      "remediation": "Ontology action '{0}' is bound to workflow '{1}', but that name resolves to {2} workflow definitions in this compilation. Declare exactly one C# or imported workflow with that ordinal name.",
+      "since": "2.13.0"
+    },
+    {
+      "name": "WorkflowActionReferenceInvalid",
+      "id": "AGWF040",
+      "severity": "error",
+      "summary": "Workflow step action reference is invalid",
+      "remediation": "Reachable step '{0}' in workflow '{1}' has {2}. Every reachable step must carry one statically closed action reference that resolves exactly once by (DomainName, ObjectTypeName, ActionName).",
+      "since": "2.13.0"
+    },
+    {
+      "name": "WorkflowBindingRefinementFailed",
+      "id": "AGWF041",
+      "severity": "error",
+      "summary": "Workflow binding refinement proof failed",
+      "remediation": "Workflow '{0}' does not refine bound action '{1}': {2}",
+      "since": "2.13.0"
+    },
+    {
+      "name": "WorkflowContractUnprovable",
+      "id": "AGWF042",
+      "severity": "error",
+      "summary": "Workflow contract cannot be proved statically",
+      "remediation": "Workflow '{0}' bound to action '{1}' cannot be proved statically: {2}",
+      "since": "2.13.0"
+    },
+    {
+      "name": "WorkflowEmissionIdentityCollision",
+      "id": "AGWF043",
+      "severity": "error",
+      "summary": "Workflow generated identity collision",
+      "remediation": "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique.",
+      "since": "2.13.0"
     }
   ]
 }

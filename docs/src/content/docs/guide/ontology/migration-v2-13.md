@@ -1,6 +1,6 @@
 ---
 title: Migrate action contracts to 2.13
-description: Upgrade string-shaped action preconditions to typed predicates, explicit guarantees, ActionFacts, and tri-state discovery.
+description: Upgrade string-shaped action preconditions to typed predicates, explicit guarantees, typed workflow bindings, ActionFacts, and tri-state discovery.
 sidebar:
   order: 7
 ---
@@ -9,6 +9,16 @@ Strategos 2.13 replaces string-shaped action preconditions with a typed,
 immutable contract model and exact sequential proofs. This is an intentional
 source-breaking change: there is no compatibility initializer that accepts or
 parses a legacy expression string.
+
+## Upgrading from the last published release
+
+The examples below contrast 2.12 with 2.13 because the changes were staged
+that way, but 2.11 and 2.12 were never published: the last released package
+set is 2.10.0. A consumer that restores 2.13.0 absorbs the 2.11.0 changes in
+the same restore. Read the 2.11.0 section of the
+[CHANGELOG](https://github.com/lvlup-sw/strategos/blob/main/CHANGELOG.md)
+first; its action-calculus, identity-routing, and authentication changes are
+not repeated here.
 
 ## Approved versioning exception
 
@@ -19,9 +29,11 @@ semantic authorities. The release therefore removes that surface in one step
 instead of carrying an obsolete parser through the 2.x line.
 
 This exception applies to the source API. The cross-language contracts package
-is independently versioned and moves from 0.9.0 to 0.10.0. Contract consumers
-must adopt the 0.10 tagged predicate schema before receiving newly generated
-action metadata.
+is independently versioned: 0.10.0 introduces the tagged predicate schema, and
+0.11.0 adds occurrence-scoped workflow action identity without making the
+workflow wire schema breaking. Contract consumers should adopt 0.11.0 before
+receiving workflow definitions that carry the new optional `action` field or
+diagnostics carrying one of the new `AGWF039`–`AGWF043` closed-enum tokens.
 
 ## 1. Give every action an ontology subject
 
@@ -260,10 +272,170 @@ must have the same `ActionSubject` in 2.13. Use
 `ActionCalculus.Identity(subject)` for the distinct empty operand; do not model
 identity as an ordinary true/true action.
 
-## 8. Upgrade TypeSpec metadata
+## 8. Bind workflow implementations by typed identity
 
-Upgrade `LevelUp.Strategos.Contracts` to 0.10.0 and replace relation-only or
-consumer-parsed metadata with `ActionPredicateV1`:
+Workflow-bound actions now carry an immutable `WorkflowBindingReference`
+instead of a writable workflow-name string:
+
+```csharp
+obj.Action("Publish")
+    .BoundToWorkflow(
+        new WorkflowBindingReference("publish-position"));
+```
+
+`WorkflowBindingReference.WorkflowId` is the exact ordinal name used to look up
+the workflow catalog. The constructor rejects null, empty, or whitespace-only
+identifiers and otherwise preserves the string as supplied; it does not trim or
+case-normalize it. The existing
+`.BoundToWorkflow("publish-position")` overload remains supported and constructs
+the same typed reference.
+
+If code initialized descriptors directly, replace the pre-release string
+property:
+
+```csharp
+// Before
+new ActionDescriptor(subject, "Publish", "Publish a position")
+{
+    BindingType = ActionBindingType.Workflow,
+    BoundWorkflowName = "publish-position",
+};
+
+// 2.13
+new ActionDescriptor(subject, "Publish", "Publish a position")
+{
+    BindingType = ActionBindingType.Workflow,
+    BoundWorkflow = new WorkflowBindingReference("publish-position"),
+};
+```
+
+Then identify the ontology action performed by every reachable named step
+occurrence in that workflow. `WorkflowActionReference` contains the ontology
+domain, object type, and action names; `.Performs(...)` attaches it to one use
+of a step, not to the CLR step type:
+
+```csharp
+Workflow<PublishState>.Create("publish-position")
+    .StartWith<ValidatePositionStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Validate")))
+    .Then<WritePositionStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Write")))
+    .Finally<NotifyPublicationStep>(step => step.Performs(
+        new WorkflowActionReference("Trading", "Position", "Notify")));
+```
+
+The same CLR step type may therefore name different actions at different
+occurrences, including occurrences inside branch, loop, fork, failure, and
+low-confidence paths. Declare `.Performs(...)` at most once per occurrence.
+All three identity names reject null, empty, or whitespace-only values.
+
+For static workflow-binding proof, use a direct
+`new WorkflowActionReference(...)` whose three arguments are compile-time
+constant strings. Factories, mutable locals, dynamic expressions, and delegate
+steps cannot provide the closed identity required by the analyzer. Imported
+workflow definitions may carry the equivalent structured action reference.
+
+The workflow must be a behavioral subtype of the bound action:
+
+| Obligation | Required relation |
+|---|---|
+| Requirements (contravariant) | `requires(bound action) implies requires(workflow entry)` |
+| Guarantees (covariant) | Every successful workflow exit implies `ensures(bound action)` |
+| Frame | The union of leaf-action writes is a subset of the bound action's frame |
+| Authority | The join of leaf-action requirements is no stronger than the bound action's authority limit |
+
+Every leaf action must have the bound action's subject, every internal workflow
+seam must compose, and parallel paths must not have write/write or
+write/predicate-read interference. A closed counterexample is a definite
+refinement failure; a custom predicate or dynamic contract is not treated as a
+successful proof.
+
+The proof also requires a statically closed workflow topology. Keep branch
+cases, loop bodies and names, fork paths, approval handlers, confidence
+handlers, and failure handlers inline and analyzer-visible. Dynamic callback or
+collection helpers fail with `AGWF042` instead of being silently omitted.
+Declare at most one `OnRejection` and one `OnTimeout` callback per approval;
+duplicates also fail closed because the runtime builder uses last-wins semantics.
+Nonterminal workflow `OnFailure`, fork-path `OnFailure`, and nested
+`EscalateTo` approval routing also remain outside the proved v2.13 subset because
+those routes are not yet represented by the closed proof graph.
+Steps configured with `Compensate<T>` likewise report `AGWF042`; rollback-path
+refinement is deferred to #169.
+No binding proof or runtime enforcement is added to an unbound workflow. The
+topology lowering fixes shipped with this release still apply to every workflow.
+
+The v2.13 proof is compilation-local. It sees source declarations in the
+current compilation and imported workflow JSON supplied as `AdditionalFiles`;
+it does not inspect ontology or workflow declarations inside referenced
+binaries, execute `IOntologySource`, or repeat the proof at runtime. Keep the
+bound action, target workflow, and referenced leaf actions source-visible to
+one generator invocation. Source-visible `DomainOntology.Define` bodies form
+the declaration catalog regardless of which domains a particular host later
+registers. A direct `ActionDescriptor` construction is cataloged only when it
+is inline in the `ObjectTypeDescriptor.Actions` collection passed through
+`ObjectTypeFromDescriptor` from such a body.
+
+Portable proof catalogs for referenced assemblies are deferred to
+[#204](https://github.com/lvlup-sw/strategos/issues/204).
+
+The proof runs inside the `LevelUp.Strategos.Generators` source generator. A
+project that references `LevelUp.Strategos.Ontology` but not the generator
+package compiles a `BoundToWorkflow(...)` binding with no diagnostic at all:
+nothing proves it and nothing reports that it is unproved. Add the generator
+package to every project that declares a workflow-bound action, or move the
+binding into the project that owns the workflow.
+
+The generator catalogs a binding only when the whole fluent chain from
+`obj.Action(...)` to `.BoundToWorkflow(...)` is one expression inside
+`DomainOntology.Define`. A `Define` body factored into helper methods, a
+binding applied to a builder held in a local, or a chain routed through an
+extension method fails closed as `AGWF042`. Inline the chain before upgrading.
+The same closure rule applies to the workflow side: a bound workflow's
+`Definition` must be one direct `Workflow<TState>.Create(...)...Finally<TStep>()`
+chain. A `Definition` that delegates to a helper method still generates the
+saga it generated on 2.12, but it cannot be proved and reports `AGWF042` while
+bound.
+
+The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), and `AGWF043`
+(emission collision) carry the `NotConfigurable` tag. `<NoWarn>`,
+`#pragma warning disable`, and `.editorconfig` severity entries do not suppress
+or downgrade them. The resolution diagnostics `AGWF039` (bound workflow not
+found) and `AGWF040` (action reference invalid) are Errors by default but stay
+configurable: a project whose workflow or ontology lives in another assembly,
+which the compilation-local proof cannot see until
+[#204](https://github.com/lvlup-sw/strategos/issues/204) lands, silences them
+explicitly with `<NoWarn>AGWF039</NoWarn>` in its project file. That entry is
+the visible, greppable record that the binding is declared but unproved; delete
+it when the cross-assembly proof ships. An internal failure of the proof itself
+is reported as `AGWF042` in any compilation that calls `BoundToWorkflow`, rather
+than as the Roslyn generator-crash warning, so a bound workflow never builds
+green because the analyzer did not run. A compilation that binds nothing is not
+affected by such a failure.
+
+The proof graph is keyed by effective phase name. Reusing one step type in
+multiple configured positions is valid only when the positions do not collapse
+to one phase identity with different action references. Use distinct step types,
+or distinct instance names where a builder exposes a combined
+name-and-configuration overload.
+
+The new workflow diagnostics all have error severity and fail closed:
+
+| Code | Meaning and migration action |
+|---|---|
+| `AGWF039` | The exact ordinal `WorkflowId` resolves to zero or multiple C# or imported workflows. Declare exactly one matching workflow. |
+| `AGWF040` | A reachable C# step has a missing, dynamic, duplicate, or unresolved action reference, or an accepted imported reference does not resolve exactly once. Add one direct, constant `.Performs(...)` declaration whose three names resolve exactly once. Malformed imported JSON is rejected earlier as `AGWF023`. |
+| `AGWF041` | The closed workflow contract definitely fails a refinement, seam, subject, frame, authority, or fork-isolation obligation. Use the reported counterexample to strengthen the leaf contract or relax the bound specification only when that is semantically correct. |
+| `AGWF042` | The analyzer cannot construct a closed proof because a binding, workflow topology, contract, authority lattice, or predicate is dynamic, invalid, opaque, contradictory, absent from the closed proof representation, or otherwise unprovable. Replace the input with a supported closed form; runtime checking is not accepted as a binding proof. |
+| `AGWF043` | Distinct workflow ids normalize to the same generated PascalCase identity. Rename them so generated type and source-hint names are unique. |
+
+See the [Workflow API](/reference/api/workflow/#workflow-action-identity) for
+occurrence authoring and [Typed action calculus](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
+for the complete proof rules.
+
+## 9. Upgrade TypeSpec and workflow wire metadata
+
+Upgrade `LevelUp.Strategos.Contracts` to 0.11.0. It includes the 0.10.0 change
+from relation-only or consumer-parsed metadata to `ActionPredicateV1`:
 
 - `@requires(predicate, strength?, description?)` emits a typed requirement;
 - `@ensures(predicate, description?)` emits a typed guarantee;
@@ -276,13 +448,33 @@ Integers and decimals are canonical strings on the wire. Do not round-trip them
 through JSON floating-point numbers. The `expression` field is presentation
 only and must not be parsed.
 
-Contracts 0.10 does not yet expose frame/effect decorators. A TypeSpec
+Contracts 0.11 does not yet expose frame/effect decorators. A TypeSpec
 `@ensures` fact must therefore already follow from a hard `@requires` fact;
 otherwise graph freeze rejects it as an unrealizable guarantee about untouched
 state. Use the CLR descriptor/fluent surface for actions that establish new
 facts and need `TouchedResources` or postcondition effects.
 
-## 9. Invalidate graph-version caches once
+Version 0.11.0 also adds `ActionReferenceV1` as the optional `action` property
+shared by every workflow step kind:
+
+```json
+{
+  "action": {
+    "domainName": "Trading",
+    "objectTypeName": "Position",
+    "actionName": "Write"
+  }
+}
+```
+
+When `action` is present, all three name fields are required. The property is
+additive and occurrence-scoped; legacy or unconfigured workflow JSON continues
+to omit it byte-for-byte. Consumers that need the new identity should upgrade
+to the generated 0.11.0 models before producers begin populating it. The same
+release adds `AGWF039`–`AGWF043`; consumers of the generated closed `AgwfCode`
+enum must upgrade before Strategos can emit those tokens.
+
+## 10. Invalidate graph-version caches once
 
 The canonical graph hash now includes action subjects, normalized typed
 requirements, guarantees, custom evaluator keys/arguments/read sets, and the
@@ -296,13 +488,20 @@ a cache-key rollover: discard stored MCP schema views, planner tool lists,
 action-availability snapshots, and any other artifact keyed by the old hash.
 Do not translate or pin the previous hash.
 
-After the rollover, registration order and presentation-only edits remain
-hash-stable.
+The typed workflow-binding wrapper is not itself part of that rollover. For an
+unchanged binding, the hasher writes only `BoundWorkflow.WorkflowId` at the same
+byte position where it previously wrote `BoundWorkflowName`. Moving from the
+string property or overload to `new WorkflowBindingReference(sameId)` therefore
+preserves the legacy graph hash. Changing the identifier still changes the
+hash, as a routing change should.
+
+After the action-contract rollover, registration order and presentation-only
+edits remain hash-stable.
 
 ## Upgrade checklist
 
-- Upgrade Strategos packages together and upgrade Contracts consumers to 0.10.0
-  before publishing typed action metadata.
+- Upgrade Strategos packages together and upgrade Contracts consumers to 0.11.0
+  before publishing typed action or workflow-step metadata.
 - Add an ontology-named `ActionSubject` to every descriptor-first action.
 - Replace direct descriptor-name-only `ObjectSet<T>` construction with
   `IOntologyQuery` or the `ActionSubject` constructor.
@@ -315,6 +514,20 @@ hash-stable.
   semantics; use `GetCandidateActions*` where the distinction matters.
 - Register authoritative fact and custom predicate resolvers and test
   indeterminate, failure, and cancellation paths.
+- Replace direct `BoundWorkflowName` initializers with
+  `BoundWorkflow = new WorkflowBindingReference(...)`, and replace every
+  reader of `descriptor.BoundWorkflowName` with `descriptor.BoundWorkflow?.WorkflowId`;
+  the string property no longer exists. Existing `.BoundToWorkflow(string)`
+  calls compile unchanged; they are proved (or rejected) once the project also
+  references `LevelUp.Strategos.Generators`.
+- Note that `.BoundToWorkflow(...)` and `.BoundToTool(...)` are now mutually
+  exclusive on a builder: the later call clears the other carrier, so a
+  descriptor can no longer report `BindingType.Tool` while still holding a
+  stale `BoundWorkflow`.
+- Add one direct, constant `.Performs(new WorkflowActionReference(...))` to
+  every reachable named step occurrence in each bound workflow.
+- Resolve `AGWF039` through `AGWF043`; opaque or dynamic workflow contracts do
+  not pass the binding proof.
 - Resolve `AONT217` and `AONT221`; review `AONT218`, `AONT219`, and
   `AONT220` coverage.
 - Invalidate caches keyed by the pre-2.13 graph hash.

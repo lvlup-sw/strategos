@@ -27,14 +27,15 @@ public class ActionDescriptorTests
     [Test]
     public async Task ActionDescriptor_BoundToWorkflow_SetsBindingType()
     {
+        var workflow = new WorkflowBindingReference("execute-trade");
         var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position")
         {
             BindingType = ActionBindingType.Workflow,
-            BoundWorkflowName = "execute-trade",
+            BoundWorkflow = workflow,
         };
 
         await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Workflow);
-        await Assert.That(descriptor.BoundWorkflowName).IsEqualTo("execute-trade");
+        await Assert.That(descriptor.BoundWorkflow).IsEqualTo(workflow);
     }
 
     [Test]
@@ -58,7 +59,7 @@ public class ActionDescriptorTests
         var descriptor = new ActionDescriptor(Subject, "ExecuteTrade", "Open a new position");
 
         await Assert.That(descriptor.BindingType).IsEqualTo(ActionBindingType.Unbound);
-        await Assert.That(descriptor.BoundWorkflowName).IsNull();
+        await Assert.That(descriptor.BoundWorkflow).IsNull();
         await Assert.That(descriptor.BoundToolName).IsNull();
         await Assert.That(descriptor.BoundToolMethod).IsNull();
     }

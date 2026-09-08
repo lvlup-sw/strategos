@@ -59,6 +59,19 @@ public interface IApprovalEscalationBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Adds a configured step to the escalation path.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step occurrence.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configure"/> is null.
+    /// </exception>
+    IApprovalEscalationBuilder<TState> Then<TStep>(
+        Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Escalates to another approver type with nested configuration.
     /// </summary>
     /// <typeparam name="TNextApprover">The marker type for the next approver level.</typeparam>

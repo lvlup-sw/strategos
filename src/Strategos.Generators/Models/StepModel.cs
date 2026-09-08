@@ -53,6 +53,17 @@ internal sealed record StepModel(
     public ConfidenceModel? Confidence { get; init; }
 
     /// <summary>
+    /// Gets the optional ontology action performed by this step occurrence.
+    /// </summary>
+    public WorkflowActionReferenceModel? Action { get; init; }
+
+    /// <summary>
+    /// Gets whether the action reference was missing, statically resolved, or authored
+    /// in a dynamic/invalid form the generator cannot prove.
+    /// </summary>
+    public WorkflowActionReferenceResolution ActionResolution { get; init; }
+
+    /// <summary>
     /// Gets the effective name for this step, used for duplicate detection and phase naming.
     /// </summary>
     /// <remarks>
@@ -99,6 +110,8 @@ internal sealed record StepModel(
     /// <param name="timeout">The optional timeout policy for this step.</param>
     /// <param name="compensation">The optional compensation (rollback) policy for this step.</param>
     /// <param name="confidence">The optional confidence-gating policy for this step.</param>
+    /// <param name="action">The optional ontology action performed by this step occurrence.</param>
+    /// <param name="actionResolution">The static resolution state of the action declaration.</param>
     /// <returns>A validated <see cref="StepModel"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stepName"/> or <paramref name="stepTypeName"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when validation fails or when predicate and message are mismatched.</exception>
@@ -117,7 +130,9 @@ internal sealed record StepModel(
         RetryModel? retry = null,
         TimeoutModel? timeout = null,
         CompensationModel? compensation = null,
-        ConfidenceModel? confidence = null)
+        ConfidenceModel? confidence = null,
+        WorkflowActionReferenceModel? action = null,
+        WorkflowActionReferenceResolution actionResolution = WorkflowActionReferenceResolution.Missing)
     {
         // Validate required parameters
         ThrowHelper.ThrowIfNull(stepName, nameof(stepName));
@@ -163,6 +178,10 @@ internal sealed record StepModel(
             Timeout = timeout,
             Compensation = compensation,
             Confidence = confidence,
+            Action = action,
+            ActionResolution = action is null
+                ? actionResolution
+                : WorkflowActionReferenceResolution.Resolved,
         };
     }
 }

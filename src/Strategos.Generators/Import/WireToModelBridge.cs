@@ -4,7 +4,12 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Collections;
+using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Helpers;
@@ -39,7 +44,10 @@ namespace Strategos.Generators.Import;
 //
 // SCOPE (task 017): the IMPORTABLE subset only — linear/fork flows, retry/
 // timeout/compensation/confidence step config, context-free approval, gates, and
-// diagnostic-fork edges.
+// diagnostic-fork edges. Failure-handler routing is not in that subset: root
+// handlers remain importable for wire/runtime compatibility but mark the model's
+// proof topology unresolved, while fork-path handlers currently lower only two
+// flags, not their executable recovery steps, and are rejected.
 //
 // REJECTION (task 018, DR-14 rejection half + DR-2 + DR-3): before any mapping,
 // CollectImportRejections walks the definition and emits a LOUD, per-case stable
@@ -193,7 +201,11 @@ internal static class WireToModelBridge
 
         // Same EffectiveName gate the C# [Workflow] root runs in TransformToResult.
         // Sharing EmitWorkflowSources is not sharing the gate.
-        var identityDiagnostics = CollectIdentityDiagnostics(baseStepModels, forkModels, workflowName!);
+        var identityDiagnostics = CollectIdentityDiagnostics(
+            definition,
+            baseStepModels,
+            forkModels,
+            workflowName!);
         if (identityDiagnostics.Count > 0)
         {
             diagnostics.AddRange(identityDiagnostics);
@@ -248,6 +260,7 @@ internal static class WireToModelBridge
             // A JSON import has no fluent {Pascal}WorkflowDefinition class, so the DI extension must
             // NOT emit the definition-evaluation line that references it (it would not compile).
             HasFluentDefinition = false,
+            TopologyClosureFailures = CollectImportedTopologyClosureFailures(definition, jsonFilePath),
         };
 
         return new BridgeResult(model, diagnostics);
@@ -259,6 +272,7 @@ internal static class WireToModelBridge
     /// a gate: fork Handle overloads bind the path-qualified completed event.
     /// </summary>
     private static List<Diagnostic> CollectIdentityDiagnostics(
+        WorkflowDefinitionV1 definition,
         IReadOnlyList<StepModel> baseStepModels,
         IReadOnlyList<ForkModel> forkModels,
         string workflowName)
@@ -270,22 +284,82 @@ internal static class WireToModelBridge
             .ToList();
 
         // Round-tripped JSON lists fork-path steps in both steps[] and forkPoints.paths.
-        // Consume one matching base entry per fork-path representation so the echo
-        // is not a duplicate name, but an extra top-level step with the same phase+type still is.
-        var remainingForkPathCopies = new Dictionary<(string Phase, string Type), int>();
-        foreach (var step in forkPathSteps)
+        // Consume one base entry only when every serialized field agrees. The nested path
+        // copy is authoritative during model composition, so accepting merely the same id,
+        // phase, type, or action would silently discard conflicting retry, timeout,
+        // compensation, confidence, gate, terminal, runtime, or instance semantics.
+        var remainingForkPathCopies = new Dictionary<ForkPathEchoKey, int>();
+        var forkPathCopiesByStepId = new Dictionary<string, List<ForkPathEchoKey>>(StringComparer.Ordinal);
+        for (var forkIndex = 0; forkIndex < forkModels.Count; forkIndex++)
         {
-            var key = (step.PhaseName, step.StepName);
-            remainingForkPathCopies[key] = remainingForkPathCopies.TryGetValue(key, out var copies)
-                ? copies + 1
-                : 1;
+            var wireFork = definition.ForkPoints[forkIndex];
+            var modelFork = forkModels[forkIndex];
+            for (var pathIndex = 0; pathIndex < modelFork.Paths.Count; pathIndex++)
+            {
+                var wirePath = wireFork.Paths[pathIndex];
+                var modelPath = modelFork.Paths[pathIndex];
+                for (var stepIndex = 0; stepIndex < modelPath.Steps.Count; stepIndex++)
+                {
+                    var key = CreateForkPathEchoKey(wirePath.Steps[stepIndex]);
+                    if (key is null)
+                    {
+                        continue;
+                    }
+
+                    remainingForkPathCopies[key] = remainingForkPathCopies.TryGetValue(
+                        key,
+                        out var copies)
+                            ? copies + 1
+                            : 1;
+                    AddEchoKey(forkPathCopiesByStepId, key);
+                }
+            }
+        }
+
+        var baseKeys = new ForkPathEchoKey?[baseStepModels.Count];
+        var baseCopiesByStepId = new Dictionary<string, List<ForkPathEchoKey>>(StringComparer.Ordinal);
+        for (var stepIndex = 0; stepIndex < baseStepModels.Count; stepIndex++)
+        {
+            var key = CreateForkPathEchoKey(definition.Steps[stepIndex]);
+            baseKeys[stepIndex] = key;
+            if (key is not null)
+            {
+                AddEchoKey(baseCopiesByStepId, key);
+            }
+        }
+
+        // A stable id may occur twice only for the exact top-level/path pair emitted by the
+        // round-trip projection. Any other reuse is ambiguous occurrence identity. Report it
+        // before composition rather than allowing list order to choose which semantics survive.
+        var stableStepIds = new SortedSet<string>(baseCopiesByStepId.Keys, StringComparer.Ordinal);
+        stableStepIds.UnionWith(forkPathCopiesByStepId.Keys);
+        foreach (var stepId in stableStepIds)
+        {
+            baseCopiesByStepId.TryGetValue(stepId, out var baseCopies);
+            forkPathCopiesByStepId.TryGetValue(stepId, out var pathCopies);
+            var isExactRoundTripPair = baseCopies is { Count: 1 }
+                && pathCopies is { Count: 1 }
+                && baseCopies[0] == pathCopies[0];
+            var occurrenceCount = (baseCopies?.Count ?? 0) + (pathCopies?.Count ?? 0);
+            if (occurrenceCount > 1 && !isExactRoundTripPair)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.WorkflowContractUnprovable,
+                    Location.None,
+                    workflowName,
+                    "<imported-workflow>",
+                    $"stable step id '{stepId}' identifies {occurrenceCount} non-equivalent or multiply represented occurrences; only one field-equivalent top-level/fork-path round-trip pair is allowed"));
+            }
         }
 
         var identitySteps = new List<StepModel>(baseStepModels.Count + forkPathSteps.Count);
-        foreach (var step in baseStepModels)
+        for (var stepIndex = 0; stepIndex < baseStepModels.Count; stepIndex++)
         {
-            var key = (step.PhaseName, step.StepName);
-            if (remainingForkPathCopies.TryGetValue(key, out var remaining) && remaining > 0)
+            var step = baseStepModels[stepIndex];
+            var key = baseKeys[stepIndex];
+            if (key is not null
+                && remainingForkPathCopies.TryGetValue(key, out var remaining)
+                && remaining > 0)
             {
                 remainingForkPathCopies[key] = remaining - 1;
                 continue;
@@ -314,6 +388,128 @@ internal static class WireToModelBridge
         return diagnostics;
     }
 
+    private static ForkPathEchoKey? CreateForkPathEchoKey(StepDefinition wireStep)
+    {
+        if (string.IsNullOrWhiteSpace(wireStep.StepId))
+        {
+            // A missing stable id cannot establish that two serialized positions are
+            // representations of one occurrence. Leave both in duplicate detection.
+            return null;
+        }
+
+        return new ForkPathEchoKey(wireStep.StepId!, CreateWireStepFingerprint(wireStep));
+    }
+
+    private static void AddEchoKey(
+        Dictionary<string, List<ForkPathEchoKey>> copiesByStepId,
+        ForkPathEchoKey key)
+    {
+        if (!copiesByStepId.TryGetValue(key.StepId, out var copies))
+        {
+            copies = new List<ForkPathEchoKey>();
+            copiesByStepId.Add(key.StepId, copies);
+        }
+
+        copies.Add(key);
+    }
+
+    /// <summary>
+    /// Produces an unambiguous, ordinal fingerprint of every wire field on a step, including
+    /// nested confidence-handler steps. This is deliberately stricter than comparing the mapped
+    /// <see cref="StepModel"/>: some wire fields are reserved or not lowered today, but two
+    /// positions claiming to serialize one occurrence must still agree before either is discarded.
+    /// </summary>
+    internal static string CreateWireStepFingerprint(StepDefinition step)
+    {
+        var fingerprint = new StringBuilder();
+        AppendWireValue(fingerprint, step);
+        return fingerprint.ToString();
+    }
+
+    /// <summary>
+    /// Recursively fingerprints the closed wire-DTO value graph. Enumerating public properties
+    /// mechanically prevents a newly added DTO field from being silently omitted here when the
+    /// schema-conformance gate updates the DTO.
+    /// </summary>
+    private static void AppendWireValue(StringBuilder fingerprint, object? value)
+    {
+        if (value is null)
+        {
+            fingerprint.Append("N;");
+            return;
+        }
+
+        switch (value)
+        {
+            case string text:
+                fingerprint.Append('S');
+                AppendFingerprintText(fingerprint, text);
+                return;
+            case bool boolean:
+                fingerprint.Append(boolean ? "B1;" : "B0;");
+                return;
+            case int integer:
+                fingerprint.Append('I');
+                fingerprint.Append(integer.ToString(CultureInfo.InvariantCulture));
+                fingerprint.Append(';');
+                return;
+            case double number:
+                fingerprint.Append('D');
+                fingerprint.Append(BitConverter.DoubleToInt64Bits(number).ToString("X16", CultureInfo.InvariantCulture));
+                fingerprint.Append(';');
+                return;
+            case IWireContractDto dto:
+                AppendWireDto(fingerprint, dto);
+                return;
+            case IEnumerable sequence:
+                AppendWireSequence(fingerprint, sequence);
+                return;
+            default:
+                throw new InvalidOperationException(
+                    $"Wire-step fingerprint does not support value type '{value.GetType().FullName}'.");
+        }
+    }
+
+    private static void AppendWireDto(StringBuilder fingerprint, IWireContractDto dto)
+    {
+        var dtoType = dto.GetType();
+        fingerprint.Append('O');
+        AppendFingerprintText(fingerprint, dtoType.FullName ?? dtoType.Name);
+
+        var properties = dtoType
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(static property => property.GetIndexParameters().Length == 0)
+            .OrderBy(static property => property.Name, StringComparer.Ordinal)
+            .ToArray();
+        fingerprint.Append(properties.Length.ToString(CultureInfo.InvariantCulture));
+        fingerprint.Append(';');
+        foreach (var property in properties)
+        {
+            AppendFingerprintText(fingerprint, property.Name);
+            AppendWireValue(fingerprint, property.GetValue(dto, index: null));
+        }
+    }
+
+    private static void AppendWireSequence(StringBuilder fingerprint, IEnumerable sequence)
+    {
+        var items = sequence.Cast<object?>().ToList();
+        fingerprint.Append('L');
+        fingerprint.Append(items.Count.ToString(CultureInfo.InvariantCulture));
+        fingerprint.Append(';');
+        foreach (var item in items)
+        {
+            AppendWireValue(fingerprint, item);
+        }
+    }
+
+    private static void AppendFingerprintText(StringBuilder fingerprint, string value)
+    {
+        fingerprint.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+        fingerprint.Append(':');
+        fingerprint.Append(value);
+        fingerprint.Append(';');
+    }
+
     /// <summary>
     /// Walks <paramref name="definition"/> and collects a LOUD, per-case stable rejection diagnostic
     /// for every runtime-bindable carrier (DR-14 rejection half) and every semantic violation
@@ -322,8 +518,11 @@ internal static class WireToModelBridge
     /// </summary>
     /// <remarks>
     /// Rejected carriers: a delegate (lambda) step, a branch point, a loop (RepeatUntil), a step's
-    /// validation predicate, and a context-bearing approval (a <c>hasContext</c> marker, escalation,
-    /// or rejection handler). Rejected semantic violations: a gate step whose <c>gateId</c>
+    /// validation predicate, a context-bearing approval (a <c>hasContext</c> marker, escalation,
+    /// or rejection handler), an approval in an executable step list, and fork-path failure
+    /// handlers whose executable recovery paths cannot be lowered without loss. Root failure
+    /// handlers remain importable but mark the proof topology unresolved. Rejected semantic
+    /// violations: a gate step whose <c>gateId</c>
     /// back-reference names an id absent from <c>gates[]</c> (DR-3), a gate declaration carrying
     /// a <c>reliability</c> block (DR-2 — reliability enters a definition only from telemetry), a
     /// diagnostic-fork permitted trigger declaring no <c>requiredEvidenceFields</c> (DR-8 — the wire
@@ -351,7 +550,13 @@ internal static class WireToModelBridge
         // chains) and every fork path — are scanned for a delegate step, a validation predicate,
         // and the DR-3 dangling-gateId violation. Branch/loop/approval-handler steps live under
         // constructs rejected wholesale below, so they are not descended into here.
-        ScanImportableSteps(definition.Steps, "$.steps", jsonFilePath, gateIds, rejections);
+        ScanImportableSteps(
+            definition.Steps,
+            "$.steps",
+            definition.Name!,
+            jsonFilePath,
+            gateIds,
+            rejections);
         for (var f = 0; f < definition.ForkPoints.Count; f++)
         {
             var fork = definition.ForkPoints[f];
@@ -360,6 +565,7 @@ internal static class WireToModelBridge
                 ScanImportableSteps(
                     fork.Paths[p].Steps,
                     $"$.forkPoints[{f}].paths[{p}].steps",
+                    definition.Name!,
                     jsonFilePath,
                     gateIds,
                     rejections);
@@ -388,7 +594,32 @@ internal static class WireToModelBridge
                 DescribeId(string.IsNullOrEmpty(loop.LoopName) ? loop.LoopId : loop.LoopName)));
         }
 
-        // (3) Context-bearing approvals rejected (DR-14): a hasContext marker (task 024), an
+        // (3) Fork-path failure handlers are represented on the wire but MapForks reduces them to
+        // HasFailureHandler/IsTerminal flags, dropping their recovery steps. Reject before mapping.
+        // Root handlers intentionally remain importable for existing wire/runtime fidelity; their
+        // omission from proof topology is recorded on the resulting WorkflowModel instead.
+        for (var forkIndex = 0; forkIndex < definition.ForkPoints.Count; forkIndex++)
+        {
+            var fork = definition.ForkPoints[forkIndex];
+            for (var pathIndex = 0; pathIndex < fork.Paths.Count; pathIndex++)
+            {
+                var path = fork.Paths[pathIndex];
+                if (path.FailureHandler is not { } handler)
+                {
+                    continue;
+                }
+
+                var handlerPath = $"$.forkPoints[{forkIndex}].paths[{pathIndex}].failureHandler";
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.WorkflowContractUnprovable,
+                    Location.None,
+                    definition.Name!,
+                    "<imported-workflow>",
+                    $"import file '{jsonFilePath}' declares fork-path failure handler '{DescribeId(handler.HandlerId)}' at {handlerPath}, but its recovery steps are not emitted by the current runtime lowering"));
+            }
+        }
+
+        // (4) Context-bearing approvals rejected (DR-14): a hasContext marker (task 024), an
         // escalation handler, or a rejection handler carries behavior the wire IR drops on export.
         for (var i = 0; i < definition.ApprovalPoints.Count; i++)
         {
@@ -406,7 +637,7 @@ internal static class WireToModelBridge
             }
         }
 
-        // (4) Reliability-bearing gate declarations rejected (DR-2 machine-check): reliability
+        // (5) Reliability-bearing gate declarations rejected (DR-2 machine-check): reliability
         // enters a definition only from measured telemetry, never from authored import JSON.
         for (var i = 0; i < definition.Gates.Count; i++)
         {
@@ -421,7 +652,7 @@ internal static class WireToModelBridge
             }
         }
 
-        // (5) Diagnostic-fork permitted triggers declaring NO required evidence fields rejected
+        // (6) Diagnostic-fork permitted triggers declaring NO required evidence fields rejected
         // (DR-8 evidence floor). The wire contract pins @minItems(1) on requiredEvidenceFields and
         // the C# builder forces >= 1, but the import path copies the list verbatim into
         // MapDiagnosticForks -> PermittedForkTriggerModel.Create, which enforces the floor by
@@ -523,6 +754,26 @@ internal static class WireToModelBridge
         return rejections;
     }
 
+    private static ImmutableArray<string> CollectImportedTopologyClosureFailures(
+        WorkflowDefinitionV1 definition,
+        string jsonFilePath)
+    {
+        if (definition.FailureHandlers.Count == 0)
+        {
+            return ImmutableArray<string>.Empty;
+        }
+
+        var failures = ImmutableArray.CreateBuilder<string>(definition.FailureHandlers.Count);
+        for (var i = 0; i < definition.FailureHandlers.Count; i++)
+        {
+            var handler = definition.FailureHandlers[i];
+            failures.Add(
+                $"import file '{jsonFilePath}' declares failure handler '{DescribeId(handler.HandlerId)}' at $.failureHandlers[{i}], but imported failure-handler routing is not represented in the closed proof topology");
+        }
+
+        return failures.ToImmutable();
+    }
+
     /// <summary>
     /// Scans one importable step list (and, recursively, each step's low-confidence handler chain)
     /// for a delegate (lambda) step, a validation predicate, and a DR-3 dangling <c>gateId</c>,
@@ -531,6 +782,7 @@ internal static class WireToModelBridge
     private static void ScanImportableSteps(
         IReadOnlyList<StepDefinition> steps,
         string pathPrefix,
+        string workflowName,
         string jsonFilePath,
         HashSet<string> gateIds,
         List<Diagnostic> rejections)
@@ -549,6 +801,19 @@ internal static class WireToModelBridge
                     jsonFilePath,
                     path,
                     DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId)));
+            }
+
+            // Approval steps are not executable named-step monikers. In particular, MapStep
+            // returns null for one nested in a low-confidence handler and MapConfidence used to
+            // turn that failure into an empty handler, silently removing the confidence path.
+            if (step is ApprovalStep)
+            {
+                rejections.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.WorkflowContractUnprovable,
+                    Location.None,
+                    workflowName,
+                    "<imported-workflow>",
+                    $"import file '{jsonFilePath}' declares approval step '{DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId)}' at {path}, but approval steps cannot be lowered in an executable step list"));
             }
 
             // Validation predicate on the step configuration — a runtime-bindable carrier (DR-14).
@@ -583,6 +848,7 @@ internal static class WireToModelBridge
                 ScanImportableSteps(
                     handlerSteps,
                     $"{path}.configuration.onLowConfidence.handlerSteps",
+                    workflowName,
                     jsonFilePath,
                     gateIds,
                     rejections);
@@ -652,6 +918,25 @@ internal static class WireToModelBridge
 
         var stepTypeName = symbol.ToDisplayString(NamespacedTypeFormat);
         var instanceName = string.IsNullOrEmpty(step.InstanceName) ? null : step.InstanceName;
+        WorkflowActionReferenceModel? action = null;
+        var actionResolution = WorkflowActionReferenceResolution.Missing;
+        if (step.Action is { } actionReference)
+        {
+            if (string.IsNullOrWhiteSpace(actionReference.DomainName)
+                || string.IsNullOrWhiteSpace(actionReference.ObjectTypeName)
+                || string.IsNullOrWhiteSpace(actionReference.ActionName))
+            {
+                actionResolution = WorkflowActionReferenceResolution.DynamicOrInvalid;
+            }
+            else
+            {
+                action = new WorkflowActionReferenceModel(
+                    actionReference.DomainName!,
+                    actionReference.ObjectTypeName!,
+                    actionReference.ActionName!);
+                actionResolution = WorkflowActionReferenceResolution.Resolved;
+            }
+        }
 
         if (!TryMapConfiguration(
                 step.Configuration,
@@ -676,7 +961,9 @@ internal static class WireToModelBridge
             retry: retry,
             timeout: timeout,
             compensation: compensation,
-            confidence: confidence);
+            confidence: confidence,
+            action: action,
+            actionResolution: actionResolution);
     }
 
     /// <summary>
@@ -1072,7 +1359,11 @@ internal static class WireToModelBridge
 
         void AddModel(StepModel step)
         {
-            if (existing.Add(step.StepName))
+            // StepModel is occurrence-scoped. The same CLR step type may legally appear
+            // more than once when each occurrence has a distinct instance name (and, for
+            // #167, a distinct action contract). Match the C# extractor's PhaseName
+            // deduplication; deduplicating by StepName silently discarded later occurrences.
+            if (existing.Add(step.PhaseName))
             {
                 stepModels.Add(step);
             }
@@ -1114,7 +1405,7 @@ internal static class WireToModelBridge
         }
 
         var existingNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
-        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.PhaseName), StringComparer.Ordinal);
 
         void AddSteps(IReadOnlyList<StepModel>? steps)
         {
@@ -1125,12 +1416,12 @@ internal static class WireToModelBridge
 
             foreach (var step in steps)
             {
-                if (existingNames.Add(step.StepName))
+                if (existingNames.Add(step.PhaseName))
                 {
-                    stepNames.Add(step.StepName);
+                    stepNames.Add(step.PhaseName);
                 }
 
-                if (existingModelNames.Add(step.StepName))
+                if (existingModelNames.Add(step.PhaseName))
                 {
                     stepModels.Add(step);
                 }
@@ -1167,18 +1458,18 @@ internal static class WireToModelBridge
 
         var confidenceHandlerStepNames = new List<string>(handlerSteps.Count);
         var existingNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
-        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+        var existingModelNames = new HashSet<string>(stepModels.Select(s => s.PhaseName), StringComparer.Ordinal);
 
         foreach (var handlerStep in handlerSteps)
         {
-            confidenceHandlerStepNames.Add(handlerStep.StepName);
+            confidenceHandlerStepNames.Add(handlerStep.PhaseName);
 
-            if (existingNames.Add(handlerStep.StepName))
+            if (existingNames.Add(handlerStep.PhaseName))
             {
-                stepNames.Add(handlerStep.StepName);
+                stepNames.Add(handlerStep.PhaseName);
             }
 
-            if (existingModelNames.Add(handlerStep.StepName))
+            if (existingModelNames.Add(handlerStep.PhaseName))
             {
                 stepModels.Add(handlerStep);
             }
@@ -1295,6 +1586,14 @@ internal static class WireToModelBridge
 
         return false;
     }
+
+    /// <summary>
+    /// Stable identity required before a top-level step can be treated as the serialized
+    /// duplicate of a fork-path occurrence.
+    /// </summary>
+    private sealed record ForkPathEchoKey(
+        string StepId,
+        string WireStepFingerprint);
 
     /// <summary>
     /// Parses an ISO-8601 duration string (the language-neutral form the wire projection emits via

@@ -223,11 +223,6 @@ internal static class BranchExtractor
             }
         }
 
-        if (cases.Count == 0)
-        {
-            return false;
-        }
-
         var branchId = $"{workflowName}-Branch{branchIndex}-{propertyPath}";
 
         branchModel = new BranchModel(
@@ -239,7 +234,10 @@ internal static class BranchExtractor
             IsMethodDiscriminator: isMethod,
             Cases: cases,
             RejoinStepName: rejoinStepName,
-            LoopPrefix: loopPrefix);
+            LoopPrefix: loopPrefix)
+        {
+            HasUnresolvedCases = cases.Count != arguments.Count - 1,
+        };
 
         return true;
     }
@@ -416,7 +414,7 @@ internal static class BranchExtractor
         // Get the receiver of the Branch call (what .Branch() is called on)
         if (branchInvocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
                 // Check if the receiver is a RepeatUntil call
                 return SyntaxHelper.IsMethodCall(previousInvocation, "RepeatUntil");
@@ -434,7 +432,7 @@ internal static class BranchExtractor
         // Walk backwards to find the previous step
         if (branchInvocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
                 if (StepExtractor.TryGetRoutingPhaseName(previousInvocation, semanticModel, loopPrefix, out var phaseName))
                 {
@@ -503,20 +501,12 @@ internal static class BranchExtractor
     /// </summary>
     private static InvocationExpressionSyntax? FindNextChainedInvocation(InvocationExpressionSyntax invocation)
     {
-        var parent = invocation.Parent;
-        while (parent is not null)
-        {
-            if (parent is MemberAccessExpressionSyntax memberAccess &&
-                memberAccess.Expression == invocation &&
-                memberAccess.Parent is InvocationExpressionSyntax nextInvocation)
-            {
-                return nextInvocation;
-            }
-
-            parent = parent.Parent;
-        }
-
-        return null;
+        var receiver = SyntaxHelper.IncludeTransparentParents(invocation);
+        return receiver.Parent is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression == receiver
+            && memberAccess.Parent is InvocationExpressionSyntax nextInvocation
+                ? nextInvocation
+                : null;
     }
 
     /// <summary>

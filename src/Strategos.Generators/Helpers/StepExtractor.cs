@@ -4,11 +4,14 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Collections.Immutable;
+
 using Strategos.Generators.Models;
 using Strategos.Generators.Polyfills;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace Strategos.Generators.Helpers;
 
@@ -58,12 +61,24 @@ internal enum StepContext
 /// <param name="InstanceName">The optional instance name for distinguishing same step types.</param>
 /// <param name="LoopName">The name of the parent loop, if any.</param>
 /// <param name="Context">The execution context (Linear, ForkPath, or BranchPath).</param>
+/// <param name="LoopPath">
+/// The immutable syntax-identity path of owning loop invocations, from outermost to innermost.
+/// </param>
 internal sealed record StepInfo(
     string StepName,
     string? InstanceName = null,
     string? LoopName = null,
-    StepContext Context = StepContext.Linear)
+    StepContext Context = StepContext.Linear,
+    ImmutableArray<int> LoopPath = default)
 {
+    /// <summary>
+    /// Gets the normalized structural loop path. Older construction sites that omit the path
+    /// represent a step outside any loop.
+    /// </summary>
+    public ImmutableArray<int> StructuralLoopPath => LoopPath.IsDefault
+        ? ImmutableArray<int>.Empty
+        : LoopPath;
+
     /// <summary>
     /// Gets the phase name, which includes the loop prefix if this step is inside a loop.
     /// </summary>
@@ -125,7 +140,14 @@ internal static class StepExtractor
 
         // Walk the invocation chain and collect step information
         var steps = new List<StepInfo>();
-        WalkInvocationChainWithLoopsAndContext(context.FinallyInvocation, steps, context.SemanticModel, currentLoopPrefix: null, StepContext.Linear, context.CancellationToken);
+        WalkInvocationChainWithLoopsAndContext(
+            context.FinallyInvocation,
+            steps,
+            context.SemanticModel,
+            currentLoopPrefix: null,
+            currentLoopPath: ImmutableArray<int>.Empty,
+            currentContext: StepContext.Linear,
+            context.CancellationToken);
 
         return CollapseRepeatedPhaseNames(steps);
     }
@@ -204,7 +226,14 @@ internal static class StepExtractor
 
         // Walk the invocation chain and collect step information with context
         var steps = new List<StepInfo>();
-        WalkInvocationChainWithLoopsAndContext(context.FinallyInvocation, steps, context.SemanticModel, currentLoopPrefix: null, StepContext.Linear, context.CancellationToken);
+        WalkInvocationChainWithLoopsAndContext(
+            context.FinallyInvocation,
+            steps,
+            context.SemanticModel,
+            currentLoopPrefix: null,
+            currentLoopPath: ImmutableArray<int>.Empty,
+            currentContext: StepContext.Linear,
+            context.CancellationToken);
 
         // Return WITHOUT deduplication - caller needs to see duplicates for validation
         return steps;
@@ -231,8 +260,26 @@ internal static class StepExtractor
 
         // Collapse repeated phase names to the FIRST occurrence, matching the position rule
         // CollapseRepeatedPhaseNames applies to the phase-name representation. The two lists are
-        // asserted to agree as an ordered sequence, so both must collapse the same way.
-        return steps.GroupBy(s => s.PhaseName, StringComparer.Ordinal).Select(g => g.First()).ToList();
+        // asserted to agree as an ordered sequence, so both must collapse the same way. A shared
+        // phase may only stand for one ontology action, however: silently retaining the first of
+        // two different .Performs(...) declarations would make proof depend on source order.
+        return steps
+            .GroupBy(s => s.PhaseName, StringComparer.Ordinal)
+            .Select(occurrences =>
+            {
+                var survivor = occurrences.First();
+                var hasConflictingAction = occurrences.Skip(1).Any(step =>
+                    step.ActionResolution != survivor.ActionResolution
+                    || !Equals(step.Action, survivor.Action));
+                return hasConflictingAction
+                    ? survivor with
+                    {
+                        Action = null,
+                        ActionResolution = WorkflowActionReferenceResolution.DynamicOrInvalid,
+                    }
+                    : survivor;
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -290,8 +337,9 @@ internal static class StepExtractor
     /// <summary>
     /// Tries to build a fully configured <see cref="StepModel"/> for a <c>Then&lt;TStep&gt;()</c>
     /// invocation, routing through the shared <c>TryGetStepModel</c> path so the step carries any
-    /// per-step resilience (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence) and
-    /// <c>ValidateState</c> guard declared via the configure-lambda overload.
+    /// per-step resilience (<c>WithRetry</c>/<c>WithTimeout</c>/<c>Compensate</c>/confidence),
+    /// <c>ValidateState</c> guard, and occurrence-scoped <c>Performs</c> binding declared via the
+    /// configure-lambda overload.
     /// </summary>
     /// <param name="invocation">The <c>Then</c> invocation expression for the step.</param>
     /// <param name="semanticModel">The semantic model for type resolution.</param>
@@ -299,9 +347,9 @@ internal static class StepExtractor
     /// <returns>True if the step model was built; otherwise, false.</returns>
     /// <remarks>
     /// Unlike <see cref="TryBuildConfiguredForkPathStepModel"/>, the instance name is preserved.
-    /// Used by <see cref="FailureHandlerExtractor"/> so failure-handler steps thread their
-    /// configure-lambda resilience into the <see cref="StepModel"/> IR (DR-7), bringing the
-    /// failure-handler parse path to parity with the top-level/loop/fork parse paths.
+    /// Used by <see cref="FailureHandlerExtractor"/> and <see cref="ApprovalExtractor"/> so
+    /// off-main-flow steps thread their configure-lambda metadata into the <see cref="StepModel"/>
+    /// IR (DR-7), bringing those parse paths to parity with top-level/loop/fork paths.
     /// </remarks>
     internal static bool TryBuildConfiguredStepModel(
         InvocationExpressionSyntax invocation,
@@ -431,13 +479,22 @@ internal static class StepExtractor
         List<StepInfo> steps,
         SemanticModel semanticModel,
         string? currentLoopPrefix,
+        ImmutableArray<int> currentLoopPath,
         StepContext currentContext,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Check if this is a RepeatUntil call
-        if (TryParseRepeatUntilWithContext(invocation, semanticModel, currentLoopPrefix, currentContext, out var effectivePrefix, out var bodySteps, cancellationToken))
+        if (TryParseRepeatUntilWithContext(
+            invocation,
+            semanticModel,
+            currentLoopPrefix,
+            currentLoopPath,
+            currentContext,
+            out var effectivePrefix,
+            out var bodySteps,
+            cancellationToken))
         {
             // Insert body steps (in reverse order since we insert at beginning)
             // Body steps already have their correct StepInfo with full prefix and context
@@ -453,7 +510,12 @@ internal static class StepExtractor
             // other construct here uses.
             steps.InsertRange(
                 0,
-                ParseForkPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
+                ParseForkPathStepsWithContext(
+                    invocation,
+                    semanticModel,
+                    currentLoopPrefix,
+                    currentLoopPath,
+                    cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Branch"))
         {
@@ -461,29 +523,51 @@ internal static class StepExtractor
             // same reason.
             steps.InsertRange(
                 0,
-                ParseBranchPathStepsWithContext(invocation, semanticModel, currentLoopPrefix, cancellationToken));
+                ParseBranchPathStepsWithContext(
+                    invocation,
+                    semanticModel,
+                    currentLoopPrefix,
+                    currentLoopPath,
+                    cancellationToken));
         }
         else if (SyntaxHelper.IsMethodCall(invocation, "Join"))
         {
             // Add join step - Linear context (after fork paths complete)
             if (TryGetJoinStepName(invocation, semanticModel, out var joinStepName))
             {
-                steps.Insert(0, new StepInfo(joinStepName, null, currentLoopPrefix, currentContext));
+                steps.Insert(0, new StepInfo(
+                    joinStepName,
+                    null,
+                    currentLoopPrefix,
+                    currentContext,
+                    currentLoopPath));
             }
         }
         else if (TryGetStepNameAndInstanceName(invocation, semanticModel, out var stepName, out var instanceName))
         {
             // Regular step - insert at beginning since we're walking backwards
-            steps.Insert(0, new StepInfo(stepName, instanceName, currentLoopPrefix, currentContext));
+            steps.Insert(0, new StepInfo(
+                stepName,
+                instanceName,
+                currentLoopPrefix,
+                currentContext,
+                currentLoopPath));
         }
 
         // Walk to the receiver (previous call in the chain)
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             // The receiver could be another invocation
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
-                WalkInvocationChainWithLoopsAndContext(previousInvocation, steps, semanticModel, currentLoopPrefix, currentContext, cancellationToken);
+                WalkInvocationChainWithLoopsAndContext(
+                    previousInvocation,
+                    steps,
+                    semanticModel,
+                    currentLoopPrefix,
+                    currentLoopPath,
+                    currentContext,
+                    cancellationToken);
             }
         }
     }
@@ -515,6 +599,7 @@ internal static class StepExtractor
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         string? parentLoopPrefix,
+        ImmutableArray<int> parentLoopPath,
         StepContext currentContext,
         out string effectivePrefix,
         out List<StepInfo> bodySteps,
@@ -530,7 +615,17 @@ internal static class StepExtractor
         }
 
         // Process the lambda body with context tracking
-        ParseLoopBodyWithContext(bodyLambda, semanticModel, effectivePrefix, currentContext, bodySteps, cancellationToken);
+        // A chained InvocationExpression starts at the beginning of its receiver, so sibling
+        // fluent calls can share SpanStart. The argument-list start belongs to this call alone.
+        var currentLoopPath = parentLoopPath.Add(invocation.ArgumentList.SpanStart);
+        ParseLoopBodyWithContext(
+            bodyLambda,
+            semanticModel,
+            effectivePrefix,
+            currentLoopPath,
+            currentContext,
+            bodySteps,
+            cancellationToken);
 
         return true;
     }
@@ -589,6 +684,7 @@ internal static class StepExtractor
         LambdaExpressionSyntax bodyLambda,
         SemanticModel semanticModel,
         string currentPrefix,
+        ImmutableArray<int> currentLoopPath,
         StepContext currentContext,
         List<StepInfo> steps,
         CancellationToken cancellationToken)
@@ -605,12 +701,25 @@ internal static class StepExtractor
                 // Check if this is a Then<T>() call
                 if (TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
                 {
-                    steps.Add(new StepInfo(stepName, instanceName, currentPrefix, currentContext));
+                    steps.Add(new StepInfo(
+                        stepName,
+                        instanceName,
+                        currentPrefix,
+                        currentContext,
+                        currentLoopPath));
                 }
             }
             else if (SyntaxHelper.IsMethodCall(inv, "RepeatUntil"))
             {
-                if (TryParseRepeatUntilWithContext(inv, semanticModel, currentPrefix, currentContext, out _, out var nestedSteps, cancellationToken))
+                if (TryParseRepeatUntilWithContext(
+                    inv,
+                    semanticModel,
+                    currentPrefix,
+                    currentLoopPath,
+                    currentContext,
+                    out _,
+                    out var nestedSteps,
+                    cancellationToken))
                 {
                     // Add all nested steps (they already have the correct prefix and context)
                     steps.AddRange(nestedSteps);
@@ -621,20 +730,35 @@ internal static class StepExtractor
                 // Process fork path steps with ForkPath context. This walker runs FORWARDS
                 // through the loop body, so the path's document-ordered steps append.
                 steps.AddRange(
-                    ParseForkPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
+                    ParseForkPathStepsWithContext(
+                        inv,
+                        semanticModel,
+                        currentPrefix,
+                        currentLoopPath,
+                        cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Branch"))
             {
                 // Process branch path steps with BranchPath context, appended for the same reason.
                 steps.AddRange(
-                    ParseBranchPathStepsWithContext(inv, semanticModel, currentPrefix, cancellationToken));
+                    ParseBranchPathStepsWithContext(
+                        inv,
+                        semanticModel,
+                        currentPrefix,
+                        currentLoopPath,
+                        cancellationToken));
             }
             else if (SyntaxHelper.IsMethodCall(inv, "Join"))
             {
                 // Add join step - executes after all fork paths complete (Linear context)
                 if (TryGetJoinStepName(inv, semanticModel, out var joinStepName))
                 {
-                    steps.Add(new StepInfo(joinStepName, null, currentPrefix, currentContext));
+                    steps.Add(new StepInfo(
+                        joinStepName,
+                        null,
+                        currentPrefix,
+                        currentContext,
+                        currentLoopPath));
                 }
             }
         }
@@ -708,6 +832,7 @@ internal static class StepExtractor
         InvocationExpressionSyntax forkInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
+        ImmutableArray<int> currentLoopPath,
         CancellationToken cancellationToken)
     {
         var steps = new List<StepInfo>();
@@ -740,7 +865,12 @@ internal static class StepExtractor
                 if (TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
                 {
                     // Fork path steps have ForkPath context
-                    steps.Add(new StepInfo(stepName, instanceName, currentPrefix, StepContext.ForkPath));
+                    steps.Add(new StepInfo(
+                        stepName,
+                        instanceName,
+                        currentPrefix,
+                        StepContext.ForkPath,
+                        currentLoopPath));
                 }
             }
         }
@@ -766,6 +896,7 @@ internal static class StepExtractor
         InvocationExpressionSyntax branchInvocation,
         SemanticModel semanticModel,
         string? currentPrefix,
+        ImmutableArray<int> currentLoopPath,
         CancellationToken cancellationToken)
     {
         var steps = new List<StepInfo>();
@@ -781,7 +912,13 @@ internal static class StepExtractor
                 continue;
             }
 
-            CollectStepsFromPathLambda(pathLambda, semanticModel, currentPrefix, StepContext.BranchPath, steps);
+            CollectStepsFromPathLambda(
+                pathLambda,
+                semanticModel,
+                currentPrefix,
+                currentLoopPath,
+                StepContext.BranchPath,
+                steps);
         }
 
         return steps;
@@ -862,6 +999,7 @@ internal static class StepExtractor
         LambdaExpressionSyntax pathLambda,
         SemanticModel semanticModel,
         string? currentPrefix,
+        ImmutableArray<int> currentLoopPath,
         StepContext context,
         List<StepInfo> steps)
     {
@@ -873,7 +1011,12 @@ internal static class StepExtractor
         {
             if (TryGetStepNameAndInstanceName(inv, semanticModel, out var stepName, out var instanceName))
             {
-                steps.Add(new StepInfo(stepName, instanceName, currentPrefix, context));
+                steps.Add(new StepInfo(
+                    stepName,
+                    instanceName,
+                    currentPrefix,
+                    context,
+                    currentLoopPath));
             }
         }
     }
@@ -1021,7 +1164,7 @@ internal static class StepExtractor
         // Walk to the receiver (previous call in the chain)
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (memberAccess.Expression is InvocationExpressionSyntax previousInvocation)
+            if (SyntaxHelper.StripTransparent(memberAccess.Expression) is InvocationExpressionSyntax previousInvocation)
             {
                 WalkInvocationChainForStepModelsInternal(
                     previousInvocation,
@@ -1132,10 +1275,19 @@ internal static class StepExtractor
                     stepModels.Add(joinStepModel);
                 }
             }
-
-            // NOTE: Branch() constructs are NOT parsed here.
-            // Branch steps are handled separately by BranchExtractor and
-            // emitted by SagaStepHandlersEmitter in a dedicated branch loop.
+            else if (SyntaxHelper.IsMethodCall(inv, "Branch"))
+            {
+                // Loop-exit and loop-internal branch actions must retain the same
+                // configured StepModel as a top-level branch occurrence. The
+                // BranchExtractor still owns routing; this projection supplies
+                // contract/resilience metadata to the shared workflow IR.
+                ParseBranchPathStepModels(
+                    inv,
+                    semanticModel,
+                    currentPrefix,
+                    stepModels,
+                    cancellationToken);
+            }
         }
     }
 
@@ -1298,21 +1450,17 @@ internal static class StepExtractor
         string? loopName,
         out StepModel stepModel)
     {
-        stepModel = default!;
-
-        if (!TryGetGenericTypeArgument(invocation, "Join", out var typeArgument))
-        {
-            return false;
-        }
-
-        if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
-        {
-            return false;
-        }
-
-        var instanceName = ExtractInstanceName(invocation);
-        stepModel = StepModel.Create(stepName, stepTypeName, instanceName: instanceName, loopName: loopName);
-        return true;
+        // Join is a class-based step occurrence and therefore uses the same
+        // configuration/action extraction path as StartWith, Then, and Finally.
+        // Loop parsing reaches joins through this dedicated branch, while a
+        // top-level join already reaches TryGetStepModel directly.
+        return TryGetStepModel(
+            invocation,
+            semanticModel,
+            loopName,
+            validationPredicate: null,
+            validationErrorMessage: null,
+            out stepModel);
     }
 
     private static bool TryGetStepModel(
@@ -1354,6 +1502,7 @@ internal static class StepExtractor
 
         var instanceName = ExtractInstanceName(invocation);
         var resilience = ExtractConfiguredResilience(invocation, semanticModel);
+        var action = ExtractConfiguredActionReference(invocation, semanticModel);
 
         // Thread validation declared via the configure-lambda overload
         // (Then<TStep>(step => step.ValidateState(...))) uniformly, exactly as
@@ -1378,7 +1527,335 @@ internal static class StepExtractor
             retry: resilience.Retry,
             timeout: resilience.Timeout,
             compensation: resilience.Compensation,
-            confidence: resilience.Confidence);
+            confidence: resilience.Confidence,
+            action: action.Action,
+            actionResolution: action.Resolution);
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the statically visible action identity from a step's own configure lambda.
+    /// </summary>
+    /// <param name="stepInvocation">The configured step invocation.</param>
+    /// <param name="semanticModel">The semantic model used to read constant constructor arguments.</param>
+    /// <returns>The action identity, or <see langword="null"/> when none is statically visible.</returns>
+    /// <remarks>
+    /// The invocation walk is scoped to the configure lambda's own body so a nested
+    /// low-confidence handler's <c>Performs</c> declaration cannot leak onto its parent step.
+    /// Only the name triple is retained; the generator model never carries a CLR type handle.
+    /// </remarks>
+    private static (WorkflowActionReferenceModel? Action, WorkflowActionReferenceResolution Resolution)
+        ExtractConfiguredActionReference(
+        InvocationExpressionSyntax stepInvocation,
+        SemanticModel semanticModel)
+    {
+        var arguments = stepInvocation.ArgumentList?.Arguments;
+        if (arguments is null)
+        {
+            return (null, WorkflowActionReferenceResolution.Missing);
+        }
+
+        foreach (var argument in arguments.Value)
+        {
+            if (argument.Expression is not LambdaExpressionSyntax configureLambda)
+            {
+                continue;
+            }
+
+            var parameterSyntax = configureLambda switch
+            {
+                SimpleLambdaExpressionSyntax simple => simple.Parameter,
+                ParenthesizedLambdaExpressionSyntax parenthesized
+                    when parenthesized.ParameterList.Parameters.Count == 1 =>
+                    parenthesized.ParameterList.Parameters[0],
+                _ => null,
+            };
+            var configureParameter = parameterSyntax is null
+                ? null
+                : semanticModel.GetDeclaredSymbol(parameterSyntax) as IParameterSymbol;
+            if (configureParameter is null)
+            {
+                return (null, WorkflowActionReferenceResolution.DynamicOrInvalid);
+            }
+
+            if (!HasClosedStepConfigurationUses(
+                configureLambda,
+                configureParameter,
+                semanticModel))
+            {
+                return (null, WorkflowActionReferenceResolution.DynamicOrInvalid);
+            }
+
+            var performsCalls = InvocationChainWalker
+                .CollectInvocationsInLambda(configureLambda)
+                .Where(call => IsStepConfigurationPerformsCall(
+                    call,
+                    configureParameter,
+                    semanticModel))
+                .ToList();
+            if (performsCalls.Count == 0)
+            {
+                continue;
+            }
+
+            if (performsCalls.Count != 1)
+            {
+                return (null, WorkflowActionReferenceResolution.DynamicOrInvalid);
+            }
+
+            var referenceExpression = performsCalls[0].ArgumentList.Arguments.FirstOrDefault()?.Expression;
+            if (referenceExpression is not null
+                && TryExtractActionReference(referenceExpression, semanticModel, out var action))
+            {
+                return (action, WorkflowActionReferenceResolution.Resolved);
+            }
+
+            return (null, WorkflowActionReferenceResolution.DynamicOrInvalid);
+        }
+
+        return (null, WorkflowActionReferenceResolution.Missing);
+    }
+
+    private static bool IsStepConfigurationPerformsCall(
+        InvocationExpressionSyntax invocation,
+        IParameterSymbol configureParameter,
+        SemanticModel semanticModel)
+    {
+        if (semanticModel.GetOperation(invocation) is not IInvocationOperation operation
+            || !string.Equals(operation.TargetMethod.Name, "Performs", StringComparison.Ordinal)
+            || !IsStepConfigurationMethod(operation.TargetMethod))
+        {
+            return false;
+        }
+
+        // In an error-tolerant consumer compilation Roslyn can retain the resolved target
+        // method while representing an earlier receiver in the fluent chain as invalid.
+        // Fall back to the syntax chain, but still resolve its root identifier to the exact
+        // configure-parameter symbol; source ordering must not turn a legal Performs call
+        // into an apparently missing declaration.
+        return IsOperationRootedAtParameter(operation.Instance, configureParameter)
+            || IsInvocationSyntaxRootedAtParameter(
+                invocation,
+                configureParameter,
+                semanticModel);
+    }
+
+    private static bool IsOperationRootedAtParameter(
+        IOperation? operation,
+        IParameterSymbol parameter)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        return operation switch
+        {
+            IParameterReferenceOperation reference =>
+                SymbolEqualityComparer.Default.Equals(reference.Parameter, parameter),
+            IInvocationOperation invocation =>
+                IsOperationRootedAtParameter(invocation.Instance, parameter),
+            _ => false,
+        };
+    }
+
+    private static bool HasClosedStepConfigurationUses(
+        LambdaExpressionSyntax configureLambda,
+        IParameterSymbol configureParameter,
+        SemanticModel semanticModel)
+    {
+        if (configureLambda.Body is BlockSyntax block
+            && block.Statements.Any(statement => statement is not ExpressionStatementSyntax))
+        {
+            return false;
+        }
+
+        foreach (var identifier in configureLambda.DescendantNodes()
+            .OfType<IdentifierNameSyntax>())
+        {
+            if (semanticModel.GetSymbolInfo(identifier).Symbol is not IParameterSymbol referenced
+                || !SymbolEqualityComparer.Default.Equals(referenced, configureParameter))
+            {
+                continue;
+            }
+
+            if (identifier.Ancestors()
+                    .TakeWhile(ancestor => ancestor != configureLambda)
+                    .Any(ancestor => ancestor is AnonymousFunctionExpressionSyntax
+                        or LocalFunctionStatementSyntax)
+                || !IsClosedStepConfigurationUse(identifier, configureLambda, semanticModel))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsClosedStepConfigurationUse(
+        IdentifierNameSyntax identifier,
+        LambdaExpressionSyntax configureLambda,
+        SemanticModel semanticModel)
+    {
+        ExpressionSyntax current = identifier;
+        while (true)
+        {
+            current = SyntaxHelper.IncludeTransparentParents(current);
+
+            if (current.Parent is MemberAccessExpressionSyntax member
+                && member.Expression == current
+                && member.Parent is InvocationExpressionSyntax invocation)
+            {
+                if (!TryResolveStepConfigurationMethod(invocation, semanticModel, out _))
+                {
+                    return false;
+                }
+
+                current = invocation;
+                continue;
+            }
+
+            return current.Parent is ExpressionStatementSyntax
+                || ReferenceEquals(current.Parent, configureLambda);
+        }
+    }
+
+    private static bool TryResolveStepConfigurationMethod(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        out IMethodSymbol method)
+    {
+        if (semanticModel.GetOperation(invocation) is IInvocationOperation operation
+            && IsStepConfigurationMethod(operation.TargetMethod))
+        {
+            method = operation.TargetMethod;
+            return true;
+        }
+
+        var symbolInfo = semanticModel.GetSymbolInfo(invocation);
+        if (symbolInfo.Symbol is IMethodSymbol direct && IsStepConfigurationMethod(direct))
+        {
+            method = direct;
+            return true;
+        }
+
+        var candidate = symbolInfo.CandidateSymbols
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(IsStepConfigurationMethod);
+        if (candidate is not null)
+        {
+            method = candidate;
+            return true;
+        }
+
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            candidate = semanticModel.GetMemberGroup(memberAccess)
+                .OfType<IMethodSymbol>()
+                .FirstOrDefault(IsStepConfigurationMethod);
+            if (candidate is not null)
+            {
+                method = candidate;
+                return true;
+            }
+        }
+
+        method = null!;
+        return false;
+    }
+
+    private static bool IsStepConfigurationMethod(IMethodSymbol? method) =>
+        method?.ContainingType is { Arity: 1 } containingType
+        && string.Equals(containingType.Name, "IStepConfiguration", StringComparison.Ordinal)
+        && string.Equals(
+            containingType.ContainingNamespace.ToDisplayString(),
+            "Strategos.Builders",
+            StringComparison.Ordinal);
+
+    private static bool IsInvocationSyntaxRootedAtParameter(
+        InvocationExpressionSyntax invocation,
+        IParameterSymbol parameter,
+        SemanticModel semanticModel)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+        {
+            return false;
+        }
+
+        ExpressionSyntax receiver = SyntaxHelper.StripTransparent(memberAccess.Expression);
+        while (true)
+        {
+            if (receiver is not InvocationExpressionSyntax chainedInvocation
+                || chainedInvocation.Expression is not MemberAccessExpressionSyntax chainedAccess)
+            {
+                break;
+            }
+
+            receiver = SyntaxHelper.StripTransparent(chainedAccess.Expression);
+        }
+
+        return receiver is IdentifierNameSyntax identifier
+            && semanticModel.GetSymbolInfo(identifier).Symbol is IParameterSymbol receiverParameter
+            && SymbolEqualityComparer.Default.Equals(receiverParameter, parameter);
+    }
+
+    private static bool TryExtractActionReference(
+        ExpressionSyntax expression,
+        SemanticModel semanticModel,
+        out WorkflowActionReferenceModel action)
+    {
+        action = default!;
+
+        IOperation? operation = semanticModel.GetOperation(expression);
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        if (operation is not IObjectCreationOperation creation
+            || !string.Equals(creation.Constructor?.ContainingType.Name, "WorkflowActionReference", StringComparison.Ordinal)
+            || !string.Equals(
+                creation.Constructor?.ContainingType.ContainingNamespace?.ToDisplayString(),
+                "Strategos.Definitions",
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string? domainName = null;
+        string? objectTypeName = null;
+        string? actionName = null;
+
+        foreach (var constructorArgument in creation.Arguments)
+        {
+            if (!constructorArgument.Value.ConstantValue.HasValue
+                || constructorArgument.Value.ConstantValue.Value is not string value)
+            {
+                return false;
+            }
+
+            switch (constructorArgument.Parameter?.Name)
+            {
+                case "domainName":
+                    domainName = value;
+                    break;
+                case "objectTypeName":
+                    objectTypeName = value;
+                    break;
+                case "actionName":
+                    actionName = value;
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(domainName)
+            || string.IsNullOrWhiteSpace(objectTypeName)
+            || string.IsNullOrWhiteSpace(actionName))
+        {
+            return false;
+        }
+
+        action = new WorkflowActionReferenceModel(domainName, objectTypeName, actionName);
         return true;
     }
 
@@ -1599,17 +2076,17 @@ internal static class StepExtractor
         var steps = new List<StepModel>(thenCalls.Count);
         foreach (var thenCall in thenCalls)
         {
-            if (!TryGetGenericTypeArgument(thenCall, "Then", out var typeArgument))
+            var (validationPredicate, validationErrorMessage) = ExtractConfiguredValidation(thenCall);
+            if (TryGetStepModel(
+                    thenCall,
+                    semanticModel,
+                    loopName: null,
+                    validationPredicate,
+                    validationErrorMessage,
+                    out var handlerStep))
             {
-                continue;
+                steps.Add(handlerStep);
             }
-
-            if (!ResolveTypeNameAndFullName(typeArgument, semanticModel, out var stepName, out var stepTypeName))
-            {
-                continue;
-            }
-
-            steps.Add(StepModel.Create(stepName, stepTypeName));
         }
 
         if (steps.Count == 0)

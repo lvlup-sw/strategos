@@ -65,12 +65,14 @@ public class OntologyGraphTests
     {
         var graph = BuildGraphWithTwoDomains();
 
-        // All collections should be backed by arrays (IReadOnlyList<T>)
-        // Verify they are truly read-only by checking the runtime type is an array
-        await Assert.That(graph.Domains).IsTypeOf<DomainDescriptor[]>();
-        await Assert.That(graph.ObjectTypes).IsTypeOf<ObjectTypeDescriptor[]>();
-        await Assert.That(graph.Interfaces).IsTypeOf<InterfaceDescriptor[]>();
-        await Assert.That(graph.CrossDomainLinks).IsTypeOf<ResolvedCrossDomainLink[]>();
-        await Assert.That(graph.WorkflowChains).IsTypeOf<WorkflowChain[]>();
+        // Arrays implement IReadOnlyList<T> but remain writable after a downcast. A frozen graph
+        // therefore must not expose its internal arrays through the public collection surfaces.
+        await Assert.That(graph.Domains is DomainDescriptor[]).IsFalse();
+        await Assert.That(graph.ObjectTypes is ObjectTypeDescriptor[]).IsFalse();
+        await Assert.That(graph.Interfaces is InterfaceDescriptor[]).IsFalse();
+        await Assert.That(graph.CrossDomainLinks is ResolvedCrossDomainLink[]).IsFalse();
+        await Assert.That(graph.WorkflowChains is WorkflowChain[]).IsFalse();
+        await Assert.That(graph.Warnings is string[]).IsFalse();
+        await Assert.That(graph.Domains[0].ObjectTypes is ObjectTypeDescriptor[]).IsFalse();
     }
 }

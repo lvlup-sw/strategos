@@ -148,9 +148,8 @@ internal static class ApprovalExtractor
         isTerminal = false;
 
         // Find OnRejection invocations within the config lambda
-        var onRejectionInvocations = configLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
+        var onRejectionInvocations = InvocationChainWalker
+            .CollectInvocationsInLambda(configLambda)
             .Where(inv => SyntaxHelper.IsMethodCall(inv, "OnRejection"))
             .ToList();
 
@@ -192,9 +191,8 @@ internal static class ApprovalExtractor
         isTerminal = false;
 
         // Find OnTimeout invocations within the config lambda
-        var onTimeoutInvocations = configLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
+        var onTimeoutInvocations = InvocationChainWalker
+            .CollectInvocationsInLambda(configLambda)
             .Where(inv => SyntaxHelper.IsMethodCall(inv, "OnTimeout"))
             .ToList();
 
@@ -254,12 +252,9 @@ internal static class ApprovalExtractor
         ref bool isTerminal,
         CancellationToken cancellationToken)
     {
-        // Find all invocations in the handler body, reversed for correct order
-        var allInvocations = handlerLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Reverse()
-            .ToList();
+        // Preserve source order while excluding configuration and other nested lambdas.
+        var allInvocations = InvocationChainWalker
+            .CollectInvocationsInLambda(handlerLambda);
 
         foreach (var inv in allInvocations)
         {
@@ -291,12 +286,9 @@ internal static class ApprovalExtractor
         ref bool isTerminal,
         CancellationToken cancellationToken)
     {
-        // Find all invocations in the handler body, reversed for correct order
-        var allInvocations = handlerLambda
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Reverse()
-            .ToList();
+        // Preserve source order while excluding configuration and other nested lambdas.
+        var allInvocations = InvocationChainWalker
+            .CollectInvocationsInLambda(handlerLambda);
 
         foreach (var inv in allInvocations)
         {
@@ -362,45 +354,10 @@ internal static class ApprovalExtractor
         SemanticModel semanticModel,
         out StepModel stepModel)
     {
-        stepModel = default!;
-
-        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
-        {
-            return false;
-        }
-
-        if (memberAccess.Name is not GenericNameSyntax genericName)
-        {
-            return false;
-        }
-
-        var typeArgument = genericName.TypeArgumentList.Arguments.FirstOrDefault();
-        if (typeArgument is null)
-        {
-            return false;
-        }
-
-        string stepName;
-        string stepTypeName;
-
-        var symbolInfo = semanticModel.GetSymbolInfo(typeArgument);
-        if (symbolInfo.Symbol is INamedTypeSymbol namedType)
-        {
-            stepName = namedType.Name;
-            stepTypeName = namedType.ToDisplayString();
-        }
-        else
-        {
-            stepName = SyntaxHelper.GetTypeNameFromSyntax(typeArgument);
-            stepTypeName = stepName;
-            if (string.IsNullOrEmpty(stepName))
-            {
-                return false;
-            }
-        }
-
-        stepModel = StepModel.Create(stepName, stepTypeName);
-        return true;
+        return StepExtractor.TryBuildConfiguredStepModel(
+            invocation,
+            semanticModel,
+            out stepModel);
     }
 
     private static bool TryGetApproverTypeName(
@@ -457,7 +414,7 @@ internal static class ApprovalExtractor
         }
 
         // The expression part is the previous invocation in the chain
-        var previousExpression = memberAccess.Expression;
+        var previousExpression = SyntaxHelper.StripTransparent(memberAccess.Expression);
 
         // Walk back until we find a StartWith or Then call
         while (previousExpression is InvocationExpressionSyntax previousInvocation)
@@ -478,7 +435,7 @@ internal static class ApprovalExtractor
             // Continue walking back
             if (previousInvocation.Expression is MemberAccessExpressionSyntax prevMemberAccess)
             {
-                previousExpression = prevMemberAccess.Expression;
+                previousExpression = SyntaxHelper.StripTransparent(prevMemberAccess.Expression);
             }
             else
             {

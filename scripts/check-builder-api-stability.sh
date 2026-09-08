@@ -4,12 +4,12 @@
 #
 # #51 builder API-stability gate (PR-B), task T11 — fail-closed CI step.
 #
-# Builds src/Strategos with Microsoft.CodeAnalysis.PublicApiAnalyzers. The 7
-# Strategos.Builders interfaces are baselined in
-# src/Strategos/PublicAPI/PublicAPI.Shipped.txt (INV-1: builder surface only,
-# scoped via PublicApi.globalconfig + .editorconfig). Any change to a builder
-# signature with no matching PublicAPI.Unshipped.txt entry raises RS0016/RS0017
-# and the build fails.
+# Builds src/Strategos with Microsoft.CodeAnalysis.PublicApiAnalyzers. The
+# historical 7 Strategos.Builders entrypoints remain the downstream mirror's
+# named subset. The local allowlist also covers the 3 continuation interfaces
+# changed by #167, WorkflowActionReference, and its StepDefinition carrier. Any
+# change to that public surface without a matching PublicAPI.Unshipped.txt entry
+# raises RS0016/RS0017 and the build fails.
 #
 # On such a failure this script prints the cross-product remediation protocol
 # VERBATIM (the exarchos strategos-api-mirror.test.ts consumer depends on this
@@ -27,7 +27,10 @@ REMEDIATION='Update PublicAPI.Unshipped.txt and add a CHANGELOG entry under Cros
 
 echo "==> Building ${PROJECT} with PublicApiAnalyzers (builder API-stability gate)"
 build_log="$(mktemp)"
-dotnet build "${PROJECT}" --configuration Release /warnaserror 2>&1 | tee "${build_log}"
+# MSBuild's parallel restore graph intermittently exits 1 without diagnostics in this
+# repository. Keep the fail-closed gate deterministic so an actual PublicApiAnalyzer
+# diagnostic, rather than restore scheduling, controls the result.
+dotnet build "${PROJECT}" --configuration Release /warnaserror -m:1 2>&1 | tee "${build_log}"
 status="${PIPESTATUS[0]}"
 
 if [ "${status}" -ne 0 ]; then
@@ -38,10 +41,11 @@ if [ "${status}" -ne 0 ]; then
     echo "Builder public API drift detected (RS0016/RS0017)."
     echo "${REMEDIATION}"
     echo "------------------------------------------------------------------"
-    echo "The 7 Strategos.Builders interfaces are a cross-product contract"
-    echo "mirrored by exarchos's strategos-api-mirror.test.ts. A breaking"
-    echo "change must be declared in the baseline and the CHANGELOG so the"
-    echo "downstream mirror can re-baseline deliberately."
+    echo "The allowlisted Strategos API is a cross-product contract. Its"
+    echo "historical 7-entrypoint subset is mirrored by exarchos's"
+    echo "strategos-api-mirror.test.ts. A breaking change must be declared"
+    echo "in the baseline and the CHANGELOG so consumers can re-baseline"
+    echo "deliberately."
   fi
   rm -f "${build_log}"
   exit "${status}"

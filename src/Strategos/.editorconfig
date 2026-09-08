@@ -2,14 +2,18 @@
 # #51 builder API-stability gate (PR-B) — INV-1 scoping.
 #
 # Microsoft.CodeAnalysis.PublicApiAnalyzers tracks the WHOLE assembly public
-# surface by default. INV-1 requires the cross-product baseline cover ONLY the
-# 7 Strategos.Builders interfaces (so no source-generator-internal types leak
-# into the baseline exarchos's strategos-api-mirror.test.ts consumes).
+# surface by default. INV-1 originally scoped the cross-product baseline to the
+# 7 Strategos.Builders entrypoint interfaces consumed by exarchos's
+# strategos-api-mirror.test.ts. Issue #167 preserves that named historical
+# subset and additionally tracks the 3 continuation interfaces changed by the
+# typed-binding API plus its public WorkflowActionReference value object and
+# the StepDefinition occurrence slot that carries that identity.
 #
 # Mechanism: the analyzer is all-or-nothing per project, so we disable its
-# diagnostics assembly-wide here, then re-enable them ONLY for the 7 interface
-# files under Abstractions/. The PublicAPI.{Shipped,Unshipped}.txt baseline
-# therefore contains exactly the 7 interfaces' members — nothing else.
+# diagnostics assembly-wide here, then re-enable them ONLY for the 10 interface
+# files under Abstractions/ and two exact files under Definitions/.
+# The PublicAPI.{Shipped,Unshipped}.txt baseline therefore remains a deliberate
+# allowlist and cannot absorb unrelated public or generated types.
 #
 # RS0016 declare-public-api / RS0017 remove / RS0024 list / RS0025 dup
 # RS0026 obsolete / RS0027 nullability annotations.
@@ -32,9 +36,37 @@ dotnet_diagnostic.RS0036.severity = none
 dotnet_diagnostic.RS0037.severity = none
 dotnet_diagnostic.RS0041.severity = none
 
-# Re-enable as build-breaking errors ONLY for the 7 tracked builder interfaces.
-# These are the cross-product public surface exarchos mirrors (#51 / R4).
-[Abstractions/{IWorkflowBuilder,IBranchBuilder,ILoopBuilder,IForkJoinBuilder,IApprovalBuilder,IFailureBuilder,IStepConfiguration}.cs]
+# Re-enable as build-breaking errors for the historical 7 entrypoints plus the
+# 3 continuation interfaces whose occurrence-configuration surface changed in
+# #167. This explicit allowlist preserves #51's fail-closed scope.
+[Abstractions/{IWorkflowBuilder,IBranchBuilder,ILoopBuilder,IForkJoinBuilder,IApprovalBuilder,IFailureBuilder,IStepConfiguration,ILoopForkJoinBuilder,IApprovalRejectionBuilder,IApprovalEscalationBuilder}.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error
+
+# The typed occurrence identity is also a public cross-product contract. Keep
+# it in its own exact-file section so no other Definitions API enters the gate.
+[Definitions/WorkflowActionReference.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error
+
+# StepDefinition is otherwise outside the deliberately narrow public-API
+# baseline. Track the full containing type so its new Action slot cannot be
+# removed or changed while the value object and builder overload stay green.
+[Definitions/StepDefinition.cs]
 dotnet_diagnostic.RS0016.severity = error
 dotnet_diagnostic.RS0017.severity = error
 dotnet_diagnostic.RS0024.severity = error

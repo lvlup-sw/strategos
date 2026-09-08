@@ -53,6 +53,19 @@ public interface IApprovalRejectionBuilder<TState>
         where TStep : class, IWorkflowStep<TState>;
 
     /// <summary>
+    /// Adds a configured step to the rejection path.
+    /// </summary>
+    /// <typeparam name="TStep">The step implementation type.</typeparam>
+    /// <param name="configure">Action to configure the step occurrence.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="configure"/> is null.
+    /// </exception>
+    IApprovalRejectionBuilder<TState> Then<TStep>(
+        Action<IStepConfiguration<TState>> configure)
+        where TStep : class, IWorkflowStep<TState>;
+
+    /// <summary>
     /// Marks this rejection handler as terminal (workflow fails on rejection).
     /// </summary>
     /// <remarks>

@@ -117,6 +117,16 @@ internal sealed record BranchModel(
     BranchModel? NextConsecutiveBranch = null)
 {
     /// <summary>
+    /// Gets a value indicating whether one or more declared branch cases could not be lowered
+    /// into the generator's closed branch grammar.
+    /// </summary>
+    /// <remarks>
+    /// Runtime emission keeps its historical fall-through behavior for such syntax, but a
+    /// workflow-bound action must not prove a contract over a silently smaller topology.
+    /// </remarks>
+    public bool HasUnresolvedCases { get; init; }
+
+    /// <summary>
     /// Gets the method name for the branch routing handler.
     /// </summary>
     /// <remarks>

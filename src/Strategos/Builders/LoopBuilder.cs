@@ -92,8 +92,7 @@ internal sealed class LoopBuilder<TState> : ILoopBuilder<TState>
         configure(configBuilder);
 
         // Create step with configuration
-        var step = StepDefinition.Create(typeof(TStep))
-            .WithConfiguration(configBuilder.Configuration)
+        var step = configBuilder.ApplyTo(StepDefinition.Create(typeof(TStep)))
             .AsLoopBodyStep(_loopId);
 
         _steps.Add(step);

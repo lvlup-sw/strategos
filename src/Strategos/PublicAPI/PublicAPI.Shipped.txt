@@ -1,4 +1,6 @@
 #nullable enable
+static Strategos.Definitions.StepDefinition.Create(System.Type! stepType, string? customName = null, string? instanceName = null) -> Strategos.Definitions.StepDefinition!
+static Strategos.Definitions.StepDefinition.CreateFromLambda(string! stepName, System.Delegate! lambdaDelegate) -> Strategos.Definitions.StepDefinition!
 Strategos.Builders.IApprovalBuilder<TState, TApprover>
 Strategos.Builders.IApprovalBuilder<TState, TApprover>.Build() -> Strategos.Definitions.ApprovalDefinition!
 Strategos.Builders.IApprovalBuilder<TState, TApprover>.OnRejection(System.Action<Strategos.Builders.IApprovalRejectionBuilder<TState!>!>! configure) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
@@ -9,6 +11,20 @@ Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithMetadataFrom(string! 
 Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithMetadata(string! key, object! value) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
 Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithOption(string! optionId, string! label, string! description, bool isDefault = false) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
 Strategos.Builders.IApprovalBuilder<TState, TApprover>.WithTimeout(System.TimeSpan timeout) -> Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!
+Strategos.Builders.IApprovalEscalationBuilder<TState>
+Strategos.Builders.IApprovalEscalationBuilder<TState>.Build() -> Strategos.Definitions.ApprovalEscalationDefinition!
+Strategos.Builders.IApprovalEscalationBuilder<TState>.Complete() -> void
+Strategos.Builders.IApprovalEscalationBuilder<TState>.EscalateTo<TNextApprover>(System.Action<Strategos.Builders.IApprovalBuilder<TState!, TNextApprover!>!>! configure) -> Strategos.Builders.IApprovalEscalationBuilder<TState!>!
+Strategos.Builders.IApprovalEscalationBuilder<TState>.IsTerminal.get -> bool
+Strategos.Builders.IApprovalEscalationBuilder<TState>.NestedApprovals.get -> System.Collections.Generic.IReadOnlyList<Strategos.Definitions.ApprovalDefinition!>!
+Strategos.Builders.IApprovalEscalationBuilder<TState>.Steps.get -> System.Collections.Generic.IReadOnlyList<Strategos.Definitions.StepDefinition!>!
+Strategos.Builders.IApprovalEscalationBuilder<TState>.Then<TStep>() -> Strategos.Builders.IApprovalEscalationBuilder<TState!>!
+Strategos.Builders.IApprovalRejectionBuilder<TState>
+Strategos.Builders.IApprovalRejectionBuilder<TState>.Build() -> Strategos.Definitions.ApprovalRejectionDefinition!
+Strategos.Builders.IApprovalRejectionBuilder<TState>.Complete() -> void
+Strategos.Builders.IApprovalRejectionBuilder<TState>.IsTerminal.get -> bool
+Strategos.Builders.IApprovalRejectionBuilder<TState>.Steps.get -> System.Collections.Generic.IReadOnlyList<Strategos.Definitions.StepDefinition!>!
+Strategos.Builders.IApprovalRejectionBuilder<TState>.Then<TStep>() -> Strategos.Builders.IApprovalRejectionBuilder<TState!>!
 Strategos.Builders.IBranchBuilder<TState>
 Strategos.Builders.IBranchBuilder<TState>.AwaitApproval<TApprover>(System.Action<Strategos.Builders.IApprovalBuilder<TState!, TApprover!>!>! configure) -> Strategos.Builders.IBranchBuilder<TState!>!
 Strategos.Builders.IBranchBuilder<TState>.Complete() -> void
@@ -30,6 +46,8 @@ Strategos.Builders.ILoopBuilder<TState>.RepeatUntil(System.Func<TState!, bool>! 
 Strategos.Builders.ILoopBuilder<TState>.Then<TStep>() -> Strategos.Builders.ILoopBuilder<TState!>!
 Strategos.Builders.ILoopBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.ILoopBuilder<TState!>!
 Strategos.Builders.ILoopBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.ILoopBuilder<TState!>!
+Strategos.Builders.ILoopForkJoinBuilder<TState>
+Strategos.Builders.ILoopForkJoinBuilder<TState>.Join<TJoinStep>() -> Strategos.Builders.ILoopBuilder<TState!>!
 Strategos.Builders.IStepConfiguration<TState>
 Strategos.Builders.IStepConfiguration<TState>.Compensate<TCompensation>() -> Strategos.Builders.IStepConfiguration<TState!>!
 Strategos.Builders.IStepConfiguration<TState>.OnLowConfidence(System.Action<Strategos.Builders.IBranchBuilder<TState!>!>! handler) -> Strategos.Builders.IStepConfiguration<TState!>!
@@ -52,3 +70,28 @@ Strategos.Builders.IWorkflowBuilder<TState>.Then(string! stepName, Strategos.Ste
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>() -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(string! instanceName) -> Strategos.Builders.IWorkflowBuilder<TState!>!
 Strategos.Builders.IWorkflowBuilder<TState>.Then<TStep>(System.Action<Strategos.Builders.IStepConfiguration<TState!>!>! configure) -> Strategos.Builders.IWorkflowBuilder<TState!>!
+Strategos.Definitions.StepDefinition
+Strategos.Definitions.StepDefinition.AsLoopBodyStep(string! loopId) -> Strategos.Definitions.StepDefinition!
+Strategos.Definitions.StepDefinition.AsTerminal() -> Strategos.Definitions.StepDefinition!
+Strategos.Definitions.StepDefinition.Configuration.get -> Strategos.Definitions.StepConfigurationDefinition?
+Strategos.Definitions.StepDefinition.Configuration.init -> void
+Strategos.Definitions.StepDefinition.InstanceName.get -> string?
+Strategos.Definitions.StepDefinition.InstanceName.init -> void
+Strategos.Definitions.StepDefinition.IsLambdaStep.get -> bool
+Strategos.Definitions.StepDefinition.IsLambdaStep.init -> void
+Strategos.Definitions.StepDefinition.IsLoopBodyStep.get -> bool
+Strategos.Definitions.StepDefinition.IsLoopBodyStep.init -> void
+Strategos.Definitions.StepDefinition.IsTerminal.get -> bool
+Strategos.Definitions.StepDefinition.IsTerminal.init -> void
+Strategos.Definitions.StepDefinition.LambdaDelegate.get -> System.Delegate?
+Strategos.Definitions.StepDefinition.LambdaDelegate.init -> void
+Strategos.Definitions.StepDefinition.ParentLoopId.get -> string?
+Strategos.Definitions.StepDefinition.ParentLoopId.init -> void
+Strategos.Definitions.StepDefinition.StepId.get -> string!
+Strategos.Definitions.StepDefinition.StepId.init -> void
+Strategos.Definitions.StepDefinition.StepName.get -> string!
+Strategos.Definitions.StepDefinition.StepName.init -> void
+Strategos.Definitions.StepDefinition.StepType.get -> System.Type!
+Strategos.Definitions.StepDefinition.StepType.init -> void
+Strategos.Definitions.StepDefinition.StepTypeName.get -> string!
+Strategos.Definitions.StepDefinition.WithConfiguration(Strategos.Definitions.StepConfigurationDefinition! configuration) -> Strategos.Definitions.StepDefinition!

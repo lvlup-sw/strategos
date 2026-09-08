@@ -302,6 +302,47 @@ public class WorkflowBuilderAwaitApprovalTests
         await Assert.That(workflow.ApprovalPoints[0].RejectionHandler!.Steps).HasCount().EqualTo(1);
     }
 
+    /// <summary>
+    /// Verifies that configured rejection and escalation occurrences retain both their
+    /// step configuration and ontology action through the completed workflow definition.
+    /// </summary>
+    [Test]
+    public async Task AwaitApproval_ConfiguredHandlers_PreserveStepConfigurationAndActions()
+    {
+        // Arrange
+        var escalationAction = new WorkflowActionReference("orders", "Order", "escalate");
+        var rejectionAction = new WorkflowActionReference("orders", "Order", "reject");
+
+        // Act
+        var workflow = Workflow<TestWorkflowState>
+            .Create("test-workflow")
+            .StartWith<ValidateStep>()
+            .AwaitApproval<ManagerApprover>(approval => approval
+                .OnTimeout(escalation => escalation.Then<NotifyAdminStep>(step => step
+                    .WithTimeout(TimeSpan.FromMinutes(2))
+                    .Performs(escalationAction)))
+                .OnRejection(rejection => rejection.Then<LogFailureStep>(step => step
+                    .WithRetry(4)
+                    .Performs(rejectionAction))))
+            .Finally<CompleteStep>();
+
+        // Assert
+        var approval = workflow.ApprovalPoints.Single();
+        var escalation = approval.EscalationHandler!.Steps.Single();
+        var rejection = approval.RejectionHandler!.Steps.Single();
+
+        await Assert.That(escalation.Configuration!.Timeout)
+            .IsEqualTo(TimeSpan.FromMinutes(2));
+        await Assert.That(escalation.Action).IsEqualTo(escalationAction);
+        await Assert.That(rejection.Configuration!.Retry!.MaxAttempts).IsEqualTo(4);
+        await Assert.That(rejection.Action).IsEqualTo(rejectionAction);
+
+        await Assert.That(workflow.Steps.Single(step => step.StepType == typeof(NotifyAdminStep)).Action)
+            .IsEqualTo(escalationAction);
+        await Assert.That(workflow.Steps.Single(step => step.StepType == typeof(LogFailureStep)).Action)
+            .IsEqualTo(rejectionAction);
+    }
+
     // =============================================================================
     // D. Chaining Tests
     // =============================================================================

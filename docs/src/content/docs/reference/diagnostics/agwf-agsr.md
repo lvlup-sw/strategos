@@ -4,7 +4,7 @@ sidebar:
   order: 5
 ---
 
-The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Strategos workflow source generator at compile time. They catch workflow definition errors before runtime — empty names, missing entry points, fork/join mismatches, and invalid reducer attribute targets. The AONT-prefixed diagnostics on the sibling pages cover the ontology layer; this page covers the workflow analyzer.
+The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Strategos workflow source generator at compile time. They catch workflow definition errors before runtime — empty names, missing entry points, fork/join mismatches, invalid reducer attribute targets, and unsound ontology-to-workflow bindings. The AONT-prefixed diagnostics on the sibling pages cover the ontology layer; this page covers the workflow analyzer.
 
 ## Diagnostic Namespaces
 
@@ -25,8 +25,38 @@ The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Stra
 | AGWF010 | Warning | Workflow should end with `Finally<T>()` |
 | AGWF012 | Error | Fork must be followed by `Join<T>()` |
 | AGWF014 | Error | Loop body cannot be empty |
+| AGWF039 | Error | Bound workflow identity does not resolve exactly once |
+| AGWF040 | Error | Reachable step action identity is missing, invalid, dynamic, or does not resolve exactly once |
+| AGWF041 | Error | A closed workflow contract definitely fails behavioral refinement |
+| AGWF042 | Error | A workflow contract cannot be proved statically |
+| AGWF043 | Error | Workflow identities collide after generated-name normalization |
 | AGSR001 | Error | `[Append]` can only be applied to collection types |
 | AGSR002 | Error | `[Merge]` can only be applied to dictionary types |
+
+## Workflow binding diagnostics
+
+An ontology action bound through `WorkflowBindingReference` is accepted only
+when the generator can construct and prove a closed contract for the referenced
+workflow. These diagnostics distinguish lookup and identity failures from
+proof results:
+
+| Code | Cause | Fix |
+|---|---|---|
+| `AGWF039` | The binding's exact ordinal `WorkflowId` matches zero or multiple C# or imported workflow definitions. | Declare exactly one workflow under that name, or correct the binding. |
+| `AGWF040` | A reachable C# step occurrence is missing `.Performs(...)`; the reference is blank, duplicated, or dynamic; or an accepted C#/JSON reference's exact `(DomainName, ObjectTypeName, ActionName)` tuple matches zero or multiple actions. Malformed imported JSON is rejected earlier as `AGWF023`. | Give the occurrence one direct `new WorkflowActionReference(...)` whose compile-time constant names resolve exactly once. |
+| `AGWF041` | All inputs are closed, and the solver finds a definite counterexample or a subject, frame, authority, or fork-isolation violation. | Use the reported obligation and witness to correct the leaf contract or, only when the public contract was too strict, the bound action specification. |
+| `AGWF042` | A binding, workflow topology, action contract, authority lattice, or predicate is dynamic, invalid, opaque, contradictory, unrealizable, absent from the closed proof representation, or otherwise outside the closed proof fragment. | Replace the unprovable input with an analyzer-visible, supported closed form. A runtime check or custom predicate is not a substitute for the binding proof. |
+| `AGWF043` | Two or more ordinal workflow identities normalize to the same generated PascalCase type and source-hint namespace. | Rename the workflows so every normalized generated name is unique. |
+
+The refinement rule is contravariant in requirements and covariant in
+guarantees: the bound action's requirement must imply the workflow entry
+requirement, while every successful workflow exit must imply the bound action's
+declared guarantee. The union of leaf frames must remain within the bound frame,
+and the pointwise join of leaf authority requirements must be no stronger than
+the bound action permits. Internal seams and parallel-path interference are
+also proved. See
+[Typed action calculus](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
+for the full model.
 
 ---
 

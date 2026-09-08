@@ -20,6 +20,7 @@ internal sealed class ActionContractProof
         ActionPredicate declaredGuarantee,
         ActionPredicate effectiveGuarantee,
         LogicFormula requirementFormula,
+        LogicFormula declaredGuaranteeFormula,
         LogicFormula effectiveGuaranteeFormula,
         ImmutableArray<string> opaqueKeys = default,
         string? reason = null,
@@ -32,6 +33,7 @@ internal sealed class ActionContractProof
         DeclaredGuarantee = declaredGuarantee;
         EffectiveGuarantee = effectiveGuarantee;
         RequirementFormula = requirementFormula;
+        DeclaredGuaranteeFormula = declaredGuaranteeFormula;
         EffectiveGuaranteeFormula = effectiveGuaranteeFormula;
         OpaqueKeys = opaqueKeys.IsDefault ? ImmutableArray<string>.Empty : opaqueKeys;
         Reason = reason;
@@ -52,6 +54,8 @@ internal sealed class ActionContractProof
     internal ActionPredicate EffectiveGuarantee { get; }
 
     internal LogicFormula RequirementFormula { get; }
+
+    internal LogicFormula DeclaredGuaranteeFormula { get; }
 
     internal LogicFormula EffectiveGuaranteeFormula { get; }
 
@@ -219,6 +223,7 @@ internal static class ActionContractProofEngine
                 declaredGuarantee,
                 ActionPredicate.True,
                 requirementFormula,
+                declaredGuaranteeFormula,
                 LogicFormula.Opaque(string.Join("|", opaqueKeys)),
                 opaqueKeys,
                 "The action contains one or more custom predicates and is excluded from static proof.");
@@ -329,6 +334,7 @@ internal static class ActionContractProofEngine
             declaredGuarantee,
             adapter.ToPredicate(effectiveGuaranteeFormula),
             requirementFormula,
+            declaredGuaranteeFormula,
             effectiveGuaranteeFormula,
             hasNontrivialEffectiveGuarantee:
                 negatedEffectiveGuarantee.Kind == LogicDecisionKind.Satisfiable);
@@ -468,6 +474,7 @@ internal static class ActionContractProofEngine
             declaredGuarantee,
             ActionPredicate.True,
             requirementFormula ?? LogicFormula.True,
+            LogicFormula.True,
             LogicFormula.True,
             reason: reason,
             witness: witness);

@@ -461,6 +461,42 @@ internal sealed class PhaseGraph
 
                 AddRouted(branchCase.LastStepName, target);
             }
+
+            if (!hasDispatcher || IsExhaustive(branch))
+            {
+                return;
+            }
+
+            // The generated switch evaluates a consecutive branch only when this branch has no
+            // matching case. Every case entry in that nested switch is therefore also a possible
+            // successor of the original dispatching step. At the end of a non-exhaustive chain,
+            // the same switch falls through to the rejoin when one exists.
+            if (branch.NextConsecutiveBranch is not null)
+            {
+                AddBranch(branch.NextConsecutiveBranch, dispatchingStepName);
+            }
+            else if (branch.RejoinStepName is not null)
+            {
+                AddRouted(dispatchingStepName, branch.RejoinStepName);
+            }
+        }
+
+        private static bool IsExhaustive(BranchModel branch)
+        {
+            if (branch.Cases.Any(branchCase =>
+                    branchCase.CaseValueLiteral is "_" or "default"))
+            {
+                return true;
+            }
+
+            if (branch.DiscriminatorTypeName is not ("bool" or "Boolean" or "System.Boolean"))
+            {
+                return false;
+            }
+
+            var hasTrue = branch.Cases.Any(branchCase => branchCase.CaseValueLiteral == "true");
+            var hasFalse = branch.Cases.Any(branchCase => branchCase.CaseValueLiteral == "false");
+            return hasTrue && hasFalse;
         }
 
         private void AddPathInterior(IReadOnlyList<string> pathStepNames)

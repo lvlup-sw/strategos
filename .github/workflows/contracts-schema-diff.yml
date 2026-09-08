@@ -1,11 +1,12 @@
 name: Contracts schema breaking-change diff
 
-# T30 — design §Resilience item 3: "additive-only minors; breaking change ⇒
-# major bump. Breaking-change detection via JSON Schema structural diff in CI."
+# T30 — breaking-change detection via JSON Schema structural diff in CI. A
+# breaking change advances the minor before 1.0 and the major after 1.0.
 #
-# Compares the emitted schemas on this ref against the schemas published at the
-# previous release tag. A removed/narrowed/newly-required property fails the
-# build (it demands a major bump); an added optional property passes.
+# Compares the complete schema tree on this ref against the schemas in the
+# latest package actually published to NuGet. A removed/narrowed/newly-required
+# property requires a minor bump before 1.0 and a major bump after 1.0; an added
+# optional property passes after any forward version increment.
 #
 # The classification rules are unit-tested in C# (JsonSchemaDiff /
 # SchemaDiffTests); this workflow drives the same rules over the file set via
@@ -19,44 +20,85 @@ on:
       - 'scripts/contracts-schema-diff.mjs'
       - '.github/workflows/contracts-schema-diff.yml'
 
+permissions:
+  contents: read
+
+env:
+  CONTRACTS_PROJECT: 'src/Strategos.Contracts/Strategos.Contracts.csproj'
+
 jobs:
   schema-diff:
-    name: Structural diff vs previous tag
+    name: Structural diff vs published package
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history for tags)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
-      - name: Extract previous tag's schemas
+      - name: Extract latest published Contracts schemas
         id: prev
         run: |
           set -euo pipefail
-          SCHEMAS=src/Strategos.Contracts/schemas/json-schema
-          PREV_TAG="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
-          PREV_DIR="$(mktemp -d)"
-          if [ -z "$PREV_TAG" ]; then
-            echo "no previous v* tag found — treating current schemas as the baseline (no diff to run)."
-            echo "have_prev=false" >> "$GITHUB_OUTPUT"
-          elif git cat-file -e "$PREV_TAG:$SCHEMAS" 2>/dev/null; then
-            git archive "$PREV_TAG" "$SCHEMAS" | tar -x -C "$PREV_DIR"
-            echo "prev_dir=$PREV_DIR/$SCHEMAS" >> "$GITHUB_OUTPUT"
-            echo "have_prev=true" >> "$GITHUB_OUTPUT"
-            echo "comparing against $PREV_TAG"
-          else
-            echo "previous tag $PREV_TAG predates the schemas dir — no diff to run."
-            echo "have_prev=false" >> "$GITHUB_OUTPUT"
+          package_id=levelup.strategos.contracts
+          package_index="https://api.nuget.org/v3-flatcontainer/$package_id/index.json"
+          candidate_version="$(grep -oP '(?<=<ContractsVersion>)[^<]+' "$CONTRACTS_PROJECT")"
+          if [[ ! "$candidate_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Candidate ContractsVersion '$candidate_version' is not strict stable SemVer; compatibility is indeterminate."
+            exit 2
           fi
 
+          prev_dir="$(mktemp -d)"
+          if ! curl --fail --silent --show-error "$package_index" --output "$prev_dir/index.json"; then
+            echo "::error::Published Contracts package index is unavailable; schema compatibility is indeterminate."
+            exit 2
+          fi
+
+          previous_version="$(jq -r '.versions[]' "$prev_dir/index.json" \
+            | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+            | sort -V \
+            | tail -1 || true)"
+          if [[ -z "$previous_version" ]]; then
+            echo "::error::No stable published Contracts package exists; schema compatibility is indeterminate."
+            exit 2
+          fi
+
+          nupkg="$prev_dir/$package_id.$previous_version.nupkg"
+          if ! curl --fail --silent --show-error \
+            "https://api.nuget.org/v3-flatcontainer/$package_id/$previous_version/$package_id.$previous_version.nupkg" \
+            --output "$nupkg"; then
+            echo "::error::Published Contracts $previous_version package is unavailable; schema compatibility is indeterminate."
+            exit 2
+          fi
+          if ! unzip -q "$nupkg" 'contentFiles/any/any/schemas/*' -d "$prev_dir/package"; then
+            echo "::error::Published Contracts $previous_version package has no readable schema payload; compatibility is indeterminate."
+            exit 2
+          fi
+          published_schemas="$prev_dir/package/contentFiles/any/any/schemas"
+          if [[ ! -d "$published_schemas" ]]; then
+            echo "::error::Published Contracts $previous_version has no packaged schemas; compatibility is indeterminate."
+            exit 2
+          fi
+
+          published_nupkg_sha256="$(sha256sum "$nupkg" | cut -d' ' -f1)"
+          {
+            echo "prev_dir=$published_schemas"
+            echo "previous_version=$previous_version"
+            echo "candidate_version=$candidate_version"
+            echo "published_nupkg_sha256=$published_nupkg_sha256"
+          } >> "$GITHUB_OUTPUT"
+          echo "comparing candidate $candidate_version against published Contracts $previous_version ($published_nupkg_sha256)"
+
       - name: Structural breaking-change diff
-        if: steps.prev.outputs.have_prev == 'true'
         run: |
           node scripts/contracts-schema-diff.mjs \
             "${{ steps.prev.outputs.prev_dir }}" \
-            "src/Strategos.Contracts/schemas/json-schema"
+            "src/Strategos.Contracts/schemas" \
+            "${{ steps.prev.outputs.previous_version }}" \
+            "${{ steps.prev.outputs.candidate_version }}"

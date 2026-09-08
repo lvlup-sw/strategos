@@ -11,6 +11,7 @@
         "name": {
             "type": "string",
             "minLength": 1,
+            "pattern": ".*\\S.*",
             "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
         },
         "steps": {
@@ -98,6 +99,35 @@
     ],
     "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is pinned to the literal `\"1.0\"`. Future minors are\nadditive-only; a breaking change requires a `WorkflowDefinitionV2` root.",
     "definitions": {
+        "ActionReferenceV1": {
+            "type": "object",
+            "properties": {
+                "domainName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "Ontology domain name."
+                },
+                "objectTypeName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "Ontology object type name."
+                },
+                "actionName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "Ontology action name."
+                }
+            },
+            "required": [
+                "domainName",
+                "objectTypeName",
+                "actionName"
+            ],
+            "description": "Language-neutral identity of an ontology action performed by a workflow step\noccurrence. Every component is a name; no runtime or CLR type identity crosses\nthe wire boundary."
+        },
         "ApprovalDefinition": {
             "type": "object",
             "properties": {
@@ -224,6 +254,10 @@
                 "configuration": {
                     "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "action": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action performed by this specific step occurrence."
                 },
                 "approverType": {
                     "type": "string",
@@ -355,6 +389,10 @@
                 "configuration": {
                     "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "action": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action performed by this specific step occurrence."
                 },
                 "lambda": {
                     "type": "boolean",
@@ -626,6 +664,10 @@
                     "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
+                "action": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action performed by this specific step occurrence."
+                },
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
@@ -674,6 +716,10 @@
                 "configuration": {
                     "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
+                },
+                "action": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action performed by this specific step occurrence."
                 },
                 "stepType": {
                     "type": "string",
@@ -845,6 +891,10 @@
                     "$ref": "#/definitions/StepConfigurationDefinition",
                     "description": "Optional step configuration (confidence / retry / compensation / …)."
                 },
+                "action": {
+                    "$ref": "#/definitions/ActionReferenceV1",
+                    "description": "Ontology action performed by this specific step occurrence."
+                },
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
@@ -975,6 +1025,7 @@
                 "name": {
                     "type": "string",
                     "minLength": 1,
+                    "pattern": ".*\\S.*",
                     "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
                 },
                 "steps": {
