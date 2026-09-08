@@ -21,6 +21,20 @@
 #
 # RS0016 declare-public-api / RS0017 remove / RS0024 list / RS0025 dup
 # RS0026 obsolete / RS0027 nullability annotations.
+#
+# Baseline placement convention (PR #206 follow-up):
+#   PublicAPI.Shipped.txt   = members present in the last NuGet release (the
+#                             newest v* tag). It changes when a member that
+#                             already shipped is newly brought into analyzer
+#                             scope (as CompensationConfiguration and the
+#                             pre-2.13 StepContext members were), and at the
+#                             release roll.
+#   PublicAPI.Unshipped.txt = members added since that release; it rolls into
+#                             Shipped when the release is cut and is the source
+#                             of the "new API" notes.
+# The analyzer accepts a member in either file, so the split is enforced by
+# scripts/check-unshipped-against-tag.sh (run in CI next to the builder gate)
+# and reviewed member-by-member in BuilderApiBaselineTests.
 # =============================================================================
 
 # Disable PublicApiAnalyzers assembly-wide (off by default for every file).

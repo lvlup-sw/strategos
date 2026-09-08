@@ -105,3 +105,17 @@ Strategos.Definitions.StepDefinition.StepType.get -> System.Type!
 Strategos.Definitions.StepDefinition.StepType.init -> void
 Strategos.Definitions.StepDefinition.StepTypeName.get -> string!
 Strategos.Definitions.StepDefinition.WithConfiguration(Strategos.Definitions.StepConfigurationDefinition! configuration) -> Strategos.Definitions.StepDefinition!
+static Strategos.Steps.StepContext.Create(System.Guid workflowId, string! stepName, string! currentPhase) -> Strategos.Steps.StepContext!
+Strategos.Steps.StepContext
+Strategos.Steps.StepContext.CorrelationId.get -> string!
+Strategos.Steps.StepContext.CorrelationId.init -> void
+Strategos.Steps.StepContext.CurrentPhase.get -> string!
+Strategos.Steps.StepContext.CurrentPhase.init -> void
+Strategos.Steps.StepContext.RetryCount.get -> int
+Strategos.Steps.StepContext.RetryCount.init -> void
+Strategos.Steps.StepContext.StepName.get -> string!
+Strategos.Steps.StepContext.StepName.init -> void
+Strategos.Steps.StepContext.Timestamp.get -> System.DateTimeOffset
+Strategos.Steps.StepContext.Timestamp.init -> void
+Strategos.Steps.StepContext.WorkflowId.get -> System.Guid
+Strategos.Steps.StepContext.WorkflowId.init -> void

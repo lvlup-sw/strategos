@@ -32,8 +32,8 @@ namespace Strategos.Tests.PublicApi;
 /// RS0016 for a dropped member.
 /// </para>
 /// <para>
-/// This test mutates a tracked file in place, so it is <see cref="NotInParallelAttribute"/>
-/// and restores the original bytes in a finally regardless of outcome.
+/// These tests mutate tracked files in place, so the class is <see cref="NotInParallelAttribute"/>
+/// and every test restores the original bytes in a finally regardless of outcome.
 /// </para>
 /// </summary>
 [NotInParallel("PublicAPI.Shipped.txt-mutation")]
@@ -52,11 +52,32 @@ public sealed class GateFailClosedTests
     private const string DriftLineToRemove =
         "Strategos.Builders.IBranchBuilder<TState>.Complete() -> void";
 
+    /// <summary>
+    /// An Ontology member line guaranteed present in that package's unshipped baseline
+    /// (its shipped baseline is empty until the first Ontology release roll); dropping
+    /// it is the synthetic drift for the second gated project.
+    /// </summary>
+    private const string OntologyDriftLineToRemove =
+        "Strategos.Ontology.OntologyGraphBuilder.Build() -> Strategos.Ontology.OntologyGraph!";
+
     private static string ShippedBaselinePath { get; } = Path.Combine(
         FixturePaths.RepoRoot, "src", "Strategos", "PublicAPI", "PublicAPI.Shipped.txt");
 
+    private static string UnshippedBaselinePath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos", "PublicAPI", "PublicAPI.Unshipped.txt");
+
+    private static string OntologyUnshippedBaselinePath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos.Ontology", "PublicAPI.Unshipped.txt");
+
     private static string GateScriptPath { get; } = Path.Combine(
         FixturePaths.RepoRoot, "scripts", "check-builder-api-stability.sh");
+
+    private static string PlacementScriptPath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "scripts", "check-unshipped-against-tag.sh");
+
+    private const string StrategosProject = "src/Strategos/Strategos.csproj";
+
+    private const string OntologyProject = "src/Strategos.Ontology/Strategos.Ontology.csproj";
 
     [Test]
     public async Task Gate_FailsClosedWithVerbatimRemediation_OnDrift_ThenPassesOnRestoredBaseline()
@@ -78,7 +99,7 @@ public sealed class GateFailClosedTests
                     .Where(line => line.Trim() != DriftLineToRemove));
             await File.WriteAllTextAsync(ShippedBaselinePath, drifted);
 
-            var (driftExit, driftOutput) = await RunGateAsync();
+            var (driftExit, driftOutput) = await RunGateAsync(StrategosProject);
 
             // Fails closed: non-zero exit.
             await Assert.That(driftExit).IsNotEqualTo(0);
@@ -94,13 +115,102 @@ public sealed class GateFailClosedTests
         }
 
         // --- BASELINE: unmodified baseline must pass (exit zero). ---
-        var (cleanExit, cleanOutput) = await RunGateAsync();
+        var (cleanExit, cleanOutput) = await RunGateAsync(StrategosProject);
 
         await Assert.That(cleanExit).IsEqualTo(0);
         await Assert.That(cleanOutput).Contains("Builder public API stable against baseline.");
     }
 
-    private static async Task<(int ExitCode, string Output)> RunGateAsync()
+    /// <summary>
+    /// The gate accepts several projects and stops at the first failure. The Ontology
+    /// package publishes its own baseline that the exarchos mirror also consumes, so
+    /// the same real-build proof runs against it: drop one tracked Ontology member
+    /// from <c>PublicAPI.Unshipped.txt</c> and require the gate to fail closed with the
+    /// verbatim remediation, then pass once the baseline is restored.
+    /// </summary>
+    [Test]
+    public async Task Gate_FailsClosed_OnOntologyBaselineDrift_ThenPassesOnRestoredBaseline()
+    {
+        var original = await File.ReadAllTextAsync(OntologyUnshippedBaselinePath);
+
+        await Assert.That(original)
+            .Contains(OntologyDriftLineToRemove);
+
+        try
+        {
+            var drifted = string.Join(
+                '\n',
+                original
+                    .Split('\n')
+                    .Where(line => line.Trim() != OntologyDriftLineToRemove));
+            await File.WriteAllTextAsync(OntologyUnshippedBaselinePath, drifted);
+
+            var (driftExit, driftOutput) = await RunGateAsync(OntologyProject);
+
+            await Assert.That(driftExit).IsNotEqualTo(0);
+            await Assert.That(driftOutput).Contains("RS0016");
+            await Assert.That(driftOutput).Contains(Remediation);
+        }
+        finally
+        {
+            await File.WriteAllTextAsync(OntologyUnshippedBaselinePath, original);
+        }
+
+        var (cleanExit, cleanOutput) = await RunGateAsync(OntologyProject);
+
+        await Assert.That(cleanExit).IsEqualTo(0);
+        await Assert.That(cleanOutput).Contains("Builder public API stable against baseline (" + OntologyProject + ").");
+    }
+
+    /// <summary>
+    /// Placement gate self-test. <c>PublicAPI.Shipped.txt</c> is defined as "present in
+    /// the last v* release" and <c>PublicAPI.Unshipped.txt</c> as "added since"; the
+    /// PublicApiAnalyzers accept a member in either file, so only
+    /// <c>scripts/check-unshipped-against-tag.sh</c> keeps the two apart. Inject a line
+    /// that shipped long ago into the unshipped baseline and require the script to fail
+    /// naming that line; then require the committed baseline to pass.
+    /// </summary>
+    [Test]
+    public async Task PlacementGate_FailsClosed_WhenAShippedMemberIsListedAsUnshipped_ThenPassesOnCommittedBaseline()
+    {
+        var original = await File.ReadAllTextAsync(UnshippedBaselinePath);
+        var shipped = await File.ReadAllTextAsync(ShippedBaselinePath);
+
+        // Guard: the injected line must really be shipped, else the failure would be a no-op.
+        await Assert.That(shipped)
+            .Contains(DriftLineToRemove);
+        await Assert.That(original)
+            .DoesNotContain(DriftLineToRemove);
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                UnshippedBaselinePath,
+                original.TrimEnd('\n') + '\n' + DriftLineToRemove + '\n');
+
+            var (injectedExit, injectedOutput) = await RunScriptAsync(PlacementScriptPath);
+
+            await Assert.That(injectedExit).IsEqualTo(1);
+            await Assert.That(injectedOutput).Contains("already shipped at");
+            await Assert.That(injectedOutput).Contains(DriftLineToRemove);
+        }
+        finally
+        {
+            await File.WriteAllTextAsync(UnshippedBaselinePath, original);
+        }
+
+        var (cleanExit, cleanOutput) = await RunScriptAsync(PlacementScriptPath);
+
+        await Assert.That(cleanExit).IsEqualTo(0);
+        await Assert.That(cleanOutput).Contains("holds only members added since");
+    }
+
+    private static Task<(int ExitCode, string Output)> RunGateAsync(params string[] projects)
+    {
+        return RunScriptAsync(GateScriptPath, projects);
+    }
+
+    private static async Task<(int ExitCode, string Output)> RunScriptAsync(string scriptPath, params string[] arguments)
     {
         var psi = new ProcessStartInfo("bash")
         {
@@ -109,7 +219,11 @@ public sealed class GateFailClosedTests
             UseShellExecute = false,
             WorkingDirectory = FixturePaths.RepoRoot,
         };
-        psi.ArgumentList.Add(GateScriptPath);
+        psi.ArgumentList.Add(scriptPath);
+        foreach (var argument in arguments)
+        {
+            psi.ArgumentList.Add(argument);
+        }
 
         using var proc = Process.Start(psi)!;
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();

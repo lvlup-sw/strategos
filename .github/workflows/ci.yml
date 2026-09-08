@@ -220,9 +220,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout with full history (the placement gate diffs against the last v* tag)
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Setup .NET
@@ -232,7 +234,12 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Builder public API gate (RS0016/RS0017 fail-closed)
-        run: bash scripts/check-builder-api-stability.sh
+        # Both published baselines: src/Strategos (the seven mirrored
+        # entrypoints plus the reviewed allowlist) and src/Strategos.Ontology.
+        run: bash scripts/check-builder-api-stability.sh src/Strategos/Strategos.csproj src/Strategos.Ontology/Strategos.Ontology.csproj
+
+      - name: PublicAPI.Unshipped.txt placement gate (Shipped means present in the last v* tag)
+        run: bash scripts/check-unshipped-against-tag.sh
 
   dbsf-parity-guard:
     # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
