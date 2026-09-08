@@ -19,6 +19,7 @@ namespace Strategos.Steps;
 ///   <item><description>CurrentPhase: Generated phase enum value</description></item>
 ///   <item><description>Timestamp: Execution start time</description></item>
 ///   <item><description>RetryCount: Number of retry attempts</description></item>
+///   <item><description>ExecutionId: Durable identity of this dispatch; the supported idempotency key</description></item>
 ///   <item><description>IsCompensation: Whether this is an inverse execution</description></item>
 ///   <item><description>RollbackId: Stable identity shared by retries of one inverse execution</description></item>
 /// </list>
@@ -30,9 +31,9 @@ public sealed record StepContext
     /// Gets the correlation ID for distributed tracing.
     /// </summary>
     /// <remarks>
-    /// Generated compensation handlers retain the rollback identifier's N-format
-    /// representation here for compatibility. Use <see cref="RollbackId"/> rather than
-    /// parsing this tracing value when implementing compensation idempotency.
+    /// This value exists for tracing only. Its textual shape is not part of the supported
+    /// contract and must never be parsed. Use <see cref="ExecutionId"/> as the durable
+    /// idempotency key, and <see cref="RollbackId"/> to identify an inverse execution.
     /// </remarks>
     public required string CorrelationId { get; init; }
 
@@ -62,13 +63,33 @@ public sealed record StepContext
     public int RetryCount { get; init; }
 
     /// <summary>
+    /// Gets the durable identity of this dispatch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For a forward execution this is the forward execution id the saga pinned in its
+    /// dispatch claim; for a compensation execution it is the rollback id. It is the
+    /// supported idempotency key: a redelivery of the same command carries the same value,
+    /// so a step that produces external effects can key those effects on it safely.
+    /// </para>
+    /// <para>
+    /// Generated derived-runtime handlers always set this explicitly from the dispatched
+    /// command. <see cref="Create(System.Guid, string, string)"/> mints a fresh value for
+    /// the legacy non-derived path, where no durable dispatch identity exists.
+    /// </para>
+    /// </remarks>
+    public required Guid ExecutionId { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether this execution is compensating a completed
     /// forward step.
     /// </summary>
     /// <remarks>
-    /// The value defaults to <see langword="false"/> for ordinary forward execution.
+    /// The value is derived from <see cref="RollbackId"/>: an execution is a compensation
+    /// exactly when it carries a rollback identifier. Forward execution is therefore always
+    /// <see langword="false"/>, and the two properties cannot disagree.
     /// </remarks>
-    public bool IsCompensation { get; init; }
+    public bool IsCompensation => RollbackId.HasValue;
 
     /// <summary>
     /// Gets the stable identifier for this rollback execution, or <see langword="null"/>
@@ -76,8 +97,8 @@ public sealed record StepContext
     /// </summary>
     /// <remarks>
     /// Retries and redeliveries of the same inverse execution carry the same value.
-    /// Compensation steps that produce external effects should use it as their durable
-    /// idempotency key when <see cref="IsCompensation"/> is <see langword="true"/>.
+    /// Setting it is what makes <see cref="IsCompensation"/> <see langword="true"/>, and it
+    /// is the value surfaced as <see cref="ExecutionId"/> for an inverse execution.
     /// </remarks>
     public Guid? RollbackId { get; init; }
 
@@ -88,11 +109,18 @@ public sealed record StepContext
     /// <param name="stepName">The step name.</param>
     /// <param name="currentPhase">The current workflow phase.</param>
     /// <returns>A new step context.</returns>
+    /// <remarks>
+    /// The minted <see cref="ExecutionId"/> is fresh per call, so it is a durable
+    /// idempotency key only on the legacy non-derived path this factory serves. Generated
+    /// derived-runtime handlers overwrite it with the dispatched command's execution
+    /// identity before the step runs.
+    /// </remarks>
     public static StepContext Create(Guid workflowId, string stepName, string currentPhase)
     {
         return new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = workflowId,
             StepName = stepName,
             Timestamp = DateTimeOffset.UtcNow,

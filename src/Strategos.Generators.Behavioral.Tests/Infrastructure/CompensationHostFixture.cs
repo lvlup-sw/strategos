@@ -58,6 +58,13 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
     public WorkflowInvocationLog Invocations { get; } = new();
 
     /// <summary>
+    /// Gets the shared step-identity probe. Instrumented workflow steps record the
+    /// <see cref="Strategos.Steps.StepContext.ExecutionId"/> triple they were handed
+    /// so a test can assert the durable idempotency contract.
+    /// </summary>
+    public StepExecutionIdProbe ExecutionIds { get; } = new();
+
+    /// <summary>
     /// Gets the running host's service provider, so a test can reach Marten directly
     /// (to race two sessions against a persisted saga document) or read Wolverine's
     /// generated handler source.
@@ -110,6 +117,7 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
                 opts.Services.AddRoundtripForkImportWorkflow();
 
                 opts.Services.AddSingleton(this.Invocations);
+                opts.Services.AddSingleton(this.ExecutionIds);
                 opts.Services.AddResourceSetupOnStartup();
             })
             .StartAsync();

@@ -68,6 +68,7 @@ public sealed class AgentStepBaseExecuteTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "TestStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -124,6 +125,7 @@ public sealed class AgentStepBaseExecuteTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "TestStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -181,6 +183,7 @@ public sealed class AgentStepBaseExecuteTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "TestStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -246,6 +249,7 @@ public sealed class AgentStepBaseExecuteTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "TestStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -298,6 +302,7 @@ public sealed class AgentStepBaseExecuteTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "TestStep",
             Timestamp = DateTimeOffset.UtcNow,

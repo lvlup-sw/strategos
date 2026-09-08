@@ -219,6 +219,7 @@ public sealed class AgentStepBaseStreamingTests
     private static StepContext MakeContext(TestState state) => new()
     {
         CorrelationId = Guid.NewGuid().ToString("N"),
+        ExecutionId = Guid.NewGuid(),
         WorkflowId = state.WorkflowId,
         StepName = "StreamingStep",
         Timestamp = DateTimeOffset.UtcNow,

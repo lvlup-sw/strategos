@@ -100,6 +100,7 @@ public sealed class AgentStepBaseToolLoopTests
         var context = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "ToolLoopStep",
             Timestamp = DateTimeOffset.UtcNow,

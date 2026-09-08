@@ -78,7 +78,7 @@ public sealed record DerivedCompensationState : IWorkflowState
 }
 
 /// <summary>Completes the first forward transition.</summary>
-public sealed class DerivedForwardAStep(WorkflowInvocationLog log)
+public sealed class DerivedForwardAStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -87,6 +87,7 @@ public sealed class DerivedForwardAStep(WorkflowInvocationLog log)
         StepContext context,
         CancellationToken cancellationToken)
     {
+        probe.Record(nameof(DerivedForwardAStep), context);
         log.Record(nameof(DerivedForwardAStep));
         return Task.FromResult(StepResult<DerivedCompensationState>.FromState(
             state with { Stage = 1 }));
@@ -94,7 +95,7 @@ public sealed class DerivedForwardAStep(WorkflowInvocationLog log)
 }
 
 /// <summary>Completes the second forward transition.</summary>
-public sealed class DerivedForwardBStep(WorkflowInvocationLog log)
+public sealed class DerivedForwardBStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -108,6 +109,7 @@ public sealed class DerivedForwardBStep(WorkflowInvocationLog log)
             throw new InvalidOperationException("Forward B did not receive A's reduced state.");
         }
 
+        probe.Record(nameof(DerivedForwardBStep), context);
         log.Record(nameof(DerivedForwardBStep));
         return Task.FromResult(StepResult<DerivedCompensationState>.FromState(
             state with { Stage = 2 }));
@@ -115,7 +117,7 @@ public sealed class DerivedForwardBStep(WorkflowInvocationLog log)
 }
 
 /// <summary>Fails after the first two forward transitions have completed.</summary>
-public sealed class DerivedFailingCStep(WorkflowInvocationLog log)
+public sealed class DerivedFailingCStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -129,13 +131,14 @@ public sealed class DerivedFailingCStep(WorkflowInvocationLog log)
             throw new InvalidOperationException("Forward C did not receive B's reduced state.");
         }
 
+        probe.Record(nameof(DerivedFailingCStep), context);
         log.Record(nameof(DerivedFailingCStep));
         throw new CompensatedStepException("C fails so rollback must use only the completed A/B prefix.");
     }
 }
 
 /// <summary>Restores the state required before forward A.</summary>
-public sealed class DerivedUndoAStep(WorkflowInvocationLog log)
+public sealed class DerivedUndoAStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -149,6 +152,7 @@ public sealed class DerivedUndoAStep(WorkflowInvocationLog log)
             throw new InvalidOperationException("Undo A did not receive Undo B's reduced state.");
         }
 
+        probe.Record(nameof(DerivedUndoAStep), context);
         log.Record(nameof(DerivedUndoAStep));
         return Task.FromResult(StepResult<DerivedCompensationState>.FromState(
             state with { Stage = 0 }));
@@ -156,7 +160,7 @@ public sealed class DerivedUndoAStep(WorkflowInvocationLog log)
 }
 
 /// <summary>Restores the state required before forward B.</summary>
-public sealed class DerivedUndoBStep(WorkflowInvocationLog log)
+public sealed class DerivedUndoBStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -170,6 +174,7 @@ public sealed class DerivedUndoBStep(WorkflowInvocationLog log)
             throw new InvalidOperationException("Undo B did not receive the failed prefix state.");
         }
 
+        probe.Record(nameof(DerivedUndoBStep), context);
         log.Record(nameof(DerivedUndoBStep));
         return Task.FromResult(StepResult<DerivedCompensationState>.FromState(
             state with { Stage = 1 }));
@@ -177,7 +182,7 @@ public sealed class DerivedUndoBStep(WorkflowInvocationLog log)
 }
 
 /// <summary>Would restore C, but must not run because C never completed.</summary>
-public sealed class DerivedUndoCStep(WorkflowInvocationLog log)
+public sealed class DerivedUndoCStep(WorkflowInvocationLog log, StepExecutionIdProbe probe)
     : IWorkflowStep<DerivedCompensationState>
 {
     /// <inheritdoc />
@@ -186,6 +191,7 @@ public sealed class DerivedUndoCStep(WorkflowInvocationLog log)
         StepContext context,
         CancellationToken cancellationToken)
     {
+        probe.Record(nameof(DerivedUndoCStep), context);
         log.Record(nameof(DerivedUndoCStep));
         return Task.FromResult(StepResult<DerivedCompensationState>.FromState(
             state with { Stage = 2 }));

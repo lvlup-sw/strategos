@@ -231,7 +231,7 @@ public class WorkerHandlerEmitterUnitTests
         // Assert
         await Assert.That(source).Contains(
             "CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),\n"
-            + "                IsCompensation = command.IsCompensation,\n"
+            + "                ExecutionId = command.RollbackId ?? command.StepExecutionId,\n"
             + "                RollbackId = command.IsCompensation ? command.RollbackId : null,");
     }
 

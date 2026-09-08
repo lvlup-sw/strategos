@@ -20,7 +20,8 @@ Strategos.Definitions.WorkflowActionReference.Deconstruct(out string! domainName
 Strategos.Definitions.WorkflowActionReference.DomainName.get -> string!
 Strategos.Definitions.WorkflowActionReference.ObjectTypeName.get -> string!
 Strategos.Definitions.WorkflowActionReference.WorkflowActionReference(string! domainName, string! objectTypeName, string! actionName) -> void
+Strategos.Steps.StepContext.ExecutionId.get -> System.Guid
+Strategos.Steps.StepContext.ExecutionId.init -> void
 Strategos.Steps.StepContext.IsCompensation.get -> bool
-Strategos.Steps.StepContext.IsCompensation.init -> void
 Strategos.Steps.StepContext.RollbackId.get -> System.Guid?
 Strategos.Steps.StepContext.RollbackId.init -> void

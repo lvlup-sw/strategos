@@ -211,6 +211,7 @@ public sealed class AgentStepBuilderConfiguratorTests
         var context = new StepContext
         {
             CorrelationId = "test-correlation",
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = state.WorkflowId,
             StepName = "CacheTestStep",
             Timestamp = DateTimeOffset.UtcNow,

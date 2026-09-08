@@ -765,9 +765,9 @@ internal static class WorkerHandlerEmitter
         {
             sb.AppendLine($"            var stepContext = StepContext.Create(command.WorkflowId, \"{stepName}\", \"{stepName}\") with");
             sb.AppendLine("            {");
-            sb.AppendLine("                // Keep the historical correlation value while exposing compensation identity explicitly.");
+            sb.AppendLine("                // Keep the historical correlation value while exposing durable identity explicitly.");
             sb.AppendLine("                CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),");
-            sb.AppendLine("                IsCompensation = command.IsCompensation,");
+            sb.AppendLine("                ExecutionId = command.RollbackId ?? command.StepExecutionId,");
             sb.AppendLine("                RollbackId = command.IsCompensation ? command.RollbackId : null,");
             sb.AppendLine("            };");
         }
