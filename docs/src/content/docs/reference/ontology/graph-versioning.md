@@ -98,7 +98,7 @@ Strategos 2.13 intentionally changes the action canonicalization once to add
 subjects, typed predicates, guarantees, and custom-predicate identity. Every
 existing action-bearing graph therefore receives a new version on its first
 2.13 build. Invalidate caches instead of attempting to translate an older hash.
-See the [2.13 migration guide](/guide/ontology/migration-v2-13/#10-invalidate-graph-version-caches-once).
+See the [2.13 migration guide](/guide/ontology/migration-v2-13/#11-invalidate-graph-version-caches-once).
 :::
 
 ## Determinism guarantees

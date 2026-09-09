@@ -602,8 +602,23 @@ after typed sagas exist strips their journals silently, and rolling forward
 again finds them unusable. Treat the boundary as a versioned data migration,
 not a code deploy.
 
-<!-- PLACEHOLDER:AREA-A-MIGRATION -->
-<!-- PLACEHOLDER:AREA-GH-MIGRATION -->
+### Saga transitions are revision-guarded
+
+Generated sagas now implement `JasperFx.IRevisioned`, so Wolverine persists each
+saga transition with Marten's revision-guarded `UpdateRevision` instead of a
+plain, last-write-wins `Update`: two deliveries that concurrently transition the
+same saga no longer both commit, and the loser is retried three times against
+the winner's revision before it dead-letters. No schema change is required —
+Marten's `RevisionColumnInt32` mapping tolerates the `bigint mt_version` column
+an existing saga table already has — but a host that previously saw silent
+last-write-wins now sees `JasperFx.ConcurrencyException` retries in its logs and,
+where a transition genuinely cannot be re-applied, a `wolverine_dead_letters` row.
+
+### Execution identity and the compensation deadline
+
+- Use `StepContext.ExecutionId` as your idempotency key. A step that produces external effects should key those effects on it: Wolverine's inbox is at-least-once, and every redelivery of one dispatch carries the same `ExecutionId`.
+- `StepContext.CorrelationId` is for tracing only. Its textual shape is not part of the supported contract; do not parse it to recover an execution or rollback identity, which is what consumers had to do before `ExecutionId` existed.
+- If you constructed a `StepContext` by hand (tests, custom hosts), it now requires `ExecutionId`, and `IsCompensation` is no longer settable — set `RollbackId` and `IsCompensation` follows.
 
 See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the runtime and proof contract.

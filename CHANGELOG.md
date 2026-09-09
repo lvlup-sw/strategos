@@ -49,9 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transpose of the forward contract (its requirement is the forward guarantee,
   its guarantee the forward requirement, over the same frame), or remove
   `CompensatedBy` from actions whose contract cannot be decided. The analyzer
-  also reports `AONT216` at build time, where it is configurable; a project
-  that silences it there still throws at graph freeze.
-<!-- PLACEHOLDER:AREA-C-AONT216 -->
+  also reports `AONT216` at build time as a `NotConfigurable` error (see the
+  entry below); a project that disables analyzers outright still throws at
+  graph freeze.
+- `AONT216` (compensation disagrees with the derived inverse) is now `NotConfigurable`, matching its workflow-side counterparts `AGWF044`/`AGWF045`: a packaged consumer can no longer ship a refuted inverse by setting `<NoWarn>AONT216</NoWarn>`, an `.editorconfig` `dotnet_diagnostic.AONT216.severity = none`, or a `#pragma warning disable`. Disabling analyzers outright (`RunAnalyzers=false`) is outside any descriptor's reach; that case is refused at graph freeze when the host starts.
+- The packed-consumer build probe (`scripts/verify-generator-consumer-build.sh`, CI job `pack-verify`) gains an `AGWF045` non-derivable-rollback-scope arm and a controlled suppression matrix that rebuilds the `AONT216`, `AGWF044` and `AGWF045` probes under `<NoWarn>` and `.editorconfig severity = none` and requires each refutation to remain the sole build error.
 - **One compensation per occurrence (#169).** Calling either `Compensate<T>()`
   overload after compensation was already configured now throws
   `InvalidOperationException` instead of silently replacing the earlier
@@ -59,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from diverging through last-write-wins configuration.
 
 ### Added
+
+- `StepContext.ExecutionId` — the durable identity of a step dispatch, and the supported idempotency key: a redelivery of the same command carries the same value. For a forward execution it is the forward execution id the saga pinned in its dispatch claim; for a compensation execution it is the rollback id.
+- `IStepConfiguration<TState>.Compensate<TCompensation>(TimeSpan timeout)` and `Compensate<TCompensation>(WorkflowActionReference inverseAction, TimeSpan timeout)` — the first authoring path to the compensation deadline, which bounds one execution of the inverse step (distinct from `WithTimeout`, which bounds the forward step). `AGWF021` now rejects a non-positive value written in the DSL.
 
 - **Mechanically derived compensation (#169).** `ActionCalculus.AnalyzeInverse`
   derives `A^-1` from a closed forward contract and proves an authored inverse's
@@ -206,9 +211,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graph-version rollover.** Canonical action hashing now includes subjects,
   predicates, guarantees, and opaque semantic keys/read sets. Action-bearing
   graphs change hash once on upgrade; presentation descriptions remain excluded.
-<!-- PLACEHOLDER:AREA-A-IREVISIONED -->
-<!-- PLACEHOLDER:AREA-GH-STEPCONTEXT-WITHTIMEOUT -->
-<!-- PLACEHOLDER:AREA-DE-CONTRACTS -->
+- **Generated sagas are concurrency-guarded (#206).** The generated saga class now
+  implements `JasperFx.IRevisioned` over the inherited `Wolverine.Saga.Version`
+  (int), replacing the `[Version] public new long Version` shadow property. The
+  shadow satisfied Marten's document mapping but not the
+  `CanBeCastTo<IRevisioned>` test in
+  `Wolverine.Marten.Persistence.Sagas.MartenPersistenceFrameProvider.DetermineUpdateFrame`,
+  so Wolverine emitted a plain `documentSession.Update(saga)` — which leaves
+  Marten's numeric revision guard at zero and made two concurrent deliveries for
+  one saga both commit, silently overwriting the loser's whole transition. The
+  emitted call is now `documentSession.UpdateRevision(saga, expectedSagaRevision)`,
+  and every generated saga carries a `Configure(HandlerChain)` applying
+  `OnException<JasperFx.ConcurrencyException>().RetryTimes(3)`: a delivery that
+  loses the race is retried against the winner's revision and dead-letters only
+  after three attempts. Existing saga documents need no migration — Marten's
+  `RevisionColumnInt32` tolerates an existing `bigint mt_version` column.
+- `StepContext.IsCompensation` is now derived from `RollbackId` rather than an independent `init` property, so the pair can no longer disagree. Setting `IsCompensation` explicitly is a compile error; set `RollbackId` instead.
+- `CompensationConfiguration.WithTimeout` and the `Timeout` init accessor reject a deadline less than or equal to `TimeSpan.Zero` with `ArgumentOutOfRangeException`. `null` (use the generated default) is still allowed.
+- **Contracts 0.12.0 — compensation defaults and the typed-inverse rule are on the wire.** `CompensationConfiguration.requiredOnFailure` now carries `"default": true` in the emitted schema, and the rule that a typed `inverseAction` requires `requiredOnFailure = true` — previously enforced only by the `AGWF044` analyzer — is stated as a JSON Schema conditional (`if`/`then`) that any Draft 2020-12 validator enforces. `timeout` documents the 300-second inverse deadline the generated runtime applies when omitted.
+- **The Contracts schema-diff gate can fail again.** While the candidate `ContractsVersion` carried a pre-1.0 minor bump over the published baseline, every BREAKING change was reported as "allowed by the pre-1.0 minor version increment" and the gate exited 0 — the failing exit was unreachable for a product reason. Each BREAKING change must now also match an entry in `src/Strategos.Contracts/schemas/breaking-changes.allowlist.json` (exact file, path and message, with a version inside the compared window), and `contracts-schema-diff.yml` gained a second arm that diffs the pull request's merge base against head so a narrowing is compared against the versions the PR actually moves between.
+- **`WorkflowDefinitionV1` v1 narrowing policy is stated on the contract.** `schemaVersion` is a pinned literal `1.0`; while the Contracts package is pre-1.0 a minor may narrow the document in place and every narrowing must be listed in the breaking-change allowlist; after 1.0 a breaking change requires a V2 root. The previous wording promised additive-only minors, which the pre-1.0 releases were not delivering.
+- **Contracts CHANGELOG correction.** The 0.12.0 compensation-identity bullet claimed the importer already rejected a blank `compensationStepType`. That was false for the empty string: `WireToModelBridge` guarded on `!string.IsNullOrEmpty` and silently dropped the entire compensation block, so a valid-looking document produced a saga with no compensation. It is now a build error.
 
 ### Removed (unreleased API)
 
@@ -229,7 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-<!-- PLACEHOLDER:AREA-B-PROOF -->
+- Fixed the workflow binding proof failing open on an internal error: a compilation declaring typed derived compensation without any `BoundToWorkflow` call now reports `AGWF042` instead of emitting an unproved compensation saga with no diagnostic, because the fail-closed gate is derived from the workflow models rather than from a text scan for the binding builder method.
 
 ## [2.11.0] - Unreleased
 
