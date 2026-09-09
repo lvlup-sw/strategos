@@ -82,6 +82,11 @@ internal sealed class BranchHandlerEmitter
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, stepName, baseStepName, isForkPathStep: false);
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var usesDerivedRuntime = CompensationTopology.UsesDerivedRuntime(model);
+        var needsReducedFailureRouting = NeedsReducedFailureRouting(model);
+        var topology = usesDerivedRuntime ? CompensationTopology.Build(model) : null;
+        CompensationOccurrence? compensationOccurrence = null;
+        _ = topology?.TryResolve(stepName, pathKey: null, out compensationOccurrence!);
 
         // Method discriminators are called with State as argument; property discriminators are accessed on State
         var discriminatorAccess = branch.IsMethodDiscriminator
@@ -97,9 +102,13 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The start command for the selected branch path.</returns>");
 
-        // Return type is object since we can return different command types
+        // Failure-aware routing needs an iterator so reducer-driven failure can
+        // enter OnFailure or emit its authenticated rollback trigger instead of
+        // dispatching a branch successor.
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-        sb.AppendLine($"    public object Handle(");
+        sb.AppendLine(needsReducedFailureRouting
+            ? "    public IEnumerable<object> Handle("
+            : "    public object Handle(");
         sb.AppendLine($"        {eventName} evt,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
@@ -109,11 +118,26 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            model,
+            stepName,
+            pathKey: null,
+            exitStatement: needsReducedFailureRouting ? "yield break;" : "return default!;");
+
         // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
+        }
+
+        CompensationJournalEmitter.EmitRecordCompletion(sb, model, stepName);
+
+        if (needsReducedFailureRouting)
+        {
+            EmitReducedPhaseSync(sb, model);
+            EmitReducedFailureGuard(sb, model, compensationOccurrence, stepName);
         }
 
         // Log branch routing decision
@@ -125,9 +149,14 @@ internal sealed class BranchHandlerEmitter
 
         // Emit switch/case based on discriminator
         sb.AppendLine($"        // Branch routing based on {branch.DiscriminatorPropertyPath}");
-        sb.Append("        return ");
+        sb.Append(needsReducedFailureRouting ? "        yield return " : "        return ");
         EmitSwitchExpression(sb, branch, "        ");
         sb.AppendLine(";");
+        if (needsReducedFailureRouting)
+        {
+            sb.AppendLine("        yield break;");
+        }
+
         sb.AppendLine("    }");
     }
 
@@ -269,6 +298,7 @@ internal sealed class BranchHandlerEmitter
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, stepName, stepTypeName ?? stepName, isForkPathStep: false);
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var needsReducedFailureRouting = NeedsReducedFailureRouting(model);
 
         // The case's own declaration wins: a case that declared .Complete() ends the workflow here,
         // whichever way its siblings exit. Only a case that made no such declaration falls back to
@@ -296,7 +326,9 @@ internal sealed class BranchHandlerEmitter
 
             sb.AppendLine($"    /// <returns>The start command for the rejoin step ({branch.RejoinStepName}).</returns>");
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-            sb.AppendLine($"    public {rejoinStepCommand} Handle(");
+            sb.AppendLine(needsReducedFailureRouting
+                ? "    public IEnumerable<object> Handle("
+                : $"    public {rejoinStepCommand} Handle(");
             sb.AppendLine($"        {eventName} evt,");
             StateApplicationHelper.EmitSessionParameter(sb, model);
             sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
@@ -306,11 +338,34 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
             sb.AppendLine();
 
+            CompensationJournalEmitter.EmitForwardCompletionGuard(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName),
+                needsReducedFailureRouting ? "yield break;" : "return default!;");
+
             // Apply state change
             if (!string.IsNullOrEmpty(model.StateTypeName))
             {
                 StateApplicationHelper.EmitStateApplication(sb, model);
                 sb.AppendLine();
+            }
+
+            CompensationJournalEmitter.EmitRecordCompletion(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
+
+            if (needsReducedFailureRouting)
+            {
+                EmitReducedPhaseSync(sb, model);
+                EmitReducedFailureGuard(
+                    sb,
+                    model,
+                    stepName,
+                    PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
             }
 
             // Log branch path completion
@@ -321,7 +376,14 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine($"            \"{branch.RejoinStepName}\");");
             sb.AppendLine();
 
-            sb.AppendLine($"        return new {rejoinStepCommand}(WorkflowId);");
+            sb.AppendLine(needsReducedFailureRouting
+                ? $"        yield return new {rejoinStepCommand}(WorkflowId);"
+                : $"        return new {rejoinStepCommand}(WorkflowId);");
+            if (needsReducedFailureRouting)
+            {
+                sb.AppendLine("        yield break;");
+            }
+
             sb.AppendLine("    }");
         }
         else
@@ -329,7 +391,9 @@ internal sealed class BranchHandlerEmitter
             // This branch path ends the workflow: either the case declared .Complete(), or the
             // branch has no convergence point at all.
             // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-            sb.AppendLine("    public void Handle(");
+            sb.AppendLine(needsReducedFailureRouting
+                ? "    public IEnumerable<object> Handle("
+                : "    public void Handle(");
             sb.AppendLine($"        {eventName} evt,");
             StateApplicationHelper.EmitSessionParameter(sb, model);
             sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
@@ -339,11 +403,34 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
             sb.AppendLine();
 
+            CompensationJournalEmitter.EmitForwardCompletionGuard(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName),
+                needsReducedFailureRouting ? "yield break;" : "return;");
+
             // Apply state change
             if (!string.IsNullOrEmpty(model.StateTypeName))
             {
                 StateApplicationHelper.EmitStateApplication(sb, model);
                 sb.AppendLine();
+            }
+
+            CompensationJournalEmitter.EmitRecordCompletion(
+                sb,
+                model,
+                stepName,
+                PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
+
+            if (needsReducedFailureRouting)
+            {
+                EmitReducedPhaseSync(sb, model);
+                EmitReducedFailureGuard(
+                    sb,
+                    model,
+                    stepName,
+                    PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, stepName));
             }
 
             // Log branch path completion with workflow completion
@@ -355,6 +442,11 @@ internal sealed class BranchHandlerEmitter
 
             sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
             sb.AppendLine("        MarkCompleted();");
+            if (needsReducedFailureRouting)
+            {
+                sb.AppendLine("        yield break;");
+            }
+
             sb.AppendLine("    }");
         }
     }
@@ -394,6 +486,7 @@ internal sealed class BranchHandlerEmitter
         var handlerStepName = confidence.OnLowConfidenceHandlerStep!.StepName;
         var lowConfidenceCommand = $"Start{handlerStepName}Command";
         var thresholdLiteral = confidence.Threshold.ToString("R", CultureInfo.InvariantCulture);
+        var needsReducedFailureRouting = NeedsReducedFailureRouting(model);
 
         // The gated step's own name, for the audit event. Derived from the completed event name so
         // it holds even when the branch case carries no resolved step model.
@@ -413,10 +506,42 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        var completedPhaseName = branch.LoopPrefix is null
+            ? branchCase.LastStepName
+            : $"{branch.LoopPrefix}_{branchCase.LastStepName}";
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            model,
+            completedPhaseName,
+            PathRoutingKey.ForBranch(branch.BranchId, branchCase.BranchPathPrefix, completedPhaseName),
+            "yield break;");
+
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
+        }
+
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            branch.LoopPrefix is null ? branchCase.LastStepName : $"{branch.LoopPrefix}_{branchCase.LastStepName}",
+            PathRoutingKey.ForBranch(
+                branch.BranchId,
+                branchCase.BranchPathPrefix,
+                branch.LoopPrefix is null ? branchCase.LastStepName : $"{branch.LoopPrefix}_{branchCase.LastStepName}"));
+
+        if (needsReducedFailureRouting)
+        {
+            EmitReducedPhaseSync(sb, model);
+            EmitReducedFailureGuard(
+                sb,
+                model,
+                completedPhaseName,
+                PathRoutingKey.ForBranch(
+                    branch.BranchId,
+                    branchCase.BranchPathPrefix,
+                    completedPhaseName));
         }
 
         sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the branch-case");
@@ -522,6 +647,21 @@ internal sealed class BranchHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(sb, model, "yield break;");
+
+        var discriminatorRoutingKey = CaptureLiveCaseDiscriminator(
+            sb,
+            occurrences,
+            distinctPhases,
+            CompensationTopology.UsesDerivedRuntime(model));
+
+        EmitLiveCaseForwardGuards(
+            sb,
+            model,
+            occurrences,
+            distinctPhases,
+            discriminatorRoutingKey);
+
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
@@ -533,10 +673,9 @@ internal sealed class BranchHandlerEmitter
         // must not bypass failure-handler dispatch. The routing key is captured FIRST —
         // the sync overwrites Phase from the reduced state, which is the very value the
         // phase arms below select on.
-        var syncsPhaseFromState = model.HasFailureHandlers
+        var syncsPhaseFromState = (model.HasFailureHandlers || CompensationTopology.UsesDerivedRuntime(model))
             && model.StateHasPhaseProperty
-            && !string.IsNullOrEmpty(model.StateTypeName)
-            && !model.StateTypeName!.EndsWith("WorkflowState", StringComparison.Ordinal);
+            && !string.IsNullOrEmpty(model.StateTypeName);
 
         var routingKey = "Phase";
         if (syncsPhaseFromState)
@@ -547,17 +686,18 @@ internal sealed class BranchHandlerEmitter
             sb.AppendLine();
         }
 
-        if (model.HasFailureHandlers)
+        if (model.HasFailureHandlers && !CompensationTopology.UsesDerivedRuntime(model))
         {
-            var failedStepCommand = StepCompletedHandlerEmitter.GetFailedStepCommandName(model);
+            var failedStepName = eventName.EndsWith("Completed", StringComparison.Ordinal)
+                ? eventName.Substring(0, eventName.Length - "Completed".Length)
+                : eventName;
             sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
             sb.AppendLine("        {");
-            sb.AppendLine("            logger.LogWarning(");
-            sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
-            sb.AppendLine("                WorkflowId);");
-            sb.AppendLine();
-            sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
-            sb.AppendLine("            yield break;");
+            StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence: null,
+                failedStepName: failedStepName);
             sb.AppendLine("        }");
             sb.AppendLine();
         }
@@ -568,11 +708,152 @@ internal sealed class BranchHandlerEmitter
         }
         else
         {
-            EmitDiscriminatorLiveCaseArms(sb, model, occurrences);
+            EmitDiscriminatorLiveCaseArms(sb, model, occurrences, discriminatorRoutingKey);
         }
 
         sb.AppendLine("    }");
     }
+
+    private static void EmitLiveCaseForwardGuards(
+        StringBuilder sb,
+        WorkflowModel model,
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences,
+        bool distinctPhases,
+        string discriminatorRoutingKey)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            return;
+        }
+
+        var topology = CompensationTopology.Build(model);
+        if (distinctPhases)
+        {
+            foreach (var occurrence in occurrences)
+            {
+                var pathKey = PathRoutingKey.ForBranch(
+                    occurrence.Branch.BranchId,
+                    occurrence.Case.BranchPathPrefix,
+                    occurrence.PhaseName);
+                _ = topology.TryResolve(occurrence.PhaseName, pathKey, out var compensationOccurrence);
+                sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.{occurrence.PhaseName})");
+                sb.AppendLine("        {");
+                CompensationJournalEmitter.EmitForwardCompletionGuard(
+                    sb,
+                    compensationOccurrence,
+                    "yield break;",
+                    "            ");
+                sb.AppendLine("        }");
+            }
+
+            sb.AppendLine();
+            return;
+        }
+
+        var orderedOccurrences = occurrences
+            .OrderBy(static occurrence => occurrence.Case.CaseValueLiteral is "_" or "default" ? 1 : 0)
+            .ToList();
+        for (var index = 0; index < orderedOccurrences.Count; index++)
+        {
+            var occurrence = orderedOccurrences[index];
+            var literal = occurrence.Case.CaseValueLiteral;
+            var isOtherwise = literal is "_" or "default";
+            var keyword = index == 0 ? "if" : "else if";
+            sb.AppendLine(isOtherwise
+                ? index == 0 ? "        if (true)" : "        else"
+                : $"        {keyword} ({discriminatorRoutingKey} == {literal})");
+            sb.AppendLine("        {");
+            var pathKey = PathRoutingKey.ForBranch(
+                occurrence.Branch.BranchId,
+                occurrence.Case.BranchPathPrefix,
+                occurrence.PhaseName);
+            _ = topology.TryResolve(occurrence.PhaseName, pathKey, out var compensationOccurrence);
+            CompensationJournalEmitter.EmitForwardCompletionGuard(
+                sb,
+                compensationOccurrence,
+                "yield break;",
+                "            ");
+            sb.AppendLine("        }");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string CaptureLiveCaseDiscriminator(
+        StringBuilder sb,
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences,
+        bool distinctPhases,
+        bool usesDerivedRuntime)
+    {
+        var branch = occurrences[0].Branch;
+        var discriminatorAccess = branch.IsMethodDiscriminator
+            ? $"{branch.DiscriminatorPropertyPath}(State)"
+            : $"State.{branch.DiscriminatorPropertyPath}";
+        if (distinctPhases || !usesDerivedRuntime)
+        {
+            return discriminatorAccess;
+        }
+
+        // The reducer is allowed to update the discriminator. Preserve the live
+        // pre-reduction branch identity so the completion is journaled against,
+        // and routed from, the occurrence that actually executed.
+        sb.AppendLine($"        var liveCaseDiscriminator = {discriminatorAccess};");
+        sb.AppendLine();
+        return "liveCaseDiscriminator";
+    }
+
+    private static void EmitReducedPhaseSync(
+        StringBuilder sb,
+        WorkflowModel model,
+        string indent = "        ")
+    {
+        if (model.StateHasPhaseProperty
+            && !string.IsNullOrEmpty(model.StateTypeName))
+        {
+            sb.AppendLine($"{indent}Phase = State.Phase;");
+            sb.AppendLine();
+        }
+    }
+
+    private static void EmitReducedFailureGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        string phaseName,
+        PathRoutingKey? pathKey,
+        string indent = "        ")
+    {
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(phaseName, pathKey, out compensationOccurrence!);
+        }
+
+        EmitReducedFailureGuard(sb, model, compensationOccurrence, phaseName, indent);
+    }
+
+    private static void EmitReducedFailureGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationOccurrence? compensationOccurrence,
+        string failedStepName,
+        string indent = "        ")
+    {
+        sb.AppendLine($"{indent}if (Phase == {model.PhaseEnumName}.Failed)");
+        sb.AppendLine($"{indent}{{");
+        StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+            sb,
+            model,
+            compensationOccurrence,
+            failedStepName,
+            indent + "    ");
+
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+    }
+
+    private static bool NeedsReducedFailureRouting(WorkflowModel model) =>
+        model.HasFailureHandlers || CompensationTopology.UsesDerivedRuntime(model);
 
     private static void EmitPhaseLiveCaseArms(
         StringBuilder sb,
@@ -599,12 +880,10 @@ internal sealed class BranchHandlerEmitter
     private static void EmitDiscriminatorLiveCaseArms(
         StringBuilder sb,
         WorkflowModel model,
-        IReadOnlyList<BranchCaseStepOccurrence> occurrences)
+        IReadOnlyList<BranchCaseStepOccurrence> occurrences,
+        string discriminatorRoutingKey)
     {
         var branch = occurrences[0].Branch;
-        var discriminatorAccess = branch.IsMethodDiscriminator
-            ? $"{branch.DiscriminatorPropertyPath}(State)"
-            : $"State.{branch.DiscriminatorPropertyPath}";
 
         for (var i = 0; i < occurrences.Count; i++)
         {
@@ -617,7 +896,7 @@ internal sealed class BranchHandlerEmitter
             }
             else
             {
-                sb.AppendLine($"        {keyword} ({discriminatorAccess} == {literal})");
+                sb.AppendLine($"        {keyword} ({discriminatorRoutingKey} == {literal})");
             }
 
             sb.AppendLine("        {");
@@ -631,7 +910,7 @@ internal sealed class BranchHandlerEmitter
         {
             sb.AppendLine("        else");
             sb.AppendLine("        {");
-            sb.AppendLine($"            throw new InvalidOperationException($\"Unhandled live branch case: {{{discriminatorAccess}}}\");");
+            sb.AppendLine($"            throw new InvalidOperationException($\"Unhandled live branch case: {{{discriminatorRoutingKey}}}\");");
             sb.AppendLine("        }");
         }
     }
@@ -704,6 +983,44 @@ internal sealed class BranchHandlerEmitter
         BranchCaseStepOccurrence occurrence,
         string indent)
     {
+        var pathKey = PathRoutingKey.ForBranch(
+            occurrence.Branch.BranchId,
+            occurrence.Case.BranchPathPrefix,
+            occurrence.PhaseName);
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            model,
+            occurrence.PhaseName,
+            pathKey,
+            "yield break;",
+            indent);
+
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            occurrence.PhaseName,
+            pathKey,
+            indent);
+
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(
+                occurrence.PhaseName,
+                pathKey,
+                out var compensationOccurrence);
+            sb.AppendLine($"{indent}if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine($"{indent}{{");
+            StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence,
+                occurrence.PhaseName,
+                indent + "    ");
+            sb.AppendLine($"{indent}}}");
+            sb.AppendLine();
+        }
+
         EmitLiveCaseConfidenceGate(sb, model, occurrence, indent);
 
         if (occurrence.SuccessorPhaseName is not null)

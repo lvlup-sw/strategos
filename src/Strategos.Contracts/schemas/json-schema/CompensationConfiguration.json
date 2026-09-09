@@ -5,19 +5,38 @@
     "properties": {
         "compensationStepType": {
             "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
             "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
+        },
+        "inverseAction": {
+            "$ref": "ActionReferenceV1.json",
+            "description": "Ontology action implemented by the authored compensation step."
         },
         "requiredOnFailure": {
             "type": "boolean",
-            "description": "Whether compensation is required on failure."
+            "default": true,
+            "description": "Whether compensation is required on failure. Defaults to `true` when the\nproperty is omitted. A typed `inverseAction` requires `true` (AGWF044)."
         },
         "timeout": {
             "type": "string",
-            "description": "Compensation timeout (ISO-8601 duration), if set."
+            "description": "Compensation timeout (ISO-8601 duration), if set. When omitted the\ngenerated runtime applies a 300-second inverse deadline."
         }
     },
     "required": [
         "compensationStepType"
     ],
-    "description": "Wire-IR compensation configuration (mirrors the builder's\n`CompensationConfiguration`). The compensation step CLR type reduces to a\nsimple-name moniker (LB-2)."
+    "description": "Wire-IR compensation configuration (mirrors the builder's\n`CompensationConfiguration`). The compensation step CLR type reduces to a\nsimple-name moniker (LB-2).",
+    "then": {
+        "properties": {
+            "requiredOnFailure": {
+                "const": true
+            }
+        }
+    },
+    "if": {
+        "required": [
+            "inverseAction"
+        ]
+    }
 }

@@ -49,7 +49,7 @@ The core package containing the fluent DSL for defining workflows and all founda
 | `IWorkflowStep<TState>` | Interface for implementing workflow steps |
 | `IWorkflowDefinition<TState>` | Interface for workflow definition classes |
 | `StepResult<TState>` | Result type returned from step execution |
-| `StepContext` | Execution context passed to steps (correlation ID, timestamp, metadata) |
+| `StepContext` | Execution context passed to steps, including workflow, phase, retry, and rollback-delivery identity |
 
 ### Thompson Sampling Types
 
@@ -214,15 +214,18 @@ Integration with Microsoft.Extensions.AI for LLM-powered workflow steps.
 
 | Type | Purpose |
 |------|---------|
-| `IAgentStep<TState>` | Base interface for LLM-powered steps |
-| `AgentStepContext` | Extended context with conversation thread access |
-| `IConversationalState` | Interface for state that includes conversation history |
-| `IStreamingCallback` | Callback for real-time token streaming |
+| `IAgentStep<TState, TResult>` | Workflow-step marker for an LLM-powered step with a typed result |
+| `AgentStepBuilder<TState, TResult>` | Fluent construction path for agent steps |
+| `AgentStepContext` | Optional agent-services value for the legacy specialist-agent surface |
+| `IConversationalState` | State with serialized conversation threads keyed by agent type |
+| `IConversationThreadManager` | Restores and serializes conversation threads |
+| `IStreamingHandler` | Streaming observer configured through `AgentStepBuilder.WithStreaming` |
+| `IStreamingCallback` | Streaming callback for the legacy specialist-agent surface |
 
 ### Dependencies
 
-- `Microsoft.Extensions.AI` (10.0.1)
-- `Microsoft.Extensions.AI.Abstractions` (10.0.1)
+- `Microsoft.Extensions.AI` (10.5.2)
+- `Microsoft.Extensions.AI.Abstractions` (10.5.2)
 
 ### Installation
 
@@ -233,29 +236,13 @@ dotnet add package LevelUp.Strategos.Agents
 ### Usage
 
 ```csharp
-public class AnalyzeDocumentStep : IAgentStep<DocumentState>
-{
-    private readonly IChatClient _chatClient;
-
-    public AnalyzeDocumentStep(IChatClient chatClient)
-    {
-        _chatClient = chatClient;
-    }
-
-    public async Task<StepResult<DocumentState>> ExecuteAsync(
-        DocumentState state,
-        AgentStepContext context,
-        CancellationToken ct)
-    {
-        var response = await _chatClient.GetResponseAsync(
-            $"Analyze this document: {state.Content}",
-            ct);
-
-        return state
-            .With(s => s.Analysis, response)
-            .AsResult();
-    }
-}
+IAgentStep<DocumentState, string> step =
+    new AgentStepBuilder<DocumentState, string>()
+        .WithSystemPrompt(_ => "You are a document analyst.")
+        .WithUserPrompt(state => $"Analyze this document: {state.Content}")
+        .WithApplyResult((state, result, _) =>
+            Task.FromResult((state with { Analysis = result }).AsResult()))
+        .Build(chatClient);
 ```
 
 ---

@@ -520,6 +520,50 @@ public sealed class TopologyClosureProofTests
         await Assert.That(diagnostic.GetMessage()).Contains("runtime rejects the second declaration");
     }
 
+    /// <summary>A step occurrence cannot expose different first-wins and last-wins inverses.</summary>
+    [Test]
+    public async Task DuplicateStepCompensations_ReportAgwf045()
+    {
+        var diagnostic = SingleCompensationTopologyDiagnostic(Source(
+            topology: string.Empty,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "noop"))
+                    .Compensate<RecoveryStep>(new WorkflowActionReference(
+                        "orders", "Order", "recover"))
+                    .Compensate<RecoveryStep>(new WorkflowActionReference(
+                        "orders", "Order", "reject"))
+                """));
+
+        await Assert.That(diagnostic.GetMessage()).Contains("duplicate Compensate declarations");
+        await Assert.That(diagnostic.GetMessage()).Contains("at most one compensation");
+    }
+
+    /// <summary>One generated phase cannot first-win between different path inverses.</summary>
+    [Test]
+    public async Task RepeatedPhaseWithDifferentCompensations_ReportsAgwf045()
+    {
+        var diagnostic = SingleCompensationTopologyDiagnostic(Source(
+            """
+                .Branch(state => state.Stage,
+                    BranchCase<FlowState, int>.When(0, path => path
+                        .Then<ReviewStep>(step => step
+                            .Performs(new WorkflowActionReference(
+                                "orders", "Order", "review"))
+                            .Compensate<RecoveryStep>(new WorkflowActionReference(
+                                "orders", "Order", "recover")))),
+                    BranchCase<FlowState, int>.Otherwise(path => path
+                        .Then<ReviewStep>(step => step
+                            .Performs(new WorkflowActionReference(
+                                "orders", "Order", "review"))
+                            .Compensate<RecoveryStep>(new WorkflowActionReference(
+                                "orders", "Order", "reject")))))
+                """));
+
+        await Assert.That(diagnostic.GetMessage()).Contains("repeated step aliases");
+        await Assert.That(diagnostic.GetMessage()).Contains("one compensation program");
+    }
+
     /// <summary>A low-confidence method group is a real alternate path and must fail closed.</summary>
     [Test]
     public async Task MethodGroupOnLowConfidence_ReportsAgwf042()
@@ -744,6 +788,23 @@ public sealed class TopologyClosureProofTests
         return diagnostics[0];
     }
 
+    private static Diagnostic SingleCompensationTopologyDiagnostic(string source)
+    {
+        var result = RunBindingGenerator(source);
+        var diagnostics = result.Diagnostics
+            .Where(static diagnostic => diagnostic.Id == "AGWF045")
+            .ToArray();
+        if (diagnostics.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected one AGWF045 diagnostic, found {diagnostics.Length}: "
+                + string.Join(" | ", result.Diagnostics.Select(static diagnostic =>
+                    diagnostic.Id + ": " + diagnostic.GetMessage())));
+        }
+
+        return diagnostics[0];
+    }
+
     private static IReadOnlyList<string> ExtractTopologyClosureFailures(string source)
     {
         var (workflowClass, semanticModel) = ParserTestHelper.CompileWorkflowValidated(source);
@@ -761,11 +822,12 @@ public sealed class TopologyClosureProofTests
             "AGWF039",
             "AGWF040",
             "AGWF041",
-            "AGWF042");
+            "AGWF042",
+            "AGWF045");
         var unexpectedErrors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .Where(static diagnostic => diagnostic.Id is not (
-                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF045"))
             .ToArray();
         if (unexpectedErrors.Length > 0)
         {

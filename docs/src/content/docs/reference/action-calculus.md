@@ -1,6 +1,6 @@
 ---
 title: Typed action calculus
-description: Typed predicates, post-state guarantees, sequential composition, behavioral refinement, workflow bindings, and three-valued runtime enforcement for ontology actions.
+description: Typed predicates, post-state guarantees, composition, behavioral refinement, workflow bindings, derived compensation, and runtime enforcement for ontology actions.
 ---
 
 An ontology action is an immutable state-transition contract. Its
@@ -456,24 +456,166 @@ evaluated. A missing or failing fact resolver (when target facts are needed),
 relation resolver, or custom evaluator yields `Indeterminate` and a structured
 log entry.
 
-## Authority, compensation, and retry safety
+## Authority and retry safety
 
 Authority uses a product order rather than the orchestration `Capability`
 flags enum. A domain declares independent axes from weakest to strongest and
 positions each authority on every axis. Sequential composition computes the
 pointwise join of all component requirements.
 
-An action may name a compensating action with `CompensatedBy`. The compensator
-must declare the same frame; `AONT216` rejects a missing or frame-incompatible
-inverse. For a completed prefix `A ; B`, `DeriveRollbackPlan` produces
-`B^-1 ; A^-1`.
-
 `ReadOnly()` implies `Idempotent()` by construction. Descriptor-first contracts
 that mark a read-only action as non-idempotent are rejected by `AONT213`.
 
+## Mechanically derived compensation
+
+Compensation is a proved inverse contract, not a name attached to an exception
+handler. For a valid, closed forward action `A`, Strategos derives `A^-1` as:
+
+| Inverse obligation | Required value |
+|---|---|
+| Subject | The same `ActionSubject` as `A` |
+| Requirement | The effective guarantee of `A` |
+| Effective guarantee | The hard requirement of `A` |
+| Frame | Exactly the same may-change frame as `A` |
+| Authority | Semantically equal in the domain authority lattice |
+
+Using the effective guarantee is important. It includes both explicit
+post-state facts and requirements preserved outside the forward frame. An
+authored inverse must be equivalent in both directions; merely accepting fewer
+states or promising weaker re-entry into the forward requirement set is not a
+valid inverse.
+
+`Proven` is a contract-level result. It proves that the inverse's effective
+guarantee re-enters the set of states described by the forward hard requirement
+`R_A`. It does not prove restoration of the exact concrete pre-forward state,
+equality of individual frame values with their earlier values, or reversal of
+external and event effects. When `R_A` admits several states, any of them can
+satisfy the inverse contract.
+
+`ActionCalculus.AnalyzeInverse` returns `Proven`, `Missing`, `Refuted`,
+`Opaque`, or `Invalid`, with an obligation-specific explanation and a stable
+symbolic counterexample when the finite-domain solver refutes equivalence. A
+non-empty frame needs executable authored inverse code. An action with an empty
+frame may use the distinct identity inverse, provided it does not contain a
+broken `CompensatedBy` declaration. Graph freeze resolves named inverse actions
+and reports `AONT216` unless the full subject, requirement, guarantee, frame,
+and authority proof succeeds.
+
+Rollback plans are immutable syntax trees:
+
+```text
+(A ; B)^-1 = B^-1 ; A^-1
+(A || B)^-1 = A^-1 || B^-1
+```
+
+`ActionCalculus.DeriveRollbackPlan` accepts only the completed forward prefix,
+so a failed action is never included in its own rollback. Sequential plans
+reverse and flatten; parallel plans preserve independent branches; scoped plans
+retain nested compensation boundaries; and an empty plan is the subject-typed
+rollback identity. Every plan exposes `Frame` as the canonical union of its leaf
+frames. `DeriveParallelRollbackPlan` rejects branches whose aggregate frames
+overlap, or whose frame can change a resource read by another branch's inverse
+contract; shared reads alone remain valid. This is a property of the pure
+function, not of the runtime's failure routing: the saga's post-completion
+failure ingress places an occurrence that completed and was later flagged
+`Failed` into the completed prefix it passes here, so that occurrence's own
+inverse is in the plan. See
+[Durable completed-prefix rollback](#durable-completed-prefix-rollback).
+
+### Typed workflow compensation
+
+Name both the forward action and the executable inverse at each step
+occurrence:
+
+```csharp
+Workflow<OrderState>.Create("process-order")
+    .StartWith<CapturePaymentStep>(step => step
+        .Performs(new WorkflowActionReference(
+            "Orders", "Order", "CapturePayment"))
+        .Compensate<RefundPaymentStep>(new WorkflowActionReference(
+            "Orders", "Order", "RefundPayment")));
+```
+
+The generator resolves both identities from the same compilation-local action
+catalog. `AGWF044` rejects a missing, ambiguous, dynamic, opaque, or
+semantically different authored inverse. Once a workflow or one of its bound
+action specifications claims rollback, compensability propagates through the
+scope: every rollback-reachable leaf with a non-empty frame must have a proved
+inverse. `AGWF045` rejects the whole scope instead of emitting a partial plan.
+Multiple same-subject action specifications may bind the workflow; each binding
+is proved independently, while the shared inverse program is proved once.
+
+The no-argument `.Compensate<T>()` overload remains a legacy runtime-only
+facade. It does not establish a typed inverse. A workflow must not mix legacy,
+dynamic, and typed compensation into one derived program; such a program fails
+closed rather than running the provable subset.
+
+### Durable completed-prefix rollback
+
+Generated Wolverine sagas first persist a forward-dispatch claim containing
+the execution id and exact compiled occurrence, scope, lane, and journal
+high-water mark. A completion or pre-completion failure must consume that
+claim; topology-shaped messages that were never dispatched cannot claim
+rollback authority. After a forward occurrence completes, its claim becomes a
+completion-journal entry carrying the action and inverse identities plus the
+state needed by the inverse worker. On failure, the generator derives rollback
+from that persisted journal rather than an author-maintained list:
+
+- an in-flight failure at `C` after `A ; B` completed runs `B^-1 ; A^-1`; `C`
+  is absent, because it never journaled a completed entry;
+- a post-completion failure at `C` — the reducer flags `Failed` on an
+  occurrence whose journal entry already reads `Completed` — runs
+  `C^-1 ; B^-1 ; A^-1`. The plan reverses every `Completed` entry in the
+  selected scope, and the post-completion failure claim requires and preserves
+  that entry, so the failing occurrence's own inverse is dispatched. Write each
+  inverse to be safe against a forward step that did complete;
+- a failure inside a nested branch or loop iteration unwinds only that concrete
+  inner scope, while a later enclosing failure can include its completed
+  descendant scopes;
+- a fork failure first stops successor dispatch and waits until every lane is
+  terminal before deriving rollback;
+- fork lanes remain parallel in the structural plan, but generated inverse
+  workers fold their state updates serially in reverse completion order because
+  generic workflow state has no sound merge operation. The workflow-binding
+  proof has already established that the lane frames do not interfere.
+
+Inverse completion has a separate message route from forward completion and,
+for saga-document workflows, applies the returned state through the configured
+reducer before the next inverse starts. Each inverse delivery carries a stable
+rollback id that is distinct from its forward execution id and derived from it
+by a map that is injective on the non-empty GUID space — `Guid.Empty` is
+excluded from the domain — for deterministic correlation and completed-delivery
+deduplication.
+Delivery remains at-least-once: inverse implementations that perform external
+effects must either be idempotent or use that rollback id as their durable
+idempotency key. Generated handlers expose it directly as
+`StepContext.RollbackId`, with `StepContext.IsCompensation` distinguishing an
+inverse delivery. `CorrelationId` retains the rollback id's N-format text for
+tracing compatibility, but compensation code should not parse it for identity.
+An inverse failure, an unmatched outcome, or a timeout is never recursively
+compensated or assumed successful: the saga and its journal remain in `Failed`
+for reconciliation. Failure handlers run only after a successful rollback of
+the selected scope.
+
+```csharp
+if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
+{
+    await payments.RefundOnceAsync(rollbackId, state.PaymentId, ct);
+}
+```
+
+Typed derived compensation is restricted to `SagaDocument` persistence in
+v2.13. An event-sourced state's consumer-defined `ApplyEvent` method may legally
+pass through an unfamiliar generated rollback-completed event. Strategos cannot
+therefore prove that `UpdatedState` is folded identically during live handling
+and Marten replay. The source generator reports `AGWF045` for a typed inverse
+program declared with `PersistenceMode.EventSourced`; it does not accept a
+compile-only or no-op `ApplyEvent` method as rollback proof. Legacy untyped
+compensation keeps its existing event-sourced behavior.
+
 ## TypeSpec and MCP metadata
 
-`Strategos.Contracts` 0.11.0 includes the versioned tagged
+`Strategos.Contracts` 0.12.0 includes the versioned tagged
 `ActionPredicateV1`, `ActionLiteralV1`, `ActionRequirementV1`, and
 `ActionGuaranteeV1` wire types introduced in 0.10.0. Contract operations author
 hard or soft requirements and guarantees directly:
@@ -509,7 +651,7 @@ lowers to a hard `relation-holds` requirement; the old relation/link-path pair
 is no longer emitted. Unknown predicate discriminators are rejected rather
 than treated as `Custom` or `True`.
 
-The 0.11 contract decorator surface does not yet author effect/frame metadata.
+The 0.12 contract decorator surface does not yet author effect/frame metadata.
 Consequently, a TypeSpec guarantee must already follow from the operation's
 hard requirements; graph freeze rejects a contract that promises a new fact
 without declaring how that resource may change. Author state-changing
@@ -521,6 +663,12 @@ Version 0.11.0 also adds the optional, occurrence-scoped `action` field to every
 workflow step kind. Its `ActionReferenceV1` value contains required
 `domainName`, `objectTypeName`, and `actionName` strings. Legacy workflow JSON
 continues to omit the optional field byte-for-byte.
+
+Version 0.12.0 adds an optional `inverseAction: ActionReferenceV1` inside a
+step's compensation configuration. The field identifies the ontology action
+implemented by the compensation step; omission retains the legacy runtime-only
+shape. It also adds the closed `AGWF044` and `AGWF045` diagnostic tokens, so
+generated-enum consumers must upgrade before producers emit them.
 
 MCP action summaries expose schema-equivalent `requires` and `ensures` arrays.
 The MCP assembly keeps local wire records rather than depending on the
@@ -540,6 +688,8 @@ contracts package, and parity is checked against the current emitted schemas.
 | `AGWF041` | Error | A closed workflow binding is definitely refuted, with a counterexample or a subject/frame/authority/fork-isolation failure. |
 | `AGWF042` | Error | A workflow binding cannot be proved because an identity, topology, contract, lattice, or predicate is dynamic, invalid, opaque, absent from the closed proof representation, or otherwise unprovable. |
 | `AGWF043` | Error | Distinct workflow ids collide after generated PascalCase normalization. |
+| `AGWF044` | Error | An authored compensation action does not equal the mechanically derived inverse contract. |
+| `AGWF045` | Error | A rollback-claimed scope contains a non-compensable or otherwise unprovable leaf. |
 
 The analyzer recognizes direct constructions, immutable single-assignment
 locals, statically initialized immutable collections, nested `Sequential` calls,

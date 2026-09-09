@@ -242,18 +242,19 @@ internal sealed class PhaseGraph
 
             foreach (var handler in model.FailureHandlers)
             {
-                if (handler.StepNames.Count == 0)
+                var stepPhaseNames = handler.StepPhaseNames;
+                if (stepPhaseNames.Count == 0)
                 {
                     continue;
                 }
 
-                AddPathInterior(handler.StepNames);
+                AddPathInterior(stepPhaseNames);
 
                 if (handler.IsTerminal)
                 {
                     // A terminal handler ends the workflow in Failed, which every step already
                     // reaches; no forward edge is claimed for the chain's last step.
-                    MarkRouted(handler.LastStepName);
+                    MarkRouted(handler.LastStepPhaseName);
                     continue;
                 }
 
@@ -261,7 +262,7 @@ internal sealed class PhaseGraph
                     ? null
                     : classification.NextMainFlowStepNameAfter(handler.TriggerStepName);
 
-                AddRouted(handler.LastStepName, resumeStepName ?? CompletedPhase);
+                AddRouted(handler.LastStepPhaseName, resumeStepName ?? CompletedPhase);
             }
         }
 

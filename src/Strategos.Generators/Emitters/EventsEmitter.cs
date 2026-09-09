@@ -164,7 +164,7 @@ internal static class EventsEmitter
         {
             foreach (var handler in model.FailureHandlers)
             {
-                foreach (var stepName in handler.StepNames)
+                foreach (var stepName in handler.StepTypeNames)
                 {
                     if (emittedStepEvents.Add(stepName))
                     {
@@ -196,6 +196,31 @@ internal static class EventsEmitter
             // Workflow Failed event with full exception context
             sb.AppendLine();
             EmitWorkflowFailedEvent(sb, model);
+        }
+
+        // Inverse execution uses distinct completion/failure messages. Reusing the
+        // normal {Step}Completed event would let a rollback accidentally advance the
+        // forward saga and cannot correlate two journal entries that share an inverse
+        // type. RollbackId is a stable, distinct, injective derivative of the
+        // forward StepExecutionId.
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var emittedRollbackEvents = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var compensatedStep in model.CompensationSteps)
+            {
+                var inverseStepName = NamingHelper.GetSimpleTypeName(
+                    compensatedStep.Compensation!.CompensationStepTypeName);
+                if (!emittedRollbackEvents.Add(inverseStepName))
+                {
+                    continue;
+                }
+
+                sb.AppendLine();
+                EmitRollbackCompletedEvent(sb, model, inverseStepName);
+            }
+
+            sb.AppendLine();
+            EmitRollbackFailedEvent(sb, model);
         }
 
         // StepFailed audit STREAM event (#138 G-5 / OQ#1). Named, queryable Marten
@@ -295,6 +320,43 @@ internal static class EventsEmitter
         sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
     }
 
+    private static void EmitRollbackCompletedEvent(
+        StringBuilder sb,
+        WorkflowModel model,
+        string inverseStepName)
+    {
+        var stateType = model.StateTypeName ?? "object";
+        var eventName = NamingHelper.GetCompletedEventName(
+            $"{model.PascalName}{inverseStepName}Rollback");
+
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Event published when the {inverseStepName} inverse completes.");
+        sb.AppendLine("/// Kept distinct from forward completion so rollback cannot advance the workflow.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public sealed partial record {eventName}(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    Guid RollbackId,");
+        sb.AppendLine("    long JournalSequence,");
+        sb.AppendLine($"    {stateType} UpdatedState,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
+    private static void EmitRollbackFailedEvent(StringBuilder sb, WorkflowModel model)
+    {
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Event published when an inverse of the {model.WorkflowName} workflow fails.");
+        sb.AppendLine("/// The saga is deliberately retained for operator reconciliation.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public sealed partial record {model.PascalName}RollbackFailed(");
+        sb.AppendLine("    [property: SagaIdentity] Guid WorkflowId,");
+        sb.AppendLine("    Guid RollbackId,");
+        sb.AppendLine("    long JournalSequence,");
+        sb.AppendLine("    string ExceptionType,");
+        sb.AppendLine("    string ExceptionMessage,");
+        sb.AppendLine("    string? StackTrace,");
+        sb.AppendLine($"    DateTimeOffset Timestamp) : I{model.PascalName}Event;");
+    }
+
     private static void EmitValidationFailedEvent(StringBuilder sb, WorkflowModel model)
     {
         sb.AppendLine("/// <summary>");
@@ -372,7 +434,7 @@ internal static class EventsEmitter
         {
             var sanitizedId = handler.HandlerId.Replace("-", "_");
 
-            foreach (var stepName in handler.StepNames)
+            foreach (var stepName in handler.StepPhaseNames)
             {
                 sb.AppendLine();
                 EmitFailureHandlerStepCompletedEvent(sb, model, handler, stepName, sanitizedId);

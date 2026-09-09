@@ -230,6 +230,9 @@ internal sealed class CompensationConfiguration : IWireContractDto
     /// <summary>Gets or sets the simple-name CLR moniker of the compensation step type (LB-2).</summary>
     public string? CompensationStepType { get; set; }
 
+    /// <summary>Gets or sets the ontology action implemented by the compensation step.</summary>
+    public ActionReferenceV1? InverseAction { get; set; }
+
     /// <summary>Gets or sets a value indicating whether compensation is required on failure.</summary>
     public bool? RequiredOnFailure { get; set; }
 

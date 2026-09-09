@@ -217,6 +217,70 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     /// <summary>
+    /// Verifies that derived compensation exposes explicit rollback metadata to user step code.
+    /// </summary>
+    [Test]
+    public async Task Emit_DerivedCompensation_PopulatesExplicitStepContextMetadata()
+    {
+        // Arrange
+        var model = CreateTypedCompensationModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+
+        // Assert
+        await Assert.That(source).Contains(
+            "CorrelationId = (command.RollbackId ?? command.StepExecutionId).ToString(\"N\"),\n"
+            + "                ExecutionId = command.RollbackId ?? command.StepExecutionId,\n"
+            + "                RollbackId = command.IsCompensation ? command.RollbackId : null,");
+    }
+
+    /// <summary>
+    /// Verifies that malformed inverse metadata is rejected before context assembly or user step execution.
+    /// </summary>
+    [Test]
+    public async Task Emit_DerivedCompensation_RejectsMalformedMetadataBeforeUserCode()
+    {
+        // Arrange
+        var model = CreateTypedCompensationModel();
+
+        // Act
+        var source = WorkerHandlerEmitter.Emit(model);
+        var inverseHandlerStart = source.IndexOf(
+            "public sealed partial class RefundPaymentHandler",
+            StringComparison.Ordinal);
+
+        await Assert.That(inverseHandlerStart).IsGreaterThanOrEqualTo(0);
+
+        var guardStart = source.IndexOf(
+            "if (command.IsCompensation\n                && (command.RollbackId is not Guid rollbackId",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+        var contextStart = source.IndexOf(
+            "var stepContext = StepContext.Create(",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+        var executeStart = source.IndexOf(
+            "var result = await _step.ExecuteAsync(",
+            inverseHandlerStart,
+            StringComparison.Ordinal);
+
+        // Assert
+        await Assert.That(guardStart).IsGreaterThan(inverseHandlerStart);
+        await Assert.That(contextStart).IsGreaterThan(guardStart);
+        await Assert.That(executeStart).IsGreaterThan(contextStart);
+
+        var preExecutionGuard = source.Substring(guardStart, contextStart - guardStart);
+        await Assert.That(preExecutionGuard).Contains("rollbackId == Guid.Empty");
+        await Assert.That(preExecutionGuard).Contains("command.StepExecutionId != rollbackId");
+        await Assert.That(preExecutionGuard).Contains(
+            "command.RollbackJournalSequence is not long journalSequence");
+        await Assert.That(preExecutionGuard).Contains("journalSequence <= 0");
+        await Assert.That(preExecutionGuard).Contains("return new CompensatingOrderRollbackFailed(");
+        await Assert.That(preExecutionGuard).DoesNotContain("RefundPaymentCompleted");
+    }
+
+    /// <summary>
     /// Verifies that Handle method calls ExecuteAsync on the step.
     /// </summary>
     [Test]
@@ -466,11 +530,12 @@ public class WorkerHandlerEmitterUnitTests
     }
 
     /// <summary>
-    /// Verifies that the OnFailure handler step itself does NOT publish the trigger
-    /// (it is the recovery path and must not re-trigger the OnFailure chain).
+    /// Verifies that a CLR step type reused in the main flow and OnFailure keeps the
+    /// two command roles distinct: its normal forward handler publishes a trigger,
+    /// while its dedicated recovery handler cannot recursively trigger OnFailure.
     /// </summary>
     [Test]
-    public async Task Emit_WorkflowWithOnFailure_HandlerStep_DoesNotPublishTrigger()
+    public async Task Emit_WorkflowWithOnFailure_SharedStepType_PublishesOnlyFromForwardRole()
     {
         // Arrange
         var model = CreateOnFailureModel();
@@ -478,11 +543,24 @@ public class WorkerHandlerEmitterUnitTests
         // Act
         var source = WorkerHandlerEmitter.Emit(model);
 
-        // Assert - the NotifyFailure step's plain main-flow handler has no Configure
-        // that publishes the trigger; only the dedicated failure-handler worker class
-        // references NotifyFailure as a recovery step. Confirm exactly the main-flow
-        // steps (ValidateOrder) carry the trigger publish but the OnFailure step's
-        // dedicated worker class never publishes a trigger.
+        // The normal forward role must not lose rollback ingress merely because its
+        // CLR type also appears in the recovery chain.
+        const string forwardWorkerDecl = "class NotifyFailureHandler";
+        var forwardWorkerStart = source.IndexOf(forwardWorkerDecl, StringComparison.Ordinal);
+        await Assert.That(forwardWorkerStart).IsGreaterThan(-1);
+        var recoveryWorkerStart = source.IndexOf(
+            "class FailureHandler_recovery_NotifyFailureHandler",
+            forwardWorkerStart,
+            StringComparison.Ordinal);
+        await Assert.That(recoveryWorkerStart).IsGreaterThan(forwardWorkerStart);
+        var forwardWorkerBody = source.Substring(
+            forwardWorkerStart,
+            recoveryWorkerStart - forwardWorkerStart);
+        await Assert.That(forwardWorkerBody).Contains(
+            "PublishAsync(new TriggerOnFailureProofFailureHandlerCommand");
+
+        // The dedicated recovery role has no Wolverine compensating policy and
+        // therefore cannot recursively publish the trigger.
         const string notifyWorkerDecl = "class FailureHandler_recovery_NotifyFailureHandler";
         var notifyWorkerStart = source.IndexOf(notifyWorkerDecl, StringComparison.Ordinal);
         await Assert.That(notifyWorkerStart).IsGreaterThan(-1);
@@ -630,6 +708,37 @@ public class WorkerHandlerEmitterUnitTests
             Namespace: "TestNamespace",
             StepNames: ["ValidateOrder", "ProcessPayment", "SendConfirmation"],
             StateTypeName: "OrderState");
+    }
+
+    private static WorkflowModel CreateTypedCompensationModel()
+    {
+        var steps = new List<StepModel>
+        {
+            StepModel.Create(
+                "CapturePayment",
+                "TestNamespace.CapturePayment",
+                compensation: new CompensationModel(
+                    "TestNamespace.RefundPayment",
+                    InverseAction: new WorkflowActionReferenceModel(
+                        "Orders",
+                        "Order",
+                        "RefundPayment"),
+                    InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+                action: new WorkflowActionReferenceModel(
+                    "Orders",
+                    "Order",
+                    "CapturePayment"),
+                actionResolution: WorkflowActionReferenceResolution.Resolved),
+            StepModel.Create("RefundPayment", "TestNamespace.RefundPayment"),
+        };
+
+        return WorkflowModel.Create(
+            "compensating-order",
+            "CompensatingOrder",
+            "TestNamespace",
+            ["CapturePayment"],
+            "OrderState",
+            steps: steps);
     }
 
     private static int CountOccurrences(string source, string pattern)

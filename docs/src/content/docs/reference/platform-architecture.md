@@ -3191,6 +3191,30 @@ Azure VNet (10.0.0.0/16)
 
 This hybrid approach provides a production-like deployment topology at a fraction of the full production cost, suitable for staging environments and team development.
 
+### 9.7 Workflow Versioning and the Derived-Runtime Rollout
+
+Typed derived compensation (#169) adds a block of persisted members to a workflow's saga document, among them `CompensationJournal`, `CompensationJournalSequence`, `CompensationJournalSchemaVersion`, and `ForwardDispatchClaims`. Marten's default serializer is `System.Text.Json` with the default `JsonUnmappedMemberHandling.Skip`, so a host built before those members existed does not reject them -- it drops them.
+
+That makes a rolling deploy across this boundary lossy rather than loud:
+
+1. An instance on the older build loads a typed saga document. Those members are absent from its CLR type, so they are skipped on read.
+2. Its next `session.Update(saga)` writes the row back without them.
+3. A newer instance picks up the same saga. `CompensationJournalSchemaVersion` reads `0` instead of `1`, the structural-validity check fails, and the saga is parked in `Failed` with `CompensationFailureMessage` set to "Completion journal changed or became corrupt before a forward result; saga retained."
+
+Nothing is reported while this happens: the older build handles every message successfully, and the message an operator eventually reads names the journal, not the deploy. Across a rolling window the two builds alternate on the same documents, so the loss repeats. A stripped saga does not recover -- the completed-prefix journal its rollback needed is gone.
+
+Three rollouts are supported for hosts running typed workflows:
+
+| Rollout | Constraint | Both builds live at once |
+|---|---|---|
+| Drain, then deploy | Stop starting the typed workflows; let in-flight instances reach a terminal state before rolling the build. | No |
+| Stop the world | Take every instance handling those workflows out of service, deploy, restore. | No |
+| New workflow version | Publish the typed definition under a new workflow version. `NamingHelper.GetSagaClassName(pascalName, version)` makes the saga CLR type, and therefore the Marten table, version-scoped, so old documents stay with the old build. | Yes |
+
+A package rollback is the same mechanism in reverse and is one-way: rolling back after typed sagas exist strips their journals silently, and rolling forward again finds them unusable. Treat the boundary as a versioned data migration, not a code deploy. The consumer-facing procedure is in the [2.13 migration guide](/guide/ontology/migration-v2-13/).
+
+Version-scoped saga types are the mechanism available today. Migrating an in-flight instance from one workflow version to another, and running two versions against one document set, remain out of scope (&sect;13).
+
 ---
 
 ## 10. Resource Management
@@ -3592,9 +3616,9 @@ Built-in support for querying multiple models and aggregating their outputs, wit
 
 Per-workflow and per-step tracking of LLM costs (tokens, API calls), enabling cost allocation and optimization. The event sourcing foundation already captures token usage per decision; this would add aggregation, budgeting, and reporting capabilities.
 
-### Workflow Versioning
+### Workflow Version Migration
 
-Managing workflow definition changes when instances are in flight: migration strategies, parallel version support, and gradual rollout. This is critical for production systems where workflow definitions evolve over time while existing instances continue executing under their original definition.
+Migrating an in-flight instance from one workflow definition version to another, and running two versions against one document set. Today a version bump isolates documents by generating a distinct saga type and Marten table (&sect;9.7), which is enough to roll a definition forward but leaves in-flight instances on the definition they started under, with no supported path between them. Gradual rollout across a single instance population, and a mid-flight definition upgrade, are the parts that remain unbuilt.
 
 ### E2B Production Migration
 

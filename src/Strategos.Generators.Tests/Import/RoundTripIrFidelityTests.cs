@@ -11,6 +11,7 @@ using Strategos.Abstractions;
 using Strategos.Builders;
 using Strategos.Contracts;
 using Strategos.Definitions;
+using Strategos.Generators.Emitters;
 using Strategos.Generators.Import;
 using Strategos.Generators.Models;
 using Strategos.Steps;
@@ -336,18 +337,30 @@ public sealed class RoundTripIrFidelityTests
     [Test]
     public async Task CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep()
     {
-        var (dto, model) = BridgeRoundTrip(
-            Workflow<FidState>.Create("rt-comp")
-                .StartWith<FidValidateStep>()
-                .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>())
-                .Finally<FidCompleteStep>(),
-            "rt-comp");
+        // The inverse deadline is AUTHORED through the DSL overload, not stitched onto the
+        // definition afterwards: this test used to reach into StepDefinition.Configuration and
+        // call WithTimeout by hand because no authoring path could set it, which meant the
+        // whole C# -> export -> import -> saga chain was never exercised for that field.
+        var inverse = new WorkflowActionReference("orders", "Order", "undo-process");
+        var authored = Workflow<FidState>.Create("rt-comp")
+            .StartWith<FidValidateStep>()
+            .Then<FidProcessStep>(step => step.Compensate<FidCompensateStep>(
+                inverse,
+                TimeSpan.FromSeconds(17)))
+            .Finally<FidCompleteStep>();
+
+        var (dto, model) = BridgeRoundTrip(authored, "rt-comp");
 
         var wireComp = FindSkill(dto, "FidProcessStep").Configuration?.Compensation;
         await Assert.That(wireComp).IsNotNull()
             .Because("the exported JSON must carry the compensation configuration.");
         await Assert.That(wireComp!.CompensationStepType).IsEqualTo("FidCompensateStep")
             .Because("the wire compensation moniker is the compensation step's simple type name (LB-2).");
+        await Assert.That(wireComp.InverseAction).IsNotNull();
+        await Assert.That(wireComp.InverseAction!.DomainName).IsEqualTo("orders");
+        await Assert.That(wireComp.InverseAction.ObjectTypeName).IsEqualTo("Order");
+        await Assert.That(wireComp.InverseAction.ActionName).IsEqualTo("undo-process");
+        await Assert.That(wireComp.Timeout).IsEqualTo("PT17S");
 
         var modelStep = model.Steps!.Single(s => s.StepName == "FidProcessStep");
         await Assert.That(modelStep.Compensation).IsNotNull()
@@ -360,6 +373,18 @@ public sealed class RoundTripIrFidelityTests
             .Because("the model's RequiredOnFailure must match the wire value (default true) field-for-field.");
         await Assert.That(modelStep.Compensation.IsRegisteredStep).IsTrue()
             .Because("the compensation moniker resolves to a real IWorkflowStep<FidState> in the test assembly.");
+        await Assert.That(modelStep.Compensation.InverseActionResolution)
+            .IsEqualTo(WorkflowActionReferenceResolution.Resolved);
+        await Assert.That(modelStep.Compensation.InverseIdentity)
+            .IsEqualTo("orders/Order/undo-process");
+        await Assert.That(modelStep.Compensation.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
+
+        var generatedSaga = SagaEmitter.Emit(model);
+        await Assert.That(generatedSaga).Contains($"entry.InverseTimeoutTicks == {TimeSpan.FromSeconds(17).Ticks}L")
+            .Because("the imported compensation deadline must remain topology-bound in generated rollback code");
+        await Assert.That(generatedSaga).Contains(
+            "yield return new CompensationRollbackTimeout(WorkflowId, entry.RollbackId, entry.Sequence, entry.InverseTimeoutTicks);")
+            .Because("the scheduled rollback deadline must use the exact journaled inverse timeout");
 
         // The compensation step type is folded into the model's step MODELS (for its worker command /
         // handler / DI registration) but NOT onto the linear phase-name chain (it is reached only via
@@ -430,6 +455,10 @@ public sealed class RoundTripIrFidelityTests
         var modelStepNames = model.Steps!.Select(s => s.StepName).ToList();
         await Assert.That(modelStepNames).Contains("FidAutoStep");
         await Assert.That(modelStepNames).Contains("FidManualStep");
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidAutoStep");
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidManualStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidAutoStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidManualStep");
     }
 
     /// <summary>
@@ -497,6 +526,17 @@ public sealed class RoundTripIrFidelityTests
             model.Steps!.Select(s => s.StepName),
             wireMonikers,
             "every top-level wire step maps to a model step, field-for-field and in order.");
+
+        // Failure routing is outside the current import subset, so the recovery step remains in
+        // the legacy top-level lowering. Its authored role is nevertheless explicit and excluded
+        // from forward-worker provenance. If imported failure routing is added later, the recovery
+        // worker therefore cannot inherit the recursive OnFailure trigger policy through a null
+        // fallback.
+        await Assert.That(model.MainFlowStepPhaseNames!).DoesNotContain("FidLogStep");
+        await Assert.That(model.ForwardStepTypeNames!).DoesNotContain("FidLogStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidValidateStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidProcessStep");
+        await Assert.That(model.ForwardStepTypeNames!).Contains("FidCompleteStep");
 
         // The failure-ROUTING construct is not lowered by the import subset (documented follow-on).
         await Assert.That(model.FailureHandlers).IsNull()

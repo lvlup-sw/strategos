@@ -30,6 +30,8 @@ The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Stra
 | AGWF041 | Error | A closed workflow contract definitely fails behavioral refinement |
 | AGWF042 | Error | A workflow contract cannot be proved statically |
 | AGWF043 | Error | Workflow identities collide after generated-name normalization |
+| AGWF044 | Error | An authored compensation action disagrees with the derived inverse |
+| AGWF045 | Error | A compensation scope is not mechanically derivable |
 | AGSR001 | Error | `[Append]` can only be applied to collection types |
 | AGSR002 | Error | `[Merge]` can only be applied to dictionary types |
 
@@ -47,6 +49,8 @@ proof results:
 | `AGWF041` | All inputs are closed, and the solver finds a definite counterexample or a subject, frame, authority, or fork-isolation violation. | Use the reported obligation and witness to correct the leaf contract or, only when the public contract was too strict, the bound action specification. |
 | `AGWF042` | A binding, workflow topology, action contract, authority lattice, or predicate is dynamic, invalid, opaque, contradictory, unrealizable, absent from the closed proof representation, or otherwise outside the closed proof fragment. | Replace the unprovable input with an analyzer-visible, supported closed form. A runtime check or custom predicate is not a substitute for the binding proof. |
 | `AGWF043` | Two or more ordinal workflow identities normalize to the same generated PascalCase type and source-hint namespace. | Rename the workflows so every normalized generated name is unique. |
+| `AGWF044` | A configured inverse is legacy, dynamic, missing, ambiguous, opaque, or not semantically equivalent to the inverse derived from its forward action. | Use `.Compensate<T>(new WorkflowActionReference(...))` and give the inverse the same subject, frame, and semantic authority, the forward effective guarantee as its requirement, and the forward hard requirement as its effective guarantee. |
+| `AGWF045` | A workflow or bound action claims rollback, but a rollback-reachable non-empty-frame leaf has no proved inverse, the typed compensation program lacks one shared closed subject/binding boundary, or the workflow uses event-sourced persistence whose consumer-defined replay fold cannot be proved. | Make every state-changing leaf in the reported scope compensable. Do not mix legacy, dynamic, and typed declarations into a derived program. Typed derived compensation requires saga-document persistence in v2.13. Keep the workflow, the ontology that binds it, and every action it names in one compilation: the proof reads the action catalog of the compilation being built, so a correct `BoundToWorkflow` declaration in another project is invisible to it. `AllowDiagnosticFork` is not represented in the closed proof, so remove it from a workflow that also declares typed or dynamic compensation. |
 
 The refinement rule is contravariant in requirements and covariant in
 guarantees: the bound action's requirement must imply the workflow entry
@@ -57,6 +61,20 @@ the bound action permits. Internal seams and parallel-path interference are
 also proved. See
 [Typed action calculus](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
 for the full model.
+
+Compensation proof is based on executable occurrences, not an authored rollback
+list. Which occurrences the rollback covers depends on the failure ingress. For
+an in-flight failure at `C` after the prefix `A ; B` completed, the derived
+order is `B^-1 ; A^-1`; `C` is absent, because it never journaled a completed
+entry. For a post-completion failure — the reducer flags `Failed` on an
+occurrence whose journal entry already reads `Completed` — the derived order is
+`C^-1 ; B^-1 ; A^-1`, because the plan reverses every `Completed` entry in the
+selected scope and the post-completion failure claim requires and preserves
+that entry. An inverse can therefore run for a forward step that did complete;
+write it to be safe on that path. Nested scope failures do not unwind enclosing
+scopes. See
+[mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
+for inverse equivalence, scope propagation, and runtime journal semantics.
 
 ---
 

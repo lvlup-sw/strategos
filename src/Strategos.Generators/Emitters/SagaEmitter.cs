@@ -27,6 +27,7 @@ namespace Strategos.Generators.Emitters;
 /// The components are emitted in the following order:
 /// <list type="number">
 ///   <item><description>Properties (WorkflowId, State, Phase, loop counters)</description></item>
+///   <item><description>Concurrency error policy (static Configure(HandlerChain))</description></item>
 ///   <item><description>Loop condition methods (ShouldExitXxxLoop)</description></item>
 ///   <item><description>Start method (static factory)</description></item>
 ///   <item><description>Step handlers (start and completed for each step)</description></item>
@@ -43,6 +44,7 @@ internal static class SagaEmitter
     private static readonly IReadOnlyList<ISagaComponentEmitter> ComponentEmitters =
     [
         new SagaPropertiesEmitter(),
+        new SagaConcurrencyPolicyEmitter(),
         new SagaLoopConditionsEmitter(),
         new SagaStartMethodEmitter(),
         new SagaStepHandlersEmitter(),
@@ -75,11 +77,21 @@ internal static class SagaEmitter
             "System.Collections.Generic",
             "Strategos.Identity.Abstractions",
             "Strategos.Services",
-            "Marten.Schema",
             "Microsoft.Extensions.Logging",
             "Wolverine",
+
+            // The saga-level concurrency error policy: HandlerChain lives in
+            // Wolverine.Runtime.Handlers, the fluent OnException<T>()/RetryTimes()
+            // surface lives in Wolverine.ErrorHandling.
+            "Wolverine.ErrorHandling",
             "Wolverine.Persistence.Sagas",
+            "Wolverine.Runtime.Handlers",
         };
+
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            usings.Add("System.Linq");
+        }
 
         // Event-sourced mode needs IDocumentSession from Marten
         if (model.IsEventSourced)
@@ -154,7 +166,20 @@ internal static class SagaEmitter
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Wolverine saga for the {model.WorkflowName} workflow.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine($"public partial class {sagaClassName} : Saga, IPhaseAwareSaga");
+        sb.AppendLine("/// <remarks>");
+        sb.AppendLine("/// Implements <c>JasperFx.IRevisioned</c> over the inherited <c>Saga.Version</c>");
+        sb.AppendLine("/// (int). Wolverine's MartenPersistenceFrameProvider.DetermineUpdateFrame tests the");
+        sb.AppendLine("/// saga type for that interface and only then emits");
+        sb.AppendLine("/// <c>documentSession.UpdateRevision(saga, expectedSagaRevision)</c>; without it the");
+        sb.AppendLine("/// emitted persistence call is a plain <c>Update</c>, which leaves Marten's numeric");
+        sb.AppendLine("/// revision guard at 0 and makes concurrent saga transitions last-write-wins.");
+        sb.AppendLine("/// </remarks>");
+
+        // Fully qualified: `using JasperFx;` would drag the whole JasperFx root
+        // namespace into every generated saga file and risk colliding with
+        // consumer types (the same CS0616-class hazard that forces
+        // [JasperFx.Identity] to be written out in full).
+        sb.AppendLine($"public partial class {sagaClassName} : Saga, IPhaseAwareSaga, JasperFx.IRevisioned");
         sb.AppendLine("{");
     }
 }

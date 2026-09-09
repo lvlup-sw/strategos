@@ -1602,9 +1602,7 @@ Strategos.Ontology.WorkflowChain.WorkflowChain(string! WorkflowName, Strategos.O
 Strategos.Ontology.WorkflowChain.WorkflowName.get -> string!
 Strategos.Ontology.WorkflowChain.WorkflowName.init -> void
 virtual Strategos.Ontology.ObjectSets.ObjectSetExpression.RootObjectTypeName.get -> string!
-static Strategos.Ontology.Descriptors.ActionCalculus.AuthoredRollbackAgrees(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionDescriptor!>! completedForwardPrefix, System.Collections.Generic.IEnumerable<string!>! authoredRollback) -> bool
 static Strategos.Ontology.Contracts.ContractOntologyCatalog.ObjectTypes.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ObjectTypeDescriptor!>
-static Strategos.Ontology.Descriptors.ActionCalculus.DeriveRollbackPlan(System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionDescriptor!>! completedForwardPrefix) -> System.Collections.Immutable.ImmutableArray<string!>
 static Strategos.Ontology.Descriptors.ActionFrame.Empty.get -> Strategos.Ontology.Descriptors.ActionFrame!
 static Strategos.Ontology.Descriptors.ActionResource.Event(string! eventTypeName) -> Strategos.Ontology.Descriptors.ActionResource!
 static Strategos.Ontology.Descriptors.ActionResource.External(string! resourceName) -> Strategos.Ontology.Descriptors.ActionResource!
@@ -1641,3 +1639,74 @@ Strategos.Ontology.Descriptors.CompositeActionContract
 Strategos.Ontology.Descriptors.CompositeActionContract.Actions.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionDescriptor!>
 Strategos.Ontology.Descriptors.CompositeActionContract.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
 Strategos.Ontology.Descriptors.CompositeActionContract.RequiredAuthority.get -> Strategos.Ontology.Descriptors.AuthorityRequirement!
+override Strategos.Ontology.Descriptors.ActionContractIdentity.ToString() -> string!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeInverse(Strategos.Ontology.Descriptors.ActionDescriptor! forwardAction, Strategos.Ontology.Descriptors.ActionDescriptor? authoredInverse, Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice) -> Strategos.Ontology.Descriptors.ActionInverseAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeInverse(Strategos.Ontology.Descriptors.ActionDescriptor! forwardAction, Strategos.Ontology.Descriptors.ActionDescriptor? authoredInverse, Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Threading.CancellationToken cancellationToken) -> Strategos.Ontology.Descriptors.ActionInverseAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeInverse(Strategos.Ontology.Descriptors.ActionDescriptor! forwardAction, Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice) -> Strategos.Ontology.Descriptors.ActionInverseAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.AnalyzeInverse(Strategos.Ontology.Descriptors.ActionDescriptor! forwardAction, Strategos.Ontology.Descriptors.AuthorityLattice! authorityLattice, System.Threading.CancellationToken cancellationToken) -> Strategos.Ontology.Descriptors.ActionInverseAnalysis!
+static Strategos.Ontology.Descriptors.ActionCalculus.DeriveParallelRollbackPlan(Strategos.Ontology.Descriptors.ActionSubject! subject, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionRollbackPlan!>! completedForwardBranches) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+static Strategos.Ontology.Descriptors.ActionCalculus.DeriveRollbackPlan(Strategos.Ontology.Descriptors.ActionInverseAnalysis! inverse) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+static Strategos.Ontology.Descriptors.ActionCalculus.DeriveRollbackPlan(Strategos.Ontology.Descriptors.ActionSubject! subject, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionInverseAnalysis!>! completedForwardPrefix) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+static Strategos.Ontology.Descriptors.ActionCalculus.DeriveScopedRollbackPlan(Strategos.Ontology.Descriptors.ActionRollbackPlan! completedBody) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+static Strategos.Ontology.Descriptors.ActionCalculus.DeriveSequentialRollbackPlan(Strategos.Ontology.Descriptors.ActionSubject! subject, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionRollbackPlan!>! completedForwardChildren) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+static Strategos.Ontology.Descriptors.ActionCalculus.RollbackIdentity(Strategos.Ontology.Descriptors.ActionSubject! subject) -> Strategos.Ontology.Descriptors.ActionRollbackPlan!
+Strategos.Ontology.Descriptors.ActionContractIdentity
+Strategos.Ontology.Descriptors.ActionContractIdentity.ActionContractIdentity(Strategos.Ontology.Descriptors.ActionSubject! subject, string! actionName) -> void
+Strategos.Ontology.Descriptors.ActionContractIdentity.ActionName.get -> string!
+Strategos.Ontology.Descriptors.ActionContractIdentity.Subject.get -> Strategos.Ontology.Descriptors.ActionSubject!
+Strategos.Ontology.Descriptors.ActionInverseAnalysis
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.AuthoredInverse.get -> Strategos.Ontology.Descriptors.ActionDescriptor?
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.DerivedContract.get -> Strategos.Ontology.Descriptors.ActionInverseContract?
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.Failures.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionInverseFailure!>
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.ForwardAction.get -> Strategos.Ontology.Descriptors.ActionDescriptor!
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.IsCompensable.get -> bool
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.Status.get -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysis.UsesIdentityInverse.get -> bool
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus.Invalid = 4 -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus.Missing = 1 -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus.Opaque = 3 -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus.Proven = 0 -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus.Refuted = 2 -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionInverseContract
+Strategos.Ontology.Descriptors.ActionInverseContract.ForwardAction.get -> Strategos.Ontology.Descriptors.ActionContractIdentity!
+Strategos.Ontology.Descriptors.ActionInverseContract.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
+Strategos.Ontology.Descriptors.ActionInverseContract.Guarantee.get -> Strategos.Ontology.Descriptors.ActionPredicate!
+Strategos.Ontology.Descriptors.ActionInverseContract.RequiredAuthority.get -> Strategos.Ontology.Descriptors.AuthorityRequirement!
+Strategos.Ontology.Descriptors.ActionInverseContract.Requirement.get -> Strategos.Ontology.Descriptors.ActionPredicate!
+Strategos.Ontology.Descriptors.ActionInverseFailure
+Strategos.Ontology.Descriptors.ActionInverseFailure.ActionInverseFailure(Strategos.Ontology.Descriptors.ActionInverseObligation obligation, string! message, System.Collections.Generic.IEnumerable<Strategos.Ontology.Descriptors.ActionCounterexampleFact!>? counterexample = null) -> void
+Strategos.Ontology.Descriptors.ActionInverseFailure.Counterexample.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionCounterexampleFact!>
+Strategos.Ontology.Descriptors.ActionInverseFailure.Message.get -> string!
+Strategos.Ontology.Descriptors.ActionInverseFailure.Obligation.get -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.AuthoredContract = 2 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.Authority = 6 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.ExecutableInverse = 1 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.ForwardContract = 0 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.Frame = 7 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.Guarantees = 5 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.Requirements = 4 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionInverseObligation.Subject = 3 -> Strategos.Ontology.Descriptors.ActionInverseObligation
+Strategos.Ontology.Descriptors.ActionRollbackLeaf
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.Failures.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionInverseFailure!>
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.ForwardAction.get -> Strategos.Ontology.Descriptors.ActionContractIdentity!
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.InverseAction.get -> Strategos.Ontology.Descriptors.ActionContractIdentity?
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.IsCompensable.get -> bool
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.Status.get -> Strategos.Ontology.Descriptors.ActionInverseAnalysisStatus
+Strategos.Ontology.Descriptors.ActionRollbackLeaf.UsesIdentityInverse.get -> bool
+Strategos.Ontology.Descriptors.ActionRollbackPlan
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Children.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionRollbackPlan!>
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Frame.get -> Strategos.Ontology.Descriptors.ActionFrame!
+Strategos.Ontology.Descriptors.ActionRollbackPlan.IsCompensable.get -> bool
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Kind.get -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Leaf.get -> Strategos.Ontology.Descriptors.ActionRollbackLeaf?
+Strategos.Ontology.Descriptors.ActionRollbackPlan.NonCompensableLeaves.get -> System.Collections.Immutable.ImmutableArray<Strategos.Ontology.Descriptors.ActionRollbackLeaf!>
+Strategos.Ontology.Descriptors.ActionRollbackPlan.Subject.get -> Strategos.Ontology.Descriptors.ActionSubject!
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind.Identity = 0 -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind.Leaf = 1 -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind.Parallel = 3 -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind.Scope = 4 -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind
+Strategos.Ontology.Descriptors.ActionRollbackPlanKind.Sequence = 2 -> Strategos.Ontology.Descriptors.ActionRollbackPlanKind

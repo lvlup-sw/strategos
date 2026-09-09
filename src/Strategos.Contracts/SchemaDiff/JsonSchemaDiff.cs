@@ -56,8 +56,10 @@ public sealed record SchemaDiffResult(IReadOnlyList<SchemaChange> Changes)
 /// <remarks>
 /// The classifier understands nested properties and required members, declared
 /// types, enums, constants, references, minimum string/collection sizes,
-/// patterns, item schemas, discriminators, and composition keywords, and
-/// recurses per entry through the <c>$defs</c> / <c>definitions</c> schema
+/// patterns, item schemas, discriminators, composition keywords, and the
+/// conditional applicators (<c>if</c> / <c>then</c> / <c>else</c> /
+/// <c>dependentSchemas</c> / <c>dependentRequired</c>), and recurses per entry
+/// through the <c>$defs</c> / <c>definitions</c> schema
 /// containers. Unknown validation keywords fail closed when their values change. Schema annotations
 /// such as descriptions and vendor extensions do not affect compatibility.
 /// </remarks>
@@ -84,6 +86,11 @@ public static class JsonSchemaDiff
         "discriminator",
         "$defs",
         "definitions",
+        "if",
+        "then",
+        "else",
+        "dependentSchemas",
+        "dependentRequired",
     };
 
     private static readonly HashSet<string> AnnotationKeywords = new(StringComparer.Ordinal)
@@ -173,6 +180,11 @@ public static class JsonSchemaDiff
         DiffUnion(previous, next, "allOf", path, changes);
         DiffDefinitions(previous, next, "$defs", path, changes);
         DiffDefinitions(previous, next, "definitions", path, changes);
+        DiffConditional(previous, next, "if", path, changes);
+        DiffConditional(previous, next, "then", path, changes);
+        DiffConditional(previous, next, "else", path, changes);
+        DiffConditional(previous, next, "dependentSchemas", path, changes);
+        DiffConditional(previous, next, "dependentRequired", path, changes);
         DiffUnhandledKeywords(previous, next, path, changes);
     }
 
@@ -583,6 +595,52 @@ public static class JsonSchemaDiff
                     changes);
             }
         }
+    }
+
+    /// <summary>
+    /// <c>if</c> / <c>then</c> / <c>else</c> / <c>dependentSchemas</c> /
+    /// <c>dependentRequired</c> are the applicator keywords that make a document's
+    /// validity depend on its own shape. Adding one, or changing one, can only
+    /// reject documents the previous schema accepted, so it is a narrowing
+    /// (breaking). Removing one only widens the accepted set (non-breaking). The
+    /// Node gate (<c>scripts/contracts-schema-diff.mjs</c>) carries the same rule.
+    /// </summary>
+    private static void DiffConditional(
+        JsonElement previous,
+        JsonElement next,
+        string keyword,
+        string path,
+        List<SchemaChange> changes)
+    {
+        var hadConditional = TryGetKeyword(previous, keyword, out var previousConditional);
+        var hasConditional = TryGetKeyword(next, keyword, out var nextConditional);
+        if (!hadConditional && !hasConditional)
+        {
+            return;
+        }
+
+        if (hadConditional
+            && hasConditional
+            && JsonElement.DeepEquals(previousConditional, nextConditional))
+        {
+            return;
+        }
+
+        if (hadConditional && !hasConditional)
+        {
+            AddChange(
+                changes,
+                ChangeSeverity.NonBreaking,
+                path,
+                $"'{keyword}' conditional was removed");
+            return;
+        }
+
+        AddChange(
+            changes,
+            ChangeSeverity.Breaking,
+            path,
+            $"'{keyword}' conditional was added or narrowed");
     }
 
     private static void DiffUnhandledKeywords(

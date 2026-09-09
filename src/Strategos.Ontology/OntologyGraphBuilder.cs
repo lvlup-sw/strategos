@@ -309,6 +309,7 @@ public sealed class OntologyGraphBuilder
     {
         ValidateAuthorityLattices(domains, fatal);
         ValidateActionFrames(allObjectTypes, fatal);
+        ValidateActionInverses(domains, allObjectTypes, fatal);
         ValidateActionContracts(allObjectTypes, fatal, nonFatal);
 
         // AONT213 — RFC 9110 safe ⇒ idempotent. Descriptor-first and
@@ -661,10 +662,6 @@ public sealed class OntologyGraphBuilder
     {
         foreach (var objectType in objectTypes)
         {
-            var actionsByName = objectType.Actions
-                .GroupBy(action => action.Name, StringComparer.Ordinal)
-                .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
-
             foreach (var action in objectType.Actions)
             {
                 // Contract-shape validation below owns malformed null entries and
@@ -697,35 +694,69 @@ public sealed class OntologyGraphBuilder
                             $"Postcondition mutates '{mutated.Kind}:{mutated.Name}' outside the declared frame."));
                     }
                 }
+            }
+        }
+    }
 
-                if (action.CompensatingActionName is null)
+    private static void ValidateActionInverses(
+        IReadOnlyList<DomainDescriptor> domains,
+        IReadOnlyList<ObjectTypeDescriptor> objectTypes,
+        ImmutableArray<OntologyDiagnostic>.Builder fatal)
+    {
+        var lattices = new Dictionary<string, AuthorityLattice>(StringComparer.Ordinal);
+        foreach (var domain in domains)
+        {
+            try
+            {
+                lattices[domain.DomainName] = new AuthorityLattice(
+                    domain.AuthorityAxes,
+                    domain.Authorities);
+            }
+            catch (ArgumentException)
+            {
+                // AONT214 owns malformed lattices. Avoid duplicating that root failure as AONT216.
+            }
+        }
+
+        foreach (var objectType in objectTypes)
+        {
+            if (!lattices.TryGetValue(objectType.DomainName, out var lattice))
+            {
+                continue;
+            }
+
+            var actionsByName = objectType.Actions
+                .Where(action => action is not null)
+                .GroupBy(action => action.Name, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+            foreach (var action in objectType.Actions.Where(action =>
+                         action.CompensatingActionName is not null))
+            {
+                // AONT221 owns an invalid forward contract. Do not duplicate that root
+                // failure as an authored-inverse disagreement merely because the
+                // invalid action also names compensation.
+                if (ActionContractProofEngine.Analyze(action).Kind
+                    == ActionContractProofKind.Invalid)
                 {
                     continue;
                 }
 
-                if (!actionsByName.TryGetValue(action.CompensatingActionName, out var compensation))
-                {
-                    fatal.Add(CompensationDiagnostic(
-                        objectType,
-                        action,
-                        $"Compensating action '{action.CompensatingActionName}' does not exist."));
-                    continue;
-                }
-
-                if (action.TouchedResources.Any(resource => resource is null)
-                    || compensation.TouchedResources.Any(resource => resource is null))
+                actionsByName.TryGetValue(
+                    action.CompensatingActionName!,
+                    out var authoredInverse);
+                var analysis = ActionCalculus.AnalyzeInverse(
+                    action,
+                    authoredInverse,
+                    lattice);
+                if (analysis.Status == ActionInverseAnalysisStatus.Proven)
                 {
                     continue;
                 }
 
-                if (!frame.SetEquals(compensation.TouchedResources))
-                {
-                    fatal.Add(CompensationDiagnostic(
-                        objectType,
-                        action,
-                        $"Compensating action '{compensation.Name}' declares a different frame; "
-                        + "an inverse must restore exactly the forward action's touched resources."));
-                }
+                var detail = analysis.Failures.IsEmpty
+                    ? "The authored inverse could not be proved."
+                    : string.Join(" ", analysis.Failures.Select(failure => failure.Message));
+                fatal.Add(CompensationDiagnostic(objectType, action, detail));
             }
         }
     }

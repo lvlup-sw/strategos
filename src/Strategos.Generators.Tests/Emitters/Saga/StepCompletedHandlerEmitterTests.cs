@@ -256,6 +256,31 @@ public class StepCompletedHandlerEmitterTests
         await Assert.That(result).Contains("MarkCompleted();");
     }
 
+    /// <summary>A final step enters OnFailure when its reducer returns Failed.</summary>
+    [Test]
+    public async Task EmitHandler_FinalStepWithFailureHandler_RoutesBeforeCompletingSaga()
+    {
+        var emitter = new StepCompletedHandlerEmitter();
+        var sb = new StringBuilder();
+        var model = CreateModelWithFailureHandlers();
+        var context = CreateContext(isLastStep: true, nextStepName: null);
+
+        emitter.EmitHandler(sb, model, "ValidateStep", context);
+        var result = sb.ToString();
+        var failureRoute = result.IndexOf(
+            "yield return new TriggerTestWorkflowFailureHandlerCommand(",
+            StringComparison.Ordinal);
+        var completion = result.IndexOf(
+            "Phase = TestWorkflowPhase.Completed;",
+            StringComparison.Ordinal);
+
+        await Assert.That(result).Contains("public IEnumerable<object> Handle(");
+        await Assert.That(result).Contains("\"ValidateStep\"");
+        await Assert.That(result).Contains("\"StateTransitionFailure\"");
+        await Assert.That(failureRoute).IsGreaterThan(-1);
+        await Assert.That(completion).IsGreaterThan(failureRoute);
+    }
+
     // =============================================================================
     // D. No State Type Tests
     // =============================================================================
@@ -501,7 +526,7 @@ public class StepCompletedHandlerEmitterTests
     /// </summary>
     /// <remarks>
     /// When a workflow has failure handlers, the step completed handler uses IEnumerable
-    /// to support polymorphic routing with yield return to either the next step or the FailedStep.
+    /// to support polymorphic routing with yield return to either the next step or the failure trigger.
     /// </remarks>
     [Test]
     public async Task EmitHandler_WithFailureHandlers_GeneratesEnumerableReturnType()
@@ -526,7 +551,7 @@ public class StepCompletedHandlerEmitterTests
     /// </summary>
     /// <remarks>
     /// After applying the reducer, the handler must check if State.Phase == Failed
-    /// to route to the FailedStep instead of the next step.
+    /// to route through the unified failure trigger instead of the next step.
     /// </remarks>
     [Test]
     public async Task EmitHandler_WithFailureHandlers_GeneratesPhaseCheck()
@@ -546,10 +571,10 @@ public class StepCompletedHandlerEmitterTests
     }
 
     /// <summary>
-    /// Verifies that EmitHandler routes to FailedStep when phase is Failed.
+    /// Verifies that EmitHandler routes through the unified trigger when phase is Failed.
     /// </summary>
     [Test]
-    public async Task EmitHandler_WithFailureHandlers_RoutesToFailedStep()
+    public async Task EmitHandler_WithFailureHandlers_RoutesThroughFailureTrigger()
     {
         // Arrange
         var emitter = new StepCompletedHandlerEmitter();
@@ -561,8 +586,12 @@ public class StepCompletedHandlerEmitterTests
         emitter.EmitHandler(sb, model, "ValidateStep", context);
         var result = sb.ToString();
 
-        // Assert - Now uses yield return pattern
-        await Assert.That(result).Contains("yield return new StartFailedStepCommand(WorkflowId)");
+        // Assert - enters the unified trigger so failure context is audited before
+        // the trigger handler starts the dedicated recovery role.
+        await Assert.That(result).Contains(
+            "yield return new TriggerTestWorkflowFailureHandlerCommand(");
+        await Assert.That(result).Contains("\"ValidateStep\"");
+        await Assert.That(result).Contains("\"StateTransitionFailure\"");
     }
 
     /// <summary>
@@ -590,7 +619,7 @@ public class StepCompletedHandlerEmitterTests
     /// </summary>
     /// <remarks>
     /// The generated code should have an if-else structure:
-    /// if (Phase == Failed) return StartFailedStepCommand
+    /// if (Phase == Failed) return the unified failure trigger
     /// else return StartNextStepCommand.
     /// </remarks>
     [Test]
@@ -733,6 +762,68 @@ public class StepCompletedHandlerEmitterTests
         await Assert.That(phaseSyncIndex).IsLessThan(phaseCheckIndex);
     }
 
+    /// <summary>Typed rollback observes reducer failure without requiring an OnFailure chain.</summary>
+    [Test]
+    public async Task EmitHandler_WithTypedCompensation_RoutesReducedFailureBeforeEverySuccessorShape()
+    {
+        var emitter = new StepCompletedHandlerEmitter();
+        var model = CreateTypedCompensationModel();
+        var step = model.Steps!.Single(candidate => candidate.StepName == "ValidateStep");
+        var approval = ApprovalModel.Create("PostValidation", "LegalReviewer", "ValidateStep");
+        var contexts = new[]
+        {
+            CreateContext(isLastStep: false, nextStepName: "ProcessStep") with { StepModel = step },
+            CreateContext(isLastStep: true, nextStepName: null) with { StepModel = step },
+            CreateContextWithApproval(approval, "ProcessStep") with { StepModel = step },
+        };
+        var forbiddenSuccessors = new[]
+        {
+            "yield return new StartProcessStepCommand(WorkflowId)",
+            "Phase = TestWorkflowPhase.Completed;",
+            "yield return new RequestPostValidationApprovalEvent(",
+        };
+
+        for (var index = 0; index < contexts.Length; index++)
+        {
+            var sb = new StringBuilder();
+            emitter.EmitHandler(sb, model, "ValidateStep", contexts[index]);
+            var result = sb.ToString();
+            var failureRoute = result.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+            var successor = result.IndexOf(forbiddenSuccessors[index], StringComparison.Ordinal);
+
+            await Assert.That(result).Contains("Phase = State.Phase;");
+            await Assert.That(result).Contains("Phase == TestWorkflowPhase.Failed");
+            await Assert.That(failureRoute).IsGreaterThan(-1);
+            await Assert.That(successor).IsGreaterThan(failureRoute);
+        }
+
+        var lowConfidenceStep = StepModel.Create("ReviewStep", "TestNamespace.ReviewStep");
+        var confidenceStep = step with
+        {
+            Confidence = new ConfidenceModel(
+                0.8,
+                "ReviewStep",
+                lowConfidenceStep,
+                new LowConfidenceHandlerChainModel([lowConfidenceStep])),
+        };
+        var confidenceModel = model with
+        {
+            Steps = [confidenceStep, StepModel.Create("ProcessStep", "TestNamespace.ProcessStep")],
+        };
+        var confidenceContext = CreateContext(isLastStep: false, nextStepName: "ProcessStep") with
+        {
+            StepModel = confidenceStep,
+        };
+        var confidenceSource = new StringBuilder();
+        emitter.EmitHandler(confidenceSource, confidenceModel, "ValidateStep", confidenceContext);
+        var confidenceResult = confidenceSource.ToString();
+        var confidenceFailure = confidenceResult.IndexOf("StateTransitionFailure", StringComparison.Ordinal);
+        var confidenceGate = confidenceResult.IndexOf("if (evt.Confidence", StringComparison.Ordinal);
+
+        await Assert.That(confidenceFailure).IsGreaterThan(-1);
+        await Assert.That(confidenceGate).IsGreaterThan(confidenceFailure);
+    }
+
     // =============================================================================
     // Helper Methods
     // =============================================================================
@@ -768,6 +859,30 @@ public class StepCompletedHandlerEmitterTests
             // This model represents a state type that carries a Phase property, so
             // the saga syncs Phase = State.Phase (the route-1 OnFailure path). The
             // emitter only emits that sync when StateHasPhaseProperty is true (#140).
+            StateHasPhaseProperty = true,
+        };
+    }
+
+    private static WorkflowModel CreateTypedCompensationModel()
+    {
+        var inverse = new WorkflowActionReferenceModel("orders", "Order", "undo-validate");
+        var step = StepModel.Create(
+            "ValidateStep",
+            "TestNamespace.ValidateStep",
+            compensation: new CompensationModel(
+                "TestNamespace.UndoValidateStep",
+                InverseAction: inverse,
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+            action: new WorkflowActionReferenceModel("orders", "Order", "validate"));
+
+        return new WorkflowModel(
+            WorkflowName: "test-workflow",
+            PascalName: "TestWorkflow",
+            Namespace: "TestNamespace",
+            StepNames: ["ValidateStep", "ProcessStep"],
+            StateTypeName: "TestState",
+            Steps: [step, StepModel.Create("ProcessStep", "TestNamespace.ProcessStep")])
+        {
             StateHasPhaseProperty = true,
         };
     }

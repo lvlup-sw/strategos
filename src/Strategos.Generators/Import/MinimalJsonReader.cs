@@ -671,34 +671,44 @@ internal static class WireWorkflowReader
             return null;
         }
 
-        var identity = string.IsNullOrWhiteSpace(stepId) ? "<unnamed>" : stepId;
+        var identity = string.IsNullOrWhiteSpace(stepId) ? "<unnamed>" : stepId!;
         if (node.Kind != JsonKind.Object)
         {
             throw new JsonParseException(
                 $"step '{identity}' property 'action' must be a JSON object when present");
         }
 
-        return new ActionReferenceV1
-        {
-            DomainName = ReadRequiredActionIdentity(node, "domainName", identity),
-            ObjectTypeName = ReadRequiredActionIdentity(node, "objectTypeName", identity),
-            ActionName = ReadRequiredActionIdentity(node, "actionName", identity),
-        };
+        return ReadActionReference(node, identity);
     }
 
-    private static string ReadRequiredActionIdentity(JsonValue action, string name, string stepId)
+    private static ActionReferenceV1 ReadActionReference(
+        JsonValue node,
+        string identity,
+        string propertyName = "action") =>
+        new ActionReferenceV1
+        {
+            DomainName = ReadRequiredActionIdentity(node, "domainName", identity, propertyName),
+            ObjectTypeName = ReadRequiredActionIdentity(node, "objectTypeName", identity, propertyName),
+            ActionName = ReadRequiredActionIdentity(node, "actionName", identity, propertyName),
+        };
+
+    private static string ReadRequiredActionIdentity(
+        JsonValue action,
+        string name,
+        string stepId,
+        string propertyName)
     {
         if (!action.TryGetMember(name, out var node) || node.Kind != JsonKind.String)
         {
             throw new JsonParseException(
-                $"step '{stepId}' property 'action.{name}' must be a string");
+                $"step '{stepId}' property '{propertyName}.{name}' must be a string");
         }
 
         var value = node.AsStringOrNull();
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new JsonParseException(
-                $"step '{stepId}' property 'action.{name}' must contain at least one non-whitespace character");
+                $"step '{stepId}' property '{propertyName}.{name}' must contain at least one non-whitespace character");
         }
 
         return value!;
@@ -727,10 +737,63 @@ internal static class WireWorkflowReader
     private static CompensationConfiguration ReadCompensation(JsonValue node) =>
         new CompensationConfiguration
         {
-            CompensationStepType = GetString(node, "compensationStepType"),
+            CompensationStepType = ReadRequiredCompensationStepType(node),
+            InverseAction = ReadOptionalCompensationActionReference(node),
             RequiredOnFailure = GetBool(node, "requiredOnFailure"),
-            Timeout = GetString(node, "timeout"),
+            Timeout = ReadOptionalCompensationTimeout(node),
         };
+
+    private static string? ReadOptionalCompensationTimeout(JsonValue compensation)
+    {
+        const string propertyName = "timeout";
+        if (!compensation.TryGetMember(propertyName, out var node))
+        {
+            return null;
+        }
+
+        if (node.Kind != JsonKind.String)
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must be a string when present");
+        }
+
+        return node.AsStringOrNull();
+    }
+
+    private static string ReadRequiredCompensationStepType(JsonValue compensation)
+    {
+        const string propertyName = "compensationStepType";
+        if (!compensation.TryGetMember(propertyName, out var node) || node.Kind != JsonKind.String)
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must be a string");
+        }
+
+        var value = node.AsStringOrNull();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new JsonParseException(
+                $"step 'compensation' property '{propertyName}' must contain at least one non-whitespace character");
+        }
+
+        return value!;
+    }
+
+    private static ActionReferenceV1? ReadOptionalCompensationActionReference(JsonValue compensation)
+    {
+        if (!compensation.TryGetMember("inverseAction", out var node))
+        {
+            return null;
+        }
+
+        if (node.Kind != JsonKind.Object)
+        {
+            throw new JsonParseException(
+                "step 'compensation' property 'inverseAction' must be a JSON object when present");
+        }
+
+        return ReadActionReference(node, "compensation", "inverseAction");
+    }
 
     private static RetryConfiguration ReadRetry(JsonValue node) =>
         new RetryConfiguration

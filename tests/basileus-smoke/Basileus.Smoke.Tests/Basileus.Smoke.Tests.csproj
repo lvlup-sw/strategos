@@ -6,7 +6,9 @@
     Intentionally a PackageReference (not ProjectReference) consumer of
     LevelUp.Strategos.Agents at the version about to ship to basileus.
     Restored from a sibling local-feed/ directory populated by
-    scripts/pack-to-local-feed.sh. Lives outside src/ to avoid being
+    scripts/pack-to-local-feed.sh. CI uses verify-basileus-smoke.sh to restore
+    into an empty per-run package directory and verify exact nupkg bytes. Lives
+    outside src/ to avoid being
     swept into CI's main build-test job (which restores src/strategos.slnx
     BEFORE we have packed the local feed — chicken-and-egg).
 
@@ -21,6 +23,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <OutputType>Exe</OutputType>
+    <!-- Keep the hermetic gate's compile inputs closed when its obj/bin roots move to /tmp. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!--
       Opt out of MinVer + analyzers that the src/Directory.Build.props
       chain installs. We are deliberately outside that hierarchy, so
@@ -34,9 +38,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="BasileusConsumedSurfaceTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
-      Pulled from sibling local-feed/ via nuget.config in this directory.
-      Pinned to the synthetic 2.7.0-smoke version that
+      Pulled from sibling local-feed/ via the source-mapped nuget.config in
+      this directory (or the ephemeral equivalent used by CI). Pinned to the
+      synthetic 2.7.0-smoke version that
       scripts/pack-to-local-feed.sh stamps onto the packed artifact. That
       version exists only in the local feed (nuget.org will never carry it), so
       this resolves the freshly-packed Agents unambiguously and fails restore

@@ -25,14 +25,18 @@ namespace Strategos.Builders;
 /// </list>
 /// </para>
 /// <para>
-/// Example usage:
+/// Example usage. The two deadlines are distinct: <c>WithTimeout</c> bounds the FORWARD
+/// step, while the timeout argument to <c>Compensate</c> bounds one execution of the
+/// INVERSE (rollback) step.
 /// <code>
 /// .Then&lt;AssessClaim&gt;(step => step
 ///     .RequireConfidence(0.85)
 ///     .OnLowConfidence(alt => alt.Then&lt;HumanReview&gt;())
-///     .Compensate&lt;RollbackAssessment&gt;()
+///     // AssessClaim itself must finish within five minutes...
+///     .WithTimeout(TimeSpan.FromMinutes(5))
 ///     .WithRetry(3, TimeSpan.FromSeconds(5))
-///     .WithTimeout(TimeSpan.FromMinutes(5)))
+///     // ...and if it is rolled back, RollbackAssessment gets thirty seconds per attempt.
+///     .Compensate&lt;RollbackAssessment&gt;(TimeSpan.FromSeconds(30)))
 /// </code>
 /// </para>
 /// </remarks>
@@ -80,7 +84,81 @@ public interface IStepConfiguration<TState>
     /// </summary>
     /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
     /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
+    /// <remarks>Each step occurrence accepts exactly one compensation declaration.</remarks>
     IStepConfiguration<TState> Compensate<TCompensation>()
+        where TCompensation : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Sets the compensation step and declares the ontology action it implements.
+    /// </summary>
+    /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
+    /// <param name="inverseAction">The language-neutral inverse-action identity.</param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="inverseAction"/> is null.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
+    /// <remarks>
+    /// Each step occurrence accepts exactly one compensation declaration. This typed
+    /// form enables the source generator to prove that the authored rollback implements
+    /// the inverse contract mechanically derived from the forward action.
+    /// </remarks>
+    IStepConfiguration<TState> Compensate<TCompensation>(WorkflowActionReference inverseAction)
+        where TCompensation : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Sets the compensation step type and the deadline for one inverse execution.
+    /// </summary>
+    /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
+    /// <param name="timeout">
+    /// The deadline for one execution of the INVERSE step. This is not the forward step's
+    /// deadline, which is authored separately with <see cref="WithTimeout(TimeSpan)"/>.
+    /// </param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="timeout"/> is less than or equal to <see cref="TimeSpan.Zero"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
+    /// <remarks>Each step occurrence accepts exactly one compensation declaration.</remarks>
+    IStepConfiguration<TState> Compensate<TCompensation>(TimeSpan timeout)
+        where TCompensation : class, IWorkflowStep<TState>;
+
+    /// <summary>
+    /// Sets the compensation step, the ontology action it implements, and the deadline for
+    /// one inverse execution.
+    /// </summary>
+    /// <typeparam name="TCompensation">The compensation step implementation type.</typeparam>
+    /// <param name="inverseAction">The language-neutral inverse-action identity.</param>
+    /// <param name="timeout">
+    /// The deadline for one execution of the INVERSE step. This is not the forward step's
+    /// deadline, which is authored separately with <see cref="WithTimeout(TimeSpan)"/>.
+    /// </param>
+    /// <returns>The builder for fluent chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="inverseAction"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="timeout"/> is less than or equal to <see cref="TimeSpan.Zero"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when compensation was already declared for this step occurrence.
+    /// </exception>
+    /// <remarks>
+    /// Each step occurrence accepts exactly one compensation declaration. This typed form
+    /// enables the source generator to prove that the authored rollback implements the
+    /// inverse contract mechanically derived from the forward action, and lowers the
+    /// deadline into the generated rollback journal entry.
+    /// </remarks>
+    IStepConfiguration<TState> Compensate<TCompensation>(
+        WorkflowActionReference inverseAction,
+        TimeSpan timeout)
         where TCompensation : class, IWorkflowStep<TState>;
 
     /// <summary>

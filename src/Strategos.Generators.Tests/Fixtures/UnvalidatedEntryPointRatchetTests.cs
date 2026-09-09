@@ -76,7 +76,7 @@ public sealed class UnvalidatedEntryPointRatchetTests
             ["Helpers/FailureHandlerExtractorTests.cs"] = 6,
             ["ExtensionsIntegrationTests.cs"] = 6,
             ["Emitters/ContextOnHandlerStepsTests.cs"] = 6,
-            ["Emitters/ConfidenceLoweringTests.cs"] = 6,
+            ["Emitters/ConfidenceLoweringTests.cs"] = 5,
             ["WorkerHandlerIntegrationTests.cs"] = 5,
             ["SagaIdentityNegationTests.cs"] = 5,
             ["Emitters/Saga/SagaApprovalConstructTests.cs"] = 5,

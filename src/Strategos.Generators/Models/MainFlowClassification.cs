@@ -333,11 +333,21 @@ internal sealed class MainFlowClassification
             return;
         }
 
+        var mainFlowStepPhases = model.MainFlowStepPhaseNames is null
+            ? null
+            : new HashSet<string>(model.MainFlowStepPhaseNames, StringComparer.Ordinal);
+
         foreach (var handler in model.FailureHandlers)
         {
-            foreach (var stepName in handler.StepNames)
+            foreach (var stepName in handler.StepPhaseNames)
             {
-                offMainFlow.Add(stepName);
+                // A recovery occurrence is off-main unless that exact phase identity is also an
+                // authored main-flow occurrence. CLR type reuse alone cannot move an independently
+                // instance-named recovery phase onto the main flow.
+                if (mainFlowStepPhases?.Contains(stepName) != true)
+                {
+                    offMainFlow.Add(stepName);
+                }
             }
         }
     }

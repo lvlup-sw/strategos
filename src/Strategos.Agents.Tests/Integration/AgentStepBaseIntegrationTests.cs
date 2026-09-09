@@ -138,6 +138,7 @@ public sealed class AgentStepBaseIntegrationTests
         var stepContext = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "MeaiRoundTripStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -317,6 +318,7 @@ public sealed class AgentStepBaseIntegrationTests
         var stepContext = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "MeaiMcpRoundTripStep",
             Timestamp = DateTimeOffset.UtcNow,
@@ -529,6 +531,7 @@ public sealed class AgentStepBaseIntegrationTests
         var stepContext = new StepContext
         {
             CorrelationId = Guid.NewGuid().ToString("N"),
+            ExecutionId = Guid.NewGuid(),
             WorkflowId = initialState.WorkflowId,
             StepName = "FullChainStreamingStep",
             Timestamp = DateTimeOffset.UtcNow,

@@ -79,7 +79,7 @@ public sealed record ActionDescriptor
         }
     }
 
-    /// <summary>Name of the action that restores this action's frame.</summary>
+    /// <summary>Name of the action declared to implement this action's contract inverse.</summary>
     public string? CompensatingActionName { get; init; }
 
     /// <summary>

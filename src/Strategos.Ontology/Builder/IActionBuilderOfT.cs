@@ -43,7 +43,7 @@ public interface IActionBuilder<T> : IActionBuilder
     /// <summary>Adds a resource to the action's declared frame.</summary>
     new IActionBuilder<T> Touches(ActionResource resource);
 
-    /// <summary>Names the action that restores this action's declared frame.</summary>
+    /// <summary>Names the action declared to implement this action's contract inverse.</summary>
     new IActionBuilder<T> CompensatedBy(string actionName);
 
     IActionBuilder<T> BoundToTool<TTool>(Expression<Func<TTool, Delegate>> methodSelector);

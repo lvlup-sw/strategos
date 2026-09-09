@@ -79,29 +79,6 @@ public sealed class ActionCalculusTests
     }
 
     [Test]
-    public async Task RollbackPlan_IsMechanicallyReversedFromTheCompletedPrefix()
-    {
-        var reserve = new ActionDescriptor(Subject, "reserve", "reserve")
-        {
-            CompensatingActionName = "release",
-        };
-        var charge = new ActionDescriptor(Subject, "charge", "charge")
-        {
-            CompensatingActionName = "refund",
-        };
-
-        var plan = ActionCalculus.DeriveRollbackPlan([reserve, charge]);
-
-        await Assert.That(plan).IsEquivalentTo(["refund", "release"]);
-        await Assert.That(ActionCalculus.AuthoredRollbackAgrees(
-            [reserve, charge],
-            ["refund", "release"])).IsTrue();
-        await Assert.That(ActionCalculus.AuthoredRollbackAgrees(
-            [reserve, charge],
-            ["release", "refund"])).IsFalse();
-    }
-
-    [Test]
     public async Task Build_PostconditionOutsideDeclaredFrame_FailsAont215()
     {
         var exception = BuildFailure<UnsoundFrameOntology>();
@@ -117,6 +94,75 @@ public sealed class ActionCalculusTests
 
         var diagnostic = exception.Diagnostics.Single(item => item.Id == "AONT216");
         await Assert.That(diagnostic.Message).Contains("different frame");
+    }
+
+    [Test]
+    public async Task Build_CompensationWithWrongGuarantee_FailsAont216()
+    {
+        var exception = BuildFailure<SemanticallyWrongCompensationOntology>();
+
+        var diagnostic = exception.Diagnostics.Single(item => item.Id == "AONT216");
+        await Assert.That(diagnostic.Message).Contains("inverse guarantee");
+        await Assert.That(diagnostic.Message).Contains("does not imply");
+    }
+
+    [Test]
+    public async Task Build_MissingNamedCompensation_FailsAont216()
+    {
+        var exception = BuildFailure<MissingCompensationOntology>();
+
+        var diagnostic = exception.Diagnostics.Single(item => item.Id == "AONT216");
+        await Assert.That(diagnostic.Message).Contains("'missing' was not supplied");
+    }
+
+    [Test]
+    public async Task Build_SemanticallyEquivalentCompensation_PassesInverseProof()
+    {
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<SemanticallyEquivalentCompensationOntology>()
+            .Build();
+
+        await Assert.That(graph.GetObjectType("frame", "Document")!.Actions).HasCount(2);
+    }
+
+    /// <summary>
+    /// Graph freeze admits an authored inverse only when the analysis is <c>Proven</c>. A
+    /// custom predicate evaluator in the forward contract yields <c>Opaque</c>, which is not a
+    /// disagreement at all, and is fatal through the same branch. Base checked only frame
+    /// set-equality, so this graph froze before this release.
+    /// </summary>
+    /// <returns>A task representing the assertion.</returns>
+    [Test]
+    public async Task Build_OpaqueForwardContractWithNamedCompensation_FailsAont216()
+    {
+        var exception = BuildFailure<OpaqueForwardCompensationOntology>();
+
+        var diagnostic = exception.Diagnostics.Single(item => item.Id == "AONT216");
+        await Assert.That(diagnostic.Message).Contains("Custom predicate");
+        await Assert.That(diagnostic.Message).Contains("tenant-quota-ok");
+    }
+
+    [Test]
+    public async Task Build_InvalidForwardWithNamedCompensationReportsOnlyAont221()
+    {
+        var exception = BuildFailure<InvalidForwardCompensationOntology>();
+
+        await Assert.That(exception.Diagnostics.Select(item => item.Id)).Contains("AONT221");
+        await Assert.That(exception.Diagnostics.Select(item => item.Id)).DoesNotContain("AONT216");
+    }
+
+    [Test]
+    public async Task Build_SymbolKeyOnlyCompensation_PassesInverseProof()
+    {
+        var graph = new OntologyGraphBuilder()
+            .AddDomain<SymbolKeyOnlyCompensationOntology>()
+            .Build();
+
+        var descriptor = graph.GetObjectType("frame", "Document");
+        await Assert.That(descriptor).IsNotNull();
+        await Assert.That(descriptor!.ClrType).IsNull();
+        await Assert.That(descriptor.SymbolKey).IsEqualTo("contract://frame/Document");
+        await Assert.That(descriptor.Actions).HasCount(2);
     }
 
     private static AuthorityLattice CreateLattice() => new(
@@ -212,6 +258,199 @@ public sealed class ActionCalculusTests
             });
         }
     }
+
+    private sealed class SemanticallyWrongCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: Status(0),
+                        ensures: Status(1),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: Status(1),
+                        ensures: Status(2)),
+                ],
+            });
+        }
+    }
+
+    private sealed class MissingCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: Status(0),
+                        ensures: Status(1),
+                        compensatingActionName: "missing"),
+                ],
+            });
+        }
+    }
+
+    private sealed class SemanticallyEquivalentCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            var one = Status(1);
+            var two = Status(2);
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        ensures: ActionPredicate.Any(one, two),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: ActionPredicate.Not(ActionPredicate.All(
+                            ActionPredicate.Not(one),
+                            ActionPredicate.Not(two)))),
+                ],
+            });
+        }
+    }
+
+    private sealed class InvalidForwardCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: ActionPredicate.All(Status(0), Status(1)),
+                        ensures: Status(1),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: Status(1),
+                        ensures: Status(0)),
+                ],
+            });
+        }
+    }
+
+    private sealed class OpaqueForwardCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = typeof(FramedDocument),
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: ActionPredicate.All(
+                            Status(0),
+                            ActionPredicate.Custom("tenant-quota-ok")),
+                        ensures: Status(1),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: Status(1),
+                        ensures: Status(0)),
+                ],
+            });
+        }
+    }
+
+    private sealed class SymbolKeyOnlyCompensationOntology : DomainOntology
+    {
+        public override string DomainName => "frame";
+
+        protected override void Define(IOntologyBuilder builder)
+        {
+            builder.ObjectTypeFromDescriptor(new ObjectTypeDescriptor
+            {
+                Name = "Document",
+                DomainName = DomainName,
+                ClrType = null,
+                SymbolKey = "contract://frame/Document",
+                Source = DescriptorSource.HandAuthoredContract,
+                Actions =
+                [
+                    Action(
+                        "publish",
+                        requires: Status(0),
+                        ensures: Status(1),
+                        compensatingActionName: "unpublish"),
+                    Action(
+                        "unpublish",
+                        requires: Status(1),
+                        ensures: Status(0)),
+                ],
+            });
+        }
+    }
+
+    private static ActionDescriptor Action(
+        string name,
+        ActionPredicate? requires = null,
+        ActionPredicate? ensures = null,
+        string? compensatingActionName = null) => new(Subject, name, name)
+        {
+            CompensatingActionName = compensatingActionName,
+            Preconditions = requires is null
+                ? []
+                : [new ActionPrecondition(requires, requires.Expression)],
+            Ensures = ensures is null
+                ? []
+                : [new ActionGuarantee(ensures)],
+            TouchedResources = [ActionResource.Property("Status")],
+        };
+
+    private static ActionPredicate Status(int value) => ActionPredicate.Property(
+        new PredicatePropertyReference(
+            "Status",
+            PredicateScalarKind.Integer,
+            isNullable: false),
+        PredicateComparisonOperator.Equal,
+        PredicateLiteral.Integer(value));
 
     private sealed class FramedDocument
     {

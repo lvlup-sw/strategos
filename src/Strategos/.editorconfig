@@ -7,16 +7,34 @@
 # strategos-api-mirror.test.ts. Issue #167 preserves that named historical
 # subset and additionally tracks the 3 continuation interfaces changed by the
 # typed-binding API plus its public WorkflowActionReference value object and
-# the StepDefinition occurrence slot that carries that identity.
+# the StepDefinition occurrence slot that carries that identity. Issue #169
+# additionally tracks CompensationConfiguration because its typed inverse slot
+# is the public bridge from rollback authoring to static proof, plus StepContext
+# because rollback identity is now an explicit consumer-facing execution seam.
 #
 # Mechanism: the analyzer is all-or-nothing per project, so we disable its
 # diagnostics assembly-wide here, then re-enable them ONLY for the 10 interface
-# files under Abstractions/ and two exact files under Definitions/.
+# files under Abstractions/, three exact files under Definitions/, and the exact
+# Steps/StepContext.cs file.
 # The PublicAPI.{Shipped,Unshipped}.txt baseline therefore remains a deliberate
 # allowlist and cannot absorb unrelated public or generated types.
 #
 # RS0016 declare-public-api / RS0017 remove / RS0024 list / RS0025 dup
 # RS0026 obsolete / RS0027 nullability annotations.
+#
+# Baseline placement convention (PR #206 follow-up):
+#   PublicAPI.Shipped.txt   = members present in the last NuGet release (the
+#                             newest v* tag). It changes when a member that
+#                             already shipped is newly brought into analyzer
+#                             scope (as CompensationConfiguration and the
+#                             pre-2.13 StepContext members were), and at the
+#                             release roll.
+#   PublicAPI.Unshipped.txt = members added since that release; it rolls into
+#                             Shipped when the release is cut and is the source
+#                             of the "new API" notes.
+# The analyzer accepts a member in either file, so the split is enforced by
+# scripts/check-unshipped-against-tag.sh (run in CI next to the builder gate)
+# and reviewed member-by-member in BuilderApiBaselineTests.
 # =============================================================================
 
 # Disable PublicApiAnalyzers assembly-wide (off by default for every file).
@@ -67,6 +85,34 @@ dotnet_diagnostic.RS0041.severity = error
 # baseline. Track the full containing type so its new Action slot cannot be
 # removed or changed while the value object and builder overload stay green.
 [Definitions/StepDefinition.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error
+
+# Typed inverse identity is stored on the public compensation descriptor as
+# well as exposed by IStepConfiguration. Gate the descriptor so the two halves
+# of the authoring contract cannot drift independently.
+[Definitions/CompensationConfiguration.cs]
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+dotnet_diagnostic.RS0024.severity = error
+dotnet_diagnostic.RS0025.severity = error
+dotnet_diagnostic.RS0026.severity = error
+dotnet_diagnostic.RS0027.severity = error
+dotnet_diagnostic.RS0036.severity = error
+dotnet_diagnostic.RS0037.severity = error
+dotnet_diagnostic.RS0041.severity = error
+
+# Generated inverse workers expose their stable rollback identity through this
+# execution context. Gate the complete containing type so the idempotency seam
+# cannot disappear while generated handlers and documentation remain green.
+[Steps/StepContext.cs]
 dotnet_diagnostic.RS0016.severity = error
 dotnet_diagnostic.RS0017.severity = error
 dotnet_diagnostic.RS0024.severity = error

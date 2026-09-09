@@ -197,6 +197,56 @@ workflow JSON omits the additive field byte-for-byte. See
 [behavioral refinement and workflow bindings](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
 for the proof obligations and `AGWF039`–`AGWF043`.
 
+### Typed compensation
+
+Use the typed `Compensate` overload to identify the ontology action implemented
+by an inverse step:
+
+```csharp
+.Then<CapturePaymentStep>(step => step
+    .Performs(new WorkflowActionReference(
+        "Orders", "Order", "CapturePayment"))
+    .Compensate<RefundPaymentStep>(new WorkflowActionReference(
+        "Orders", "Order", "RefundPayment")))
+```
+
+The generator derives the required inverse contract from the forward action and
+proves that the authored inverse has the same subject, frame, and semantic
+authority, requires the forward effective guarantee, and re-enters the set of
+states described by the forward hard requirement. This proof does not establish
+restoration of the exact concrete pre-forward state or reversal of external
+effects; the frame is the same declared may-change boundary, not a snapshot.
+`AGWF044` reports a disagreement. If the workflow or a bound action claims
+rollback, `AGWF045` rejects a scope containing any rollback-reachable occurrence
+with a non-empty frame but no proved inverse. Typed compensation also rejects
+`RequiredOnFailure = false`; completed-prefix rollback is mandatory once the
+typed program claims rollback safety.
+
+The existing no-argument `.Compensate<T>()` overload remains available for
+legacy runtime-only workflows. It carries no inverse action identity and cannot
+participate in static rollback proof. Contracts 0.12.0 projects the typed value
+as the optional `compensation.inverseAction` object using the same
+`ActionReferenceV1` shape. Legacy JSON continues to omit the field.
+Each step occurrence accepts one compensation declaration; a second call to
+either overload throws `InvalidOperationException` rather than replacing the
+first executable/inverse pair.
+
+At runtime, Strategos records an exact durable dispatch claim before each
+forward worker starts, consumes it into the completion journal, and derives the
+reverse plan from the completed prefix. A forged or stale execution identity
+cannot claim rollback. The failed occurrence is excluded.
+Nested failures unwind their innermost concrete scope; fork rollback waits for
+all lanes to become terminal. See
+[mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
+for the exact contract and durability rules.
+
+Typed derived compensation currently requires `PersistenceMode.SagaDocument`.
+For `PersistenceMode.EventSourced`, the application owns `ApplyEvent`, so the
+generator cannot prove that a generated rollback-completed event applies its
+`UpdatedState` during both live handling and Marten replay. Such a typed program
+receives `AGWF045`; a no-op or pass-through `ApplyEvent` method is not accepted as
+proof. Legacy untyped compensation retains its existing event-sourced path.
+
 ---
 
 ## StepResult\<TState\>
@@ -242,12 +292,14 @@ Execution context passed to every step. Contains metadata about the current exec
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `CorrelationId` | `string` | Correlation ID for tracing; do not parse it as a durable identity |
 | `WorkflowId` | `Guid` | Unique identifier for this workflow instance |
-| `CorrelationId` | `string` | Correlation ID for tracing |
-| `Timestamp` | `DateTimeOffset` | When the step execution started |
-| `Phase` | `string` | Current workflow phase name |
 | `StepName` | `string` | Current step name |
-| `Metadata` | `IReadOnlyDictionary<string, object>` | Additional context data |
+| `Timestamp` | `DateTimeOffset` | When the step execution started |
+| `CurrentPhase` | `string` | Current workflow phase name |
+| `RetryCount` | `int` | Number of retry attempts; defaults to zero |
+| `IsCompensation` | `bool` | Whether this is an inverse execution; defaults to `false` |
+| `RollbackId` | `Guid?` | Stable identity shared by retries of one inverse execution; `null` during forward execution |
 
 ### Example
 
@@ -260,7 +312,13 @@ public async Task<StepResult<OrderState>> ExecuteAsync(
     _logger.LogInformation(
         "Processing order {WorkflowId} at phase {Phase}",
         context.WorkflowId,
-        context.Phase);
+        context.CurrentPhase);
+
+    if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
+    {
+        // At-least-once inverse delivery requires a durable idempotency key.
+        await _payments.RefundOnceAsync(rollbackId, state.PaymentId, ct);
+    }
 
     // Step logic...
 }

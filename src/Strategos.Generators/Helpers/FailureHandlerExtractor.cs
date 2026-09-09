@@ -187,7 +187,7 @@ internal static class FailureHandlerExtractor
         // bringing failure-handler steps to parity with the top-level/loop/fork parse paths.
         if (StepExtractor.TryBuildConfiguredStepModel(invocation, semanticModel, out var configuredStepModel))
         {
-            stepName = configuredStepModel.StepName;
+            stepName = configuredStepModel.PhaseName;
             stepModel = configuredStepModel;
             return true;
         }

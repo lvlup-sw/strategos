@@ -42,6 +42,34 @@ public class CompensationConfigurationTests
         await Assert.That(config.CompensationStepType).IsEqualTo(typeof(TestCompensationStep));
     }
 
+    /// <summary>The typed factory retains a language-neutral inverse action identity.</summary>
+    [Test]
+    public async Task Create_WithInverseAction_CapturesStructuralIdentity()
+    {
+        var inverse = new WorkflowActionReference("orders", "Order", "refund");
+
+        var genericConfig = CompensationConfiguration.Create<TestCompensationStep>(inverse);
+        var runtimeTypeConfig = CompensationConfiguration.Create(
+            typeof(TestCompensationStep),
+            inverse);
+
+        await Assert.That(genericConfig.InverseAction).IsEqualTo(inverse);
+        await Assert.That(genericConfig.CompensationStepType).IsEqualTo(typeof(TestCompensationStep));
+        await Assert.That(runtimeTypeConfig).IsEqualTo(genericConfig);
+    }
+
+    /// <summary>The typed factory rejects a missing inverse identity at construction.</summary>
+    [Test]
+    public async Task Create_WithNullInverseAction_ThrowsArgumentNullException()
+    {
+        await Assert.That(() =>
+                CompensationConfiguration.Create<TestCompensationStep>(null!))
+            .Throws<ArgumentNullException>();
+        await Assert.That(() =>
+                CompensationConfiguration.Create(typeof(TestCompensationStep), null!))
+            .Throws<ArgumentNullException>();
+    }
+
     /// <summary>
     /// Verifies that Create throws for null step type.
     /// </summary>
@@ -50,6 +78,10 @@ public class CompensationConfigurationTests
     {
         // Act & Assert
         await Assert.That(() => CompensationConfiguration.Create(null!))
+            .Throws<ArgumentNullException>();
+        await Assert.That(() => CompensationConfiguration.Create(
+                null!,
+                new WorkflowActionReference("orders", "Order", "refund")))
             .Throws<ArgumentNullException>();
     }
 

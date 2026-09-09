@@ -487,7 +487,8 @@ internal static class TerminalReachabilityGuard
         {
             foreach (var handler in model.FailureHandlers)
             {
-                AddAll(owned, handler.StepNames);
+                AddAll(owned, handler.StepTypeNames);
+                AddAll(owned, handler.StepPhaseNames);
             }
         }
 

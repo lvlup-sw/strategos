@@ -6,6 +6,8 @@
 
 using Microsoft.CodeAnalysis;
 
+using Strategos.Generators.Models;
+using Strategos.Generators.Proof;
 using Strategos.Generators.Tests.Fixtures;
 
 namespace Strategos.Generators.Tests.Proof;
@@ -394,6 +396,375 @@ public sealed class WorkflowBindingTopologySemanticsTests
     }
 
     /// <summary>
+    /// A written low-confidence occurrence cannot participate in typed rollback until the
+    /// runtime compensation topology can journal that alternate path.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_WrittenConfidenceHandlerOutsideRuntimeTopology_ReportsAgwf045()
+    {
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: BoundStageContract(),
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("review", 1, 1),
+                ("undo-review", 1, 1),
+                ("done", 1, 3),
+                ("undo-done", 3, 1)),
+            topology: string.Empty,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                    .RequireConfidence(0.8)
+                    .OnLowConfidence(handler => handler
+                        .Then<ReviewStep>(review => review
+                            .Performs(new WorkflowActionReference(
+                                "orders", "Order", "review"))
+                            .Compensate<ReviewStep>(new WorkflowActionReference(
+                                "orders", "Order", "undo-review")))
+                        .RejoinMainFlow())
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ReviewStep");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("outside the closed compensation topology");
+    }
+
+    /// <summary>
+    /// Empty-frame identity leaves still need occurrence metadata when a typed program is active:
+    /// their own failure must name a concrete rollback scope.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_IdentityConfidenceHandlerOutsideRuntimeTopology_ReportsAgwf045()
+    {
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: BoundStageContract(),
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("done", 1, 3),
+                ("undo-done", 3, 1))
+                + """
+
+                    obj.Action("review-identity")
+                        .Requires(order => order.Stage == 1);
+                    """,
+            topology: string.Empty,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                    .RequireConfidence(0.8)
+                    .OnLowConfidence(handler => handler
+                        .Then<ReviewStep>(review => review.Performs(
+                            new WorkflowActionReference(
+                                "orders", "Order", "review-identity")))
+                        .RejoinMainFlow())
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ReviewStep");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("failure metadata");
+    }
+
+    /// <summary>An empty-frame approval path is executable and therefore also needs a scope.</summary>
+    [Test]
+    public async Task TypedCompensation_IdentityApprovalPathOutsideRuntimeTopology_ReportsAgwf045()
+    {
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: """
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 1)
+                .Modifies(order => order.Stage)
+                """,
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("done", 1, 1),
+                ("undo-done", 1, 1))
+                + """
+
+                    obj.Action("reject-identity")
+                        .Requires(order => order.Stage == 1);
+                    """,
+            topology: """
+                .AwaitApproval<Reviewer>(approval => approval
+                    .OnRejection(rejection => rejection
+                        .Then<RejectedStep>(step => step.Performs(
+                            new WorkflowActionReference(
+                                "orders", "Order", "reject-identity")))
+                        .Complete()))
+                """,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("RejectedStep");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("failure metadata");
+    }
+
+    /// <summary>
+    /// A terminal approval cannot seed rollback from a phase shared by multiple branch
+    /// occurrences; the more general branch-routing ambiguity is diagnosed first.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_TerminalApprovalWithAmbiguousAnchor_ReportsAgwf045()
+    {
+        const string reviewConfiguration = """
+            step => step
+                .Performs(new WorkflowActionReference("orders", "Order", "review"))
+                .Compensate<ReviewStep>(new WorkflowActionReference(
+                    "orders", "Order", "undo-review"))
+            """;
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: BoundStageContract(),
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("review", 1, 2),
+                ("undo-review", 2, 1),
+                ("done", 2, 3),
+                ("undo-done", 3, 2)),
+            topology: $$"""
+                .Branch(state => state.Route,
+                    BranchCase<FlowState, int>.When(1, path => path
+                        .Then<ReviewStep>({{reviewConfiguration}})
+                        .AwaitApproval<Reviewer>(approval => approval.WithContext("review"))
+                        .RejoinMainFlow()),
+                    BranchCase<FlowState, int>.Otherwise(path => path
+                        .Then<ReviewStep>({{reviewConfiguration}})
+                        .RejoinMainFlow()))
+                """,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ReviewStep");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("shared forward start command");
+    }
+
+    /// <summary>
+    /// A shared phase command cannot select between otherwise identical branch occurrences:
+    /// unlike fork commands, it carries no durable branch-path identity at dispatch.
+    /// </summary>
+    [Test]
+    public async Task TypedCompensation_SharedBranchPhaseWithoutDispatchIdentity_ReportsAgwf045()
+    {
+        const string reviewConfiguration = """
+            step => step
+                .Performs(new WorkflowActionReference("orders", "Order", "review"))
+                .Compensate<ReviewStep>(new WorkflowActionReference(
+                    "orders", "Order", "undo-review"))
+            """;
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: BoundStageContract(),
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("review", 1, 2),
+                ("undo-review", 2, 1),
+                ("done", 2, 3),
+                ("undo-done", 3, 2)),
+            topology: $$"""
+                .Branch(state => state.Route,
+                    BranchCase<FlowState, int>.When(1, path => path
+                        .Then<ReviewStep>({{reviewConfiguration}})
+                        .RejoinMainFlow()),
+                    BranchCase<FlowState, int>.Otherwise(path => path
+                        .Then<ReviewStep>({{reviewConfiguration}})
+                        .RejoinMainFlow()))
+                """,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).HasCount().EqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("AGWF045");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ReviewStep");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("branch path identity");
+    }
+
+    /// <summary>A unique preceding occurrence soundly anchors direct approval failure rollback.</summary>
+    [Test]
+    public async Task TypedCompensation_TerminalApprovalWithUniqueAnchor_IsProved()
+    {
+        var diagnostics = RunClosedProof(TopologySource(
+            boundContract: BoundStageContract(),
+            actionDeclarations: StageActions(
+                ("entry", 0, 1),
+                ("undo-entry", 1, 0),
+                ("done", 1, 3),
+                ("undo-done", 3, 1)),
+            topology: """
+                .AwaitApproval<Reviewer>(approval => approval.WithContext("review"))
+                """,
+            startConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "entry"))
+                    .Compensate<DoneStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-entry"))
+                """,
+            finalConfiguration: """
+                step => step
+                    .Performs(new WorkflowActionReference("orders", "Order", "done"))
+                    .Compensate<EntryStep>(new WorkflowActionReference(
+                        "orders", "Order", "undo-done"))
+                """));
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    /// <summary>A terminal approval cannot use a concurrent fork lane as its rollback anchor.</summary>
+    [Test]
+    public async Task TypedCompensation_TerminalApprovalAnchoredInForkScope_IsRejected()
+    {
+        var forked = StepModel.Create(
+            "Forked",
+            "BindingProof.Forked",
+            compensation: new CompensationModel(
+                "BindingProof.UndoForked",
+                InverseAction: new WorkflowActionReferenceModel(
+                    "orders",
+                    "Order",
+                    "undo-forked"),
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+            action: new WorkflowActionReferenceModel("orders", "Order", "forked"));
+        var sibling = StepModel.Create("Sibling", "BindingProof.Sibling");
+        var model = WorkflowModel.Create(
+            "fork-approval",
+            "ForkApproval",
+            "BindingProof",
+            ["Entry", "Forked", "Sibling", "Join", "Done"],
+            steps:
+            [
+                StepModel.Create("Entry", "BindingProof.Entry"),
+                forked,
+                sibling,
+                StepModel.Create("Join", "BindingProof.Join"),
+                StepModel.Create("Done", "BindingProof.Done"),
+            ],
+            forks:
+            [
+                ForkModel.Create(
+                    "ForkApproval-Fork0",
+                    "Entry",
+                    [
+                        ForkPathModel.Create(0, [forked], false, false),
+                        ForkPathModel.Create(1, [sibling], false, false),
+                    ],
+                    "Join"),
+            ]);
+        var topology = CompensationTopology.Build(model);
+        var approval = ApprovalModel.Create(
+            "Reviewer",
+            "BindingProof.Reviewer",
+            "Forked");
+
+        var failure = WorkflowBindingProofAnalyzer.FindTerminalApprovalAnchorFailure(
+            topology,
+            approval);
+
+        await Assert.That(topology.IsClosed).IsTrue();
+        await Assert.That(failure).Contains("inside a fork scope");
+        await Assert.That(failure).Contains("fork occurrence identity");
+    }
+
+    /// <summary>A terminal approval anchor must resolve to exactly one structural occurrence.</summary>
+    [Test]
+    public async Task TerminalApprovalAnchor_WithTwoBranchOccurrences_IsRejected()
+    {
+        var review = StepModel.Create(
+            "Review",
+            "BindingProof.Review",
+            compensation: new CompensationModel(
+                "BindingProof.UndoReview",
+                InverseAction: new WorkflowActionReferenceModel(
+                    "orders",
+                    "Order",
+                    "undo-review"),
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved),
+            action: new WorkflowActionReferenceModel("orders", "Order", "review"));
+        var branch = BranchModel.Create(
+            "route",
+            "Entry",
+            "Route",
+            "int",
+            isEnumDiscriminator: false,
+            isMethodDiscriminator: false,
+            cases:
+            [
+                BranchCaseModel.Create("1", "Selected", ["Review"], isTerminal: false),
+                BranchCaseModel.Create("_", "Otherwise", ["Review"], isTerminal: false),
+            ],
+            rejoinStepName: "Done");
+        var model = WorkflowModel.Create(
+            "branch-approval",
+            "BranchApproval",
+            "BindingProof",
+            ["Entry", "Review", "Done"],
+            steps:
+            [
+                StepModel.Create("Entry", "BindingProof.Entry"),
+                review,
+                StepModel.Create("Done", "BindingProof.Done"),
+            ],
+            branches: [branch]);
+        var failure = WorkflowBindingProofAnalyzer.FindTerminalApprovalAnchorFailure(
+            CompensationTopology.Build(model),
+            ApprovalModel.Create("Reviewer", "BindingProof.Reviewer", "Review"));
+
+        await Assert.That(failure).Contains("maps to 2 compiled occurrences");
+    }
+
+    /// <summary>
     /// Disjoint fork paths may contribute separate facts whose conjunction establishes the
     /// configured join requirement and survives through the workflow exit.
     /// </summary>
@@ -651,10 +1022,13 @@ public sealed class WorkflowBindingTopologySemanticsTests
             "AGWF039",
             "AGWF040",
             "AGWF041",
-            "AGWF042");
+            "AGWF042",
+            "AGWF044",
+            "AGWF045");
         var unexpectedGeneratorErrors = result.Diagnostics
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .Where(diagnostic => diagnostic.Id is not ("AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
+            .Where(diagnostic => diagnostic.Id is not (
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045"))
             .ToArray();
         if (unexpectedGeneratorErrors.Length != 0)
         {
@@ -665,7 +1039,8 @@ public sealed class WorkflowBindingTopologySemanticsTests
         }
 
         return result.Diagnostics
-            .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
+            .Where(diagnostic => diagnostic.Id is
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
     }
 
@@ -689,6 +1064,9 @@ public sealed class WorkflowBindingTopologySemanticsTests
         string topology,
         string startConfiguration = """
             step => step.Performs(new WorkflowActionReference("orders", "Order", "entry"))
+            """,
+        string finalConfiguration = """
+            step => step.Performs(new WorkflowActionReference("orders", "Order", "done"))
             """,
         string workflowChainPrefix = "",
         string beforeFinallySuffix = "") => $$"""
@@ -771,8 +1149,7 @@ public sealed class WorkflowBindingTopologySemanticsTests
                 .StartWith<EntryStep>({{startConfiguration}})
                 {{topology}}
                 {{beforeFinallySuffix}}
-                .Finally<DoneStep>(step => step.Performs(
-                    new WorkflowActionReference("orders", "Order", "done")));
+                .Finally<DoneStep>({{finalConfiguration}});
         }
         """;
 }

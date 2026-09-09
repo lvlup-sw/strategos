@@ -73,6 +73,11 @@ internal sealed class SagaStartMethodEmitter : ISagaComponentEmitter
             sb.AppendLine("            State = command.InitialState,");
         }
 
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine("            CompensationJournalSchemaVersion = 1,");
+        }
+
         sb.AppendLine("            StartedAt = DateTimeOffset.UtcNow");
         sb.AppendLine("        };");
         sb.AppendLine();

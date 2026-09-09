@@ -450,6 +450,22 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             context.SemanticModel,
             ct);
 
+        // Preserve authored role provenance before recovery/path lowering folds additional
+        // step types into the shared Steps collection. A CLR type may legitimately serve both
+        // a normal forward occurrence and a dedicated OnFailure recovery occurrence.
+        var mainFlowStepPhaseNames = FluentDslParser.ExtractMainFlowStepPhaseNames(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+        var forwardStepTypeNames = FluentDslParser.ExtractForwardStepTypeNames(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+        var forwardStepPhaseNames = FluentDslParser.ExtractForwardStepPhaseNames(
+            context.TargetNode,
+            context.SemanticModel,
+            ct);
+
         // Extract state type name from Workflow<TState>
         var stateTypeName = FluentDslParser.ExtractStateTypeName(
             context.TargetNode,
@@ -539,6 +555,24 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             pascalName,
             ct);
 
+        // A repeated recovery phase within one handler would generate duplicate dedicated
+        // commands, events, handlers, and saga Handle signatures. Reject it with the existing
+        // EffectiveName diagnostic, then collapse the invalid IR so the diagnostic itself does
+        // not cascade into CS0101/CS0111 noise in generated output.
+        var duplicateFailureStepNames = failureHandlerModels
+            .SelectMany(handler => handler.StepPhaseNames
+                .GroupBy(static name => name, StringComparer.Ordinal)
+                .Where(static occurrences => occurrences.Count() > 1)
+                .Select(static occurrences => occurrences.Key))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (duplicateFailureStepNames.Count > 0)
+        {
+            failureHandlerModels = failureHandlerModels
+                .Select(CollapseDuplicateFailureHandlerPhases)
+                .ToList();
+        }
+
         // Extract approval models for approval handler generation
         var approvalModels = FluentDslParser.ExtractApprovalModels(
             context.TargetNode,
@@ -561,7 +595,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         if (failureHandlerModels.Count > 0)
         {
             // Estimate additional capacity needed from failure handlers
-            var estimatedAdditionalSteps = failureHandlerModels.Sum(h => h.StepNames.Count);
+            var estimatedAdditionalSteps = failureHandlerModels.Sum(h => h.StepPhaseNames.Count);
             var estimatedAdditionalModels = failureHandlerModels.Sum(h => h.Steps?.Count ?? 0);
 
             // Pre-allocate with estimated capacity to avoid reallocations
@@ -572,11 +606,11 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
             // Use HashSet for O(1) Contains lookups instead of O(n) List.Contains
             var existingStepNames = new HashSet<string>(stepNames, StringComparer.Ordinal);
-            var existingStepModelNames = new HashSet<string>(stepModels.Select(s => s.StepName), StringComparer.Ordinal);
+            var existingStepModelNames = new HashSet<string>(stepModels.Select(s => s.PhaseName), StringComparer.Ordinal);
 
             foreach (var handler in failureHandlerModels)
             {
-                foreach (var handlerStep in handler.StepNames)
+                foreach (var handlerStep in handler.StepPhaseNames)
                 {
                     if (!existingStepNames.Contains(handlerStep))
                     {
@@ -590,10 +624,10 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                 {
                     foreach (var handlerStepModel in handler.Steps)
                     {
-                        if (!existingStepModelNames.Contains(handlerStepModel.StepName))
+                        if (!existingStepModelNames.Contains(handlerStepModel.PhaseName))
                         {
                             allStepModels.Add(handlerStepModel);
-                            existingStepModelNames.Add(handlerStepModel.StepName);
+                            existingStepModelNames.Add(handlerStepModel.PhaseName);
                         }
                     }
                 }
@@ -896,6 +930,8 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
                     || SpansMultipleBranches(branchIdsByStepName, g.Key)))
             .Select(g => g.Key)
             .ToList();
+        duplicateSteps.AddRange(duplicateFailureStepNames.Where(name =>
+            !duplicateSteps.Contains(name, StringComparer.Ordinal)));
 
         foreach (var duplicate in duplicateSteps)
         {
@@ -1078,6 +1114,9 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             DiagnosticForks: diagnosticForkModels)
         {
             StateHasPhaseProperty = stateHasPhaseProperty,
+            MainFlowStepPhaseNames = mainFlowStepPhaseNames,
+            ForwardStepPhaseNames = forwardStepPhaseNames,
+            ForwardStepTypeNames = forwardStepTypeNames,
             TopologyClosureFailures = topologyClosureFailures,
         };
 
@@ -1105,7 +1144,7 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
     /// <param name="workflowName">The validated workflow name, threaded into messages.</param>
     /// <param name="location">The diagnostic location (the workflow attribute).</param>
     /// <param name="diagnostics">The diagnostics accumulator to append to.</param>
-    private static void ReportResilienceDiagnostics(
+    internal static void ReportResilienceDiagnostics(
         IReadOnlyList<StepModel> stepModels,
         IReadOnlyList<ApprovalModel> approvalModels,
         string workflowName,
@@ -1162,6 +1201,19 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
 
             // NonPositiveTimeout — non-positive WithTimeout.
             if (step.Timeout is { } timeout && timeout.Timeout <= TimeSpan.Zero)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    WorkflowDiagnostics.NonPositiveTimeout,
+                    location,
+                    step.EffectiveName,
+                    workflowName));
+            }
+
+            // A compensation deadline is an independent execution bound. Letting a zero or
+            // negative value reach the rollback emitter would create a structurally invalid
+            // journal entry and defer an authoring error until runtime.
+            if (step.Compensation?.Timeout is { } compensationTimeout
+                && compensationTimeout <= TimeSpan.Zero)
             {
                 diagnostics.Add(Diagnostic.Create(
                     WorkflowDiagnostics.NonPositiveTimeout,
@@ -1311,6 +1363,38 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
             .FirstOrDefault();
 
         return attributeList?.GetLocation() ?? context.TargetNode.GetLocation();
+    }
+
+    private static FailureHandlerModel CollapseDuplicateFailureHandlerPhases(FailureHandlerModel handler)
+    {
+        var phaseNames = handler.StepPhaseNames;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var keptIndices = new List<int>(phaseNames.Count);
+        for (var i = 0; i < phaseNames.Count; i++)
+        {
+            if (seen.Add(phaseNames[i]))
+            {
+                keptIndices.Add(i);
+            }
+        }
+
+        if (keptIndices.Count == phaseNames.Count)
+        {
+            return handler;
+        }
+
+        var distinctPhaseNames = keptIndices.Select(index => phaseNames[index]).ToList();
+        IReadOnlyList<StepModel>? distinctSteps = handler.Steps;
+        if (handler.Steps is not null && handler.Steps.Count == phaseNames.Count)
+        {
+            distinctSteps = keptIndices.Select(index => handler.Steps[index]).ToList();
+        }
+
+        return handler with
+        {
+            StepNames = distinctPhaseNames,
+            Steps = distinctSteps,
+        };
     }
 
     private static string WrapMermaidAsCSharp(WorkflowModel model, string mermaidContent)

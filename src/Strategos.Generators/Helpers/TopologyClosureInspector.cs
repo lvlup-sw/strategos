@@ -25,6 +25,7 @@ internal static class TopologyClosureInspector
     private static readonly HashSet<string> ModelAffectingMethodNames = new(StringComparer.Ordinal)
     {
         "AwaitApproval",
+        "AllowDiagnosticFork",
         "Branch",
         "Compensate",
         "Complete",
@@ -66,6 +67,8 @@ internal static class TopologyClosureInspector
 
         InspectInvocationOwnership(context, failures);
         InspectWorkflowChain(context, failures);
+        InspectDuplicateStepCompensations(context, failures);
+        InspectCollapsedCompensationConflicts(context, failures);
         var invocations = context.FinallyInvocation
             .DescendantNodesAndSelf()
             .OfType<InvocationExpressionSyntax>()
@@ -84,6 +87,11 @@ internal static class TopologyClosureInspector
             var containingType = operation.TargetMethod.ContainingType.OriginalDefinition.Name;
             switch (operation.TargetMethod.Name)
             {
+                case "AllowDiagnosticFork":
+                    failures.Add(
+                        "AllowDiagnosticFork is not represented in the current statically closed workflow proof; diagnostic fork paths are not admitted in a bound or typed-compensation workflow");
+                    break;
+
                 case "Branch" when containingType is "IWorkflowBuilder" or "ILoopBuilder":
                     InspectBranch(context, invocation, operation, containingType, failures);
                     break;
@@ -143,6 +151,51 @@ internal static class TopologyClosureInspector
         return failures
             .Distinct(StringComparer.Ordinal)
             .ToImmutableArray();
+    }
+
+    private static void InspectDuplicateStepCompensations(
+        FluentDslParseContext context,
+        ImmutableArray<string>.Builder failures)
+    {
+        var duplicateConfigurations = context.AllInvocations
+            .Select(invocation =>
+            {
+                var isCompensation = TryGetDslOperation(context, invocation, out var operation)
+                    && string.Equals(operation.TargetMethod.Name, "Compensate", StringComparison.Ordinal)
+                    && string.Equals(
+                        operation.TargetMethod.ContainingType.OriginalDefinition.Name,
+                        "IStepConfiguration",
+                        StringComparison.Ordinal);
+                return (Invocation: invocation, IsCompensation: isCompensation);
+            })
+            .Where(static item => item.IsCompensation)
+            .Select(static item => (
+                item.Invocation,
+                Configuration: item.Invocation.FirstAncestorOrSelf<LambdaExpressionSyntax>()))
+            .Where(static item => item.Configuration is not null)
+            .GroupBy(static item => item.Configuration!)
+            .Where(static group => group.Skip(1).Any())
+            .OrderBy(static group => group.Key.SpanStart);
+
+        foreach (var duplicate in duplicateConfigurations)
+        {
+            failures.Add(
+                "step configuration contains duplicate Compensate declarations; each occurrence may declare at most one compensation");
+        }
+    }
+
+    private static void InspectCollapsedCompensationConflicts(
+        FluentDslParseContext context,
+        ImmutableArray<string>.Builder failures)
+    {
+        foreach (var step in StepExtractor.ExtractStepModels(context)
+            .Where(static candidate => candidate.Compensation?.HasConflictingDeclarations == true)
+            .OrderBy(static candidate => candidate.PhaseName, StringComparer.Ordinal))
+        {
+            failures.Add(
+                $"phase '{step.PhaseName}' collapses repeated step aliases with conflicting "
+                + "Compensate declarations; one phase must have one compensation program");
+        }
     }
 
     private static void InspectInvocationOwnership(

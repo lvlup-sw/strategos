@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 37,
+  "count": 39,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -296,6 +296,22 @@
       "severity": "error",
       "summary": "Workflow generated identity collision",
       "remediation": "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique.",
+      "since": "2.13.0"
+    },
+    {
+      "name": "AuthoredInverseDisagrees",
+      "id": "AGWF044",
+      "severity": "error",
+      "summary": "Authored compensation disagrees with derived inverse",
+      "remediation": "Step '{0}' in workflow '{1}' declares inverse action '{2}' for forward action '{3}', but their contracts disagree: {4}",
+      "since": "2.13.0"
+    },
+    {
+      "name": "CompensationScopeNotDerivable",
+      "id": "AGWF045",
+      "severity": "error",
+      "summary": "Compensation scope is not mechanically derivable",
+      "remediation": "Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action.",
       "since": "2.13.0"
     }
   ]

@@ -169,6 +169,14 @@ public enum AgwfCode
     /// <summary>AGWF043 — Workflow generated identity collision.</summary>
     [JsonStringEnumMemberName("AGWF043")]
     WorkflowEmissionIdentityCollision,
+
+    /// <summary>AGWF044 — Authored compensation disagrees with derived inverse.</summary>
+    [JsonStringEnumMemberName("AGWF044")]
+    AuthoredInverseDisagrees,
+
+    /// <summary>AGWF045 — Compensation scope is not mechanically derivable.</summary>
+    [JsonStringEnumMemberName("AGWF045")]
+    CompensationScopeNotDerivable,
 }
 
 public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
@@ -222,6 +230,8 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             "AGWF041" => AgwfCode.WorkflowBindingRefinementFailed,
             "AGWF042" => AgwfCode.WorkflowContractUnprovable,
             "AGWF043" => AgwfCode.WorkflowEmissionIdentityCollision,
+            "AGWF044" => AgwfCode.AuthoredInverseDisagrees,
+            "AGWF045" => AgwfCode.CompensationScopeNotDerivable,
             _ => throw new JsonException("Unknown AgwfCode wire token."),
         };
     }
@@ -270,6 +280,8 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             AgwfCode.WorkflowBindingRefinementFailed => "AGWF041",
             AgwfCode.WorkflowContractUnprovable => "AGWF042",
             AgwfCode.WorkflowEmissionIdentityCollision => "AGWF043",
+            AgwfCode.AuthoredInverseDisagrees => "AGWF044",
+            AgwfCode.CompensationScopeNotDerivable => "AGWF045",
             _ => throw new JsonException("Unknown AgwfCode value."),
         };
 

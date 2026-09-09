@@ -58,6 +58,25 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
     public WorkflowInvocationLog Invocations { get; } = new();
 
     /// <summary>
+    /// Gets the shared step-identity probe. Instrumented workflow steps record the
+    /// <see cref="Strategos.Steps.StepContext.ExecutionId"/> triple they were handed
+    /// so a test can assert the durable idempotency contract.
+    /// </summary>
+    public StepExecutionIdProbe ExecutionIds { get; } = new();
+
+    /// <summary>
+    /// Gets the running host's service provider, so a test can reach Marten directly
+    /// (to race two sessions against a persisted saga document) or read Wolverine's
+    /// generated handler source.
+    /// </summary>
+    public IServiceProvider Services => this.RequireHost().Services;
+
+    /// <summary>
+    /// Gets the Marten document store backing saga persistence.
+    /// </summary>
+    public IDocumentStore Store => this.Services.GetRequiredService<IDocumentStore>();
+
+    /// <summary>
     /// Starts the shared Postgres container, then builds and starts the Wolverine
     /// host with Marten-backed saga storage and the generated compensation-workflow
     /// registration.
@@ -84,7 +103,26 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
                 // lowered from .WithRetry(2).Compensate<RollbackStep>() (DR-3).
                 opts.Services.AddCompensationProofWorkflow();
 
+                // #169 typed inverse fixture: A and B complete, C fails, and the
+                // generated durable journal derives UndoB then UndoA.
+                opts.Services.AddDerivedCompensationProofWorkflow();
+
+                // A fork-join workflow, so a test can make two lane completions race
+                // for the SAME saga document. Each lane completion is a
+                // read-modify-write of that lane's ForkPathStatus followed by a join
+                // readiness check; under a last-write-wins Update the loser's status
+                // is clobbered and the join never fires. This is the JSON-imported
+                // fork rather than the C#-authored twin because the twin does not
+                // reach its terminal step (strategos#155).
+                opts.Services.AddRoundtripForkImportWorkflow();
+
+                // Inverse-deadline fixture: its first occurrence authors a one-second
+                // deadline through Compensate<T>(inverseAction, timeout) while its inverse
+                // takes twenty seconds, so the authored value decides the runtime outcome.
+                opts.Services.AddCompensationDeadlineProofWorkflow();
+
                 opts.Services.AddSingleton(this.Invocations);
+                opts.Services.AddSingleton(this.ExecutionIds);
                 opts.Services.AddResourceSetupOnStartup();
             })
             .StartAsync();
@@ -160,6 +198,143 @@ public sealed class CompensationHostFixture : IAsyncInitializer, IAsyncDisposabl
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Publishes generated start commands for several workflows at once and then
+    /// polls each saga document until it is removed by <c>MarkCompleted()</c>.
+    /// </summary>
+    /// <typeparam name="TSaga">The generated saga document type polled for terminal completion.</typeparam>
+    /// <param name="workflowIds">The workflow identities, aligned with <paramref name="startCommands"/>.</param>
+    /// <param name="startCommands">The generated start commands.</param>
+    /// <param name="expectedInvocations">
+    /// How many step invocations the batch must produce before absence is accepted as
+    /// completion. Saga-document absence ALONE is not proof: a saga that was never
+    /// created is absent for the whole poll, so an unrouted start command would look
+    /// identical to a workflow that ran and finished.
+    /// </param>
+    /// <param name="terminalBudget">Total budget for every saga to settle. Defaults to 120 seconds.</param>
+    /// <returns>The identities that had NOT reached their terminal phase when the budget elapsed.</returns>
+    /// <remarks>
+    /// Deliberately does NOT use <c>TrackActivity()</c>. A tracked session observes the
+    /// whole runtime, so several concurrent tracked sessions cross-talk; the point of
+    /// this helper is to have many sagas in flight at once so their handlers contend.
+    /// Saga-document absence is the terminal signal, exactly as in
+    /// <see cref="RunToTerminalAsync{TSaga}"/>.
+    /// </remarks>
+    public async Task<IReadOnlyList<Guid>> RunManyToTerminalAsync<TSaga>(
+        IReadOnlyList<Guid> workflowIds,
+        IReadOnlyList<object> startCommands,
+        int expectedInvocations,
+        TimeSpan? terminalBudget = null)
+        where TSaga : class
+    {
+        ArgumentNullException.ThrowIfNull(workflowIds, nameof(workflowIds));
+        ArgumentNullException.ThrowIfNull(startCommands, nameof(startCommands));
+
+        if (workflowIds.Count != startCommands.Count)
+        {
+            throw new ArgumentException(
+                "workflowIds and startCommands must be the same length.", nameof(startCommands));
+        }
+
+        var runtime = this.RequireHost();
+        var budget = terminalBudget ?? TimeSpan.FromSeconds(120);
+
+        await Task.WhenAll(startCommands.Select(async command =>
+        {
+            await using var scope = runtime.Services.CreateAsyncScope();
+            var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+            await bus.PublishAsync(command);
+        }));
+
+        var store = runtime.Services.GetRequiredService<IDocumentStore>();
+        var pending = new List<Guid>(workflowIds);
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed < budget)
+        {
+            await using (var query = store.QuerySession())
+            {
+                var stillRunning = new List<Guid>(pending.Count);
+                foreach (var id in pending)
+                {
+                    if (await query.LoadAsync<TSaga>(id) is not null)
+                    {
+                        stillRunning.Add(id);
+                    }
+                }
+
+                pending = stillRunning;
+            }
+
+            // Absence is only accepted once the batch has demonstrably DONE the work.
+            if (pending.Count == 0 && this.Invocations.TotalCount >= expectedInvocations)
+            {
+                return pending;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        }
+
+        return pending;
+    }
+
+    /// <summary>
+    /// Publishes a generated start command, then polls the saga document until
+    /// <paramref name="isSettled"/> accepts it or the budget elapses. Unlike
+    /// <see cref="RunToTerminalAsync{TSaga}"/> this is for workflows that deliberately do
+    /// NOT complete: a retained saga is the observable outcome.
+    /// </summary>
+    /// <typeparam name="TSaga">The generated saga document type.</typeparam>
+    /// <param name="workflowId">The workflow/saga identity to wait on.</param>
+    /// <param name="startCommand">The generated start command.</param>
+    /// <param name="isSettled">Predicate deciding whether the loaded saga has settled.</param>
+    /// <param name="budget">Total polling budget; defaults to 60 seconds.</param>
+    /// <returns>The settled saga document, or <see langword="null"/> if the budget elapsed.</returns>
+    public async Task<TSaga?> RunToSettledSagaAsync<TSaga>(
+        Guid workflowId,
+        object startCommand,
+        Func<TSaga, bool> isSettled,
+        TimeSpan? budget = null)
+        where TSaga : class
+    {
+        ArgumentNullException.ThrowIfNull(startCommand, nameof(startCommand));
+        ArgumentNullException.ThrowIfNull(isSettled, nameof(isSettled));
+
+        var runtime = this.RequireHost();
+        var window = budget ?? TimeSpan.FromSeconds(60);
+
+        try
+        {
+            await runtime
+                .TrackActivity()
+                .Timeout(window)
+                .DoNotAssertOnExceptionsDetected()
+                .PublishMessageAndWaitAsync(startCommand);
+        }
+        catch (TimeoutException)
+        {
+            // The slow inverse keeps the tracked session busy well past the point the saga
+            // has recorded its outcome; the poll below is the authoritative signal.
+        }
+
+        var store = runtime.Services.GetRequiredService<IDocumentStore>();
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed < window)
+        {
+            await using var query = store.QuerySession();
+            var saga = await query.LoadAsync<TSaga>(workflowId);
+            if (saga is not null && isSettled(saga))
+            {
+                return saga;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), CancellationToken.None);
+        }
+
+        return null;
     }
 
     /// <summary>

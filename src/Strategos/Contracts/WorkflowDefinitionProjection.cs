@@ -5,6 +5,7 @@
 // =============================================================================
 
 using Strategos.Definitions;
+
 using Wire = Strategos.Contracts.Generated;
 
 namespace Strategos.Contracts;
@@ -354,6 +355,7 @@ public static class WorkflowDefinitionProjection
     {
         // LB-2: simple type name moniker for the compensation step.
         CompensationStepType = c.CompensationStepType.Name,
+        InverseAction = ProjectAction(c.InverseAction),
         RequiredOnFailure = c.RequiredOnFailure,
         Timeout = c.Timeout is { } t ? System.Xml.XmlConvert.ToString(t) : null,
     };

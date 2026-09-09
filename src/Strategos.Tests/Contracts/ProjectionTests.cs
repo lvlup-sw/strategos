@@ -5,6 +5,7 @@
 // =============================================================================
 
 using System.Reflection;
+
 using Strategos.Contracts;
 using Strategos.Contracts.Generated;
 using Strategos.Steps;
@@ -230,7 +231,10 @@ public class ProjectionTests
                 path => path.Then<ProcessStep>(step => step
                     .WithRetry(3, TimeSpan.FromSeconds(5))
                     .WithTimeout(TimeSpan.FromMinutes(2))
-                    .Compensate<RefundStep>()),
+                    .Compensate<RefundStep>(new WorkflowActionReference(
+                        "orders",
+                        "Order",
+                        "refund"))),
                 path => path.Then<NotifyStep>())
             .Join<CompleteStep>()
             .Finally<NotifyAdminStep>();
@@ -250,6 +254,9 @@ public class ProjectionTests
         await Assert.That(configuredStep.Configuration!.Compensation).IsNotNull();
         await Assert.That(configuredStep.Configuration!.Compensation!.CompensationStepType)
             .IsEqualTo(typeof(RefundStep).Name);
+        await Assert.That(configuredStep.Configuration!.Compensation!.InverseAction).IsNotNull();
+        await Assert.That(configuredStep.Configuration!.Compensation!.InverseAction!.ActionName)
+            .IsEqualTo("refund");
 
         // The unconfigured branch step carries no configuration.
         var plainStep = v1.ForkPoints[0].Paths[1].Steps.OfType<SkillStep>().First();

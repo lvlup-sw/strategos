@@ -7,6 +7,271 @@ namespace Strategos.Ontology.Descriptors;
 /// <summary>Pure composition operations over action contracts.</summary>
 public static class ActionCalculus
 {
+    /// <summary>Derives the inverse of a forward action without an authored inverse.</summary>
+    public static ActionInverseAnalysis AnalyzeInverse(
+        ActionDescriptor forwardAction,
+        AuthorityLattice authorityLattice) =>
+        AnalyzeInverse(forwardAction, null, authorityLattice, default);
+
+    /// <summary>Derives the inverse of a forward action without an authored inverse.</summary>
+    public static ActionInverseAnalysis AnalyzeInverse(
+        ActionDescriptor forwardAction,
+        AuthorityLattice authorityLattice,
+        CancellationToken cancellationToken) =>
+        AnalyzeInverse(forwardAction, null, authorityLattice, cancellationToken);
+
+    /// <summary>Derives and proves an authored inverse using the supplied authority lattice.</summary>
+    public static ActionInverseAnalysis AnalyzeInverse(
+        ActionDescriptor forwardAction,
+        ActionDescriptor? authoredInverse,
+        AuthorityLattice authorityLattice) =>
+        AnalyzeInverse(forwardAction, authoredInverse, authorityLattice, default);
+
+    /// <summary>
+    /// Derives <c>A^-1</c> and proves that an optional authored inverse is semantically equivalent.
+    /// </summary>
+    public static ActionInverseAnalysis AnalyzeInverse(
+        ActionDescriptor forwardAction,
+        ActionDescriptor? authoredInverse,
+        AuthorityLattice authorityLattice,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(forwardAction);
+        ArgumentNullException.ThrowIfNull(authorityLattice);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var forwardProof = ActionContractProofEngine.Analyze(forwardAction, cancellationToken);
+        if (forwardProof.Kind == ActionContractProofKind.Invalid)
+        {
+            return InverseResult(
+                ActionInverseAnalysisStatus.Invalid,
+                forwardAction,
+                authoredInverse,
+                null,
+                ActionInverseObligation.ForwardContract,
+                forwardProof.Reason ?? "The forward action contract is invalid.");
+        }
+
+        if (forwardProof.Kind == ActionContractProofKind.Opaque)
+        {
+            return InverseResult(
+                ActionInverseAnalysisStatus.Opaque,
+                forwardAction,
+                authoredInverse,
+                null,
+                ActionInverseObligation.ForwardContract,
+                "Custom predicate evaluator(s) prevent derivation of a closed inverse: "
+                + string.Join(", ", forwardProof.OpaqueKeys)
+                + ".");
+        }
+
+        if (!TryResolveAuthority(
+                forwardAction,
+                authorityLattice,
+                out var forwardAuthority,
+                out var authorityFailure))
+        {
+            return InverseResult(
+                ActionInverseAnalysisStatus.Invalid,
+                forwardAction,
+                authoredInverse,
+                null,
+                ActionInverseObligation.ForwardContract,
+                authorityFailure!);
+        }
+
+        var frame = new ActionFrame(forwardAction.TouchedResources);
+        var derivedContract = new ActionInverseContract(
+            new ActionContractIdentity(forwardAction.Subject, forwardAction.Name),
+            forwardProof.EffectiveGuarantee,
+            forwardProof.Requirement,
+            forwardAuthority!,
+            frame);
+        var derivedDescriptor = new ActionDescriptor(
+            forwardAction.Subject,
+            $"{forwardAction.Name}^-1",
+            $"Mechanically derived inverse contract for {forwardAction.Name}.")
+        {
+            RequiredAuthority = forwardAction.RequiredAuthority,
+            Preconditions =
+            [
+                new ActionPrecondition(
+                    derivedContract.Requirement,
+                    derivedContract.Requirement.Expression),
+            ],
+            Ensures = [new ActionGuarantee(derivedContract.Guarantee)],
+            TouchedResources = frame.Resources,
+        };
+        var derivedProof = ActionContractProofEngine.Analyze(derivedDescriptor, cancellationToken);
+        if (derivedProof.Kind != ActionContractProofKind.Closed)
+        {
+            return InverseResult(
+                ActionInverseAnalysisStatus.Invalid,
+                forwardAction,
+                authoredInverse,
+                derivedContract,
+                ActionInverseObligation.ForwardContract,
+                derivedProof.Reason ?? "The mechanically derived inverse contract is invalid.");
+        }
+
+        if (authoredInverse is null)
+        {
+            if (frame.Resources.IsEmpty)
+            {
+                if (forwardAction.CompensatingActionName is not null)
+                {
+                    return InverseResult(
+                        ActionInverseAnalysisStatus.Refuted,
+                        forwardAction,
+                        null,
+                        derivedContract,
+                        ActionInverseObligation.ExecutableInverse,
+                        $"The declared inverse action '{forwardAction.CompensatingActionName}' was not supplied; "
+                        + "remove the broken declaration to use the empty identity inverse.");
+                }
+
+                return new ActionInverseAnalysis(
+                    ActionInverseAnalysisStatus.Proven,
+                    forwardAction,
+                    null,
+                    derivedContract,
+                    [],
+                    usesIdentityInverse: true);
+            }
+
+            var expected = forwardAction.CompensatingActionName is null
+                ? "The non-empty action frame requires an authored inverse."
+                : $"The declared inverse action '{forwardAction.CompensatingActionName}' was not supplied.";
+            return InverseResult(
+                ActionInverseAnalysisStatus.Missing,
+                forwardAction,
+                null,
+                derivedContract,
+                ActionInverseObligation.ExecutableInverse,
+                expected);
+        }
+
+        var failures = ImmutableArray.CreateBuilder<ActionInverseFailure>();
+        var hasInvalid = false;
+        var hasRefuted = false;
+        var hasOpaque = false;
+
+        if (forwardAction.CompensatingActionName is not null
+            && !string.Equals(
+                forwardAction.CompensatingActionName,
+                authoredInverse.Name,
+                StringComparison.Ordinal))
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.ExecutableInverse,
+                $"Forward action '{forwardAction.Subject}/{forwardAction.Name}' names inverse "
+                + $"'{forwardAction.CompensatingActionName}', but '{authoredInverse.Name}' was supplied."));
+            hasRefuted = true;
+        }
+
+        var authoredProof = ActionContractProofEngine.Analyze(authoredInverse, cancellationToken);
+        if (authoredProof.Kind == ActionContractProofKind.Invalid)
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.AuthoredContract,
+                authoredProof.Reason ?? "The authored inverse contract is invalid.",
+                ToCounterexample(authoredProof.Witness)));
+            hasInvalid = true;
+        }
+
+        if (!forwardAction.Subject.Equals(authoredInverse.Subject))
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.Subject,
+                $"Authored inverse subject '{authoredInverse.Subject}' does not match forward subject "
+                + $"'{forwardAction.Subject}'."));
+            hasRefuted = true;
+        }
+
+        AuthorityRequirement? authoredAuthority = null;
+        if (!TryResolveAuthority(
+                authoredInverse,
+                authorityLattice,
+                out authoredAuthority,
+                out authorityFailure))
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.AuthoredContract,
+                authorityFailure!));
+            hasInvalid = true;
+        }
+        else if (!AuthoritiesEqual(forwardAuthority!, authoredAuthority!, authorityLattice))
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.Authority,
+                "The authored inverse authority is not semantically equal to the forward authority."));
+            hasRefuted = true;
+        }
+
+        var authoredFrame = new ActionFrame(
+            authoredInverse.TouchedResources.Where(resource => resource is not null));
+        if (!frame.Resources.SequenceEqual(authoredFrame.Resources))
+        {
+            var expected = FormatFrame(frame);
+            var actual = FormatFrame(authoredFrame);
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.Frame,
+                $"The authored inverse declares a different frame: [{actual}] does not equal "
+                + $"the forward frame [{expected}]."));
+            hasRefuted = true;
+        }
+
+        if (authoredProof.Kind == ActionContractProofKind.Opaque)
+        {
+            failures.Add(new ActionInverseFailure(
+                ActionInverseObligation.AuthoredContract,
+                "Custom predicate evaluator(s) prevent a complete inverse proof: "
+                + string.Join(", ", authoredProof.OpaqueKeys)
+                + "."));
+            hasOpaque = true;
+        }
+        else if (authoredProof.Kind == ActionContractProofKind.Closed)
+        {
+            AddEquivalenceFailures(
+                failures,
+                ActionInverseObligation.Requirements,
+                forwardProof.EffectiveGuaranteeFormula,
+                authoredProof.RequirementFormula,
+                "Derived inverse requirement does not imply the authored inverse requirement.",
+                "Authored inverse requirement does not imply the derived inverse requirement.",
+                cancellationToken,
+                ref hasInvalid,
+                ref hasRefuted,
+                ref hasOpaque);
+            AddEquivalenceFailures(
+                failures,
+                ActionInverseObligation.Guarantees,
+                forwardProof.RequirementFormula,
+                authoredProof.EffectiveGuaranteeFormula,
+                "Derived inverse guarantee does not imply the authored inverse guarantee.",
+                "Authored inverse guarantee does not imply the derived inverse guarantee.",
+                cancellationToken,
+                ref hasInvalid,
+                ref hasRefuted,
+                ref hasOpaque);
+        }
+
+        var status = hasInvalid
+            ? ActionInverseAnalysisStatus.Invalid
+            : hasRefuted
+                ? ActionInverseAnalysisStatus.Refuted
+                : hasOpaque
+                    ? ActionInverseAnalysisStatus.Opaque
+                    : ActionInverseAnalysisStatus.Proven;
+        return new ActionInverseAnalysis(
+            status,
+            forwardAction,
+            authoredInverse,
+            derivedContract,
+            failures,
+            usesIdentityInverse: false);
+    }
+
     /// <summary>
     /// Proves that an executable action is a behavioral refinement of a declared
     /// action specification.
@@ -358,34 +623,150 @@ public static class ActionCalculus
         return analysis.Contract;
     }
 
-    /// <summary>
-    /// Derives the rollback order for a completed forward prefix.
-    /// </summary>
-    public static ImmutableArray<string> DeriveRollbackPlan(
-        IEnumerable<ActionDescriptor> completedForwardPrefix)
-    {
-        ArgumentNullException.ThrowIfNull(completedForwardPrefix);
-        var actions = completedForwardPrefix.ToArray();
-        if (actions.Any(action => string.IsNullOrWhiteSpace(action.CompensatingActionName)))
-        {
-            throw new InvalidOperationException(
-                "Every completed action must name a compensating action before a rollback plan can be derived.");
-        }
+    /// <summary>Creates the distinct empty rollback identity for one subject.</summary>
+    public static ActionRollbackPlan RollbackIdentity(ActionSubject subject) =>
+        new(ActionRollbackPlanKind.Identity, subject, null, []);
 
-        return actions
-            .Reverse()
-            .Select(action => action.CompensatingActionName!)
-            .ToImmutableArray();
+    /// <summary>Derives one rollback leaf from a completed forward action.</summary>
+    public static ActionRollbackPlan DeriveRollbackPlan(ActionInverseAnalysis inverse)
+    {
+        ArgumentNullException.ThrowIfNull(inverse);
+        var leaf = new ActionRollbackLeaf(inverse);
+        return new ActionRollbackPlan(
+            ActionRollbackPlanKind.Leaf,
+            inverse.ForwardAction.Subject,
+            leaf,
+            []);
     }
 
-    /// <summary>Checks an authored rollback sequence against the derived plan.</summary>
-    public static bool AuthoredRollbackAgrees(
-        IEnumerable<ActionDescriptor> completedForwardPrefix,
-        IEnumerable<string> authoredRollback)
+    /// <summary>
+    /// Derives rollback for a completed forward prefix. Only supplied completed
+    /// leaves participate, and their execution order is reversed mechanically.
+    /// </summary>
+    public static ActionRollbackPlan DeriveRollbackPlan(
+        ActionSubject subject,
+        IEnumerable<ActionInverseAnalysis> completedForwardPrefix)
     {
-        ArgumentNullException.ThrowIfNull(authoredRollback);
-        return DeriveRollbackPlan(completedForwardPrefix)
-            .SequenceEqual(authoredRollback, StringComparer.Ordinal);
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(completedForwardPrefix);
+        var children = completedForwardPrefix
+            .Select(DeriveRollbackPlan)
+            .ToArray();
+        return DeriveSequentialRollbackPlan(subject, children);
+    }
+
+    /// <summary>
+    /// Derives sequential rollback by reversing the completed forward children.
+    /// Nested sequential plans are flattened after reversal; scope boundaries are retained.
+    /// </summary>
+    public static ActionRollbackPlan DeriveSequentialRollbackPlan(
+        ActionSubject subject,
+        IEnumerable<ActionRollbackPlan> completedForwardChildren)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        var children = MaterializeRollbackChildren(subject, completedForwardChildren);
+        var rollbackOrder = children
+            .Reverse()
+            .SelectMany(child => child.Kind == ActionRollbackPlanKind.Sequence
+                ? child.Children
+                : [child])
+            .Where(child => child.Kind != ActionRollbackPlanKind.Identity)
+            .ToImmutableArray();
+        return rollbackOrder.Length switch
+        {
+            0 => RollbackIdentity(subject),
+            1 => rollbackOrder[0],
+            _ => new ActionRollbackPlan(
+                ActionRollbackPlanKind.Sequence,
+                subject,
+                null,
+                rollbackOrder),
+        };
+    }
+
+    /// <summary>
+    /// Derives parallel rollback without imposing a sequential order on independent branches.
+    /// </summary>
+    public static ActionRollbackPlan DeriveParallelRollbackPlan(
+        ActionSubject subject,
+        IEnumerable<ActionRollbackPlan> completedForwardBranches)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        var branches = MaterializeRollbackChildren(subject, completedForwardBranches)
+            .Where(child => child.Kind != ActionRollbackPlanKind.Identity)
+            .ToImmutableArray();
+        var interference = FindParallelRollbackInterference(branches);
+        if (interference is not null)
+        {
+            throw new ArgumentException(
+                interference,
+                nameof(completedForwardBranches));
+        }
+
+        return branches.IsEmpty
+            ? RollbackIdentity(subject)
+            : new ActionRollbackPlan(
+                ActionRollbackPlanKind.Parallel,
+                subject,
+                null,
+                branches);
+    }
+
+    private static string? FindParallelRollbackInterference(
+        ImmutableArray<ActionRollbackPlan> branches)
+    {
+        var conflicts = new List<(
+            ActionResource Resource,
+            bool IsWriteWrite,
+            int WriterIndex,
+            int OtherIndex)>();
+        for (var leftIndex = 0; leftIndex < branches.Length; leftIndex++)
+        {
+            var left = branches[leftIndex];
+            for (var rightIndex = leftIndex + 1; rightIndex < branches.Length; rightIndex++)
+            {
+                var right = branches[rightIndex];
+                conflicts.AddRange(left.Frame.Resources
+                    .Intersect(right.Frame.Resources)
+                    .Select(resource => (resource, true, leftIndex, rightIndex)));
+                conflicts.AddRange(left.Frame.Resources
+                    .Intersect(right.ReadFootprint.Resources)
+                    .Select(resource => (resource, false, leftIndex, rightIndex)));
+                conflicts.AddRange(right.Frame.Resources
+                    .Intersect(left.ReadFootprint.Resources)
+                    .Select(resource => (resource, false, rightIndex, leftIndex)));
+            }
+        }
+
+        if (conflicts.Count == 0)
+        {
+            return null;
+        }
+
+        var conflict = conflicts
+            .OrderBy(static item => item.Resource.Kind)
+            .ThenBy(static item => item.Resource.Name, StringComparer.Ordinal)
+            .ThenBy(static item => item.IsWriteWrite ? 0 : 1)
+            .ThenBy(static item => item.WriterIndex)
+            .ThenBy(static item => item.OtherIndex)
+            .First();
+        return conflict.IsWriteWrite
+            ? "Parallel rollback branches must have pairwise-disjoint frames; resource "
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is written during rollback by more than one branch."
+            : "Parallel rollback branches must be noninterfering; resource "
+                + $"'{conflict.Resource.Kind}:{conflict.Resource.Name}' is written during rollback by branch "
+                + $"{conflict.WriterIndex} and read by branch {conflict.OtherIndex}.";
+    }
+
+    /// <summary>Preserves a nested compensation boundary around a derived body plan.</summary>
+    public static ActionRollbackPlan DeriveScopedRollbackPlan(ActionRollbackPlan completedBody)
+    {
+        ArgumentNullException.ThrowIfNull(completedBody);
+        return new ActionRollbackPlan(
+            ActionRollbackPlanKind.Scope,
+            completedBody.Subject,
+            null,
+            [completedBody]);
     }
 
     private static ActionSubject GetSubject(ActionCompositionOperand operand)
@@ -409,6 +790,147 @@ public static class ActionCalculus
         null,
         [],
         [message]);
+
+    private static ActionInverseAnalysis InverseResult(
+        ActionInverseAnalysisStatus status,
+        ActionDescriptor forwardAction,
+        ActionDescriptor? authoredInverse,
+        ActionInverseContract? derivedContract,
+        ActionInverseObligation obligation,
+        string message) => new(
+            status,
+            forwardAction,
+            authoredInverse,
+            derivedContract,
+            [new ActionInverseFailure(obligation, message)],
+            usesIdentityInverse: false);
+
+    private static bool TryResolveAuthority(
+        ActionDescriptor action,
+        AuthorityLattice authorityLattice,
+        out AuthorityRequirement? authority,
+        out string? failure)
+    {
+        try
+        {
+            authority = action.RequiredAuthority is null
+                ? authorityLattice.Join([])
+                : authorityLattice.Join(action.RequiredAuthority);
+            failure = null;
+            return true;
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or ArgumentException)
+        {
+            authority = null;
+            failure = exception.Message;
+            return false;
+        }
+    }
+
+    private static bool AuthoritiesEqual(
+        AuthorityRequirement left,
+        AuthorityRequirement right,
+        AuthorityLattice authorityLattice) =>
+        authorityLattice.IsAtMost(left, right)
+        && authorityLattice.IsAtMost(right, left);
+
+    private static string FormatFrame(ActionFrame frame) => string.Join(
+        ", ",
+        frame.Resources.Select(resource => $"{resource.Kind}:{resource.Name}"));
+
+    private static void AddEquivalenceFailures(
+        ICollection<ActionInverseFailure> failures,
+        ActionInverseObligation obligation,
+        LogicFormula derived,
+        LogicFormula authored,
+        string derivedToAuthoredMessage,
+        string authoredToDerivedMessage,
+        CancellationToken cancellationToken,
+        ref bool hasInvalid,
+        ref bool hasRefuted,
+        ref bool hasOpaque)
+    {
+        AddInverseImplicationFailure(
+            failures,
+            obligation,
+            FiniteDomainSolver.Implies(derived, authored, cancellationToken),
+            derivedToAuthoredMessage,
+            ref hasInvalid,
+            ref hasRefuted,
+            ref hasOpaque);
+        AddInverseImplicationFailure(
+            failures,
+            obligation,
+            FiniteDomainSolver.Implies(authored, derived, cancellationToken),
+            authoredToDerivedMessage,
+            ref hasInvalid,
+            ref hasRefuted,
+            ref hasOpaque);
+    }
+
+    private static void AddInverseImplicationFailure(
+        ICollection<ActionInverseFailure> failures,
+        ActionInverseObligation obligation,
+        LogicDecision decision,
+        string refutationMessage,
+        ref bool hasInvalid,
+        ref bool hasRefuted,
+        ref bool hasOpaque)
+    {
+        if (decision.Kind == LogicDecisionKind.Unsatisfiable)
+        {
+            return;
+        }
+
+        failures.Add(new ActionInverseFailure(
+            obligation,
+            decision.Kind == LogicDecisionKind.Satisfiable
+                ? refutationMessage
+                : decision.Reason ?? "The inverse equivalence could not be decided.",
+            ToCounterexample(decision.Witness)));
+        switch (decision.Kind)
+        {
+            case LogicDecisionKind.Satisfiable:
+                hasRefuted = true;
+                break;
+            case LogicDecisionKind.Opaque:
+                hasOpaque = true;
+                break;
+            default:
+                hasInvalid = true;
+                break;
+        }
+    }
+
+    private static ImmutableArray<ActionCounterexampleFact> ToCounterexample(
+        ImmutableArray<KeyValuePair<string, string>> witness) => witness
+        .Select(pair => new ActionCounterexampleFact(pair.Key, pair.Value))
+        .ToImmutableArray();
+
+    private static ImmutableArray<ActionRollbackPlan> MaterializeRollbackChildren(
+        ActionSubject subject,
+        IEnumerable<ActionRollbackPlan> children)
+    {
+        ArgumentNullException.ThrowIfNull(children);
+        var materialized = children.ToImmutableArray();
+        if (materialized.Any(child => child is null))
+        {
+            throw new ArgumentException(
+                "Rollback plan children cannot contain null entries.",
+                nameof(children));
+        }
+
+        var foreign = materialized.FirstOrDefault(child => !subject.Equals(child.Subject));
+        if (foreign is not null)
+        {
+            throw new ArgumentException(
+                $"Rollback composition is restricted to one subject: '{subject}' and "
+                + $"'{foreign.Subject}' do not match.",
+                nameof(children));
+        }
+
+        return materialized;
+    }
 
     private static ActionRefinementAnalysis AnalyzeRefinement(
         ActionDescriptor specification,

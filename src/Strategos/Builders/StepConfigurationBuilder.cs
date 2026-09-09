@@ -20,6 +20,7 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
     private StepConfigurationDefinition _configuration = StepConfigurationDefinition.Empty;
     private WorkflowActionReference? _action;
     private bool _hasActionDeclaration;
+    private bool _hasCompensationDeclaration;
 
     /// <summary>
     /// Applies both the ordinary step configuration and occurrence-scoped action identity
@@ -83,9 +84,63 @@ internal sealed class StepConfigurationBuilder<TState> : IStepConfiguration<TSta
     public IStepConfiguration<TState> Compensate<TCompensation>()
         where TCompensation : class, IWorkflowStep<TState>
     {
+        ThrowIfCompensationAlreadyDeclared();
+
         var compensation = CompensationConfiguration.Create<TCompensation>();
         _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
         return this;
+    }
+
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(WorkflowActionReference inverseAction)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+        ThrowIfCompensationAlreadyDeclared();
+
+        var compensation = CompensationConfiguration.Create<TCompensation>(inverseAction);
+        _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
+        return this;
+    }
+
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(TimeSpan timeout)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ThrowIfCompensationAlreadyDeclared();
+
+        var compensation = CompensationConfiguration.Create<TCompensation>().WithTimeout(timeout);
+        _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
+        return this;
+    }
+
+    /// <inheritdoc/>
+    public IStepConfiguration<TState> Compensate<TCompensation>(
+        WorkflowActionReference inverseAction,
+        TimeSpan timeout)
+        where TCompensation : class, IWorkflowStep<TState>
+    {
+        ArgumentNullException.ThrowIfNull(inverseAction, nameof(inverseAction));
+        ThrowIfCompensationAlreadyDeclared();
+
+        var compensation = CompensationConfiguration
+            .Create<TCompensation>(inverseAction)
+            .WithTimeout(timeout);
+        _configuration = _configuration.WithCompensation(compensation);
+        _hasCompensationDeclaration = true;
+        return this;
+    }
+
+    private void ThrowIfCompensationAlreadyDeclared()
+    {
+        if (_hasCompensationDeclaration)
+        {
+            throw new InvalidOperationException(
+                "Compensate can be declared only once for a step occurrence.");
+        }
     }
 
     /// <inheritdoc/>

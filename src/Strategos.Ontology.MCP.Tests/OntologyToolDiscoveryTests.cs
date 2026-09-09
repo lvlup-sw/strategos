@@ -281,6 +281,8 @@ internal sealed class SemanticActionDomainOntology : DomainOntology
                 .ReadOnly()
                 .BoundToWorkflow("alternative-account");
             obj.Action("revert-upsert")
+                .RequiresLink("space")
+                .EnsuresRelation("owner", "space")
                 .RequiresAuthority("writer")
                 .Touches(ActionResource.Property("Status"))
                 .Touches(ActionResource.Link("space"))

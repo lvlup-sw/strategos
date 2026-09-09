@@ -136,10 +136,11 @@ jobs:
         # vstest host — invoke via `dotnet run` (the project sets
         # OutputType=Exe). `dotnet test` was rejected by the .NET 10 SDK
         # ("Specifying a project for 'dotnet test' should be via '--project'")
-        # AND would not surface TUnit's source-generated test list anyway.
-        run: |
-          dotnet restore tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj
-          dotnet run --project tests/basileus-smoke/Basileus.Smoke.Tests/Basileus.Smoke.Tests.csproj --configuration Release --no-restore
+        # AND would not surface TUnit's source-generated test list anyway. The
+        # verification script creates an empty per-run NuGet package directory
+        # and byte-compares the restored Strategos closure with ./local-feed,
+        # preventing a runner-wide fixed-version cache from masking the pack.
+        run: bash scripts/verify-basileus-smoke.sh ./local-feed
 
   coverage-gate:
     needs: build-test
@@ -219,9 +220,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout with full history (the placement gate diffs against the last v* tag)
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Setup .NET
@@ -231,7 +234,12 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Builder public API gate (RS0016/RS0017 fail-closed)
-        run: bash scripts/check-builder-api-stability.sh
+        # Both published baselines: src/Strategos (the seven mirrored
+        # entrypoints plus the reviewed allowlist) and src/Strategos.Ontology.
+        run: bash scripts/check-builder-api-stability.sh src/Strategos/Strategos.csproj src/Strategos.Ontology/Strategos.Ontology.csproj
+
+      - name: PublicAPI.Unshipped.txt placement gate (Shipped means present in the last v* tag)
+        run: bash scripts/check-unshipped-against-tag.sh
 
   dbsf-parity-guard:
     # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json

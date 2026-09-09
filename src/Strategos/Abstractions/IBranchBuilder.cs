@@ -85,9 +85,11 @@ public interface IBranchBuilder<TState>
     /// </code>
     /// </para>
     /// <para>
-    /// Enforcement parity is partial today: the configuration is captured in the workflow definition
-    /// and threaded into the generator's step IR, but the source generator does not yet emit Wolverine
-    /// retry/timeout/compensation for branch-path steps (tracked by issue #135).
+    /// Branch-path forward occurrences receive generated validation, retry, timeout, and worker
+    /// policies. The typed <c>Compensate&lt;TCompensation&gt;(WorkflowActionReference)</c>
+    /// overload additionally participates in whole-program inverse proof and durable
+    /// completed-prefix rollback for saga-document workflows. A shared branch phase or other
+    /// topology that cannot carry one authoritative rollback identity is rejected at compile time.
     /// </para>
     /// </remarks>
     IBranchBuilder<TState> Then<TStep>(Action<IStepConfiguration<TState>> configure)

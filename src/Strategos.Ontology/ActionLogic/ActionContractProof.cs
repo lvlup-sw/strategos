@@ -386,6 +386,13 @@ internal static class ActionContractProofEngine
             return false;
         }
 
+        if (action.CompensatingActionName is not null
+            && string.IsNullOrWhiteSpace(action.CompensatingActionName))
+        {
+            failureReason = "The compensating action name cannot be empty.";
+            return false;
+        }
+
         var frame = new HashSet<ActionResource>();
         foreach (var resource in action.TouchedResources)
         {

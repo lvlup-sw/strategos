@@ -11,7 +11,7 @@ namespace LevelUp.Strategos.Contracts;
  * generated `AgwfCode` C# enum, and the codegen pipeline emits the canonical
  * `agwf-catalog.json` data artifact + `docs/diagnostics/agwf.md` reference.
  *
- * Ground truth = exactly **37 defined codes** with gaps preserved as gaps
+ * Ground truth = exactly **39 defined codes** with gaps preserved as gaps
  * (INV-5: never renumber). Member NAMES are the wire identity: the enum
  * round-trips by name and never by ordinal, so a member may be added but never
  * renamed or reordered without a major bump.
@@ -59,6 +59,8 @@ enum AgwfCode {
   WorkflowBindingRefinementFailed: "AGWF041",
   WorkflowContractUnprovable: "AGWF042",
   WorkflowEmissionIdentityCollision: "AGWF043",
+  AuthoredInverseDisagrees: "AGWF044",
+  CompensationScopeNotDerivable: "AGWF045",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -428,5 +430,25 @@ model AgwfEntryWorkflowEmissionIdentityCollision {
   severity: "error";
   summary: "Workflow generated identity collision";
   remediation: "Workflow identities [{0}] all normalize to generated name '{1}' and cannot be emitted together. Rename them so every generated PascalCase workflow name is unique.";
+  since: "2.13.0";
+}
+
+/** AGWF044 — Authored compensation action disagrees with the derived inverse (#169). */
+@jsonSchema
+model AgwfEntryAuthoredInverseDisagrees {
+  id: "AGWF044";
+  severity: "error";
+  summary: "Authored compensation disagrees with derived inverse";
+  remediation: "Step '{0}' in workflow '{1}' declares inverse action '{2}' for forward action '{3}', but their contracts disagree: {4}";
+  since: "2.13.0";
+}
+
+/** AGWF045 — A rollback scope contains a leaf whose inverse cannot be derived (#169). */
+@jsonSchema
+model AgwfEntryCompensationScopeNotDerivable {
+  id: "AGWF045";
+  severity: "error";
+  summary: "Compensation scope is not mechanically derivable";
+  remediation: "Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action.";
   since: "2.13.0";
 }

@@ -18,11 +18,18 @@ internal static class OntologyDiagnostics
     public static readonly DiagnosticDescriptor CompensationDisagreesWithInverse = new(
         OntologyDiagnosticIds.CompensationDisagreesWithInverse,
         "Compensation disagrees with the derived inverse",
-        "Action '{0}' names compensation '{1}', but their frames differ or the compensation is undeclared",
+        "Action '{0}' names compensation '{1}', but it does not implement the derived inverse: {2}",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A compensation must exist and restore exactly the forward action's frame.");
+        description: "A compensation must have the same subject, exact frame, and semantic authority as the forward action, require its effective guarantee, and re-enter its hard-requirement state set.",
+        // NotConfigurable puts AONT216 on the same footing as its workflow-side
+        // inverse-refutation counterparts: a refuted inverse is a proof failure,
+        // not a style preference, so <NoWarn>, .editorconfig severity, and
+        // #pragma cannot silence it. (Only RunAnalyzers=false removes it,
+        // because that unloads every analyzer; that case is caught at host start
+        // by graph freeze in OntologyGraphBuilder.)
+        customTags: [WellKnownDiagnosticTags.CompilationEnd, WellKnownDiagnosticTags.NotConfigurable]);
 
     public static readonly DiagnosticDescriptor InvalidAuthorityLattice = new(
         OntologyDiagnosticIds.InvalidAuthorityLattice,

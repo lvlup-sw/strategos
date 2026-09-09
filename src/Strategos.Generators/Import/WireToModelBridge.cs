@@ -54,10 +54,11 @@ namespace Strategos.Generators.Import;
 // diagnostic — naming the construct + its JSON path — for every runtime-bindable
 // carrier (delegate steps, branch points, loops, validation predicates,
 // context-bearing approvals) and every semantic violation (a dangling gateId,
-// DR-3; a reliability-bearing gate declaration, DR-2). When the scan finds any,
-// the bridge returns NO model (so NO saga is emitted for that workflow) with the
-// rejection diagnostics attached. Re-binding the dropped bodies (condition,
-// lambda, context) is a #100 follow-on (see docs/deferred-features.md).
+// DR-3; a reliability-bearing gate declaration, DR-2; or an invalid compensation
+// deadline). When the scan finds any, the bridge returns NO model (so NO saga is
+// emitted for that workflow) with the rejection diagnostics attached. Re-binding
+// the dropped bodies (condition, lambda, context) is a #100 follow-on (see
+// docs/deferred-features.md).
 // =============================================================================
 
 /// <summary>
@@ -234,6 +235,49 @@ internal static class WireToModelBridge
         // Both orders must be reproduced or the generated saga diverges from a C# twin.
         var stepNames = ComposeStepNames(definition, baseStepModels, forkModels);
         var stepModels = ComposeStepModels(definition, baseStepModels, forkModels);
+
+        // Preserve authored forward-role provenance before approval, confidence-handler, and
+        // compensation lowering append off-main worker types to the shared step collections.
+        // The import subset currently lowers top-level wire steps as its linear flow and supports
+        // fork paths; both are forward roles, while the later folds are not. Keep these collections
+        // non-null so emitters never have to apply the legacy "unknown means forward" fallback to
+        // an imported model.
+        var forkPathStepIds = new HashSet<string>(
+            definition.ForkPoints
+                .SelectMany(static fork => fork.Paths.SelectMany(static path => path.Steps))
+                .Select(static step => step.StepId)
+                .Where(static stepId => !string.IsNullOrEmpty(stepId))
+                .Select(static stepId => stepId!),
+            StringComparer.Ordinal);
+        var recoveryStepIds = new HashSet<string>(
+            definition.FailureHandlers
+                .SelectMany(static handler => handler.Steps)
+                .Concat(definition.Steps.SelectMany(static step =>
+                    step.Configuration?.OnLowConfidence?.HandlerSteps ?? []))
+                .Select(static step => step.StepId)
+                .Where(static stepId => !string.IsNullOrEmpty(stepId))
+                .Select(static stepId => stepId!),
+            StringComparer.Ordinal);
+        var mainFlowStepPhaseNames = baseStepModels
+            .Where((_, index) => definition.Steps[index].StepId is not { } stepId
+                || (!forkPathStepIds.Contains(stepId) && !recoveryStepIds.Contains(stepId)))
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var forwardStepModels = baseStepModels
+            .Where((_, index) => definition.Steps[index].StepId is not { } stepId
+                || !recoveryStepIds.Contains(stepId))
+            .Concat(forkModels.SelectMany(static fork => fork.Paths.SelectMany(static path => path.Steps)))
+            .ToList();
+        var forwardStepPhaseNames = forwardStepModels
+            .Select(static step => step.PhaseName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var forwardStepTypeNames = forwardStepModels
+            .Select(static step => step.StepName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
         (stepNames, stepModels) = AppendApprovalSteps(stepNames, stepModels, approvalModels);
         var confidenceHandlerStepNames = AppendConfidenceHandlerSteps(ref stepNames, ref stepModels);
         stepModels = FoldCompensationSteps(stepModels);
@@ -260,6 +304,9 @@ internal static class WireToModelBridge
             // A JSON import has no fluent {Pascal}WorkflowDefinition class, so the DI extension must
             // NOT emit the definition-evaluation line that references it (it would not compile).
             HasFluentDefinition = false,
+            MainFlowStepPhaseNames = mainFlowStepPhaseNames,
+            ForwardStepPhaseNames = forwardStepPhaseNames,
+            ForwardStepTypeNames = forwardStepTypeNames,
             TopologyClosureFailures = CollectImportedTopologyClosureFailures(definition, jsonFilePath),
         };
 
@@ -528,7 +575,9 @@ internal static class WireToModelBridge
     /// diagnostic-fork permitted trigger declaring no <c>requiredEvidenceFields</c> (DR-8 — the wire
     /// <c>@minItems(1)</c> evidence floor; an empty list would lower an always-true occurrence guard),
     /// and a diagnostic-fork edge that permits the same trigger twice (#156.2 — two same-trigger
-    /// declarations can carry different evidence schemas; reject, do not first-wins-dedup).
+    /// declarations can carry different evidence schemas; reject, do not first-wins-dedup), and
+    /// a malformed or non-positive compensation deadline (which must not become an absent policy
+    /// or an invalid rollback-journal bound).
     /// </remarks>
     private static List<Diagnostic> CollectImportRejections(
         WorkflowDefinitionV1 definition,
@@ -776,8 +825,9 @@ internal static class WireToModelBridge
 
     /// <summary>
     /// Scans one importable step list (and, recursively, each step's low-confidence handler chain)
-    /// for a delegate (lambda) step, a validation predicate, and a DR-3 dangling <c>gateId</c>,
-    /// appending a rejection diagnostic — naming the construct + its JSON path — for each.
+    /// for a delegate (lambda) step, a validation predicate, a compensation deadline, and a DR-3
+    /// dangling <c>gateId</c>, appending a rejection diagnostic — naming the construct + its JSON
+    /// path — for each.
     /// </summary>
     private static void ScanImportableSteps(
         IReadOnlyList<StepDefinition> steps,
@@ -825,6 +875,31 @@ internal static class WireToModelBridge
                     jsonFilePath,
                     $"{path}.configuration.validation",
                     DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId)));
+            }
+
+            // A compensation deadline is proof-bearing executable configuration. Validate its
+            // wire representation before mapping so malformed input cannot silently collapse to
+            // an absent policy, and a non-positive value cannot reach the rollback journal.
+            if (step.Configuration?.Compensation?.Timeout is { } compensationTimeout)
+            {
+                var timeoutPath = $"{path}.configuration.compensation.timeout";
+                if (!TryParseIsoDuration(compensationTimeout, out var parsedTimeout))
+                {
+                    rejections.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.MalformedWorkflowJson,
+                        Location.None,
+                        jsonFilePath,
+                        $"value at {timeoutPath} must be a valid ISO-8601 duration"));
+                }
+                else if (parsedTimeout <= TimeSpan.Zero)
+                {
+                    var stepName = DescribeId(string.IsNullOrEmpty(step.StepId) ? step.StepName : step.StepId);
+                    rejections.Add(Diagnostic.Create(
+                        WorkflowDiagnostics.NonPositiveTimeout,
+                        Location.None,
+                        $"{stepName} ({timeoutPath})",
+                        workflowName));
+                }
             }
 
             // Dangling gateId back-reference — a DR-3 semantic violation.
@@ -1021,10 +1096,18 @@ internal static class WireToModelBridge
                 return false;
             }
 
+            var inverseAction = MapActionReference(c.InverseAction);
             compensation = new CompensationModel(
                 CompensationStepTypeName: compSymbol.ToDisplayString(NamespacedTypeFormat),
                 RequiredOnFailure: c.RequiredOnFailure ?? true,
-                IsRegisteredStep: true);
+                IsRegisteredStep: true,
+                InverseAction: inverseAction,
+                InverseActionResolution: c.InverseAction is null
+                    ? WorkflowActionReferenceResolution.Missing
+                    : inverseAction is null
+                        ? WorkflowActionReferenceResolution.DynamicOrInvalid
+                        : WorkflowActionReferenceResolution.Resolved,
+                Timeout: ParseIsoDuration(c.Timeout));
         }
 
         if (config.OnLowConfidence is { } handler)
@@ -1033,6 +1116,22 @@ internal static class WireToModelBridge
         }
 
         return true;
+    }
+
+    private static WorkflowActionReferenceModel? MapActionReference(ActionReferenceV1? action)
+    {
+        if (action is null
+            || string.IsNullOrWhiteSpace(action.DomainName)
+            || string.IsNullOrWhiteSpace(action.ObjectTypeName)
+            || string.IsNullOrWhiteSpace(action.ActionName))
+        {
+            return null;
+        }
+
+        return new WorkflowActionReferenceModel(
+            action.DomainName!,
+            action.ObjectTypeName!,
+            action.ActionName!);
     }
 
     /// <summary>
@@ -1598,22 +1697,36 @@ internal static class WireToModelBridge
     /// <summary>
     /// Parses an ISO-8601 duration string (the language-neutral form the wire projection emits via
     /// <c>XmlConvert.ToString(TimeSpan)</c>) back into a <see cref="TimeSpan"/>. Returns null for a
-    /// null/empty or unparseable value so an absent or malformed duration simply carries no policy.
+    /// null/empty or unparseable value. Compensation durations are validated by
+    /// <see cref="ScanImportableSteps"/> before this tolerant mapper is reached.
     /// </summary>
     private static TimeSpan? ParseIsoDuration(string? iso)
     {
+        return TryParseIsoDuration(iso, out var duration) ? duration : null;
+    }
+
+    /// <summary>
+    /// Attempts to parse the language-neutral ISO-8601 duration used by the wire projection.
+    /// </summary>
+    /// <param name="iso">The duration text.</param>
+    /// <param name="duration">The parsed duration when this method returns <see langword="true"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="iso"/> is a valid duration.</returns>
+    private static bool TryParseIsoDuration(string? iso, out TimeSpan duration)
+    {
+        duration = default;
         if (string.IsNullOrEmpty(iso))
         {
-            return null;
+            return false;
         }
 
         try
         {
-            return System.Xml.XmlConvert.ToTimeSpan(iso!);
+            duration = System.Xml.XmlConvert.ToTimeSpan(iso!);
+            return true;
         }
-        catch (FormatException)
+        catch (Exception ex) when (ex is FormatException or OverflowException)
         {
-            return null;
+            return false;
         }
     }
 }

@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// `CompensationConfiguration`). The compensation step CLR type reduces to a
 /// simple-name moniker (LB-2).
 /// </summary>
-public sealed record CompensationConfiguration
+public sealed record CompensationConfiguration : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Simple-name CLR moniker of the compensation step type (LB-2).
@@ -26,14 +26,33 @@ public sealed record CompensationConfiguration
     public string CompensationStepType { get; init; } = default!;
 
     /// <summary>
-    /// Whether compensation is required on failure.
+    /// Ontology action implemented by the authored compensation step.
+    /// </summary>
+    [JsonPropertyName("inverseAction")]
+    public ActionReferenceV1? InverseAction { get; init; }
+
+    /// <summary>
+    /// Whether compensation is required on failure. Defaults to `true` when the
+    /// property is omitted. A typed `inverseAction` requires `true` (AGWF044).
     /// </summary>
     [JsonPropertyName("requiredOnFailure")]
     public bool? RequiredOnFailure { get; init; }
 
     /// <summary>
-    /// Compensation timeout (ISO-8601 duration), if set.
+    /// Compensation timeout (ISO-8601 duration), if set. When omitted the
+    /// generated runtime applies a 300-second inverse deadline.
     /// </summary>
     [JsonPropertyName("timeout")]
     public string? Timeout { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(CompensationStepType, "CompensationConfiguration.compensationStepType", required: true);
+    }
 }

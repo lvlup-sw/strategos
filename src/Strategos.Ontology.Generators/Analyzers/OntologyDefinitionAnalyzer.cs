@@ -78,6 +78,7 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         // query code. A per-method action can't correlate the two, so we collect
         // both across the whole compilation and decide at compilation end.
         context.RegisterCompilationStartAction(RegisterAmbiguousTraversalGuard);
+        context.RegisterCompilationAction(OntologyInverseContractAnalyzer.Analyze);
         context.RegisterSyntaxNodeAction(
             ActionCompositionAnalyzer.AnalyzeInvocation,
             SyntaxKind.InvocationExpression);
@@ -1848,33 +1849,9 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             }
         }
 
-        // AONT216: the authored compensation edge must point to an action whose
-        // derived frame is exactly the forward frame. Fluent mutators add their
-        // resources by construction; explicit Touches() calls join that frame.
-        foreach (var (actionName, compensatingAction, location) in ot.ActionCompensations)
-        {
-            if (ot.UnreadableActionFrames.Contains(actionName)
-                || ot.UnreadableActionFrames.Contains(compensatingAction))
-            {
-                continue;
-            }
-
-            var forwardFrame = ot.ActionFrameResources.TryGetValue(actionName, out var forward)
-                ? forward
-                : new HashSet<string>(StringComparer.Ordinal);
-            var compensationFrame = ot.ActionFrameResources.TryGetValue(compensatingAction, out var inverse)
-                ? inverse
-                : new HashSet<string>(StringComparer.Ordinal);
-            if (!ot.DeclaredActions.Contains(compensatingAction)
-                || !forwardFrame.SetEquals(compensationFrame))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    OntologyDiagnostics.CompensationDisagreesWithInverse,
-                    location,
-                    actionName,
-                    compensatingAction));
-            }
-        }
+        // AONT216 is compilation-wide and is owned by
+        // OntologyInverseContractAnalyzer. It uses the same closed action parser,
+        // finite-domain kernel, and authority lattice as workflow binding proof.
     }
 
     private static void ReportPostconditionOverlapDiagnostics(

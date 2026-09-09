@@ -118,6 +118,74 @@ public class StepContextTests
         await Assert.That(context.RetryCount).IsEqualTo(3);
     }
 
+    /// <summary>
+    /// Verifies that compensation metadata defaults to ordinary forward execution.
+    /// </summary>
+    [Test]
+    public async Task CompensationMetadata_DefaultsToForwardExecution()
+    {
+        // Arrange
+        var context = CreateValidContext();
+
+        // Assert
+        await Assert.That(context.IsCompensation).IsFalse();
+        await Assert.That(context.RollbackId).IsNull();
+    }
+
+    /// <summary>
+    /// Verifies that a set rollback identifier derives compensation execution.
+    /// </summary>
+    [Test]
+    public async Task IsCompensation_WithRollbackId_IsTrue()
+    {
+        // Arrange
+        var rollbackId = Guid.NewGuid();
+
+        // Act
+        var context = CreateValidContext() with { RollbackId = rollbackId };
+
+        // Assert
+        await Assert.That(context.RollbackId).IsEqualTo(rollbackId);
+        await Assert.That(context.IsCompensation).IsTrue();
+    }
+
+    /// <summary>
+    /// Verifies that clearing the rollback identifier derives forward execution, so the
+    /// two halves of the compensation identity pair cannot disagree.
+    /// </summary>
+    [Test]
+    public async Task IsCompensation_WithoutRollbackId_IsFalse()
+    {
+        // Arrange
+        var compensating = CreateValidContext() with { RollbackId = Guid.NewGuid() };
+
+        // Act
+        var forward = compensating with { RollbackId = null };
+
+        // Assert
+        await Assert.That(forward.RollbackId).IsNull();
+        await Assert.That(forward.IsCompensation).IsFalse();
+    }
+
+    /// <summary>
+    /// Verifies that the durable execution identity round-trips through with syntax.
+    /// </summary>
+    [Test]
+    public async Task ExecutionId_RoundTripsThroughWith()
+    {
+        // Arrange
+        var original = CreateValidContext();
+        var executionId = Guid.NewGuid();
+
+        // Act
+        var modified = original with { ExecutionId = executionId };
+
+        // Assert
+        await Assert.That(modified.ExecutionId).IsEqualTo(executionId);
+        await Assert.That(original.ExecutionId).IsNotEqualTo(executionId);
+        await Assert.That((modified with { RetryCount = 9 }).ExecutionId).IsEqualTo(executionId);
+    }
+
     // =============================================================================
     // C. Factory Method Tests
     // =============================================================================
@@ -143,6 +211,25 @@ public class StepContextTests
         await Assert.That(context.CorrelationId).IsNotEmpty();
         await Assert.That(context.Timestamp).IsGreaterThanOrEqualTo(DateTimeOffset.UtcNow.AddSeconds(-1));
         await Assert.That(context.Timestamp).IsLessThanOrEqualTo(DateTimeOffset.UtcNow.AddSeconds(1));
+        await Assert.That(context.IsCompensation).IsFalse();
+        await Assert.That(context.RollbackId).IsNull();
+    }
+
+    /// <summary>
+    /// Verifies that Create mints a non-empty execution identity on the legacy
+    /// non-derived path, where no dispatched command supplies one.
+    /// </summary>
+    [Test]
+    public async Task Create_MintsNonEmptyExecutionId()
+    {
+        // Act
+        var first = StepContext.Create(Guid.NewGuid(), "Step1", "Phase1");
+        var second = StepContext.Create(Guid.NewGuid(), "Step1", "Phase1");
+
+        // Assert
+        await Assert.That(first.ExecutionId).IsNotEqualTo(Guid.Empty);
+        await Assert.That(second.ExecutionId).IsNotEqualTo(Guid.Empty);
+        await Assert.That(first.ExecutionId).IsNotEqualTo(second.ExecutionId);
     }
 
     /// <summary>
@@ -202,6 +289,9 @@ public class StepContextTests
         await Assert.That(modified.StepName).IsEqualTo(original.StepName);
         await Assert.That(modified.Timestamp).IsEqualTo(original.Timestamp);
         await Assert.That(modified.CurrentPhase).IsEqualTo(original.CurrentPhase);
+        await Assert.That(modified.ExecutionId).IsEqualTo(original.ExecutionId);
+        await Assert.That(modified.IsCompensation).IsEqualTo(original.IsCompensation);
+        await Assert.That(modified.RollbackId).IsEqualTo(original.RollbackId);
     }
 
     // =============================================================================
@@ -214,6 +304,7 @@ public class StepContextTests
     private static StepContext CreateValidContext() => new StepContext
     {
         CorrelationId = Guid.NewGuid().ToString("N"),
+        ExecutionId = Guid.NewGuid(),
         WorkflowId = Guid.NewGuid(),
         StepName = "TestStep",
         Timestamp = DateTimeOffset.UtcNow,

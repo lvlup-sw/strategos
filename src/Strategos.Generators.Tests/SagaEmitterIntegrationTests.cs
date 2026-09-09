@@ -83,17 +83,25 @@ public class SagaEmitterIntegrationTests
     }
 
     /// <summary>
-    /// Verifies that the saga has the Version attribute for optimistic concurrency.
+    /// Verifies that optimistic concurrency comes from the <c>JasperFx.IRevisioned</c>
+    /// interface rather than a <c>[Version]</c>-attributed shadow property.
     /// </summary>
+    /// <remarks>
+    /// Marten's default VersionedPolicy maps any document implementing
+    /// <c>IRevisioned</c> to numeric revisions over the inherited <c>Saga.Version</c>,
+    /// so no attribute is required; the attribute alone was invisible to Wolverine's
+    /// <c>MartenPersistenceFrameProvider.DetermineUpdateFrame</c> interface test.
+    /// </remarks>
     [Test]
-    public async Task Generator_Saga_HasVersionAttribute()
+    public async Task Generator_Saga_DerivesConcurrencyFromIRevisioned_NotAVersionAttribute()
     {
         // Arrange & Act
         var result = GeneratorTestHelper.RunGenerator(SourceTexts.LinearWorkflow);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
         // Assert
-        await Assert.That(sagaSource).Contains("[Version]");
+        await Assert.That(sagaSource).Contains("JasperFx.IRevisioned");
+        await Assert.That(sagaSource).DoesNotContain("[Version]");
     }
 
     /// <summary>

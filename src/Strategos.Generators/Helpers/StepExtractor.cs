@@ -261,8 +261,9 @@ internal static class StepExtractor
         // Collapse repeated phase names to the FIRST occurrence, matching the position rule
         // CollapseRepeatedPhaseNames applies to the phase-name representation. The two lists are
         // asserted to agree as an ordered sequence, so both must collapse the same way. A shared
-        // phase may only stand for one ontology action, however: silently retaining the first of
-        // two different .Performs(...) declarations would make proof depend on source order.
+        // phase may only stand for one ontology action and one compensation program, however:
+        // silently retaining the first differing declaration would make proof and rollback
+        // depend on source order.
         return steps
             .GroupBy(s => s.PhaseName, StringComparer.Ordinal)
             .Select(occurrences =>
@@ -271,13 +272,36 @@ internal static class StepExtractor
                 var hasConflictingAction = occurrences.Skip(1).Any(step =>
                     step.ActionResolution != survivor.ActionResolution
                     || !Equals(step.Action, survivor.Action));
-                return hasConflictingAction
+                var collapsed = hasConflictingAction
                     ? survivor with
                     {
                         Action = null,
                         ActionResolution = WorkflowActionReferenceResolution.DynamicOrInvalid,
                     }
                     : survivor;
+                var hasConflictingCompensation = occurrences.Skip(1).Any(step =>
+                    !Equals(step.Compensation, survivor.Compensation));
+                if (!hasConflictingCompensation)
+                {
+                    return collapsed;
+                }
+
+                var representative = occurrences
+                    .Select(static step => step.Compensation)
+                    .First(static compensation => compensation is not null)!;
+                var hasTypedOrDynamicDeclaration = occurrences
+                    .Select(static step => step.Compensation)
+                    .Where(static compensation => compensation is not null)
+                    .Any(static compensation => compensation!.InverseActionResolution
+                        != WorkflowActionReferenceResolution.Missing);
+                return collapsed with
+                {
+                    Compensation = representative with
+                    {
+                        HasConflictingDeclarations = true,
+                        HasTypedOrDynamicDeclaration = hasTypedOrDynamicDeclaration,
+                    },
+                };
             })
             .ToList();
     }
@@ -1770,6 +1794,10 @@ internal static class StepExtractor
         && string.Equals(
             containingType.ContainingNamespace.ToDisplayString(),
             "Strategos.Builders",
+            StringComparison.Ordinal)
+        && string.Equals(
+            containingType.ContainingAssembly.Name,
+            "Strategos",
             StringComparison.Ordinal);
 
     private static bool IsInvocationSyntaxRootedAtParameter(
@@ -1855,7 +1883,7 @@ internal static class StepExtractor
             return false;
         }
 
-        action = new WorkflowActionReferenceModel(domainName, objectTypeName, actionName);
+        action = new WorkflowActionReferenceModel(domainName!, objectTypeName!, actionName!);
         return true;
     }
 
@@ -1902,6 +1930,22 @@ internal static class StepExtractor
                 continue;
             }
 
+            var parameterSyntax = configureLambda switch
+            {
+                SimpleLambdaExpressionSyntax simple => simple.Parameter,
+                ParenthesizedLambdaExpressionSyntax parenthesized
+                    when parenthesized.ParameterList.Parameters.Count == 1 =>
+                    parenthesized.ParameterList.Parameters[0],
+                _ => null,
+            };
+            var configureParameter = parameterSyntax is null
+                ? null
+                : semanticModel.GetDeclaredSymbol(parameterSyntax) as IParameterSymbol;
+            if (configureParameter is null)
+            {
+                continue;
+            }
+
             // F1: scope the resilience walk to THIS configure lambda's own body. Walking
             // raw DescendantNodes() would capture WithRetry/WithTimeout/Compensate calls from
             // a NESTED lambda — e.g. OnLowConfidence(alt => alt.Then<Y>(c => c.WithTimeout(t)))
@@ -1910,20 +1954,40 @@ internal static class StepExtractor
 
             foreach (var configCall in configInvocations)
             {
-                if (retry is null && SyntaxHelper.IsMethodCall(configCall, "WithRetry"))
+                if (retry is null && IsStepConfigurationCall(
+                    configCall,
+                    configureParameter,
+                    semanticModel,
+                    "WithRetry"))
                 {
                     retry = ResilienceParser.ExtractRetry(configCall);
                 }
-                else if (timeout is null && SyntaxHelper.IsMethodCall(configCall, "WithTimeout"))
+                else if (timeout is null && IsStepConfigurationCall(
+                    configCall,
+                    configureParameter,
+                    semanticModel,
+                    "WithTimeout"))
                 {
                     timeout = ResilienceParser.ExtractTimeout(configCall);
                 }
-                else if (compensation is null && SyntaxHelper.IsMethodCall(configCall, "Compensate"))
+                else if (compensation is null && IsStepConfigurationCall(
+                    configCall,
+                    configureParameter,
+                    semanticModel,
+                    "Compensate"))
                 {
                     compensation = ExtractCompensation(configCall, semanticModel);
                 }
-                else if (SyntaxHelper.IsMethodCall(configCall, "RequireConfidence")
-                    || SyntaxHelper.IsMethodCall(configCall, "OnLowConfidence"))
+                else if (IsStepConfigurationCall(
+                        configCall,
+                        configureParameter,
+                        semanticModel,
+                        "RequireConfidence")
+                    || IsStepConfigurationCall(
+                        configCall,
+                        configureParameter,
+                        semanticModel,
+                        "OnLowConfidence"))
                 {
                     confidence = MergeConfidence(confidence, configCall, semanticModel);
                 }
@@ -1933,8 +1997,45 @@ internal static class StepExtractor
         return (retry, timeout, compensation, confidence);
     }
 
+    private static bool IsStepConfigurationCall(
+        InvocationExpressionSyntax invocation,
+        IParameterSymbol configureParameter,
+        SemanticModel semanticModel,
+        string methodName)
+    {
+        var operation = semanticModel.GetOperation(invocation) as IInvocationOperation;
+        var rootedAtConfigureParameter = (operation is not null
+                && IsOperationRootedAtParameter(operation.Instance, configureParameter))
+            || IsInvocationSyntaxRootedAtParameter(
+                invocation,
+                configureParameter,
+                semanticModel);
+        if (!rootedAtConfigureParameter)
+        {
+            return false;
+        }
+
+        if (TryResolveStepConfigurationMethod(invocation, semanticModel, out var method))
+        {
+            return string.Equals(method.Name, methodName, StringComparison.Ordinal);
+        }
+
+        // A malformed surrounding construct can leave an otherwise ordinary configure
+        // callback without a target type. Preserve the parser's error-tolerant behavior only
+        // when Roslyn has no competing method symbol at all; a resolved homonym never enters
+        // the Strategos configuration model.
+        var symbolInfo = semanticModel.GetSymbolInfo(invocation);
+        if (symbolInfo.Symbol is IMethodSymbol
+            || symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().Any())
+        {
+            return false;
+        }
+
+        return SyntaxHelper.IsMethodCall(invocation, methodName);
+    }
+
     /// <summary>
-    /// Resolves a <c>Compensate&lt;TCompensation&gt;()</c> call into a <see cref="CompensationModel"/>,
+    /// Resolves a <c>Compensate&lt;TCompensation&gt;(inverseAction)</c> call into a <see cref="CompensationModel"/>,
     /// carrying the compensation step's fully qualified type name (INV-8: a string descriptor,
     /// never a CLR <see cref="System.Type"/>). Mirrors the <c>Join&lt;T&gt;</c> symbol resolution.
     /// </summary>
@@ -1961,7 +2062,57 @@ internal static class StepExtractor
         var symbol = semanticModel.GetSymbolInfo(typeArgument).Symbol as INamedTypeSymbol;
         var isRegisteredStep = symbol is null || ImplementsWorkflowStep(symbol);
 
-        return new CompensationModel(compensationTypeName, IsRegisteredStep: isRegisteredStep);
+        // Four authoring overloads share this call site, so the inverse-action argument and
+        // the inverse-deadline argument are located by SHAPE, not by fixed position:
+        //   Compensate<T>()                            -> no arguments
+        //   Compensate<T>(timeout)                      -> duration in position 0
+        //   Compensate<T>(inverseAction)                -> reference in position 0
+        //   Compensate<T>(inverseAction, timeout)       -> reference then duration
+        // A duration literal and a WorkflowActionReference construction are disjoint shapes,
+        // so probing position 0 for a duration first cannot misread a typed declaration.
+        var arguments = compensateInvocation.ArgumentList.Arguments;
+        var firstExpression = arguments.Count > 0 ? arguments[0].Expression : null;
+
+        if (firstExpression is null)
+        {
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseActionResolution: WorkflowActionReferenceResolution.Missing);
+        }
+
+        if (ResilienceParser.TryGetTimeSpanArgument(firstExpression, out var timeoutOnly))
+        {
+            // Compensate<T>(timeout): legacy (untyped) inverse identity plus a deadline.
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseActionResolution: WorkflowActionReferenceResolution.Missing,
+                Timeout: timeoutOnly);
+        }
+
+        TimeSpan? inverseTimeout = null;
+        if (arguments.Count > 1
+            && ResilienceParser.TryGetTimeSpanArgument(arguments[1].Expression, out var typedTimeout))
+        {
+            inverseTimeout = typedTimeout;
+        }
+
+        if (TryExtractActionReference(firstExpression, semanticModel, out var inverseAction))
+        {
+            return new CompensationModel(
+                compensationTypeName,
+                IsRegisteredStep: isRegisteredStep,
+                InverseAction: inverseAction,
+                InverseActionResolution: WorkflowActionReferenceResolution.Resolved,
+                Timeout: inverseTimeout);
+        }
+
+        return new CompensationModel(
+            compensationTypeName,
+            IsRegisteredStep: isRegisteredStep,
+            InverseActionResolution: WorkflowActionReferenceResolution.DynamicOrInvalid,
+            Timeout: inverseTimeout);
     }
 
     /// <summary>

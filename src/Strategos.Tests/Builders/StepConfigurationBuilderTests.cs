@@ -163,6 +163,144 @@ public class StepConfigurationBuilderTests
         await Assert.That(processStep.Configuration!.Compensation!.CompensationStepType).IsEqualTo(typeof(RollbackStep));
     }
 
+    /// <summary>The typed compensation overload snapshots its inverse action identity.</summary>
+    [Test]
+    public async Task Then_WithTypedCompensate_SetsInverseAction()
+    {
+        var inverse = new WorkflowActionReference("orders", "Order", "refund");
+
+        var workflow = Workflow<TestWorkflowState>
+            .Create("typed-compensation-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(inverse))
+            .Finally<CompleteStep>();
+
+        var compensation = workflow.Steps
+            .First(step => step.StepType == typeof(ProcessStep))
+            .Configuration!
+            .Compensation!;
+        await Assert.That(compensation.InverseAction).IsEqualTo(inverse);
+    }
+
+    /// <summary>The typed authoring overload rejects a null inverse at the fluent boundary.</summary>
+    [Test]
+    public async Task Then_WithNullTypedCompensate_ThrowsArgumentNullException()
+    {
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("invalid-typed-compensation")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(null!)))
+            .Throws<ArgumentNullException>();
+    }
+
+    /// <summary>
+    /// A step occurrence has one inverse; a second declaration must not silently replace
+    /// the first declaration selected by static extraction.
+    /// </summary>
+    [Test]
+    public async Task Then_WithDuplicateCompensate_ThrowsInvalidOperationException()
+    {
+        var firstInverse = new WorkflowActionReference("orders", "Order", "undo-first");
+        var secondInverse = new WorkflowActionReference("orders", "Order", "undo-second");
+
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("duplicate-compensation")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg
+                    .Compensate<RollbackStep>(firstInverse)
+                    .Compensate<RollbackStep>(secondInverse)))
+            .Throws<InvalidOperationException>()
+            .WithMessage("Compensate can be declared only once for a step occurrence.");
+    }
+
+    /// <summary>
+    /// The timeout-only overload sets the inverse deadline while leaving the inverse
+    /// identity unset, so the legacy runtime-only compensation shape is preserved.
+    /// </summary>
+    [Test]
+    public async Task Then_WithCompensateTimeout_SetsInverseDeadlineOnly()
+    {
+        var workflow = Workflow<TestWorkflowState>
+            .Create("compensation-deadline-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(TimeSpan.FromSeconds(17)))
+            .Finally<CompleteStep>();
+
+        var compensation = workflow.Steps
+            .First(step => step.StepType == typeof(ProcessStep))
+            .Configuration!
+            .Compensation!;
+        await Assert.That(compensation.CompensationStepType).IsEqualTo(typeof(RollbackStep));
+        await Assert.That(compensation.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
+        await Assert.That(compensation.InverseAction).IsNull();
+    }
+
+    /// <summary>The typed overload carries BOTH the inverse identity and the deadline.</summary>
+    [Test]
+    public async Task Then_WithTypedCompensateTimeout_SetsInverseActionAndDeadline()
+    {
+        var inverse = new WorkflowActionReference("orders", "Order", "refund");
+
+        var workflow = Workflow<TestWorkflowState>
+            .Create("typed-compensation-deadline-workflow")
+            .StartWith<ValidateStep>()
+            .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(
+                inverse,
+                TimeSpan.FromSeconds(17)))
+            .Finally<CompleteStep>();
+
+        var compensation = workflow.Steps
+            .First(step => step.StepType == typeof(ProcessStep))
+            .Configuration!
+            .Compensation!;
+        await Assert.That(compensation.InverseAction).IsEqualTo(inverse);
+        await Assert.That(compensation.Timeout).IsEqualTo(TimeSpan.FromSeconds(17));
+    }
+
+    /// <summary>
+    /// A non-positive inverse deadline is rejected at the authoring boundary, on both
+    /// overloads. A zero or negative deadline can never elapse into a meaningful timeout.
+    /// </summary>
+    /// <param name="seconds">The non-positive deadline, in seconds.</param>
+    [Test]
+    [Arguments(0)]
+    [Arguments(-1)]
+    public async Task Then_WithNonPositiveCompensateTimeout_ThrowsArgumentOutOfRangeException(int seconds)
+    {
+        var inverse = new WorkflowActionReference("orders", "Order", "refund");
+
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("invalid-compensation-deadline")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(TimeSpan.FromSeconds(seconds))))
+            .Throws<ArgumentOutOfRangeException>();
+
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("invalid-typed-compensation-deadline")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg.Compensate<RollbackStep>(
+                    inverse,
+                    TimeSpan.FromSeconds(seconds))))
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// The deadline overloads take part in the same one-declaration-per-occurrence
+    /// discipline as the overloads that carry no deadline.
+    /// </summary>
+    [Test]
+    public async Task Then_WithDuplicateCompensateTimeout_ThrowsInvalidOperationException()
+    {
+        await Assert.That(() => Workflow<TestWorkflowState>
+                .Create("duplicate-compensation-deadline")
+                .StartWith<ValidateStep>()
+                .Then<ProcessStep>(cfg => cfg
+                    .Compensate<RollbackStep>(TimeSpan.FromSeconds(5))
+                    .Compensate<RollbackStep>(TimeSpan.FromSeconds(9))))
+            .Throws<InvalidOperationException>()
+            .WithMessage("Compensate can be declared only once for a step occurrence.");
+    }
+
     // =============================================================================
     // C. WithRetry Tests
     // =============================================================================

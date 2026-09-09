@@ -66,6 +66,12 @@ internal sealed class StepStartHandlerEmitter
         var commandStem = messageStem ?? stepName;
         var commandName = $"Start{commandStem}Command";
         var stepModel = context.StepModel;
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(stepName, context.ForkPathKey, out compensationOccurrence!);
+        }
 
         // Unique-type and linear steps dispatch Execute{StepType}WorkerCommand.
         // Shared-type fork instances dispatch Execute{stem}WorkerCommand so the
@@ -92,11 +98,26 @@ internal sealed class StepStartHandlerEmitter
 
         if (stepModel?.HasValidation == true)
         {
-            EmitValidationHandler(sb, model, stepName, stepModel, commandName, workerCommandName, hasTimeout);
+            EmitValidationHandler(
+                sb,
+                model,
+                stepName,
+                stepModel,
+                commandName,
+                workerCommandName,
+                hasTimeout,
+                compensationOccurrence);
         }
         else
         {
-            EmitStandardHandler(sb, model, stepName, commandName, workerCommandName, hasTimeout);
+            EmitStandardHandler(
+                sb,
+                model,
+                stepName,
+                commandName,
+                workerCommandName,
+                hasTimeout,
+                compensationOccurrence);
         }
     }
 
@@ -107,7 +128,8 @@ internal sealed class StepStartHandlerEmitter
         StepModel stepModel,
         string commandName,
         string workerCommandName,
-        bool hasTimeout)
+        bool hasTimeout,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -121,6 +143,9 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
+
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
 
         // Emit validation guard (Guard-Then-Dispatch pattern)
         // Replace lambda parameter (typically "state") with saga's State property
@@ -145,6 +170,20 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine($"                \"{stepName}\",");
         sb.AppendLine($"                {validationMessageLiteral},");
         sb.AppendLine("                DateTimeOffset.UtcNow);");
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine();
+            sb.AppendLine("            // Validation is a failure ingress for a typed rollback program.");
+            sb.AppendLine("            // Preserve the ValidationFailed audit event, then let the saga");
+            sb.AppendLine("            // derive rollback from the completed prefix in this exact scope.");
+            EmitValidationFailureTrigger(
+                sb,
+                model,
+                stepName,
+                validationMessageLiteral,
+                compensationOccurrence);
+        }
+
         sb.AppendLine("            yield break;");
         sb.AppendLine("        }");
         sb.AppendLine();
@@ -157,7 +196,13 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine($"            nameof({workerCommandName}),");
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
-        sb.AppendLine($"        yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+        EmitWorkerCommandConstruction(
+            sb,
+            model,
+            workerCommandName,
+            compensationOccurrence,
+            "yield return ",
+            "        ");
 
         if (hasTimeout)
         {
@@ -165,10 +210,70 @@ internal sealed class StepStartHandlerEmitter
             // delivery from the TimeoutMessage base and re-enters the saga later.
             sb.AppendLine();
             sb.AppendLine("        // Start the timeout deadline race for this step.");
-            sb.AppendLine($"        yield return new {stepName}Timeout(WorkflowId);");
+            EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
         }
 
         sb.AppendLine("    }");
+    }
+
+    private static void EmitValidationFailureTrigger(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        string validationMessageLiteral,
+        CompensationOccurrence? occurrence)
+    {
+        var occurrenceKey = SymbolDisplay.FormatLiteral(
+            occurrence?.StableKey ?? "unresolved",
+            quote: true);
+        var failedStepName = SymbolDisplay.FormatLiteral(
+            occurrence?.Step.StepName ?? stepName,
+            quote: true);
+        var scopeTemplate = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.TemplateKey ?? "unresolved",
+            quote: true);
+        var scopeKind = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.Kind.ToString() ?? "Unresolved",
+            quote: true);
+        var laneKey = occurrence?.Scope.LaneKey is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.LaneKey, quote: true);
+        var forkId = occurrence?.Scope.ForkId is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.ForkId, quote: true);
+        var pathIndex = occurrence?.Scope.ForkPathIndex?.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+
+        sb.AppendLine("            var failedForwardExecutionId = Guid.NewGuid();");
+        sb.AppendLine("            if (!TryRecordForwardDispatch(");
+        sb.AppendLine("                    failedForwardExecutionId,");
+        sb.AppendLine($"                    {occurrenceKey},");
+        sb.AppendLine($"                    ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"                    {scopeKind},");
+        sb.AppendLine($"                    {laneKey},");
+        sb.AppendLine($"                    {forkId},");
+        sb.AppendLine($"                    {pathIndex},");
+        sb.AppendLine($"                    {failedStepName}))");
+        sb.AppendLine("            {");
+        sb.AppendLine("                yield break;");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine($"            yield return new Trigger{model.PascalName}FailureHandlerCommand(");
+        sb.AppendLine("                WorkflowId,");
+        sb.AppendLine($"                {failedStepName},");
+        sb.AppendLine($"                {validationMessageLiteral},");
+        sb.AppendLine("                \"ValidationFailure\",");
+        sb.AppendLine("                null)");
+        sb.AppendLine("            {");
+        sb.AppendLine($"                ForwardOccurrenceKey = {occurrenceKey},");
+        sb.AppendLine($"                CompensationScopeKey = ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"                CompensationScopeKind = {scopeKind},");
+        sb.AppendLine($"                CompensationLaneKey = {laneKey},");
+        sb.AppendLine($"                CompensationForkId = {forkId},");
+        sb.AppendLine($"                CompensationForkPathIndex = {pathIndex},");
+        sb.AppendLine("                CompensationJournalSequenceAtDispatch = CompensationJournalSequence,");
+        sb.AppendLine("                FailedForwardExecutionId = failedForwardExecutionId,");
+        sb.AppendLine("            };");
     }
 
     private static void EmitStandardHandler(
@@ -177,13 +282,34 @@ internal sealed class StepStartHandlerEmitter
         string stepName,
         string commandName,
         string workerCommandName,
-        bool hasTimeout)
+        bool hasTimeout,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
         if (hasTimeout)
         {
-            EmitTimeoutCascadingStandardHandler(sb, model, stepName, commandName, workerCommandName, sagaClassName);
+            EmitTimeoutCascadingStandardHandler(
+                sb,
+                model,
+                stepName,
+                commandName,
+                workerCommandName,
+                sagaClassName,
+                compensationOccurrence);
+            return;
+        }
+
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            EmitDerivedStandardHandler(
+                sb,
+                model,
+                stepName,
+                commandName,
+                workerCommandName,
+                sagaClassName,
+                compensationOccurrence);
             return;
         }
 
@@ -204,7 +330,49 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine($"            nameof({workerCommandName}),");
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
-        sb.AppendLine($"        return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+        EmitWorkerCommandConstruction(
+            sb,
+            model,
+            workerCommandName,
+            compensationOccurrence,
+            "return ",
+            "        ");
+        sb.AppendLine("    }");
+    }
+
+    private static void EmitDerivedStandardHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        string commandName,
+        string workerCommandName,
+        string sagaClassName,
+        CompensationOccurrence? compensationOccurrence)
+    {
+        sb.AppendLine($"    /// <returns>The worker command to execute the {stepName} step, or rollback work while a fork quiesces.</returns>");
+        sb.AppendLine("    public IEnumerable<object> Handle(");
+        sb.AppendLine($"        {commandName} command,");
+        sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
+        sb.AppendLine();
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
+        sb.AppendLine($"        Phase = {model.PhaseEnumName}.{stepName};");
+        sb.AppendLine();
+        sb.AppendLine("        logger.LogDebug(");
+        sb.AppendLine("            \"Dispatching {CommandType} for workflow {WorkflowId}\",");
+        sb.AppendLine($"            nameof({workerCommandName}),");
+        sb.AppendLine("            WorkflowId);");
+        sb.AppendLine();
+        EmitWorkerCommandConstruction(
+            sb,
+            model,
+            workerCommandName,
+            compensationOccurrence,
+            "yield return ",
+            "        ");
         sb.AppendLine("    }");
     }
 
@@ -214,7 +382,8 @@ internal sealed class StepStartHandlerEmitter
         string stepName,
         string commandName,
         string workerCommandName,
-        string sagaClassName)
+        string sagaClassName,
+        CompensationOccurrence? compensationOccurrence)
     {
         // Yield-based handler so the start handler can cascade BOTH the worker
         // command and the {Phase}Timeout (Wolverine TimeoutMessage) that begins the
@@ -228,6 +397,8 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.{stepName};");
         sb.AppendLine();
         sb.AppendLine($"        logger.LogDebug(");
@@ -235,11 +406,213 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine($"            nameof({workerCommandName}),");
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
-        sb.AppendLine($"        yield return new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+        EmitWorkerCommandConstruction(
+            sb,
+            model,
+            workerCommandName,
+            compensationOccurrence,
+            "yield return ",
+            "        ");
         sb.AppendLine();
         sb.AppendLine("        // Start the timeout deadline race for this step.");
-        sb.AppendLine($"        yield return new {stepName}Timeout(WorkflowId);");
+        EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
         sb.AppendLine("    }");
+    }
+
+    private static void EmitForwardStartGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationOccurrence? occurrence,
+        string exitStatement)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            return;
+        }
+
+        var occurrenceKey = SymbolDisplay.FormatLiteral(
+            occurrence?.StableKey ?? "unresolved",
+            quote: true);
+        var scopeTemplate = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.TemplateKey ?? "unresolved",
+            quote: true);
+        sb.AppendLine("        if (ShouldIgnoreForwardStart(");
+        sb.AppendLine($"            {occurrenceKey},");
+        sb.AppendLine($"            ResolveCompensationScopeInstance({scopeTemplate})))");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            {exitStatement}");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void EmitPendingForkStartQuiescenceGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationOccurrence? occurrence)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            return;
+        }
+
+        if (occurrence?.Scope.ForkId is { } forkId
+            && occurrence.Scope.ForkPathIndex is { } pathIndex)
+        {
+            var forkIdLiteral = SymbolDisplay.FormatLiteral(forkId, quote: true);
+            var scopeTemplate = SymbolDisplay.FormatLiteral(
+                occurrence.Scope.TemplateKey,
+                quote: true);
+            var sanitizedId = forkId.Replace("-", "_");
+
+            sb.AppendLine("        // A sibling selected rollback before this queued lane began.");
+            sb.AppendLine("        // Quiesce the never-dispatched lane and wake rollback when it is last.");
+            sb.AppendLine($"        if (string.Equals(PendingCompensationForkId, {forkIdLiteral}, StringComparison.Ordinal)");
+            sb.AppendLine("            && string.Equals(");
+            sb.AppendLine("                PendingCompensationScopeKey,");
+            sb.AppendLine($"                ResolveCompensationScopeInstance({scopeTemplate}),");
+            sb.AppendLine("                StringComparison.Ordinal))");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            if (Fork_{sanitizedId}_Path{pathIndex}Status == Strategos.Definitions.ForkPathStatus.InProgress)");
+            sb.AppendLine("            {");
+            sb.AppendLine($"                Fork_{sanitizedId}_Path{pathIndex}CompensationQuiesced = true;");
+            sb.AppendLine($"                Fork_{sanitizedId}_Path{pathIndex}Status = Strategos.Definitions.ForkPathStatus.Success;");
+            sb.AppendLine("            }");
+            sb.AppendLine($"            else if (Fork_{sanitizedId}_Path{pathIndex}Status is not Strategos.Definitions.ForkPathStatus.Success");
+            sb.AppendLine($"                and not Strategos.Definitions.ForkPathStatus.Failed)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                CompensationFailureMessage = \"Queued fork start contradicts the pending compensation path state; saga retained.\";");
+            sb.AppendLine($"                Phase = {model.PhaseEnumName}.Failed;");
+            sb.AppendLine("                yield break;");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine($"            if (CheckJoinReady_{sanitizedId}() && PendingCompensationScopeKey is not null)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                foreach (var rollbackMessage in BeginCompensationScope(PendingCompensationScopeKey, logger))");
+            sb.AppendLine("                {");
+            sb.AppendLine("                    yield return rollbackMessage;");
+            sb.AppendLine("                }");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
+        // A stale command from another scope is not authoritative enough to mutate
+        // the pending fork; it still must not start new external forward work.
+        sb.AppendLine("        if (PendingCompensationScopeKey is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            yield break;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void EmitTimeoutConstruction(
+        StringBuilder sb,
+        WorkflowModel model,
+        string stepName,
+        CompensationOccurrence? occurrence)
+    {
+        sb.Append($"        yield return new {stepName}Timeout(WorkflowId)");
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine(";");
+            return;
+        }
+
+        var occurrenceKey = SymbolDisplay.FormatLiteral(
+            occurrence?.StableKey ?? "unresolved",
+            quote: true);
+        var scopeTemplate = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.TemplateKey ?? "unresolved",
+            quote: true);
+        var scopeKind = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.Kind.ToString() ?? "Unresolved",
+            quote: true);
+        var laneKey = occurrence?.Scope.LaneKey is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.LaneKey, quote: true);
+        var forkId = occurrence?.Scope.ForkId is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.ForkId, quote: true);
+        var pathIndex = occurrence?.Scope.ForkPathIndex?.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+
+        sb.AppendLine();
+        sb.AppendLine("        {");
+        sb.AppendLine($"            ForwardOccurrenceKey = {occurrenceKey},");
+        sb.AppendLine($"            CompensationScopeKey = ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"            CompensationScopeKind = {scopeKind},");
+        sb.AppendLine($"            CompensationLaneKey = {laneKey},");
+        sb.AppendLine($"            CompensationForkId = {forkId},");
+        sb.AppendLine($"            CompensationForkPathIndex = {pathIndex},");
+        sb.AppendLine("            CompensationJournalSequenceAtDispatch = CompensationJournalSequence,");
+        sb.AppendLine("            ForwardExecutionId = forwardExecutionId,");
+        sb.AppendLine("        };");
+    }
+
+    /// <summary>
+    /// Emits one forward worker dispatch. Compensation-aware workflows attach the
+    /// stable occurrence and concrete structural scope without changing the command's
+    /// backward-compatible positional constructor.
+    /// </summary>
+    private static void EmitWorkerCommandConstruction(
+        StringBuilder sb,
+        WorkflowModel model,
+        string workerCommandName,
+        CompensationOccurrence? occurrence,
+        string statementPrefix,
+        string indent)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine($"{indent}{statementPrefix}new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+            return;
+        }
+
+        var occurrenceKey = SymbolDisplay.FormatLiteral(
+            occurrence?.StableKey ?? "unresolved",
+            quote: true);
+        var scopeTemplate = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.TemplateKey ?? "unresolved",
+            quote: true);
+        var scopeKind = SymbolDisplay.FormatLiteral(
+            occurrence?.Scope.Kind.ToString() ?? "Unresolved",
+            quote: true);
+        var laneKey = occurrence?.Scope.LaneKey is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.LaneKey, quote: true);
+        var forkId = occurrence?.Scope.ForkId is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(occurrence.Scope.ForkId, quote: true);
+        var pathIndex = occurrence?.Scope.ForkPathIndex?.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+
+        sb.AppendLine($"{indent}var forwardExecutionId = Guid.NewGuid();");
+        sb.AppendLine($"{indent}if (!TryRecordForwardDispatch(");
+        sb.AppendLine($"{indent}        forwardExecutionId,");
+        sb.AppendLine($"{indent}        {occurrenceKey},");
+        sb.AppendLine($"{indent}        ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"{indent}        {scopeKind},");
+        sb.AppendLine($"{indent}        {laneKey},");
+        sb.AppendLine($"{indent}        {forkId},");
+        sb.AppendLine($"{indent}        {pathIndex},");
+        sb.AppendLine($"{indent}        {SymbolDisplay.FormatLiteral(occurrence?.Step.StepName ?? "unresolved", quote: true)}))");
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine($"{indent}    yield break;");
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+        sb.Append($"{indent}{statementPrefix}new {workerCommandName}(WorkflowId, forwardExecutionId, State)");
+        sb.AppendLine();
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine($"{indent}    ForwardOccurrenceKey = {occurrenceKey},");
+        sb.AppendLine($"{indent}    CompensationScopeKey = ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"{indent}    CompensationScopeKind = {scopeKind},");
+        sb.AppendLine($"{indent}    CompensationLaneKey = {laneKey},");
+        sb.AppendLine($"{indent}    CompensationForkId = {forkId},");
+        sb.AppendLine($"{indent}    CompensationForkPathIndex = {pathIndex},");
+        sb.AppendLine($"{indent}    CompensationJournalSequenceAtDispatch = CompensationJournalSequence,");
+        sb.AppendLine($"{indent}}};");
     }
 
     /// <summary>

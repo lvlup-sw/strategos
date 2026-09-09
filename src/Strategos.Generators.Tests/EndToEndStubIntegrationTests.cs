@@ -36,7 +36,7 @@ public class EndToEndStubIntegrationTests
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
         // (a) IPhaseAwareSaga is in the base list.
-        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga");
+        await Assert.That(sagaSource).Contains(": Saga, IPhaseAwareSaga, JasperFx.IRevisioned");
 
         // (b) CurrentPhaseName returns Phase.ToString().
         await Assert.That(sagaSource).Contains("public string CurrentPhaseName => Phase.ToString();");

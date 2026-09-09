@@ -48,6 +48,8 @@ public class ConfidenceLoweringTests
     /// </summary>
     private const string WorkflowWithStepConfidence = """
         using System;
+        using System.Threading;
+        using System.Threading.Tasks;
         using Strategos.Abstractions;
         using Strategos.Attributes;
         using Strategos.Builders;
@@ -111,6 +113,8 @@ public class ConfidenceLoweringTests
     /// </summary>
     private const string WorkflowWithConfidenceAndFailureHandler = """
         using System;
+        using System.Threading;
+        using System.Threading.Tasks;
         using Strategos.Abstractions;
         using Strategos.Attributes;
         using Strategos.Builders;
@@ -119,6 +123,7 @@ public class ConfidenceLoweringTests
 
         namespace TestNamespace;
 
+        [WorkflowState]
         public record OrderState : IWorkflowState
         {
             public Guid WorkflowId { get; init; }
@@ -160,7 +165,7 @@ public class ConfidenceLoweringTests
         }
 
         [Workflow("process-order")]
-        public static partial class ProcessOrderWorkflow
+        public static partial class ProcessOrderWorkflowDefinition
         {
             public static WorkflowDefinition<OrderState> Definition => Workflow<OrderState>
                 .Create("process-order")
@@ -168,10 +173,10 @@ public class ConfidenceLoweringTests
                 .Then<ClassifyIntent>(step => step
                     .RequireConfidence(0.85)
                     .OnLowConfidence(alt => alt.Then<HumanReview>()))
-                .Finally<SendConfirmation>()
                 .OnFailure(f => f
                     .Then<LogFailure>()
-                    .Complete());
+                    .Complete())
+                .Finally<SendConfirmation>();
         }
         """;
 
@@ -274,7 +279,8 @@ public class ConfidenceLoweringTests
     public async Task Emit_ConfidenceGatedStepWithFailureHandler_RoutesFailedPhaseToFailureHandler()
     {
         // Arrange & Act
-        var result = GeneratorTestHelper.RunGenerator(WorkflowWithConfidenceAndFailureHandler);
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(
+            WorkflowWithConfidenceAndFailureHandler);
         var sagaSource = GeneratorTestHelper.GetGeneratedSource(result, "ProcessOrderSaga.g.cs");
 
         // Isolate the ClassifyIntent confidence-gated completed handler region so
@@ -290,10 +296,17 @@ public class ConfidenceLoweringTests
         await Assert.That(handler).Contains("StartHumanReviewCommand");
 
         // Assert — the confidence-gated handler ITSELF guards on the Failed phase
-        // and routes to the lowered failure handler step (LogFailure). Without the
-        // F1 fix this guard is absent from the confidence-gated handler entirely.
+        // and emits the unified failure trigger with reducer-failure metadata.
+        // The trigger handler then enters the dedicated failure-handler role.
+        // Without the F1 fix this guard is absent from the confidence-gated
+        // handler entirely.
         await Assert.That(handler).Contains("if (Phase == ProcessOrderPhase.Failed)");
-        await Assert.That(handler).Contains("StartLogFailureCommand");
+        await Assert.That(handler).Contains("yield return new TriggerProcessOrderFailureHandlerCommand(");
+        await Assert.That(handler).Contains("\"ClassifyIntent\"");
+        await Assert.That(handler).Contains("\"StateTransitionFailure\"");
+        await Assert.That(handler).DoesNotContain("yield return new StartLogFailureCommand");
+        await Assert.That(sagaSource).Contains(
+            "return new StartFailureHandler_ProcessOrder_FailureHandler0_LogFailureCommand(WorkflowId);");
 
         // The Failed-phase guard must precede the confidence comparison so a step
         // that BOTH fails AND gates on confidence routes to the failure path, not

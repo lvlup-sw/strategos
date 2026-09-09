@@ -72,6 +72,11 @@ public sealed class StepConfigParityTests
                 ExtractionTestFile: "Strategos.Generators.Tests/Helpers/StepExtractorActionReferenceTests.cs",
                 WireRoundTripTest: "RoundTripIrFidelityTests.ActionIdentity_MatchesJsonFieldForField",
                 WireRoundTripTestFile: "Strategos.Generators.Tests/Import/RoundTripIrFidelityTests.cs"),
+            ["Compensate"] = new(
+                ExtractionTest: "StepExtractorResilienceTests.WalkInvocationChain_CompensateOfT_CarriesCompensationStepSymbolKey",
+                ExtractionTestFile: "Strategos.Generators.Tests/Helpers/StepExtractorResilienceTests.cs",
+                WireRoundTripTest: "RoundTripIrFidelityTests.CompensationConfig_MatchesJsonFieldForField_AndFoldsCompensationStep",
+                WireRoundTripTestFile: "Strategos.Generators.Tests/Import/RoundTripIrFidelityTests.cs"),
         };
 
     /// <summary>
@@ -315,6 +320,27 @@ public sealed class StepConfigParityTests
             ["Context"] = new(
                 "ContextBehaviorTests.Saga_StepWithContext_AssemblesContextAndInvokesExecuteSimilarity",
                 "Strategos.Generators.Behavioral.Tests/ContextBehaviorTests.cs"),
+
+            // --- CompensationConfiguration members (the nested descriptor the Compensate
+            //     overloads populate). Keys carry the type prefix because several of these
+            //     names collide with step-level members that mean something else:
+            //     CompensationConfiguration.Timeout is the INVERSE deadline, while the bare
+            //     Timeout key above is the FORWARD step deadline. ---
+            ["CompensationConfiguration.CompensationStepType"] = new(
+                "CompensationBehaviorTests.Saga_RetryExhaustedWithCompensate_RunsCompensationOnceAndTransitionsToFailed",
+                "Strategos.Generators.Behavioral.Tests/CompensationBehaviorTests.cs"),
+            ["CompensationConfiguration.InverseAction"] = new(
+                "CompensationBehaviorTests.Saga_TypedCompensation_DerivesAndExecutesReversedCompletedPrefix",
+                "Strategos.Generators.Behavioral.Tests/CompensationBehaviorTests.cs"),
+            ["CompensationConfiguration.RequiredOnFailure"] = new(
+                "CompensateOnFailureInteropTests.Behavioral_StepCompensateAndWorkflowOnFailure_RunsCompensationThenFailureChain",
+                "Strategos.Generators.Behavioral.Tests/CompensateOnFailureInteropTests.cs"),
+            ["CompensationConfiguration.Timeout"] = new(
+                "CompensationDeadlineBehaviorTests.Saga_AuthoredInverseDeadline_FiresRollbackTimeoutBeforeTheInverseFinishes",
+                "Strategos.Generators.Behavioral.Tests/CompensationDeadlineBehaviorTests.cs"),
+            ["CompensationConfiguration.WithTimeout"] = new(
+                "CompensationDeadlineBehaviorTests.Saga_AuthoredInverseDeadline_FiresRollbackTimeoutBeforeTheInverseFinishes",
+                "Strategos.Generators.Behavioral.Tests/CompensationDeadlineBehaviorTests.cs"),
         };
 
     /// <summary>
@@ -825,7 +851,44 @@ public sealed class StepConfigParityTests
             .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(p => p.Name);
 
-        return builderMethods.Concat(definitionFields).Distinct(StringComparer.Ordinal);
+        return builderMethods
+            .Concat(definitionFields)
+            .Concat(EnumerateCompensationConfigSurface())
+            .Distinct(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Enumerates the nested compensation descriptor's configurable surface: the public
+    /// instance properties of <see cref="CompensationConfiguration"/> plus its
+    /// <c>With*</c> mutator methods, each prefixed with the declaring type name.
+    /// </summary>
+    /// <remarks>
+    /// The prefix is load-bearing, not cosmetic. Two of these names (<c>Timeout</c> and
+    /// <c>WithTimeout</c>) already exist on the step-level surface meaning a DIFFERENT
+    /// thing — the forward step's deadline rather than one inverse execution's. Without the
+    /// prefix a compensation member would silently inherit the step-level member's
+    /// classification and its proof, which is exactly the drift this guard exists to catch.
+    /// </remarks>
+    /// <returns>The distinct prefixed member names.</returns>
+    private static IEnumerable<string> EnumerateCompensationConfigSurface()
+    {
+        const string prefix = nameof(CompensationConfiguration) + ".";
+
+        var properties = typeof(CompensationConfiguration)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(p => !p.IsSpecialName)
+            .Select(p => p.Name);
+
+        var mutators = typeof(CompensationConfiguration)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => !m.IsSpecialName)
+            .Where(m => m.Name.StartsWith("With", StringComparison.Ordinal))
+            .Select(m => m.Name);
+
+        return properties
+            .Concat(mutators)
+            .Distinct(StringComparer.Ordinal)
+            .Select(name => prefix + name);
     }
 
     /// <summary>

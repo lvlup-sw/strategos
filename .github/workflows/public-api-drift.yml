@@ -28,27 +28,128 @@ name: Public API drift (cross-repo notify)
 # historical entrypoint *signatures*, not the transitive type graph. The
 # local analyzer allowlist additionally guards the three continuation interfaces
 # changed by #167 (ILoopForkJoinBuilder, IApprovalEscalationBuilder, and
-# IApprovalRejectionBuilder) plus WorkflowActionReference and the StepDefinition
-# carrier property. IForkPathBuilder and IContextBuilder remain transitively
+# IApprovalRejectionBuilder) plus WorkflowActionReference, the StepDefinition
+# carrier property, CompensationConfiguration, and StepContext's rollback-
+# identity seam. IForkPathBuilder and IContextBuilder remain transitively
 # represented by the historical entrypoints.
 #
 # Downstream mirror scope is the seven entrypoints; the local baseline is the
 # reviewed allowlist documented in src/Strategos/.editorconfig.
+
+# Pre-merge notice (PR #206 follow-up)
+# ------------------------------------
+# The push-to-main job above tells exarchos AFTER a merge. The mirror-scope-
+# changed job below runs on every pull request that touches a PublicAPI
+# baseline and, when the mirrored surface changed against the PR base, emits
+# a warning annotation and a sticky PR comment naming the changed lines — so a
+# reviewer sees that the exarchos mirror will need re-baselining BEFORE the
+# merge, not from a downstream build failure afterwards. It needs no PAT
+# (GITHUB_TOKEN with pull-requests: write) and never fails the PR.
 
 on:
   push:
     branches: [main]
     paths:
       - 'src/Strategos/PublicAPI/**'
+      - 'src/Strategos.Ontology/PublicAPI.Shipped.txt'
+      - 'src/Strategos.Ontology/PublicAPI.Unshipped.txt'
       - 'scripts/build-drift-issue.sh'
+      - '.github/workflows/public-api-drift.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/Strategos/PublicAPI/**'
+      - 'src/Strategos.Ontology/PublicAPI.Shipped.txt'
+      - 'src/Strategos.Ontology/PublicAPI.Unshipped.txt'
       - '.github/workflows/public-api-drift.yml'
 
 permissions:
   contents: read
 
 jobs:
+  mirror-scope-changed:
+    # Pre-merge: diff every PublicAPI baseline against the PR base and surface
+    # a change to the mirrored surface as a warning + sticky comment.
+    name: Mirror scope changed? (pre-merge notice)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR head (full history for the base diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Diff PublicAPI baselines vs PR base
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          files=(
+            src/Strategos/PublicAPI/PublicAPI.Shipped.txt
+            src/Strategos/PublicAPI/PublicAPI.Unshipped.txt
+            src/Strategos.Ontology/PublicAPI.Shipped.txt
+            src/Strategos.Ontology/PublicAPI.Unshipped.txt
+          )
+          # The mirrored surface: the seven historical entrypoints plus the
+          # reviewed allowlist documented in src/Strategos/.editorconfig.
+          mirror_regex='^[-+](static )?Strategos\.(Builders\.I(ApprovalBuilder|BranchBuilder|FailureBuilder|ForkJoinBuilder|LoopBuilder|StepConfiguration|WorkflowBuilder|ForkPathBuilder|LoopForkJoinBuilder|ApprovalEscalationBuilder|ApprovalRejectionBuilder|ContextBuilder)|Definitions\.(WorkflowActionReference|CompensationConfiguration|StepDefinition)|Steps\.StepContext)'
+          diff_out="$(git diff --no-color "${BASE_SHA}" HEAD -- "${files[@]}" || true)"
+          changed_lines="$(printf '%s\n' "${diff_out}" | grep -E "${mirror_regex}" || true)"
+          all_changed="$(printf '%s\n' "${diff_out}" | grep -E '^[-+](static )?Strategos\.' || true)"
+          if [ -z "${all_changed}" ]; then
+            echo "No PublicAPI baseline line changed against ${BASE_SHA}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          if [ -n "${changed_lines}" ]; then
+            echo "mirror=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=exarchos mirror scope changed::This PR changes the public API surface mirrored by lvlup-sw/exarchos strategos-api-mirror.test.ts; the mirror needs re-baselining when this merges."
+          else
+            echo "mirror=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "<!-- public-api-drift:mirror-scope -->"
+            echo "### Public API baseline changed against the PR base"
+            echo
+            if [ -n "${changed_lines}" ]; then
+              echo "**The surface mirrored by \`lvlup-sw/exarchos\` (\`strategos-api-mirror.test.ts\`) changed.** Re-baseline the mirror when this merges; the push-to-main workflow files the tracking issue."
+            else
+              echo "No mirrored entrypoint changed; the lines below are outside the exarchos mirror scope."
+            fi
+            echo
+            echo '```diff'
+            printf '%s\n' "${all_changed}"
+            echo '```'
+          } > "${RUNNER_TEMP}/comment.md"
+          echo "comment_path=${RUNNER_TEMP}/comment.md" >> "$GITHUB_OUTPUT"
+
+      - name: Sticky PR comment
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMENT_PATH: ${{ steps.diff.outputs.comment_path }}
+        run: |
+          set -euo pipefail
+          marker='<!-- public-api-drift:mirror-scope -->'
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -n1 || true)"
+          if [ -n "${existing}" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F body=@"${COMMENT_PATH}" >/dev/null
+            echo "Updated sticky comment ${existing}."
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -F body=@"${COMMENT_PATH}" >/dev/null
+            echo "Posted sticky comment."
+          fi
+
   notify-on-drift:
     name: Diff baseline + notify exarchos (fail-soft)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history for tag diff)
@@ -62,7 +163,7 @@ jobs:
         id: diff
         run: |
           set -euo pipefail
-          baseline='src/Strategos/PublicAPI/PublicAPI.Shipped.txt'
+          baseline='src/Strategos/PublicAPI/PublicAPI.Shipped.txt src/Strategos.Ontology/PublicAPI.Shipped.txt'
           prev_tag="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
           if [ -z "${prev_tag}" ]; then
             echo "No previous v* tag found — nothing to diff against; skipping."
@@ -70,7 +171,8 @@ jobs:
             exit 0
           fi
           echo "Comparing ${baseline} : ${prev_tag}..HEAD"
-          if git diff --quiet "${prev_tag}" HEAD -- "${baseline}"; then
+          # shellcheck disable=SC2086 # intentional word-splitting over the baseline list
+          if git diff --quiet "${prev_tag}" HEAD -- ${baseline}; then
             echo "Builder baseline unchanged since ${prev_tag}."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -91,6 +193,7 @@ jobs:
     # every push to main (alongside notify-on-drift) so the wiring can never
     # silently rot.
     name: Mocked-gh notify dry-run (#51 T14)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

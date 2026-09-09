@@ -19,7 +19,6 @@ namespace Strategos.Generators.Emitters.Saga;
 /// This emitter generates the following properties:
 /// <list type="bullet">
 ///   <item><description>WorkflowId - The saga identity with both [SagaIdentity] and [Identity] attributes</description></item>
-///   <item><description>Version - Optimistic concurrency control with [Version] attribute</description></item>
 ///   <item><description>Phase - Current workflow phase with NotStarted default</description></item>
 ///   <item><description>State - Workflow state (if StateTypeName is specified)</description></item>
 ///   <item><description>Iteration counters - One per loop (if loops are defined)</description></item>
@@ -55,16 +54,17 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
         sb.AppendLine("    public Guid WorkflowId { get; set; }");
         sb.AppendLine();
 
-        // Version for optimistic concurrency.
-        // Typed as long: Marten 9 widened numeric document revisions from int to
-        // long and rejects an int [Version] property at mapping time. This
-        // shadows the Wolverine Saga.Version (int) base property with `new`.
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Gets or sets the version for optimistic concurrency control.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    [Version]");
-        sb.AppendLine("    public new long Version { get; set; }");
-        sb.AppendLine();
+        // No Version property is emitted. Revisioning comes from the
+        // `JasperFx.IRevisioned` interface on the saga class declaration
+        // (SagaEmitter.EmitClassDeclaration) over the inherited `Saga.Version`
+        // (int), which Marten's default VersionedPolicy maps to numeric
+        // revisions with no [Version] attribute needed.
+        //
+        // The previous `[Version] public new long Version` shadow satisfied
+        // Marten's document mapping but NOT Wolverine's interface test in
+        // MartenPersistenceFrameProvider.DetermineUpdateFrame, so
+        // `UpdateRevision` was never emitted and concurrent saga transitions
+        // were last-write-wins.
 
         // Phase property
         sb.AppendLine("    /// <summary>");
@@ -143,6 +143,15 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
                         sb.AppendLine($"    /// Gets or sets the state for path {path.PathIndex} of fork {fork.ForkId}.");
                         sb.AppendLine("    /// </summary>");
                         sb.AppendLine($"    public {model.StateTypeName}? Fork_{sanitizedId}_Path{path.PathIndex}State {{ get; set; }}");
+                        sb.AppendLine();
+                    }
+
+                    if (CompensationTopology.UsesDerivedRuntime(model))
+                    {
+                        sb.AppendLine("    /// <summary>");
+                        sb.AppendLine($"    /// Gets or sets whether path {path.PathIndex} stopped at a rollback quiescence boundary.");
+                        sb.AppendLine("    /// </summary>");
+                        sb.AppendLine($"    public bool Fork_{sanitizedId}_Path{path.PathIndex}CompensationQuiesced {{ get; set; }}");
                         sb.AppendLine();
                     }
                 }
@@ -224,6 +233,88 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
             sb.AppendLine("    /// Gets or sets the timestamp when the failure occurred.");
             sb.AppendLine("    /// </summary>");
             sb.AppendLine("    public DateTimeOffset? FailureTimestamp { get; set; }");
+            sb.AppendLine();
+        }
+
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the durable completion-journal schema version.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public int CompensationJournalSchemaVersion { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the durable completion journal used to derive rollback work.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<CompensationJournalEntry> CompensationJournal { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets durable authority claims for in-flight forward dispatches.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<ForwardDispatchClaim> ForwardDispatchClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets saga-minted capabilities for failures observed after forward completion.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<FailureTriggerClaim> PendingPostCompletionFailureClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets consumed failure-trigger authority retained for idempotent");
+            sb.AppendLine("    /// terminal signals from the same dispatch and topology.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public List<FailureTriggerClaim> ConsumedFailureTriggerClaims { get; set; } = [];");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the next monotonic completion-journal sequence.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public long CompensationJournalSequence { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the concrete scope currently being rolled back.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? ActiveCompensationScopeKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the compiled occurrence whose failure claimed rollback.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? FailedCompensationOccurrenceKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the fork awaiting path quiescence before inverse dispatch.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? PendingCompensationForkId { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the fork scope awaiting path quiescence.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? PendingCompensationScopeKey { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets whether an inverse timed out with an unknown external outcome.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public bool CompensationOutcomeUnknown { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets the inverse failure that requires operator reconciliation.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public string? CompensationFailureMessage { get; set; }");
+            sb.AppendLine();
+
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets or sets whether the active rollback reached its terminal success path.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine("    public bool CompensationRollbackFinished { get; set; }");
             sb.AppendLine();
         }
 

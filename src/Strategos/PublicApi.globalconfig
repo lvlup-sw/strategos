@@ -10,8 +10,10 @@
 # Layer 2 (.editorconfig, this directory) then RE-ENABLES these rules as
 # build-breaking errors for an explicit allowlist: the historical 7
 # Strategos.Builders entrypoints, the 3 continuations changed by #167, and
-# WorkflowActionReference plus its StepDefinition carrier. .editorconfig section-scoped severities override
-# this global config, so generated and unrelated public types remain excluded.
+# WorkflowActionReference, its StepDefinition carrier, #169's
+# CompensationConfiguration inverse slot, and the StepContext rollback-identity
+# seam. .editorconfig section-scoped severities override this global config, so
+# generated and unrelated public types remain excluded.
 #
 # Precedence: globalconfig < .editorconfig section. See
 # https://learn.microsoft.com/dotnet/fundamentals/code-analysis/configuration-files

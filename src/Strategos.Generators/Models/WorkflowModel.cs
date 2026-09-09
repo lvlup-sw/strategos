@@ -71,6 +71,36 @@ internal sealed record WorkflowModel(
     public bool StateHasPhaseProperty { get; init; }
 
     /// <summary>
+    /// Gets the phase names that have at least one occurrence on the authored main flow.
+    /// </summary>
+    /// <remarks>
+    /// Lowering can append a type-named recovery infrastructure phase after the authored flow.
+    /// This provenance set prevents that folded phase from hiding an identically named main-flow
+    /// occurrence while leaving instance-named path phases independently classifiable.
+    /// </remarks>
+    public IReadOnlyCollection<string>? MainFlowStepPhaseNames { get; init; }
+
+    /// <summary>
+    /// Gets the phase names that have at least one authored forward occurrence.
+    /// </summary>
+    /// <remarks>
+    /// This is the occurrence-level counterpart to <see cref="ForwardStepTypeNames"/>. It lets
+    /// saga lowering omit generic handlers for recovery-only phases while retaining a phase that
+    /// is shared with any forward main-flow, loop, branch, or fork occurrence.
+    /// </remarks>
+    public IReadOnlyCollection<string>? ForwardStepPhaseNames { get; init; }
+
+    /// <summary>
+    /// Gets the CLR step type names that have at least one authored forward occurrence.
+    /// </summary>
+    /// <remarks>
+    /// Forward occurrences include the main flow, loops, branches, and forks. Dedicated
+    /// OnFailure occurrences are excluded, allowing worker error policies to be selected by
+    /// execution role even when recovery lowering folds the same CLR type into <see cref="Steps"/>.
+    /// </remarks>
+    public IReadOnlyCollection<string>? ForwardStepTypeNames { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether this workflow is backed by a C#-authored fluent
     /// <c>{PascalName}WorkflowDefinition.Definition</c> class.
     /// </summary>

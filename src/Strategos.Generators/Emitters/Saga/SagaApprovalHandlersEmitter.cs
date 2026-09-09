@@ -53,6 +53,7 @@ internal sealed class SagaApprovalHandlersEmitter
         ThrowHelper.ThrowIfNull(context, nameof(context));
 
         var commandName = $"Resume{approval.ApprovalPointName}ApprovalCommand";
+        var compensationOccurrence = ResolveCompensationOccurrence(model, approval);
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -65,20 +66,38 @@ internal sealed class SagaApprovalHandlersEmitter
         // construct — Start{Join} or Start{Rejoin} hangs the saga (#182).
         if (context.ForkAtCheckpoint is not null)
         {
-            EmitForkDispatchResumeHandler(sb, model, approval, commandName, context.ForkAtCheckpoint);
+            EmitForkDispatchResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                context.ForkAtCheckpoint,
+                compensationOccurrence);
             return;
         }
 
         var forkAtJoin = FindForkJoinedAt(model, context.NextStepName);
         if (forkAtJoin is not null)
         {
-            EmitForkDispatchResumeHandler(sb, model, approval, commandName, forkAtJoin);
+            EmitForkDispatchResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                forkAtJoin,
+                compensationOccurrence);
             return;
         }
 
         if (context.BranchAtCheckpoint is not null)
         {
-            EmitBranchDispatchResumeHandler(sb, model, approval, commandName, context.BranchAtCheckpoint);
+            EmitBranchDispatchResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                context.BranchAtCheckpoint,
+                compensationOccurrence);
             return;
         }
 
@@ -87,11 +106,22 @@ internal sealed class SagaApprovalHandlersEmitter
         // publishes Start{FirstRejection}Command, so the chain never starts (#186).
         if (context.IsLastStep && !approval.HasRejection)
         {
-            EmitFinalStepResumeHandler(sb, model, approval, commandName);
+            EmitFinalStepResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                compensationOccurrence);
         }
         else
         {
-            EmitNonFinalStepResumeHandler(sb, model, approval, commandName, context.NextStepName);
+            EmitNonFinalStepResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                context.NextStepName,
+                compensationOccurrence);
         }
     }
 
@@ -99,8 +129,20 @@ internal sealed class SagaApprovalHandlersEmitter
         StringBuilder sb,
         WorkflowModel model,
         ApprovalModel approval,
-        string commandName)
+        string commandName,
+        CompensationOccurrence? compensationOccurrence)
     {
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            EmitDerivedFinalStepResumeHandler(
+                sb,
+                model,
+                approval,
+                commandName,
+                compensationOccurrence);
+            return;
+        }
+
         // Final step - void return, sets Completed on approval or Failed on rejection
         sb.AppendLine("    public void Handle(");
         sb.AppendLine($"        {commandName} cmd)");
@@ -121,7 +163,12 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("                break;");
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
-        EmitRejectionHandling(sb, model, approval, isVoidHandler: true);
+        EmitRejectionHandling(
+            sb,
+            model,
+            approval,
+            compensationOccurrence: null,
+            isVoidHandler: true);
         sb.AppendLine("                break;");
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
@@ -131,12 +178,57 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("    }");
     }
 
+    private static void EmitDerivedFinalStepResumeHandler(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        string commandName,
+        CompensationOccurrence? compensationOccurrence)
+    {
+        sb.AppendLine("    public object? Handle(");
+        sb.AppendLine($"        {commandName} cmd)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        EmitDerivedResumePhaseGuard(sb, model, approval);
+        sb.AppendLine("        PendingApprovalRequestId = null;");
+        sb.AppendLine();
+        sb.AppendLine("        switch (cmd.Decision)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Approved:");
+        sb.AppendLine("                if (!string.IsNullOrEmpty(cmd.Instructions))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    ApprovalInstructions = cmd.Instructions;");
+        sb.AppendLine("                }");
+        sb.AppendLine();
+        sb.AppendLine($"                Phase = {model.PhaseEnumName}.Completed;");
+        sb.AppendLine("                MarkCompleted();");
+        sb.AppendLine("                return null;");
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
+        EmitRejectionHandling(
+            sb,
+            model,
+            approval,
+            compensationOccurrence,
+            isVoidHandler: false);
+        sb.AppendLine();
+        sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
+        sb.AppendLine("                // Stay in approval phase, await another response");
+        sb.AppendLine("                return null;");
+        sb.AppendLine();
+        sb.AppendLine("            default:");
+        sb.AppendLine("                return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+    }
+
     private static void EmitNonFinalStepResumeHandler(
         StringBuilder sb,
         WorkflowModel model,
         ApprovalModel approval,
         string commandName,
-        string? nextStepName)
+        string? nextStepName,
+        CompensationOccurrence? compensationOccurrence)
     {
         // Returns nullable object to allow a next-step command, a rejection-chain
         // start command, or null when the last main-flow step is approved (or deferred).
@@ -145,6 +237,7 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine($"        {commandName} cmd)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        EmitDerivedResumePhaseGuard(sb, model, approval);
         sb.AppendLine("        PendingApprovalRequestId = null;");
         sb.AppendLine();
         sb.AppendLine("        switch (cmd.Decision)");
@@ -168,7 +261,12 @@ internal sealed class SagaApprovalHandlersEmitter
 
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
-        EmitRejectionHandling(sb, model, approval, isVoidHandler: false);
+        EmitRejectionHandling(
+            sb,
+            model,
+            approval,
+            compensationOccurrence,
+            isVoidHandler: false);
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
         sb.AppendLine("                // Stay in approval phase, await another response");
@@ -189,7 +287,8 @@ internal sealed class SagaApprovalHandlersEmitter
         WorkflowModel model,
         ApprovalModel approval,
         string commandName,
-        ForkModel fork)
+        ForkModel fork,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sanitizedId = fork.ForkId.Replace("-", "_");
 
@@ -198,6 +297,7 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine($"        {commandName} cmd)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        EmitDerivedResumePhaseGuard(sb, model, approval);
         sb.AppendLine("        PendingApprovalRequestId = null;");
         sb.AppendLine();
         sb.AppendLine("        switch (cmd.Decision)");
@@ -228,7 +328,13 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("                };");
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
-        EmitRejectionHandling(sb, model, approval, isVoidHandler: false, returnAsEnumerable: true);
+        EmitRejectionHandling(
+            sb,
+            model,
+            approval,
+            compensationOccurrence,
+            isVoidHandler: false,
+            returnAsEnumerable: true);
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
         sb.AppendLine("                // Stay in approval phase, await another response");
@@ -249,13 +355,15 @@ internal sealed class SagaApprovalHandlersEmitter
         WorkflowModel model,
         ApprovalModel approval,
         string commandName,
-        BranchModel branch)
+        BranchModel branch,
+        CompensationOccurrence? compensationOccurrence)
     {
         sb.AppendLine("    /// <returns>The start command for the selected branch path, or null if deferred.</returns>");
         sb.AppendLine("    public object? Handle(");
         sb.AppendLine($"        {commandName} cmd)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        EmitDerivedResumePhaseGuard(sb, model, approval);
         sb.AppendLine("        PendingApprovalRequestId = null;");
         sb.AppendLine();
         sb.AppendLine("        switch (cmd.Decision)");
@@ -271,7 +379,12 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine(";");
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Rejected:");
-        EmitRejectionHandling(sb, model, approval, isVoidHandler: false);
+        EmitRejectionHandling(
+            sb,
+            model,
+            approval,
+            compensationOccurrence,
+            isVoidHandler: false);
         sb.AppendLine();
         sb.AppendLine("            case Strategos.Models.ApprovalDecision.Deferred:");
         sb.AppendLine("                // Stay in approval phase, await another response");
@@ -326,6 +439,7 @@ internal sealed class SagaApprovalHandlersEmitter
         ThrowHelper.ThrowIfNull(approval, nameof(approval));
 
         var commandName = $"{approval.ApprovalPointName}ApprovalTimeoutCommand";
+        var compensationOccurrence = ResolveCompensationOccurrence(model, approval);
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -338,6 +452,11 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
         sb.AppendLine();
+        EmitDerivedApprovalLifecycleGuard(
+            sb,
+            model,
+            approval,
+            returnStatement: "return null;");
         sb.AppendLine("        // Race condition guard: check if approval was already received");
         sb.AppendLine("        if (PendingApprovalRequestId != cmd.ApprovalRequestId)");
         sb.AppendLine("        {");
@@ -370,16 +489,26 @@ internal sealed class SagaApprovalHandlersEmitter
         else if (approval.IsEscalationTerminal)
         {
             // Terminal escalation - fail workflow
-            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
-            sb.AppendLine("        MarkCompleted();");
-            sb.AppendLine("        return null;");
+            EmitTerminalApprovalFailure(
+                sb,
+                model,
+                approval,
+                compensationOccurrence,
+                failureKind: "ApprovalTimeout",
+                failureMessage: $"Approval '{approval.ApprovalPointName}' timed out.",
+                indent: "        ");
         }
         else
         {
             // No escalation configured - fail workflow
-            sb.AppendLine($"        Phase = {model.PhaseEnumName}.Failed;");
-            sb.AppendLine("        MarkCompleted();");
-            sb.AppendLine("        return null;");
+            EmitTerminalApprovalFailure(
+                sb,
+                model,
+                approval,
+                compensationOccurrence,
+                failureKind: "ApprovalTimeout",
+                failureMessage: $"Approval '{approval.ApprovalPointName}' timed out.",
+                indent: "        ");
         }
 
         sb.AppendLine("    }");
@@ -414,6 +543,11 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine($"        {commandName} cmd)");
         sb.AppendLine("    {");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(cmd, nameof(cmd));");
+        EmitDerivedApprovalLifecycleGuard(
+            sb,
+            model,
+            approval,
+            returnStatement: "return;");
         sb.AppendLine("        PendingApprovalRequestId = cmd.ApprovalRequestId;");
         sb.AppendLine("    }");
     }
@@ -422,6 +556,7 @@ internal sealed class SagaApprovalHandlersEmitter
         StringBuilder sb,
         WorkflowModel model,
         ApprovalModel approval,
+        CompensationOccurrence? compensationOccurrence,
         bool isVoidHandler,
         bool returnAsEnumerable = false)
     {
@@ -441,13 +576,153 @@ internal sealed class SagaApprovalHandlersEmitter
         }
         else
         {
-            // No rejection steps - go directly to Failed
-            sb.AppendLine($"                Phase = {model.PhaseEnumName}.Failed;");
-            sb.AppendLine("                MarkCompleted();");
-            if (!isVoidHandler)
-            {
-                sb.AppendLine("                return null;");
-            }
+            // No rejection steps - fail directly for legacy programs, or enter the
+            // mechanically derived rollback for typed programs.
+            EmitTerminalApprovalFailure(
+                sb,
+                model,
+                approval,
+                compensationOccurrence,
+                failureKind: "ApprovalRejected",
+                failureMessage: $"Approval '{approval.ApprovalPointName}' was rejected.",
+                indent: "                ",
+                isVoidHandler: isVoidHandler,
+                returnAsEnumerable: returnAsEnumerable);
         }
     }
+
+    private static void EmitTerminalApprovalFailure(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        CompensationOccurrence? compensationOccurrence,
+        string failureKind,
+        string failureMessage,
+        string indent,
+        bool isVoidHandler = false,
+        bool returnAsEnumerable = false)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            sb.AppendLine($"{indent}Phase = {model.PhaseEnumName}.Failed;");
+            sb.AppendLine($"{indent}MarkCompleted();");
+            if (!isVoidHandler)
+            {
+                sb.AppendLine($"{indent}return null;");
+            }
+
+            return;
+        }
+
+        var occurrenceKey = Literal(compensationOccurrence?.StableKey ?? "unresolved");
+        var failedStepName = Literal(compensationOccurrence?.Step.StepName ?? "unresolved");
+        var scopeTemplate = Literal(compensationOccurrence?.Scope.TemplateKey ?? "unresolved");
+        var scopeKind = Literal(compensationOccurrence?.Scope.Kind.ToString() ?? "Unresolved");
+        var laneKey = NullableLiteral(compensationOccurrence?.Scope.LaneKey);
+        var forkId = NullableLiteral(compensationOccurrence?.Scope.ForkId);
+        var pathIndex = compensationOccurrence?.Scope.ForkPathIndex?.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+
+        sb.AppendLine($"{indent}if (!TryMintPostCompletionFailureClaim(");
+        sb.AppendLine($"{indent}        {occurrenceKey},");
+        sb.AppendLine($"{indent}        ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"{indent}        {scopeKind},");
+        sb.AppendLine($"{indent}        {laneKey},");
+        sb.AppendLine($"{indent}        {forkId},");
+        sb.AppendLine($"{indent}        {pathIndex},");
+        sb.AppendLine($"{indent}        {failedStepName},");
+        sb.AppendLine($"{indent}        {Literal(failureKind)},");
+        sb.AppendLine($"{indent}        out var approvalFailureClaim))");
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine(isVoidHandler
+            ? $"{indent}    return;"
+            : $"{indent}    return null;");
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+        sb.AppendLine($"{indent}var approvalFailure = new Trigger{model.PascalName}FailureHandlerCommand(");
+        sb.AppendLine($"{indent}    WorkflowId,");
+        // Approval fails after its preceding forward occurrence completed. The
+        // trigger therefore names that compiled occurrence (not the synthetic
+        // approval phase) and opts into inclusive completed-prefix semantics.
+        sb.AppendLine($"{indent}    {failedStepName},");
+        sb.AppendLine($"{indent}    {Literal(failureMessage)},");
+        sb.AppendLine($"{indent}    {Literal(failureKind)},");
+        sb.AppendLine($"{indent}    null)");
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine($"{indent}    ForwardOccurrenceKey = {occurrenceKey},");
+        sb.AppendLine($"{indent}    CompensationScopeKey = ResolveCompensationScopeInstance({scopeTemplate}),");
+        sb.AppendLine($"{indent}    CompensationScopeKind = {scopeKind},");
+        sb.AppendLine($"{indent}    CompensationLaneKey = {laneKey},");
+        sb.AppendLine($"{indent}    CompensationForkId = {forkId},");
+        sb.AppendLine($"{indent}    CompensationForkPathIndex = {pathIndex},");
+        sb.AppendLine($"{indent}    CompensationJournalSequenceAtDispatch = approvalFailureClaim.JournalSequenceAtDispatch,");
+        sb.AppendLine($"{indent}    FailedForwardExecutionId = approvalFailureClaim.ForwardExecutionId,");
+        sb.AppendLine($"{indent}    FailureOccurredAfterForwardCompletion = true,");
+        sb.AppendLine($"{indent}}};");
+        sb.AppendLine(returnAsEnumerable
+            ? $"{indent}return new object[] {{ approvalFailure }};"
+            : $"{indent}return approvalFailure;");
+    }
+
+    private static void EmitDerivedResumePhaseGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval)
+    {
+        EmitDerivedApprovalLifecycleGuard(
+            sb,
+            model,
+            approval,
+            returnStatement: "return null;");
+    }
+
+    private static void EmitDerivedApprovalLifecycleGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        ApprovalModel approval,
+        string returnStatement)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("        // Approval control messages are valid only at their persisted checkpoint.");
+        sb.AppendLine("        // A pending, active, or terminal rollback makes stale redelivery a no-op.");
+        sb.AppendLine($"        if (Phase != {model.PhaseEnumName}.{approval.PhaseName}");
+        sb.AppendLine("            || !HasStructurallyValidCompensationJournal()");
+        sb.AppendLine("            || !HasStructurallyValidForwardDispatchClaims()");
+        sb.AppendLine("            || !HasStructurallyValidFailureTriggerClaims()");
+        sb.AppendLine("            || PendingPostCompletionFailureClaims.Count > 0");
+        sb.AppendLine("            || PendingCompensationForkId is not null");
+        sb.AppendLine("            || ActiveCompensationScopeKey is not null");
+        sb.AppendLine("            || CompensationRollbackFinished");
+        sb.AppendLine("            || CompensationOutcomeUnknown");
+        sb.AppendLine("            || CompensationFailureMessage is not null");
+        sb.AppendLine("            || CompensationJournal?.Any(entry => entry?.Status is \"Failed\" or \"OutcomeUnknown\") == true)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            {returnStatement}");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static CompensationOccurrence? ResolveCompensationOccurrence(
+        WorkflowModel model,
+        ApprovalModel approval)
+    {
+        if (!CompensationTopology.UsesDerivedRuntime(model))
+        {
+            return null;
+        }
+
+        var topology = CompensationTopology.Build(model);
+        return topology.TryResolve(approval.PrecedingStepName, pathKey: null, out var occurrence)
+            ? occurrence
+            : null;
+    }
+
+    private static string NullableLiteral(string? value) => value is null ? "null" : Literal(value);
+
+    private static string Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
 }

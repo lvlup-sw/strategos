@@ -15,6 +15,10 @@
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="Marten" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- CompensationIdentityCorpusTests validates the same wire documents against the
+         bundled JSON Schema that the generated DTO and the vendored MinimalJsonReader
+         parse, so the three encodings of the non-blank rule cannot drift apart. -->
+    <PackageReference Include="NJsonSchema" />
   </ItemGroup>
 
   <ItemGroup>

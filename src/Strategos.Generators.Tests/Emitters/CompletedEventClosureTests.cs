@@ -114,6 +114,7 @@ public sealed class CompletedEventClosureTests
     [
         "SagaApprovalComponentEmitter",
         "SagaCompensationComponentEmitter",
+        "SagaConcurrencyPolicyEmitter",
         "SagaFailureHandlerComponentEmitter",
         "SagaLoopConditionsEmitter",
         "SagaNotFoundHandlersEmitter",

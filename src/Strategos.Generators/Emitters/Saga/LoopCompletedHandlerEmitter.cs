@@ -62,6 +62,14 @@ internal sealed class LoopCompletedHandlerEmitter
         var loops = context.LoopsAtStep!;
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var innermostLoop = loops[0];
+        var needsReducedFailureRouting = model.HasFailureHandlers
+            || CompensationTopology.UsesDerivedRuntime(model);
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(stepName, context.ForkPathKey, out compensationOccurrence!);
+        }
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -72,9 +80,12 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine("    /// <param name=\"logger\">The logger for diagnostic output.</param>");
         sb.AppendLine("    /// <returns>The command for the next step based on loop conditions.</returns>");
 
-        // Return type is object since we can return different command types
+        // Failure-aware programs use an iterator so the completed occurrence can
+        // emit its exact rollback trigger instead of a loop successor.
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-        sb.AppendLine($"    public object Handle(");
+        sb.AppendLine(needsReducedFailureRouting
+            ? "    public IEnumerable<object> Handle("
+            : "    public object Handle(");
         sb.AppendLine($"        {eventName} evt,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
@@ -84,10 +95,45 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            model,
+            stepName,
+            context.ForkPathKey,
+            needsReducedFailureRouting ? "yield break;" : "return default!;");
+
         // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
+            sb.AppendLine();
+        }
+
+        CompensationJournalEmitter.EmitRecordCompletion(
+            sb,
+            model,
+            stepName,
+            context.ForkPathKey);
+
+        // A reducer-driven failure is an inclusive completed boundary. Persist the
+        // occurrence, then route it before confidence or loop control can overwrite
+        // Phase, advance a counter, or dispatch any successor.
+        if (needsReducedFailureRouting)
+        {
+            if (model.StateHasPhaseProperty && !string.IsNullOrEmpty(model.StateTypeName))
+            {
+                sb.AppendLine("        Phase = State.Phase;");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+            sb.AppendLine("        {");
+            StepCompletedHandlerEmitter.EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence,
+                stepName);
+            sb.AppendLine("        }");
             sb.AppendLine();
         }
 
@@ -107,11 +153,16 @@ internal sealed class LoopCompletedHandlerEmitter
         // handler chain's start command (a Wolverine cascade, INV-1) and do NOT continue or exit
         // the loop. Confidence on a NON-last (intermediate) loop-body step is deferred and is
         // diagnosed separately.
-        EmitLoopBodyConfidenceGate(sb, model, stepModel, baseStepName);
+        EmitLoopBodyConfidenceGate(
+            sb,
+            model,
+            stepModel,
+            baseStepName,
+            needsReducedFailureRouting);
 
         // For nested loops, we need to check innermost first, then outer loops
         // Each loop has: max iteration guard, condition check, then continue/exit logic
-        EmitNestedLoopChecks(sb, model, loops, 0);
+        EmitNestedLoopChecks(sb, model, loops, 0, needsReducedFailureRouting);
 
         sb.AppendLine("    }");
     }
@@ -120,9 +171,8 @@ internal sealed class LoopCompletedHandlerEmitter
     /// Emits the confidence gate for a loop body's LAST step (DR-5 / #145 gap B), when that step
     /// declared <c>.RequireConfidence(t).OnLowConfidence(alt =&gt; ...)</c>. Emits nothing when the
     /// last body step is not confidence-gated, keeping non-confidence loop output byte-unchanged.
-    /// Mirrors <c>ForkJoinHandlerEmitter.EmitForkPathConfidenceGate</c>, but uses a plain
-    /// <c>return</c> (the loop completed handler's return type is <c>object</c>, not
-    /// <c>IEnumerable&lt;object&gt;</c>): below-threshold confidence routes to the lowered
+    /// Mirrors <c>ForkJoinHandlerEmitter.EmitForkPathConfidenceGate</c>, using the handler's
+    /// object or iterator return shape: below-threshold confidence routes to the lowered
     /// OnLowConfidence handler chain's start command and, in EventSourced mode, appends the
     /// <c>{Pascal}LowConfidenceRouted</c> audit stream event.
     /// </summary>
@@ -134,7 +184,8 @@ internal sealed class LoopCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         StepModel? stepModel,
-        string gatedStepName)
+        string gatedStepName,
+        bool usesIterator)
     {
         if (stepModel?.Confidence?.OnLowConfidenceHandlerStep is not { } handlerStep)
         {
@@ -176,7 +227,16 @@ internal sealed class LoopCompletedHandlerEmitter
         }
 
         sb.AppendLine();
-        sb.AppendLine($"            return new {lowConfidenceCommand}(WorkflowId);");
+        if (usesIterator)
+        {
+            sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
+            sb.AppendLine("            yield break;");
+        }
+        else
+        {
+            sb.AppendLine($"            return new {lowConfidenceCommand}(WorkflowId);");
+        }
+
         sb.AppendLine("        }");
         sb.AppendLine();
     }
@@ -185,7 +245,8 @@ internal sealed class LoopCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         IReadOnlyList<LoopModel> loops,
-        int loopIndex)
+        int loopIndex,
+        bool usesIterator)
     {
         var loop = loops[loopIndex];
         var conditionMethod = loop.ConditionMethodName;
@@ -206,11 +267,11 @@ internal sealed class LoopCompletedHandlerEmitter
             // Exit to outer loop check
             var outerLoop = loops[loopIndex + 1];
             sb.AppendLine($"            // Exit {loop.LoopName} loop, check {outerLoop.LoopName} loop");
-            EmitOuterLoopCheckInline(sb, model, loops, loopIndex + 1);
+            EmitOuterLoopCheckInline(sb, model, loops, loopIndex + 1, usesIterator);
         }
         else
         {
-            EmitLoopExitLogic(sb, model, loop, "            ");
+            EmitLoopExitLogic(sb, model, loop, "            ", usesIterator);
         }
 
         sb.AppendLine("        }");
@@ -226,11 +287,11 @@ internal sealed class LoopCompletedHandlerEmitter
             // Exit to outer loop check
             var outerLoop = loops[loopIndex + 1];
             sb.AppendLine($"            // Exit {loop.LoopName} loop, check {outerLoop.LoopName} loop");
-            EmitOuterLoopCheckInline(sb, model, loops, loopIndex + 1);
+            EmitOuterLoopCheckInline(sb, model, loops, loopIndex + 1, usesIterator);
         }
         else
         {
-            EmitLoopExitLogic(sb, model, loop, "            ");
+            EmitLoopExitLogic(sb, model, loop, "            ", usesIterator);
         }
 
         sb.AppendLine("        }");
@@ -239,38 +300,66 @@ internal sealed class LoopCompletedHandlerEmitter
         // Continue loop - increment and return first loop step
         sb.AppendLine($"        // Continue {loop.LoopName} loop");
         sb.AppendLine($"        {iterationCountProp}++;");
-        sb.AppendLine($"        return new {firstLoopStepCommand}(WorkflowId);");
+        if (usesIterator)
+        {
+            sb.AppendLine($"        yield return new {firstLoopStepCommand}(WorkflowId);");
+            sb.AppendLine("        yield break;");
+        }
+        else
+        {
+            sb.AppendLine($"        return new {firstLoopStepCommand}(WorkflowId);");
+        }
     }
 
     /// <summary>
     /// Emits the loop exit logic, which may route through a branch or directly to a continuation step.
     /// </summary>
-    private static void EmitLoopExitLogic(StringBuilder sb, WorkflowModel model, LoopModel loop, string indent)
+    private static void EmitLoopExitLogic(
+        StringBuilder sb,
+        WorkflowModel model,
+        LoopModel loop,
+        string indent,
+        bool usesIterator)
     {
         if (loop.HasBranchOnExit && loop.BranchOnExit is not null)
         {
             // Use the branch model stored directly on the loop
-            EmitBranchRouting(sb, model, loop.BranchOnExit, indent);
+            EmitBranchRouting(sb, model, loop.BranchOnExit, indent, usesIterator);
             return;
         }
 
         // Default: route to continuation step or complete
         if (loop.ContinuationStepName is not null)
         {
-            sb.AppendLine($"{indent}return new Start{loop.ContinuationStepName}Command(WorkflowId);");
+            if (usesIterator)
+            {
+                sb.AppendLine($"{indent}yield return new Start{loop.ContinuationStepName}Command(WorkflowId);");
+                sb.AppendLine($"{indent}yield break;");
+            }
+            else
+            {
+                sb.AppendLine($"{indent}return new Start{loop.ContinuationStepName}Command(WorkflowId);");
+            }
         }
         else
         {
             sb.AppendLine($"{indent}Phase = {model.PhaseEnumName}.Completed;");
             sb.AppendLine($"{indent}MarkCompleted();");
-            sb.AppendLine($"{indent}return null!;");
+            sb.AppendLine(usesIterator
+                ? $"{indent}yield break;"
+                : $"{indent}return null!;");
         }
     }
 
     /// <summary>
     /// Emits branch routing logic as a switch expression.
     /// </summary>
-    private static void EmitBranchRouting(StringBuilder sb, WorkflowModel model, BranchModel branch, string indent)
+    private static void EmitBranchRouting(
+        StringBuilder sb,
+        WorkflowModel model,
+        BranchModel branch,
+        string indent,
+        bool usesIterator)
     {
         // Method discriminators need qualified class name since they're defined in the workflow definition class
         // Property discriminators are accessed on the State property
@@ -279,7 +368,9 @@ internal sealed class LoopCompletedHandlerEmitter
             : $"State.{branch.DiscriminatorPropertyPath}";
 
         sb.AppendLine($"{indent}// Branch routing based on {branch.DiscriminatorPropertyPath}");
-        sb.AppendLine($"{indent}return {discriminatorAccess} switch");
+        sb.AppendLine(usesIterator
+            ? $"{indent}yield return {discriminatorAccess} switch"
+            : $"{indent}return {discriminatorAccess} switch");
         sb.AppendLine($"{indent}{{");
 
         // Emit case for each branch path
@@ -307,13 +398,18 @@ internal sealed class LoopCompletedHandlerEmitter
         }
 
         sb.AppendLine($"{indent}}};");
+        if (usesIterator)
+        {
+            sb.AppendLine($"{indent}yield break;");
+        }
     }
 
     private static void EmitOuterLoopCheckInline(
         StringBuilder sb,
         WorkflowModel model,
         IReadOnlyList<LoopModel> loops,
-        int loopIndex)
+        int loopIndex,
+        bool usesIterator)
     {
         var loop = loops[loopIndex];
         var conditionMethod = loop.ConditionMethodName;
@@ -329,11 +425,11 @@ internal sealed class LoopCompletedHandlerEmitter
         {
             var outerLoop = loops[loopIndex + 1];
             sb.AppendLine($"                // Exit {loop.LoopName} loop, check {outerLoop.LoopName} loop");
-            EmitOuterLoopCheckDoubleInline(sb, model, loops, loopIndex + 1);
+            EmitOuterLoopCheckDoubleInline(sb, model, loops, loopIndex + 1, usesIterator);
         }
         else
         {
-            EmitLoopExitLogic(sb, model, loop, "                ");
+            EmitLoopExitLogic(sb, model, loop, "                ", usesIterator);
         }
 
         sb.AppendLine("            }");
@@ -347,11 +443,11 @@ internal sealed class LoopCompletedHandlerEmitter
         {
             var outerLoop = loops[loopIndex + 1];
             sb.AppendLine($"                // Exit {loop.LoopName} loop, check {outerLoop.LoopName} loop");
-            EmitOuterLoopCheckDoubleInline(sb, model, loops, loopIndex + 1);
+            EmitOuterLoopCheckDoubleInline(sb, model, loops, loopIndex + 1, usesIterator);
         }
         else
         {
-            EmitLoopExitLogic(sb, model, loop, "                ");
+            EmitLoopExitLogic(sb, model, loop, "                ", usesIterator);
         }
 
         sb.AppendLine("            }");
@@ -359,14 +455,23 @@ internal sealed class LoopCompletedHandlerEmitter
 
         // Continue loop
         sb.AppendLine($"            {iterationCountProp}++;");
-        sb.AppendLine($"            return new {firstLoopStepCommand}(WorkflowId);");
+        if (usesIterator)
+        {
+            sb.AppendLine($"            yield return new {firstLoopStepCommand}(WorkflowId);");
+            sb.AppendLine("            yield break;");
+        }
+        else
+        {
+            sb.AppendLine($"            return new {firstLoopStepCommand}(WorkflowId);");
+        }
     }
 
     private static void EmitOuterLoopCheckDoubleInline(
         StringBuilder sb,
         WorkflowModel model,
         IReadOnlyList<LoopModel> loops,
-        int loopIndex)
+        int loopIndex,
+        bool usesIterator)
     {
         var loop = loops[loopIndex];
         var conditionMethod = loop.ConditionMethodName;
@@ -379,12 +484,20 @@ internal sealed class LoopCompletedHandlerEmitter
         sb.AppendLine($"                if ({iterationCountProp} >= {loop.MaxIterations} || {conditionMethod}())");
         sb.AppendLine("                {");
 
-        EmitLoopExitLogic(sb, model, loop, "                    ");
+        EmitLoopExitLogic(sb, model, loop, "                    ", usesIterator);
 
         sb.AppendLine("                }");
         sb.AppendLine();
         sb.AppendLine($"                {iterationCountProp}++;");
-        sb.AppendLine($"                return new {firstLoopStepCommand}(WorkflowId);");
+        if (usesIterator)
+        {
+            sb.AppendLine($"                yield return new {firstLoopStepCommand}(WorkflowId);");
+            sb.AppendLine("                yield break;");
+        }
+        else
+        {
+            sb.AppendLine($"                return new {firstLoopStepCommand}(WorkflowId);");
+        }
     }
 
     /// <summary>

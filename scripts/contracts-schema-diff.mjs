@@ -1,10 +1,19 @@
 // =============================================================================
 // contracts-schema-diff.mjs — fail-closed Contracts JSON Schema compatibility.
 //
-// Compares every packaged schema from the preceding published Contracts package
-// with the candidate schema set. Missing/unreadable/empty inputs are
-// INDETERMINATE and exit 2. A structural narrowing exits 1 unless the candidate
-// version carries the breaking-version increment required by Contracts policy.
+// Compares every packaged schema from a baseline schema tree (the preceding
+// published Contracts package, or the pull request's merge base) with the
+// candidate schema set. Missing/unreadable/empty inputs are INDETERMINATE and
+// exit 2.
+//
+// A structural narrowing exits 1 unless BOTH of the following hold:
+//   1. the candidate version carries the breaking-version increment required by
+//      Contracts policy (pre-1.0 minor, post-1.0 major), and
+//   2. the narrowing is named by an entry in the breaking-change allowlist
+//      (`--allowlist`) whose `version` falls inside the compared window.
+// The version increment alone is NOT sufficient: without (2) a pre-1.0 minor
+// bump absorbs every narrowing and the gate can never fail for a product reason.
+//
 // The recursive rules mirror the authoritative C# classifier in
 // Strategos.Contracts.SchemaDiff.JsonSchemaDiff.
 // =============================================================================
@@ -14,20 +23,49 @@ import path from "node:path";
 
 const usage =
   "usage: node scripts/contracts-schema-diff.mjs " +
-  "<previous-dir> <current-dir> <previous-version> <candidate-version>";
+  "<previous-dir> <current-dir> <previous-version> <candidate-version> " +
+  "[--allowlist <path>] [--allow-equal-versions]";
 
-const [prevDir, nextDir, previousVersionText, candidateVersionText, ...extraArgs] =
-  process.argv.slice(2);
-if (
-  !prevDir ||
-  !nextDir ||
-  !previousVersionText ||
-  !candidateVersionText ||
-  extraArgs.length > 0
-) {
+const DEFAULT_ALLOWLIST_PATH =
+  "src/Strategos.Contracts/schemas/breaking-changes.allowlist.json";
+
+function parseArguments(argv) {
+  const positional = [];
+  let allowlistPath = null;
+  let allowEqualVersions = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--allowlist") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) return null;
+      allowlistPath = value;
+      index += 1;
+    } else if (argument.startsWith("--allowlist=")) {
+      allowlistPath = argument.slice("--allowlist=".length);
+      if (!allowlistPath) return null;
+    } else if (argument === "--allow-equal-versions") {
+      allowEqualVersions = true;
+    } else if (argument.startsWith("--")) {
+      return null;
+    } else {
+      positional.push(argument);
+    }
+  }
+
+  if (positional.length !== 4 || positional.some((value) => !value)) return null;
+  return { positional, allowlistPath, allowEqualVersions };
+}
+
+const parsedArguments = parseArguments(process.argv.slice(2));
+if (parsedArguments === null) {
   console.error(`[INDETERMINATE] ${usage}`);
   process.exit(2);
 }
+
+const [prevDir, nextDir, previousVersionText, candidateVersionText] =
+  parsedArguments.positional;
+const { allowlistPath, allowEqualVersions } = parsedArguments;
 
 const BREAKING = "BREAKING";
 const NOTICE = "NOTICE";
@@ -53,6 +91,11 @@ const handledKeywords = new Set([
   "discriminator",
   "$defs",
   "definitions",
+  "if",
+  "then",
+  "else",
+  "dependentSchemas",
+  "dependentRequired",
 ]);
 
 const annotationKeywords = new Set([
@@ -156,6 +199,11 @@ function equivalent(left, right) {
   return canonicalKey(left) === canonicalKey(right);
 }
 
+// The allowlist lives beside the schemas (and therefore ships inside the package
+// content the baseline is extracted from), but it is policy data, not a schema:
+// diffing it would make every allowlist edit register as a schema change.
+const NON_SCHEMA_FILES = new Set(["breaking-changes.allowlist.json"]);
+
 async function listSchemaFiles(root, current = root) {
   let entries;
   try {
@@ -171,7 +219,11 @@ async function listSchemaFiles(root, current = root) {
     const entryPath = path.join(current, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await listSchemaFiles(root, entryPath)));
-    } else if (entry.isFile() && entry.name.endsWith(".json")) {
+    } else if (
+      entry.isFile() &&
+      entry.name.endsWith(".json") &&
+      !NON_SCHEMA_FILES.has(entry.name)
+    ) {
       files.push(path.relative(root, entryPath).split(path.sep).join("/"));
     }
   }
@@ -206,7 +258,13 @@ async function readSchemas(dir, label) {
 }
 
 function addChange(changes, severity, file, at, detail) {
-  changes.push({ severity, desc: `${file}: ${at}: ${detail}` });
+  changes.push({
+    severity,
+    file,
+    path: at,
+    kind: detail,
+    desc: `${file}: ${at}: ${detail}`,
+  });
 }
 
 function properties(schema) {
@@ -487,6 +545,26 @@ function diffDefinitions(file, prev, next, keyword, at, changes) {
   }
 }
 
+// `if` / `then` / `else` / `dependentSchemas` / `dependentRequired` are the
+// applicator keywords that make a document's validity depend on its own shape.
+// Adding one, or changing one, can only reject documents the previous schema
+// accepted, so it is a narrowing (BREAKING). Removing one only widens the
+// accepted set (NON-BREAKING). The authoritative C# classifier
+// (JsonSchemaDiff.DiffConditional) carries the same rule.
+function diffConditional(file, prev, next, keyword, at, changes) {
+  const hadConditional = hasOwn(prev, keyword);
+  const hasConditional = hasOwn(next, keyword);
+  if (!hadConditional && !hasConditional) return;
+  if (hadConditional && hasConditional && equivalent(prev[keyword], next[keyword])) return;
+
+  if (hadConditional && !hasConditional) {
+    addChange(changes, NON_BREAKING, file, at, `'${keyword}' conditional was removed`);
+    return;
+  }
+
+  addChange(changes, BREAKING, file, at, `'${keyword}' conditional was added or narrowed`);
+}
+
 function isAnnotation(keyword) {
   return annotationKeywords.has(keyword) || keyword.startsWith("x-");
 }
@@ -540,16 +618,110 @@ function diffSchema(file, prev, next, at, changes) {
   diffUnion(file, prev, next, "allOf", at, changes);
   diffDefinitions(file, prev, next, "$defs", at, changes);
   diffDefinitions(file, prev, next, "definitions", at, changes);
+  diffConditional(file, prev, next, "if", at, changes);
+  diffConditional(file, prev, next, "then", at, changes);
+  diffConditional(file, prev, next, "else", at, changes);
+  diffConditional(file, prev, next, "dependentSchemas", at, changes);
+  diffConditional(file, prev, next, "dependentRequired", at, changes);
   diffUnhandledKeywords(file, prev, next, at, changes);
+}
+
+// -----------------------------------------------------------------------------
+// Breaking-change allowlist.
+//
+// Each entry names one accepted narrowing by the exact triple the classifier
+// reports — `file` (path relative to the schema root), `path` (the JSON-pointer-ish
+// location `addChange` records) and `kind` (the reported message text) — plus the
+// Contracts `version` that introduced it and a human `reason`. Matching is exact
+// string equality on all three: a near-miss does not accept the change.
+// -----------------------------------------------------------------------------
+
+const ALLOWLIST_FIELDS = ["file", "path", "kind", "version", "reason"];
+
+async function readAllowlist(allowlistFile) {
+  if (!allowlistFile) return [];
+
+  let text;
+  try {
+    text = await readFile(allowlistFile, "utf8");
+  } catch (error) {
+    throw new SchemaInputError(
+      `breaking-change allowlist '${allowlistFile}' is unreadable: ${error.message}`,
+    );
+  }
+
+  let document;
+  try {
+    document = JSON.parse(text);
+  } catch (error) {
+    throw new SchemaInputError(
+      `breaking-change allowlist '${allowlistFile}' is not valid JSON: ${error.message}`,
+    );
+  }
+
+  const entries = Array.isArray(document)
+    ? document
+    : isObject(document) && Array.isArray(document.entries)
+      ? document.entries
+      : null;
+  if (entries === null) {
+    throw new SchemaInputError(
+      `breaking-change allowlist '${allowlistFile}' must be a JSON array of entries, ` +
+        "or an object with an 'entries' array",
+    );
+  }
+
+  return entries.map((entry, index) => {
+    if (!isObject(entry)) {
+      throw new SchemaInputError(
+        `breaking-change allowlist '${allowlistFile}' entry ${index} is not a JSON object`,
+      );
+    }
+
+    for (const field of ALLOWLIST_FIELDS) {
+      if (typeof entry[field] !== "string" || entry[field].length === 0) {
+        throw new SchemaInputError(
+          `breaking-change allowlist '${allowlistFile}' entry ${index} is missing a ` +
+            `non-empty string '${field}'`,
+        );
+      }
+    }
+
+    return {
+      index,
+      file: entry.file,
+      path: entry.path,
+      kind: entry.kind,
+      version: parseVersion(entry.version, `allowlist entry ${index}`),
+      reason: entry.reason,
+      matched: false,
+    };
+  });
+}
+
+/** An entry applies only when the version that introduced it falls in
+ * `(previous, candidate]` — the exact window this run compares. An entry outside
+ * the window describes a narrowing that is either already baked into the baseline
+ * or not yet shipped, so it cannot accept anything here. */
+function entryIsInWindow(entry, previousVersion, candidateVersion) {
+  return compareVersions(entry.version, previousVersion) > 0 &&
+    compareVersions(entry.version, candidateVersion) <= 0;
+}
+
+function describeEntry(entry) {
+  return `${entry.file}: ${entry.path}: ${entry.kind} (${entry.version.text}) — ${entry.reason}`;
 }
 
 async function main() {
   const previousVersion = parseVersion(previousVersionText, "previous");
   const candidateVersion = parseVersion(candidateVersionText, "candidate");
+  const allowlistEntries = await readAllowlist(allowlistPath);
   const previousSchemas = await readSchemas(prevDir, "previous");
   const currentSchemas = await readSchemas(nextDir, "current");
 
-  if (compareVersions(candidateVersion, previousVersion) <= 0) {
+  const versionOrder = compareVersions(candidateVersion, previousVersion);
+  const equalVersions = versionOrder === 0;
+  if (versionOrder < 0 || (equalVersions && !allowEqualVersions)) {
     console.error(
       `schema-diff: candidate version ${candidateVersion.text} must be greater than ` +
         `published baseline ${previousVersion.text}.`,
@@ -579,14 +751,66 @@ async function main() {
   for (const change of changes) console.log(`[${change.severity}] ${change.desc}`);
   if (changes.length === 0) console.log("schema-diff: no structural changes.");
 
+  const allowlistLabel = allowlistPath ?? DEFAULT_ALLOWLIST_PATH;
+  const applicableEntries = allowlistEntries.filter((entry) =>
+    entryIsInWindow(entry, previousVersion, candidateVersion));
+  for (const entry of allowlistEntries) {
+    if (!applicableEntries.includes(entry)) {
+      console.log(
+        `[${NOTICE}] stale allowlist entry — version ${entry.version.text} is outside the ` +
+          `compared window (${previousVersion.text}, ${candidateVersion.text}]: ` +
+          describeEntry(entry),
+      );
+    }
+  }
+
   if (breaking.length > 0) {
     if (permitsBreakingChange(previousVersion, candidateVersion)) {
       const increment = candidateVersion.major > previousVersion.major
         ? "major"
         : "pre-1.0 minor";
+      const unmatched = [];
+      for (const change of breaking) {
+        const entry = applicableEntries.find((candidate) =>
+          !candidate.matched &&
+          candidate.file === change.file &&
+          candidate.path === change.path &&
+          candidate.kind === change.kind);
+        if (entry) {
+          entry.matched = true;
+        } else {
+          unmatched.push(change);
+        }
+      }
+
+      for (const entry of applicableEntries) {
+        if (entry.matched) console.log(`[ALLOWED] ${describeEntry(entry)}`);
+      }
+
+      if (unmatched.length > 0) {
+        console.error(
+          `\nschema-diff: ${unmatched.length} of ${breaking.length} BREAKING change(s) ` +
+            `carry the ${increment} version increment ${previousVersion.text} -> ` +
+            `${candidateVersion.text} but are NOT accepted by the breaking-change ` +
+            "allowlist. For each one, add an entry to " +
+            `${allowlistLabel} and a Contracts CHANGELOG line:`,
+        );
+        for (const change of unmatched) {
+          console.error(
+            `  - {"file": ${JSON.stringify(change.file)}, "path": ${JSON.stringify(change.path)}, ` +
+              `"kind": ${JSON.stringify(change.kind)}, "version": ${JSON.stringify(candidateVersion.text)}, ` +
+              '"reason": "<why this narrowing is correct>"}',
+          );
+        }
+
+        process.exitCode = 1;
+        return;
+      }
+
       console.log(
         `\nschema-diff: ${breaking.length} BREAKING change(s) allowed by the ${increment} ` +
-          `version increment ${previousVersion.text} -> ${candidateVersion.text}. OK.`,
+          `version increment ${previousVersion.text} -> ${candidateVersion.text}, each ` +
+          `accepted by an entry in ${allowlistLabel}. OK.`,
       );
       return;
     }
@@ -595,7 +819,8 @@ async function main() {
     console.error(
       `\nschema-diff: ${breaking.length} BREAKING change(s) detected — a breaking ` +
         `schema change from ${previousVersion.text} requires a ${requiredIncrement} Contracts ` +
-        `version bump; candidate is ${candidateVersion.text}.`,
+        `version bump; candidate is ${candidateVersion.text}. Bump ContractsVersion, then ` +
+        `add an entry to ${allowlistLabel} and a Contracts CHANGELOG line.`,
     );
     process.exitCode = 1;
     return;

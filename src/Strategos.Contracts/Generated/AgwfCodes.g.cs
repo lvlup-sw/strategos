@@ -125,5 +125,11 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF043 — Workflow generated identity collision.</summary>
         public const string WorkflowEmissionIdentityCollision = "AGWF043";
+
+        /// <summary>AGWF044 — Authored compensation disagrees with derived inverse.</summary>
+        public const string AuthoredInverseDisagrees = "AGWF044";
+
+        /// <summary>AGWF045 — Compensation scope is not mechanically derivable.</summary>
+        public const string CompensationScopeNotDerivable = "AGWF045";
     }
 }

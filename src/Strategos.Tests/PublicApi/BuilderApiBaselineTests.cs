@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 
 using Strategos.Builders;
 using Strategos.Definitions;
+using Strategos.Steps;
 using Strategos.Tests.FixtureExport;
 
 namespace Strategos.Tests.PublicApi;
@@ -22,8 +23,10 @@ namespace Strategos.Tests.PublicApi;
 /// historical 7-entrypoint subset remains the surface exarchos's
 /// <c>strategos-api-mirror.test.ts</c> consumes. Issue #167 extends the local
 /// gate to the 3 continuations changed by typed occurrence configuration, the
-/// public <see cref="WorkflowActionReference"/> value object, and its
-/// <see cref="StepDefinition"/> carrier property.
+/// public <see cref="WorkflowActionReference"/> value object, its
+/// <see cref="StepDefinition"/> carrier property, and issue #169's reviewed
+/// <see cref="CompensationConfiguration"/> surface, and the explicit rollback
+/// identity carried by <see cref="StepContext"/>.
 /// </para>
 /// <para>
 /// These tests assert the historical subset remains intact, the expanded
@@ -110,6 +113,12 @@ public sealed class BuilderApiBaselineTests
     [
         "WorkflowActionReference",
         "StepDefinition",
+        "CompensationConfiguration",
+    ];
+
+    private static readonly string[] TrackedStepFileStems =
+    [
+        "StepContext",
     ];
 
     private static string ShippedBaselinePath { get; } = Path.Combine(
@@ -159,28 +168,39 @@ public sealed class BuilderApiBaselineTests
             .ToArray();
 
         // Every non-directive line belongs either to one of the 10 tracked
-        // builder interfaces or to the pre-existing StepDefinition surface
-        // that was shipped before this analyzer gate began tracking the file.
+        // builder interfaces or to one of the explicitly reviewed definition
+        // surfaces covered by this analyzer gate.
         foreach (var line in nonDirectiveLines)
         {
             var hasReviewedOwner = line.StartsWith("Strategos.Builders.", StringComparison.Ordinal) ||
                 line.StartsWith("Strategos.Definitions.StepDefinition", StringComparison.Ordinal) ||
-                line.StartsWith("static Strategos.Definitions.StepDefinition", StringComparison.Ordinal);
+                line.StartsWith("static Strategos.Definitions.StepDefinition", StringComparison.Ordinal) ||
+                line.StartsWith("Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal) ||
+                line.StartsWith("static Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal) ||
+                line.StartsWith("Strategos.Steps.StepContext", StringComparison.Ordinal) ||
+                line.StartsWith("static Strategos.Steps.StepContext", StringComparison.Ordinal);
 
             await Assert.That(hasReviewedOwner).IsTrue();
         }
 
         // The hard INV-1 contract still tracks exactly the 10 reviewed builder
-        // types. StepDefinition is the sole reviewed non-builder declaration.
+        // types plus the reviewed non-builder declarations that shipped in the
+        // last release: StepDefinition, CompensationConfiguration, and StepContext
+        // (its pre-2.13 members shipped in v2.10.0; Shipped = present in the last
+        // release, see src/Strategos/.editorconfig).
         // A type-declaration line is a bare fully-qualified type name with no
         // member ('.' after the type) and no signature arrow ('->').
         var typeDeclarationLines = nonDirectiveLines
             .Where(static l => !l.Contains("->", StringComparison.Ordinal))
             .ToArray();
 
-        await Assert.That(typeDeclarationLines.Length).IsEqualTo(11);
+        await Assert.That(typeDeclarationLines.Length).IsEqualTo(13);
         await Assert.That(typeDeclarationLines)
             .Contains("Strategos.Definitions.StepDefinition");
+        await Assert.That(typeDeclarationLines)
+            .Contains("Strategos.Definitions.CompensationConfiguration");
+        await Assert.That(typeDeclarationLines)
+            .Contains("Strategos.Steps.StepContext");
 
         var builderDeclarations = typeDeclarationLines
             .Where(static declaration => declaration.StartsWith("Strategos.Builders.", StringComparison.Ordinal))
@@ -281,7 +301,7 @@ public sealed class BuilderApiBaselineTests
     }
 
     [Test]
-    public async Task EditorConfig_DefinitionReEnableSections_ExactlyMatchIssue167Surface()
+    public async Task EditorConfig_DefinitionReEnableSections_ExactlyMatchIssues167And169Surface()
     {
         var text = await File.ReadAllTextAsync(EditorConfigPath);
         var matches = Regex.Matches(
@@ -295,6 +315,23 @@ public sealed class BuilderApiBaselineTests
             .ToArray();
 
         await Assert.That(actual).IsEquivalentTo(TrackedDefinitionFileStems);
+    }
+
+    [Test]
+    public async Task EditorConfig_StepReEnableSections_ExactlyMatchIssue169Surface()
+    {
+        var text = await File.ReadAllTextAsync(EditorConfigPath);
+        var matches = Regex.Matches(
+            text,
+            @"\[Steps/(?<stem>[^\]/{},]+)\.cs\]",
+            RegexOptions.None,
+            TimeSpan.FromSeconds(2));
+
+        var actual = matches
+            .Select(static match => match.Groups["stem"].Value)
+            .ToArray();
+
+        await Assert.That(actual).IsEquivalentTo(TrackedStepFileStems);
     }
 
     /// <summary>
@@ -333,6 +370,22 @@ public sealed class BuilderApiBaselineTests
     }
 
     [Test]
+    public async Task TrackedStepFiles_Exist()
+    {
+        foreach (var fileStem in TrackedStepFileStems)
+        {
+            var path = Path.Combine(
+                FixturePaths.RepoRoot,
+                "src",
+                "Strategos",
+                "Steps",
+                fileStem + ".cs");
+
+            await Assert.That(File.Exists(path)).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task ApiBaselines_DeclareOnlyReviewedTopLevelTypes()
     {
         var shipped = await File.ReadAllTextAsync(ShippedBaselinePath);
@@ -348,6 +401,8 @@ public sealed class BuilderApiBaselineTests
             [
                 typeof(StepDefinition).FullName!,
                 typeof(WorkflowActionReference).FullName!,
+                typeof(CompensationConfiguration).FullName!,
+                typeof(StepContext).FullName!,
             ])
             .ToArray();
 
@@ -391,6 +446,156 @@ public sealed class BuilderApiBaselineTests
         return match.Groups["stems"].Value
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Owner prefixes of the three non-builder types the <c>.editorconfig</c> re-enable
+    /// block brings into analyzer scope. Every member line under one of these owners
+    /// must appear in <see cref="ReviewedMemberLines"/>.
+    /// </summary>
+    private static readonly string[] ReviewedMemberOwners =
+    [
+        "Strategos.Definitions.StepDefinition.",
+        "Strategos.Definitions.CompensationConfiguration.",
+        "Strategos.Steps.StepContext.",
+    ];
+
+    /// <summary>
+    /// Member-level review allowlist (policy as data, the
+    /// <c>UnvalidatedEntryPointRatchetTests</c> idiom). The other assertions in this
+    /// file review the baseline at TYPE granularity: a member line such as
+    /// <c>CompensationConfiguration.WithTimeout(System.TimeSpan) -> CompensationConfiguration!</c>
+    /// satisfies the owner-prefix rule, is filtered out of the type count by its
+    /// <c>-></c>, and is invisible to the top-level-type allowlist — which is how a
+    /// shipped member with no authoring path entered <c>PublicAPI.Shipped.txt</c>
+    /// unreviewed (PR #206 review). A member line under one of
+    /// <see cref="ReviewedMemberOwners"/> is now accepted only when it is listed here
+    /// verbatim; adding a member means adding its line to this set in the same change.
+    /// </summary>
+    private static readonly HashSet<string> ReviewedMemberLines = new(StringComparer.Ordinal)
+    {
+        "Strategos.Definitions.CompensationConfiguration.CompensationStepType.get -> System.Type!",
+        "Strategos.Definitions.CompensationConfiguration.CompensationStepType.init -> void",
+        "Strategos.Definitions.CompensationConfiguration.InverseAction.get -> Strategos.Definitions.WorkflowActionReference?",
+        "Strategos.Definitions.CompensationConfiguration.InverseAction.init -> void",
+        "Strategos.Definitions.CompensationConfiguration.RequiredOnFailure.get -> bool",
+        "Strategos.Definitions.CompensationConfiguration.RequiredOnFailure.init -> void",
+        "Strategos.Definitions.CompensationConfiguration.Timeout.get -> System.TimeSpan?",
+        "Strategos.Definitions.CompensationConfiguration.Timeout.init -> void",
+        "Strategos.Definitions.CompensationConfiguration.WithTimeout(System.TimeSpan timeout) -> Strategos.Definitions.CompensationConfiguration!",
+        "Strategos.Definitions.StepDefinition.Action.get -> Strategos.Definitions.WorkflowActionReference?",
+        "Strategos.Definitions.StepDefinition.Action.init -> void",
+        "Strategos.Definitions.StepDefinition.AsLoopBodyStep(string! loopId) -> Strategos.Definitions.StepDefinition!",
+        "Strategos.Definitions.StepDefinition.AsTerminal() -> Strategos.Definitions.StepDefinition!",
+        "Strategos.Definitions.StepDefinition.Configuration.get -> Strategos.Definitions.StepConfigurationDefinition?",
+        "Strategos.Definitions.StepDefinition.Configuration.init -> void",
+        "Strategos.Definitions.StepDefinition.InstanceName.get -> string?",
+        "Strategos.Definitions.StepDefinition.InstanceName.init -> void",
+        "Strategos.Definitions.StepDefinition.IsLambdaStep.get -> bool",
+        "Strategos.Definitions.StepDefinition.IsLambdaStep.init -> void",
+        "Strategos.Definitions.StepDefinition.IsLoopBodyStep.get -> bool",
+        "Strategos.Definitions.StepDefinition.IsLoopBodyStep.init -> void",
+        "Strategos.Definitions.StepDefinition.IsTerminal.get -> bool",
+        "Strategos.Definitions.StepDefinition.IsTerminal.init -> void",
+        "Strategos.Definitions.StepDefinition.LambdaDelegate.get -> System.Delegate?",
+        "Strategos.Definitions.StepDefinition.LambdaDelegate.init -> void",
+        "Strategos.Definitions.StepDefinition.ParentLoopId.get -> string?",
+        "Strategos.Definitions.StepDefinition.ParentLoopId.init -> void",
+        "Strategos.Definitions.StepDefinition.StepId.get -> string!",
+        "Strategos.Definitions.StepDefinition.StepId.init -> void",
+        "Strategos.Definitions.StepDefinition.StepName.get -> string!",
+        "Strategos.Definitions.StepDefinition.StepName.init -> void",
+        "Strategos.Definitions.StepDefinition.StepType.get -> System.Type!",
+        "Strategos.Definitions.StepDefinition.StepType.init -> void",
+        "Strategos.Definitions.StepDefinition.StepTypeName.get -> string!",
+        "Strategos.Definitions.StepDefinition.WithConfiguration(Strategos.Definitions.StepConfigurationDefinition! configuration) -> Strategos.Definitions.StepDefinition!",
+        "Strategos.Steps.StepContext.CorrelationId.get -> string!",
+        "Strategos.Steps.StepContext.CorrelationId.init -> void",
+        "Strategos.Steps.StepContext.CurrentPhase.get -> string!",
+        "Strategos.Steps.StepContext.CurrentPhase.init -> void",
+        "Strategos.Steps.StepContext.ExecutionId.get -> System.Guid",
+        "Strategos.Steps.StepContext.ExecutionId.init -> void",
+        "Strategos.Steps.StepContext.IsCompensation.get -> bool",
+        "Strategos.Steps.StepContext.RetryCount.get -> int",
+        "Strategos.Steps.StepContext.RetryCount.init -> void",
+        "Strategos.Steps.StepContext.RollbackId.get -> System.Guid?",
+        "Strategos.Steps.StepContext.RollbackId.init -> void",
+        "Strategos.Steps.StepContext.StepName.get -> string!",
+        "Strategos.Steps.StepContext.StepName.init -> void",
+        "Strategos.Steps.StepContext.Timestamp.get -> System.DateTimeOffset",
+        "Strategos.Steps.StepContext.Timestamp.init -> void",
+        "Strategos.Steps.StepContext.WorkflowId.get -> System.Guid",
+        "Strategos.Steps.StepContext.WorkflowId.init -> void",
+        "static Strategos.Definitions.CompensationConfiguration.Create(System.Type! stepType) -> Strategos.Definitions.CompensationConfiguration!",
+        "static Strategos.Definitions.CompensationConfiguration.Create(System.Type! stepType, Strategos.Definitions.WorkflowActionReference! inverseAction) -> Strategos.Definitions.CompensationConfiguration!",
+        "static Strategos.Definitions.CompensationConfiguration.Create<TStep>() -> Strategos.Definitions.CompensationConfiguration!",
+        "static Strategos.Definitions.CompensationConfiguration.Create<TStep>(Strategos.Definitions.WorkflowActionReference! inverseAction) -> Strategos.Definitions.CompensationConfiguration!",
+        "static Strategos.Definitions.StepDefinition.Create(System.Type! stepType, string? customName = null, string? instanceName = null) -> Strategos.Definitions.StepDefinition!",
+        "static Strategos.Definitions.StepDefinition.CreateFromLambda(string! stepName, System.Delegate! lambdaDelegate) -> Strategos.Definitions.StepDefinition!",
+        "static Strategos.Steps.StepContext.Create(System.Guid workflowId, string! stepName, string! currentPhase) -> Strategos.Steps.StepContext!",
+    };
+
+    [Test]
+    public async Task ApiBaselines_DeclareOnlyReviewedMembersOfDefinitionAndStepTypes()
+    {
+        var shipped = await File.ReadAllTextAsync(ShippedBaselinePath);
+        var unshipped = await File.ReadAllTextAsync(UnshippedBaselinePath);
+        var baselineLines = (shipped + "\n" + unshipped)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var (unreviewed, missing) = ReviewMemberLines(baselineLines);
+
+        await Assert.That(unreviewed).IsEmpty();
+        await Assert.That(missing).IsEmpty();
+    }
+
+    /// <summary>
+    /// Kill fixture for the member-level review: a baseline that carries one member
+    /// line nobody reviewed must be reported, and a reviewed member that disappears
+    /// must be reported too. Proves the predicate can fail, so a green
+    /// <see cref="ApiBaselines_DeclareOnlyReviewedMembersOfDefinitionAndStepTypes"/>
+    /// means the baseline matched the allowlist rather than that nothing was compared.
+    /// </summary>
+    [Test]
+    public async Task ReviewMemberLines_ReportsAnUnreviewedMemberAndAMissingReviewedMember()
+    {
+        const string injected = "Strategos.Steps.StepContext.Unreviewed.get -> int";
+        var reviewed = ReviewedMemberLines.ToList();
+        var dropped = reviewed[0];
+        var mutated = reviewed.Skip(1).Append(injected).ToArray();
+
+        var (unreviewed, missing) = ReviewMemberLines(mutated);
+
+        await Assert.That(unreviewed).IsEquivalentTo([injected]);
+        await Assert.That(missing).IsEquivalentTo([dropped]);
+
+        // The committed allowlist itself is accepted without noise.
+        var (cleanUnreviewed, cleanMissing) = ReviewMemberLines(reviewed);
+        await Assert.That(cleanUnreviewed).IsEmpty();
+        await Assert.That(cleanMissing).IsEmpty();
+    }
+
+    /// <summary>
+    /// Splits baseline lines under <see cref="ReviewedMemberOwners"/> into those absent
+    /// from <see cref="ReviewedMemberLines"/> (unreviewed) and reviewed lines absent
+    /// from the baseline (missing).
+    /// </summary>
+    private static (IReadOnlyList<string> Unreviewed, IReadOnlyList<string> Missing) ReviewMemberLines(
+        IEnumerable<string> baselineLines)
+    {
+        var memberLines = baselineLines
+            .Select(static line => line.Trim())
+            .Where(static line => line.Length > 0 && !line.StartsWith('#') && line.Contains("->", StringComparison.Ordinal))
+            .Where(static line =>
+            {
+                var bare = line.StartsWith("static ", StringComparison.Ordinal) ? line["static ".Length..] : line;
+                return ReviewedMemberOwners.Any(owner => bare.StartsWith(owner, StringComparison.Ordinal));
+            })
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unreviewed = memberLines.Where(line => !ReviewedMemberLines.Contains(line)).Order(StringComparer.Ordinal).ToArray();
+        var missing = ReviewedMemberLines.Where(line => !memberLines.Contains(line)).Order(StringComparer.Ordinal).ToArray();
+        return (unreviewed, missing);
     }
 
     private static string FormatUnboundGenericName(Type type)

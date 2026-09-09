@@ -116,6 +116,11 @@ internal static partial class ActionCompositionAnalyzer
             cancellationToken,
             out var hasWorkflowBinding,
             out var boundWorkflow);
+        var compensationFailure = TryParseDescriptorCompensatingAction(
+            expression,
+            semanticModel,
+            cancellationToken,
+            out var compensatingActionName);
         if (!TryParseAction(
                 expression,
                 semanticModel,
@@ -142,9 +147,11 @@ internal static partial class ActionCompositionAnalyzer
                     WorkflowPredicateSyntax.All(Array.Empty<WorkflowPredicateSyntax>()),
                     ImmutableArray<string>.Empty,
                     requiredAuthority: null,
+                    compensatingActionName,
                     unresolvedReason
                         ?? identityFailure
                         ?? bindingFailure
+                        ?? compensationFailure
                         ?? "the workflow-bound action contract is not statically closed",
                     identity.Location);
                 return true;
@@ -164,7 +171,8 @@ internal static partial class ActionCompositionAnalyzer
             Project(parsed.Guarantee),
             parsed.Frame.OrderBy(resource => resource, StringComparer.Ordinal).ToImmutableArray(),
             parsed.RequiredAuthority,
-            parsed.InvalidReason ?? bindingFailure,
+            compensatingActionName,
+            parsed.InvalidReason ?? bindingFailure ?? compensationFailure,
             parsed.Location);
         return true;
     }
@@ -206,6 +214,7 @@ internal static partial class ActionCompositionAnalyzer
         var hasWorkflowBinding = false;
         string? boundWorkflow = null;
         string? requiredAuthority = null;
+        string? compensatingActionName = null;
         var requirements = new List<WorkflowPredicateSyntax>();
         var guarantees = new List<WorkflowPredicateSyntax>();
         var frame = new HashSet<string>(StringComparer.Ordinal);
@@ -406,12 +415,23 @@ internal static partial class ActionCompositionAnalyzer
                     }
 
                     break;
+                case "CompensatedBy":
+                    if (!TryParseFluentRequiredString(
+                        invocation,
+                        semanticModel,
+                        cancellationToken,
+                        out compensatingActionName,
+                        out var compensationReason))
+                    {
+                        invalidReason ??= compensationReason;
+                    }
+
+                    break;
                 case "Description":
                 case "Accepts":
                 case "Returns":
                 case "ReadOnly":
                 case "Idempotent":
-                case "CompensatedBy":
                 case "ValidFromState":
                     break;
                 default:
@@ -432,6 +452,7 @@ internal static partial class ActionCompositionAnalyzer
             guarantee,
             frame.OrderBy(resource => resource, StringComparer.Ordinal).ToImmutableArray(),
             requiredAuthority,
+            compensatingActionName,
             invalidReason ?? requirement.InvalidReason ?? guarantee.InvalidReason,
             actionInvocation.GetLocation());
         return true;
@@ -614,6 +635,44 @@ internal static partial class ActionCompositionAnalyzer
             out var reason)
             ? null
             : reason;
+    }
+
+    private static string? TryParseDescriptorCompensatingAction(
+        ExpressionSyntax expression,
+        SemanticModel semanticModel,
+        System.Threading.CancellationToken cancellationToken,
+        out string? compensatingActionName)
+    {
+        compensatingActionName = null;
+        if (Unwrap(expression) is not BaseObjectCreationExpressionSyntax creation
+            || creation.Initializer is null)
+        {
+            return null;
+        }
+
+        var compensationExpression = FindInitializerValue(
+            creation.Initializer,
+            "CompensatingActionName");
+        if (compensationExpression is null
+            || Unwrap(compensationExpression).IsKind(SyntaxKind.NullLiteralExpression))
+        {
+            return null;
+        }
+
+        var status = TryParseRequiredString(
+            compensationExpression,
+            semanticModel,
+            cancellationToken,
+            out var parsed);
+        if (status == StaticParseKind.Success)
+        {
+            compensatingActionName = parsed;
+            return null;
+        }
+
+        return status == StaticParseKind.Invalid
+            ? "a compensating action name cannot be empty"
+            : "the compensating action name is dynamic";
     }
 
     private static bool TryParseWorkflowActionIdentity(
@@ -1201,15 +1260,15 @@ internal static partial class ActionCompositionAnalyzer
 
     private static LogicComparisonOperator ReverseWorkflowComparison(
         LogicComparisonOperator comparison) => comparison switch
-    {
-        LogicComparisonOperator.Equal => LogicComparisonOperator.Equal,
-        LogicComparisonOperator.NotEqual => LogicComparisonOperator.NotEqual,
-        LogicComparisonOperator.LessThan => LogicComparisonOperator.GreaterThan,
-        LogicComparisonOperator.LessThanOrEqual => LogicComparisonOperator.GreaterThanOrEqual,
-        LogicComparisonOperator.GreaterThan => LogicComparisonOperator.LessThan,
-        LogicComparisonOperator.GreaterThanOrEqual => LogicComparisonOperator.LessThanOrEqual,
-        _ => throw new ArgumentOutOfRangeException(nameof(comparison)),
-    };
+        {
+            LogicComparisonOperator.Equal => LogicComparisonOperator.Equal,
+            LogicComparisonOperator.NotEqual => LogicComparisonOperator.NotEqual,
+            LogicComparisonOperator.LessThan => LogicComparisonOperator.GreaterThan,
+            LogicComparisonOperator.LessThanOrEqual => LogicComparisonOperator.GreaterThanOrEqual,
+            LogicComparisonOperator.GreaterThan => LogicComparisonOperator.LessThan,
+            LogicComparisonOperator.GreaterThanOrEqual => LogicComparisonOperator.LessThanOrEqual,
+            _ => throw new ArgumentOutOfRangeException(nameof(comparison)),
+        };
 
     /// <summary>A dependency-free projection of one parsed predicate.</summary>
     internal sealed class WorkflowPredicateSyntax
@@ -1299,6 +1358,7 @@ internal static partial class ActionCompositionAnalyzer
             WorkflowPredicateSyntax guarantee,
             ImmutableArray<string> frame,
             string? requiredAuthority,
+            string? compensatingActionName,
             string? invalidReason,
             Location location)
         {
@@ -1311,6 +1371,7 @@ internal static partial class ActionCompositionAnalyzer
             Guarantee = guarantee;
             Frame = frame;
             RequiredAuthority = requiredAuthority;
+            CompensatingActionName = compensatingActionName;
             InvalidReason = invalidReason;
             Location = location;
         }
@@ -1332,6 +1393,8 @@ internal static partial class ActionCompositionAnalyzer
         internal ImmutableArray<string> Frame { get; }
 
         internal string? RequiredAuthority { get; }
+
+        internal string? CompensatingActionName { get; }
 
         internal string? InvalidReason { get; }
 

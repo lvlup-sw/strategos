@@ -163,6 +163,28 @@ public class InvariantGuardTests
     }
 
     /// <summary>
+    /// INV-6 (sealed), #169 inverse-calculus surface: proof results and rollback
+    /// syntax nodes remain closed so subtype-specific inverse semantics cannot
+    /// bypass the exact proof kernel.
+    /// </summary>
+    [Test]
+    public async Task ActionInverseTypes_AreSealed()
+    {
+        var types = new[]
+        {
+            typeof(ActionContractIdentity),
+            typeof(ActionInverseContract),
+            typeof(ActionInverseFailure),
+            typeof(ActionInverseAnalysis),
+            typeof(ActionRollbackLeaf),
+            typeof(ActionRollbackPlan),
+        };
+
+        await Assert.That(types.Where(type => !type.IsSealed).Select(type => type.FullName))
+            .IsEmpty();
+    }
+
+    /// <summary>
     /// INV-6 (sealed), DR-2 edge surface: the relate-store edge types
     /// introduced for the Ontology Edge Foundation must be sealed. DR-2 left
     /// them sealed but uncovered by a guard; this closes that net mechanically

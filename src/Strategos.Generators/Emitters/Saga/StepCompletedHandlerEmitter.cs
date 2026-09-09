@@ -62,6 +62,12 @@ internal sealed class StepCompletedHandlerEmitter
         var baseStepName = stepModel?.StepName ?? ExtractBaseStepName(stepName);
         var eventName = PathEndTypeCollisionFinder.CompletedEventName(
             model, stepName, baseStepName, context.IsForkPathStep, context.ForkPathKey);
+        CompensationOccurrence? compensationOccurrence = null;
+        if (CompensationTopology.UsesDerivedRuntime(model))
+        {
+            var topology = CompensationTopology.Build(model);
+            _ = topology.TryResolve(stepName, context.ForkPathKey, out compensationOccurrence!);
+        }
 
         // XML documentation
         sb.AppendLine("    /// <summary>");
@@ -83,19 +89,38 @@ internal sealed class StepCompletedHandlerEmitter
         var confidence = context.StepModel?.Confidence;
         if (context.ApprovalAtStep is not null)
         {
-            EmitApprovalWaitingHandler(sb, model, eventName, context.ApprovalAtStep);
+            EmitApprovalWaitingHandler(
+                sb,
+                model,
+                stepName,
+                eventName,
+                context.ApprovalAtStep,
+                compensationOccurrence);
         }
         else if (confidence?.OnLowConfidenceHandlerStep is not null)
         {
-            EmitConfidenceGatedHandler(sb, model, eventName, confidence, context);
+            EmitConfidenceGatedHandler(
+                sb,
+                model,
+                stepName,
+                eventName,
+                confidence,
+                context,
+                compensationOccurrence);
         }
         else if (context.IsTerminalStep || context.IsLastStep)
         {
-            EmitFinalStepHandler(sb, model, eventName);
+            EmitFinalStepHandler(sb, model, stepName, eventName, compensationOccurrence);
         }
         else
         {
-            EmitNonFinalStepHandler(sb, model, eventName, context.NextStepName!);
+            EmitNonFinalStepHandler(
+                sb,
+                model,
+                stepName,
+                eventName,
+                context.NextStepName!,
+                compensationOccurrence);
         }
     }
 
@@ -111,9 +136,11 @@ internal sealed class StepCompletedHandlerEmitter
     private static void EmitConfidenceGatedHandler(
         StringBuilder sb,
         WorkflowModel model,
+        string stepName,
         string eventName,
         ConfidenceModel confidence,
-        HandlerContext context)
+        HandlerContext context,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var handlerStepName = confidence.OnLowConfidenceHandlerStep!.StepName;
@@ -141,41 +168,47 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            "yield break;");
+
         StateApplicationHelper.EmitStateApplication(sb, model);
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         // Failure-phase sync + route (F1): a confidence-gated step can ALSO drive
         // the saga into the Failed phase via its reducer/state application. The
-        // confidence comparison must not bypass failure-handler dispatch, so when
-        // the workflow declares failure handlers we mirror the phase-aware non-final
-        // handler: sync Phase from the reduced state and emit the same Phase == Failed
-        // guard — BEFORE the confidence comparison — routing to the failure handler's
-        // start command (INV-1: a Wolverine cascade). State types ending in
-        // "WorkflowState" track phase at the saga level only, so they are excluded
-        // from the sync, exactly as EmitPhaseAwareNonFinalStepHandler does.
-        if (model.HasFailureHandlers
-            && model.StateHasPhaseProperty
-            && !string.IsNullOrEmpty(model.StateTypeName)
-            && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
-        {
-            sb.AppendLine($"        Phase = State.Phase;");
-        }
+        // confidence comparison must not bypass failure handling, so an OnFailure
+        // chain or typed derived compensation activates the same phase-aware route.
+        // Sync Phase from reduced state and emit the Phase == Failed guard BEFORE
+        // the confidence comparison. The semantic state-property inspection is the
+        // authority; type-name suffixes do not decide whether a Phase member exists.
+        EmitReducedPhaseSync(sb, model);
 
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             sb.AppendLine();
         }
 
-        if (model.HasFailureHandlers)
+        if (NeedsReducedFailureRouting(model))
         {
-            var failedStepCommand = GetFailedStepCommandName(model);
             sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
             sb.AppendLine("        {");
-            sb.AppendLine("            logger.LogWarning(");
-            sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
-            sb.AppendLine("                WorkflowId);");
-            sb.AppendLine();
-            sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
-            sb.AppendLine("            yield break;");
+            EmitPostCompletionFailureRoute(
+                sb,
+                model,
+                compensationOccurrence,
+                stepName);
+
             sb.AppendLine("        }");
             sb.AppendLine();
         }
@@ -244,13 +277,21 @@ internal sealed class StepCompletedHandlerEmitter
     private static void EmitFinalStepHandler(
         StringBuilder sb,
         WorkflowModel model,
-        string eventName)
+        string stepName,
+        string eventName,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+        var needsReducedFailureRouting = NeedsReducedFailureRouting(model);
 
-        // Final step - apply state change, then MarkCompleted
+        // Final step - apply state change, then MarkCompleted. Failure-aware
+        // programs use an iterator because a reducer-driven Failed state must first
+        // enter OnFailure or emit its authenticated rollback trigger instead of
+        // completing the saga.
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
-        sb.AppendLine("    public void Handle(");
+        sb.AppendLine(needsReducedFailureRouting
+            ? "    public IEnumerable<object> Handle("
+            : "    public void Handle(");
         sb.AppendLine($"        {eventName} evt,");
         StateApplicationHelper.EmitSessionParameter(sb, model);
         sb.AppendLine($"        ILogger<{sagaClassName}> logger)");
@@ -260,7 +301,28 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            needsReducedFailureRouting ? "yield break;" : "return;");
+
         StateApplicationHelper.EmitStateApplication(sb, model);
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
+
+        if (needsReducedFailureRouting)
+        {
+            EmitReducedPhaseSync(sb, model);
+            EmitReducedFailureGuard(sb, model, compensationOccurrence, stepName);
+        }
 
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.Completed;");
         sb.AppendLine();
@@ -269,28 +331,47 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
         sb.AppendLine("        MarkCompleted();");
+        if (needsReducedFailureRouting)
+        {
+            sb.AppendLine("        yield break;");
+        }
+
         sb.AppendLine("    }");
     }
 
     private static void EmitNonFinalStepHandler(
         StringBuilder sb,
         WorkflowModel model,
+        string stepName,
         string eventName,
-        string nextStepName)
+        string nextStepName,
+        CompensationOccurrence? compensationOccurrence)
     {
         // Non-final step - apply reducer, returns StartNextStepCommand
         var nextStartCommand = $"Start{nextStepName}Command";
 
-        // When workflow has failure handlers, we need phase-aware routing:
-        // - Return type must be `object` to support polymorphic return
-        // - After reducer, check if Phase == Failed and route to FailedStep
-        if (model.HasFailureHandlers)
+        // OnFailure and typed derived compensation both need phase-aware routing:
+        // - Return type must be `IEnumerable<object>` to support polymorphic return
+        // - After reducer, check if Phase == Failed and emit the unified failure trigger
+        if (NeedsReducedFailureRouting(model))
         {
-            EmitPhaseAwareNonFinalStepHandler(sb, model, eventName, nextStepName, nextStartCommand);
+            EmitPhaseAwareNonFinalStepHandler(
+                sb,
+                model,
+                eventName,
+                stepName,
+                nextStepName,
+                nextStartCommand,
+                compensationOccurrence);
         }
         else
         {
-            EmitSimpleNonFinalStepHandler(sb, model, eventName, nextStartCommand);
+            EmitSimpleNonFinalStepHandler(
+                sb,
+                model,
+                eventName,
+                nextStartCommand,
+                compensationOccurrence);
         }
     }
 
@@ -298,7 +379,8 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
-        string nextStartCommand)
+        string nextStartCommand,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -315,7 +397,22 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            "yield break;");
+
         StateApplicationHelper.EmitStateApplication(sb, model);
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
 
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
@@ -335,13 +432,12 @@ internal sealed class StepCompletedHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string eventName,
+        string stepName,
         string nextStepName,
-        string nextStartCommand)
+        string nextStartCommand,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
-
-        // Get the failure step command name from the workflow's failure handlers
-        var failedStepCommand = GetFailedStepCommandName(model);
 
         // Use IEnumerable<object> pattern for phase-aware routing
         // Uses method injection for ILogger to work with Wolverine's saga rehydration pattern
@@ -356,37 +452,36 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            "yield break;");
+
         // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
 
+            if (compensationOccurrence is not null)
+            {
+                CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+            }
+
+            CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+                sb,
+                model,
+                compensationOccurrence);
+
             // Sync saga Phase from state ONLY for state types that actually expose a
             // Phase property (mechanically detected via StateHasPhaseProperty). State
-            // types tracking phase at the saga level only (e.g. OrchestratorWorkflowState,
-            // or any realistic exception-triggered OnFailure state) have no Phase member,
-            // so emitting State.Phase would not compile. The "WorkflowState" suffix check
-            // is retained as a defensive secondary guard.
-            if (model.StateHasPhaseProperty
-                && !model.StateTypeName.EndsWith("WorkflowState", StringComparison.Ordinal))
-            {
-                sb.AppendLine($"        Phase = State.Phase;");
-            }
+            // types tracking phase at the saga level only have no Phase member, so
+            // emitting State.Phase would not compile.
+            EmitReducedPhaseSync(sb, model);
 
             sb.AppendLine();
         }
 
-        // Phase-aware routing: check if Phase is Failed after reducer application
-        sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
-        sb.AppendLine("        {");
-        sb.AppendLine("            logger.LogWarning(");
-        sb.AppendLine("                \"Workflow {WorkflowId} entered Failed phase, routing to failure handler\",");
-        sb.AppendLine("                WorkflowId);");
-        sb.AppendLine();
-        sb.AppendLine($"            yield return new {failedStepCommand}(WorkflowId);");
-        sb.AppendLine("            yield break;");
-        sb.AppendLine("        }");
-        sb.AppendLine();
+        EmitReducedFailureGuard(sb, model, compensationOccurrence, stepName);
         sb.AppendLine($"        logger.LogDebug(");
         sb.AppendLine("            \"Step completed, chaining to {NextStep} for workflow {WorkflowId}\",");
         sb.AppendLine($"            nameof({nextStartCommand}),");
@@ -396,46 +491,86 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("    }");
     }
 
-    /// <summary>
-    /// Gets the command name for routing to the failure handler.
-    /// </summary>
-    /// <param name="model">The workflow model.</param>
-    /// <returns>The command name to start the failure handler step.</returns>
-    /// <summary>
-    /// Resolves the start command for the workflow-level failure handler chain — the
-    /// route a completed handler takes when the reducer drives the saga into the
-    /// <c>Failed</c> phase. Shared with <see cref="BranchHandlerEmitter"/> so the branch
-    /// live-case handler emits the same guard rather than a divergent copy.
-    /// </summary>
-    /// <param name="model">The workflow model.</param>
-    /// <returns>The failure-handler start-command type name.</returns>
-    internal static string GetFailedStepCommandName(WorkflowModel model)
+    private static bool NeedsReducedFailureRouting(WorkflowModel model) =>
+        model.HasFailureHandlers || CompensationTopology.UsesDerivedRuntime(model);
+
+    private static void EmitReducedPhaseSync(StringBuilder sb, WorkflowModel model)
     {
-        // Find the workflow-scoped failure handler's first step
-        var workflowFailureHandler = model.FailureHandlers?
-            .FirstOrDefault(fh => fh.Scope == Models.FailureHandlerScope.Workflow);
-
-        if (workflowFailureHandler is not null)
+        if (model.StateHasPhaseProperty
+            && !string.IsNullOrEmpty(model.StateTypeName))
         {
-            return $"Start{workflowFailureHandler.FirstStepName}Command";
+            sb.AppendLine($"        Phase = State.Phase;");
         }
+    }
 
-        // Fallback: look for any failure handler
-        var anyFailureHandler = model.FailureHandlers?.FirstOrDefault();
-        if (anyFailureHandler is not null)
+    private static void EmitReducedFailureGuard(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationOccurrence? compensationOccurrence,
+        string failedStepName)
+    {
+        sb.AppendLine($"        if (Phase == {model.PhaseEnumName}.Failed)");
+        sb.AppendLine("        {");
+        EmitPostCompletionFailureRoute(
+            sb,
+            model,
+            compensationOccurrence,
+            failedStepName);
+
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the unified reducer-failure route after a forward occurrence has
+    /// completed. Typed derived compensation carries the saga-minted occurrence
+    /// claim into the trigger; legacy <c>OnFailure</c> retains the trigger's
+    /// ordinary failure audit metadata.
+    /// </summary>
+    internal static void EmitPostCompletionFailureRoute(
+        StringBuilder sb,
+        WorkflowModel model,
+        CompensationOccurrence? compensationOccurrence,
+        string failedStepName,
+        string indent = "            ")
+    {
+        if (!CompensationJournalEmitter.EmitFailureAfterForwardCompletion(
+                sb,
+                model,
+                compensationOccurrence,
+                indent))
         {
-            return $"Start{anyFailureHandler.FirstStepName}Command";
+            EmitLegacyFailureTrigger(sb, model, failedStepName, indent);
         }
+    }
 
-        // Last resort fallback
-        return "StartFailedStepCommand";
+    private static void EmitLegacyFailureTrigger(
+        StringBuilder sb,
+        WorkflowModel model,
+        string failedStepName,
+        string indent = "            ")
+    {
+        var triggerCommand = $"Trigger{model.PascalName}FailureHandlerCommand";
+        sb.AppendLine($"{indent}logger.LogWarning(");
+        sb.AppendLine($"{indent}    \"Workflow {{WorkflowId}} entered Failed phase, routing to failure handler\",");
+        sb.AppendLine($"{indent}    WorkflowId);");
+        sb.AppendLine();
+        sb.AppendLine($"{indent}yield return new {triggerCommand}(");
+        sb.AppendLine($"{indent}    WorkflowId,");
+        sb.AppendLine($"{indent}    \"{failedStepName}\",");
+        sb.AppendLine($"{indent}    \"Workflow state entered Failed after the forward occurrence completed.\",");
+        sb.AppendLine($"{indent}    \"StateTransitionFailure\",");
+        sb.AppendLine($"{indent}    null);");
+        sb.AppendLine($"{indent}yield break;");
     }
 
     private static void EmitApprovalWaitingHandler(
         StringBuilder sb,
         WorkflowModel model,
+        string stepName,
         string eventName,
-        ApprovalModel approval)
+        ApprovalModel approval,
+        CompensationOccurrence? compensationOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var requestEventName = $"Request{approval.ApprovalPointName}ApprovalEvent";
@@ -453,11 +588,32 @@ internal sealed class StepCompletedHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
+        CompensationJournalEmitter.EmitForwardCompletionGuard(
+            sb,
+            compensationOccurrence,
+            "yield break;");
+
         // Apply state change
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
             StateApplicationHelper.EmitStateApplication(sb, model);
             sb.AppendLine();
+        }
+
+        if (compensationOccurrence is not null)
+        {
+            CompensationJournalEmitter.EmitRecordCompletion(sb, compensationOccurrence);
+        }
+
+        CompensationJournalEmitter.EmitPendingForkQuiescenceGuard(
+            sb,
+            model,
+            compensationOccurrence);
+
+        if (NeedsReducedFailureRouting(model))
+        {
+            EmitReducedPhaseSync(sb, model);
+            EmitReducedFailureGuard(sb, model, compensationOccurrence, stepName);
         }
 
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.{approval.PhaseName};");

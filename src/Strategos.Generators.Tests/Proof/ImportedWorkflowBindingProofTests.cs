@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 using Strategos.Generators.Tests.Fixtures;
@@ -65,6 +66,100 @@ public sealed class ImportedWorkflowBindingProofTests
                 diagnostic.Severity == DiagnosticSeverity.Error))
             .IsEqualTo(1)
             .Because("the illegal seam must fail through AGWF041 without an unrelated generator error.");
+    }
+
+    /// <summary>
+    /// The wire compatibility bit cannot weaken a typed rollback program: once an inverse
+    /// action identity is present, rollback on failure is mandatory.
+    /// </summary>
+    [Test]
+    public async Task ImportedTypedCompensation_WithRequiredOnFailureFalse_ReportsAgwf044()
+    {
+        var result = RunGenerator(
+            Source(
+                secondRequirement: 1,
+                compensationActions: """
+                    obj.Action("undo-receive")
+                        .Requires(order => order.Stage == 1)
+                        .Ensures(order => order.Stage == 0)
+                        .Modifies(order => order.Stage);
+                    obj.Action("undo-complete")
+                        .Requires(order => order.Stage == 2)
+                        .Ensures(order => order.Stage == 1)
+                        .Modifies(order => order.Stage);
+                    """),
+            ("imported-typed-compensation.workflow.json", ImportedTypedCompensationWorkflowJson));
+        var diagnostic = SingleBindingDiagnostic(result);
+
+        await Assert.That(diagnostic.Id).IsEqualTo("AGWF044");
+        await Assert.That(diagnostic.GetMessage()).Contains("RequiredOnFailure");
+        await Assert.That(diagnostic.GetMessage()).Contains("cannot set");
+    }
+
+    /// <summary>
+    /// The wire contract states the same rule the analyzer enforces above: since
+    /// 0.12.0 <c>CompensationConfiguration</c> carries
+    /// <c>if: { required: ["inverseAction"] }</c> /
+    /// <c>then: { properties: { requiredOnFailure: { const: true } } }</c>, so a
+    /// consumer validating with a Draft 2020-12 validator rejects the EXACT document
+    /// that produces AGWF044 here.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This test also PINS a limitation. NJsonSchema 11.6.1 — the validator behind the
+    /// in-repo equivalence gate — does not implement the conditional applicators, so it
+    /// accepts this document. The rule is therefore enforced in-repo by the analyzer
+    /// (AGWF044), not by the equivalence gate, and by conforming consumers through the
+    /// published schema.
+    /// </para>
+    /// <para>
+    /// The assertion below is deliberately written to FAIL if a future NJsonSchema
+    /// starts honouring <c>if</c>/<c>then</c>: that is the signal to promote the wire
+    /// conditional into the equivalence gate rather than leaving it analyzer-only.
+    /// </para>
+    /// </remarks>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task ImportedTypedCompensation_WireConditionalStatesTheAgwf044Rule()
+    {
+        var bundle = Strategos.Generators.Tests.Import.ContractsSchemaPaths.LoadBundle()
+            .GetProperty("definitions")
+            .GetProperty("CompensationConfiguration");
+
+        var condition = bundle.GetProperty("if").GetProperty("required")
+            .EnumerateArray()
+            .Select(element => element.GetString()!)
+            .ToArray();
+        await Assert.That(condition).IsEquivalentTo(new[] { "inverseAction" })
+            .Because("the wire rule fires on exactly the antecedent AGWF044 keys on: a typed inverse.");
+
+        var consequent = bundle.GetProperty("then")
+            .GetProperty("properties")
+            .GetProperty("requiredOnFailure")
+            .GetProperty("const");
+        await Assert.That(consequent.ValueKind).IsEqualTo(JsonValueKind.True)
+            .Because("the wire rule's consequent is the value AGWF044 requires.");
+
+        // The document under test is the antecedent with the consequent violated —
+        // the same shape the analyzer rejects above.
+        using var document = JsonDocument.Parse(ImportedTypedCompensationWorkflowJson);
+        var compensation = document.RootElement
+            .GetProperty("steps")[0]
+            .GetProperty("configuration")
+            .GetProperty("compensation");
+        await Assert.That(compensation.TryGetProperty("inverseAction", out _)).IsTrue();
+        await Assert.That(compensation.GetProperty("requiredOnFailure").ValueKind)
+            .IsEqualTo(JsonValueKind.False);
+
+        // Pinned limitation: NJsonSchema 11.6.1 ignores if/then, so it accepts the
+        // document the schema forbids. When this stops being true, move the rule into
+        // the equivalence gate.
+        var schema = await NJsonSchema.JsonSchema.FromFileAsync(
+            Strategos.Generators.Tests.Import.ContractsSchemaPaths.BundledWorkflowSchema);
+        await Assert.That(schema.Validate(ImportedTypedCompensationWorkflowJson)).IsEmpty()
+            .Because("NJsonSchema 11.6.1 does not implement the conditional applicators; if this "
+                + "assertion fails the validator gained if/then support and the wire conditional "
+                + "should be promoted into the equivalence gate.");
     }
 
     /// <summary>A C# and JSON definition with the same ordinal identity make the binding ambiguous.</summary>
@@ -249,10 +344,81 @@ public sealed class ImportedWorkflowBindingProofTests
         }
         """;
 
+    private const string ImportedTypedCompensationWorkflowJson = """
+        {
+          "schemaVersion": "1.0",
+          "name": "imported-flow",
+          "steps": [
+            {
+              "kind": "skill",
+              "stepId": "receive",
+              "stepName": "ReceiveStep",
+              "isTerminal": false,
+              "stepType": "ReceiveStep",
+              "action": {
+                "domainName": "orders",
+                "objectTypeName": "Order",
+                "actionName": "receive"
+              },
+              "configuration": {
+                "compensation": {
+                  "compensationStepType": "CompleteStep",
+                  "inverseAction": {
+                    "domainName": "orders",
+                    "objectTypeName": "Order",
+                    "actionName": "undo-receive"
+                  },
+                  "requiredOnFailure": false
+                }
+              }
+            },
+            {
+              "kind": "skill",
+              "stepId": "complete",
+              "stepName": "CompleteStep",
+              "isTerminal": true,
+              "stepType": "CompleteStep",
+              "action": {
+                "domainName": "orders",
+                "objectTypeName": "Order",
+                "actionName": "complete"
+              },
+              "configuration": {
+                "compensation": {
+                  "compensationStepType": "ReceiveStep",
+                  "inverseAction": {
+                    "domainName": "orders",
+                    "objectTypeName": "Order",
+                    "actionName": "undo-complete"
+                  },
+                  "requiredOnFailure": true
+                }
+              }
+            }
+          ],
+          "transitions": [
+            {
+              "transitionId": "receive-complete",
+              "fromStepId": "receive",
+              "toStepId": "complete",
+              "isDefault": true
+            }
+          ],
+          "branchPoints": [],
+          "loops": [],
+          "forkPoints": [],
+          "failureHandlers": [],
+          "approvalPoints": [],
+          "entryStepId": "receive",
+          "terminalStepId": "complete"
+        }
+        """;
+
     private static string Source(
         int secondRequirement,
         bool includeAuthoredWorkflow = false,
-        string bindingExpression = "\"imported-flow\"") => $$"""
+        string bindingExpression = "\"imported-flow\"",
+        string compensationActions = "") => $$"""
         using System;
         using System.Threading;
         using System.Threading.Tasks;
@@ -299,6 +465,8 @@ public sealed class ImportedWorkflowBindingProofTests
                         .Requires(order => order.Stage == {{secondRequirement}})
                         .Ensures(order => order.Stage == 2)
                         .Modifies(order => order.Stage);
+
+                    {{compensationActions}}
                 });
             }
         }
@@ -385,7 +553,9 @@ public sealed class ImportedWorkflowBindingProofTests
             "AGWF040",
             "AGWF041",
             "AGWF042",
-            "AGWF043");
+            "AGWF043",
+            "AGWF044",
+            "AGWF045");
     }
 
     private static async Task AssertDynamicCollisionFailsCleanly(GeneratorDriverRunResult result)
@@ -420,7 +590,7 @@ public sealed class ImportedWorkflowBindingProofTests
         var unexpectedErrors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .Where(static diagnostic => diagnostic.Id is not (
-                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042"))
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045"))
             .ToArray();
         if (unexpectedErrors.Length > 0)
         {
@@ -431,7 +601,8 @@ public sealed class ImportedWorkflowBindingProofTests
         }
 
         var diagnostics = result.Diagnostics
-            .Where(static diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042")
+            .Where(static diagnostic => diagnostic.Id is
+                "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
         if (diagnostics.Length != 1)
         {

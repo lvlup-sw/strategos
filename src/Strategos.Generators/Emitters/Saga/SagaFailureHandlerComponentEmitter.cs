@@ -41,9 +41,8 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
             return;
         }
 
-        // Get the first handler to determine the first step to chain to
+        // Get the first handler to determine the first recovery chain to trigger.
         var firstHandler = model.FailureHandlers!.First();
-        var firstStepName = firstHandler.FirstStepName;
 
         // Emit the trigger handler — UNLESS the workflow also declares compensation
         // (#140 Task 3.2). When both are present, a single merged Handle(Trigger…)
@@ -62,7 +61,7 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
         foreach (var handler in model.FailureHandlers!)
         {
             var sanitizedId = handler.HandlerId.Replace("-", "_");
-            var stepNames = handler.StepNames.ToList();
+            var stepNames = handler.StepPhaseNames;
 
             for (int i = 0; i < stepNames.Count; i++)
             {
@@ -88,7 +87,7 @@ internal sealed class SagaFailureHandlerComponentEmitter : ISagaComponentEmitter
     {
         var triggerCommandName = $"Trigger{model.PascalName}FailureHandlerCommand";
         var sanitizedId = handler.HandlerId.Replace("-", "_");
-        var firstStepName = handler.FirstStepName;
+        var firstStepName = handler.FirstStepPhaseName;
         var startCommandName = $"StartFailureHandler_{sanitizedId}_{firstStepName}Command";
 
         sb.AppendLine("    /// <summary>");
