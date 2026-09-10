@@ -547,7 +547,13 @@ jobs:
           args: --latest --strip header
 
       - name: Create GitHub Release
+        # publish.yml updates this same release later with the packed artifacts.
+        # Keep the pre-release flags in step with it: a hyphenated tag
+        # (v3.0.0-rc.1) must never be published as a stable "Latest" release
+        # in the window before publish.yml's release step runs.
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.changelog.outputs.content }}
           generate_release_notes: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}

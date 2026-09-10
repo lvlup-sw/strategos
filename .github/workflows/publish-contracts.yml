@@ -238,13 +238,19 @@ jobs:
           done
 
       - name: Push symbols
+        # `dotnet nuget push <pkg>.nupkg` already pushes the paired .snupkg from
+        # the same directory, so this step re-sends a symbols package nuget.org
+        # is still validating. Without --skip-duplicate that second PUT is a 409
+        # and fails the job after the package is already live (contracts-v0.12.0,
+        # run 34430841560), skipping the GitHub Release step. Mirrors publish.yml.
         run: |
           for package in ./packages/*.snupkg; do
             if [ -f "$package" ]; then
               echo "Pushing symbols $package..."
               dotnet nuget push "$package" \
                 --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
-                --source https://api.nuget.org/v3/index.json
+                --source https://api.nuget.org/v3/index.json \
+                --skip-duplicate
             fi
           done
 
