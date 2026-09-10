@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-cutting architecture suite (the basileus tests/Basileus.Architecture.Tests
+       shape). It asserts the invariants catalog (.exarchos/invariants.md) stays paired
+       with docs/architecture/invariants/ and runs the deterministic checks from
+       docs/architecture/invariants/deterministic-checks.md against the repository
+       tree. It reads files only, so it references no product project: nothing here
+       can go green because a scanned assembly stopped being built. -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+</Project>

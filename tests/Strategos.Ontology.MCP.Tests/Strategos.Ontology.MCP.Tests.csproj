@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="NSubstitute" />
+    <!-- Task 022 (DR-16 parity half): validate the C# abstention union's serialized
+         output against the Contracts-emitted JSON Schema. The schema is loaded as a
+         FILE from src/Strategos.Contracts/schemas/json-schema/ — the ontology CORE
+         takes NO Strategos.Contracts reference; only this TEST project validates. -->
+    <PackageReference Include="NJsonSchema" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Strategos.Ontology.MCP\Strategos.Ontology.MCP.csproj" />
+  </ItemGroup>
+
+</Project>

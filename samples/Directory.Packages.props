@@ -1,4 +1,0 @@
-<Project>
-  <!-- Import root package versions -->
-  <Import Project="../src/Directory.Packages.props" />
-</Project>

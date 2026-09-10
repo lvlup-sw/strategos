@@ -58,7 +58,7 @@ namespace Strategos.Generators.Import;
 // deadline). When the scan finds any, the bridge returns NO model (so NO saga is
 // emitted for that workflow) with the rejection diagnostics attached. Re-binding
 // the dropped bodies (condition, lambda, context) is a #100 follow-on (see
-// docs/deferred-features.md).
+// docs/plans/archive/deferred-features.md).
 // =============================================================================
 
 /// <summary>

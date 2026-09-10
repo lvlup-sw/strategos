@@ -8,7 +8,7 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_QUALITY: 'preview'
-  SOLUTION_PATH: 'src/strategos.slnx'
+  SOLUTION_PATH: 'strategos.slnx'
 
 # Required for trusted publishing (OIDC)
 permissions:
@@ -50,7 +50,7 @@ jobs:
         # *Benchmarks.Tests* are perf,
         # not a release gate (skipped in ci.yml too).
         run: |
-          for proj in src/*Tests/*.csproj; do
+          for proj in tests/*Tests/*.csproj; do
             case "$proj" in
               *Benchmarks.Tests*|*Contracts.Tests*)
                 echo "Skipping $(basename "$proj") (verified elsewhere; see step comment)"

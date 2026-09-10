@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategos — system design</title>
+<!--
+  Diagram profile: diagram-design 2.6 DEFAULT skin (white-smoke paper #f5f5f5, jet ink #2d3142,
+  atomic-tangerine accent #eb6c36, blue-slate muted #4f5d75; Geist / Geist Mono / Instrument Serif).
+  Decision: the docs site (docs/astro.config.mjs, Starlight defaults, no custom CSS under docs/src/) defines
+  no brand tokens — logo.svg carries the Vite template's #646cff/#42b883, not a brand — so option (e) of the
+  skill's onboarding applies: default skin, light-first, with the skill's dark tokens under
+  prefers-color-scheme: dark, a data-theme override, and a script-free toggle (:root:has(radio:checked)).
+  Regenerate from the diagram-design grammar rather than editing coordinates by hand: every x/y/size/font
+  is on the 4px grid, arrows are drawn before boxes, labels are masked with an 8px gap, elbows are r=8.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ---- diagram-design default skin: tokens on :root (light); dark redefines the same tokens ---- */
+  :root{
+  --paper:#f5f5f5; --paper-2:#ececec; --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
+  --rule:rgba(45,49,66,.12); --rule-solid:#bfc0c0; --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+  --accent-05:rgba(235,108,54,.05); --accent-50:rgba(235,108,54,.5); --link:#2e5aa8; --node:#ffffff;
+  --ink-02:rgba(45,49,66,.02); --ink-03:rgba(45,49,66,.03); --ink-05:rgba(45,49,66,.05); --ink-06:rgba(45,49,66,.06);
+  --ink-10:rgba(45,49,66,.10); --ink-20:rgba(45,49,66,.20); --ink-22:rgba(45,49,66,.22); --ink-30:rgba(45,49,66,.30);
+  --ink-40:rgba(45,49,66,.40); --muted-10:rgba(79,93,117,.10);
+  color-scheme:light;
+    --sans:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+    --serif:'Instrument Serif',Georgia,serif;
+    --mono:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#2d3142; --paper-2:#393e53; --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+  --rule:rgba(245,245,245,.12); --rule-solid:rgba(191,192,192,.25); --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  --accent-05:rgba(240,138,89,.06); --accent-50:rgba(240,138,89,.55); --link:#6a95d8; --node:rgba(245,245,245,.04);
+  --ink-02:rgba(245,245,245,.02); --ink-03:rgba(245,245,245,.03); --ink-05:rgba(245,245,245,.05); --ink-06:rgba(245,245,245,.06);
+  --ink-10:rgba(245,245,245,.10); --ink-20:rgba(245,245,245,.20); --ink-22:rgba(245,245,245,.22); --ink-30:rgba(245,245,245,.30);
+  --ink-40:rgba(245,245,245,.40); --muted-10:rgba(191,192,192,.10);
+  color-scheme:dark; } }
+  :root[data-theme="dark"]{
+  --paper:#2d3142; --paper-2:#393e53; --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+  --rule:rgba(245,245,245,.12); --rule-solid:rgba(191,192,192,.25); --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  --accent-05:rgba(240,138,89,.06); --accent-50:rgba(240,138,89,.55); --link:#6a95d8; --node:rgba(245,245,245,.04);
+  --ink-02:rgba(245,245,245,.02); --ink-03:rgba(245,245,245,.03); --ink-05:rgba(245,245,245,.05); --ink-06:rgba(245,245,245,.06);
+  --ink-10:rgba(245,245,245,.10); --ink-20:rgba(245,245,245,.20); --ink-22:rgba(245,245,245,.22); --ink-30:rgba(245,245,245,.30);
+  --ink-40:rgba(245,245,245,.40); --muted-10:rgba(191,192,192,.10);
+  color-scheme:dark; }
+  :root:has(#th-light:checked){
+  --paper:#f5f5f5; --paper-2:#ececec; --ink:#2d3142; --muted:#4f5d75; --soft:#7a8399;
+  --rule:rgba(45,49,66,.12); --rule-solid:#bfc0c0; --accent:#eb6c36; --accent-tint:rgba(235,108,54,.08);
+  --accent-05:rgba(235,108,54,.05); --accent-50:rgba(235,108,54,.5); --link:#2e5aa8; --node:#ffffff;
+  --ink-02:rgba(45,49,66,.02); --ink-03:rgba(45,49,66,.03); --ink-05:rgba(45,49,66,.05); --ink-06:rgba(45,49,66,.06);
+  --ink-10:rgba(45,49,66,.10); --ink-20:rgba(45,49,66,.20); --ink-22:rgba(45,49,66,.22); --ink-30:rgba(45,49,66,.30);
+  --ink-40:rgba(45,49,66,.40); --muted-10:rgba(79,93,117,.10);
+  color-scheme:light; }
+  :root:has(#th-dark:checked){
+  --paper:#2d3142; --paper-2:#393e53; --ink:#f5f5f5; --muted:#bfc0c0; --soft:#8e98ac;
+  --rule:rgba(245,245,245,.12); --rule-solid:rgba(191,192,192,.25); --accent:#f08a59; --accent-tint:rgba(240,138,89,.10);
+  --accent-05:rgba(240,138,89,.06); --accent-50:rgba(240,138,89,.55); --link:#6a95d8; --node:rgba(245,245,245,.04);
+  --ink-02:rgba(245,245,245,.02); --ink-03:rgba(245,245,245,.03); --ink-05:rgba(245,245,245,.05); --ink-06:rgba(245,245,245,.06);
+  --ink-10:rgba(245,245,245,.10); --ink-20:rgba(245,245,245,.20); --ink-22:rgba(245,245,245,.22); --ink-30:rgba(245,245,245,.30);
+  --ink-40:rgba(245,245,245,.40); --muted-10:rgba(191,192,192,.10);
+  color-scheme:dark; }
+
+  *,*::before,*::after{box-sizing:border-box}
+  html{overflow-x:hidden}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .wrap{max-width:1264px;margin:0 auto;padding:0 32px 64px} /* 1200px column: the widest figure (.dg-sd-contracts, min-width 1200px) fits without a horizontal scroll */
+  header{padding:56px 0 24px;border-bottom:1px solid var(--rule)}
+  .eyebrow{font-family:var(--mono);font-size:.66rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(1.75rem,2.4vw + .75rem,2.5rem);line-height:1.15;letter-spacing:-.02em;margin:0 0 .5rem}
+  h1 i{font-style:italic;color:var(--muted)}
+  .sub{max-width:820px;color:var(--muted);margin:0}
+  .sub b{color:var(--ink);font-weight:600}
+  .stamp{font-family:var(--mono);font-size:.72rem;color:var(--soft);margin-top:16px;display:flex;flex-wrap:wrap;gap:4px 24px;line-height:1.6}
+  a{color:var(--link);text-decoration:none;border-bottom:1px solid var(--rule-solid)}
+  a:hover{border-bottom-color:var(--link)}
+  .theme{display:inline-flex;border:1px solid var(--rule-solid);border-radius:6px;padding:2px;font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;margin:0}
+  .theme legend{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .theme input{position:absolute;opacity:0;width:1px;height:1px}
+  .theme label{padding:4px 10px;border-radius:4px;color:var(--muted);cursor:pointer}
+  .theme input:checked + label{background:var(--ink-10);color:var(--ink)}
+  .theme input:focus-visible + label{outline:2px solid var(--link)}
+
+  section{padding:40px 0 8px;border-bottom:1px solid var(--rule)}
+  h2{font-family:var(--sans);font-weight:600;font-size:1.25rem;letter-spacing:-.01em;margin:.25rem 0 .5rem}
+  .lede{color:var(--muted);max-width:820px;margin:0 0 20px}
+  figure{margin:0 0 8px}
+  .scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  .scroll svg{display:block;width:100%;height:auto;font-family:var(--sans)}
+  figcaption{max-width:960px;margin-top:12px;font-size:.92rem;color:var(--muted)}
+  figcaption b{color:var(--ink);font-weight:600}
+  figcaption .claim{display:block;color:var(--ink);margin-bottom:6px}
+  figcaption .claim::before{content:"claim";font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-right:10px}
+  figcaption ul{margin:8px 0 0;padding-left:18px}
+  figcaption li{margin:4px 0}
+  .mono,code{font-family:var(--mono);font-size:.9em}
+  .mono{color:var(--ink)}
+  .detail{margin-top:24px}
+  .detail .eyebrow{margin-bottom:8px}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px;font-size:.88rem}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  .refs{table-layout:fixed}
+  .refs th:first-child,.refs td:first-child{width:10.5em}
+  .refs th:last-child,.refs td:last-child{width:9em}
+  .refs td{overflow-wrap:anywhere}
+  .refs td:first-child{font-weight:600;color:var(--ink)}
+  .refs td .mono{color:var(--muted)}
+  .note{font-family:var(--mono);font-size:.78rem;color:var(--soft);margin-top:12px;line-height:1.55}
+  footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:.72rem;color:var(--soft);display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:space-between}
+  @media (max-width:760px){ .wrap{padding:0 16px 48px} }
+
+  /* ---- SVG grammar (diagram-design §6): paint order paper -> zones -> arrows -> labels -> nodes -> legend ---- */
+  .paper,.pm{fill:var(--paper)}
+  .zone{fill:var(--ink-02);stroke:var(--ink-10);stroke-width:.8}
+  .bnd{fill:var(--accent-05);stroke:var(--accent-50);stroke-width:1;stroke-dasharray:4 4}
+  .zl{fill:var(--ink-40);font:500 8px var(--mono);letter-spacing:.14em}
+  .zl-acc{fill:var(--accent)}
+  .a{fill:none;stroke:var(--muted);stroke-width:1}
+  .a-acc{fill:none;stroke:var(--accent);stroke-width:1.2}
+  .a-link{fill:none;stroke:var(--link);stroke-width:1.2}
+  .stop{stroke-width:2}
+  .hl{stroke:var(--rule);stroke-width:.8}
+  .dir{stroke:var(--ink-30);stroke-width:1} .dir-head{fill:var(--muted)}
+  .mk{fill:var(--muted)} .mk-acc{fill:var(--accent)} .mk-link{fill:var(--link)}
+  .mk-open{fill:none;stroke:var(--muted);stroke-width:1.2}
+  .al{fill:var(--soft);font:8px var(--mono);letter-spacing:.06em}
+  .al-ink{fill:var(--muted);font:8px var(--mono);letter-spacing:.06em}
+  .al-acc{fill:var(--accent);font:8px var(--mono);letter-spacing:.06em}
+  .al-link{fill:var(--link);font:8px var(--mono);letter-spacing:.06em}
+  .n{stroke-width:1}
+  .n-backend{fill:var(--node);stroke:var(--ink)}
+  .n-store{fill:var(--ink-05);stroke:var(--muted)}
+  .n-ext{fill:var(--ink-03);stroke:var(--ink-30)}
+  .n-input{fill:var(--muted-10);stroke:var(--soft)}
+  .n-opt{fill:var(--ink-02);stroke:var(--ink-20);stroke-dasharray:4 3}
+  .n-sec{fill:var(--accent-05);stroke:var(--accent-50);stroke-dasharray:4 4}
+  .n-focal{fill:var(--accent-tint);stroke:var(--accent)}
+  .tg{fill:transparent;stroke:var(--ink-40);stroke-width:.8}
+  .tg-focal{stroke:var(--accent-50)} .tg-input{stroke:var(--soft)}
+  .tgt{fill:var(--ink);font:500 8px var(--mono);letter-spacing:.08em}
+  .tgt-focal{fill:var(--accent)} .tgt-input{fill:var(--soft)}
+  .bdg{fill:var(--ink);font:8px var(--mono)}
+  .nm{fill:var(--ink);font:600 12px var(--sans)}
+  .sb{fill:var(--muted);font:8px var(--mono)} .sb-acc{fill:var(--accent)}
+  .rk{fill:var(--muted);font:8px var(--mono);letter-spacing:.18em}
+  .lk{fill:var(--muted);font:500 8px var(--mono);letter-spacing:.18em}
+  .lt{fill:var(--muted);font:8px var(--sans)} .lt-i{font-style:italic}
+  .co{fill:var(--ink);font:italic 12px var(--serif)}
+  .co-lead{fill:none;stroke:var(--ink-40);stroke-width:1;stroke-dasharray:4 3} .co-dot{fill:var(--ink)}
+  .ll{stroke:var(--ink-20);stroke-width:1;stroke-dasharray:3 3}
+  .act{fill:var(--ink-06);stroke:var(--muted);stroke-width:.8}
+  .frag{fill:var(--ink-02);stroke:var(--ink-22);stroke-width:1}
+  .frag-tab{fill:var(--paper);stroke:var(--ink-22);stroke-width:1}
+  .frag-op{fill:var(--muted);font:8px var(--mono);letter-spacing:.12em}
+  .guard{fill:var(--muted);font:8px var(--mono);letter-spacing:.04em}
+  .div{stroke:var(--ink-20);stroke-width:1;stroke-dasharray:4 3}
+  .ly{fill:var(--node)} .ly-focal{fill:var(--accent-tint)}
+  .ly-focal-stroke{fill:none;stroke:var(--accent);stroke-width:1}
+  .ly-name{fill:var(--ink);font:600 16px var(--sans)}
+  .ly-idx{fill:var(--muted);font:8px var(--mono);letter-spacing:.14em} .ly-idx-acc{fill:var(--accent);font-weight:600}
+
+  .dg-sd-packages{min-width:1120px}
+  .dg-sd-ontology-family{min-width:960px}
+  .dg-sd-compiler{min-width:1140px}
+  .dg-sd-runtime{min-width:1040px}
+  .dg-sd-ontology{min-width:1000px}
+  .dg-sd-calculus{min-width:1100px}
+  .dg-sd-contracts{min-width:1200px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="top">
+      <p class="eyebrow">strategos · system design · v3.0.0-rc.1 / Contracts 0.12.0</p>
+      <fieldset class="theme">
+        <legend>Theme</legend>
+        <input type="radio" name="theme" id="th-auto" checked><label for="th-auto">auto</label>
+        <input type="radio" name="theme" id="th-light"><label for="th-light">light</label>
+        <input type="radio" name="theme" id="th-dark"><label for="th-dark">dark</label>
+      </fieldset>
+    </div>
+    <h1>Strategos — system design<br><i>the compiler checks the composition.</i></h1>
+    <p class="sub">Strategos is a <b>declarative contract layer</b> with a <b>compiled durable runtime</b>. You describe a workflow with a fluent DSL, or ship its wire IR as <span class="mono">*.workflow.json</span>. You describe your domain as an ontology. You describe what each action can do as a typed contract. A Roslyn source generator lowers the workflow into a Wolverine saga that Marten persists. Analyzers prove the ontology and the action calculus before anything runs. A TypeSpec spine publishes the shared shapes to basileus, exarchos, valkyrie and dynatoi. Every diagram below states one claim and names the files it was read from. The compiler checks the composition, so the runtime only has to be durable.</p>
+    <div class="stamp">
+      <span>as of <b>v3.0.0-rc.1</b> / Contracts <b>0.12.0</b> (2026-09-10)</span>
+      <span>index · <a href="adrs/system-index.md">adrs/system-index.md</a></span>
+      <span>invariants · <a href="architecture/invariants/README.md">architecture/invariants/README.md</a> (U-1 … U-8)</span>
+      <span>sibling · basileus/docs/system-design.html</span>
+    </div>
+  </header>
+
+  <section id="packages">
+    <p class="eyebrow">01 · the packages</p>
+    <h2>Package map</h2>
+    <p class="lede">Fourteen packages ship from one repository on two publish lines. MinVer versions thirteen product packages from the <span class="mono">v*</span> tag. <span class="mono">LevelUp.Strategos.Contracts</span> is pinned to its own <span class="mono">contracts-v*</span> tag. Every solid edge below is a <span class="mono">ProjectReference</span> read from <span class="mono">src/*/*.csproj</span>. Dotted edges are <span class="mono">&lt;Compile Include … Link&gt;</span> source links or a pack-time bundling. Nothing is inferred from names.</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-packages" viewBox="0 0 1120 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-packages-title sd-packages-desc">
+<title id="sd-packages-title">Package map: the workflow line and its build-time links</title>
+<desc id="sd-packages-desc">Ranked dependency graph of the LevelUp.Strategos packages: Infrastructure, Agents.Mcp and Generators at rank 0; Strategos at rank 2 with Contracts and Identity.Abstractions beneath it; the Generators analyzer reaches the ontology family, Wolverine and Marten, Contracts and Identity only through dashed build-time links, and no package imports Wolverine or Marten.</desc>
+<defs><marker id="sd-packages-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-packages-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-packages-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-packages-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- dependency graph · ranks 120px apart · fan-in badges · no cycle, so no accent -->
+<!-- arrows -->
+<path class="a" d="M 160,136 V 292 Q 160,300 168,300 H 324 Q 332,300 332,308 V 320" marker-end="url(#sd-packages-arrow)"><title>Infrastructure imports Strategos</title></path>
+<line class="a" x1="360" y1="136" x2="360" y2="200" marker-end="url(#sd-packages-arrow)"><title>Agents.Mcp imports Agents</title></line>
+<line class="a" x1="388" y1="256" x2="388" y2="320" marker-end="url(#sd-packages-arrow)"><title>Agents imports Strategos</title></line>
+<path class="a" d="M 332,376 V 460 Q 332,468 340,468 H 480" marker-end="url(#sd-packages-arrow)"><title>Strategos imports Identity.Abstractions</title></path>
+<path class="a" d="M 388,376 V 404 Q 388,412 396,412 H 924 Q 932,412 932,420 V 440" marker-end="url(#sd-packages-arrow)"><title>Strategos imports Contracts</title></path>
+<path class="a" d="M 912,136 V 172 Q 912,180 904,180 H 768 Q 760,180 760,188 V 200" stroke-dasharray="4,3" marker-end="url(#sd-packages-arrow)"><title>Generators links ontology analyzer source</title></path>
+<path class="a" d="M 944,136 V 292 Q 944,300 936,300 H 808 Q 800,300 800,308 V 320" stroke-dasharray="4,3" marker-end="url(#sd-packages-arrow)"><title>Generated saga derives from Wolverine Saga and persists through Marten</title></path>
+<path class="a" d="M 976,136 V 388 Q 976,396 968,396 H 608 Q 600,396 600,404 a 8,8 0 0,1 0,16 V 440" stroke-dasharray="4,3" marker-end="url(#sd-packages-arrow)"><title>Generators packs Identity.Abstractions under analyzers/dotnet/cs</title></path>
+<line class="a" x1="1008" y1="136" x2="1008" y2="440" stroke-dasharray="4,3" marker-end="url(#sd-packages-arrow)"><title>Generators links Contracts/Generated/AgwfCodes.g.cs</title></line>
+<!-- labels -->
+<text class="rk" x="40" y="108">RANK 0</text>
+<text class="rk" x="40" y="228">RANK 1</text>
+<text class="rk" x="40" y="348">RANK 2</text>
+<text class="rk" x="40" y="468">RANK 3</text>
+<rect class="pm" x="756" y="160" width="80" height="12" rx="2"/><text class="al" x="796" y="168" text-anchor="middle">LINKS SOURCE</text>
+<rect class="pm" x="792" y="280" width="80" height="12" rx="2"/><text class="al" x="832" y="288" text-anchor="middle">EMITS AGAINST</text>
+<rect class="pm" x="608" y="376" width="64" height="12" rx="2"/><text class="al" x="640" y="384" text-anchor="middle">PACKS DLL</text>
+<rect class="pm" x="1016" y="280" width="80" height="12" rx="2"/><text class="al" x="1056" y="288" text-anchor="middle">LINKS SOURCE</text>
+<!-- nodes -->
+<rect class="pm" x="80" y="80" width="160" height="56" rx="6"/><rect class="n n-backend" x="80" y="80" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="88" y="88" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="104" y="96" text-anchor="middle">PKG</text><rect class="tg" x="200" y="88" width="32" height="12" rx="2"/><text class="bdg" x="216" y="96" text-anchor="middle">0 IN</text><text class="nm" x="160" y="112" text-anchor="middle">Infrastructure</text><text class="sb" x="160" y="128" text-anchor="middle">Thompson · loops · budget</text>
+<rect class="pm" x="280" y="80" width="160" height="56" rx="6"/><rect class="n n-backend" x="280" y="80" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="288" y="88" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="304" y="96" text-anchor="middle">PKG</text><rect class="tg" x="400" y="88" width="32" height="12" rx="2"/><text class="bdg" x="416" y="96" text-anchor="middle">0 IN</text><text class="nm" x="360" y="112" text-anchor="middle">Agents.Mcp</text><text class="sb" x="360" y="128" text-anchor="middle">McpToolSource · MCP SDK 1.3.0</text>
+<rect class="pm" x="880" y="80" width="160" height="56" rx="6"/><rect class="n n-opt" x="880" y="80" width="160" height="56" rx="6"/><rect class="tg tg-opt" x="888" y="88" width="24" height="12" rx="2"/><text class="tgt tgt-opt" x="900" y="96" text-anchor="middle">SG</text><rect class="tg" x="1000" y="88" width="32" height="12" rx="2"/><text class="bdg" x="1016" y="96" text-anchor="middle">0 IN</text><text class="nm" x="960" y="112" text-anchor="middle">Generators</text><text class="sb" x="960" y="128" text-anchor="middle">Roslyn source generator</text>
+<rect class="pm" x="280" y="200" width="160" height="56" rx="6"/><rect class="n n-backend" x="280" y="200" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="288" y="208" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="304" y="216" text-anchor="middle">PKG</text><rect class="tg" x="400" y="208" width="32" height="12" rx="2"/><text class="bdg" x="416" y="216" text-anchor="middle">1 IN</text><text class="nm" x="360" y="232" text-anchor="middle">Agents</text><text class="sb" x="360" y="248" text-anchor="middle">Microsoft.Extensions.AI</text>
+<rect class="pm" x="680" y="200" width="160" height="56" rx="6"/><rect class="n n-store" x="680" y="200" width="160" height="56" rx="6"/><rect class="tg tg-store" x="688" y="208" width="40" height="12" rx="2"/><text class="tgt tgt-store" x="708" y="216" text-anchor="middle">6 PKG</text><rect class="tg" x="800" y="208" width="32" height="12" rx="2"/><text class="bdg" x="816" y="216" text-anchor="middle">1 IN</text><text class="nm" x="760" y="232" text-anchor="middle">Ontology family</text><text class="sb" x="760" y="248" text-anchor="middle">Ontology · MCP · Npgsql · …</text>
+<rect class="pm" x="280" y="320" width="160" height="56" rx="6"/><rect class="n n-backend" x="280" y="320" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="288" y="328" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="304" y="336" text-anchor="middle">PKG</text><rect class="tg" x="400" y="328" width="32" height="12" rx="2"/><text class="bdg" x="416" y="336" text-anchor="middle">2 IN</text><text class="nm" x="360" y="352" text-anchor="middle">Strategos</text><text class="sb" x="360" y="368" text-anchor="middle">Workflow&lt;TState&gt; DSL · core</text>
+<rect class="pm" x="680" y="320" width="160" height="56" rx="6"/><rect class="n n-ext" x="680" y="320" width="160" height="56" rx="6"/><rect class="tg tg-ext" x="688" y="328" width="32" height="12" rx="2"/><text class="tgt tgt-ext" x="704" y="336" text-anchor="middle">HOST</text><rect class="tg" x="800" y="328" width="32" height="12" rx="2"/><text class="bdg" x="816" y="336" text-anchor="middle">1 IN</text><text class="nm" x="760" y="352" text-anchor="middle">Wolverine + Marten</text><text class="sb" x="760" y="368" text-anchor="middle">host references · not a dep</text>
+<rect class="pm" x="480" y="440" width="160" height="56" rx="6"/><rect class="n n-store" x="480" y="440" width="160" height="56" rx="6"/><rect class="tg tg-store" x="488" y="448" width="32" height="12" rx="2"/><text class="tgt tgt-store" x="504" y="456" text-anchor="middle">PKG</text><rect class="tg" x="600" y="448" width="32" height="12" rx="2"/><text class="bdg" x="616" y="456" text-anchor="middle">2 IN</text><text class="nm" x="560" y="472" text-anchor="middle">Identity.Abstractions</text><text class="sb" x="560" y="488" text-anchor="middle">IPhaseAwareSaga · headers</text>
+<rect class="pm" x="880" y="440" width="160" height="56" rx="6"/><rect class="n n-store" x="880" y="440" width="160" height="56" rx="6"/><rect class="tg tg-store" x="888" y="448" width="32" height="12" rx="2"/><text class="tgt tgt-store" x="904" y="456" text-anchor="middle">PKG</text><rect class="tg" x="1000" y="448" width="32" height="12" rx="2"/><text class="bdg" x="1016" y="456" text-anchor="middle">2 IN</text><text class="nm" x="960" y="472" text-anchor="middle">Contracts</text><text class="sb" x="960" y="488" text-anchor="middle">records + schema · 0.12.0</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="532" x2="1080" y2="532"/><text class="lk" x="40" y="548">LEGEND</text><rect class="n n-backend" x="40" y="564" width="16" height="12" rx="2"/><text class="lt" x="64" y="572">Internal package</text><rect class="n n-opt" x="172" y="564" width="16" height="12" rx="2"/><text class="lt" x="196" y="572">Analyzer package (DevelopmentDependency)</text><rect class="n n-store" x="412" y="564" width="16" height="12" rx="2"/><text class="lt" x="436" y="572">Leaf (imports nothing)</text><rect class="n n-ext" x="572" y="564" width="16" height="12" rx="2"/><text class="lt" x="596" y="572">Outside the package graph</text><line class="a" x1="744" y1="572" x2="772" y2="572" marker-end="url(#sd-packages-arrow)"/><text class="lt" x="780" y="572">ProjectReference</text><line class="a" x1="888" y1="572" x2="916" y2="572" stroke-dasharray="4,3" marker-end="url(#sd-packages-arrow)"/><text class="lt" x="924" y="572">Build-time link</text><text class="lt lt-i" x="1028" y="572">Badges show fan-in.</text>
+</svg></div>
+      <div class="detail"><p class="eyebrow">01b · detail · the ontology family</p><div class="scroll"><svg class="dg dg-sd-ontology-family" viewBox="0 0 960 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-ontology-family-title sd-ontology-family-desc">
+<title id="sd-ontology-family-title">Package map detail: the ontology family</title>
+<desc id="sd-ontology-family-desc">Ranked dependency graph of the six Ontology packages: MCP.Hosting, Npgsql and Embeddings at rank 0, Ontology.MCP and Ontology.Generators at rank 1, and Ontology as the highest fan-in leaf that imports nothing; Ontology.Generators takes no ProjectReference and is reached only by source links.</desc>
+<defs><marker id="sd-ontology-family-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-family-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-family-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-family-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- dependency graph · detail of the ontology family · no cycle, so no accent -->
+<!-- arrows -->
+<line class="a" x1="160" y1="136" x2="160" y2="200" marker-end="url(#sd-ontology-family-arrow)"><title>Ontology.MCP.Hosting imports Ontology.MCP</title></line>
+<line class="a" x1="400" y1="136" x2="400" y2="320" marker-end="url(#sd-ontology-family-arrow)"><title>Ontology.Npgsql imports Ontology</title></line>
+<line class="a" x1="500" y1="136" x2="500" y2="320" marker-end="url(#sd-ontology-family-arrow)"><title>Ontology.Embeddings imports Ontology</title></line>
+<line class="a" x1="760" y1="136" x2="760" y2="200" stroke-dasharray="4,3" marker-end="url(#sd-ontology-family-arrow)"><title>Strategos.Generators links ActionCompositionAnalyzer source</title></line>
+<path class="a" d="M 160,256 V 340 Q 160,348 168,348 H 360" marker-end="url(#sd-ontology-family-arrow)"><title>Ontology.MCP imports Ontology</title></path>
+<path class="a" d="M 760,256 V 340 Q 760,348 752,348 H 520" stroke-dasharray="4,3" marker-end="url(#sd-ontology-family-arrow)"><title>Ontology.Generators links LogicFormula, FiniteDomainSolver and OntologyActionCatalog source</title></path>
+<!-- labels -->
+<text class="rk" x="40" y="108">RANK 0</text>
+<text class="rk" x="40" y="228">RANK 1</text>
+<text class="rk" x="40" y="348">RANK 2</text>
+<rect class="pm" x="768" y="160" width="80" height="12" rx="2"/><text class="al" x="808" y="168" text-anchor="middle">LINKS SOURCE</text>
+<rect class="pm" x="600" y="328" width="80" height="12" rx="2"/><text class="al" x="640" y="336" text-anchor="middle">LINKS SOURCE</text>
+<!-- nodes -->
+<rect class="pm" x="80" y="80" width="160" height="56" rx="6"/><rect class="n n-backend" x="80" y="80" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="88" y="88" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="104" y="96" text-anchor="middle">PKG</text><rect class="tg" x="200" y="88" width="32" height="12" rx="2"/><text class="bdg" x="216" y="96" text-anchor="middle">0 IN</text><text class="nm" x="160" y="112" text-anchor="middle">Ontology.MCP.Hosting</text><text class="sb" x="160" y="128" text-anchor="middle">AddOntologyTools() · 2.2.0</text>
+<rect class="pm" x="280" y="80" width="160" height="56" rx="6"/><rect class="n n-backend" x="280" y="80" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="288" y="88" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="304" y="96" text-anchor="middle">PKG</text><rect class="tg" x="400" y="88" width="32" height="12" rx="2"/><text class="bdg" x="416" y="96" text-anchor="middle">0 IN</text><text class="nm" x="360" y="112" text-anchor="middle">Ontology.Npgsql</text><text class="sb" x="360" y="128" text-anchor="middle">PgVectorObjectSetProvider</text>
+<rect class="pm" x="480" y="80" width="160" height="56" rx="6"/><rect class="n n-backend" x="480" y="80" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="488" y="88" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="504" y="96" text-anchor="middle">PKG</text><rect class="tg" x="600" y="88" width="32" height="12" rx="2"/><text class="bdg" x="616" y="96" text-anchor="middle">0 IN</text><text class="nm" x="560" y="112" text-anchor="middle">Ontology.Embeddings</text><text class="sb" x="560" y="128" text-anchor="middle">OpenAI-compatible provider</text>
+<rect class="pm" x="680" y="80" width="160" height="56" rx="6"/><rect class="n n-opt" x="680" y="80" width="160" height="56" rx="6"/><rect class="tg tg-opt" x="688" y="88" width="24" height="12" rx="2"/><text class="tgt tgt-opt" x="700" y="96" text-anchor="middle">SG</text><rect class="tg" x="800" y="88" width="32" height="12" rx="2"/><text class="bdg" x="816" y="96" text-anchor="middle">0 IN</text><text class="nm" x="760" y="112" text-anchor="middle">Strategos.Generators</text><text class="sb" x="760" y="128" text-anchor="middle">workflow line · see overview</text>
+<rect class="pm" x="80" y="200" width="160" height="56" rx="6"/><rect class="n n-backend" x="80" y="200" width="160" height="56" rx="6"/><rect class="tg tg-backend" x="88" y="208" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="104" y="216" text-anchor="middle">PKG</text><rect class="tg" x="200" y="208" width="32" height="12" rx="2"/><text class="bdg" x="216" y="216" text-anchor="middle">1 IN</text><text class="nm" x="160" y="232" text-anchor="middle">Ontology.MCP</text><text class="sb" x="160" y="248" text-anchor="middle">tool descriptors</text>
+<rect class="pm" x="680" y="200" width="160" height="56" rx="6"/><rect class="n n-opt" x="680" y="200" width="160" height="56" rx="6"/><rect class="tg tg-opt" x="688" y="208" width="24" height="12" rx="2"/><text class="tgt tgt-opt" x="700" y="216" text-anchor="middle">SG</text><rect class="tg" x="800" y="208" width="32" height="12" rx="2"/><text class="bdg" x="816" y="216" text-anchor="middle">1 IN</text><text class="nm" x="760" y="232" text-anchor="middle">Ontology.Generators</text><text class="sb" x="760" y="248" text-anchor="middle">AONT analyzers · no codegen</text>
+<rect class="pm" x="360" y="320" width="160" height="56" rx="6"/><rect class="n n-store" x="360" y="320" width="160" height="56" rx="6"/><rect class="tg tg-store" x="368" y="328" width="32" height="12" rx="2"/><text class="tgt tgt-store" x="384" y="336" text-anchor="middle">PKG</text><rect class="tg" x="480" y="328" width="32" height="12" rx="2"/><text class="bdg" x="496" y="336" text-anchor="middle">4 IN</text><text class="nm" x="440" y="352" text-anchor="middle">Ontology</text><text class="sb" x="440" y="368" text-anchor="middle">descriptors · ObjectSet&lt;T&gt;</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="412" x2="920" y2="412"/><text class="lk" x="40" y="428">LEGEND</text><rect class="n n-backend" x="40" y="444" width="16" height="12" rx="2"/><text class="lt" x="64" y="452">Internal package</text><rect class="n n-opt" x="172" y="444" width="16" height="12" rx="2"/><text class="lt" x="196" y="452">Analyzer package (DevelopmentDependency)</text><rect class="n n-store" x="412" y="444" width="16" height="12" rx="2"/><text class="lt" x="436" y="452">Leaf (imports nothing)</text><line class="a" x1="572" y1="452" x2="600" y2="452" marker-end="url(#sd-ontology-family-arrow)"/><text class="lt" x="608" y="452">ProjectReference</text><line class="a" x1="716" y1="452" x2="744" y2="452" stroke-dasharray="4,3" marker-end="url(#sd-ontology-family-arrow)"/><text class="lt" x="752" y="452">Build-time source link</text>
+</svg></div></div>
+      <figcaption>
+        <span class="claim">Two independent lines meet only through the generator's source links, and no package references Wolverine or Marten.</span>
+        <ul>
+          <li><b>Workflow line</b> — <span class="mono">Strategos</span> imports <span class="mono">Identity.Abstractions</span> (the <span class="mono">IPhaseAwareSaga</span> port and header constants) and <span class="mono">Contracts</span> (the export target of <span class="mono">WorkflowDefinitionProjection.ToContract()</span>). <span class="mono">Agents</span>, <span class="mono">Infrastructure</span> and <span class="mono">Agents.Mcp</span> stack on it. <span class="mono">Rag</span> is deprecated in favor of <span class="mono">Ontology</span> + <span class="mono">IObjectSetProvider</span>.</li>
+          <li><b>Ontology family</b> — <span class="mono">Ontology</span> has no <span class="mono">ProjectReference</span> at all and takes no Wolverine or Marten dependency (U-2). <span class="mono">MCP</span>, <span class="mono">Npgsql</span> and <span class="mono">Embeddings</span> import it. <span class="mono">MCP.Hosting</span> imports <span class="mono">MCP</span>. <span class="mono">Ontology.Generators</span> imports nothing: it source-links <span class="mono">ActionLogic/LogicFormula.cs</span>, <span class="mono">FiniteDomainSolver.cs</span> and <span class="mono">Shared/Analyzers/Proof/OntologyActionCatalog.cs</span> so runtime and analyzer proofs cannot drift.</li>
+          <li><b>Generators</b> — a netstandard2.0 analyzer marked <span class="mono">DevelopmentDependency</span>. It references <span class="mono">Identity.Abstractions</span> with <span class="mono">PrivateAssets="all"</span> and packs that DLL next to itself under <span class="mono">analyzers/dotnet/cs</span>. It source-links <span class="mono">Contracts/Generated/AgwfCodes.g.cs</span> (diagnostic ids are never hand-typed) and the ontology <span class="mono">ActionCompositionAnalyzer</span> + <span class="mono">OntologyDiagnostics</span>.</li>
+          <li><b>Wolverine + Marten</b> — grep <span class="mono">src/*/*.csproj tests/*/*.csproj</span>: only the test projects reference <span class="mono">WolverineFx</span>, <span class="mono">WolverineFx.Marten</span> and <span class="mono">Marten</span> (pinned 6.12.0 / 9.9.0 in <span class="mono">Directory.Packages.props</span>). The emitted saga derives from Wolverine's <span class="mono">Saga</span>, so the consumer host supplies both.</li>
+          <li><b>Other externals, attached only where referenced</b> — <span class="mono">ModelContextProtocol</span> as a client in <span class="mono">Agents.Mcp</span> (1.3.0) and as a server in <span class="mono">Ontology.MCP.Hosting</span> (<span class="mono">VersionOverride="2.2.0"</span>). <span class="mono">Npgsql</span> + <span class="mono">Pgvector</span> are in <span class="mono">Ontology.Npgsql</span>. <span class="mono">Microsoft.Extensions.AI</span> is in <span class="mono">Agents</span> and <span class="mono">Agents.Mcp</span>.</li>
+                  <li><b>How it is drawn</b> — as a ranked dependency graph in two parts. The overview keeps the workflow line and collapses the ontology family into one node. The detail below draws that family in full. <span class="mono">Rag</span> (deprecated, and its only reference is <span class="mono">Agents</span>) is omitted from the overview drawing, so fan-in badges count the edges drawn. The graph has no cycle, so nothing is accented: the badges carry the story, and the highest fan-in is <span class="mono">Ontology</span> with four dependents.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="compiler">
+    <p class="eyebrow">02 · the compiler</p>
+    <h2>Compile pipeline</h2>
+    <p class="lede">A workflow enters the compiler one of two ways and leaves it one way. Front-end A is a <span class="mono">[Workflow]</span> class whose <span class="mono">Definition</span> is a fluent chain — <span class="mono">Workflow&lt;TState&gt;.Create("name").StartWith&lt;T&gt;().Then&lt;T&gt;().Branch(…).Fork(…).Join&lt;T&gt;().RepeatUntil(…).AwaitApproval&lt;T&gt;().OnFailure(…).Finally&lt;T&gt;()</span>. Front-end B is a <span class="mono">*.workflow.json</span> AdditionalFile carrying <span class="mono">WorkflowDefinitionV1</span> wire IR. Both lower into the same <span class="mono">WorkflowModel</span>, and <span class="mono">WorkflowIncrementalGenerator.EmitWorkflowSources</span> is the only path out (U-1).</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-compiler" viewBox="0 0 1140 536" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-compiler-title sd-compiler-desc">
+<title id="sd-compiler-title">Compile pipeline: two front ends, one WorkflowModel, gated emission</title>
+<desc id="sd-compiler-desc">Architecture of the workflow generator: the fluent DSL and *.workflow.json front ends are lowered by FluentDslParser and WireToModelBridge into one WorkflowModel, which passes the Tier 2 analyzers and Tier 3 emitter guards before EmitWorkflowSources writes the saga and DI extensions into the consumer assembly.</desc>
+<defs><marker id="sd-compiler-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-compiler-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-compiler-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-compiler-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- architecture · zones: front ends / validation boundary (accent) · focal: WorkflowModel -->
+<rect class="zone" x="40" y="48" width="392" height="240" rx="8"/><rect class="pm" x="52" y="52" width="152" height="12" rx="2"/><text class="zl" x="56" y="60">FRONT ENDS · TWO WAYS IN</text>
+<rect class="bnd" x="688" y="104" width="416" height="136" rx="8"/><rect class="pm" x="700" y="108" width="216" height="12" rx="2"/><text class="zl zl-acc" x="704" y="116">VALIDATION GATES · U-5 · FAIL CLOSED</text>
+<!-- arrows -->
+<line class="a" x1="216" y1="112" x2="256" y2="112" marker-end="url(#sd-compiler-arrow)"><title>FluentDslParser walks the Roslyn syntax of the fluent chain</title></line>
+<line class="a" x1="216" y1="232" x2="256" y2="232" marker-end="url(#sd-compiler-arrow)"><title>WireToModelBridge binds the *.workflow.json wire IR</title></line>
+<path class="a" d="M 416,112 H 568 Q 576,112 576,120 V 140" marker-end="url(#sd-compiler-arrow)"><title>FluentDslParser lowers into WorkflowModel</title></path>
+<path class="a" d="M 416,232 H 568 Q 576,232 576,224 V 204" marker-end="url(#sd-compiler-arrow)"><title>WireToModelBridge lowers into WorkflowModel</title></path>
+<line class="a" x1="656" y1="172" x2="704" y2="172" marker-end="url(#sd-compiler-arrow)"><title>WorkflowModel is validated by the Tier 2 analyzers</title></line>
+<line class="a" x1="880" y1="172" x2="912" y2="172" marker-end="url(#sd-compiler-arrow)"><title>Tier 3 emitter guards run before any AddSource</title></line>
+<path class="a" d="M 1000,204 V 260 Q 1000,268 992,268 H 568 Q 560,268 560,276 V 312" marker-end="url(#sd-compiler-arrow)"><title>Only a model that passes every guard reaches EmitWorkflowSources</title></path>
+<line class="a" x1="656" y1="344" x2="704" y2="344" marker-end="url(#sd-compiler-arrow)"><title>SagaEmitter and ExtensionsEmitter write into the consumer assembly</title></line>
+<!-- labels -->
+<rect class="pm" x="472" y="92" width="48" height="12" rx="2"/><text class="al" x="496" y="100" text-anchor="middle">LOWERS</text>
+<rect class="pm" x="472" y="212" width="48" height="12" rx="2"/><text class="al" x="496" y="220" text-anchor="middle">LOWERS</text>
+<rect class="pm" x="744" y="248" width="72" height="12" rx="2"/><text class="al" x="780" y="256" text-anchor="middle">FAIL CLOSED</text>
+<!-- nodes -->
+<rect class="pm" x="56" y="80" width="160" height="64" rx="6"/><rect class="n n-input" x="56" y="80" width="160" height="64" rx="6"/><rect class="tg tg-input" x="64" y="88" width="24" height="12" rx="2"/><text class="tgt tgt-input" x="76" y="96" text-anchor="middle">C#</text><text class="nm" x="136" y="112" text-anchor="middle">[Workflow] fluent DSL</text><text class="sb" x="136" y="124" text-anchor="middle">Workflow&lt;TState&gt;.Create(…)</text><text class="sb" x="136" y="136" text-anchor="middle">StartWith · Then · Branch · Fork</text>
+<rect class="pm" x="56" y="200" width="160" height="64" rx="6"/><rect class="n n-ext" x="56" y="200" width="160" height="64" rx="6"/><rect class="tg tg-ext" x="64" y="208" width="32" height="12" rx="2"/><text class="tgt tgt-ext" x="80" y="216" text-anchor="middle">JSON</text><text class="nm" x="136" y="232" text-anchor="middle">*.workflow.json</text><text class="sb" x="136" y="244" text-anchor="middle">AdditionalFiles · schema 1.0</text><text class="sb" x="136" y="256" text-anchor="middle">WorkflowDefinitionV1</text>
+<rect class="pm" x="256" y="80" width="160" height="64" rx="6"/><rect class="n n-backend" x="256" y="80" width="160" height="64" rx="6"/><rect class="tg tg-backend" x="264" y="88" width="24" height="12" rx="2"/><text class="tgt tgt-backend" x="276" y="96" text-anchor="middle">SG</text><text class="nm" x="336" y="112" text-anchor="middle">FluentDslParser</text><text class="sb" x="336" y="124" text-anchor="middle">Roslyn syntax extractors</text><text class="sb" x="336" y="136" text-anchor="middle">TopologyClosureInspector</text>
+<rect class="pm" x="256" y="200" width="160" height="64" rx="6"/><rect class="n n-backend" x="256" y="200" width="160" height="64" rx="6"/><rect class="tg tg-backend" x="264" y="208" width="24" height="12" rx="2"/><text class="tgt tgt-backend" x="276" y="216" text-anchor="middle">SG</text><text class="nm" x="336" y="232" text-anchor="middle">WireToModelBridge</text><text class="sb" x="336" y="244" text-anchor="middle">vendored MinimalJsonReader</text><text class="sb" x="336" y="256" text-anchor="middle">WireMonikerResolver</text>
+<rect class="pm" x="496" y="140" width="160" height="64" rx="6"/><rect class="n n-focal" x="496" y="140" width="160" height="64" rx="6"/><rect class="tg tg-focal" x="504" y="148" width="24" height="12" rx="2"/><text class="tgt tgt-focal" x="516" y="156" text-anchor="middle">IR</text><text class="nm" x="576" y="172" text-anchor="middle">WorkflowModel</text><text class="sb" x="576" y="184" text-anchor="middle">one IR for both front ends</text><text class="sb" x="576" y="196" text-anchor="middle">U-1 · single lowering path</text>
+<rect class="pm" x="704" y="140" width="176" height="64" rx="6"/><rect class="n n-backend" x="704" y="140" width="176" height="64" rx="6"/><rect class="tg tg-backend" x="712" y="148" width="48" height="12" rx="2"/><text class="tgt tgt-backend" x="736" y="156" text-anchor="middle">TIER 2</text><text class="nm" x="792" y="172" text-anchor="middle">Analyzers</text><text class="sb" x="792" y="184" text-anchor="middle">AGWF001–045 · AONT001–221</text><text class="sb" x="792" y="196" text-anchor="middle">WorkflowDiagnostics</text>
+<rect class="pm" x="912" y="140" width="176" height="64" rx="6"/><rect class="n n-backend" x="912" y="140" width="176" height="64" rx="6"/><rect class="tg tg-backend" x="920" y="148" width="48" height="12" rx="2"/><text class="tgt tgt-backend" x="944" y="156" text-anchor="middle">TIER 3</text><text class="nm" x="1000" y="172" text-anchor="middle">Emitter guards</text><text class="sb" x="1000" y="184" text-anchor="middle">reachability · proof guards</text><text class="sb" x="1000" y="196" text-anchor="middle">TerminalReachabilityGuard</text>
+<rect class="pm" x="496" y="312" width="160" height="64" rx="6"/><rect class="n n-backend" x="496" y="312" width="160" height="64" rx="6"/><rect class="tg tg-backend" x="504" y="320" width="24" height="12" rx="2"/><text class="tgt tgt-backend" x="516" y="328" text-anchor="middle">SG</text><text class="nm" x="576" y="344" text-anchor="middle">EmitWorkflowSources</text><text class="sb" x="576" y="356" text-anchor="middle">Saga · Extensions · Events</text><text class="sb" x="576" y="368" text-anchor="middle">Cmds · Phase · Handlers</text>
+<rect class="pm" x="704" y="312" width="320" height="64" rx="6"/><rect class="n n-store" x="704" y="312" width="320" height="64" rx="6"/><rect class="tg tg-store" x="712" y="320" width="104" height="12" rx="2"/><text class="tgt tgt-store" x="764" y="328" text-anchor="middle">CONSUMER ASSEMBLY</text><text class="nm" x="864" y="344" text-anchor="middle">{Pascal}Saga + Add{Pascal}Workflow()</text><text class="sb" x="864" y="356" text-anchor="middle">Saga · IPhaseAwareSaga · IRevisioned · DI + ConfigureMarten</text><text class="sb" x="864" y="368" text-anchor="middle">Phase · Commands · Events · Handlers</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="468" x2="1100" y2="468"/><text class="lk" x="40" y="484">LEGEND</text><rect class="n n-input" x="40" y="500" width="16" height="12" rx="2"/><text class="lt" x="64" y="508">Authored input</text><rect class="n n-ext" x="164" y="500" width="16" height="12" rx="2"/><text class="lt" x="188" y="508">Imported file</text><rect class="n n-backend" x="280" y="500" width="16" height="12" rx="2"/><text class="lt" x="304" y="508">Generator component</text><rect class="n n-focal" x="424" y="500" width="16" height="12" rx="2"/><text class="lt" x="448" y="508">Focal: the one IR</text><rect class="bnd" x="560" y="500" width="16" height="12" rx="2"/><text class="lt" x="584" y="508">Validation boundary</text><rect class="n n-store" x="704" y="500" width="16" height="12" rx="2"/><text class="lt" x="728" y="508">Emitted into the consumer assembly</text><line class="a" x1="920" y1="508" x2="948" y2="508" marker-end="url(#sd-compiler-arrow)"/><text class="lt" x="956" y="508">Lowering / emission</text>
+</svg></div>
+      <figcaption>
+        <span class="claim">Both front-ends lower into one <span class="mono">WorkflowModel</span>, three validation tiers gate that single path, and the same emitters serve C#-authored and JSON-imported workflows.</span>
+        <ul>
+          <li><b>Front-end A</b> — <span class="mono">FluentDslParser</span> walks the Roslyn syntax of the chain (<span class="mono">ExtractStepModels</span>, <span class="mono">ExtractBranchModels</span>, <span class="mono">ExtractForkModels</span>, <span class="mono">ExtractLoopModels</span>, <span class="mono">ExtractApprovalModels</span>, <span class="mono">ExtractFailureHandlerModels</span>) into <span class="mono">WorkflowModel</span>. <span class="mono">TopologyClosureInspector</span> records topology the extractors cannot represent so the binding proof never certifies a smaller graph than the builder runs.</li>
+          <li><b>Front-end B</b> — <span class="mono">AdditionalTextsProvider</span> filters <span class="mono">.workflow.json</span>. The vendored <span class="mono">MinimalJsonReader</span> / <span class="mono">WireWorkflowReader</span> (the generator is a netstandard2.0 analyzer with zero package dependencies, so no <span class="mono">System.Text.Json</span>) binds the DTOs. <span class="mono">WireMonikerResolver</span> resolves simple-name step monikers to <span class="mono">INamedTypeSymbol</span>s (never a CLR <span class="mono">Type</span>, U-8). <span class="mono">WireToModelBridge</span> maps the importable subset. Runtime-bound carriers — lambda steps, branch points, loops, validation predicates, context-bearing approvals — are rejected loudly as AGWF027–031 and no saga is emitted.</li>
+          <li><b>Tier 1 · builder runtime</b> — <span class="mono">WorkflowBuilder</span> throws <span class="mono">InvalidOperationException</span> on misuse ("StartWith must be called before Then") when the definition is evaluated. <b>Tier 2 · analyzers</b> — <span class="mono">WorkflowDiagnostics</span> reports AGWF001–045 with ids sourced from <span class="mono">AgwfCodes.g.cs</span> (single-sourced in <span class="mono">AgwfCatalog.tsp</span>). <span class="mono">OntologyDefinitionAnalyzer</span> reports AONT001–221. <b>Tier 3 · emitter guards</b> — <span class="mono">TerminalReachabilityGuard</span> (AGWF035), <span class="mono">PathEndTypeCollisionFinder</span> (AGWF036), <span class="mono">HasEmissionCollision</span> (AGWF043) and <span class="mono">WorkflowBindingProofAnalyzer.AnalyzeFailClosed</span> (AGWF039–045) run before any <span class="mono">AddSource</span>. Ids are public contract: never reused or renumbered inside a major (U-5).</li>
+          <li><b>Emitters</b> — <span class="mono">PhaseEnumEmitter</span>, <span class="mono">CommandsEmitter</span>, <span class="mono">EventsEmitter</span>, <span class="mono">TransitionsEmitter</span> (<span class="mono">ValidTransitions</span> / <span class="mono">IsValidTransition</span>), <span class="mono">SagaEmitter</span> (<span class="mono">{Pascal}Saga : Saga, IPhaseAwareSaga, JasperFx.IRevisioned</span>), <span class="mono">ContextAssemblerEmitter</span>, <span class="mono">WorkerHandlerEmitter</span>, <span class="mono">ExtensionsEmitter</span> (<span class="mono">Add{Pascal}Workflow()</span>, and for EventSourced also <span class="mono">services.ConfigureMarten(opts =&gt; opts.Projections.Snapshot&lt;TState&gt;(SnapshotLifecycle.Inline))</span>) and <span class="mono">MermaidEmitter</span> — all through <span class="mono">GeneratedCodeStamper.AddStampedSource</span>.</li>
+          <li><b>State reducers</b> — a second generator, <span class="mono">StateReducerIncrementalGenerator</span>, reads <span class="mono">[WorkflowState]</span> records and <span class="mono">StateReducerEmitter</span> emits <span class="mono">{State}Reducer.Reduce(current, update)</span> honoring <span class="mono">[Append]</span> and <span class="mono">[Merge]</span>.</li>
+                  <li><b>How it is drawn</b> — as an architecture with three zones. The focal node is <span class="mono">WorkflowModel</span>, because the point is that two front ends become one IR before any gate runs. The second accent is the validation boundary the model must leave before anything is emitted. Tier 1 (the builder throwing when the definition is evaluated) sits off the compile path and the <span class="mono">{State}Reducer</span> generator is a separate pipeline, so both are described above rather than drawn.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="runtime">
+    <p class="eyebrow">03 · the runtime</p>
+    <h2>Runtime lifecycle</h2>
+    <p class="lede">At runtime a workflow instance is one Wolverine saga document in Marten. Nothing here is hand-written: the saga class, its <span class="mono">Handle</span> overloads, the worker handlers and the DI registration all come out of the compiler above. Your code is the <span class="mono">IWorkflowStep&lt;TState&gt;</span> implementations and the immutable state record.</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-runtime" viewBox="0 0 1040 744" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-runtime-title sd-runtime-desc">
+<title id="sd-runtime-title">Runtime lifecycle: one step through the generated saga</title>
+<desc id="sd-runtime-desc">Sequence of one workflow step: the host sends Start{Pascal}Command to the generated saga, which cascades a worker command; the worker handler runs IWorkflowStep.ExecuteAsync and publishes {Step}Completed; the saga persists through Marten as a saga document or an event stream, cascades Start{Next}Command, and calls MarkCompleted() when the Finally step is reached.</desc>
+<defs><marker id="sd-runtime-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-runtime-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-runtime-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-runtime-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- sequence · lifelines: host 120 · saga 320 · Marten 520 · worker 720 · step 920 · ALT = two persistence modes -->
+<rect class="frag" x="296" y="344" width="248" height="156" rx="4"/><rect class="frag-tab" x="296" y="344" width="40" height="16" rx="2"/><text class="frag-op" x="316" y="356" text-anchor="middle">ALT</text><text class="guard" x="312" y="372">[Persistence = SagaDocument]</text><line class="div" x1="304" y1="424" x2="536" y2="424"/><text class="guard" x="312" y="448">[Persistence = EventSourced]</text>
+<!-- arrows -->
+<line class="ll" x1="120" y1="120" x2="120" y2="608"/>
+<line class="ll" x1="320" y1="120" x2="320" y2="608"/>
+<line class="ll" x1="520" y1="120" x2="520" y2="608"/>
+<line class="ll" x1="720" y1="120" x2="720" y2="608"/>
+<line class="ll" x1="920" y1="120" x2="920" y2="608"/>
+<rect class="act" x="316" y="160" width="8" height="444"/>
+<rect class="act" x="716" y="200" width="8" height="128"/>
+<rect class="act" x="916" y="240" width="8" height="48"/>
+<rect class="act" x="516" y="392" width="8" height="16"/>
+<rect class="act" x="516" y="468" width="8" height="16"/>
+<rect class="act" x="516" y="580" width="8" height="16"/>
+<line class="a" x1="124" y1="160" x2="316" y2="160" marker-end="url(#sd-runtime-arrow)"/>
+<line class="a" x1="324" y1="200" x2="716" y2="200" marker-end="url(#sd-runtime-arrow)"/>
+<line class="a" x1="724" y1="240" x2="916" y2="240" marker-end="url(#sd-runtime-arrow)"/>
+<line class="a" x1="916" y1="280" x2="724" y2="280" stroke-dasharray="5,4" marker-end="url(#sd-runtime-arrow)"/>
+<line class="a" x1="716" y1="320" x2="324" y2="320" stroke-dasharray="5,4" marker-end="url(#sd-runtime-arrow-open)"/>
+<line class="a" x1="324" y1="400" x2="516" y2="400" marker-end="url(#sd-runtime-arrow)"/>
+<line class="a" x1="324" y1="476" x2="516" y2="476" marker-end="url(#sd-runtime-arrow)"/>
+<path class="a-acc" d="M 324,528 H 360 Q 368,528 368,536 V 544 Q 368,552 360,552 H 324" marker-end="url(#sd-runtime-arrow-accent)"/>
+<line class="a" x1="324" y1="588" x2="516" y2="588" marker-end="url(#sd-runtime-arrow)"/>
+<!-- labels -->
+<rect class="pm" x="160" y="140" width="120" height="12" rx="2"/><text class="al-ink" x="220" y="148" text-anchor="middle">Start{Pascal}Command</text>
+<rect class="pm" x="544" y="180" width="152" height="12" rx="2"/><text class="al-ink" x="620" y="188" text-anchor="middle">Execute{Step}WorkerCommand</text>
+<rect class="pm" x="740" y="220" width="160" height="12" rx="2"/><text class="al-ink" x="820" y="228" text-anchor="middle">ExecuteAsync(state, ctx, ct)</text>
+<rect class="pm" x="764" y="260" width="112" height="12" rx="2"/><text class="al-ink" x="820" y="268" text-anchor="middle">StepResult&lt;TState&gt;</text>
+<rect class="pm" x="572" y="300" width="96" height="12" rx="2"/><text class="al-ink" x="620" y="308" text-anchor="middle">{Step}Completed</text>
+<rect class="pm" x="352" y="380" width="136" height="12" rx="2"/><text class="al-ink" x="420" y="388" text-anchor="middle">Reducer.Reduce → Update</text>
+<rect class="pm" x="344" y="456" width="152" height="12" rx="2"/><text class="al-ink" x="420" y="464" text-anchor="middle">Events.Append · ApplyEvent</text>
+<rect class="pm" x="380" y="532" width="112" height="12" rx="2"/><text class="al-acc" x="384" y="540">Start{Next}Command</text>
+<rect class="pm" x="348" y="568" width="144" height="12" rx="2"/><text class="al-ink" x="420" y="576" text-anchor="middle">MarkCompleted() · delete</text>
+<!-- nodes -->
+<rect class="pm" x="48" y="64" width="144" height="56" rx="6"/><rect class="n n-input" x="48" y="64" width="144" height="56" rx="6"/><rect class="tg tg-input" x="56" y="72" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="72" y="80" text-anchor="middle">HOST</text><text class="nm" x="120" y="96" text-anchor="middle">Your host</text><text class="sb" x="120" y="112" text-anchor="middle">sends Start{Pascal}Command</text>
+<rect class="pm" x="248" y="64" width="144" height="56" rx="6"/><rect class="n n-focal" x="248" y="64" width="144" height="56" rx="6"/><rect class="tg tg-focal" x="256" y="72" width="32" height="12" rx="2"/><text class="tgt tgt-focal" x="272" y="80" text-anchor="middle">SAGA</text><text class="nm" x="320" y="96" text-anchor="middle">{Pascal}Saga</text><text class="sb" x="320" y="112" text-anchor="middle">generated · IRevisioned</text>
+<rect class="pm" x="448" y="64" width="144" height="56" rx="6"/><rect class="n n-store" x="448" y="64" width="144" height="56" rx="6"/><rect class="tg tg-store" x="456" y="72" width="24" height="12" rx="2"/><text class="tgt tgt-store" x="468" y="80" text-anchor="middle">DB</text><text class="nm" x="520" y="96" text-anchor="middle">Marten</text><text class="sb" x="520" y="112" text-anchor="middle">saga document · events</text>
+<rect class="pm" x="648" y="64" width="144" height="56" rx="6"/><rect class="n n-backend" x="648" y="64" width="144" height="56" rx="6"/><rect class="tg tg-backend" x="656" y="72" width="48" height="12" rx="2"/><text class="tgt tgt-backend" x="680" y="80" text-anchor="middle">HANDLER</text><text class="nm" x="720" y="96" text-anchor="middle">{Step}WorkerHandler</text><text class="sb" x="720" y="112" text-anchor="middle">generated worker handler</text>
+<rect class="pm" x="848" y="64" width="144" height="56" rx="6"/><rect class="n n-input" x="848" y="64" width="144" height="56" rx="6"/><rect class="tg tg-input" x="856" y="72" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="872" y="80" text-anchor="middle">STEP</text><text class="nm" x="920" y="96" text-anchor="middle">IWorkflowStep&lt;TState&gt;</text><text class="sb" x="920" y="112" text-anchor="middle">your code · U-7 immutable</text>
+<text class="co" x="992" y="640" text-anchor="end">on {Step}Failed the completed prefix unwinds: B⁻¹ ; A⁻¹</text><path class="co-lead" d="M 848 628 Q 780 460 724 300"/><circle class="co-dot" cx="724" cy="300" r="2"/>
+<!-- legend -->
+<line class="hl" x1="40" y1="672" x2="1000" y2="672"/><text class="lk" x="40" y="688">LEGEND</text><rect class="n n-focal" x="40" y="704" width="16" height="12" rx="2"/><text class="lt" x="64" y="712">Focal actor</text><line class="a" x1="148" y1="712" x2="176" y2="712" marker-end="url(#sd-runtime-arrow)"/><text class="lt" x="184" y="712">Command</text><line class="a" x1="252" y1="712" x2="280" y2="712" stroke-dasharray="5,4" marker-end="url(#sd-runtime-arrow)"/><text class="lt" x="288" y="712">Return</text><line class="a" x1="348" y1="712" x2="376" y2="712" stroke-dasharray="5,4" marker-end="url(#sd-runtime-arrow-open)"/><text class="lt" x="384" y="712">Event (async)</text><line class="a-acc" x1="476" y1="712" x2="504" y2="712" marker-end="url(#sd-runtime-arrow-accent)"/><text class="lt" x="512" y="712">Headline: the cascade</text><rect class="frag" x="644" y="704" width="16" height="12" rx="2"/><text class="lt" x="668" y="712">ALT: persistence mode</text>
+</svg></div>
+      <figcaption>
+        <span class="claim">Every phase transition is one saga handler that applies an immutable state result, persists through Marten under optimistic concurrency, and cascades the next command. Completion deletes the document. A failure unwinds only the completed prefix.</span>
+        <ul>
+          <li><b>Message in</b> — <span class="mono">{Pascal}Saga.Start(...)</span> returns the saga and its first <span class="mono">Start{Step}Command</span>. <span class="mono">Handle(Start{Step}Command)</span> sets <span class="mono">CurrentPhase</span> (the generated <span class="mono">Phase</span> enum) and returns <span class="mono">Execute{Step}WorkerCommand</span>.</li>
+          <li><b>Worker</b> — the generated <span class="mono">{Step}WorkerHandler</span> resolves your <span class="mono">IWorkflowStep&lt;TState&gt;</span> from DI and awaits <span class="mono">_step.ExecuteAsync(command.State, stepContext, ct)</span>. The step returns <span class="mono">StepResult&lt;TState&gt;</span> — a sealed record (<span class="mono">UpdatedState</span>, <span class="mono">Confidence</span>, <span class="mono">Metadata</span>) built with <span class="mono">with</span>. The input state is never mutated (U-7). The handler publishes <span class="mono">{Step}Completed</span>.</li>
+          <li><b>Two persistence modes</b> — <span class="mono">[Workflow(Persistence = PersistenceMode.SagaDocument)]</span> (default): <span class="mono">Handle({Step}Completed)</span> runs <span class="mono">Reducer.Reduce(State, evt.UpdatedState)</span> and the saga document is updated. <span class="mono">PersistenceMode.EventSourced</span>: the handler takes <span class="mono">IDocumentSession session</span>, appends <span class="mono">session.Events.Append(WorkflowId, evt)</span> and folds <span class="mono">State = State.ApplyEvent(evt)</span> (the state implements <span class="mono">IEventSourcedState&lt;TState&gt;</span>, AGWF015/016). Either way the handler then yields <span class="mono">Start{Next}Command</span>.</li>
+          <li><b>Concurrency</b> — the saga implements <span class="mono">JasperFx.IRevisioned</span> over the inherited <span class="mono">Saga.Version</span>. A lost transition race throws <span class="mono">JasperFx.ConcurrencyException</span> and the generated <span class="mono">Configure(HandlerChain)</span> retries it three times. The <span class="mono">Phase</span> enum persists by <i>name</i> under System.Text.Json and by <i>ordinal</i> under Newtonsoft, so a member reorder is a data migration (<span class="mono">reference/phase-persistence.md</span>).</li>
+          <li><b>Completion</b> — the <span class="mono">Finally</span> step's completed handler calls <span class="mono">MarkCompleted()</span>. Wolverine deletes the saga document. <b>Compensation</b> — a worker failure publishes <span class="mono">Trigger{Pascal}FailureHandlerCommand</span>. Completed forward occurrences were journaled on the saga. The rollback plan is derived from that prefix (<span class="mono">B⁻¹ ; A⁻¹</span>). Inverse workers run on distinct message routes with a stable rollback id. The outcome is <span class="mono">{Pascal}RollbackFailed</span> or a completed rollback, never a recursive re-entry into compensation.</li>
+                  <li><b>How it is drawn</b> — as a sequence for one step, with five lifelines. The two persistence modes are one <span class="mono">ALT</span> fragment. The accent sits on <span class="mono">Start{Next}Command</span> because the cascade is the mechanism. Commands are solid, returns dashed, the published event has an open head. Compensation is a second flow and is described here rather than drawn. The aside on the drawing points at where it starts.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="ontology">
+    <p class="eyebrow">04 · the ontology</p>
+    <h2>Ontology layer</h2>
+    <p class="lede">The ontology is a semantic type system agents plan and act against. It is architecturally independent of the workflow DSL. The <span class="mono">Ontology</span> package has no project references. Roslyn <b>analyzers</b> validate it, not generators. It reaches agents through MCP tools, and every reply carries the version of the graph.</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-ontology" viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-ontology-title sd-ontology-desc">
+<title id="sd-ontology-title">Ontology layer: from authored definitions to MCP tools</title>
+<desc id="sd-ontology-desc">Layer stack of the ontology packages: authored definitions at the bottom compose into the content-addressed OntologyGraph, providers materialise objects, ObjectSet queries execute against them, and the MCP tools at the top carry the graph version in every reply.</desc>
+<defs><marker id="sd-ontology-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-ontology-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- layer stack · 5 layers · focal: L2 GRAPH (content-addressed) -->
+<text class="rk" x="40" y="68">TOWARD AGENTS</text><line class="dir" x1="80" y1="88" x2="80" y2="400"/><polygon class="dir-head" points="76,88 84,88 80,80"/><text class="rk" x="40" y="416">AUTHORED SOURCE</text>
+<line class="hl" x1="120" y1="80" x2="960" y2="80"/>
+<!-- arrows -->
+<!-- labels -->
+<!-- nodes -->
+<rect class="ly" x="120" y="80" width="840" height="64"/><line class="hl" x1="120" y1="144" x2="960" y2="144"/><text class="ly-idx" x="140" y="116">L5 · EXPOSE</text><text class="ly-name" x="232" y="116">Ontology.MCP · Ontology.MCP.Hosting</text><text class="sb" x="940" y="108" text-anchor="end">5 tools · AddOntologyTools() · _meta.ontologyVersion</text><text class="sb" x="940" y="120" text-anchor="end">MCP spec 2026-07-28 · ModelContextProtocol 2.2.0</text>
+<rect class="ly" x="120" y="144" width="840" height="64"/><line class="hl" x1="120" y1="208" x2="960" y2="208"/><text class="ly-idx" x="140" y="180">L4 · QUERY</text><text class="ly-name" x="232" y="180">ObjectSet&lt;T&gt; · IOntologyQuery</text><text class="sb" x="940" y="172" text-anchor="end">lazy expression tree · Where · TraverseLink · ApplyAsync</text><text class="sb" x="940" y="184" text-anchor="end">OntologyQueryService · GetCandidateActions</text>
+<rect class="ly" x="120" y="208" width="840" height="64"/><line class="hl" x1="120" y1="272" x2="960" y2="272"/><text class="ly-idx" x="140" y="244">L3 · PROVIDERS</text><text class="ly-name" x="232" y="244">IObjectSetProvider</text><text class="sb" x="940" y="236" text-anchor="end">InMemoryObjectSetProvider · PgVectorObjectSetProvider</text><text class="sb" x="940" y="248" text-anchor="end">IEmbeddingProvider · Ontology.Npgsql · Ontology.Embeddings</text>
+<rect class="ly-focal" x="120" y="272" width="840" height="64"/><rect class="ly-focal-stroke" x="120" y="272" width="840" height="64"/><text class="ly-idx ly-idx-acc" x="140" y="308">L2 · GRAPH</text><text class="ly-name" x="232" y="308">OntologyGraph</text><text class="sb sb-acc" x="940" y="300" text-anchor="end">OntologyGraphBuilder.Build() · Version = sha256</text><text class="sb" x="940" y="312" text-anchor="end">ObjectTypeDescriptor · LinkDescriptor · ActionDescriptor</text>
+<rect class="ly" x="120" y="336" width="840" height="64"/><line class="hl" x1="120" y1="400" x2="960" y2="400"/><text class="ly-idx" x="140" y="372">L1 · DEFINE</text><text class="ly-name" x="232" y="372">DomainOntology.Define · IOntologySource</text><text class="sb" x="940" y="364" text-anchor="end">IOntologyBuilder DSL · OntologyDelta stream</text><text class="sb" x="940" y="376" text-anchor="end">validated by AONT001–221 · Ontology.Generators</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="456" x2="960" y2="456"/><text class="lk" x="40" y="472">LEGEND</text><rect class="n n-focal" x="40" y="488" width="16" height="12" rx="2"/><text class="lt" x="64" y="496">Focal layer: the content-addressed graph</text><rect class="n n-backend" x="280" y="488" width="16" height="12" rx="2"/><text class="lt" x="304" y="496">Layer (depends on the one below)</text><text class="lt lt-i" x="484" y="496">Each band names its package surface; the right column names the types that implement it.</text>
+</svg></div>
+      <figcaption>
+        <span class="claim">Definitions from any source compose into one immutable, content-addressed <span class="mono">OntologyGraph</span>. Every query is an expression tree the provider executes. Every MCP reply carries the graph's version.</span>
+        <ul>
+          <li><b>Define</b> — each domain is a <span class="mono">DomainOntology</span> whose <span class="mono">Define(IOntologyBuilder)</span> registers object types, properties, links, associations, interfaces, actions, lifecycles and derivations (<span class="mono">AddDomain&lt;T&gt;()</span>). Anything else implements <span class="mono">IOntologySource</span> (<span class="mono">AddSource&lt;T&gt;()</span>) and streams <span class="mono">OntologyDelta</span>s — <span class="mono">AddObjectType</span>, <span class="mono">AddProperty</span>, <span class="mono">AddLink</span>, … — that <span class="mono">OntologyGraphBuilder.Build()</span> drains at startup.</li>
+          <li><b>Compose</b> — <span class="mono">OntologyGraph</span> holds <span class="mono">Domains</span>, <span class="mono">ObjectTypes</span> (<span class="mono">ObjectTypeDescriptor</span> with its <span class="mono">PropertyDescriptor</span>s, <span class="mono">LinkDescriptor</span>s, <span class="mono">AssociationEndpoint</span>s and <span class="mono">ActionDescriptor</span>s), <span class="mono">Interfaces</span>, <span class="mono">CrossDomainLinks</span> and <span class="mono">WorkflowChains</span>. <span class="mono">Version</span> is the SHA-256 of its structural fields. Identity is polyglot: a descriptor carries <span class="mono">ClrType</span> or <span class="mono">SymbolKey</span> (a SCIP moniker), at least one, both first-class (U-8) — ingestion paths always supply a <span class="mono">SymbolKey</span>.</li>
+          <li><b>Validate</b> — <span class="mono">Ontology.Generators</span> ships analyzers only (<span class="mono">OntologyDefinitionAnalyzer</span>, <span class="mono">ActionCompositionAnalyzer</span>, <span class="mono">OntologyInverseContractAnalyzer</span>) reporting AONT001–221. Despite the package name it emits no code (U-2).</li>
+          <li><b>Query</b> — <span class="mono">ObjectSet&lt;T&gt;</span> is a lazy, immutable expression tree (<span class="mono">RootExpression</span> → <span class="mono">FilterExpression</span> / <span class="mono">TraverseLinkExpression</span> / <span class="mono">InterfaceNarrowExpression</span> / <span class="mono">IncludeExpression</span> / <span class="mono">SimilarityExpression</span>) that an <span class="mono">IObjectSetProvider</span> executes (<span class="mono">ExecuteAsync</span>, <span class="mono">StreamAsync</span>, <span class="mono">ExecuteSimilarityAsync</span>, <span class="mono">EnsureSchemaAsync</span>). <span class="mono">ApplyAsync(ActionPrincipal, …)</span> dispatches actions and <span class="mono">EventsAsync</span> reads the stream. <span class="mono">IOntologyQuery</span> (<span class="mono">OntologyQueryService</span>) answers descriptor questions such as <span class="mono">GetCandidateActions</span>.</li>
+          <li><b>Materialize</b> — <span class="mono">InMemoryObjectSetProvider</span> ships in the core package. <span class="mono">PgVectorObjectSetProvider</span> (<span class="mono">Ontology.Npgsql</span>, <span class="mono">AddPgVectorObjectSets</span>) stores JSONB documents with pgvector embeddings supplied by an <span class="mono">IEmbeddingProvider</span> such as <span class="mono">OpenAiCompatibleEmbeddingProvider</span> (<span class="mono">Ontology.Embeddings</span>, <span class="mono">AddOpenAiEmbeddings</span>).</li>
+          <li><b>Expose</b> — <span class="mono">OntologyToolDiscovery</span> derives an <span class="mono">OntologyToolDescriptor</span> (Title, OutputSchema, Annotations, Icons in the 2026-07-28 shape) for <span class="mono">ontology_explore</span>, <span class="mono">ontology_query</span>, <span class="mono">ontology_action</span> and <span class="mono">ontology_validate</span>. <span class="mono">Ontology.MCP.Hosting</span> adds <span class="mono">ontology_traverse</span> and registers all five with <span class="mono">IMcpServerBuilder.AddOntologyTools()</span> on ModelContextProtocol 2.2.0, binding the authenticated caller to an <span class="mono">ActionPrincipal</span> via <span class="mono">IActionPrincipalResolver</span>. Every result record carries the <span class="mono">_meta</span> envelope (<span class="mono">ResponseMeta.OntologyVersion</span> as <span class="mono">sha256:…</span>, optional <span class="mono">hybrid</span> degraded state) so clients can invalidate cached schema views (U-3).</li>
+                  <li><b>How it is drawn</b> — as a layer stack, bottom-up: each band depends only on the one below it. The focal layer is the graph. Its SHA-256 travels in every MCP reply, and lets a client tell a stale schema view from a current one.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="calculus">
+    <p class="eyebrow">05 · the calculus</p>
+    <h2>Action calculus proof flow</h2>
+    <p class="lede">An ontology action is an immutable state-transition contract, and Strategos proves whether one action can follow another instead of parsing display strings. The proof is exact and decidable because the predicate language is closed. What it cannot see is stated on the diagram, not hidden.</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-calculus" viewBox="0 0 1100 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-calculus-title sd-calculus-desc">
+<title id="sd-calculus-title">Action calculus: what is proved, where, and where the proof stops</title>
+<desc id="sd-calculus-desc">Architecture of the action-calculus proof flow: the authored ActionDescriptor and AuthorityLattice feed the ActionCalculus kernel, whose results the Ontology.Generators analyzers and WorkflowBindingProofAnalyzer report at build time and the graph freeze and dispatch chain enforce at runtime; contracts in referenced assemblies and runtime ontology sources stop at the assembly edge and are not proved (#204).</desc>
+<defs><marker id="sd-calculus-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-calculus-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-calculus-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-calculus-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- architecture + secure paved road · accent = the assembly edge and the stop on the blocked ingress -->
+<rect class="zone" x="40" y="48" width="688" height="320" rx="8"/><rect class="pm" x="52" y="52" width="272" height="12" rx="2"/><text class="zl" x="56" y="60">THIS COMPILATION · WHAT THE BINDING PROOF SEES</text>
+<rect class="zone" x="792" y="48" width="264" height="320" rx="8"/><rect class="pm" x="804" y="52" width="136" height="12" rx="2"/><text class="zl" x="808" y="60">RUNTIME · HOST PROCESS</text>
+<rect class="zone" x="40" y="432" width="688" height="128" rx="8"/><rect class="pm" x="52" y="436" width="152" height="12" rx="2"/><text class="zl" x="56" y="444">OUTSIDE THIS COMPILATION</text>
+<!-- arrows -->
+<line class="a-acc" x1="40" y1="400" x2="728" y2="400" stroke-dasharray="5,4"/>
+<line class="a" x1="240" y1="120" x2="264" y2="120" marker-end="url(#sd-calculus-arrow)"><title>The contract is the kernel&#x27;s input</title></line>
+<line class="a" x1="464" y1="120" x2="496" y2="120" marker-end="url(#sd-calculus-arrow)"><title>Composition results are reported by the AONT analyzers</title></line>
+<path class="a" d="M 364,152 V 240 Q 364,248 372,248 H 496" marker-end="url(#sd-calculus-arrow)"><title>Refinement and inverse results are reported by the binding proof</title></path>
+<line class="a" x1="712" y1="120" x2="808" y2="120" marker-end="url(#sd-calculus-arrow)"><title>OntologyGraphBuilder.Build() re-proves composition over the merged graph</title></line>
+<line class="a" x1="712" y1="248" x2="808" y2="248" marker-end="url(#sd-calculus-arrow)"><title>Dispatch evaluates the same hard predicates three-valued and fail closed</title></line>
+<line class="a" x1="364" y1="456" x2="364" y2="408" stroke-dasharray="4,3"><title>Contracts outside the compilation never reach the binding proof</title></line>
+<line class="a-acc stop" x1="352" y1="408" x2="376" y2="408"/>
+<!-- labels -->
+<rect class="pm" x="52" y="380" width="120" height="12" rx="2"/><text class="al-acc" x="56" y="388">ASSEMBLY EDGE · #204</text>
+<rect class="pm" x="728" y="100" width="64" height="12" rx="2"/><text class="al" x="760" y="108" text-anchor="middle">RE-PROVED</text>
+<rect class="pm" x="728" y="228" width="64" height="12" rx="2"/><text class="al" x="760" y="236" text-anchor="middle">PREDICATES</text>
+<rect class="pm" x="372" y="424" width="80" height="12" rx="2"/><text class="al" x="412" y="432" text-anchor="middle">UNSEEN · #204</text>
+<!-- nodes -->
+<rect class="pm" x="48" y="88" width="192" height="64" rx="6"/><rect class="n n-input" x="48" y="88" width="192" height="64" rx="6"/><rect class="tg tg-input" x="56" y="96" width="56" height="12" rx="2"/><text class="tgt tgt-input" x="84" y="104" text-anchor="middle">AUTHORED</text><text class="nm" x="144" y="120" text-anchor="middle">Action contract</text><text class="sb" x="144" y="132" text-anchor="middle">ActionDescriptor · AuthorityLattice</text><text class="sb" x="144" y="144" text-anchor="middle">requires · ensures · frame · A⁻¹</text>
+<rect class="pm" x="264" y="88" width="200" height="64" rx="6"/><rect class="n n-backend" x="264" y="88" width="200" height="64" rx="6"/><rect class="tg tg-backend" x="272" y="96" width="48" height="12" rx="2"/><text class="tgt tgt-backend" x="296" y="104" text-anchor="middle">KERNEL</text><text class="nm" x="364" y="120" text-anchor="middle">ActionCalculus</text><text class="sb" x="364" y="132" text-anchor="middle">Sequential · Refinement · Inverse</text><text class="sb" x="364" y="144" text-anchor="middle">FiniteDomainSolver · G_A ⇒ R_B</text>
+<rect class="pm" x="496" y="88" width="216" height="64" rx="6"/><rect class="n n-backend" x="496" y="88" width="216" height="64" rx="6"/><rect class="tg tg-backend" x="504" y="96" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="520" y="104" text-anchor="middle">AONT</text><text class="nm" x="604" y="120" text-anchor="middle">Ontology.Generators</text><text class="sb" x="604" y="132" text-anchor="middle">ActionCompositionAnalyzer</text><text class="sb" x="604" y="144" text-anchor="middle">AONT213–221</text>
+<rect class="pm" x="496" y="216" width="216" height="64" rx="6"/><rect class="n n-backend" x="496" y="216" width="216" height="64" rx="6"/><rect class="tg tg-backend" x="504" y="224" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="520" y="232" text-anchor="middle">AGWF</text><text class="nm" x="604" y="248" text-anchor="middle">WorkflowBindingProofAnalyzer</text><text class="sb" x="604" y="260" text-anchor="middle">AGWF039–045 · fail closed</text><text class="sb" x="604" y="272" text-anchor="middle">Strategos.Generators</text>
+<rect class="pm" x="808" y="88" width="224" height="64" rx="6"/><rect class="n n-backend" x="808" y="88" width="224" height="64" rx="6"/><rect class="tg tg-backend" x="816" y="96" width="48" height="12" rx="2"/><text class="tgt tgt-backend" x="840" y="104" text-anchor="middle">STARTUP</text><text class="nm" x="920" y="120" text-anchor="middle">Graph freeze</text><text class="sb" x="920" y="132" text-anchor="middle">OntologyGraphBuilder.Build()</text><text class="sb" x="920" y="144" text-anchor="middle">AONT216 backstop · merged graph</text>
+<rect class="pm" x="808" y="216" width="224" height="64" rx="6"/><rect class="n n-backend" x="808" y="216" width="224" height="64" rx="6"/><rect class="tg tg-backend" x="816" y="224" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="832" y="232" text-anchor="middle">GATE</text><text class="nm" x="920" y="248" text-anchor="middle">Dispatch chain</text><text class="sb" x="920" y="260" text-anchor="middle">ActionPrincipal mandatory · three-valued</text><text class="sb" x="920" y="272" text-anchor="middle">Authority → Precondition → Relation</text>
+<rect class="pm" x="264" y="456" width="200" height="64" rx="6"/><rect class="n n-ext" x="264" y="456" width="200" height="64" rx="6"/><rect class="tg tg-ext" x="272" y="464" width="64" height="12" rx="2"/><text class="tgt tgt-ext" x="304" y="472" text-anchor="middle">ELSEWHERE</text><text class="nm" x="364" y="488" text-anchor="middle">Other assemblies</text><text class="sb" x="364" y="500" text-anchor="middle">declarations in referenced binaries</text><text class="sb" x="364" y="512" text-anchor="middle">IOntologySource at runtime</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="592" x2="1060" y2="592"/><text class="lk" x="40" y="608">LEGEND</text><rect class="n n-input" x="40" y="624" width="16" height="12" rx="2"/><text class="lt" x="64" y="632">Authored contract</text><rect class="n n-backend" x="168" y="624" width="16" height="12" rx="2"/><text class="lt" x="192" y="632">Kernel · analyzer · enforcer</text><rect class="n n-ext" x="348" y="624" width="16" height="12" rx="2"/><text class="lt" x="372" y="632">Outside the compilation</text><line class="a" x1="504" y1="632" x2="532" y2="632" marker-end="url(#sd-calculus-arrow)"/><text class="lt" x="540" y="632">Proof / enforcement path</text><line class="a-acc" x1="676" y1="632" x2="704" y2="632" stroke-dasharray="5,4"/><text class="lt" x="712" y="632">Assembly edge: proof stops here</text><line class="a" x1="880" y1="632" x2="908" y2="632" stroke-dasharray="4,3"/><text class="lt" x="916" y="632">Blocked ingress, not proved</text>
+</svg></div>
+      <figcaption>
+        <span class="claim">Sequential composition, behavioral refinement and derived compensation are proved by one finite-domain kernel at build time and re-checked at graph freeze. Dispatch enforces the same hard predicates three-valued and fail-closed — but only for contracts visible to the compilation being built.</span>
+        <ul>
+          <li><b>Contract</b> — <span class="mono">ActionDescriptor</span> requires an <span class="mono">ActionSubject</span> (domain, object type — never a CLR type). It carries hard and soft requirements as typed <span class="mono">ActionPredicate</span>s (<span class="mono">Requires</span> / <span class="mono">RequiresSoft</span>), guarantees (<span class="mono">Ensures</span>, an <span class="mono">ActionGuarantee</span>), and a frame of what it can change (<span class="mono">Modifies</span>, <span class="mono">CreatesLinked</span>, <span class="mono">EmitsEvent</span> → <span class="mono">ActionFrame</span>). It also carries an <span class="mono">AuthorityRequirement</span> over the domain's <span class="mono">AuthorityLattice</span> (a product order of axes), <span class="mono">Idempotent</span> / <span class="mono">ReadOnly</span>, and an optional authored inverse (<span class="mono">CompensatedBy</span>).</li>
+          <li><b>Sequential kernel</b> — for action A: <span class="mono">R_A</span> (hard requirements), <span class="mono">D_A</span> (declared guarantees plus sound frame facts), <span class="mono">W_A</span> (frame), <span class="mono">G_A = D_A ∧ Forget_W_A(R_A)</span>. A seam A→B is legal if and only if <span class="mono">G_A ⇒ R_B</span>. <span class="mono">FiniteDomainSolver</span> decides <span class="mono">G_A ∧ ¬R_B</span> exactly over finitely many cells with no atom limit. <span class="mono">ActionCalculus.AnalyzeSequential</span> → Proven / PartiallyVerified / Refuted / Invalid. <span class="mono">Custom</span> predicates are opaque exclusions, never silent passes.</li>
+          <li><b>Refinement and inverse</b> — <span class="mono">AnalyzeRefinement</span> proves an implementation I substitutes for specification S: <span class="mono">R_S ⇒ R_I</span>, <span class="mono">G_I ⇒ D_S</span>, <span class="mono">W_I ⊆ W_S</span>, <span class="mono">Authority_I ≤ Authority_S</span>, same subject. <span class="mono">AnalyzeInverse</span> derives <span class="mono">A⁻¹</span> (requires <span class="mono">G_A</span>, guarantees <span class="mono">R_A</span>, same frame and authority) and refutes an authored inverse that disagrees. <span class="mono">DeriveRollbackPlan</span> builds <span class="mono">(A;B)⁻¹ = B⁻¹;A⁻¹</span> and <span class="mono">(A‖B)⁻¹ = A⁻¹‖B⁻¹</span> over the completed prefix only.</li>
+          <li><b>Analyzers</b> — AONT213 (read-only implies idempotent), 214 (authority lattice), 215 (frame unsound), 216 (authored compensation ≠ derived inverse), 217 (refuted seam, with counterexample), 218 (opaque contract), 219 (composability coverage), 220 (dynamic sequence), 221 (invalid contract). The workflow generator adds AGWF039–040 (binding identity), 041 (refinement refuted), 042 (unprovable), 043 (identity collision), 044 (compensation disagrees), 045 (rollback scope not derivable). <span class="mono">OntologyGraphBuilder.Build()</span> is the exact merged-graph backstop at startup.</li>
+          <li><b>Runtime enforcement</b> — <span class="mono">ActionContext</span>, <span class="mono">ObjectSet&lt;T&gt;.ApplyAsync</span> and <span class="mono">OntologyActionTool.ExecuteAsync</span> require an <span class="mono">ActionPrincipal</span> (<span class="mono">PrincipalType</span>, <span class="mono">PrincipalId</span>, granted authorities) — refused, never defaulted. Dispatch is decorated <span class="mono">AuthorityAuthorizationActionDispatcher</span> → <span class="mono">ActionPreconditionAuthorizationActionDispatcher</span> → <span class="mono">RelationAuthorizationActionDispatcher</span>, evaluating <span class="mono">PredicateTruthValue</span> Satisfied / Unsatisfied / Indeterminate against <span class="mono">IActionFactResolver</span> facts. False and indeterminate both fail closed.</li>
+          <li><b>The boundary</b> — the binding proof is compilation-local. It sees <span class="mono">DomainOntology.Define</span> bodies and <span class="mono">[Workflow]</span> / imported JSON in the current compilation. It does not see declarations in referenced binaries, or runtime <span class="mono">IOntologySource</span> contributions. There is no runtime re-proof fallback for a cross-assembly binding. Portable referenced-assembly catalogs are lvlup-sw/strategos#204, in progress.</li>
+                  <li><b>How it is drawn</b> — as an architecture in the <i>secure paved road</i> pattern. It shows two trust zones the proof covers, and one it does not. The accent sits on the assembly edge, and on the stop where the blocked ingress ends. The three analyses share one kernel node (they run on the same <span class="mono">FiniteDomainSolver</span>) and the two authored inputs share one node. Every identifier above is kept in the box sublabels.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="contracts">
+    <p class="eyebrow">06 · the spine</p>
+    <h2>Contracts spine and consumers</h2>
+    <p class="lede">TypeSpec is the single canonical source of every cross-product shape. The build emits C# records for .NET consumers and JSON Schema for everyone else. It packs both into an independently versioned NuGet. It publishes that package <b>before</b> the product packages that depend on it.</p>
+    <figure>
+      <div class="scroll"><svg class="dg dg-sd-contracts" viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sd-contracts-title sd-contracts-desc">
+<title id="sd-contracts-title">Contracts spine: one TypeSpec source, two publish lines, four consumers</title>
+<desc id="sd-contracts-desc">Integration topology of the contracts spine: main.tsp is compiled to JSON Schema, Contracts.Codegen emits sealed C# records, both pack into LevelUp.Strategos.Contracts on its own contracts-v tag, the thirteen product packages pin that version and publish after it, and basileus, exarchos, valkyrie and dynatoi each consume a different surface.</desc>
+<defs><marker id="sd-contracts-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk" points="0 0, 8 3, 0 6"/></marker><marker id="sd-contracts-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-acc" points="0 0, 8 3, 0 6"/></marker><marker id="sd-contracts-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="mk-link" points="0 0, 8 3, 0 6"/></marker><marker id="sd-contracts-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline class="mk-open" points="0 0, 8 3, 0 6"/></marker></defs>
+<rect class="paper" width="100%" height="100%"/>
+<!-- dp integration · zone 260..916 · bars inset 16 · consumer corridor 928..976 · focal: Contracts package + pinned edge -->
+<rect class="zone" x="260" y="72" width="656" height="368" rx="8"/>
+<rect class="pm" x="452" y="64" width="272" height="12" rx="2"/><text class="zl" x="588" y="72" text-anchor="middle">CONTRACTS SPINE · EMITTER-OWNED · CODEGEN GUARD</text>
+<!-- arrows -->
+<line class="a" x1="200" y1="212" x2="276" y2="212" marker-end="url(#sd-contracts-arrow)"><title>main.tsp is the canonical source</title></line>
+<line class="a" x1="420" y1="212" x2="436" y2="212" marker-end="url(#sd-contracts-arrow)"><title>tsp compile emits JSON Schema</title></line>
+<line class="a" x1="580" y1="212" x2="596" y2="212" marker-end="url(#sd-contracts-arrow)"><title>Contracts.Codegen reads the schema with a raw JsonDocument</title></line>
+<line class="a" x1="740" y1="212" x2="756" y2="212" marker-end="url(#sd-contracts-arrow)"><title>RecordEmitter writes Generated/*.g.cs</title></line>
+<line class="a" x1="508" y1="248" x2="508" y2="288" marker-end="url(#sd-contracts-arrow)"><title>Schemas and fixtures pack as contentFiles</title></line>
+<line class="a" x1="828" y1="248" x2="828" y2="288" marker-end="url(#sd-contracts-arrow)"><title>Generated records compile into the Contracts package</title></line>
+<line class="a-acc" x1="588" y1="344" x2="588" y2="376" stroke-dasharray="5,4" marker-end="url(#sd-contracts-arrow-accent)"><title>The product packages pin the Contracts version; Contracts publishes first</title></line>
+<path class="a-link" d="M 900,308 H 920 Q 928,308 928,300 V 132 Q 928,124 936,124 H 1000" marker-end="url(#sd-contracts-arrow-link)"><title>exarchos derives Zod from the JSON Schema</title></path>
+<path class="a-link" d="M 900,324 H 932 Q 940,324 940,316 V 208 Q 940,200 948,200 H 1000" marker-end="url(#sd-contracts-arrow-link)"><title>basileus references the Contracts DLL</title></path>
+<path class="a-link" d="M 900,384 H 944 Q 952,384 952,376 V 232 Q 952,224 960,224 H 1000" marker-end="url(#sd-contracts-arrow-link)"><title>basileus references the product packages</title></path>
+<path class="a-link" d="M 900,396 H 956 Q 964,396 964,388 V 308 Q 964,300 972,300 H 1000" marker-end="url(#sd-contracts-arrow-link)"><title>valkyrie references Ontology, Ontology.MCP and Ontology.Npgsql</title></path>
+<path class="a-link" d="M 900,408 H 968 Q 976,408 976,400 V 396 Q 976,388 984,388 H 1000" marker-end="url(#sd-contracts-arrow-link)"><title>dynatoi references the five Ontology packages</title></path>
+<!-- labels -->
+<rect class="pm" x="516" y="264" width="80" height="12" rx="2"/><text class="al" x="556" y="272" text-anchor="middle">CONTENTFILES</text>
+<rect class="pm" x="836" y="264" width="40" height="12" rx="2"/><text class="al" x="856" y="272" text-anchor="middle">PACKS</text>
+<rect class="pm" x="596" y="352" width="88" height="12" rx="2"/><text class="al-acc" x="640" y="360" text-anchor="middle">PINNED · FIRST</text>
+<!-- nodes -->
+<rect class="pm" x="40" y="180" width="160" height="64" rx="6"/><rect class="n n-input" x="40" y="180" width="160" height="64" rx="6"/><rect class="tg tg-input" x="48" y="188" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="64" y="196" text-anchor="middle">TSP</text><text class="nm" x="120" y="212" text-anchor="middle">main.tsp</text><text class="sb" x="120" y="224" text-anchor="middle">TypeSpec · five families</text><text class="sb" x="120" y="236" text-anchor="middle">canonical source</text>
+<rect class="pm" x="276" y="176" width="144" height="72" rx="6"/><rect class="n n-backend" x="276" y="176" width="144" height="72" rx="6"/><rect class="tg tg-backend" x="284" y="184" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="300" y="192" text-anchor="middle">EMIT</text><text class="nm" x="348" y="208" text-anchor="middle">tsp compile</text><text class="sb" x="348" y="220" text-anchor="middle">@typespec/json-schema</text><text class="sb" x="348" y="232" text-anchor="middle">emitAllModels</text>
+<rect class="pm" x="436" y="176" width="144" height="72" rx="6"/><rect class="n n-store" x="436" y="176" width="144" height="72" rx="6"/><rect class="tg tg-store" x="444" y="184" width="32" height="12" rx="2"/><text class="tgt tgt-store" x="460" y="192" text-anchor="middle">JSON</text><text class="nm" x="508" y="208" text-anchor="middle">Schema + fixtures</text><text class="sb" x="508" y="220" text-anchor="middle">json-schema/*.json</text><text class="sb" x="508" y="232" text-anchor="middle">≥100 fixtures · catalog</text>
+<rect class="pm" x="596" y="176" width="144" height="72" rx="6"/><rect class="n n-backend" x="596" y="176" width="144" height="72" rx="6"/><rect class="tg tg-backend" x="604" y="184" width="32" height="12" rx="2"/><text class="tgt tgt-backend" x="620" y="192" text-anchor="middle">EMIT</text><text class="nm" x="668" y="208" text-anchor="middle">Contracts.Codegen</text><text class="sb" x="668" y="220" text-anchor="middle">RecordEmitter · AgwfCatalog</text><text class="sb" x="668" y="232" text-anchor="middle">OntologyContractEmitter</text>
+<rect class="pm" x="756" y="176" width="144" height="72" rx="6"/><rect class="n n-store" x="756" y="176" width="144" height="72" rx="6"/><rect class="tg tg-store" x="764" y="184" width="24" height="12" rx="2"/><text class="tgt tgt-store" x="776" y="192" text-anchor="middle">C#</text><text class="nm" x="828" y="208" text-anchor="middle">Generated/*.g.cs</text><text class="sb" x="828" y="220" text-anchor="middle">sealed records · AgwfCode</text><text class="sb" x="828" y="232" text-anchor="middle">U-6 · U-7 shape</text>
+<rect class="pm" x="276" y="288" width="624" height="56" rx="6"/><rect class="n n-focal" x="276" y="288" width="624" height="56" rx="6"/><rect class="tg tg-focal" x="284" y="296" width="40" height="12" rx="2"/><text class="tgt tgt-focal" x="304" y="304" text-anchor="middle">NUGET</text><text class="nm" x="588" y="312" text-anchor="middle">LevelUp.Strategos.Contracts</text><text class="sb" x="588" y="328" text-anchor="middle">contracts-v0.12.0 tag · publish-contracts.yml · OIDC push</text>
+<rect class="pm" x="276" y="376" width="624" height="44" rx="6"/><rect class="n n-store" x="276" y="376" width="624" height="44" rx="6"/><rect class="tg tg-store" x="284" y="384" width="40" height="12" rx="2"/><text class="tgt tgt-store" x="304" y="392" text-anchor="middle">NUGET</text><text class="nm" x="588" y="396" text-anchor="middle">13 product packages</text><text class="sb" x="588" y="412" text-anchor="middle">v3.0.0-rc.1 tag · MinVer · publish.yml</text>
+<rect class="pm" x="1000" y="92" width="160" height="64" rx="6"/><rect class="n n-input" x="1000" y="92" width="160" height="64" rx="6"/><rect class="tg tg-input" x="1008" y="100" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="1024" y="108" text-anchor="middle">REPO</text><text class="nm" x="1080" y="124" text-anchor="middle">exarchos</text><text class="sb" x="1080" y="136" text-anchor="middle">JSON Schema → Zod</text><text class="sb" x="1080" y="148" text-anchor="middle">no NuGet package</text>
+<rect class="pm" x="1000" y="180" width="160" height="64" rx="6"/><rect class="n n-input" x="1000" y="180" width="160" height="64" rx="6"/><rect class="tg tg-input" x="1008" y="188" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="1024" y="196" text-anchor="middle">REPO</text><text class="nm" x="1080" y="212" text-anchor="middle">basileus</text><text class="sb" x="1080" y="224" text-anchor="middle">NuGet · generated sagas</text><text class="sb" x="1080" y="236" text-anchor="middle">3.0.0-rc.1 + Contracts 0.12.0</text>
+<rect class="pm" x="1000" y="268" width="160" height="64" rx="6"/><rect class="n n-input" x="1000" y="268" width="160" height="64" rx="6"/><rect class="tg tg-input" x="1008" y="276" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="1024" y="284" text-anchor="middle">REPO</text><text class="nm" x="1080" y="300" text-anchor="middle">valkyrie</text><text class="sb" x="1080" y="312" text-anchor="middle">Ontology · MCP · Npgsql</text><text class="sb" x="1080" y="324" text-anchor="middle">pinned 2.8.0 (valkyrie#115)</text>
+<rect class="pm" x="1000" y="356" width="160" height="64" rx="6"/><rect class="n n-input" x="1000" y="356" width="160" height="64" rx="6"/><rect class="tg tg-input" x="1008" y="364" width="32" height="12" rx="2"/><text class="tgt tgt-input" x="1024" y="372" text-anchor="middle">REPO</text><text class="nm" x="1080" y="388" text-anchor="middle">dynatoi</text><text class="sb" x="1080" y="400" text-anchor="middle">five Ontology* packages</text><text class="sb" x="1080" y="412" text-anchor="middle">pinned 2.7.0 (dynatoi#59)</text>
+<!-- legend -->
+<line class="hl" x1="40" y1="512" x2="1160" y2="512"/><text class="lk" x="40" y="528">LEGEND</text><rect class="n n-input" x="40" y="544" width="16" height="12" rx="2"/><text class="lt" x="64" y="552">Source / consumer repository</text><rect class="n n-backend" x="228" y="544" width="16" height="12" rx="2"/><text class="lt" x="252" y="552">Emitter</text><rect class="n n-store" x="320" y="544" width="16" height="12" rx="2"/><text class="lt" x="344" y="552">Emitted artifact / package</text><rect class="n n-focal" x="496" y="544" width="16" height="12" rx="2"/><text class="lt" x="520" y="552">Focal: the published spine</text><line class="a-acc" x1="672" y1="552" x2="700" y2="552" stroke-dasharray="5,4" marker-end="url(#sd-contracts-arrow-accent)"/><text class="lt" x="708" y="552">Pinned dependency, publishes first</text><line class="a-link" x1="900" y1="552" x2="928" y2="552" marker-end="url(#sd-contracts-arrow-link)"/><text class="lt" x="936" y="552">Consumed surface (named in the box)</text>
+</svg></div>
+      <figcaption>
+        <span class="claim">One TypeSpec source, two emitted artifact families, two publish lines in a fixed order — Contracts first — and four consumers that each take a different surface.</span>
+        <ul>
+          <li><b>Source</b> — <span class="mono">src/Strategos.Contracts/main.tsp</span> imports five families: Events (<span class="mono">Envelope</span>, <span class="mono">IntentEnvelope</span>, <span class="mono">MergeGateDecision</span>, <span class="mono">JourneyResult</span>, lifecycles), Workflow IR (<span class="mono">WorkflowDefinitionV1</span>, <span class="mono">StepDefinition</span>, <span class="mono">ForkTrigger</span>, <span class="mono">ActionReference</span>), Diagnostics (<span class="mono">AgwfCatalog</span>, <span class="mono">CheckNode</span>, <span class="mono">Enforcement</span>, <span class="mono">InvariantEntry</span>), Gates (<span class="mono">GateClass</span>, <span class="mono">GateDeclaration</span>) and Ontology (<span class="mono">Actions</span>, <span class="mono">ActionPredicates</span>, <span class="mono">AbstentionResponse</span>).</li>
+          <li><b>Emit</b> — <span class="mono">scripts/contracts-codegen.sh</span> runs <span class="mono">tsp compile</span> (<span class="mono">@typespec/json-schema</span>, <span class="mono">emitAllModels</span>) into <span class="mono">schemas/json-schema/*.json</span>, bundles <span class="mono">workflow-definition-v1.schema.json</span>, then <span class="mono">Strategos.Contracts.Codegen</span> (raw <span class="mono">JsonDocument</span>, no package references): <span class="mono">RecordEmitter</span> → <span class="mono">Generated/*.g.cs</span> as <span class="mono">sealed record</span> + <span class="mono">{ get; init; }</span> + <span class="mono">IReadOnlyList&lt;T&gt;</span> (U-6 / U-7) with <span class="mono">[JsonPolymorphic]</span> unions. <span class="mono">AgwfCatalogEmitter</span> → <span class="mono">AgwfCode.g.cs</span>, <span class="mono">agwf-catalog.json</span> and <span class="mono">docs/diagnostics/agwf.md</span>. <span class="mono">OntologyContractEmitter</span> → <span class="mono">src/Strategos.Ontology/Contracts/Generated/ContractOntology.g.cs</span>. <span class="mono">contracts-codegen-guard.yml</span> regenerates in CI and fails on any hand edit.</li>
+          <li><b>Zod and fixtures</b> — <span class="mono">scripts/zod-smoke.mjs</span> dereferences every schema and converts it with <span class="mono">json-schema-to-zod</span> with no post-processing. <span class="mono">cross-product-roundtrip.mjs</span> parses the ≥100-case builder-fixture corpus (produced by <span class="mono">FixtureExportTests</span>, packed under <span class="mono">contentFiles/any/any/fixtures/</span>) against it. The production swap to exarchos's pinned Zod barrel is a flag (<span class="mono">--zod-source</span>), tracked in exarchos#1247.</li>
+          <li><b>Publish, in order</b> — <span class="mono">contracts-v*</span> triggers <span class="mono">publish-contracts.yml</span>, which gates on four things. The tag must equal the pinned <span class="mono">&lt;ContractsVersion&gt;</span>. Regenerate-and-diff must be clean. The breaking-change diff against the newest package on nuget.org must be fully allowlisted. The fixture corpus must be ≥100. Only then does the OIDC push run. Only then <span class="mono">v*</span> triggers <span class="mono">publish.yml</span>, which packs the whole solution and deletes <span class="mono">LevelUp.Strategos.Contracts.*</span> before pushing. The core package's nuspec depends on the pinned Contracts version. The product cannot ship against a Contracts version that is not yet on the feed.</li>
+          <li><b>Consumers</b> (measured 2026-09-09) — <b>basileus</b> pins <span class="mono">LevelUp.Strategos</span> 2.9.1 and <span class="mono">Contracts</span> 0.4.0 and adopts 3.0.0-rc.1 + 0.12.0 in one commit (basileus#496, and transitive pinning is off, so a split graph fails <span class="mono">GateClassSourceTests</span>). <b>exarchos</b> carries no Strategos NuGet at all — a hand-written Zod stand-in derived from the JSON Schema (exarchos#1901). <b>valkyrie</b> pins <span class="mono">Ontology</span>, <span class="mono">Ontology.MCP</span>, <span class="mono">Ontology.Npgsql</span> at 2.8.0 (valkyrie#115, goes first). <b>dynatoi</b> pins the five <span class="mono">Ontology*</span> packages at 2.7.0 (dynatoi#59, follows valkyrie). Its custom <span class="mono">IObjectSetProvider</span> implementations must be re-checked against the 2.8–3.0 provider surface). Consumers must restore Contracts 0.12.0 before any producer emits AGWF035–045 tokens: <span class="mono">AgwfCode</span> round-trips by name and throws on an unknown member.</li>
+                  <li><b>How it is drawn</b> — as an integration topology: one source, the emitter-owned spine, four consumers. Consumer edges are unlabeled because the surface each takes is named in its box. The two accents are the published Contracts package and its pinned, publishes-first edge to the product packages. The topology type's usual accent on every serve edge is not applied so the page holds to two accents per diagram.</li>
+        </ul>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="reference">
+    <p class="eyebrow">reference · where each diagram was read from</p>
+    <h2>Sources and invariants</h2>
+    <p class="lede">Every name on this page was checked against the tree at <span class="mono">v3.0.0-rc.1</span>. The invariant ids (U-1 … U-8) are the catalog in <a href="architecture/invariants/README.md">architecture/invariants/README.md</a>. They were spelled INV-N before 2026-09-10.</p>
+    <table class="refs">
+        <thead><tr><th>diagram</th><th>grounded in</th><th>invariants</th></tr></thead>
+        <tbody>
+          <tr><td>01 package map</td><td><span class="mono">src/*/*.csproj</span> (ProjectReference, PackageReference, Compile Include Link), <span class="mono">Directory.Packages.props</span>, <span class="mono">.github/workflows/publish.yml</span>, <span class="mono">docs/adrs/packages.md</span></td><td>U-2</td></tr>
+          <tr><td>02 compile pipeline</td><td><span class="mono">src/Strategos.Generators/WorkflowIncrementalGenerator.cs</span>, <span class="mono">FluentDslParser.cs</span>, <span class="mono">Import/{MinimalJsonReader,WireToModelBridge,WireMonikerResolver}.cs</span>, <span class="mono">Emitters/*.cs</span>, <span class="mono">Diagnostics/{WorkflowDiagnostics,TerminalReachabilityGuard}.cs</span>, <span class="mono">Proof/WorkflowBindingProofAnalyzer.cs</span>, <span class="mono">StateReducerIncrementalGenerator.cs</span>, <span class="mono">src/Strategos/Builders/WorkflowBuilder.cs</span>, <span class="mono">docs/diagnostics/agwf.md</span></td><td>U-1 · U-4 · U-5</td></tr>
+          <tr><td>03 runtime lifecycle</td><td><span class="mono">Emitters/SagaEmitter.cs</span>, <span class="mono">Emitters/Saga/{SagaStartMethodEmitter,StepStartHandlerEmitter,StepCompletedHandlerEmitter,StateApplicationHelper,SagaConcurrencyPolicyEmitter,SagaCompensationComponentEmitter}.cs</span>, <span class="mono">Emitters/WorkerHandlerEmitter.cs</span>, <span class="mono">src/Strategos/Steps/StepResult.cs</span>, <span class="mono">Abstractions/IWorkflowStep.cs</span>, <span class="mono">Attributes/PersistenceMode.cs</span>, <span class="mono">docs/src/content/docs/reference/phase-persistence.md</span></td><td>U-1 · U-7</td></tr>
+          <tr><td>04 ontology layer</td><td><span class="mono">src/Strategos.Ontology/{DomainOntology,OntologyGraph,OntologyGraphBuilder}.cs</span>, <span class="mono">Sources/{IOntologySource,OntologyDelta}.cs</span>, <span class="mono">ObjectSets/{ObjectSet,ObjectSetExpression,IObjectSetProvider,InMemoryObjectSetProvider}.cs</span>, <span class="mono">Descriptors/ObjectTypeDescriptor.cs</span>, <span class="mono">src/Strategos.Ontology.Npgsql/PgVectorObjectSetProvider.cs</span>, <span class="mono">src/Strategos.Ontology.MCP/{OntologyToolDiscovery,OntologyToolDescriptor,ResponseMeta}.cs</span>, <span class="mono">src/Strategos.Ontology.MCP.Hosting/{OntologyMcpServerBuilderExtensions,OntologyServerToolFactory,IActionPrincipalResolver}.cs</span>, <span class="mono">reference/platform-architecture.md</span> §4.14</td><td>U-2 · U-3 · U-8</td></tr>
+          <tr><td>05 action calculus</td><td><span class="mono">src/Strategos.Ontology/Descriptors/ActionCalculus.cs</span>, <span class="mono">Descriptors/{ActionCompositionAnalysis,ActionRefinementAnalysis,ActionInverseAnalysis}.cs</span>, <span class="mono">ActionLogic/{FiniteDomainSolver,LogicFormula,ActionContractProof}.cs</span>, <span class="mono">Actions/{ActionPrincipal,PredicateTruthValue,*ActionDispatcher}.cs</span>, <span class="mono">src/Strategos.Ontology.Generators/Diagnostics/OntologyDiagnosticIds.cs</span>, <span class="mono">docs/src/content/docs/reference/action-calculus.md</span></td><td>U-5 · U-6 · U-8</td></tr>
+          <tr><td>06 contracts spine</td><td><span class="mono">src/Strategos.Contracts/{main.tsp,README.md,Strategos.Contracts.csproj,tspconfig.yaml}</span>, <span class="mono">scripts/contracts-codegen.sh</span>, <span class="mono">src/Strategos.Contracts.Codegen/{Program,RecordEmitter,AgwfCatalogEmitter,OntologyContractEmitter}.cs</span>, <span class="mono">src/Strategos.Contracts/scripts/{zod-smoke,cross-product-roundtrip}.mjs</span>, <span class="mono">.github/workflows/{publish-contracts,publish}.yml</span>, <span class="mono">docs/handoffs/2026-09-09-3.0.0-rc.1-consumer-upgrade.md</span></td><td>U-6 · U-7</td></tr>
+        </tbody>
+      </table>
+    <p class="note">Grammar: diagram-design 2.6 (default skin). Types — 01 dependency graph (overview + detail), 02 architecture, 03 sequence, 04 layer stack, 05 architecture in the secure-paved-road pattern, 06 DP integration. Each figure carries its own legend strip. Accent marks at most two elements per drawing and the caption says why. Node treatments follow the skill's table (white = component, ink wash = leaf or artifact, dashed = analyzer package or blocked path, tint = focal). Every identifier was carried over from the previous, grep-verified page. What the complexity budget forced out of a drawing is named in that figure's last bullet.</p>
+  </section>
+
+  <footer>
+    <span>strategos · system design — canonical reference · v3.0.0-rc.1 / Contracts 0.12.0 · 2026-09-10</span>
+    <span>packages · compiler · runtime · ontology · calculus · spine — .NET 10 · Roslyn · Wolverine · Marten · TypeSpec · MCP</span>
+  </footer>
+</div>
+</body>
+</html>

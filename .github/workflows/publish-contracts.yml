@@ -18,8 +18,8 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_QUALITY: 'preview'
   CONTRACTS_PROJECT: 'src/Strategos.Contracts/Strategos.Contracts.csproj'
-  CONTRACTS_TESTS_PROJECT: 'src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj'
-  TESTS_PROJECT: 'src/Strategos.Tests/Strategos.Tests.csproj'
+  CONTRACTS_TESTS_PROJECT: 'tests/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj'
+  TESTS_PROJECT: 'tests/Strategos.Tests/Strategos.Tests.csproj'
 
 # Mirrors the product publish workflow's trusted-publishing setup.
 permissions:

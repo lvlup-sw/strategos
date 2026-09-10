@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Strategos.Contracts/Strategos.Contracts.csproj" />
+    <ProjectReference Include="../../src/Strategos.Ontology.MCP/Strategos.Ontology.MCP.csproj" />
+  </ItemGroup>
+
+</Project>

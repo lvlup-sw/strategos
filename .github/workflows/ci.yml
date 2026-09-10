@@ -11,9 +11,9 @@ jobs:
     # Required proof policy executes an immutable org-workflow revision.
     uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
     with:
-      solution-path: 'src/strategos.slnx'
+      solution-path: 'strategos.slnx'
       test-project-patterns: |
-        src/*Tests/*.csproj
+        tests/*Tests/*.csproj
       skip-patterns: |
         *Benchmarks.Tests*
         *Contracts.Tests*
@@ -73,7 +73,7 @@ jobs:
       - name: Run Contracts tests
         # TUnit uses the Microsoft.Testing.Platform exe entrypoint (the project
         # sets OutputType=Exe); invoke via `dotnet run`, mirroring basileus-smoke.
-        run: dotnet run --project src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj --configuration Release
+        run: dotnet run --project tests/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj --configuration Release
 
   pack-verify:
     name: Pack (verify)
@@ -93,7 +93,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Pack
-        run: dotnet pack src/strategos.slnx --configuration Release --output ./packages
+        run: dotnet pack strategos.slnx --configuration Release --output ./packages
 
       - name: Packed generator and workflow-binding consumer probe
         # Preserves the G1 IPhaseAwareSaga dependency-flow regression net and
@@ -242,7 +242,7 @@ jobs:
         run: bash scripts/check-unshipped-against-tag.sh
 
   dbsf-parity-guard:
-    # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
+    # Verifies tests/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
     # still matches the output of qdrant_client.hybrid.fusion.distribution_based_score_fusion
     # for the pinned qdrant-client version. Reconciliation issue #79; see
     # docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md.

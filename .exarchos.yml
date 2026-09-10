@@ -1,0 +1,4 @@
+invariants:
+  catalogs:
+    - path: .exarchos/invariants.md
+      tier: user
