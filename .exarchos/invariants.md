@@ -25,11 +25,8 @@ invariants:
     cost-of-load: always-load
     integrity-class: user
     applies-to:
-      - src/Strategos/**
-      - src/Strategos.Generators/**
-      - src/Strategos.Infrastructure/**
-      - src/Strategos.Agents/**
-      - src/*/*.csproj
+      - src/**
+      - samples/**
     summary: >
       Workflows lower into Wolverine sagas and Marten event/document storage
       through Strategos.Generators only. Sagas are emitted by SagaEmitter, never

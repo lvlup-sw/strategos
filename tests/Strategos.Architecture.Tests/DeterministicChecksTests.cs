@@ -77,12 +77,22 @@ public class DeterministicChecksTests
     private static readonly Regex MutableCollection = new(@"\b(List|Dictionary|HashSet)<", RegexOptions.CultureInvariant);
     private static readonly Regex SymbolKeyAssignment = new(@"SymbolKey\s*=", RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// Every project under <c>src/</c> except the generator family
+    /// (<c>src/Strategos.Generators</c> and its two test projects), which authors the emitted
+    /// saga's base list and asserts on it as a string literal. Naming the projects to scan
+    /// instead of the ones to skip is what lets this gate go blind when a project is added.
+    /// </summary>
+    private static IReadOnlyList<string> SourceProjectsOutsideTheGeneratorFamily =>
+        RepoTree.DirectoriesStartingWith("src", string.Empty)
+            .Where(directory => !directory.StartsWith("src/Strategos.Generators", StringComparison.Ordinal))
+            .ToList();
+
     /// <summary>U-1 / 1.1: no class outside the emitter derives from Wolverine's Saga.</summary>
     [Test]
     public async Task Check_1_1_NoHandAuthoredSagasOutsideTheEmitter()
     {
-        var files = RepoTree.Files(["src/Strategos", "src/Strategos.Infrastructure", "src/Strategos.Agents"], "*.cs");
-        var hits = RepoTree.Grep(files, SagaBase);
+        var hits = RepoTree.Grep(RepoTree.Files(SourceProjectsOutsideTheGeneratorFamily, "*.cs"), SagaBase);
 
         await AssertNoHits("1.1", "sagas are emitted by SagaEmitter only; no hand-authored ': Saga' base", hits);
     }
@@ -101,8 +111,7 @@ public class DeterministicChecksTests
     [Test]
     public async Task Check_1_3_NoAdHocSagaStorageOutsideTheGenerator()
     {
-        var files = RepoTree.Files(["src/Strategos", "src/Strategos.Infrastructure"], "*.cs");
-        var hits = RepoTree.Grep(files, SagaStorage);
+        var hits = RepoTree.Grep(RepoTree.Files(RepoTree.DirectoriesStartingWith("src", string.Empty), "*.cs"), SagaStorage);
 
         await AssertNoHits("1.3", "saga persistence is Marten's, wired by the generator; no *SagaStore/*SagaRepository/*SagaPersistence class", hits);
     }

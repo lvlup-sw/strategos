@@ -13,12 +13,17 @@ Checks 1.1–1.3, 2.1–2.3, 3.2–3.5, 4.1, 5.1, 5.1b, 6.1, 6.2, 7.1, 7.2 and 8
 A class declaring `: Saga` (Wolverine's saga base) anywhere except `Strategos.Generators/Emitters/SagaEmitter.cs`'s emitted output is a violation — sagas are exclusively generated.
 
 ```bash
-grep -rnE ':\s*Saga\b' src/Strategos/ src/Strategos.Infrastructure/ src/Strategos.Agents/ \
-  --include='*.cs' \
-  | grep -v 'src/Strategos.Generators/'
+grep -rnE ':\s*Saga\b' src/ --include='*.cs' \
+  | grep -v '^src/Strategos.Generators'
 ```
 
 Expected: empty.
+
+The scan covers every project under `src/`. The generator family
+(`src/Strategos.Generators`, `.Generators.Tests`, `.Generators.Behavioral.Tests`) is the one
+exemption: it authors the emitted base list and asserts on it as a string, so its hits are the
+generated saga, not a hand-authored one. Scoping the scan to a handful of named projects instead
+is how this gate goes blind — a saga added to any other project would return zero hits.
 
 ### Check 1.2: Core authoring project leaks a runtime dependency
 
@@ -34,9 +39,7 @@ Expected: empty.
 ### Check 1.3: Ad-hoc saga storage in non-generator code
 
 ```bash
-grep -rnE 'class\s+\w*Saga(Store|Repository|Persistence)\b' \
-  src/Strategos/ src/Strategos.Infrastructure/ \
-  --include='*.cs'
+grep -rnE 'class\s+\w*Saga(Store|Repository|Persistence)\b' src/ --include='*.cs'
 ```
 
 Expected: empty.
