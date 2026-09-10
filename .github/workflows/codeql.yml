@@ -37,7 +37,8 @@ jobs:
     # c10269573359bc91ff59fe5e9cb8090bbc6cb87a when this pin was set. A tag is
     # movable, so the SHA is recorded here to make that visible; the reusable
     # SHA-pins its internal actions, so the action graph under this ref is fixed.
-    uses: lvlup-sw/.github/.github/workflows/codeql.yml@v1
+    # Pinned to the same immutable org-workflow revision as ci.yml (the moving v1 tag lags it).
+    uses: lvlup-sw/.github/.github/workflows/codeql.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
     with:
       languages: csharp
       build-mode: none

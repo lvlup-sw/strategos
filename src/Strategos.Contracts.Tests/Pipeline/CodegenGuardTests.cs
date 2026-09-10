@@ -362,7 +362,7 @@ public sealed class CodegenGuardTests
         await Assert.That(yaml.Contains("--skip-duplicate", StringComparison.Ordinal)).IsFalse()
             .Because("a duplicate push must not turn different local package bytes into a green release.");
         await Assert.That(yaml).Contains(
-            "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
+            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
         await Assert.That(yaml.Contains("packages: write", StringComparison.Ordinal)).IsFalse();
         await Assert.That(yaml).Contains("persist-credentials: false");
     }
