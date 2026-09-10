@@ -139,9 +139,13 @@ jobs:
             echo "All changed baseline lines:"
             echo
             echo '```diff'
-            total_lines="$(printf '%s\n' "${all_changed}" | wc -l)"
-            printf '%s\n' "${all_changed}" | head -c "${budget}"
-            shown_lines="$(printf '%s\n' "${all_changed}" | head -c "${budget}" | wc -l)"
+            # Through a file, not a pipe: under pipefail, `printf | head -c` fails
+            # with SIGPIPE when head stops reading early.
+            all_file="${RUNNER_TEMP}/all_changed.diff"
+            printf '%s\n' "${all_changed}" > "${all_file}"
+            total_lines="$(wc -l < "${all_file}")"
+            head -c "${budget}" "${all_file}"
+            shown_lines="$(head -c "${budget}" "${all_file}" | wc -l)"
             if [ "${shown_lines}" -lt "${total_lines}" ]; then
               echo
               echo "# … truncated: ${shown_lines} of ${total_lines} lines shown. The full diff is in the PR's PublicAPI.*.txt files."
