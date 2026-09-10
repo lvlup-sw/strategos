@@ -1289,10 +1289,10 @@ closed sequential contracts, discovery evaluates a particular fact set, and
 the dispatcher can enforce hard requirements against authoritative target
 facts.
 
-:::note[Strategos 2.13]
+:::note[Strategos 3.0]
 Requirements are no longer string-parsed. Fluent expression overloads translate
 a restricted subset into `ActionPredicate`; descriptor-first authoring passes
-the predicate directly. See the [2.13 migration guide](/guide/ontology/migration-v2-13/).
+the predicate directly. See the [3.0 migration guide](/guide/ontology/migration-v3/).
 :::
 
 **DSL methods on `IActionBuilder`:**
@@ -3211,7 +3211,7 @@ Three rollouts are supported for hosts running typed workflows:
 | Stop the world | Take every instance handling those workflows out of service, deploy, restore. | No |
 | New workflow version | Publish the typed definition under a new workflow version. `NamingHelper.GetSagaClassName(pascalName, version)` makes the saga CLR type, and therefore the Marten table, version-scoped, so old documents stay with the old build. | Yes |
 
-A package rollback is the same mechanism in reverse and is one-way: rolling back after typed sagas exist strips their journals silently, and rolling forward again finds them unusable. Treat the boundary as a versioned data migration, not a code deploy. The consumer-facing procedure is in the [2.13 migration guide](/guide/ontology/migration-v2-13/).
+A package rollback is the same mechanism in reverse and is one-way: rolling back after typed sagas exist strips their journals silently, and rolling forward again finds them unusable. Treat the boundary as a versioned data migration, not a code deploy. The consumer-facing procedure is in the [3.0 migration guide](/guide/ontology/migration-v3/).
 
 Version-scoped saga types are the mechanism available today. Migrating an in-flight instance from one workflow version to another, and running two versions against one document set, remain out of scope (&sect;13).
 

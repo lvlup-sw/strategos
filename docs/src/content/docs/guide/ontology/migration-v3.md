@@ -1,52 +1,530 @@
 ---
-title: Migrate action contracts to 2.13
-description: Upgrade string-shaped action preconditions to typed predicates, explicit guarantees, typed workflow bindings and compensation, ActionFacts, and tri-state discovery.
+title: Migrate to Strategos 3.0
+description: Upgrade from 2.10.0 (or 2.9.1) to 3.0.0-rc.1 — Contracts 0.12.0 first, then the correctness-core, principal and authority, and typed action-contract changes, in upgrade order.
 sidebar:
   order: 7
 ---
 
-Strategos 2.13 replaces string-shaped action preconditions with a typed,
-immutable contract model and exact sequential proofs. This is an intentional
-source-breaking change: there is no compatibility initializer that accepts or
-parses a legacy expression string.
+Strategos 3.0.0-rc.1 is the first release since 2.10.0 (2026-08-07). It folds
+three programs that were planned as 2.11, 2.12, and 2.13 minor releases — and
+never shipped under those labels — into one major pre-release, alongside
+`LevelUp.Strategos.Contracts` 0.12.0. A consumer that restores 3.0.0-rc.1
+absorbs all three programs in one restore, so this page covers all of them,
+ordered the way an upgrade should proceed.
 
-## Upgrading from the last published release
+The headline breaking changes are:
 
-The examples below contrast 2.12 with 2.13 because the changes were staged
-that way, but 2.11 and 2.12 were never published: the last released package
-set is 2.10.0. A consumer that restores 2.13.0 absorbs the 2.11.0 changes in
-the same restore. Read the 2.11.0 section of the
-[CHANGELOG](https://github.com/lvlup-sw/strategos/blob/main/CHANGELOG.md)
-first; its action-calculus, identity-routing, and authentication changes are
-not repeated here.
+- Every action dispatch, action discovery call, and MCP `ontology_action` call
+  now carries an authenticated `ActionPrincipal`. Missing or incomplete
+  principals are refused before the dispatcher runs.
+- Action preconditions are typed, immutable predicates with a required
+  ontology subject. There is no compatibility parser for the old string form.
+- Workflows that `Fork`, `Branch`, or `AwaitApproval` now terminate. The fix
+  changes the generated `Phase` enum's member order and the emitted
+  `ValidTransitions` table, and it adds build-time diagnostics that reject
+  shapes that used to compile.
+- Workflow-bound actions are proved against their workflow, and compensation
+  is mechanically derived. The proofs fail closed with diagnostics that cannot
+  be suppressed.
 
-## Approved versioning exception
+## Where you are starting from
 
-The maintainers approved issue #168 as a source-breaking **minor-version
-exception** for the 2.13 release. The old precondition surface could not express
-sound post-state reasoning, and retaining a string bridge would preserve two
-semantic authorities. The release therefore removes that surface in one step
-instead of carrying an obsolete parser through the 2.x line.
+**From 2.10.0.** Read this page top to bottom. Every section applies.
 
-This exception applies to the source API. The cross-language contracts package
-is independently versioned: 0.10.0 introduces the tagged predicate schema,
-0.11.0 adds occurrence-scoped workflow action identity, and 0.12.0 adds typed
-inverse identity. Both workflow changes are additive. Contract consumers should
-adopt 0.12.0 before receiving workflow definitions that carry the new optional
-`action` or `compensation.inverseAction` fields, or diagnostics carrying one of
-the new `AGWF039`–`AGWF045` closed-enum tokens.
+**From 2.9.1** (where basileus is pinned). You also absorb 2.10.0, the
+strategy-compiler contract layer: `LevelUp.Strategos.Contracts` 0.4.0,
+`GateClass` / `GateDeclaration`, execution-profile metadata, JSON workflow
+import through `AdditionalFiles`, and the export-only workflow wire contract.
+That release is not re-documented here. Read the
+[2.10.0 section of the CHANGELOG](https://github.com/lvlup-sw/strategos/blob/main/CHANGELOG.md#2100---2026-08-07)
+first, then continue with this page.
 
-## 1. Give every action an ontology subject
+**Ontology-only consumers** (`LevelUp.Strategos.Ontology*` without the
+workflow package). Sections 5 to 21 apply; sections 2 to 4 describe the
+workflow generator and can be skipped, except for
+`DescriptorSource.HandAuthoredContract` in section 4.
+
+**Contracts consumers** (anything that deserializes `WorkflowDefinitionV1`,
+`AgwfCode`, or the ontology contract schemas). Section 1 applies to you before
+any producer upgrades, whether or not you consume the .NET packages.
+
+## Why this is a major release
+
+Issue #168 was originally approved as a source-breaking *minor-version
+exception* for a 2.13 release: the old precondition surface could not express
+sound post-state reasoning, and retaining a string bridge would have preserved
+two semantic authorities. That release never shipped. With the correctness-core
+and principal programs folded in, the set is cut as 3.0.0-rc.1 instead. Under a
+major version these are ordinary breaking changes; no exception is claimed or
+needed, and none of the removed surfaces carries an obsolete shim.
+
+The cross-language contracts package is versioned independently and moves
+0.4.0 → 0.12.0 across the same window. While it is pre-1.0, a minor may narrow
+the schema in place; every narrowing is listed in
+`src/Strategos.Contracts/schemas/breaking-changes.allowlist.json` and in the
+package's own CHANGELOG. After 1.0 a breaking change will require a new
+schema root.
+
+## Upgrade order
+
+1. Upgrade every **Contracts consumer** to 0.12.0 (section 1). Nothing else
+   may emit the new diagnostic tokens or wire fields until this is done.
+2. Restore the **3.0.0-rc.1 package set together** — core, generators,
+   ontology, MCP, and hosting packages move as one. Do not mix a 3.0 ontology
+   package with a 2.10 generator package.
+3. Fix compile errors in the order of sections 2 to 20. The diagnostics that
+   carry `NotConfigurable` (`AGWF041`–`AGWF045`, `AONT216`) cannot be silenced;
+   plan to resolve them, not to suppress them.
+4. Run the **data checks** before deploying: `Phase` storage representation
+   (section 3), the derived-runtime rollout boundary (section 19), and the
+   graph-version cache rollover (section 21).
+
+## 1. Upgrade Contracts consumers to 0.12.0 first
+
+`LevelUp.Strategos.Contracts` moves from the published 0.4.0 to 0.12.0. The
+generated `AgwfCode` enum is decorated with
+`JsonStringEnumConverter<AgwfCode>` and per-member `JsonStringEnumMemberName`,
+so it round-trips by *name* and **throws on a member it does not know**. A
+consumer still on 0.4.0 cannot deserialize any payload that carries
+`AGWF035`–`AGWF045`. The same rule applies to the other generated closed enums
+in the package: they accept and emit only their exact wire tokens.
+
+Move consumers first, producers second. In practice: land the Contracts bump
+in each consumer before you restore 3.0.0-rc.1 in any producer that can emit
+diagnostics or workflow definitions to it.
+
+What each intermediate version added:
+
+| Version | Change | Compatibility |
+|---|---|---|
+| 0.5.0 | `AGWF035` unreachable termination. | Additive enum member; consumer-first. |
+| 0.6.0 | `AGWF036` path-end type collision. Retired in the same release window — kept as history, no longer emitted. | Additive. |
+| 0.7.0 | `AGWF037` duplicate permitted fork trigger. | Additive. |
+| 0.8.0 | `AGWF038` duplicate diagnostic-fork compensation seed. | Additive. |
+| 0.9.0 | Ontology action contract decorators (`@objectKind`, `@authority`, `@relation`, `@clients`, `@confirm`, `@readOnly`, `@idempotent`) emitting `x-strategos-*` JSON Schema metadata; generated `HandAuthoredContract` descriptors. | Additive. |
+| 0.10.0 | Versioned tagged `ActionPredicateV1` / `ActionLiteralV1`; typed `@requires` and `@ensures`; `@relation` lowers to a `relation-holds` predicate; `x-strategos-relation` and `x-strategos-link-path` no longer emitted; generated required properties fail deserialization when absent. | **Narrowing.** Unknown predicate discriminators are rejected. |
+| 0.11.0 | Optional `action: ActionReferenceV1` on every workflow step kind; `AGWF039`–`AGWF043`; `WorkflowDefinitionV1.name` must be non-blank. | Additive field; narrowing on `name`. |
+| 0.12.0 | Optional `compensation.inverseAction: ActionReferenceV1`; `AGWF044`–`AGWF045`; `requiredOnFailure` carries `default: true` and an `if`/`then` rule that a typed inverse requires it; empty or whitespace `compensationStepType` rejected. | Additive fields; narrowing on `compensationStepType`. |
+
+If your project pins the Contracts package **directly** as well as receiving
+it **transitively** from the core package, move both in one commit. The 3.0
+core package's nuspec depends on 0.12.0; leaving a direct 0.4.0 pin in place
+splits the dependency graph, and a test that asserts one resolved Contracts
+version across every `project.assets.json` (basileus has one) goes red.
+
+Section 20 covers what changes for a consumer that *authors* TypeSpec or
+workflow JSON, as opposed to one that only deserializes it.
+
+## 2. Workflows that fork, branch, or await approval — correctness core
+
+A C#-authored workflow using `Fork` or `Branch` never terminated on any
+published version, including 2.10.0. Five generator blocks appended off-main-
+flow steps (fork paths, branch cases, failure handlers, rejection and
+escalation chains) to the step list *after* the declared terminal, and the
+successor scans did not filter them out, so the terminal's completed handler
+chained back into a path step. The 3.0 generator classifies off-main-flow steps
+once, routes every successor scan through that classification, and restores
+document order to the step list.
+
+No DSL change is required to receive the fixes. What follows is what changes
+in the *emitted* artifacts and diagnostics.
+
+### What now runs correctly
+
+- `.Fork(...).Join<T>().Finally<T>()` and `Branch` sagas reach `Completed` and
+  delete their saga document.
+- Multi-step `OnRejection` and `OnTimeout` approval chains run past their
+  first step and either `Complete()` or resume onto the main-flow step the
+  approval resumes onto.
+- An `AwaitApproval` that is last on the main flow dispatches its rejection
+  chain; an approval immediately before a `Fork` or `Branch` parks at the
+  checkpoint, and resume is the single dispatch owner.
+- `RequireConfidence` / `OnLowConfidence` on the last step of a branch case now
+  lowers; an `OnLowConfidence` chain declared inside a branch case is no longer
+  mistaken for a case step.
+- Instance-named fork-path steps no longer emit a duplicate phase, command, and
+  handler (`CS0111` in the consuming compilation).
+- Bool exclusive branches (`When(true)` + `When(false)`) no longer emit an
+  unreachable discard arm (`CS8510`); loop-exit `Finally` runs.
+
+If a workflow of these shapes has instances in flight on 2.10.0, they are stuck
+in the old routing and will not recover under the new build. Drain or
+terminate them before deploying, then start new instances.
+
+### `ValidTransitions` and `IsValidTransition` describe the real graph
+
+The generated transition table was a flat linear chain over the step list. It
+now follows the constructs: a fork predecessor dispatches every path, each
+path's last step reaches the join, a branch discriminator dispatches every
+case, a case's last step rejoins or completes, a loop publishes its continue
+edge, and a terminal `OnFailure` handler loses its fall-through edge. **This is
+emitted public API and its content changes for every fork, branch, loop-only,
+and `OnFailure`-only workflow.** Nothing in the generated saga consults the
+table at runtime, so the impact is on tests and tooling that assert on it.
+
+### Path-qualified completed events for exclusive paths
+
+Routing maps for fork paths and branch cases key by `PathRoutingKey` (phase
+name plus construct and path identity), not by bare CLR step type. Fork-path
+instances that share one step type publish a **path-qualified completed
+event** — `{PhaseName}Completed`, or `{PathId}_{PhaseName}Completed` when
+unnamed paths collide — and the saga `Handle` overload and the worker dispatch
+bind the same stem. Branch completions remain one `Handle({StepType}Completed)`
+that routes by the live case.
+
+Code or tests that named the generated completed-event type for a fork path
+whose step type is reused on another path must switch to the path-qualified
+name. `AGWF036` (path-end type collision), which briefly rejected that shape,
+is no longer emitted; the catalog member remains as history.
+
+### New and changed diagnostics
+
+| Code | Severity | What changed |
+|---|---|---|
+| `AGWF003` | Error | Now also reports **duplicate step names on `BranchPath`**. Exclusive cases that shared a step name compiled with last-write-wins routing; they now fail the build. Rename the steps. This is the one *breaking* diagnostic of the correctness core. |
+| `AGWF035` | Error | New. Unreachable termination: a declared `Finally<T>` is not the last main-flow step, a main-flow step's successor is construct-owned, or a rejoin construct's last step never dispatches the terminal. Silent when every exclusive path already `Complete()`s. |
+| `AGWF037` | Error | New. Two `PermitTrigger` declarations on one diagnostic-fork edge name the same closed trigger. Declare each trigger once. |
+| `AGWF038` | Error | New. Two diagnostic-fork edges share a compensation seed. `DiagnosticForkCount` is now keyed by the sanitized seed, not a call-site index; the 2.10.0 positional `DiagnosticForkCount_{i}` property is kept as a read-only migration shim that folds forward into the seed-keyed property. |
+| `AGWF022` | Warning | Re-aimed. It no longer reports intermediate fork-path or loop-body confidence gating (those were false positives). It now reports confidence gating on the step an `AwaitApproval` checkpoint follows, which is genuinely dropped. |
+| `AGWF036` | — | Retired. No longer emitted. |
+
+## 3. Check how your Marten store persists `Phase`
+
+Restoring document order changes the **member order** of the generated `Phase`
+enum for every fork and branch workflow. Under a System.Text.Json-serializing
+Marten store the phase persists by *name*, so the reorder is not a migration.
+Under a Newtonsoft-serializing store it persists by *ordinal* by default, and a
+reorder silently loads the wrong phase for every saga document written before
+the upgrade. Strategos never sees your `StoreOptions` and cannot detect this.
+
+Inspect the raw document before you deploy:
+
+```sql
+select jsonb_typeof(data->'Phase') as json_type,
+       data->>'Phase'              as stored_phase
+  from mt_doc_<yoursaga>
+ limit 5;
+```
+
+`json_type = 'string'` means name storage and nothing to do. `json_type =
+'number'` means ordinal storage: rewrite the stored values (or move the store
+to `EnumStorage.AsString`) before the new build starts. The full procedure and
+the serializer matrix are on
+[Phase Enum Persistence](/reference/phase-persistence/).
+
+## 4. Smaller correctness-core API changes
+
+**`DescriptorSource.HandAuthoredContract`** is appended as `2`, after
+`HandAuthored = 0` and `Ingested = 1`. Descriptors authored through TypeSpec or
+JSON contracts carry it, and `AONT205` (mechanical ingester contributed to an
+intent-only field) now applies only to `Ingested`, so contract-authored actions
+survive graph merge. A `switch` over `DescriptorSource` needs a new arm.
+
+**`IActionBuilder<T>.Requires` (#115).** The 2.11 milestone marked the
+expression `Requires` overload obsolete in favour of descriptor
+`Preconditions`. The typed-contract program then made `Requires` the typed
+authoring path — it translates a restricted expression subset into an
+`ActionPredicate`, or takes an `ActionPredicate` directly — so nothing on the
+builder is marked obsolete in 3.0.0-rc.1. What *is* gone is the string-shaped
+precondition surface; see section 12.
+
+**MCP protocol revision 2026-07-28.** `Strategos.Ontology.MCP.Hosting` pins the
+`ModelContextProtocol` SDK at 2.2.0 (`VersionOverride`) so every constructed
+`CallToolResult` sets the `resultType` discriminator; the other packages stay
+on 1.3.0. `OntologyToolDescriptor.Icons` is optional and stays null when
+unset. A host that references the hosting package receives the 2.2.0 SDK
+transitively.
+
+## 5. Every action dispatch carries an `ActionPrincipal`
+
+`ActionPrincipal` is a sealed, ontology-owned record: the principal's
+ontology descriptor name (`PrincipalType`, for example `User` or
+`ServiceAccount`), the instance identifier (`PrincipalId`), and the
+`GrantedAuthorities` literal names. Both identity values are required and
+non-blank; the constructor throws otherwise. Nothing about it assumes a CLR
+identity type.
+
+`ActionContext` now requires the principal as its first constructor argument
+and rejects `null`:
+
+```csharp
+using Strategos.Ontology.Actions;
+
+// 2.10.0
+var context = new ActionContext("Trading", "Position", positionId, "Activate");
+
+// 3.0
+var principal = new ActionPrincipal("User", userId)
+{
+    GrantedAuthorities = ["Trader"],
+};
+
+var context = new ActionContext(principal, "Trading", "Position", positionId, "Activate")
+{
+    ActionDescriptor = descriptor, // optional; must be the graph's own instance
+};
+```
+
+When you set `ActionContext.ActionDescriptor`, pass the descriptor resolved
+from the frozen `OntologyGraph`. The authority dispatcher compares it by
+reference with the graph's descriptor and refuses a copy as an unknown action.
+
+The same principal threads through the other dispatch and discovery entry
+points:
+
+```csharp
+// ObjectSet<T>: the principal is now the first argument.
+await positions.ApplyAsync(principal, "Activate", request, ct);
+await positions.ApplyAsync(principal, "Activate", request,
+    new ActionDispatchOptions { EnforcePreconditions = true }, ct);
+
+// IOntologyQuery: principal-aware, instance-scoped discovery.
+var candidates = await query.GetCandidateActionsAsync(
+    principal, "Trading", "Position", positionId, facts, ct);
+```
+
+`GetValidActionsAsync` and `GetCandidateActionsAsync` are the principal-aware
+overloads; they take a target instance so `RelationHolds` predicates can be
+decided during discovery, and a query implementation without a relation
+resolver reports `NotSupportedException` rather than guessing. The synchronous
+descriptor-only overloads remain for fact-only evaluation.
+
+`OntologyActionTool.ExecuteAsync` takes `ActionPrincipal?` as its first
+parameter. A `null` principal returns a failed `ActionResult` (*"An
+authenticated action principal is required."*) and never reaches
+`IActionDispatcher`.
+
+## 6. Bind MCP callers through `IActionPrincipalResolver`
+
+The hosting package resolves the principal per call from the MCP transport's
+`ClaimsPrincipal`. An unauthenticated caller is refused before any resolver
+runs. The default `ClaimsActionPrincipalResolver` reads:
+
+- `PrincipalId` from `ClaimTypes.NameIdentifier`, falling back to `sub`;
+- `PrincipalType` from the `strategos:principal_type` claim
+  (`ActionPrincipalClaimTypes.PrincipalType`);
+- `GrantedAuthorities` from every `strategos:authority` claim
+  (`ActionPrincipalClaimTypes.Authority`), de-duplicated ordinally.
+
+A missing type or id yields `null`, and `null` refuses dispatch. Register your
+own resolver when the host's claims are shaped differently:
+
+```csharp
+using System.Security.Claims;
+using Strategos.Ontology.Actions;
+using Strategos.Ontology.MCP.Hosting;
+
+public sealed class TenantActionPrincipalResolver : IActionPrincipalResolver
+{
+    public ActionPrincipal? Resolve(ClaimsPrincipal caller)
+    {
+        var id = caller.FindFirst("oid")?.Value;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return null; // refuse dispatch
+        }
+
+        return new ActionPrincipal("User", id)
+        {
+            GrantedAuthorities = [.. caller.FindAll("roles").Select(c => c.Value)],
+        };
+    }
+}
+
+builder.Services.AddSingleton<IActionPrincipalResolver, TenantActionPrincipalResolver>();
+```
+
+The tool factory resolves `IActionPrincipalResolver` from the request's
+service provider and falls back to `ClaimsActionPrincipalResolver.Instance`.
+Tool annotations are unchanged: `ontology_action` keeps `DestructiveHint =
+true`, so interactive clients still prompt; the per-action tools derive
+`IdempotentHint` from the descriptor (section 9).
+
+## 7. Relation preconditions are enforced at the dispatcher
+
+`AddOntology` now wraps whichever `IActionDispatcher` you register — including
+one supplied through `UseActionDispatcher<T>()` — in two decorators before
+your own `DispatcherDecorators` run:
+
+1. `RelationAuthorizationActionDispatcher` loads authoritative target facts
+   through `IActionFactResolver`, evaluates the action's hard formula, and
+   fails closed. A hard formula that contains `RelationHolds` is **always**
+   enforced, regardless of `ActionDispatchOptions.EnforcePreconditions`; other
+   hard predicates are enforced when that option is set. Unknown is not
+   allowed: a missing resolver, an absent custom evaluator, or an evaluator
+   failure produces `Indeterminate`, which is refused with a structured log
+   entry.
+2. `AuthorityAuthorizationActionDispatcher` enforces `RequiredAuthority`
+   (section 8).
+
+`RelationHolds(name, path...)` is decided against the calling principal: the
+principal must be reachable from the action target by following the link path
+and then the named relation. Register an `IActionRelationResolver` (the default
+walks `IObjectSetProvider`) and, if relation facts live outside the object
+sets, an `IActionFactResolver`. A precondition that was declared with
+`RequiresRelation(...)` on 2.10.0 and never enforced is enforced now.
+
+Discovery is principal-aware for the same reason: the async overloads in
+section 5 evaluate relation predicates for the calling principal, so an action
+whose relation the caller does not hold is reported `Unavailable` rather than
+offered.
+
+## 8. Declare the authority lattice
+
+Authority is a product order, not the orchestration `Capability` flags enum. A
+domain declares independent axes ordered weakest to strongest, positions each
+named authority on **every** axis, and actions name the authority they
+require:
+
+```csharp
+protected override void Define(IOntologyBuilder builder)
+{
+    builder.AuthorityAxis("Clearance", "Public", "Internal", "Restricted");
+    builder.AuthorityAxis("Role", "Viewer", "Trader", "RiskOfficer");
+
+    builder.Authority("Trader")
+        .At("Clearance", "Internal")
+        .At("Role", "Trader");
+
+    builder.Authority("RiskOfficer")
+        .At("Clearance", "Restricted")
+        .At("Role", "RiskOfficer")
+        .Implies("Trader"); // verified against the product order at graph freeze
+
+    builder.Object<Position>(obj =>
+    {
+        obj.Action("Activate")
+            .RequiresAuthority("Trader")
+            .Requires(p => p.Status == PositionStatus.Pending)
+            .Ensures(p => p.Status == PositionStatus.Active)
+            .Modifies(p => p.Status);
+
+        obj.Action("Close")
+            .RequiresAuthority("RiskOfficer")
+            .Modifies(p => p.Status);
+    });
+}
+```
+
+Descriptor-first authoring sets `ActionDescriptor.RequiredAuthority`; the
+lattice itself is built from `AuthorityAxisDescriptor` and
+`AuthorityDescriptor` (`Coordinates` per axis, optional
+`ExplicitImplications`) and exposed as `OntologyGraph.GetAuthorityLattice(domainName)`.
+`AuthorityLattice.Satisfies(granted, required)` is the pointwise comparison,
+`Join(names)` the least requirement stronger than every named authority (this
+is what sequential composition and workflow bindings compute), and
+`IsAtMost(candidate, limit)` the authority arm of refinement.
+
+Dispatch is fail-closed. When an action declares `RequiredAuthority`, at least
+one literal in the principal's `GrantedAuthorities` must satisfy it on every
+axis; a grant the domain's lattice does not define satisfies nothing; and an
+action absent from the frozen graph is refused. An action without
+`RequiredAuthority` passes through unchanged. The result is a failed
+`ActionResult` naming the principal and the missing authority, not an
+exception.
+
+`AONT214` rejects an invalid lattice at both the analyzer and graph-freeze
+tiers: an authority that omits an axis, names an unknown level, is declared
+but never required, or whose `Implies` contradicts the product order.
+
+## 9. Declare action frames and idempotence
+
+`TouchedResources` is the action's **frame** — the set of resources it may
+change. Fluent `Modifies`, `CreatesLinked`, and `EmitsEvent` add their
+resources by construction; `Touches(ActionResource)` declares a write the
+ontology cannot infer, such as an external system. Descriptor-first actions
+set `TouchedResources` directly:
+
+```csharp
+using Strategos.Ontology.Descriptors;
+
+obj.Action("Settle")
+    .Requires(p => p.Status == PositionStatus.Active)
+    .Modifies(p => p.Status)                        // Property("Status")
+    .EmitsEvent<PositionSettled>()                  // Event("PositionSettled")
+    .Touches(ActionResource.External("ledger"))     // an effect outside the graph
+    .Idempotent();
+
+// Descriptor-first equivalent
+new ActionDescriptor(subject, "Settle", "Settle a position")
+{
+    TouchedResources =
+    [
+        ActionResource.Property("Status"),
+        ActionResource.Event("PositionSettled"),
+        ActionResource.External("ledger"),
+    ],
+    Idempotent = true,
+};
+```
+
+`ActionResource` has four kinds: `Property`, `Link`, `Event`, and `External`.
+The frame is immutable once the descriptor is built.
+
+The frame is what makes composition sound: a predicate whose resources are
+disjoint from an action's frame has the same truth value before and after it
+(non-interference), so requirements on untouched state survive. Three
+diagnostics guard it:
+
+- `AONT215` — a mutating postcondition names a resource absent from the frame.
+  Add it to the frame if the implementation may write it; otherwise correct the
+  effect declaration.
+- `AONT216` — an authored compensator disagrees with the mechanically derived
+  inverse (requirement, guarantee, frame, or authority). Reported at the
+  analyzer tier as `NotConfigurable` and refused again at graph freeze, so
+  disabling analyzers does not admit it. Section 19 covers the compensation
+  contract.
+- Graph freeze also rejects a guarantee about a resource outside the frame
+  unless it already follows from the hard requirements (`AONT221`).
+
+`Idempotent()` (descriptor `Idempotent`) declares that repeating the action
+has the same externally observable effect. `ReadOnly()` implies it by
+construction; a descriptor-first action that sets `IsReadOnly` without
+`Idempotent` is `AONT213`. The MCP surface derives each per-action tool's
+`ToolAnnotations.IdempotentHint` from the flag, and
+`ActionSemanticSummary` exposes `RequiredAuthority` and `TouchedResources` to
+agents so they can plan against effects before invoking.
+
+## 10. Author contracts in TypeSpec with the action decorators
+
+`Strategos.Contracts` 0.9.0 adds `extern dec` decorators for ontology
+operations, and 0.10.0 makes the requirement decorators typed:
+
+| Decorator | Emits |
+|---|---|
+| `@objectKind(domain, objectType, kind)` | The action's ontology subject and object kind. |
+| `@authority(name)` | `RequiredAuthority`. |
+| `@relation(name, ...linkPath)` | Sugar for a hard `relation-holds` requirement. |
+| `@requires(predicate, strength?, description?)` | A typed hard or soft `ActionPredicateV1` requirement. |
+| `@ensures(predicate, description?)` | A typed post-state guarantee. |
+| `@clients(...names)` | `AllowedClients`. |
+| `@confirm(required)` | `RequiresConfirmation`. |
+| `@readOnly` / `@idempotent` | `IsReadOnly` / `Idempotent`. |
+
+The decorators emit language-neutral `x-strategos-*` JSON Schema metadata
+(`x-strategos-requires-v1`, `x-strategos-ensures-v1`, and so on). The C#
+codegen extension — an internal `ISchemaEmissionExtension` seam in
+`Strategos.Contracts.Codegen`, not a consumer surface — emits immutable
+descriptors with `DescriptorSource.HandAuthoredContract`. Unknown predicate
+discriminators are rejected rather than read as `Custom` or `True`.
+
+The 0.12 decorator surface does not author frames. A TypeSpec `@ensures` fact
+must already follow from a hard `@requires` fact, or graph freeze rejects it
+as a guarantee about untouched state. Author state-changing actions on the CLR
+descriptor or fluent surface until a versioned contract frame exists. Section
+20 shows the full decorator syntax.
+
+## 11. Give every action an ontology subject
 
 `ActionDescriptor` now requires `ActionSubject(DomainName, ObjectTypeName)`.
 Use stable ontology names rather than `typeof(T)`, assembly-qualified names, or
 other CLR identity:
 
 ```csharp
-// 2.12
+// before
 var action = new ActionDescriptor("Activate", "Activate a position");
 
-// 2.13
+// 3.0
 var subject = new ActionSubject("Trading", "Position");
 var action = new ActionDescriptor(subject, "Activate", "Activate a position");
 ```
@@ -56,10 +534,10 @@ object descriptor names automatically. Descriptor-first and polyglot actions
 must supply the subject directly. Graph freeze rejects a subject that does not
 match the containing object with `AONT221`.
 
-The same identity is now required when constructing an `ObjectSet<T>` directly.
-The descriptor-name-only constructor could not identify a domain and has been
-removed; use `IOntologyQuery.GetObjectSet<T>(name)` when possible, or pass an
-explicit subject:
+The same identity is now required when constructing an `ObjectSet<T>`
+directly. The descriptor-name-only constructor could not identify a domain and
+has been removed; use `IOntologyQuery.GetObjectSet<T>(name)` when possible, or
+pass an explicit subject:
 
 ```csharp
 var positions = new ObjectSet<Position>(
@@ -69,7 +547,7 @@ var positions = new ObjectSet<Position>(
     eventStreamProvider);
 ```
 
-## 2. Replace legacy precondition initializers
+## 12. Replace legacy precondition initializers
 
 `ActionPrecondition.Expression`, `Kind`, `LinkName`, and legacy relation
 fields are no longer writable inputs. `PreconditionKind` is removed. Construct
@@ -77,7 +555,7 @@ the precondition from an `ActionPredicate`; `Expression` remains a read-only
 canonical display projection:
 
 ```csharp
-// 2.12
+// before
 new ActionPrecondition
 {
     Expression = "Status == Active",
@@ -86,7 +564,7 @@ new ActionPrecondition
     Strength = ConstraintStrength.Hard,
 };
 
-// 2.13
+// 3.0
 new ActionPrecondition(
     ActionPredicate.Property(
         new PredicatePropertyReference(
@@ -118,7 +596,7 @@ Use `ActionPredicate.True` for an explicit wildcard. A top-level
 `_ => true` expression is rejected so an accidentally vacuous lambda is not
 silently accepted.
 
-## 3. Separate guarantees from effects
+## 13. Separate guarantees from effects
 
 Add `Ensures` entries for facts callers may rely on after success:
 
@@ -144,20 +622,20 @@ hard requirements. Expand `TouchedResources` only when the implementation may
 really write the resource; otherwise strengthen the requirement or remove the
 unsound guarantee.
 
-## 4. Use typed ActionFacts
+## 14. Use typed ActionFacts
 
 Runtime precondition APIs no longer accept
 `IReadOnlyDictionary<string, object?>`. Build immutable, typed facts:
 
 ```csharp
-// 2.12
+// before
 var knownProperties = new Dictionary<string, object?>
 {
     ["Status"] = PositionStatus.Active,
     ["Note"] = null,
 };
 
-// 2.13
+// 3.0
 var facts = new ActionFacts(
     properties:
     [
@@ -177,7 +655,7 @@ A missing entry is unknown. An explicit null literal and a link value of
 `false` are known negative information. This distinction is required for
 sound three-valued evaluation.
 
-## 5. Handle tri-state discovery
+## 15. Handle tri-state discovery
 
 `GetCandidateActions*` is the primary discovery API. It excludes actions proven
 unavailable and returns an `ActionCandidateEvaluation` for every available or
@@ -213,7 +691,7 @@ Per-constraint results expose `PredicateTruthValue`. Any retained
 `IsSatisfied` member is only a read-only convenience for
 `TruthValue == Satisfied`; it cannot represent indeterminate by itself.
 
-## 6. Register runtime resolvers and enforce authoritative facts
+## 16. Register runtime resolvers and enforce authoritative facts
 
 Register the resolver for target facts and each custom evaluator through the
 generic, trimming-safe options surface:
@@ -242,7 +720,7 @@ A missing resolver, absent custom evaluator, or evaluator failure produces
 `Indeterminate` and a structured log entry rather than an allow decision.
 Soft requirements remain advisory.
 
-## 7. Migrate explicit composition
+## 17. Migrate explicit composition
 
 Replace assumptions about declared writes with explicit guarantees, then use
 the nonthrowing analysis API while adopting:
@@ -269,11 +747,11 @@ contracts or refuted seams. Custom predicates produce a partially verified
 contract and explicit opaque exclusions instead.
 
 Nested composites flatten before their adjacent seams are checked. All operands
-must have the same `ActionSubject` in 2.13. Use
+must have the same `ActionSubject` in 3.0. Use
 `ActionCalculus.Identity(subject)` for the distinct empty operand; do not model
 identity as an ordinary true/true action.
 
-## 8. Bind workflow implementations by typed identity
+## 18. Bind workflow implementations by typed identity
 
 Workflow-bound actions now carry an immutable `WorkflowBindingReference`
 instead of a writable workflow-name string:
@@ -291,18 +769,17 @@ case-normalize it. The existing
 `.BoundToWorkflow("publish-position")` overload remains supported and constructs
 the same typed reference.
 
-If code initialized descriptors directly, replace the pre-release string
-property:
+If code initialized descriptors directly, replace the string property:
 
 ```csharp
-// Before
+// before
 new ActionDescriptor(subject, "Publish", "Publish a position")
 {
     BindingType = ActionBindingType.Workflow,
     BoundWorkflowName = "publish-position",
 };
 
-// 2.13
+// 3.0
 new ActionDescriptor(subject, "Publish", "Publish a position")
 {
     BindingType = ActionBindingType.Workflow,
@@ -358,12 +835,12 @@ collection helpers fail with `AGWF042` instead of being silently omitted.
 Declare at most one `OnRejection` and one `OnTimeout` callback per approval;
 duplicates also fail closed because the runtime builder uses last-wins semantics.
 Nonterminal workflow `OnFailure`, fork-path `OnFailure`, and nested
-`EscalateTo` approval routing also remain outside the proved v2.13 subset because
+`EscalateTo` approval routing also remain outside the proved 3.0 subset because
 those routes are not yet represented by the closed proof graph.
 No binding proof or runtime enforcement is added to an unbound workflow. The
 topology lowering fixes shipped with this release still apply to every workflow.
 
-The v2.13 proof is compilation-local. It sees source declarations in the
+The 3.0 proof is compilation-local. It sees source declarations in the
 current compilation and imported workflow JSON supplied as `AdditionalFiles`;
 it does not inspect ontology or workflow declarations inside referenced
 binaries, execute `IOntologySource`, or repeat the proof at runtime. Keep the
@@ -392,8 +869,8 @@ extension method fails closed as `AGWF042`. Inline the chain before upgrading.
 The same closure rule applies to the workflow side: a bound workflow's
 `Definition` must be one direct `Workflow<TState>.Create(...)...Finally<TStep>()`
 chain. A `Definition` that delegates to a helper method still generates the
-saga it generated on 2.12, but it cannot be proved and reports `AGWF042` while
-bound.
+same saga it did before the binding proof existed, but it cannot be proved and
+reports `AGWF042` while bound.
 
 The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), `AGWF043`
 (emission collision), `AGWF044` (invalid inverse), and `AGWF045` (underivable
@@ -434,8 +911,7 @@ See the [Workflow API](/reference/api/workflow/#workflow-action-identity) for
 occurrence authoring and [Typed action calculus](/reference/action-calculus/#behavioral-refinement-and-workflow-bindings)
 for the complete proof rules.
 
-
-## 9. Replace authored rollback lists with typed inverse actions
+## 19. Replace authored rollback lists with typed inverse actions
 
 The no-argument compensation overload remains available for legacy,
 runtime-only workflows — that is, for a workflow no `BoundToWorkflow` action
@@ -538,7 +1014,7 @@ if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
 compatibility. Do not parse it for idempotency. Ordinary forward contexts keep
 `IsCompensation == false` and `RollbackId == null`.
 
-In v2.13, typed derived compensation requires `SagaDocument` persistence.
+In 3.0, typed derived compensation requires `SagaDocument` persistence.
 `EventSourced` workflows own their `ApplyEvent` implementation, and that method
 may legally ignore an unfamiliar generated rollback-completed event. Strategos
 cannot use method presence as proof that the inverse `UpdatedState` will be
@@ -549,7 +1025,7 @@ There is no in-place migration from event-sourced persistence to
 `SagaDocument` persistence. The two substrates have different identity and
 different replay semantics, and this release ships no procedure, tool, or
 supported query for converting a live event stream into a saga document. An
-event-sourced workflow has two options in v2.13: keep it on legacy untyped
+event-sourced workflow has two options in 3.0: keep it on legacy untyped
 compensation, or publish a *new* `SagaDocument`-persisted workflow under a
 different workflow name or a new workflow version, direct new instances to it,
 and let the in-flight event-sourced instances drain on the old definition.
@@ -619,11 +1095,15 @@ where a transition genuinely cannot be re-applied, a `wolverine_dead_letters` ro
 - Use `StepContext.ExecutionId` as your idempotency key. A step that produces external effects should key those effects on it: Wolverine's inbox is at-least-once, and every redelivery of one dispatch carries the same `ExecutionId`.
 - `StepContext.CorrelationId` is for tracing only. Its textual shape is not part of the supported contract; do not parse it to recover an execution or rollback identity, which is what consumers had to do before `ExecutionId` existed.
 - If you constructed a `StepContext` by hand (tests, custom hosts), it now requires `ExecutionId`, and `IsCompensation` is no longer settable — set `RollbackId` and `IsCompensation` follows.
+- `Compensate<T>(TimeSpan timeout)` and `Compensate<T>(WorkflowActionReference, TimeSpan timeout)` bound one execution of the inverse step (distinct from `WithTimeout`, which bounds the forward step). A non-positive value is `AGWF021` in the DSL and `ArgumentOutOfRangeException` on `CompensationConfiguration`; omitted, the generated runtime applies a 300-second inverse deadline.
 
 See [Mechanically derived compensation](/reference/action-calculus/#mechanically-derived-compensation)
 for the runtime and proof contract.
 
-## 10. Upgrade TypeSpec and workflow wire metadata
+## 20. Upgrade TypeSpec and workflow wire metadata
+
+This section is for a consumer that *authors* TypeSpec or workflow JSON. A
+consumer that only deserializes it needs section 1.
 
 Upgrade `LevelUp.Strategos.Contracts` to 0.12.0. It includes the 0.10.0 change
 from relation-only or consumer-parsed metadata to `ActionPredicateV1`:
@@ -683,9 +1163,13 @@ compensation metadata:
 
 Omitting `inverseAction` retains the legacy runtime-only shape. The field is
 additive, but `AGWF044` and `AGWF045` are new members of the generated closed
-diagnostic enum; all consumers must upgrade before producers emit them.
+diagnostic enum; all consumers must upgrade before producers emit them. The
+0.12.0 schema also states, as a JSON Schema `if`/`then` conditional, that a
+present `inverseAction` requires `requiredOnFailure = true`, and it rejects an
+empty or whitespace-only `compensationStepType` — a document that previously
+slipped through and produced a saga with no compensation is now a build error.
 
-## 11. Invalidate graph-version caches once
+## 21. Invalidate graph-version caches once
 
 The canonical graph hash now includes action subjects, normalized typed
 requirements, guarantees, custom evaluator keys/arguments/read sets, and the
@@ -694,7 +1178,7 @@ excluded.
 
 Every existing action-bearing graph receives a different
 `OntologyGraph.Version` after this upgrade even when its apparent business
-meaning is unchanged. This is intentional. Treat the first 2.13 deployment as
+meaning is unchanged. This is intentional. Treat the first 3.0 deployment as
 a cache-key rollover: discard stored MCP schema views, planner tool lists,
 action-availability snapshots, and any other artifact keyed by the old hash.
 Do not translate or pin the previous hash.
@@ -711,8 +1195,57 @@ edits remain hash-stable.
 
 ## Upgrade checklist
 
-- Upgrade Strategos packages together and upgrade Contracts consumers to 0.12.0
-  before publishing typed action, workflow-step, or inverse-action metadata.
+Contracts and packages:
+
+- Upgrade every Contracts consumer to 0.12.0 *before* any producer restores
+  3.0.0-rc.1; move a direct Contracts pin and the core package pin in one
+  commit.
+- Restore the 3.0.0-rc.1 package set together. Coming from 2.9.1, read the
+  2.10.0 CHANGELOG section first.
+- Note that `Strategos.Ontology.MCP.Hosting` carries the `ModelContextProtocol`
+  2.2.0 SDK.
+
+Workflows (correctness core):
+
+- Drain or terminate fork, branch, and multi-step approval-chain instances that
+  are in flight on 2.10.0; they do not recover under the new routing.
+- Run the `Phase` storage query against every saga table. Ordinal storage
+  (Newtonsoft default) is a data migration; name storage is not.
+- Update tests and tooling that assert on `ValidTransitions` or
+  `IsValidTransition` for fork, branch, loop-only, and `OnFailure`-only
+  workflows.
+- Rename branch-case steps that share a name (`AGWF003` now fails the build).
+- Resolve `AGWF035`, `AGWF037`, and `AGWF038`; review the re-aimed `AGWF022`.
+- Switch code that names a fork path's generated completed event, where the
+  step type is reused on another path, to the path-qualified
+  `{PathId}_{PhaseName}Completed` name.
+- Add a `DescriptorSource.HandAuthoredContract` arm to any exhaustive switch.
+
+Principals, authority, and frames:
+
+- Construct every `ActionContext` with an `ActionPrincipal`; pass the
+  principal as the first argument to `ObjectSet<T>.ApplyAsync` and to the
+  async `IOntologyQuery` discovery overloads.
+- Pass `ActionContext.ActionDescriptor` from the frozen graph, never a copy.
+- MCP hosts: confirm the transport authenticates callers and supplies
+  `strategos:principal_type` (plus `NameIdentifier`/`sub` and any
+  `strategos:authority` claims), or register an `IActionPrincipalResolver`.
+- Register `IActionRelationResolver` / `IActionFactResolver` as needed; every
+  `RequiresRelation` declaration is now enforced at dispatch and evaluated
+  during principal-aware discovery.
+- Declare authority axes and literals for any action that uses
+  `RequiresAuthority`; every literal must be positioned on every axis and be
+  required by at least one action (`AONT214`). Populate
+  `ActionPrincipal.GrantedAuthorities` from your identity source.
+- Declare frames: keep `Modifies` / `CreatesLinked` / `EmitsEvent` accurate
+  and add `Touches(ActionResource.External(...))` for writes the ontology
+  cannot see (`AONT215`). Mark repeat-safe actions `Idempotent()` (`AONT213`
+  for read-only actions).
+- If you author TypeSpec ontology contracts, adopt the 0.9.0 decorators and
+  the 0.10.0 typed `@requires` / `@ensures`.
+
+Typed action contracts, bindings, and compensation:
+
 - Add an ontology-named `ActionSubject` to every descriptor-first action.
 - Replace direct descriptor-name-only `ObjectSet<T>` construction with
   `IOntologyQuery` or the `ActionSubject` constructor.
@@ -741,8 +1274,10 @@ edits remain hash-stable.
   `.Compensate<T>(new WorkflowActionReference(...))`, and make every
   state-changing leaf in a rollback-claimed scope compensable.
 - Update external `IStepConfiguration<TState>` implementations and API mirrors
-  for the typed `Compensate<T>(WorkflowActionReference)` overload, and remove
-  repeated compensation calls that previously relied on last-write-wins.
+  for the typed `Compensate<T>(WorkflowActionReference)` overload, the
+  `Compensate<T>(TimeSpan)` overloads, `Performs(...)`, `Join<TStep>(configure)`,
+  and the approval-chain `Then<TStep>(configure)`; remove repeated compensation
+  calls that previously relied on last-write-wins.
 - Update reconciliation tooling for retained inverse failures and unknown
   timeout outcomes.
 - Resolve `AGWF039` through `AGWF045`; opaque or dynamic workflow contracts do
@@ -768,7 +1303,9 @@ edits remain hash-stable.
   in-flight typed workflows, stop the world for the hosts that run them, or
   publish the typed definition under a new workflow version. A rolling window
   in which two builds share one Marten database strips live journals.
-- Invalidate caches keyed by the pre-2.13 graph hash.
+- Expect `JasperFx.ConcurrencyException` retries in saga logs; treat a
+  `wolverine_dead_letters` row for a saga transition as an incident.
+- Invalidate caches keyed by the pre-3.0 graph hash.
 - Run the full solution and documentation builds before deployment.
 
 For the formal contract and exact proof rules, see

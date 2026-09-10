@@ -66,7 +66,7 @@ This document catalogs all features from the Strategos design specification that
 >   approval branch wins over the confidence branch when the completed handler is emitted, so no
 >   confidence comparison reaches the saga while the `OnLowConfidence` chain is fully lowered into
 >   its own phase, start command and worker handler.
->   The branch-case last-step shape this entry named until 2.11.0 is **no longer inert**: the
+>   The branch-case last-step shape this entry named before the 3.0.0-rc.1 correctness-core fix (#145) is **no longer inert**: the
 >   branch path-end handler now emits the same gate prologue the generic completed handler does. (Surfacing 6.1's backfill also fixed
 >   two real top-level `ValidateState` lowering gaps — configure-lambda validation was dropped
 >   for top-level/loop steps, and the predicate parameter had to be named literally `state` to

@@ -18,9 +18,9 @@ Under System.Text.Json the generator also emits `[JsonConverter(typeof(JsonStrin
 
 ## When this becomes a migration
 
-2.11.0 restores document order to the generated step list. For fork and branch workflows that changes the **order of members** on the emitted `Phase` enum. Name-based documents are unaffected. Ordinal-based documents written before the upgrade denote a different phase after it.
+3.0.0-rc.1 restores document order to the generated step list (the correctness-core work planned as 2.11.0, which never shipped as its own release). For fork and branch workflows that changes the **order of members** on the emitted `Phase` enum. Name-based documents are unaffected. Ordinal-based documents written before the upgrade denote a different phase after it.
 
-If your Marten store uses Newtonsoft, treat any release that reorders the generated `Phase` enum — starting with 2.11.0 — as a data migration. Rewrite stored `Phase` values (or migrate the documents onto name-based serialization) before deploying the new build.
+If your Marten store uses Newtonsoft, treat any release that reorders the generated `Phase` enum — starting with 3.0.0-rc.1 — as a data migration. Rewrite stored `Phase` values (or migrate the documents onto name-based serialization) before deploying the new build.
 
 Strategos cannot warn you at startup: it never sees your `StoreOptions`.
 
