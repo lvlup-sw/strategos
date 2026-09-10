@@ -772,7 +772,7 @@ public sealed class StepConfigParityTests
 
     /// <summary>
     /// Walks up from the running test assembly's directory to the solution root — the directory
-    /// containing <c>strategos.slnx</c> (the <c>src</c> dir) — so the relative
+    /// whose parent contains <c>strategos.slnx</c> (the <c>src</c> dir) — so the relative
     /// <see cref="LoweredProof.BehavioralTestFile"/> paths can be resolved at test runtime
     /// regardless of the build output layout.
     /// </summary>
@@ -785,7 +785,8 @@ public sealed class StepConfigParityTests
         {
             if (File.Exists(Path.Combine(dir.FullName, "strategos.slnx")))
             {
-                return dir.FullName;
+                // The solution file sits at the repository root; the projects live under src/.
+                return Path.Combine(dir.FullName, "src");
             }
 
             dir = dir.Parent;

@@ -280,5 +280,5 @@ Ensure benchmark class has `[Config(typeof(BenchmarkConfig))]` or uses default c
 ## Resources
 
 - [BenchmarkDotNet Documentation](https://benchmarkdotnet.org/articles/overview.html)
-- [Performance Targets](../../docs/benchmarks/PERFORMANCE.md)
+- [Performance Targets](../../docs/architecture/benchmarks/PERFORMANCE.md)
 - [Design Document](../../docs/designs/2026-01-17-performance-benchmarks-and-optimizations.md)

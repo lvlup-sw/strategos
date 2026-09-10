@@ -1,0 +1,40 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="src/Strategos.Agents.Mcp.Tests/Strategos.Agents.Mcp.Tests.csproj" />
+  <Project Path="src/Strategos.Agents.Mcp/Strategos.Agents.Mcp.csproj" />
+  <Project Path="src/Strategos.Agents.Tests/Strategos.Agents.Tests.csproj" />
+  <Project Path="src/Strategos.Agents/Strategos.Agents.csproj" />
+  <Project Path="src/Strategos.Benchmarks.Tests/Strategos.Benchmarks.Tests.csproj" />
+  <Project Path="src/Strategos.Benchmarks/Strategos.Benchmarks.csproj" />
+  <Project Path="src/Strategos.Contracts.Codegen/Strategos.Contracts.Codegen.csproj" />
+  <Project Path="src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj" />
+  <Project Path="src/Strategos.Contracts/Strategos.Contracts.csproj" />
+  <Project Path="src/Strategos.EnumJson.SourceGeneration.Tests/Strategos.EnumJson.SourceGeneration.Tests.csproj" />
+  <Project Path="src/Strategos.Generators.Behavioral.Tests/Strategos.Generators.Behavioral.Tests.csproj" />
+  <Project Path="src/Strategos.Generators.Tests/Strategos.Generators.Tests.csproj" />
+  <Project Path="src/Strategos.Generators/Strategos.Generators.csproj" />
+  <Project Path="src/Strategos.Identity.Abstractions.Tests/Strategos.Identity.Abstractions.Tests.csproj" />
+  <Project Path="src/Strategos.Identity.Abstractions/Strategos.Identity.Abstractions.csproj" />
+  <Project Path="src/Strategos.Infrastructure.Tests/Strategos.Infrastructure.Tests.csproj" />
+  <Project Path="src/Strategos.Infrastructure/Strategos.Infrastructure.csproj" />
+  <Project Path="src/Strategos.Ontology.Embeddings.Tests/Strategos.Ontology.Embeddings.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology.Embeddings/Strategos.Ontology.Embeddings.csproj" />
+  <Project Path="src/Strategos.Ontology.Generators.Tests/Strategos.Ontology.Generators.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology.Generators/Strategos.Ontology.Generators.csproj" />
+  <Project Path="src/Strategos.Ontology.MCP.Hosting.Tests/Strategos.Ontology.MCP.Hosting.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology.MCP.Hosting/Strategos.Ontology.MCP.Hosting.csproj" />
+  <Project Path="src/Strategos.Ontology.MCP.Tests/Strategos.Ontology.MCP.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology.MCP/Strategos.Ontology.MCP.csproj" />
+  <Project Path="src/Strategos.Ontology.Npgsql.Tests/Strategos.Ontology.Npgsql.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology.Npgsql/Strategos.Ontology.Npgsql.csproj" />
+  <Project Path="src/Strategos.Ontology.Tests/Strategos.Ontology.Tests.csproj" />
+  <Project Path="src/Strategos.Ontology/Strategos.Ontology.csproj" />
+  <Project Path="src/Strategos.Rag.Tests/Strategos.Rag.Tests.csproj" />
+  <Project Path="src/Strategos.Rag/Strategos.Rag.csproj" />
+  <Project Path="src/Strategos.Tests/Strategos.Tests.csproj" />
+  <Project Path="src/Strategos/Strategos.csproj" />
+</Solution>

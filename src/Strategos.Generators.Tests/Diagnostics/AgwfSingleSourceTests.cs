@@ -82,7 +82,7 @@ public sealed class AgwfSingleSourceTests
         while (dir is not null)
         {
             var src = Path.Combine(dir, "src");
-            if (File.Exists(Path.Combine(src, "strategos.slnx")))
+            if (File.Exists(Path.Combine(dir, "strategos.slnx")))
             {
                 return src;
             }
@@ -91,7 +91,7 @@ public sealed class AgwfSingleSourceTests
         }
 
         throw new InvalidOperationException(
-            "Could not locate src/ (no src/strategos.slnx found walking up from "
+            "Could not locate src/ (no strategos.slnx found walking up from "
             + AppContext.BaseDirectory + ").");
     }
 }

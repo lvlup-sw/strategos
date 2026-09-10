@@ -16,7 +16,7 @@ namespace Strategos.Generators.Tests.Import;
 /// </summary>
 internal static class ContractsSchemaPaths
 {
-    /// <summary>Gets the repository root (the directory holding <c>src/strategos.slnx</c>).</summary>
+    /// <summary>Gets the repository root (the directory holding <c>strategos.slnx</c>).</summary>
     internal static string RepoRoot { get; } = LocateRepoRoot();
 
     /// <summary>Gets the per-model schema directory (<c>schemas/json-schema</c>).</summary>
@@ -60,7 +60,7 @@ internal static class ContractsSchemaPaths
         var dir = AppContext.BaseDirectory;
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
+            if (File.Exists(Path.Combine(dir, "strategos.slnx")))
             {
                 return dir;
             }
@@ -69,7 +69,7 @@ internal static class ContractsSchemaPaths
         }
 
         throw new InvalidOperationException(
-            "could not locate the repo root (no src/strategos.slnx walking up from "
+            "could not locate the repo root (no strategos.slnx walking up from "
             + AppContext.BaseDirectory + ").");
     }
 }

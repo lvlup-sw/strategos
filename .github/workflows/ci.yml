@@ -11,7 +11,7 @@ jobs:
     # Required proof policy executes an immutable org-workflow revision.
     uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
     with:
-      solution-path: 'src/strategos.slnx'
+      solution-path: 'strategos.slnx'
       test-project-patterns: |
         src/*Tests/*.csproj
       skip-patterns: |
@@ -93,7 +93,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Pack
-        run: dotnet pack src/strategos.slnx --configuration Release --output ./packages
+        run: dotnet pack strategos.slnx --configuration Release --output ./packages
 
       - name: Packed generator and workflow-binding consumer probe
         # Preserves the G1 IPhaseAwareSaga dependency-flow regression net and

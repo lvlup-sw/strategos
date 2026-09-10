@@ -8,15 +8,15 @@
 //
 // Solution-layout decision: this project lives in a STANDALONE
 // tests/basileus-smoke/Basileus.Smoke.slnx rather than being added to
-// src/strategos.slnx. Two reasons:
+// strategos.slnx. Two reasons:
 //
 //   1) Chicken-and-egg with CI: the smoke project's <PackageReference>
 //      to LevelUp.Strategos.Agents 2.7.0-smoke only resolves AFTER
 //      `dotnet pack` populates the sibling local-feed/. The main
-//      build-test job restores src/strategos.slnx before any pack step,
+//      build-test job restores strategos.slnx before any pack step,
 //      so including this csproj there would break that job.
 //
-//   2) Directory.Build.props isolation: src/Directory.Build.props
+//   2) Directory.Build.props isolation: the root Directory.Build.props
 //      installs MinVer, coverlet thresholds, analyzer packages and a
 //      net10.0-only target. The smoke project is intentionally outside
 //      that hierarchy so nothing leaks in — keeping it a clean

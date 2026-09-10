@@ -13,7 +13,7 @@ import pymupdf4llm
 import pymupdf
 
 DEFAULT_PDF_PATH = Path.home() / "Documents/academic/textbooks/ontological-semantics.pdf"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/reference/ontological-semantics"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/src/content/docs/reference/ontological-semantics"
 
 # Chapter boundaries: (filename, title, start_page_0indexed, end_page_0indexed_inclusive)
 CHAPTERS = [

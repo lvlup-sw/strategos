@@ -1,0 +1,8 @@
+<!--
+  Stops the MSBuild directory walk here. tests/basileus-smoke/ is deliberately
+  outside the library build tree: it is a PackageReference consumer of the packed
+  LevelUp.Strategos.Agents (see Basileus.Smoke.Tests.csproj) and must not inherit
+  the root Directory.Build.props / Directory.Packages.props (MinVer, analyzers,
+  central package management). Keep this file empty.
+-->
+<Project />

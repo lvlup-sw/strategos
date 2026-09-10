@@ -9,11 +9,11 @@ namespace Strategos.Tests.FixtureExport;
 /// <summary>
 /// Resolves the repository's <c>artifacts/builder-fixtures</c> directory by
 /// walking up from the test assembly to the repo root (the directory holding
-/// <c>src/strategos.slnx</c>).
+/// <c>strategos.slnx</c>).
 /// </summary>
 internal static class FixturePaths
 {
-    /// <summary>Gets the repository root (directory containing <c>src/strategos.slnx</c>).</summary>
+    /// <summary>Gets the repository root (directory containing <c>strategos.slnx</c>).</summary>
     public static string RepoRoot { get; } = FindRepoRoot();
 
     /// <summary>Gets the canonical exported fixtures directory.</summary>
@@ -29,7 +29,7 @@ internal static class FixturePaths
         var dir = AppContext.BaseDirectory;
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
+            if (File.Exists(Path.Combine(dir, "strategos.slnx")))
             {
                 return dir;
             }
@@ -38,6 +38,6 @@ internal static class FixturePaths
         }
 
         throw new InvalidOperationException(
-            "Could not locate repo root (no src/strategos.slnx) from " + AppContext.BaseDirectory);
+            "Could not locate repo root (no strategos.slnx) from " + AppContext.BaseDirectory);
     }
 }

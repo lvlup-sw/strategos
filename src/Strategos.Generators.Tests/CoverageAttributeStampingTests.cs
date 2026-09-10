@@ -240,7 +240,7 @@ public sealed class CoverageAttributeStampingTests
         }
     }
 
-    // Walks up to the directory containing strategos.slnx (the src dir), mirroring the
+    // Walks up to the src/ directory under the repository root (the directory containing strategos.slnx), mirroring the
     // existing StepConfigParityTests source-root resolution.
     private static string FindSolutionRoot()
     {
@@ -249,7 +249,8 @@ public sealed class CoverageAttributeStampingTests
         {
             if (File.Exists(Path.Combine(dir.FullName, "strategos.slnx")))
             {
-                return dir.FullName;
+                // The solution file sits at the repository root; the projects live under src/.
+                return Path.Combine(dir.FullName, "src");
             }
 
             dir = dir.Parent;

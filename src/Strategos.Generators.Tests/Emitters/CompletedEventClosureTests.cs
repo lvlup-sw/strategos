@@ -446,7 +446,8 @@ public sealed class CompletedEventClosureTests
         {
             if (File.Exists(Path.Combine(dir.FullName, "strategos.slnx")))
             {
-                return dir.FullName;
+                // The solution file sits at the repository root; the projects live under src/.
+                return Path.Combine(dir.FullName, "src");
             }
 
             dir = dir.Parent;

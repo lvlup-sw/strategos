@@ -42,7 +42,7 @@ namespace Strategos.Identity.Abstractions.Tests;
 ///     <b>Row 2</b> — middleware generates a new identity when none is incoming.
 ///     This is the basileus <c>StrategosHeaderMiddleware</c> contract; the
 ///     reference implementation lives in lvlup-sw/basileus PR #184. See
-///     <c>docs/coordination/2026-05-16-basileus-handoff.md</c> for the cross-repo
+///     <c>docs/handoffs/2026-05-16-basileus-handoff.md</c> for the cross-repo
 ///     handoff and middleware-shape contract.
 ///   </description></item>
 ///   <item><description>

@@ -60,7 +60,7 @@ fi
 
 PACKAGES_DIR="$(realpath "$1")"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-CENTRAL_PACKAGES_FILE="$SCRIPT_DIR/../src/Directory.Packages.props"
+CENTRAL_PACKAGES_FILE="$SCRIPT_DIR/../Directory.Packages.props"
 
 if [[ ! -d "$PACKAGES_DIR" ]]; then
   echo "packages dir does not exist: $PACKAGES_DIR" >&2

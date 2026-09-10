@@ -599,7 +599,7 @@ public sealed class WireDtoSchemaConformanceTests
         var dir = AppContext.BaseDirectory;
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "src", "strategos.slnx")))
+            if (File.Exists(Path.Combine(dir, "strategos.slnx")))
             {
                 return Path.Combine(dir, "src", "Strategos.Contracts", "schemas", "json-schema");
             }
@@ -608,7 +608,7 @@ public sealed class WireDtoSchemaConformanceTests
         }
 
         throw new InvalidOperationException(
-            "could not locate the repo root (no src/strategos.slnx walking up from "
+            "could not locate the repo root (no strategos.slnx walking up from "
             + AppContext.BaseDirectory + ").");
     }
 }

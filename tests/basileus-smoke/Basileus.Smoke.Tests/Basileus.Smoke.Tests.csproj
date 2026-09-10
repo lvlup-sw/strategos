@@ -9,11 +9,11 @@
     scripts/pack-to-local-feed.sh. CI uses verify-basileus-smoke.sh to restore
     into an empty per-run package directory and verify exact nupkg bytes. Lives
     outside src/ to avoid being
-    swept into CI's main build-test job (which restores src/strategos.slnx
+    swept into CI's main build-test job (which restores strategos.slnx
     BEFORE we have packed the local feed — chicken-and-egg).
 
     Layout: standalone Basileus.Smoke.slnx in this directory (separate
-    from src/strategos.slnx). Justification documented in
+    from strategos.slnx). Justification documented in
     BasileusConsumedSurfaceTests.cs file header.
   -->
   <PropertyGroup>
@@ -26,11 +26,12 @@
     <!-- Keep the hermetic gate's compile inputs closed when its obj/bin roots move to /tmp. -->
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!--
-      Opt out of MinVer + analyzers that the src/Directory.Build.props
-      chain installs. We are deliberately outside that hierarchy, so
-      nothing flows in here automatically anyway — this guard is here so
-      that a future contributor who copies the file under src/ does not
-      get a confusing build.
+      Opt out of MinVer + analyzers that the root Directory.Build.props
+      chain installs. The empty Directory.Build.props / .targets /
+      Directory.Packages.props in tests/basileus-smoke/ stop the MSBuild
+      directory walk, so nothing flows in here automatically — this guard
+      is here so that a future contributor who copies the file under src/
+      does not get a confusing build.
     -->
     <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
     <!-- Match the new Microsoft Testing Platform integration used elsewhere -->

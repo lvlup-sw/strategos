@@ -4,7 +4,7 @@
 import re
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/reference/ontological-semantics"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs/src/content/docs/reference/ontological-semantics"
 
 # Pattern: **N.N.N Title** or **N. Title** at start of line -> markdown heading
 HEADING_PATTERNS = [

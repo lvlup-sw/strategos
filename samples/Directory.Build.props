@@ -1,4 +1,0 @@
-<Project>
-  <!-- Import root build props -->
-  <Import Project="../src/Directory.Build.props" />
-</Project>

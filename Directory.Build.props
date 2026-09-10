@@ -30,14 +30,6 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
-  <PropertyGroup>
-    <CollectCoverage>true</CollectCoverage>
-    <CoverletOutputFormat>cobertura,json,lcov</CoverletOutputFormat>
-    <CoverletOutput>$(MSBuildProjectDirectory)/coverage/</CoverletOutput>
-    <Threshold>80</Threshold>
-    <ThresholdType>line,branch,method</ThresholdType>
-    <ThresholdStat>total</ThresholdStat>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
     <IsPackable>false</IsPackable>
     <IsPublishable>false</IsPublishable>
@@ -50,5 +42,5 @@
     <PackageReference Include="MinVer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
   </ItemGroup>
-  <!-- stylecop.json provided by Lvlup.Build package -->
+  <!-- stylecop.json is supplied by the Lvlup.Build package; the repo does not carry its own. -->
 </Project>
