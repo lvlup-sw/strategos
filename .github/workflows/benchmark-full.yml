@@ -36,12 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout current
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
@@ -87,21 +87,21 @@ jobs:
           fi
 
       - name: Upload JSON results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-json-${{ github.sha }}
           path: ./benchmark-results/**/*.json
           retention-days: 90
 
       - name: Upload Markdown results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-markdown-${{ github.sha }}
           path: ./benchmark-results/**/*.md
           retention-days: 90
 
       - name: Upload full artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-full-${{ github.sha }}
           path: ./benchmark-results/
@@ -113,13 +113,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout comparison ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.comparison_ref }}
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
@@ -140,14 +140,14 @@ jobs:
             --artifacts ./baseline-results
 
       - name: Upload baseline results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-baseline-${{ inputs.comparison_ref }}
           path: ./baseline-results/
           retention-days: 30
 
       - name: Download current results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: benchmark-json-${{ github.sha }}
           path: ./current-results/
@@ -173,13 +173,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: benchmark-markdown-${{ github.sha }}
           path: ./results/
 
       - name: Comment on PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
