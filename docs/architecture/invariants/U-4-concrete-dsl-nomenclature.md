@@ -1,4 +1,4 @@
-# INV-4: Fluent workflow DSL uses concrete domain nomenclature
+# U-4: Fluent workflow DSL uses concrete domain nomenclature
 
 The public workflow DSL surface — `IWorkflowBuilder`, `Workflow<TState>`, step types, fluent extension methods — uses words that workflow *authors* think in: `StartWith`, `Then`, `Branch`, `Fork`, `Join`, `RepeatUntil`, `AwaitApproval`, `OnFailure`. It does **not** use graph-theory terms (`Node`, `Edge`, `Vertex`, `Graph`) on the public authoring surface.
 

@@ -1,4 +1,4 @@
-# INV-2: Ontology uses Roslyn analyzers (not generators) and is self-contained
+# U-2: Ontology uses Roslyn analyzers (not generators) and is self-contained
 
 The ontology subsystem (`Strategos.Ontology*`) is two things, and exactly two:
 
@@ -31,7 +31,7 @@ It does not lower into Wolverine, Marten, or any other downstream library. It do
 ## External grounding
 
 - [Roslyn analyzers vs source generators](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/) — analyzers report diagnostics; generators emit code. Distinct roles, distinct consumer contracts.
-- The polyglot identity story (see [INV-8](INV-8-polyglot-identity.md)) explicitly avoids any path that would require Wolverine or Marten in the ontology stack.
+- The polyglot identity story (see [U-8](U-8-polyglot-identity.md)) explicitly avoids any path that would require Wolverine or Marten in the ontology stack.
 
 ## Severity guide
 

@@ -1,4 +1,4 @@
-# INV-5: Three-tiered validation with stable diagnostic IDs
+# U-5: Three-tiered validation with stable diagnostic IDs
 
 Validation happens at three tiers, and each error gets a stable, monotonically-assigned diagnostic ID:
 

@@ -1,4 +1,4 @@
-# INV-3: MCP is first-class and tracks the latest protocol spec (2026-07-28)
+# U-3: MCP is first-class and tracks the latest protocol spec (2026-07-28)
 
 Strategos's MCP layer (`Strategos.Ontology.MCP`) targets the *current* MCP protocol spec and leverages its modern features: structured tool descriptors with `OutputSchema`, optional `Icons`, `_meta` envelopes on every response, `resultType` on every `CallToolResult`, `ToolAnnotations`, capability hints. It does not write to a lowest-common-denominator subset that older clients would also accept.
 

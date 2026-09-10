@@ -2,9 +2,9 @@
 
 Mechanical grep / structural patterns that this skill can run against the diff or working tree to surface candidate findings. These are starting points for human or agent reasoning, not verdicts. A pattern match is a *signal*, not a conclusion — confirm by reading context.
 
-Coverage is limited to invariants where mechanical detection adds value. The remaining invariants are reasoning-driven; their checks live in the corresponding `INV-N-*.md` reference files.
+Coverage is limited to invariants where mechanical detection adds value. The remaining invariants are reasoning-driven; their checks live in the corresponding `U-N-*.md` reference files.
 
-## INV-1: Workflows → Wolverine + Marten via Roslyn SG
+## U-1: Workflows → Wolverine + Marten via Roslyn SG
 
 ### Check 1.1: Hand-authored sagas outside the emitter
 
@@ -39,7 +39,7 @@ grep -rnE 'class\s+\w*Saga(Store|Repository|Persistence)\b' \
 
 Expected: empty.
 
-## INV-2: Ontology = analyzers + self-contained
+## U-2: Ontology = analyzers + self-contained
 
 ### Check 2.1: Wolverine / Marten coupling in ontology projects
 
@@ -71,7 +71,7 @@ grep -nE '<IsRoslynComponent>|<OutputItemType>|<ReferenceOutputAssembly>' \
 
 Expected: `IsRoslynComponent=true` with analyzer-style metadata. The presence of generator-specific MSBuild items (`<OutputItemType>Analyzer</OutputItemType>` combined with `[Generator]` attribute classes) flags drift.
 
-## INV-3: MCP first-class, latest spec (2026-07-28)
+## U-3: MCP first-class, latest spec (2026-07-28)
 
 ### Check 3.1: Response records missing `_meta` envelope
 
@@ -132,7 +132,7 @@ grep -L 'Icons' src/Strategos.Ontology.MCP/OntologyToolDescriptor.cs
 Expected: empty. The property is optional and must stay null when unset —
 do not flag a missing placeholder icon as a gap.
 
-## INV-4: Concrete workflow DSL nomenclature
+## U-4: Concrete workflow DSL nomenclature
 
 ### Check 4.1: Graph-theory terms in workflow DSL surface
 
@@ -147,7 +147,7 @@ grep -rinE '\b(graph|node|edge|vertex)\w*' \
 
 Expected: empty.
 
-## INV-5: Three-tiered validation, stable diagnostic IDs
+## U-5: Three-tiered validation, stable diagnostic IDs
 
 ### Check 5.1: Duplicate diagnostic IDs in the authoritative catalog
 
@@ -197,7 +197,7 @@ git diff <last-release-tag>..HEAD -- \
 
 Each removed ID is a back-compat break — must be gated on a major version bump.
 
-## INV-6: Sealed-by-default
+## U-6: Sealed-by-default
 
 ### Check 6.1: Public non-sealed concrete classes in DSL/descriptor namespaces
 
@@ -224,7 +224,7 @@ grep -rnE '^\s*public virtual ' \
 
 Expected: empty unless explicitly justified.
 
-## INV-7: Immutable record state
+## U-7: Immutable record state
 
 ### Check 7.1: Mutable setters in state types
 
@@ -246,7 +246,7 @@ grep -rlE ':\s*IWorkflowState\b' src/Strategos/ samples/ --include='*.cs' \
 
 Hits should use `ImmutableList<T>`, `ImmutableDictionary<K,V>`, or another truly immutable type. `IReadOnlyList<T>` is a view, not a substitute — only accept it when the backing collection is frozen after construction.
 
-## INV-8: Polyglot identity (`ClrType` OR `SymbolKey`)
+## U-8: Polyglot identity (`ClrType` OR `SymbolKey`)
 
 ### Check 8.1: Unconditional `ClrType` dereference
 

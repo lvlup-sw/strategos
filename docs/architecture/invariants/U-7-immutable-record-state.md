@@ -1,4 +1,4 @@
-# INV-7: Immutable record state; step results never mutate input
+# U-7: Immutable record state; step results never mutate input
 
 `IWorkflowState` implementations are records with `{ get; init; }` properties — no mutable setters. Workflow steps receive a state instance and return a `StepResult<TState>` carrying an *updated* state value (typically `state with { ... }`). Steps must never mutate the input — neither by writing a property, nor by mutating a referenced collection, nor by writing through a held reference.
 

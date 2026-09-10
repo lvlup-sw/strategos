@@ -1,4 +1,4 @@
-# INV-6: Sealed-by-default for DSL and descriptor types
+# U-6: Sealed-by-default for DSL and descriptor types
 
 DSL types (`Strategos/Builders/`, `Strategos/Definitions/`, `Strategos/Steps/`) and descriptor types (`Strategos.Ontology/Descriptors/`) are `sealed record` or `sealed class` by default. The source generator targets *concrete* types when emitting Wolverine sagas and Marten event stores; a subclass with overridden behavior would be bypassed at the generated-code boundary, causing silent runtime divergence from author intent.
 

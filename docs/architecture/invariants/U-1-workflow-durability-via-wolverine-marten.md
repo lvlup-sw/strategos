@@ -1,4 +1,4 @@
-# INV-1: Workflows lower into Wolverine + Marten via Roslyn SG
+# U-1: Workflows lower into Wolverine + Marten via Roslyn SG
 
 Strategos's durability story is borrowed, not invented. Workflow runtime is Wolverine messages plus Marten event / document storage, emitted at compile time by `Strategos.Generators`. The DSL produces *definitions*; the source generator lowers those definitions into Wolverine saga classes (with `[SagaIdentity]`, `[Identity]`, `[Version]` markers) and DI extensions that call `services.ConfigureMarten`.
 

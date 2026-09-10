@@ -1,4 +1,4 @@
-# INV-8: Polyglot identity — `ClrType` OR `SymbolKey`, both first-class
+# U-8: Polyglot identity — `ClrType` OR `SymbolKey`, both first-class
 
 Ontology descriptors carry identity through one of two paths:
 

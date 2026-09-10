@@ -1,6 +1,6 @@
 # Package Documentation
 
-This document is the plain-markdown mirror of the published [Package Ecosystem](src/content/docs/reference/packages.md) reference. It is kept here for links from the design and plan records; the site builds from the published copy.
+This document is the plain-markdown mirror of the published [Package Ecosystem](../src/content/docs/reference/packages.md) reference. It is kept here for links from the design and plan records; the site builds from the published copy.
 
 Strategos is distributed as fourteen NuGet packages, allowing you to include only what you need. Every package listed here ships to nuget.org under the `LevelUp.` prefix.
 
@@ -284,7 +284,7 @@ The type-safe ontology definition layer for domain modeling. It provides descrip
 | `ITextChunker` | Chunking strategies: sentence, paragraph, and fixed-size |
 | `IngestionPipeline` | Chunk, embed, and load source text into an object set |
 
-See the [Ontology Reference](src/content/docs/reference/ontology/index.md) for the modeling guide.
+See the [Ontology Reference](../src/content/docs/reference/ontology/index.md) for the modeling guide.
 
 ### Installation
 
@@ -298,7 +298,7 @@ dotnet add package LevelUp.Strategos.Ontology
 
 Roslyn diagnostic analyzers for ontology definitions. They validate domain ontology declarations at compile time across the core, precondition, lifecycle, derivation, interface-action, and extension-point rules.
 
-The analyzers report the `AONT` diagnostic series; see [AONT001-AONT099](src/content/docs/reference/diagnostics/aont-001-aont-099.md), [AONT100-AONT199](src/content/docs/reference/diagnostics/aont-100-aont-199.md), and the [AONT200 series](src/content/docs/reference/diagnostics/aont-200-series.md).
+The analyzers report the `AONT` diagnostic series; see [AONT001-AONT099](../src/content/docs/reference/diagnostics/aont-001-aont-099.md), [AONT100-AONT199](../src/content/docs/reference/diagnostics/aont-100-aont-199.md), and the [AONT200 series](../src/content/docs/reference/diagnostics/aont-200-series.md).
 
 ### Installation
 
@@ -322,7 +322,7 @@ A PostgreSQL pgvector-backed `IObjectSetProvider`, for ontologies that need a du
 | `PgVectorOptions` | Connection, schema, and search configuration |
 | `IterativeScanOptions` | Iterative-scan tuning for filtered vector search |
 
-See the [Npgsql provider reference](src/content/docs/reference/ontology/npgsql.md) for schema and index setup.
+See the [Npgsql provider reference](../src/content/docs/reference/ontology/npgsql.md) for schema and index setup.
 
 ### Installation
 
