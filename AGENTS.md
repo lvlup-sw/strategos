@@ -51,11 +51,11 @@ packages/                       # NuGet package output
 - **Authentication**: Not applicable (library, not service)
 - **Secrets Management**: No secrets stored in repository
 - **External APIs**: Library consumers configure LLM providers via Microsoft.Extensions.AI
-- **NuGet Publishing**: GitHub Actions trusted publishing (OIDC via `NuGet/login@v1`); short-lived nuget.org keys. Username is repo var `NUGET_USER`.
+- **NuGet Publishing**: GitHub Actions trusted publishing (OIDC via `NuGet/login@v1`); short-lived nuget.org keys. Repo var `NUGET_USER` is the nuget.org username of the person who *created* the two Trusted Publishing policies (`rsalus`), not the `lvlup` organization that owns the packages and the policies; the token exchange is a 401 otherwise.
 
 ## Known Tech Debt
 
-- Two nuget.org Trusted Publishing policies (`publish.yml`, `publish-contracts.yml`) and repo var `NUGET_USER` must exist before the next `v*` / `contracts-v*` tag. Delete the `NUGET_API_KEY` Actions secret only after a green tag.
+- None. The two nuget.org Trusted Publishing policies (`publish.yml`, `publish-contracts.yml`, environment `nuget-publish`) went live with `contracts-v0.12.0` and `v3.0.0-rc.1` on 2026-09-09, and the long-lived `NUGET_API_KEY` secret was deleted afterwards.
 
 ## Scan Preferences
 
