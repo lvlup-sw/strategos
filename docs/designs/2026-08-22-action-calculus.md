@@ -6,6 +6,17 @@
 **Addresses:** #161 · #162 · #163 · #164 · #165 · #167 · #168 · #169 · #170 · #171
 **Builds on:** #100 (bidirectional workflow IR) · #150 / #151 / #152 (contract shapes), all released in v2.10.0
 
+> **Status: historical.** This is a dated grounding snapshot taken on 2026-08-22, *before* the
+> action-calculus program was built. Epic #172 closed on 2026-09-08 with all ten children delivered, and
+> the program shipped in v3.0.0-rc.1 (2026-09-09). **Every finding under "What is absent, and how absent"
+> below is now resolved:** `needs` shipped as `ActionDescriptor.RequiredAuthority` with the authority
+> lattice (#165); `touches` as `ActionDescriptor.TouchedResources` and `ActionFrame` with `AONT215`
+> frame soundness (#164); `PreconditionKind` and the permissive wildcard were removed outright in favour
+> of the typed `ActionPredicate` with explicit `IsOpaque` (#168); `Strategos.Contracts` carries nine
+> `extern dec` declarations (#170); retry safety is `ActionDescriptor.Idempotent` (#171). Read this for
+> *why* the program was scoped the way it was, not for the state of the code. The current reference is
+> `docs/src/content/docs/reference/action-calculus.md`.
+
 This document is the durable record of two things the epic does not carry: the **grounding audit** against
 source as it stood on 2026-08-22, and the **register** of questions the review raised, with their standing.
 The live plan, sequencing and issue map live in #172 — this file does not restate them.
@@ -22,7 +33,7 @@ The live plan, sequencing and issue map live in #172 — this file does not rest
 Everything is an action with a declared contract — including the acts of declaring, binding and projecting.
 Actions compose. The compiler checks the composition, at every level.
 
-```
+```text
 Action@L = {
   requires : Predicate@L    -- what must hold before
   ensures  : Predicate@L    -- what holds after
@@ -42,8 +53,8 @@ for meta-level work, a declared "consumer kind" field, and a separate version-co
 
 ## Grounding audit — Strategos as of 2026-08-22
 
-Everything below was read from source at the commit this document lands on. It decays; re-verify before
-estimating from it.
+Everything below was read from source at `4e95874`, the tip of `main` on 2026-08-22 (the same read the
+same-day `docs/specs/2026-08-22-correctness-core.md` cites). It decays; re-verify before estimating from it.
 
 ### What already exists
 
