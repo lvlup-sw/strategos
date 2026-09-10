@@ -88,7 +88,10 @@ public sealed class RationaleOntologyFixture
     // link (target = the association, via its SymbolKey) surfaces the reified
     // edge object with its attributes; a far-node link (target = a node, via the
     // node's SymbolKey) resolves the related node. Both route through the reverse
-    // index — no chained alias-loss hop is needed (that limitation is #128).
+    // index as single hops. The corpus predates the chained-hop fix (#128, now
+    // carried through the in-memory chain) and deliberately keeps its edge-view
+    // rows endpoint-free ("n/a" target ids), so a chained far-endpoint hop is
+    // pinned by InMemoryTraversalIdentityTests rather than by this fixture.
     public const string LinkSupersedesEdge = "supersedesEdge";
     public const string LinkSupersededDecision = "supersededDecision";
     public const string LinkMotivatesEdge = "motivatesEdge";

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **In-memory chained traversal keeps the producing descriptor's identity (#128).**
+  `InMemoryExpressionEvaluator` resolved the source of a chained hop from the prior hop's
+  CLR-simple type name and the source of a post-narrow hop from the interface's CLR name, so
+  `.TraverseLink<TEdge>("link").Where(...).TraverseLink<TNode>("To")` over an association
+  registered under an alias (or one of several registrations of one CLR type), and
+  `.OfInterface<TInterface>().TraverseLink<T>("link")`, both failed with
+  `Object type '<CLR name>' not found in ontology graph`. The evaluator now carries the
+  graph-resolved descriptor name (`TraverseLinkExpression.RootObjectTypeName`) through the
+  chain and treats an interface narrow as transparent, matching the Npgsql provider. No
+  public API change.
+
 ## [3.0.0-rc.1] - 2026-09-09
 
 The first release since 2.10.0. It folds three milestones that were merged but never
