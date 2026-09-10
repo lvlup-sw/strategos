@@ -20,7 +20,7 @@ reviews:
         - SOLID: One public type per file, Strategy over switches, constructor injection
         - Types: Sealed by default, records for DTOs, nullable enabled
         - Control: Guard clauses first, early return, no arrow code
-    - path: "**/Tests/**"
+    - path: "**/*Tests/**"
       instructions: |
         Focus on test coverage, assertion quality, edge cases.
         Use Method_Scenario_Outcome naming for test methods.

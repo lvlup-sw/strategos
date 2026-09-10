@@ -37,4 +37,5 @@
   <Project Path="src/Strategos.Rag/Strategos.Rag.csproj" />
   <Project Path="src/Strategos.Tests/Strategos.Tests.csproj" />
   <Project Path="src/Strategos/Strategos.csproj" />
+  <Project Path="tests/Strategos.Architecture.Tests/Strategos.Architecture.Tests.csproj" />
 </Solution>

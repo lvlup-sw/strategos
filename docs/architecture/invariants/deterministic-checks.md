@@ -4,6 +4,8 @@ Mechanical grep / structural patterns that this skill can run against the diff o
 
 Coverage is limited to invariants where mechanical detection adds value. The remaining invariants are reasoning-driven; their checks live in the corresponding `U-N-*.md` reference files.
 
+Checks 1.1–1.3, 2.1–2.3, 3.2–3.5, 4.1, 5.1, 5.1b, 6.1, 6.2, 7.1, 7.2 and 8.3 run on every CI build as `DeterministicChecksTests` in `tests/Strategos.Architecture.Tests` (one test per check id, anchored at the repo root so a moved path fails instead of returning zero hits); 3.1, 5.2, 5.3, 8.1 and 8.2 stay manual.
+
 ## U-1: Workflows → Wolverine + Marten via Roslyn SG
 
 ### Check 1.1: Hand-authored sagas outside the emitter
@@ -170,7 +172,7 @@ Workflow descriptors must consume `AgwfCodes.*`, not quote `AGWF0xx`. This scan 
 grep -rhoE '"(AGWF)[0-9]{3,}"' \
   src/Strategos.Generators/Diagnostics/ \
   --include='*.cs' \
-  | sort | uniq -d
+  | sort -u
 ```
 
 Expected: empty.

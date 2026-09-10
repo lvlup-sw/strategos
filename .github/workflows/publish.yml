@@ -50,7 +50,7 @@ jobs:
         # *Benchmarks.Tests* are perf,
         # not a release gate (skipped in ci.yml too).
         run: |
-          for proj in src/*Tests/*.csproj; do
+          for proj in src/*Tests/*.csproj tests/*Tests/*.csproj; do
             case "$proj" in
               *Benchmarks.Tests*|*Contracts.Tests*)
                 echo "Skipping $(basename "$proj") (verified elsewhere; see step comment)"
