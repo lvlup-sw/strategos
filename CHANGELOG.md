@@ -566,10 +566,12 @@ pre-2026-07-28 response shape instead of flagging the icon gap.
 `Ingested = 1`. AONT205 retargets to mechanical ingestion, so TypeSpec / JSON contract-authored
 actions survive graph merge.
 
-**`IActionBuilder<T>.Requires` is obsolete (#115).** Prefer `ActionDescriptor.Preconditions`. The
-method stays so existing `Object<T>` authoring still compiles; there is no fluent successor. Docs
-name `ObjectTypeFromDescriptor` / `ApplyDelta` as the CLR-free authoring seam and record that a
-SymbolKey-only interface fan-out is not expressible.
+**`IActionBuilder<T>.Requires` was marked obsolete (#115), then re-typed (#168).** Within this
+window the string-parsed `Requires` was deprecated in favour of `ActionDescriptor.Preconditions`;
+the operators program then removed the string surface and made `Requires(predicate)` the typed
+authoring path, so 3.0 ships no `[Obsolete]` shim on it. Docs name `ObjectTypeFromDescriptor` /
+`ApplyDelta` as the CLR-free authoring seam and record that a SymbolKey-only interface fan-out is
+not expressible.
 
 **Option B — identity-carrying exclusive paths (`feat/185-option-b`).** Routing maps key by
 `PathRoutingKey` (phase name plus construct/path identity), not bare CLR type. Fork-path
