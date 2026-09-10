@@ -137,7 +137,7 @@ Both systems use MCP to bridge between symbolic ontological knowledge and LLM ag
 
 ### 4.1 Runtime Constraint Feedback Protocol
 
-**Status: Implemented in 2.13**
+**Status: Implemented in 3.0.0-rc.1**
 
 **Paper concept:** OTC tools return structured constraint violation messages: "If a violation is detected, for example a missing required field, a type mismatch, or an invalid unit, the tool returns an error with an explanation. The agent then retries with corrected inputs" [§6.2, p.19-20]. This feedback loop is critical -- ablating it causes "a substantial drop in synthesis-step F1" [§4.2].
 
@@ -197,7 +197,7 @@ obj.Action("ExecuteTrade")
 
 ### 5.1 Structured Constraint Feedback to Action Dispatch
 
-**Status: Implemented in 2.13**
+**Status: Implemented in 3.0.0-rc.1**
 
 The paper's most impactful finding is that structured constraint feedback improves agent performance. Adapt this for our system:
 
@@ -218,7 +218,7 @@ hard and soft entries, and take corrective action.
 
 ### 5.2 Hard and Soft Constraint Taxonomy
 
-**Status: Implemented in 2.13**
+**Status: Implemented in 3.0.0-rc.1**
 
 Formalize the hard/soft distinction from the paper:
 
@@ -236,7 +236,7 @@ precondition enforcement is disabled.
 
 ### 5.3 MCP Tool Constraint Metadata
 
-**Status: Implemented in 2.13 / Contracts 0.10**
+**Status: Implemented in 3.0.0-rc.1 / Contracts 0.10**
 
 `Strategos.Ontology.MCP` progressive-disclosure metadata now includes:
 

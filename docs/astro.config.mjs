@@ -6,6 +6,12 @@ export default defineConfig({
   site: 'https://lvlup-sw.github.io',
   base: '/strategos/',
   trailingSlash: 'always',  // see decision below
+  redirects: {
+    // The 2.13 migration guide was folded into the 3.0 guide for 3.0.0-rc.1.
+    // Astro does not prepend `base` to a redirect target (verified against the
+    // built dist/), so the target carries the /strategos/ prefix explicitly.
+    '/guide/ontology/migration-v2-13/': '/strategos/guide/ontology/migration-v3/',
+  },
   integrations: [
     starlight({
       title: 'Strategos',

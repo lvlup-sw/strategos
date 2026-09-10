@@ -67,7 +67,7 @@ The expression-tree DSL is validated by the source generator. Diagnostics in the
 supported expression subset into immutable `ActionPredicate` values. Use their
 `ActionPredicate` overloads for CLR-free or explicit Boolean/link/relation
 formulas. See [Typed action calculus](/reference/action-calculus/) and the
-[2.13 migration guide](/guide/ontology/migration-v2-13/).
+[3.0 migration guide](/guide/ontology/migration-v3/).
 :::
 
 `Object<T>` / `Interface<T>` stay CLR-generic. The first-class CLR-free path is `ObjectTypeFromDescriptor` / `ApplyDelta` — see [Polyglot Descriptors](/guide/ontology/polyglot-descriptors/).
