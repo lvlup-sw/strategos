@@ -41,8 +41,8 @@ public sealed class OntologySchemaIdentifierException : Exception
 
         return $"Schema identifiers '{firstName}' and '{secondName}' both derive the PostgreSQL "
             + $"identifier '{derivedIdentifier}'. PostgreSQL truncates identifiers at 63 bytes "
-            + $"silently, so these two distinct junction targets would collapse onto one physical "
-            + $"table. Rename one descriptor/link so their derived identifiers differ.";
+            + $"silently, so these two distinct schema objects would collapse onto one physical "
+            + $"table or column. Rename one descriptor/link/role so their derived identifiers differ.";
     }
 
     /// <summary>The first colliding input name.</summary>

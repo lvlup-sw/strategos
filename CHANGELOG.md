@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph-resolved descriptor name (`TraverseLinkExpression.RootObjectTypeName`) through the
   chain and treats an interface narrow as transparent, matching the Npgsql provider. No
   public API change.
+- **Every generated Npgsql identifier goes through the 63-byte guard (#130, R3a).** Vertex,
+  junction and association-object table names, `{role}_id` endpoint columns and index names
+  now all derive through one deterministic truncate-and-hash function (`PgIdentifier`, the
+  generalized DR-11 junction guard), so a logical name over PostgreSQL's 63-byte
+  `NAMEDATALEN - 1` limit yields the SAME identifier in the DDL and in the
+  relate/unrelate/traversal DML. Previously only the relate/unrelate write path derived the
+  junction name; the junction DDL, the traversal read and the association-object DDL emitted
+  the raw name, which PostgreSQL silently truncates — a `42P01 relation does not exist` on the
+  first relate over a long `{source}_{link}`, and two long descriptor or role names could
+  collapse onto one table or column. The association endpoint-role collision guard now
+  compares the derived columns. Names within the cap are byte-identical to before.
 
 ## [3.0.0-rc.1] - 2026-09-09
 

@@ -100,6 +100,8 @@ The `descriptorName` parameter resolves the target table:
 - When non-null, the table name is the snake-cased descriptor name (e.g. `"TradingDocuments"` → `"trading_documents"`).
 - When null, resolution falls back to the registered descriptor name for `T` via the optional `OntologyGraph` passed to the provider constructor. For a type registered exactly once, the default works. For a type registered under multiple descriptor names (multi-registration), the default-null call throws — callers must supply `descriptorName` explicitly, one call per descriptor.
 
+Every generated identifier — vertex, junction and association-object table names, `{role}_id` endpoint columns and index names — is capped at PostgreSQL's 63-byte identifier limit (`NAMEDATALEN - 1`): a name within the cap is used verbatim, and a longer one is truncated and given a deterministic hash suffix derived from the full name. The DDL and the relate/unrelate/traversal DML derive each identifier through the same function, so they always agree and two long names never silently collapse onto one table or column.
+
 ## Multi-registration partitioning
 
 The same CLR carrier type can be registered under multiple descriptor names — for example a shared content-carrier registered separately for "trading documents" and "knowledge documents," each backed by an independent table partition. The write path mirrors the read path:
