@@ -53,8 +53,8 @@ public sealed class GateFailClosedTests
         "Strategos.Builders.IBranchBuilder<TState>.Complete() -> void";
 
     /// <summary>
-    /// An Ontology member line guaranteed present in that package's unshipped baseline
-    /// (its shipped baseline is empty until the first Ontology release roll); dropping
+    /// An Ontology member line guaranteed present in that package's shipped baseline
+    /// (rolled from Unshipped for 3.0.0-rc.1, the first Ontology release roll); dropping
     /// it is the synthetic drift for the second gated project.
     /// </summary>
     private const string OntologyDriftLineToRemove =
@@ -66,8 +66,8 @@ public sealed class GateFailClosedTests
     private static string UnshippedBaselinePath { get; } = Path.Combine(
         FixturePaths.RepoRoot, "src", "Strategos", "PublicAPI", "PublicAPI.Unshipped.txt");
 
-    private static string OntologyUnshippedBaselinePath { get; } = Path.Combine(
-        FixturePaths.RepoRoot, "src", "Strategos.Ontology", "PublicAPI.Unshipped.txt");
+    private static string OntologyShippedBaselinePath { get; } = Path.Combine(
+        FixturePaths.RepoRoot, "src", "Strategos.Ontology", "PublicAPI.Shipped.txt");
 
     private static string GateScriptPath { get; } = Path.Combine(
         FixturePaths.RepoRoot, "scripts", "check-builder-api-stability.sh");
@@ -152,13 +152,13 @@ public sealed class GateFailClosedTests
     /// The gate accepts several projects and stops at the first failure. The Ontology
     /// package publishes its own baseline that the exarchos mirror also consumes, so
     /// the same real-build proof runs against it: drop one tracked Ontology member
-    /// from <c>PublicAPI.Unshipped.txt</c> and require the gate to fail closed with the
+    /// from <c>PublicAPI.Shipped.txt</c> and require the gate to fail closed with the
     /// verbatim remediation, then pass once the baseline is restored.
     /// </summary>
     [Test]
     public async Task Gate_FailsClosed_OnOntologyBaselineDrift_ThenPassesOnRestoredBaseline()
     {
-        var original = await File.ReadAllTextAsync(OntologyUnshippedBaselinePath);
+        var original = await File.ReadAllTextAsync(OntologyShippedBaselinePath);
 
         await Assert.That(original)
             .Contains(OntologyDriftLineToRemove);
@@ -170,7 +170,7 @@ public sealed class GateFailClosedTests
                 original
                     .Split('\n')
                     .Where(line => line.Trim() != OntologyDriftLineToRemove));
-            await File.WriteAllTextAsync(OntologyUnshippedBaselinePath, drifted);
+            await File.WriteAllTextAsync(OntologyShippedBaselinePath, drifted);
 
             var (driftExit, driftOutput) = await RunGateAsync(OntologyProject);
 
@@ -180,7 +180,7 @@ public sealed class GateFailClosedTests
         }
         finally
         {
-            await File.WriteAllTextAsync(OntologyUnshippedBaselinePath, original);
+            await File.WriteAllTextAsync(OntologyShippedBaselinePath, original);
         }
 
         var (cleanExit, cleanOutput) = await RunGateAsync(OntologyProject);

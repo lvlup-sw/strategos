@@ -15,7 +15,13 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
-## [Unreleased]
+## [0.12.0] - 2026-09-09
+
+The first Contracts release since 0.4.0. The 0.5.0 through 0.12.0 minors were pinned in
+the tree between 2026-08-07 and 2026-09-08 and never tagged separately; every entry below
+carries the minor it landed in. Ships alongside Strategos 3.0.0-rc.1, whose core package
+depends on this version. Consumers upgrade first: the emitted converters throw on an
+unknown member.
 
 ### Fixed
 

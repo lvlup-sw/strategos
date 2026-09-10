@@ -178,25 +178,30 @@ public sealed class BuilderApiBaselineTests
                 line.StartsWith("Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal) ||
                 line.StartsWith("static Strategos.Definitions.CompensationConfiguration", StringComparison.Ordinal) ||
                 line.StartsWith("Strategos.Steps.StepContext", StringComparison.Ordinal) ||
-                line.StartsWith("static Strategos.Steps.StepContext", StringComparison.Ordinal);
+                line.StartsWith("static Strategos.Steps.StepContext", StringComparison.Ordinal) ||
+                line.StartsWith("Strategos.Definitions.WorkflowActionReference", StringComparison.Ordinal) ||
+                line.StartsWith("static Strategos.Definitions.WorkflowActionReference", StringComparison.Ordinal);
 
             await Assert.That(hasReviewedOwner).IsTrue();
         }
 
         // The hard INV-1 contract still tracks exactly the 10 reviewed builder
         // types plus the reviewed non-builder declarations that shipped in the
-        // last release: StepDefinition, CompensationConfiguration, and StepContext
-        // (its pre-2.13 members shipped in v2.10.0; Shipped = present in the last
-        // release, see src/Strategos/.editorconfig).
+        // last release: StepDefinition, CompensationConfiguration, StepContext, and
+        // WorkflowActionReference (#167's occurrence identity value object, rolled
+        // into Shipped for 3.0.0-rc.1; Shipped = present in the last release, see
+        // src/Strategos/.editorconfig).
         // A type-declaration line is a bare fully-qualified type name with no
         // member ('.' after the type) and no signature arrow ('->').
         var typeDeclarationLines = nonDirectiveLines
             .Where(static l => !l.Contains("->", StringComparison.Ordinal))
             .ToArray();
 
-        await Assert.That(typeDeclarationLines.Length).IsEqualTo(13);
+        await Assert.That(typeDeclarationLines.Length).IsEqualTo(14);
         await Assert.That(typeDeclarationLines)
             .Contains("Strategos.Definitions.StepDefinition");
+        await Assert.That(typeDeclarationLines)
+            .Contains("Strategos.Definitions.WorkflowActionReference");
         await Assert.That(typeDeclarationLines)
             .Contains("Strategos.Definitions.CompensationConfiguration");
         await Assert.That(typeDeclarationLines)

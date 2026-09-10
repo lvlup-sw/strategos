@@ -5,15 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.13.0] - Unreleased
+## [3.0.0-rc.1] - 2026-09-09
 
-> **Approved source-compatibility exception:** issue #168 intentionally makes a
-> source-breaking minor release. The legacy writable/string-parsed action
-> precondition surface is removed without a compatibility parser so typed
-> predicates remain the sole semantic authority. See the
-> [2.13 migration guide](docs/src/content/docs/guide/ontology/migration-v2-13.md).
+The first release since 2.10.0. It folds three milestones that were merged but never
+published — **2.11.0** (correctness core and paved road), **2.12.0** (the action calculus:
+the object) and **2.13.0** (the action calculus: the operators) — into one major
+pre-release, because their sum is source-breaking in ways a minor cannot honestly carry.
+Each program keeps its own block below, newest first, so the history reads as it was
+built. `Strategos.Contracts` ships **0.12.0** alongside, published independently from its
+own tag and the first Contracts release since 0.4.0. Consumers on 2.9.1 also read the
+[2.10.0](#2100---2026-08-07) section.
 
-### Cross-product breaking changes
+Upgrade guide: [3.0 migration guide](docs/src/content/docs/guide/ontology/migration-v3.md).
+
+### Breaking changes
+
+Everything a consumer must act on, with the block that documents it.
+
+- **Every ontology action dispatch names its principal (#161).** `ActionContext`,
+  `ObjectSet<T>.ApplyAsync` and `OntologyActionTool.ExecuteAsync` require an
+  `ActionPrincipal`; a missing or incomplete principal is refused, never defaulted. → *the object*
+- **Authority, frames and retry safety are checked (#164, #165, #171).** A domain that declares
+  `RequiresAuthority` must declare a complete lattice (`AONT214`); a postcondition that mutates
+  outside the declared frame is `AONT215`; a read-only action declared non-idempotent is
+  `AONT213`. → *the object*
+- **Action contracts are source-breaking (#168).** Every `ActionDescriptor` requires an
+  `ActionSubject`; `PreconditionKind` and the writable legacy expression/relation/link fields are
+  removed with no compatibility parser; graph hashes change once. → *the operators*
+- **`ActionDescriptor.BoundWorkflowName` is removed and builder interfaces gain members (#167,
+  #169).** Read `BoundWorkflow?.WorkflowId`; external implementations of `IStepConfiguration`,
+  the fork-join builders and the approval builders must adopt the added members. → *the operators*
+- **Graph freeze rejects every unproved authored inverse (#169).** `AONT216`, `AGWF044` and
+  `AGWF045` are `NotConfigurable`; a second `Compensate<T>()` on one occurrence throws. → *the
+  operators*
+- **The generated `Phase` enum's member order changes for fork and branch workflows (#155,
+  #183).** Under a Newtonsoft-serializing Marten store this is a data migration; under
+  System.Text.Json it is not. → *correctness core*
+- **Emitted `ValidTransitions` content changes for fork, branch, loop and `OnFailure` workflows,
+  and `AGWF003` now rejects duplicate names on `BranchPath` (#155).** → *correctness core*
+- **`Strategos.Contracts` 0.4.0 → 0.12.0, consumer-first.** The strict enum converters throw on
+  an unknown member, so consumers restore 0.12.0 before producers emit `AGWF035`–`AGWF045`. The
+  narrowings (0.6.0, 0.11.0, 0.12.0) are allowlisted and listed in the package changelog.
+
+### Action calculus — the operators (planned as 2.13.0; PRs #203, #205, #206)
+
+> The typed predicate removal in #168 was recorded as an approved source-compatibility
+> exception while this program was planned as a minor. Under a major release it is a breaking
+> change like any other and is listed above. The legacy writable/string-parsed action
+> precondition surface is removed without a compatibility parser so typed predicates remain
+> the sole semantic authority.
+
+#### Cross-product breaking changes
 
 - **Workflow builder surface (#167).** `IStepConfiguration<TState>` adds
   `Performs(WorkflowActionReference)` and #169's
@@ -60,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declaration. This keeps the executable inverse and proved inverse identity
   from diverging through last-write-wins configuration.
 
-### Added
+#### Added
 
 - `StepContext.ExecutionId` — the durable identity of a step dispatch, and the supported idempotency key: a redelivery of the same command carries the same value. For a forward execution it is the forward execution id the saga pinned in its dispatch claim; for a compensation execution it is the rollback id.
 - `IStepConfiguration<TState>.Compensate<TCompensation>(TimeSpan timeout)` and `Compensate<TCompensation>(WorkflowActionReference inverseAction, TimeSpan timeout)` — the first authoring path to the compensation deadline, which bounds one execution of the inverse step (distinct from `WithTimeout`, which bounds the forward step). `AGWF021` now rejects a non-positive value written in the DSL.
@@ -133,7 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exclusions, proof coverage, dynamic sequences, and invalid contracts. Runtime
   and the netstandard analyzer share the same proof kernel.
 
-### Changed
+#### Changed
 
 - **Contracts package 0.12.0.** Compensation metadata adds the optional
   `inverseAction: ActionReferenceV1` field and the closed diagnostic vocabulary
@@ -233,7 +275,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`WorkflowDefinitionV1` v1 narrowing policy is stated on the contract.** `schemaVersion` is a pinned literal `1.0`; while the Contracts package is pre-1.0 a minor may narrow the document in place and every narrowing must be listed in the breaking-change allowlist; after 1.0 a breaking change requires a V2 root. The previous wording promised additive-only minors, which the pre-1.0 releases were not delivering.
 - **Contracts CHANGELOG correction.** The 0.12.0 compensation-identity bullet claimed the importer already rejected a blank `compensationStepType`. That was false for the empty string: `WireToModelBridge` guarded on `!string.IsNullOrEmpty` and silently dropped the entire compensation block, so a valid-looking document produced a saga with no compensation. It is now a build error.
 
-### Removed (unreleased API)
+#### Removed (unreleased API)
 
 - **Two `ActionCalculus` members added earlier in this unreleased window are
   removed (#169).** `AuthoredRollbackAgrees(IEnumerable<ActionDescriptor>,
@@ -250,11 +292,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ActionSubject` with the completed forward prefix; both return an
   `ActionRollbackPlan`, which carries the structure a string list could not.
 
-### Fixed
+#### Fixed
 
 - Fixed the workflow binding proof failing open on an internal error: a compilation declaring typed derived compensation without any `BoundToWorkflow` call now reports `AGWF042` instead of emitting an unproved compensation saga with no diagnostic, because the fail-closed gate is derived from the workflow models rather than from a text scan for the binding builder method.
 
-## [2.11.0] - Unreleased
+
+### Action calculus — the object (planned as 2.12.0; PRs #200, #201)
+
+Every ontology action becomes an object with a declared contract: who may perform it, what
+authority it needs, what it touches, and whether it may be retried. This program merged
+without a changelog entry; the block is written from the pull requests and the issues they
+close (#161, #162, #164, #165, #170, #171), and the vocabulary is documented in
+`docs/src/content/docs/reference/action-calculus.md`.
+
+#### Cross-product breaking changes
+
+- **Every action dispatch names its principal (#161, PR #200).** `ActionPrincipal` is a sealed,
+  ontology-owned record carrying `PrincipalType`, `PrincipalId` and `GrantedAuthorities`.
+  `ActionContext` can no longer be constructed without one, `ObjectSet<T>.ApplyAsync` takes the
+  principal as its first parameter, and `OntologyActionTool.ExecuteAsync` refuses a missing or
+  incomplete principal before `IActionDispatcher` is reached; the overloads without a principal
+  are removed. MCP hosts bind an authenticated caller through
+  `IActionPrincipalResolver` in `Strategos.Ontology.MCP.Hosting`
+  (`ClaimsActionPrincipalResolver` over `ActionPrincipalClaimTypes` by default). The principal
+  deliberately lives in `Strategos.Ontology` rather than `Strategos.Identity.Abstractions`, so
+  the authorization contract stays in ontology terms and the ontology kernel takes no dependency
+  on a CLR identity implementation.
+- **Relation preconditions are enforced at the dispatcher chokepoint (#162).** A
+  `RequiresRelation(relation, linkPath...)` requirement is evaluated by
+  `RelationAuthorizationActionDispatcher` against the calling principal before the handler runs,
+  resolving through `IActionRelationResolver` (`ObjectSetActionRelationResolver` by default).
+  Action discovery is principal-aware: an action whose relation does not hold for the caller is
+  not offered.
+- **A domain declares its authority lattice, and dispatch fails closed on it (#165).**
+  `IOntologyBuilder.AuthorityAxis(name, levels...)` declares an axis from weakest to strongest;
+  `Authority(name).At(axis, level).Implies(weaker)` positions each authority on every axis;
+  `IActionBuilder.RequiresAuthority(name)` puts the requirement on the action. `AuthorityLattice`
+  computes joins as the pointwise maximum and answers `Satisfies` and `IsAtMost`;
+  `AuthorityAuthorizationActionDispatcher` refuses a principal whose granted authorities do not
+  satisfy the requirement. A lattice with a missing axis, an authority not positioned on every
+  axis, or duplicate names is `AONT214` at build time and `OntologyCompositionException` at
+  graph freeze. Actions that declare no authority are unaffected.
+- **Actions carry a frame, and mutation outside it is an error (#164).** `Touches(resource)` and
+  the fluent effect declarations (`Modifies`, `CreatesLinked`, `EmitsEvent`) populate
+  `ActionDescriptor.TouchedResources` (`ActionResource`, `ActionResourceKind`). `AONT215` reports
+  a postcondition that mutates a resource outside the declared frame — at the analyzer for
+  literal initializers, at graph freeze for descriptor-first actions. `ActionFrame`,
+  `ActionCalculus` and `CompositeActionContract` compute a composite's frame as the union of its
+  parts and carry the non-interference rule: a predicate over resources disjoint from the frame
+  keeps its truth value across the action.
+- **A read-only action cannot declare itself non-idempotent (#171).**
+  `ActionDescriptor.Idempotent` (`IActionBuilder<T>.Idempotent()`) is the retry-safety signal.
+  `IsReadOnly` implies it by construction, and a descriptor-first contract that says otherwise is
+  `AONT213`. `ToolAnnotations.IdempotentHint` is derived from `Idempotent` rather than from
+  `IsReadOnly`, so a write action that opts in now advertises retry safety, and one that does not
+  is no longer conflated with a safe read.
+- **Authored compensation is checked at graph freeze (#164).** `CompensatedBy(actionName)` names
+  an inverse. In this program the graph accepted an inverse whose frame was set-equal to the
+  forward frame and reported disagreement as `AONT216`; the operators block above replaces that
+  check with the mechanically derived inverse (`ActionCalculus.AnalyzeInverse`) and makes
+  `AONT216` `NotConfigurable`.
+
+#### Added
+
+- `ActionDescriptor.RequiredAuthority`, `TouchedResources`, `Idempotent`, `RequiresConfirmation`,
+  `AllowedClients` and `CompensatingActionName`, with the matching `IActionBuilder<T>` verbs.
+  Authority, relation, frame, retry, client-exposure, confirmation and compensation semantics are
+  surfaced through MCP tool metadata (`ActionAuthorizationRequirement`, `ActionSemanticSummary`).
+- **Contract-authored actions (#170; Contracts 0.9.0).** TypeSpec `extern dec` decorators for
+  object ownership, authority, relation paths, clients, confirmation, read-only and idempotent
+  semantics emit language-neutral `x-strategos-*` JSON Schema metadata, and the C# side emits
+  immutable `HandAuthoredContract` descriptors (`ContractOntologyCatalog`) through the acyclic
+  `ISchemaEmissionExtension` seam in `Strategos.Contracts.Codegen`. Together with #163's
+  `DescriptorSource.HandAuthoredContract` (below) this is the pair that makes contract-authored
+  actions both legal and writable.
+- `docs/src/content/docs/reference/action-calculus.md` documents the object: identity, the
+  closed predicate language, guarantees versus frames, authority and retry safety.
+
+#### Changed
+
+- Diagnostics `AONT213`–`AONT216` are appended after `AONT212`; ids are never reused.
+- `Strategos.Contracts` moves 0.8.0 → 0.9.0 (additive).
+
+### Correctness core and paved road (planned as 2.11.0; PRs #160, #187, #188, #194, #195, #196, #198)
 
 **Correctness core.** A C#-authored workflow using `Fork` or `Branch` never terminated. The defect
 was live in every published version, including 2.10.0, with no DSL-level workaround. Fixing it
@@ -270,7 +390,7 @@ then `AGWF037`).
 > members. Read *Changed* below before upgrading — one item is a data-migration risk for a
 > specific serializer configuration.
 
-### Fixed
+#### Fixed
 
 **Fork workflows now terminate (#155).** A C#-authored `.Fork(...).Join<T>().Finally<T>()` saga
 stalled: fork-path steps were appended after the declared terminal, so the terminal's completed
@@ -334,7 +454,7 @@ list positionally with no filter, so an approved checkpoint could resume onto a 
 branch-case, failure-handler or handler-chain step, bypassing that construct's own dispatch. It
 also resumed onto the *first* step in the list when its gated step was absent.
 
-### Added
+#### Added
 
 **`AGWF035` — unreachable termination (error).** The generator holds both the declared terminal and
 every computed successor at emission time, so this whole failure class is decidable before anything
@@ -364,7 +484,7 @@ is not a migration; ordinal Newtonsoft storage is. That fact now lives on a dura
 manager, on the basis that Actions pins are owned by Dependabot — and no Dependabot config existed.
 17 workflow references, including the newly pinned reusable workflows, now have an update path.
 
-### Changed
+#### Changed
 
 **The generated transition table describes the real graph (#155).** `ValidTransitions` and
 `IsValidTransition` were built as a flat linear chain over the step list, so a branch workflow
@@ -417,7 +537,7 @@ one the issue did not name.
 fail the build instead of last-write-win routing. This is a **breaking diagnostic** for workflows
 that compiled with that shape.
 
-### Residue (#185)
+#### Residue (#185)
 
 **`AGWF035` now decides route under-reach.** The guard already reported a declared `Finally<T>` that
 was not last on the main flow, or a main-flow step whose successor was construct-owned. It was
@@ -493,6 +613,24 @@ publish and CI follows. `CLAUDE.md` defers to `AGENTS.md`.
 (`chore/147-slnx-claude-md`) both edit `.github/workflows/publish.yml`. The weave must keep
 both: OIDC `NuGet/login` + `steps.login.outputs.NUGET_API_KEY`, and
 `SOLUTION_PATH: 'src/strategos.slnx'`.
+
+### Release engineering
+
+- **Public API baselines rolled.** Every `PublicAPI.Unshipped.txt` (core, Ontology, Ontology.MCP,
+  Ontology.MCP.Hosting, Identity.Abstractions) is folded into its `PublicAPI.Shipped.txt`; an rc
+  is an API freeze, and anything that changes during the candidate re-enters Unshipped. The
+  exarchos `strategos-api-mirror` re-baselines against the new core Shipped file.
+- **`publish.yml` no longer pushes `LevelUp.Strategos.Contracts`.** Packing the solution emits the
+  Contracts nupkg, and the v2.10.0 run pushed it (as a duplicate). The workflow now drops it
+  before push so the package is published only by `publish-contracts.yml`, behind the gates
+  that workflow runs. Because the core package's nuspec depends on the pinned Contracts version,
+  the `contracts-v*` tag is published before the `v*` tag. A tag carrying a hyphen is created as
+  a GitHub pre-release and kept off "latest".
+- **SourceLink 8.0.0 → 10.0.401.** Clears CVE-2026-62900 (`NU1902` on
+  `Microsoft.Build.Tasks.Git` 8.0.0, no patched 8.x). Build-time only (`PrivateAssets="all"`);
+  no package dependency changes.
+- The changelog-disclosure and rollback-disclosure tests read this release's section and the
+  3.0 migration guide; the `[2.13.0]` heading they targeted no longer exists.
 
 ## [2.10.0] - 2026-08-07
 

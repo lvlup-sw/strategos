@@ -46,7 +46,7 @@ public sealed class RollbackRuleDisclosureTests
     {
         yield return "CHANGELOG.md";
         yield return "docs/src/content/docs/reference/action-calculus.md";
-        yield return "docs/src/content/docs/guide/ontology/migration-v2-13.md";
+        yield return "docs/src/content/docs/guide/ontology/migration-v3.md";
         yield return "docs/src/content/docs/reference/diagnostics/agwf-agsr.md";
     }
 
