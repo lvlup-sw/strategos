@@ -81,7 +81,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     internal static string ResolveTableName(ObjectSetExpression expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
-        return TypeMapper.ToSnakeCase(expression.RootObjectTypeName);
+        return SqlGenerator.ObjectTableName(expression.RootObjectTypeName);
     }
 
     /// <summary>
@@ -100,7 +100,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     internal static string ResolveTableNameForDescriptor(string descriptorName)
     {
         ArgumentNullException.ThrowIfNull(descriptorName);
-        return TypeMapper.ToSnakeCase(descriptorName);
+        return SqlGenerator.ObjectTableName(descriptorName);
     }
 
     /// <summary>
@@ -139,7 +139,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
             if (names.Count == 1)
             {
-                return TypeMapper.ToSnakeCase(names[0]);
+                return SqlGenerator.ObjectTableName(names[0]);
             }
 
             throw new InvalidOperationException(
@@ -155,7 +155,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         // Graph absent — fall back to typeof(T).Name → snake_case for
         // back-compat with direct unit-test instantiation and DI
         // configurations that do not resolve an OntologyGraph.
-        return TypeMapper.ToSnakeCase(typeof(T).Name);
+        return SqlGenerator.ObjectTableName(typeof(T).Name);
     }
 
     /// <inheritdoc />
@@ -728,7 +728,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         }
 
         return new RelateEndpoint(
-            TypeMapper.ToSnakeCase(descriptorName),
+            SqlGenerator.ObjectTableName(descriptorName),
             descriptor.KeyProperty.Name);
     }
 
@@ -1011,12 +1011,15 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
 
         return new AssociationRelatePlan
         {
-            AssociationTable = TypeMapper.ToSnakeCase(associationDescriptor),
+            // #130 R3a: the table and the {role}_id columns derive through the same
+            // capped resolvers BuildAssociationObjectTableDdl uses, so the DDL and
+            // this DML plan can never name different physical identifiers.
+            AssociationTable = SqlGenerator.ObjectTableName(associationDescriptor),
             AssociationKeyProperty = association.KeyProperty.Name,
-            SourceColumn = $"{TypeMapper.ToSnakeCase(sourceEndpoint.Role)}_id",
+            SourceColumn = SqlGenerator.RoleColumnName(sourceEndpoint.Role),
             SourceTable = source.TableName,
             SourceKeyProperty = source.KeyProperty,
-            TargetColumn = $"{TypeMapper.ToSnakeCase(targetEndpoint.Role)}_id",
+            TargetColumn = SqlGenerator.RoleColumnName(targetEndpoint.Role),
             TargetTable = target.TableName,
             TargetKeyProperty = target.KeyProperty,
         };
@@ -1252,7 +1255,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
         foreach (var descriptor in _graph.ObjectTypes)
         {
             ct.ThrowIfCancellationRequested();
-            var tableName = TypeMapper.ToSnakeCase(descriptor.Name);
+            var tableName = SqlGenerator.ObjectTableName(descriptor.Name);
             await EnsureSchemaForTableAsync(tableName, descriptor.KeyProperty?.Name, ct).ConfigureAwait(false);
         }
     }
@@ -1344,7 +1347,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         if (descriptorName is not null)
         {
-            return TypeMapper.ToSnakeCase(descriptorName);
+            return SqlGenerator.ObjectTableName(descriptorName);
         }
 
         return ResolveTableNameForDefaultOverload<T>(graph);

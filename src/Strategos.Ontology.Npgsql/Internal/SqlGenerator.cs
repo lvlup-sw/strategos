@@ -258,7 +258,9 @@ internal static class SqlGenerator
             _ => throw new ArgumentOutOfRangeException(nameof(indexType), indexType, "Unsupported pgvector index type."),
         };
 
-        var indexName = QuoteIdentifier($"idx_{tableName}_embedding");
+        // #130 R3a: the index name is derived from the (already-capped) table name
+        // and can itself exceed the cap, so it goes through the same guard.
+        var indexName = QuoteIdentifier(PgIdentifier.Derive($"idx_{tableName}_embedding"));
         sb.Append($"CREATE INDEX IF NOT EXISTS {indexName} ON {QuoteIdentifier(schema)}.{QuoteIdentifier(tableName)} USING {indexMethod} (embedding {opsClass})");
 
         if (indexType == PgVectorIndexType.IvfFlat)
@@ -325,19 +327,11 @@ internal static class SqlGenerator
         ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetTableName);
 
-        var junctionTableName = $"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}";
-        var qSchema = QuoteIdentifier(schema);
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"CREATE TABLE IF NOT EXISTS {qSchema}.{QuoteIdentifier(junctionTableName)} (");
-        sb.AppendLine("    edge_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),");
-        sb.AppendLine($"    source_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(sourceTableName)} (id),");
-        sb.AppendLine($"    target_id uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(targetTableName)} (id),");
-        sb.AppendLine("    UNIQUE (source_id, target_id)");
-        sb.AppendLine(");");
-        AppendReverseJunctionIndex(sb, schema, junctionTableName);
-
-        return sb.ToString();
+        // #130 R3a: the DDL derives the junction identifier through the SAME
+        // function the relate/unrelate/traversal DML uses, so an over-long
+        // {source}_{link} name is capped identically on both sides.
+        var junctionTableName = JunctionTableName(sourceTableName, linkName);
+        return BuildJunctionTableDdlByName(schema, junctionTableName, sourceTableName, targetTableName);
     }
 
     /// <summary>
@@ -366,10 +360,48 @@ internal static class SqlGenerator
     }
 
     /// <summary>
-    /// Resolves the snake_cased junction table name for a pure link
+    /// Resolves the physical object (vertex or association-object) table
+    /// identifier for a descriptor NAME: snake_cased via
+    /// <see cref="TypeMapper.ToSnakeCase(string)"/>, then passed through
+    /// <see cref="PgIdentifier.Derive(string)"/> so it can never exceed
+    /// PostgreSQL's silent 63-byte truncation limit (#130 R3a). EVERY table-name
+    /// resolution in the provider — read path, write path, schema bootstrap,
+    /// relate endpoints, association plans — and every DDL builder routes through
+    /// this one function, so the DDL and the DML can never name different
+    /// physical tables for one descriptor. A name within the cap is returned
+    /// byte-identical to the plain snake_case lowering.
+    /// </summary>
+    /// <param name="descriptorName">The ontology descriptor name (INV-8: identity by name).</param>
+    internal static string ObjectTableName(string descriptorName)
+    {
+        ArgumentNullException.ThrowIfNull(descriptorName);
+        return PgIdentifier.Derive(TypeMapper.ToSnakeCase(descriptorName));
+    }
+
+    /// <summary>
+    /// Resolves the role-disambiguated <c>{role}_id</c> endpoint FK column
+    /// identifier for an association endpoint role, passed through
+    /// <see cref="PgIdentifier.Derive(string)"/> so an over-long role can never
+    /// be silently truncated by PostgreSQL (#130 R3a). The association DDL and
+    /// the attributed relate/unrelate DML both derive the column through this
+    /// one function.
+    /// </summary>
+    /// <param name="role">The endpoint role (e.g. <c>"Employee"</c>).</param>
+    internal static string RoleColumnName(string role)
+    {
+        ArgumentNullException.ThrowIfNull(role);
+        return PgIdentifier.Derive($"{TypeMapper.ToSnakeCase(role)}_id");
+    }
+
+    /// <summary>
+    /// Resolves the junction table identifier for a pure link
     /// <c>(source, link)</c> — the SAME identifier
-    /// <see cref="BuildJunctionTableDdl"/> creates, so relate/unrelate writes
-    /// and the schema DDL can never drift (DR-7).
+    /// <see cref="BuildJunctionTableDdl"/> creates, so relate/unrelate writes,
+    /// the traversal read and the schema DDL can never drift (DR-7). The
+    /// <c>{source}_{snake(link)}</c> name is passed through
+    /// <see cref="JunctionIdentifier.Derive(string)"/> so it can never exceed
+    /// PostgreSQL's silent 63-byte truncation limit (#130 R3a); a name within
+    /// the cap is returned verbatim.
     /// </summary>
     /// <param name="sourceTableName">
     /// The source endpoint's object table name (already snake_cased).
@@ -379,7 +411,7 @@ internal static class SqlGenerator
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceTableName);
         ArgumentException.ThrowIfNullOrWhiteSpace(linkName);
-        return $"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}";
+        return JunctionIdentifier.Derive($"{sourceTableName}_{TypeMapper.ToSnakeCase(linkName)}");
     }
 
     /// <summary>
@@ -471,9 +503,12 @@ internal static class SqlGenerator
     /// <summary>
     /// Builds one junction table's DDL from an already-derived junction name and
     /// the source/target object table names. Shared by
-    /// <see cref="BuildJunctionTableDdlForResolvedTargets"/>; emits the same edge
-    /// shape as <see cref="BuildJunctionTableDdl"/> (edge identity + two endpoint
-    /// FKs + endpoint-pair uniqueness) but with the DR-11-resolved identifier.
+    /// <see cref="BuildJunctionTableDdl"/> (the <c>(source, link)</c> name from
+    /// <see cref="JunctionTableName(string, string)"/>) and
+    /// <see cref="BuildJunctionTableDdlForResolvedTargets"/> (the DR-11-resolved
+    /// name from <see cref="JunctionTableNameFor(JunctionTableDescriptor)"/>), so
+    /// both emit one edge shape: edge identity + two endpoint FKs + endpoint-pair
+    /// uniqueness + the reverse-traversal index.
     /// </summary>
     private static string BuildJunctionTableDdlByName(
         string schema,
@@ -1039,10 +1074,12 @@ internal static class SqlGenerator
         // specified more than once". ToSnakeCase only lowercases/underscores, so
         // roles that differ only by case or separators (e.g. "Owner" / "owner")
         // collide after normalization. Surface a typed, actionable error here.
+        // The check runs on the DERIVED column (#130 R3a) so it is the identifier
+        // Postgres will actually see that is compared, never the raw name.
         var roleColumns = new HashSet<string>(StringComparer.Ordinal);
         foreach (var endpoint in association.AssociationEndpoints)
         {
-            var roleColumn = $"{TypeMapper.ToSnakeCase(endpoint.Role)}_id";
+            var roleColumn = RoleColumnName(endpoint.Role);
             if (!roleColumns.Add(roleColumn))
             {
                 throw new ArgumentException(
@@ -1054,7 +1091,11 @@ internal static class SqlGenerator
         }
 
         var qSchema = QuoteIdentifier(schema);
-        var tableName = TypeMapper.ToSnakeCase(association.Name);
+
+        // #130 R3a: the association-object table, its endpoint FK targets and its
+        // {role}_id columns all derive through the same capped resolvers the
+        // attributed relate/unrelate plan (ResolveAssociationRelate) uses.
+        var tableName = ObjectTableName(association.Name);
 
         var sb = new StringBuilder();
 
@@ -1080,8 +1121,8 @@ internal static class SqlGenerator
             // ToSnakeCase only lowercases/underscores — it does not neutralize a
             // quote or space in a role name. Quoting in BOTH positions keeps the
             // DDL column and the INSERT column the SAME physical identifier.
-            var columnName = QuoteIdentifier($"{TypeMapper.ToSnakeCase(endpoint.Role)}_id");
-            var endpointTable = TypeMapper.ToSnakeCase(endpoint.DescriptorName);
+            var columnName = QuoteIdentifier(RoleColumnName(endpoint.Role));
+            var endpointTable = ObjectTableName(endpoint.DescriptorName);
             endpointKeyColumns.Add(columnName);
             sb.AppendLine(
                 $"    {columnName} uuid NOT NULL REFERENCES {qSchema}.{QuoteIdentifier(endpointTable)} (id),");
@@ -1129,7 +1170,7 @@ internal static class SqlGenerator
         // valid-time endpoints (INCLUDE) so an as-of-now valid-time filter is an
         // index-only scan. The sequenced (both-axes) class is deliberately NOT
         // indexed (design §4.3).
-        var asOfNowIndex = QuoteIdentifier($"idx_{tableName}_as_of_now");
+        var asOfNowIndex = QuoteIdentifier(PgIdentifier.Derive($"idx_{tableName}_as_of_now"));
         sb.Append(
             $"CREATE INDEX IF NOT EXISTS {asOfNowIndex} "
             + $"ON {qSchema}.{QuoteIdentifier(tableName)} (system_from) "
