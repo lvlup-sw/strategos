@@ -454,7 +454,7 @@ public sealed class BuilderApiBaselineTests
     }
 
     /// <summary>
-    /// Owner prefixes of the three non-builder types the <c>.editorconfig</c> re-enable
+    /// Owner prefixes of the four non-builder types the <c>.editorconfig</c> re-enable
     /// block brings into analyzer scope. Every member line under one of these owners
     /// must appear in <see cref="ReviewedMemberLines"/>.
     /// </summary>
@@ -462,6 +462,7 @@ public sealed class BuilderApiBaselineTests
     [
         "Strategos.Definitions.StepDefinition.",
         "Strategos.Definitions.CompensationConfiguration.",
+        "Strategos.Definitions.WorkflowActionReference.",
         "Strategos.Steps.StepContext.",
     ];
 
@@ -538,6 +539,11 @@ public sealed class BuilderApiBaselineTests
         "static Strategos.Definitions.StepDefinition.Create(System.Type! stepType, string? customName = null, string? instanceName = null) -> Strategos.Definitions.StepDefinition!",
         "static Strategos.Definitions.StepDefinition.CreateFromLambda(string! stepName, System.Delegate! lambdaDelegate) -> Strategos.Definitions.StepDefinition!",
         "static Strategos.Steps.StepContext.Create(System.Guid workflowId, string! stepName, string! currentPhase) -> Strategos.Steps.StepContext!",
+        "Strategos.Definitions.WorkflowActionReference.ActionName.get -> string!",
+        "Strategos.Definitions.WorkflowActionReference.Deconstruct(out string! domainName, out string! objectTypeName, out string! actionName) -> void",
+        "Strategos.Definitions.WorkflowActionReference.DomainName.get -> string!",
+        "Strategos.Definitions.WorkflowActionReference.ObjectTypeName.get -> string!",
+        "Strategos.Definitions.WorkflowActionReference.WorkflowActionReference(string! domainName, string! objectTypeName, string! actionName) -> void",
     };
 
     [Test]
