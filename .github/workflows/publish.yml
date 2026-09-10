@@ -46,7 +46,8 @@ jobs:
         # compile` — @typespec/compiler needs Node 22+) false-fail here; they are
         # already gated in ci.yml's Node-provisioned job and re-run by the
         # contracts-v* publish workflow, and this workflow does not publish the
-        # version-pinned Contracts package anyway. *Benchmarks.Tests* are perf,
+        # version-pinned Contracts package (see the exclusion step after Pack).
+        # *Benchmarks.Tests* are perf,
         # not a release gate (skipped in ci.yml too).
         run: |
           for proj in src/*Tests/*.csproj; do
@@ -64,6 +65,21 @@ jobs:
 
       - name: List packages
         run: ls -la ./packages/
+
+      - name: Exclude the independently versioned Contracts package
+        # Strategos.Contracts is pinned (MinVerSkip) and is published by
+        # publish-contracts.yml from a `contracts-v*` tag, behind its own gates:
+        # tag equals the pinned version, regenerate-and-diff, breaking-change
+        # diff against the published baseline, and the fixture-corpus floor.
+        # Packing the solution still emits its nupkg, and pushing it from here
+        # would publish it with none of those gates run (the v2.10.0 run pushed
+        # Contracts 0.4.0 and survived only as a duplicate). Drop it so this
+        # workflow ships the MinVer-versioned packages only. The core package's
+        # nuspec depends on the pinned Contracts version, so the `contracts-v*`
+        # tag is published before the `v*` tag.
+        run: |
+          rm -f ./packages/LevelUp.Strategos.Contracts.*
+          ls -la ./packages/
 
       - name: NuGet login (OIDC)
         id: login
@@ -109,6 +125,11 @@ jobs:
           files: ./packages/*
           body: ${{ steps.changelog.outputs.content }}
           generate_release_notes: false
+          # A hyphen in the tag (v3.0.0-rc.1) is a SemVer pre-release: mark the
+          # release as such and keep it off "latest" so consumers pinning the
+          # newest stable release are not pointed at a candidate.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
 
       - name: Deprecate old packages
         if: success()

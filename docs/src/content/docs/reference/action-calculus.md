@@ -10,8 +10,8 @@ successful run, and its frame says which resources it may change. Strategos can
 therefore prove whether one action may safely follow another instead of parsing
 display strings or assuming that a declared write produces a particular value.
 
-This surface is source-breaking in Strategos 2.13. See the
-[2.13 migration guide](/guide/ontology/migration-v2-13/) before upgrading an
+This surface is source-breaking in Strategos 3.0. See the
+[3.0 migration guide](/guide/ontology/migration-v3/) before upgrading an
 existing ontology.
 
 The design deliberately keeps the language restricted so proof remains
@@ -254,7 +254,7 @@ removed while flattening. An ordinary action with `Requires=True` and
 `Ensures=True` is still an observable action and is not identity. An all-identity
 sequence produces an empty identity contract.
 
-Strategos 2.13 composes only actions with the same subject. Two object types
+Strategos 3.0 composes only actions with the same subject. Two object types
 with the same simple name in different domains remain distinct. Cross-subject
 state transfer is deferred. Composition is conservative across longer chains:
 facts do not survive an intervening action unless its own requirements and
@@ -372,12 +372,12 @@ user code. Branch cases, loops, fork paths, approval and confidence handlers,
 and failure handlers must use analyzer-visible inline forms. Dynamic callback or
 collection helpers produce `AGWF042`. Nonterminal workflow failure handlers,
 fork-path failure handlers, and nested `EscalateTo` approvals are also excluded
-from the proved v2.13 subset until those routes have an equivalent closed proof
+from the proved 3.0 subset until those routes have an equivalent closed proof
 representation.
 
 ### Static proof boundary
 
-The v2.13 binding proof is compilation-local. It sees C# workflow and
+The 3.0 binding proof is compilation-local. It sees C# workflow and
 `DomainOntology.Define` declarations in the current compilation, plus imported
 workflow JSON supplied as `AdditionalFiles`. It does not open declarations from
 referenced binaries and it does not execute runtime `IOntologySource`
@@ -605,7 +605,7 @@ if (context is { IsCompensation: true, RollbackId: Guid rollbackId })
 ```
 
 Typed derived compensation is restricted to `SagaDocument` persistence in
-v2.13. An event-sourced state's consumer-defined `ApplyEvent` method may legally
+3.0. An event-sourced state's consumer-defined `ApplyEvent` method may legally
 pass through an unfamiliar generated rollback-completed event. Strategos cannot
 therefore prove that `UpdatedState` is folded identically during live handling
 and Marten replay. The source generator reports `AGWF045` for a typed inverse

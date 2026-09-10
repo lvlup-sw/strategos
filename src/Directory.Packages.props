@@ -25,7 +25,7 @@
          Tracks the 7 Strategos.Builders interfaces via scoped <AdditionalFiles>. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
     <!-- Analyzers provided by Lvlup.Build -->
     <PackageVersion Include="TUnit" Version="1.2.11" />
     <!-- Contracts C# emitter: NJsonSchema parses emitted JSON Schema; records are
