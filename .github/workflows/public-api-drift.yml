@@ -123,14 +123,39 @@ jobs:
               echo "No mirrored entrypoint changed; the lines below are outside the exarchos mirror scope."
             fi
             echo
+            # GitHub rejects a comment body over 65,536 characters (HTTP 422), and a
+            # release-prep roll of PublicAPI.Unshipped.txt into Shipped.txt changes
+            # thousands of lines. Keep the mirror-scope lines in full — they are the
+            # signal — and cap the full diff at a byte budget, naming what was cut.
+            budget=48000
+            if [ -n "${changed_lines}" ]; then
+              echo "Mirrored entrypoints that changed:"
+              echo
+              echo '```diff'
+              printf '%s\n' "${changed_lines}"
+              echo '```'
+              echo
+            fi
+            echo "All changed baseline lines:"
+            echo
             echo '```diff'
-            printf '%s\n' "${all_changed}"
+            total_lines="$(printf '%s\n' "${all_changed}" | wc -l)"
+            printf '%s\n' "${all_changed}" | head -c "${budget}"
+            shown_lines="$(printf '%s\n' "${all_changed}" | head -c "${budget}" | wc -l)"
+            if [ "${shown_lines}" -lt "${total_lines}" ]; then
+              echo
+              echo "# … truncated: ${shown_lines} of ${total_lines} lines shown. The full diff is in the PR's PublicAPI.*.txt files."
+            fi
             echo '```'
           } > "${RUNNER_TEMP}/comment.md"
           echo "comment_path=${RUNNER_TEMP}/comment.md" >> "$GITHUB_OUTPUT"
 
       - name: Sticky PR comment
         if: steps.diff.outputs.changed == 'true'
+        # The notice is advisory (see the header): the warning annotation above is
+        # the durable signal, so a failure to post or update the comment must not
+        # fail the PR.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

@@ -633,6 +633,11 @@ both: OIDC `NuGet/login` + `steps.login.outputs.NUGET_API_KEY`, and
   no package dependency changes.
 - The changelog-disclosure and rollback-disclosure tests read this release's section and the
   3.0 migration guide; the `[2.13.0]` heading they targeted no longer exists.
+- **`public-api-drift.yml`'s pre-merge notice survives a baseline roll.** Its sticky PR comment
+  embedded the whole baseline diff, which exceeds GitHub's 65,536-character comment limit on a
+  release roll and returned HTTP 422; the job's header promises it never fails a PR. The comment
+  now shows the mirrored entrypoints in full and caps the full diff, and the comment step is
+  `continue-on-error`. The warning annotation is unchanged and remains the signal.
 
 ## [2.10.0] - 2026-08-07
 
