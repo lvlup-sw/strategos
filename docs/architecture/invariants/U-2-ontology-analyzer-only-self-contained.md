@@ -3,7 +3,7 @@
 The ontology subsystem (`Strategos.Ontology*`) is two things, and exactly two:
 
 1. A runtime descriptor model — records like `ObjectTypeDescriptor`, `PropertyDescriptor`, `LinkDescriptor`.
-2. Compile-time validation via a Roslyn **analyzer** (`OntologyDefinitionAnalyzer` reporting AONT001..AONT035), *not* a source generator.
+2. Compile-time validation via a Roslyn **analyzer** (`OntologyDefinitionAnalyzer` reporting the AONT series — AONT001..037 and the AONT200..221 action-calculus block as of 3.0), *not* a source generator.
 
 It does not lower into Wolverine, Marten, or any other downstream library. It does not emit code via `IIncrementalGenerator` / `ISourceGenerator`. Adding either capability changes the contract consumers depend on (descriptor changes trigger source regeneration; a Wolverine/Marten dependency follows users who only want ontology validation).
 
