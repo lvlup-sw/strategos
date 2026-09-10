@@ -19,7 +19,7 @@ The shop's .NET conventions (net10.0/.slnx, central package management, TUnit + 
 ```text
 strategos/
 ├── strategos.slnx, Directory.Build.props, Directory.Build.targets, Directory.Packages.props, global.json
-├── src/                          # 16 product projects + 17 co-located *.Tests projects (basileus style)
+├── src/                          # 16 product projects, no test projects
 │   ├── Strategos/                     core DSL, abstractions, steps, orchestration
 │   ├── Strategos.Generators/          Roslyn source generator: saga / extensions / state-reducer emitters, JSON import
 │   ├── Strategos.Contracts/           TypeSpec sources, generated records + JSON Schema, fixture corpus
@@ -27,7 +27,8 @@ strategos/
 │   ├── Strategos.Ontology*/           descriptor model + analyzers, MCP, MCP.Hosting, Npgsql, Embeddings
 │   ├── Strategos.Agents*, .Infrastructure, .Rag, .Identity.Abstractions, .Benchmarks
 │   └── Shared/                        source-shared helpers
-├── tests/
+├── tests/                        # every test project; one per product project, plus the cross-cutting ones
+│   ├── Strategos.*.Tests/             17 unit and integration projects, named for the project under test
 │   ├── Strategos.Architecture.Tests/  cross-cutting: invariants catalog + its deterministic checks
 │   └── basileus-smoke/                PackageReference consumer probe (own .slnx, kept outside the props tree)
 ├── samples/                      # runnable examples building against src/ by ProjectReference
@@ -49,7 +50,7 @@ dotnet test --solution strategos.slnx        # --solution is required on the .NE
 Tests are **TUnit on Microsoft.Testing.Platform** (pinned in `global.json`). Assertions must be awaited — `await Assert.That(x).IsEqualTo(y);` — an un-awaited assertion silently passes. Warnings are errors (`LvlupTreatWarningsAsErrors`). `dotnet test --filter` does **not** select tests in this repo; run one project or one class with the tree-node filter:
 
 ```bash
-dotnet run --project src/Strategos.Ontology.Tests/Strategos.Ontology.Tests.csproj -- --treenode-filter "/*/*/InMemoryTraversalIdentityTests/*"
+dotnet run --project tests/Strategos.Ontology.Tests/Strategos.Ontology.Tests.csproj -- --treenode-filter "/*/*/InMemoryTraversalIdentityTests/*"
 ```
 
 Project-specific notes:

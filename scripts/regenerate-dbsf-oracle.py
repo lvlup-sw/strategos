@@ -3,7 +3,7 @@
 # regenerate-dbsf-oracle.py
 #
 # Generates / verifies the Qdrant DBSF (Distribution-Based Score Fusion) parity
-# oracle at src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json.
+# oracle at tests/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json.
 #
 # Calls qdrant_client.hybrid.fusion.distribution_based_score_fusion directly
 # (qdrant-client pinned to 1.12.1 in scripts/requirements.txt). Degenerate

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Verify.SourceGenerators" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Strategos.Ontology.Generators\Strategos.Ontology.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\..\src\Strategos.Ontology\Strategos.Ontology.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Strategos.Ontology.Tests\Shared\ActionCompositionProofVectors.cs"
+             Link="Shared\ActionCompositionProofVectors.cs" />
+  </ItemGroup>
+
+</Project>

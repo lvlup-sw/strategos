@@ -78,21 +78,27 @@ public class DeterministicChecksTests
     private static readonly Regex SymbolKeyAssignment = new(@"SymbolKey\s*=", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Every project under <c>src/</c> except the generator family
-    /// (<c>src/Strategos.Generators</c> and its two test projects), which authors the emitted
-    /// saga's base list and asserts on it as a string literal. Naming the projects to scan
-    /// instead of the ones to skip is what lets this gate go blind when a project is added.
+    /// Every project under <c>src/</c> and <c>tests/</c> except the three that necessarily
+    /// contain the pattern: <c>src/Strategos.Generators</c> authors the emitted saga's base
+    /// list, <c>tests/Strategos.Generators*</c> assert on that list as string literals, and
+    /// this project quotes every pattern it scans for. Written as a skip list rather than a
+    /// scan list, so a project added later is covered by default — naming the projects to
+    /// scan is what lets a gate like this go blind.
     /// </summary>
-    private static IReadOnlyList<string> SourceProjectsOutsideTheGeneratorFamily =>
+    private static IReadOnlyList<string> ProjectsThatMayNotDeclareASaga =>
         RepoTree.DirectoriesStartingWith("src", string.Empty)
-            .Where(directory => !directory.StartsWith("src/Strategos.Generators", StringComparison.Ordinal))
+            .Concat(RepoTree.DirectoriesStartingWith("tests", string.Empty))
+            .Where(directory =>
+                !directory.StartsWith("src/Strategos.Generators", StringComparison.Ordinal)
+                && !directory.StartsWith("tests/Strategos.Generators", StringComparison.Ordinal)
+                && !directory.Equals("tests/Strategos.Architecture.Tests", StringComparison.Ordinal))
             .ToList();
 
     /// <summary>U-1 / 1.1: no class outside the emitter derives from Wolverine's Saga.</summary>
     [Test]
     public async Task Check_1_1_NoHandAuthoredSagasOutsideTheEmitter()
     {
-        var hits = RepoTree.Grep(RepoTree.Files(SourceProjectsOutsideTheGeneratorFamily, "*.cs"), SagaBase);
+        var hits = RepoTree.Grep(RepoTree.Files(ProjectsThatMayNotDeclareASaga, "*.cs"), SagaBase);
 
         await AssertNoHits("1.1", "sagas are emitted by SagaEmitter only; no hand-authored ': Saga' base", hits);
     }
@@ -111,7 +117,7 @@ public class DeterministicChecksTests
     [Test]
     public async Task Check_1_3_NoAdHocSagaStorageOutsideTheGenerator()
     {
-        var hits = RepoTree.Grep(RepoTree.Files(RepoTree.DirectoriesStartingWith("src", string.Empty), "*.cs"), SagaStorage);
+        var hits = RepoTree.Grep(RepoTree.Files(ProjectsThatMayNotDeclareASaga, "*.cs"), SagaStorage);
 
         await AssertNoHits("1.3", "saga persistence is Marten's, wired by the generator; no *SagaStore/*SagaRepository/*SagaPersistence class", hits);
     }
@@ -316,11 +322,11 @@ public class DeterministicChecksTests
     [Test]
     public async Task Check_8_3_OntologyTestsCoverSymbolKeyIdentity()
     {
-        var files = RepoTree.Files("src/Strategos.Ontology.Tests", "*.cs");
+        var files = RepoTree.Files("tests/Strategos.Ontology.Tests", "*.cs");
         var hits = RepoTree.Grep(files, SymbolKeyAssignment);
 
         await Assert.That(hits).IsNotEmpty()
-            .Because("Check 8.3: no 'SymbolKey =' in src/Strategos.Ontology.Tests; the polyglot identity path is unexercised by tests");
+            .Because("Check 8.3: no 'SymbolKey =' in tests/Strategos.Ontology.Tests; the polyglot identity path is unexercised by tests");
     }
 
     private static bool IsCommentLine(string line)

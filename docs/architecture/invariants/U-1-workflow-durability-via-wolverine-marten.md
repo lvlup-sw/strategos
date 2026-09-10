@@ -16,7 +16,7 @@ Any hand-rolled durability primitive — a custom saga store, a bespoke event lo
 - `src/Strategos.Generators/Emitters/SagaEmitter.cs:76-85` — emitted usings include `Marten`, `Marten.Schema`, `Wolverine`, `Wolverine.Persistence.Sagas`
 - `src/Strategos.Generators/Emitters/SagaEmitter.cs:153-156` — emits `public partial class {sagaClassName} : Saga`
 - `src/Strategos.Generators/Emitters/ExtensionsEmitter.cs:45-50, 197-202` — emitted DI extensions wire `services.ConfigureMarten(...)` and `SnapshottedAggregation`
-- `src/Strategos.Generators.Tests/SagaEmitterIntegrationTests.cs:40-78` — golden tests assert `: Saga`, `[SagaIdentity]`, `[Identity]`, `[Version]` shape
+- `tests/Strategos.Generators.Tests/SagaEmitterIntegrationTests.cs:40-78` — golden tests assert `: Saga`, `[SagaIdentity]`, `[Identity]`, `[Version]` shape
 
 ## Cross-cutting overlap
 

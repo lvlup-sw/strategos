@@ -13,17 +13,18 @@ Checks 1.1–1.3, 2.1–2.3, 3.2–3.5, 4.1, 5.1, 5.1b, 6.1, 6.2, 7.1, 7.2 and 8
 A class declaring `: Saga` (Wolverine's saga base) anywhere except `Strategos.Generators/Emitters/SagaEmitter.cs`'s emitted output is a violation — sagas are exclusively generated.
 
 ```bash
-grep -rnE ':\s*Saga\b' src/ --include='*.cs' \
-  | grep -v '^src/Strategos.Generators'
+grep -rnE ':\s*Saga\b' src/ tests/ --include='*.cs' \
+  | grep -vE '^(src|tests)/Strategos.Generators|^tests/Strategos.Architecture.Tests'
 ```
 
 Expected: empty.
 
-The scan covers every project under `src/`. The generator family
-(`src/Strategos.Generators`, `.Generators.Tests`, `.Generators.Behavioral.Tests`) is the one
-exemption: it authors the emitted base list and asserts on it as a string, so its hits are the
-generated saga, not a hand-authored one. Scoping the scan to a handful of named projects instead
-is how this gate goes blind — a saga added to any other project would return zero hits.
+The scan covers every project under `src/` and `tests/`. Three are exempt, because each one
+necessarily contains the pattern: `src/Strategos.Generators` authors the emitted base list,
+`tests/Strategos.Generators*` assert on that list as string literals, and
+`tests/Strategos.Architecture.Tests` quotes every pattern it scans for. The exemptions are
+written as a skip list, not as the scan's scope. Naming a handful of projects to scan is how
+this gate goes blind — a saga added to any project outside that list returns zero hits.
 
 ### Check 1.2: Core authoring project leaks a runtime dependency
 
@@ -39,7 +40,7 @@ Expected: empty.
 ### Check 1.3: Ad-hoc saga storage in non-generator code
 
 ```bash
-grep -rnE 'class\s+\w*Saga(Store|Repository|Persistence)\b' src/ --include='*.cs'
+grep -rnE 'class\s+\w*Saga(Store|Repository|Persistence)\b' src/ tests/ --include='*.cs'
 ```
 
 Expected: empty.
@@ -273,7 +274,7 @@ Each hit must be reachable only when `ClrType is not null` (or equivalently gate
 ### Check 8.3: Test fixture polyglot coverage
 
 ```bash
-grep -rn 'SymbolKey\s*=' src/Strategos.Ontology.Tests/ --include='*.cs'
+grep -rn 'SymbolKey\s*=' tests/Strategos.Ontology.Tests/ --include='*.cs'
 ```
 
 Expected: at least one match. Zero means the polyglot path is unexercised by tests.

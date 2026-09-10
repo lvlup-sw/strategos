@@ -13,7 +13,6 @@ jobs:
     with:
       solution-path: 'strategos.slnx'
       test-project-patterns: |
-        src/*Tests/*.csproj
         tests/*Tests/*.csproj
       skip-patterns: |
         *Benchmarks.Tests*
@@ -74,7 +73,7 @@ jobs:
       - name: Run Contracts tests
         # TUnit uses the Microsoft.Testing.Platform exe entrypoint (the project
         # sets OutputType=Exe); invoke via `dotnet run`, mirroring basileus-smoke.
-        run: dotnet run --project src/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj --configuration Release
+        run: dotnet run --project tests/Strategos.Contracts.Tests/Strategos.Contracts.Tests.csproj --configuration Release
 
   pack-verify:
     name: Pack (verify)
@@ -243,7 +242,7 @@ jobs:
         run: bash scripts/check-unshipped-against-tag.sh
 
   dbsf-parity-guard:
-    # Verifies src/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
+    # Verifies tests/Strategos.Ontology.Tests/Retrieval/Fixtures/qdrant-dbsf-oracle.json
     # still matches the output of qdrant_client.hybrid.fusion.distribution_based_score_fusion
     # for the pinned qdrant-client version. Reconciliation issue #79; see
     # docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md.

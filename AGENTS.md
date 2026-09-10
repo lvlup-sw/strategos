@@ -35,9 +35,9 @@ src/
 ├── Strategos.Ontology.Generators/  # Roslyn ANALYZERS only (AONT*)
 ├── Strategos.Ontology.MCP/, .MCP.Hosting/, .Npgsql/, .Embeddings/
 ├── Strategos.Agents/, .Agents.Mcp/, .Infrastructure/, .Rag/, .Identity.Abstractions/, .Benchmarks/
-├── Shared/                      # source-shared helpers
-└── *.Tests/                     # Test projects, co-located beside their subject (17)
+└── Shared/                      # source-shared helpers
 tests/
+├── Strategos.*.Tests/              # one test project per product project (17), named for its subject
 ├── Strategos.Architecture.Tests/   # cross-cutting: invariants catalog + deterministic checks
 └── basileus-smoke/                 # PackageReference consumer probe; own .slnx; empty props stoppers keep it outside the build tree
 samples/                         # runnable examples (ProjectReference into src/)
@@ -47,7 +47,7 @@ docs/                            # Astro + Starlight site (src/content/docs/) + 
 .agents/skills/                  # agent skills (design-invariants indexes docs/architecture/invariants/)
 ```
 
-Layout rules, shared with the sibling repos: unit tests sit beside the project they test; `tests/` holds cross-cutting suites only; dated documents are `YYYY-MM-DD-slug.md`; superseded material goes into an `archive/` subfolder of its own category, never a top-level `docs/archive/`. `docs/diagnostics/` is generated from the AGWF catalog and is a CI-guarded path — never move or hand-edit it.
+Layout rules: `src/` holds product projects only, and every test project lives under `tests/`, named for the project it tests; dated documents are `YYYY-MM-DD-slug.md`; superseded material goes into an `archive/` subfolder of its own category, never a top-level `docs/archive/`. `docs/diagnostics/` is generated from the AGWF catalog and is a CI-guarded path — never move or hand-edit it.
 
 ## Security Considerations
 

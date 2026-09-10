@@ -26,6 +26,7 @@ invariants:
     integrity-class: user
     applies-to:
       - src/**
+      - tests/**
       - samples/**
     summary: >
       Workflows lower into Wolverine sagas and Marten event/document storage
