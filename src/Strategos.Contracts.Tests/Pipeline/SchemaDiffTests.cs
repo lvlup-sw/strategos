@@ -920,7 +920,7 @@ public class SchemaDiffTests
         await Assert.That(workflow).Contains("schema compatibility is indeterminate");
         await Assert.That(workflow).Contains("permissions:\n  contents: read");
         await Assert.That(workflow).Contains(
-            "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020");
+            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
         await Assert.That(workflow).Contains("persist-credentials: false");
 
         // Second arm: the published baseline can be several minors behind, so a

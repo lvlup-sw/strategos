@@ -33,6 +33,7 @@ jobs:
       pull-requests: write
     # Org reusable workflows are pinned to the v1 tag, which resolved to
     # c10269573359bc91ff59fe5e9cb8090bbc6cb87a when this pin was set.
-    uses: lvlup-sw/.github/.github/workflows/dependency-review.yml@v1
+    # Pinned to the same immutable org-workflow revision as ci.yml (the moving v1 tag lags it).
+    uses: lvlup-sw/.github/.github/workflows/dependency-review.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
     with:
       fail-on-severity: high
