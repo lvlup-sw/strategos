@@ -713,31 +713,29 @@ public sealed class InMemoryExpressionEvaluator
     }
 
     // Resolves the descriptor name of the IMMEDIATE upstream element type (not the
-    // chain root). Filters/includes preserve their source's element type, so we
-    // skip them to the nearest PRODUCING node: a traversal produces its linked
-    // type (ObjectType.Name); a root produces its declared descriptor name (which
-    // can differ from ObjectType.Name for a multi-registered type). This is what
-    // lets a chained TraverseLink resolve its source as the IMMEDIATE prior hop —
-    // e.g. an association hop routes through the far-endpoint path rather than
-    // mistaking the chain root for the source.
+    // chain root). Filters/includes/narrows preserve their source's PRODUCING
+    // descriptor, so we skip them to the nearest producing node: a root produces
+    // its declared descriptor name; a prior traversal produces the descriptor its
+    // hop was resolved to. This is what lets a chained TraverseLink resolve its
+    // source as the IMMEDIATE prior hop — e.g. an association hop routes through
+    // the far-endpoint path rather than mistaking the chain root for the source.
     //
-    // ALIAS-LOSS limitation (strategos #128, deferred): a TraverseLinkExpression
-    // hop resolves to traverse.ObjectType.Name, which is the CLR/object-type name
-    // rather than the descriptor ALIAS the prior hop was registered under. After
-    // a hop the descriptor alias is therefore lost, so a subsequent hop whose
-    // source was an aliased (multi-registered) descriptor resolves against the
-    // bare type name and may route to the wrong partition. Threading the prior
-    // hop's descriptor identity (alias-preserving) through the chain is tracked
-    // under strategos #128 (descriptor-identity-through-the-chain) and
-    // intentionally NOT fixed here.
+    // #128: the producing descriptor NAME is carried through the chain. A prior
+    // hop contributes TraverseLinkExpression.RootObjectTypeName — the explicit
+    // TargetDescriptorName the front end resolved from the graph, falling back to
+    // the CLR-simple name only for graphless sets — so an association registered
+    // under an alias (or one of several registrations of one CLR type) keeps its
+    // partition across the next hop. An interface narrow is transparent: the
+    // descriptor index holds object types only, never interfaces, so the narrow's
+    // source is the producing node. Mirrors the Npgsql provider's helper.
     private static string ResolveImmediateSourceDescriptorName(ObjectSetExpression expression) =>
         expression switch
         {
             RootExpression root => root.ObjectTypeName,
-            TraverseLinkExpression traverse => traverse.ObjectType.Name,
+            TraverseLinkExpression traverse => traverse.RootObjectTypeName,
             FilterExpression filter => ResolveImmediateSourceDescriptorName(filter.Source),
             IncludeExpression include => ResolveImmediateSourceDescriptorName(include.Source),
-            InterfaceNarrowExpression narrow => narrow.InterfaceType.Name,
+            InterfaceNarrowExpression narrow => ResolveImmediateSourceDescriptorName(narrow.Source),
             RawFilterExpression raw => ResolveImmediateSourceDescriptorName(raw.Source),
             _ => throw new NotSupportedException(
                 $"Cannot resolve immediate source descriptor from {expression.GetType().Name}"),

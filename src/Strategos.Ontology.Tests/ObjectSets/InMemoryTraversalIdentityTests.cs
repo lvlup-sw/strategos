@@ -1,4 +1,5 @@
 using Strategos.Ontology.Actions;
+using Strategos.Ontology.Builder;
 using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
@@ -290,6 +291,106 @@ public class InMemoryTraversalIdentityTests
             .WithMessageContaining("descriptor-name traversal overload");
     }
 
+    // -----------------------------------------------------------------------
+    // #128, second half: the PRODUCING descriptor name is carried through a
+    // chained hop. The front end resolves each hop's target from the graph and
+    // stores it on TraverseLinkExpression.TargetDescriptorName; the NEXT hop's
+    // source descriptor must be THAT name, never the prior hop's CLR-simple type
+    // name, which diverges from the descriptor name the moment the producing
+    // descriptor is registered under an alias. Likewise an interface narrow
+    // never changes the producing descriptor: the evaluator's index holds object
+    // types only, so an interface name (aliased or not) is never a source.
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ChainedHop_AfterAliasedAssociationHop_ResolvesSourceAsProducingDescriptor()
+    {
+        // Arrange — the association is registered under "alias_edges", NOT its
+        // CLR name "AliasEdge". x --active--> y1 and x --inactive--> y2, each
+        // via an attributed relate whose edge object lives in "alias_edges".
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<AliasedEdgeOntology>();
+        var graph = graphBuilder.Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        provider.Seed(new AliasNode("x"), "x", nameof(AliasNode));
+        provider.Seed(new AliasNode("y1"), "y1", nameof(AliasNode));
+        provider.Seed(new AliasNode("y2"), "y2", nameof(AliasNode));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            nameof(AliasNode), "x", AliasedEdgeOntology.LinkName, nameof(AliasNode), "y1",
+            AliasedEdgeOntology.EdgeDescriptor,
+            new AliasEdge("e1", new AliasNode("x"), new AliasNode("y1"), "active"));
+        await writer.RelateAsync(
+            nameof(AliasNode), "x", AliasedEdgeOntology.LinkName, nameof(AliasNode), "y2",
+            AliasedEdgeOntology.EdgeDescriptor,
+            new AliasEdge("e2", new AliasNode("x"), new AliasNode("y2"), "inactive"));
+
+        // Act — edge view (the front end resolves it to "alias_edges"), filter on
+        // the edge attribute, then hop to the far endpoint. The far hop's SOURCE
+        // must resolve as "alias_edges" — the producing descriptor — which is the
+        // only name the evaluator's index knows; "AliasEdge" is not a descriptor.
+        var activeFar = await query
+            .GetObjectSet<AliasNode>(nameof(AliasNode))
+            .Where(n => n.Id == "x")
+            .TraverseLink<AliasEdge>(AliasedEdgeOntology.LinkName)
+            .Where(e => e.Status == "active")
+            .TraverseLink<AliasNode>("To")
+            .ExecuteAsync();
+
+        // Assert — only the ACTIVE edge's far node: the edge filter survived the
+        // chained hop, and the hop routed through the aliased partition.
+        var ids = activeFar.Items.Select(n => n.Id).ToList();
+        await Assert.That(ids).IsEquivalentTo(new[] { "y1" });
+    }
+
+    [Test]
+    public async Task ChainedHop_AfterAliasedInterfaceNarrow_ResolvesSourceThroughTheNarrow()
+    {
+        // Arrange — the interface is registered under "Narrowable", not its CLR
+        // name "INarrowable". x --link--> y; z is an UNRELATED node of the same
+        // type, so the result also proves the hop stayed instance-anchored.
+        var graphBuilder = new OntologyGraphBuilder();
+        graphBuilder.AddDomain<NarrowableNodeOntology>();
+        var graph = graphBuilder.Build();
+
+        var provider = new InMemoryObjectSetProvider(graph);
+        var query = new OntologyQueryService(
+            graph,
+            provider,
+            Substitute.For<IActionDispatcher>(),
+            Substitute.For<IEventStreamProvider>());
+
+        provider.Seed(new NarrowNode("x"), "x", nameof(NarrowNode));
+        provider.Seed(new NarrowNode("y"), "y", nameof(NarrowNode));
+        provider.Seed(new NarrowNode("z"), "z", nameof(NarrowNode));
+
+        IObjectSetWriter writer = provider;
+        await writer.RelateAsync(
+            nameof(NarrowNode), "x", NarrowableNodeOntology.LinkName, nameof(NarrowNode), "y");
+
+        // Act — narrow to the interface, then traverse. The traversal's SOURCE
+        // descriptor must resolve THROUGH the narrow to the root's "NarrowNode";
+        // neither "INarrowable" nor "Narrowable" is an object-type descriptor.
+        var result = await query
+            .GetObjectSet<NarrowNode>(nameof(NarrowNode))
+            .Where(n => n.Id == "x")
+            .OfInterface<INarrowable>()
+            .TraverseLink<NarrowNode>(NarrowableNodeOntology.LinkName)
+            .ExecuteAsync();
+
+        // Assert — exactly {y}: not the unrelated z, and no descriptor-not-found.
+        var ids = result.Items.Select(n => n.Id).ToList();
+        await Assert.That(ids).IsEquivalentTo(new[] { "y" });
+    }
+
     // Graph where the Origin link declares a NODE target (Origin) but the relate
     // is attributed by an association whose CLR type backs TWO descriptors
     // (EdgeWrong first, EdgeRight second). Disambiguation requires an explicit
@@ -353,3 +454,69 @@ public class InMemoryTraversalIdentityTests
 // A distinct CLR type for the source so it never collides with MultiEdge in
 // the type→descriptor reverse index.
 public sealed record OriginNode(string Key);
+
+// ---------------------------------------------------------------------------
+// Chained-hop identity corpus (#128, second half). Self-contained CLR shapes so
+// the aliased registrations below never collide with another file's ontology.
+// ---------------------------------------------------------------------------
+
+public sealed record AliasNode(string Id);
+
+// Reified association whose DESCRIPTOR name ("alias_edges") differs from its
+// CLR name. Endpoints From (role index 0) and To (role index 1).
+public sealed record AliasEdge(string Id, AliasNode From, AliasNode To, string Status);
+
+public sealed class AliasedEdgeOntology : DomainOntology
+{
+    public const string EdgeDescriptor = "alias_edges";
+    public const string LinkName = "link";
+
+    public override string DomainName => "alias";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<AliasNode>(obj =>
+        {
+            obj.Key(n => n.Id);
+            obj.HasMany<AliasNode>(LinkName);
+        });
+
+        builder.Association<AliasEdge>(EdgeDescriptor, a =>
+        {
+            a.Key(e => e.Id);
+            a.Between(e => e.From).And(e => e.To);
+            a.Property(e => e.Status).Required();
+        });
+    }
+}
+
+public interface INarrowable
+{
+    string Id { get; }
+}
+
+public sealed record NarrowNode(string Id) : INarrowable;
+
+// The interface DESCRIPTOR name ("Narrowable") differs from its CLR name.
+public sealed class NarrowableNodeOntology : DomainOntology
+{
+    public const string InterfaceDescriptor = "Narrowable";
+    public const string LinkName = "link";
+
+    public override string DomainName => "narrow";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Interface<INarrowable>(InterfaceDescriptor, iface =>
+        {
+            iface.Property(i => i.Id);
+        });
+
+        builder.Object<NarrowNode>(obj =>
+        {
+            obj.Key(n => n.Id);
+            obj.HasMany<NarrowNode>(LinkName);
+            obj.Implements<INarrowable>(map => { });
+        });
+    }
+}

@@ -371,13 +371,19 @@ public class SymbolKeyOnlyTraversalTests
 }
 
 // ---------------------------------------------------------------------------
-// F-MED-2 (DR-9, deferred): polyglot association detection is CLR-only.
+// F-MED-2 (DR-9, residual sliver): the implicit edge view over a NODE-target
+// link is CLR-only.
 //
-// IsAssociationType / TryResolveAssociationDescriptor match on ClrType, so a
-// SymbolKey-only (ingested, ClrType == null) association is NOT recognized and
-// its TraverseLink degrades to PLAIN target-endpoint traversal. This pins that
-// documented limitation; polyglot association traversal is tracked under DR-9
-// and intentionally not implemented.
+// When a link declares a plain node target and the caller gives no descriptor
+// name, the evaluator's only way to surface the reified edge is
+// TryResolveSingleAssociationByClrType, which matches association descriptors
+// on ClrType. A SymbolKey-only (ingested, ClrType == null) association can
+// never match, so the hop degrades to PLAIN target-endpoint traversal. This
+// pins that documented limitation: a node-target link attributed by a
+// ClrType == null association still needs an explicit descriptor name (the
+// TraverseLink(link, descriptorName) overload, or a link that targets the
+// association itself) to surface the edge view. Tracked under DR-9;
+// intentionally not implemented here.
 // ---------------------------------------------------------------------------
 
 // A loaded CLR type used only to REQUEST the would-be edge view. The relate-store
