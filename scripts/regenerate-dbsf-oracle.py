@@ -42,7 +42,7 @@ from qdrant_client.http.models import ScoredPoint
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_PATH = (
     REPO_ROOT
-    / "src"
+    / "tests"
     / "Strategos.Ontology.Tests"
     / "Retrieval"
     / "Fixtures"
