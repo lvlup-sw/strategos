@@ -1,7 +1,7 @@
 # Spec: v2.11.0 Correctness Core — main-flow termination, and the hygiene lane
 
 **Date:** 2026-08-22 · **Feature:** `v2110-correctness-core` · **Depth:** standard · **Revision:** 1
-**Inputs:** issues #155 · #175 · #145 · #174 · #133 · #166 · milestone v2.11.0 (#8) · design record `docs/designs/2026-08-22-action-calculus.md` (PR #173, unmerged) · in-session grounding audit (2 workflows, 24 agents, source read at `4e95874`)
+**Inputs:** issues #155 · #175 · #145 · #174 · #133 · #166 · milestone v2.11.0 (#8) · design record `docs/designs/2026-08-22-action-calculus.md` (PR #173) · in-session grounding audit (2 workflows, 24 agents, source read at `4e95874`)
 
 > One unified artifact: `## Requirements` is the DR-N source; `## Decomposition` maps tasks → DR-N within this same document.
 > Scope note: this slice does **not** close v2.11.0 (which is now 10 open with #175 filed). #147 is not PR-closeable (nuget.org portal actions + two tag trains behind manual approval), and #156/#163/#115 are excluded for the reasons in Open Questions.
