@@ -190,6 +190,67 @@ public sealed class CrossAssemblyBindingHarnessTests
     }
 
     /// <summary>
+    /// A member of the wrong SHAPE is refused with the same discipline as a missing
+    /// one, because each of these narrows a proof input rather than breaking it.
+    /// </summary>
+    /// <remarks>
+    /// This is the failure mode a reader is most likely to get wrong, because the
+    /// tolerant spelling reads as defensive: filter the malformed entry out and carry
+    /// on. What carries on is a proof against less than the catalog declared, and it
+    /// goes green. Each case below names what would silently shrink.
+    /// </remarks>
+    /// <param name="label">What the malformed member would narrow.</param>
+    /// <param name="catalog">The catalog literal carrying it.</param>
+    /// <param name="reason">The refusal this member must produce.</param>
+    /// <returns>A task.</returns>
+    [Test]
+    [MethodDataSource(nameof(NarrowingCatalogs))]
+    public async Task ReferencedCatalog_WithAMemberOfTheWrongShape_IsRefused(
+        string label,
+        string catalog,
+        string reason)
+    {
+        var consumer = ConsumeHandWrittenCatalog("NarrowingProducer", catalog);
+
+        var refusal = consumer.WithId("AGWF047");
+        await Assert.That(refusal).IsNotEmpty()
+            .Because($"a malformed member that would silently {label} is refused, not dropped: "
+                + "the build would otherwise stay green on a weaker proof than the catalog declared.");
+
+        // Named, not just counted: AGWF047 has many causes, and a case that refused for
+        // some other one would pin nothing about the member under test.
+        await Assert.That(refusal[0].GetMessage()).Contains(reason)
+            .Because("the refusal must be the one this malformed member causes.");
+    }
+
+    /// <summary>The four members whose tolerant reading would narrow a proof input.</summary>
+    /// <returns>A label, the catalog carrying that malformed member, and its refusal.</returns>
+    public static IEnumerable<(string Label, string Catalog, string Reason)> NarrowingCatalogs()
+    {
+        yield return (
+            "shift the rank of every later authority level",
+            Catalog(authorities: "[{\"domainName\":\"orders\",\"lattice\":{\"axes\":"
+                + "[{\"name\":\"scope\",\"levels\":[\"team\",7,\"org\"]}]}}]"),
+            "non-string level on axis 'scope'");
+
+        yield return (
+            "prove the guarantee against a narrower frame",
+            Catalog(touches: "[{\"kind\":\"property\"}]"),
+            "declares a frame entry with no name");
+
+        yield return (
+            "drop the authority obligation entirely",
+            Catalog(authority: "{\"sourceAuthorities\":[17]}"),
+            "declares a non-string required authority");
+
+        yield return (
+            "hide an atom from the frame intersection",
+            Catalog(requirePredicate: Escaped(
+                "{\"kind\":\"custom\",\"evaluatorKey\":\"k\",\"readSet\":[{\"kind\":\"property\"}]}")),
+            "read-set entry with no name");
+    }
+
+    /// <summary>
     /// Two assemblies declaring one ordinal action identity is refused rather than
     /// resolved by reference order.
     /// </summary>
@@ -225,6 +286,39 @@ public sealed class CrossAssemblyBindingHarnessTests
     }
 
     /// <summary>
+    /// One domain declared on both sides of the seam still resolves to one lattice.
+    /// </summary>
+    /// <remarks>
+    /// A domain can legitimately be split across assemblies — different actions of the
+    /// same domain — and each side then contributes that domain's authority lattice.
+    /// Every authority-bearing obligation requires the domain to resolve to exactly
+    /// one, so without structural deduplication the merge would hand the proof two
+    /// identical lattices and it would refuse every authority in that domain: a
+    /// correct layout failing on an ambiguity that is not one.
+    /// </remarks>
+    [Test]
+    public async Task DomainDeclaredOnBothSidesOfTheSeam_ResolvesToOneAuthorityLattice()
+    {
+        var producer = TwoAssemblyHarness.CompileProducer(
+            "AuthorityProducer",
+            OntologyAssembly(withAuthority: true));
+        var consumer = TwoAssemblyHarness.CompileConsumer(
+            WorkflowAssemblyWithLocalOrdersOntology,
+            producer);
+
+        var unprovable = consumer.WithId("AGWF042")
+            .Select(diagnostic => diagnostic.GetMessage())
+            .Where(message => message.Contains("authority lattices", StringComparison.Ordinal))
+            .ToArray();
+
+        await Assert.That(unprovable).IsEmpty()
+            .Because("two identical declarations of one domain's lattice are one lattice; "
+                + "counting them as two would refuse a layout the design calls normal.");
+        await Assert.That(consumer.ErrorIds()).IsEmpty()
+            .Because("the binding proves, authority and all.");
+    }
+
+    /// <summary>
     /// A contract the portable form cannot carry is refused at the DECLARING assembly,
     /// and its binding stays unresolved there.
     /// </summary>
@@ -256,6 +350,43 @@ public sealed class CrossAssemblyBindingHarnessTests
         await Assert.That(reported).Contains("AGWF039")
             .Because("a binding whose contract was NOT exported is still unresolved here; "
                 + "deferral is per action, not per assembly.");
+
+        await Assert.That(producer.GeneratedHintNames).Contains("StrategosProofCatalog.g.cs")
+            .Because("the refusal is per action: this assembly's other two contracts still "
+                + "travel, and only the one the gate refused stays behind.");
+    }
+
+    /// <summary>
+    /// An assembly whose EVERY contract the gate refuses still exports, carrying nothing.
+    /// </summary>
+    /// <remarks>
+    /// Absence of the attribute is the only signal AONT222 has, and it reads absence as
+    /// "the workflow generator never ran here". Emitting nothing because every contract
+    /// was refused would make absence mean two things at once: AONT222 would fire beside
+    /// the AGWF046 that already named the real fault, and blame a generator that is
+    /// installed and did run. An empty catalog says "nothing to contribute", which is a
+    /// different statement from saying nothing at all.
+    /// </remarks>
+    [Test]
+    public async Task AssemblyWhoseEveryContractIsRefused_StillExportsAnEmptyCatalog()
+    {
+        var producer = TwoAssemblyHarness.CompileProducer(
+            "WhollyUnexportableProducer",
+            SingleUnexportableActionAssembly,
+            runGenerators: true,
+            "AGWF046",
+            "AGWF039");
+
+        await Assert.That(producer.GeneratorDiagnostics.Select(diagnostic => diagnostic.Id))
+            .Contains("AGWF046")
+            .Because("the only contract this assembly declares cannot travel.");
+        await Assert.That(producer.GeneratedHintNames).Contains("StrategosProofCatalog.g.cs")
+            .Because("an assembly that declared a contract and exported none of them must "
+                + "still look like an assembly whose generator ran, or AONT222 blames the "
+                + "wrong thing.");
+        await Assert.That(producer.Generated("StrategosProofCatalog.g.cs")!)
+            .Contains("\\\"actions\\\":[]")
+            .Because("the catalog carries an empty action list, not a missing one.");
     }
 
     private static TwoAssemblyHarness.ConsumerCompilation ConsumeHandWrittenCatalog(
@@ -268,6 +399,46 @@ public sealed class CrossAssemblyBindingHarnessTests
             runGenerators: false);
         return TwoAssemblyHarness.CompileConsumer(WorkflowAssembly, producer);
     }
+
+    /// <summary>The authority lattice both sides of the seam declare, word for word.</summary>
+    private const string OrdersLattice = """
+        builder.AuthorityAxis("scope", "read", "write");
+                builder.Authority("order.writer").At("scope", "write");
+        """;
+
+    /// <summary>
+    /// An ontology declaring exactly one action, bound, whose contract cannot travel.
+    /// </summary>
+    private const string SingleUnexportableActionAssembly = """
+        using Strategos.Ontology;
+        using Strategos.Ontology.Builder;
+        using Strategos.Ontology.Descriptors;
+
+        namespace CrossAssembly.Ontology;
+
+        public sealed class Order
+        {
+            public int Stage { get; set; }
+        }
+
+        public sealed class OrdersOntology : DomainOntology
+        {
+            public override string DomainName => "orders";
+
+            protected override void Define(IOntologyBuilder builder)
+            {
+                builder.Object<Order>("Order", obj =>
+                {
+                    obj.Action("fulfill")
+                        .Requires(order => order.Stage == 0)
+                        .Ensures(order => order.Stage == 2)
+                        .Modifies(order => order.Stage)
+                        .RequiresLink("customer")
+                        .BoundToWorkflow("fulfill-order");
+                });
+            }
+        }
+        """;
 
     /// <summary>
     /// The ontology half: a domain whose action binds a workflow declared elsewhere.
@@ -282,7 +453,8 @@ public sealed class CrossAssemblyBindingHarnessTests
     private static string OntologyAssembly(
         string ontologyTypeName = "OrdersOntology",
         string fulfillExtra = "",
-        int receiveRequires = 0) => $$"""
+        int receiveRequires = 0,
+        bool withAuthority = false) => $$"""
         using Strategos.Ontology;
         using Strategos.Ontology.Builder;
         using Strategos.Ontology.Descriptors;
@@ -300,12 +472,14 @@ public sealed class CrossAssemblyBindingHarnessTests
 
             protected override void Define(IOntologyBuilder builder)
             {
+                {{(withAuthority ? OrdersLattice : string.Empty)}}
                 builder.Object<Order>("Order", obj =>
                 {
                     obj.Action("fulfill")
                         .Requires(order => order.Stage == 0)
                         .Ensures(order => order.Stage == 2)
                         .Modifies(order => order.Stage)
+                        {{(withAuthority ? ".RequiresAuthority(\"order.writer\")" : string.Empty)}}
                         {{fulfillExtra}}
                         .BoundToWorkflow("fulfill-order");
 
@@ -370,6 +544,46 @@ public sealed class CrossAssemblyBindingHarnessTests
         """;
 
     /// <summary>
+    /// The workflow half, plus a local ontology for the SAME domain the producer
+    /// declares — the layout that makes one domain's lattice arrive from both sides.
+    /// </summary>
+    private static string WorkflowAssemblyWithLocalOrdersOntology =>
+        WorkflowAssembly.Replace(
+            "namespace CrossAssembly.Flow;",
+            """
+            using Strategos.Ontology;
+            using Strategos.Ontology.Builder;
+            using Strategos.Ontology.Descriptors;
+
+            namespace CrossAssembly.Flow;
+            """,
+            StringComparison.Ordinal)
+        + $$"""
+
+        public sealed class Invoice
+        {
+            public int Stage { get; set; }
+        }
+
+        public sealed class LocalOrdersOntology : DomainOntology
+        {
+            public override string DomainName => "orders";
+
+            protected override void Define(IOntologyBuilder builder)
+            {
+                {{OrdersLattice}}
+                builder.Object<Invoice>("Invoice", obj =>
+                {
+                    obj.Action("audit")
+                        .Requires(invoice => invoice.Stage == 0)
+                        .Ensures(invoice => invoice.Stage == 1)
+                        .Modifies(invoice => invoice.Stage);
+                });
+            }
+        }
+        """;
+
+    /// <summary>
     /// An assembly carrying a hand-written catalog attribute, so a test can put a
     /// catalog the emitter would never produce in front of the reader.
     /// </summary>
@@ -402,14 +616,22 @@ public sealed class CrossAssemblyBindingHarnessTests
     /// <param name="schemaVersion">The declared manifest version.</param>
     /// <param name="contentHash">A stamped hash, or null for none.</param>
     /// <param name="requirePredicate">The requirement predicate JSON, already escaped.</param>
+    /// <param name="touches">The frame array JSON.</param>
+    /// <param name="authority">The action's authority object JSON, or null for none.</param>
+    /// <param name="authorities">The catalog's lattice array JSON, or null for none.</param>
     /// <returns>The escaped catalog literal.</returns>
     private static string Catalog(
         string schemaVersion = "1.0",
         string? contentHash = null,
-        string? requirePredicate = null)
+        string? requirePredicate = null,
+        string touches = "[]",
+        string? authority = null,
+        string? authorities = null)
     {
         var hash = contentHash is null ? string.Empty : $",\"contentHash\":\"{contentHash}\"";
         var predicate = requirePredicate ?? Escaped("{\"kind\":\"true\"}");
+        var declaredAuthority = authority is null ? string.Empty : ",\"authority\":" + authority;
+        var lattices = authorities is null ? string.Empty : ",\"authorities\":" + authorities;
         var json = "{\"schemaVersion\":\"" + schemaVersion + "\",\"catalogId\":\"HandWritten\""
             + hash
             + ",\"actions\":{\"actions\":[{"
@@ -418,8 +640,11 @@ public sealed class CrossAssemblyBindingHarnessTests
             + "\"requires\":[{\"predicate\":__PREDICATE__,"
             + "\"expression\":\"true\",\"strength\":\"hard\"}],"
             + "\"ensures\":[{\"predicate\":{\"kind\":\"true\"},\"expression\":\"true\"}],"
-            + "\"touches\":[],\"idempotent\":false,"
-            + "\"boundWorkflow\":\"fulfill-order\"}]}}";
+            + "\"touches\":" + touches + ",\"idempotent\":false"
+            + declaredAuthority
+            + ",\"boundWorkflow\":\"fulfill-order\"}]}"
+            + lattices
+            + "}";
         return Escaped(json).Replace("__PREDICATE__", predicate, StringComparison.Ordinal);
     }
 

@@ -110,7 +110,16 @@ internal static class ProofCatalogExport
         // declares no action contract exports no catalog, and a consumer that finds
         // no attribute treats it as an assembly with nothing to contribute — which
         // is exactly true.
-        if (document.Actions.IsEmpty)
+        //
+        // The test is what this assembly DECLARED, not what survived projection. An
+        // assembly whose every contract the gate refused still emits the attribute,
+        // carrying an empty action list: it has nothing to contribute and says so.
+        // Staying silent there would make absence mean two things at once, and the
+        // ontology analyzer's binding-not-exported rule reads absence as "the workflow
+        // generator never ran here" — which would then blame a generator that is
+        // installed and did run, beside the export-incomplete diagnostic reported just
+        // above, which already named the real fault.
+        if (catalog.Actions.IsEmpty)
         {
             return ImmutableHashSet<ActionIdentity>.Empty;
         }

@@ -29,6 +29,15 @@ namespace Strategos.Generators.Proof;
 // comparison operator or scalar kind, a missing required member, a content hash
 // that does not match the bytes, and an action whose declared authority the
 // catalog's own lattice does not define.
+//
+// The same discipline applies to a member of the WRONG SHAPE, not only a missing
+// one, because each of these narrows a proof input rather than breaking it -- and
+// a narrowed input still proves, just against less than the catalog declared:
+//
+//   * a non-string authority axis level      shifts the rank of every later level
+//   * a frame entry with no name             proves the guarantee against a narrower frame
+//   * a non-string required authority        removes the authority obligation entirely
+//   * a read-set entry with no name          hides the atom from the frame intersection
 // =============================================================================
 
 /// <summary>The outcome of reading one referenced assembly's proof catalog.</summary>
@@ -250,11 +259,21 @@ internal static class ProofCatalogReader
                             $"the '{domainName}' authority lattice declares a malformed axis");
                     }
 
-                    axes[axisName] = levels.Items
-                        .Select(level => level.AsStringOrNull())
-                        .Where(level => level is not null)
-                        .Select(level => level!)
-                        .ToImmutableArray();
+                    var ordered = ImmutableArray.CreateBuilder<string>(levels.Items.Count);
+                    foreach (var level in levels.Items)
+                    {
+                        // Dropping a level would silently shift the rank of every level
+                        // after it, and rank is what TryJoinAtMost compares.
+                        if (level.AsStringOrNull() is not { } levelName)
+                        {
+                            return Result<ImmutableArray<OntologyAuthorityLattice>>.Fail(
+                                $"the '{domainName}' authority lattice declares a non-string level on axis '{axisName}'");
+                        }
+
+                        ordered.Add(levelName);
+                    }
+
+                    axes[axisName] = ordered.ToImmutable();
                 }
             }
 
@@ -334,11 +353,21 @@ internal static class ProofCatalogReader
         var frame = ImmutableArray<string>.Empty;
         if (value.TryGetMember("touches", out var touches) && touches.Kind == JsonKind.Array)
         {
-            frame = touches.Items
-                .Select(resource => TryGetString(resource, "name", out var name) ? name : null)
-                .Where(name => name is not null)
-                .Select(name => name!)
-                .ToImmutableArray();
+            var resources = ImmutableArray.CreateBuilder<string>(touches.Items.Count);
+            foreach (var resource in touches.Items)
+            {
+                // The frame is what the guarantee is projected through. A dropped entry
+                // proves the action against a narrower frame than it declared.
+                if (!TryGetString(resource, "name", out var resourceName))
+                {
+                    return Result<ProofCatalogAction>.Fail(
+                        $"action '{identity}' declares a frame entry with no name");
+                }
+
+                resources.Add(resourceName);
+            }
+
+            frame = resources.ToImmutable();
         }
 
         string? requiredAuthority = null;
@@ -349,7 +378,15 @@ internal static class ProofCatalogReader
                 && sources.Kind == JsonKind.Array
                 && sources.Items.Count > 0)
             {
-                requiredAuthority = sources.Items[0].AsStringOrNull();
+                // Leaving this null does not weaken the proof a little; it removes the
+                // authority obligation and the lattice cross-check that reads it.
+                if (sources.Items[0].AsStringOrNull() is not { } declaredAuthority)
+                {
+                    return Result<ProofCatalogAction>.Fail(
+                        $"action '{identity}' declares a non-string required authority");
+                }
+
+                requiredAuthority = declaredAuthority;
             }
 
             if (authority.TryGetMember("coordinates", out var coordinates)
@@ -529,10 +566,21 @@ internal static class ProofCatalogReader
                 var reads = ImmutableArray<string>.Empty;
                 if (value.TryGetMember("readSet", out var readSet) && readSet.Kind == JsonKind.Array)
                 {
-                    reads = readSet.Items
-                        .Select(resource => TryGetString(resource, "name", out var name) ? name : null)
-                        .Where(name => name is not null)
-                        .Select(name => name!)
+                    var readNames = ImmutableArray.CreateBuilder<string>(readSet.Items.Count);
+                    foreach (var resource in readSet.Items)
+                    {
+                        // The read set is what the frame check intersects to select this
+                        // atom. Dropping one hides the atom from the check.
+                        if (!TryGetString(resource, "name", out var readName))
+                        {
+                            return Result<LogicFormula>.Fail(
+                                $"action '{identity}' declares a custom predicate read-set entry with no name");
+                        }
+
+                        readNames.Add(readName);
+                    }
+
+                    reads = readNames
                         .OrderBy(name => name, StringComparer.Ordinal)
                         .ToImmutableArray();
                 }

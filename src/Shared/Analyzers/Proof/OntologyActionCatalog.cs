@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 using Microsoft.CodeAnalysis;
@@ -64,10 +65,21 @@ internal sealed class OntologyActionCatalog
     /// diverge.
     /// </para>
     /// <para>
-    /// Local declarations win no precedence here and imported ones are not deduped
+    /// Local declarations win no precedence here and imported ACTIONS are not deduped
     /// against them. A duplicate identity across the seam is a real ambiguity — two
     /// assemblies claiming the same action — and the caller refuses it before
     /// merging rather than picking a winner.
+    /// </para>
+    /// <para>
+    /// Imported LATTICES are different, and are deduped structurally. One domain may
+    /// legitimately be split across the seam — two assemblies declaring different
+    /// actions of the same domain — and each side then contributes that domain's
+    /// lattice. Every authority-bearing obligation requires the domain to resolve to
+    /// exactly one lattice, so two identical declarations must merge to one or no
+    /// authority in a shared domain could ever be proved. Declarations that actually
+    /// differ are left as the ambiguity they are: the proof refuses the domain rather
+    /// than picking one, because picking would make the proved contract depend on
+    /// reference order.
     /// </para>
     /// </remarks>
     internal OntologyActionCatalog WithImported(
@@ -90,6 +102,16 @@ internal sealed class OntologyActionCatalog
             var existing = lattices.TryGetValue(lattice.DomainName, out var declared)
                 ? declared
                 : ImmutableArray<OntologyAuthorityLattice>.Empty;
+
+            var key = lattice.StructuralKey();
+            if (existing.Any(candidate => string.Equals(
+                    candidate.StructuralKey(),
+                    key,
+                    StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
             lattices = lattices.SetItem(lattice.DomainName, existing.Add(lattice));
         }
 
@@ -1652,6 +1674,44 @@ internal sealed class OntologyAuthorityLattice
     /// <summary>Gets each authority literal mapped to its axis-to-level coordinate.</summary>
     internal IEnumerable<KeyValuePair<string, Dictionary<string, string>>> Authorities =>
         this.authorities;
+
+    /// <summary>
+    /// Builds a canonical rendering of everything this lattice orders, for deciding
+    /// whether two declarations of one domain are the same lattice.
+    /// </summary>
+    /// <remarks>
+    /// Axis and authority order is not part of a lattice's meaning, but LEVEL order
+    /// is — levels run weakest to strongest and rank is what <see cref="TryJoinAtMost"/>
+    /// compares — so the key sorts the first two and preserves the third.
+    /// </remarks>
+    /// <returns>A rendering equal for exactly the lattices that order identically.</returns>
+    internal string StructuralKey()
+    {
+        var builder = new StringBuilder();
+        builder.Append(DomainName).Append('\u001f');
+
+        foreach (var axis in this.axes.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            builder.Append(axis.Key).Append('=')
+                .Append(string.Join(">", axis.Value))
+                .Append('\u001e');
+        }
+
+        builder.Append('\u001f');
+
+        foreach (var authority in this.authorities.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            builder.Append(authority.Key).Append('=');
+            foreach (var coordinate in authority.Value.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                builder.Append(coordinate.Key).Append(':').Append(coordinate.Value).Append(',');
+            }
+
+            builder.Append('\u001e');
+        }
+
+        return builder.Append('\u001f').Append(InvalidReason ?? string.Empty).ToString();
+    }
 
     internal bool TryJoinAtMost(
         IEnumerable<string?> candidateAuthorities,

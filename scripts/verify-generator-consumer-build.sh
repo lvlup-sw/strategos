@@ -724,22 +724,29 @@ require_error_removed() {
 # The control variant carries other diagnostics too (its workflow declares no
 # terminal step). That is harmless: the control asks only whether each channel can
 # remove AGWF010, not whether the probe builds.
-run_probe_arm "$PROBE_DIR/control-agwf010.log" CONFIGURABLE_CONTROL /p:ProbeNoWarn=AONT004
-if ! grep -Fq "AGWF010" "$PROBE_DIR/control-agwf010.log"; then
-  echo "FAIL: the control variant did not produce AGWF010; the suppression matrix has no control subject." >&2
+#
+# EVERY arm here passes -warnaserror, and the baseline demands the subject as an
+# ERROR. AGWF010 is a warning by default, and require_error_removed looks for
+# "error AGWF010:" -- so without the promotion the removal checks would find
+# nothing to remove and pass on an arm where the channel did nothing at all.
+run_probe_arm "$PROBE_DIR/control-agwf010.log" CONFIGURABLE_CONTROL \
+  -warnaserror /p:ProbeNoWarn=AONT004
+if ! grep -Eq "error AGWF010:" "$PROBE_DIR/control-agwf010.log"; then
+  echo "FAIL: the control variant did not produce AGWF010 as an error; the suppression matrix has no control subject." >&2
   cat "$PROBE_DIR/control-agwf010.log" >&2
   exit 2
 fi
 
 run_probe_arm "$PROBE_DIR/control-agwf010-nowarn.log" CONFIGURABLE_CONTROL \
-  '/p:ProbeNoWarn=AONT004%3BAGWF010'
+  -warnaserror '/p:ProbeNoWarn=AONT004%3BAGWF010'
 require_error_removed \
   "$PROBE_DIR/control-agwf010-nowarn.log" \
   AGWF010 \
   "<NoWarn>AGWF010"
 
 write_severity_none_editorconfig AGWF010
-run_probe_arm "$PROBE_DIR/control-agwf010-editorconfig.log" CONFIGURABLE_CONTROL /p:ProbeNoWarn=AONT004
+run_probe_arm "$PROBE_DIR/control-agwf010-editorconfig.log" CONFIGURABLE_CONTROL \
+  -warnaserror /p:ProbeNoWarn=AONT004
 rm -f "$PROBE_EDITORCONFIG"
 require_error_removed \
   "$PROBE_DIR/control-agwf010-editorconfig.log" \

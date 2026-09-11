@@ -643,7 +643,7 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A workflow-bound ontology action must resolve exactly one workflow model by ordinal workflow name, here or through a referenced assembly's exported proof catalog. This diagnostic was configurable while a cross-assembly layout had no other exit; exporting the contract is that exit, so the exemption is withdrawn and an unresolved binding is not silenceable.",
+        description: "A workflow-bound ontology action must resolve exactly one workflow model by ordinal workflow name in the compilation being built. A referenced assembly's proof catalog carries action contracts, never workflow models, so a binding whose workflow is absent here is deferred to the compilation that lowers it rather than resolved from a catalog. This diagnostic was configurable while a cross-assembly layout had no other exit; exporting the contract is that exit, so the exemption is withdrawn and an unresolved binding is not silenceable.",
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>A reachable workflow step has no exact static action identity.</summary>

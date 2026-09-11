@@ -21,6 +21,16 @@ namespace Strategos.Ontology.Generators.Tests.Analyzers;
 /// generator in that build to report it.
 /// </para>
 /// </remarks>
+/// <summary>The two channels a consumer can use to silence a configurable diagnostic.</summary>
+public enum SuppressionChannel
+{
+    /// <summary>The <c>&lt;NoWarn&gt;</c> project property.</summary>
+    NoWarn,
+
+    /// <summary>An <c>.editorconfig</c> <c>severity = none</c> entry.</summary>
+    EditorConfig,
+}
+
 public sealed class AONT222BindingExportTests
 {
     /// <summary>A binding with no exported catalog is reported.</summary>
@@ -67,13 +77,18 @@ public sealed class AONT222BindingExportTests
                 + "whether an assembly exports a catalog.");
     }
 
-    /// <summary>The diagnostic survives both consumer suppression channels.</summary>
+    /// <summary>The diagnostic survives each consumer suppression channel.</summary>
     /// <remarks>
-    /// Controlled: a configurable diagnostic from the same analyzer must disappear under
-    /// the same options, or "AONT222 survived" would only mean the options never applied.
+    /// One execution per channel, each carrying its own control. Driving both channels
+    /// at once and controlling only one of them would let a channel that stopped working
+    /// hide behind the channel that still does: the control would vanish, the assertion
+    /// would pass, and nothing would have tested the dead channel.
     /// </remarks>
+    /// <param name="channel">Which channel this execution drives.</param>
     [Test]
-    public async Task Aont222_SurvivesBothSuppressionChannels()
+    [Arguments(SuppressionChannel.NoWarn)]
+    [Arguments(SuppressionChannel.EditorConfig)]
+    public async Task Aont222_SurvivesSuppressionChannel(SuppressionChannel channel)
     {
         var source = Source(withCatalogAttribute: false, includeConfigurableControl: true);
 
@@ -82,13 +97,14 @@ public sealed class AONT222BindingExportTests
         await Assert.That(control).IsNotEmpty()
             .Because("the control must fire before it can be shown to be silenceable.");
 
+        string[] silenced = [OntologyDiagnosticIds.BindingNotExported, OntologyDiagnosticIds.MissingKey];
         var suppressed = await AnalyzerTestHelper.GetDiagnosticsUnderSuppressionAsync(
             source,
-            noWarn: [OntologyDiagnosticIds.BindingNotExported, OntologyDiagnosticIds.MissingKey],
-            editorConfigNone: [OntologyDiagnosticIds.BindingNotExported]);
+            noWarn: channel == SuppressionChannel.NoWarn ? silenced : [],
+            editorConfigNone: channel == SuppressionChannel.EditorConfig ? silenced : []);
 
         await Assert.That(suppressed.Any(d => d.Id == OntologyDiagnosticIds.MissingKey)).IsFalse()
-            .Because("the configurable control must be removed, proving both channels applied.");
+            .Because($"the configurable control must be removed, proving the {channel} channel applied.");
         await Assert.That(suppressed.Count(d => d.Id == OntologyDiagnosticIds.BindingNotExported))
             .IsEqualTo(1)
             .Because("a binding nobody can prove is not a thing a consumer may silence.");

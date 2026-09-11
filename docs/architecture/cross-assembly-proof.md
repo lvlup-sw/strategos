@@ -1,7 +1,7 @@
 # Cross-assembly binding proof
 
-**Status:** shipped in 3.0.0 (#204). Manifest schema `ProofCatalogV1` 1.0, frozen in
-`LevelUp.Strategos.Contracts` 0.13.0.
+**Status:** merged for 3.0.0 (#204); not yet released. Manifest schema `ProofCatalogV1`
+1.0, frozen in `LevelUp.Strategos.Contracts` 0.13.0.
 
 ## The hole this closes
 

@@ -3,7 +3,7 @@
 Validation happens at three tiers, and each error gets a stable, monotonically-assigned diagnostic ID:
 
 1. **Builder-runtime** — fluent calls throw `InvalidOperationException` / `ArgumentException` for misuse caught at build time (`WorkflowBuilder.cs:59,91,140,245,310,388`).
-2. **Roslyn analyzer** — compile-time diagnostics via `WorkflowDiagnostics.cs` (AGWF catalog through AGWF048 as of 3.0, identities in `AgwfCodes.g.cs`) and `OntologyDefinitionAnalyzer.cs` (AONT001..035).
+2. **Roslyn analyzer** — compile-time diagnostics via `WorkflowDiagnostics.cs` (AGWF catalog through AGWF048 as of 3.0, identities in `AgwfCodes.g.cs`) and `OntologyDefinitionAnalyzer.cs` (AONT001..037, AONT200..222).
 3. **Emitter-time** — source generator guards before emission.
 
 Diagnostic IDs are part of the *public contract*. Consumers suppress specific IDs via `<NoWarn>`, `.editorconfig`, or `#pragma warning disable`. IDs must never be reused, renumbered, or silently removed within a non-major release.
