@@ -63,6 +63,40 @@ public sealed record HandlerStep : StepDefinition
     public ActionReferenceV1? Action { get; init; }
 
     /// <summary>
+    /// The kernel&apos;s `tasks[].completion: Predicate` (#193). A typed post-state
+    /// guarantee that holds when this step is complete, in the SAME predicate
+    /// vocabulary the action calculus already uses (#168) — not a second one.
+    /// 
+    /// OPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it.
+    /// </summary>
+    [JsonPropertyName("completion")]
+    public ActionGuaranteeV1? Completion { get; init; }
+
+    /// <summary>
+    /// The kernel&apos;s `tasks[].capabilities[]` (#193), as an authority coordinate
+    /// rather than a name list, so two requirements compare without resolving
+    /// either against a lattice. The wire projection of #165.
+    /// 
+    /// OPTIONAL and additive. Carried, not proved.
+    /// </summary>
+    [JsonPropertyName("authority")]
+    public AuthorityRequirementV1? Authority { get; init; }
+
+    /// <summary>
+    /// The kernel&apos;s `tasks[].inputs: TypedContract` (#193) — a reference to a
+    /// schema by its `$id`, never an inline CLR type (LB-2). See
+    /// `TypedContractRefV1`: the slot is frozen, the type system is not.
+    /// </summary>
+    [JsonPropertyName("inputs")]
+    public TypedContractRefV1? Inputs { get; init; }
+
+    /// <summary>
+    /// The kernel&apos;s `tasks[].outputs: TypedContract` (#193). See `inputs`.
+    /// </summary>
+    [JsonPropertyName("outputs")]
+    public TypedContractRefV1? Outputs { get; init; }
+
+    /// <summary>
     /// Simple-name CLR moniker of the step type (LB-2).
     /// </summary>
     [JsonPropertyName("stepType")]

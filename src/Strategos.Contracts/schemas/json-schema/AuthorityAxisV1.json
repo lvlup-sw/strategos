@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthorityAxisV1.json",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The axis name."
+        },
+        "levels": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "The levels of this axis, ordered from WEAKEST to STRONGEST. The order is\nsignificant: it is the total order the dominance test reads. A consumer\nmust not re-sort this list."
+        }
+    },
+    "required": [
+        "name",
+        "levels"
+    ],
+    "description": "One independent, totally ordered axis of the product lattice. Mirrors\n`AuthorityAxisDescriptor(Name, Levels)`."
+}

@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ProofCatalogV1.json",
+    "type": "object",
+    "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "const": "1.0",
+            "description": "Manifest schema version: pinned literal `1.0`."
+        },
+        "catalogId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ordinal identity of the assembly or package this manifest describes.\nCompared ordinally when catalogs merge, never parsed."
+        },
+        "contentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over the manifest's structural fields, lowercase hex. Prose is\nexcluded, on the `OntologyGraphHasher` rules. #204 reads this for tamper\nand skew detection. Omitted when the producer does not stamp one."
+        },
+        "actions": {
+            "$ref": "ActionCatalogV1.json",
+            "description": "The action contracts this catalog declares."
+        },
+        "authorities": {
+            "type": "array",
+            "items": {
+                "$ref": "DomainAuthorityLatticeV1.json"
+            },
+            "description": "The authority lattices the action contracts' coordinates are read against,\none per domain. An action whose authority names an axis absent here is an\nincomplete lattice, and the reader must fail closed on it."
+        },
+        "workflows": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowDefinitionV1.json"
+            },
+            "description": "The workflow definitions this catalog declares, so a referencing\ncompilation can resolve a `BoundToWorkflow` name it cannot see in source."
+        }
+    },
+    "required": [
+        "schemaVersion",
+        "catalogId",
+        "actions"
+    ],
+    "description": "The portable proof manifest — the document #204 emits from one assembly and\nreads from a referencing one, so a binding whose declarations live in a\nreferenced package can still be machine-checked.\n\nThis root is frozen HERE, with the types it composes, so #204 is purely\nemission, consumption and proof, with no further Contracts change.\n\nFail-closed is the consuming analyzer's contract, not this schema's: an\nunknown `schemaVersion`, a duplicate identity, an opaque contract or an\nincomplete lattice must be rejected by the reader. JSON Schema cannot\nexpress those rules and does not try to."
+}

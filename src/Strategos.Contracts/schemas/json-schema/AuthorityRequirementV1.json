@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthorityRequirementV1.json",
+    "type": "object",
+    "properties": {
+        "coordinates": {
+            "type": "array",
+            "items": {
+                "$ref": "AuthorityCoordinateV1.json"
+            },
+            "minItems": 1,
+            "description": "The strongest required level on each axis, ordered ordinally by `axis`.\n\nAt least one pair. A requirement that demands nothing is expressed by\nOMITTING the optional `authority` field, so an empty array would be a second\nspelling of the same fact. `AuthorityDescriptorV1.coordinates` is deliberately\nNOT bounded this way: an authority literal that sits at the bottom of every\naxis is meaningful, and its coordinate list is legitimately empty."
+        },
+        "sourceAuthorities": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "The authority literals whose join produced this coordinate. Provenance\nonly — the coordinate above is the semantic identity."
+        }
+    },
+    "required": [
+        "coordinates"
+    ],
+    "description": "The pointwise join of one or more named authorities — what an action or a\nworkflow step REQUIRES. Mirrors `AuthorityRequirement`.\n\nThis is the wire form of the kernel's `tasks[].capabilities[]`. It is a\ncoordinate, not a name list, so a consumer can compare two requirements\nwithout resolving either against a lattice."
+}

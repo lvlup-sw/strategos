@@ -1,6 +1,9 @@
 import "@typespec/json-schema";
 import "./ActionReference.tsp";
 import "./StepConfiguration.tsp";
+import "./WorkflowAuthority.tsp";
+import "../Ontology/ActionPredicates.tsp";
+import "../Ontology/Authority.tsp";
 
 using JsonSchema;
 
@@ -45,6 +48,34 @@ alias StepCommon = {
 
   /** Ontology action performed by this specific step occurrence. */
   action?: ActionReferenceV1;
+
+  /**
+   * The kernel's `tasks[].completion: Predicate` (#193). A typed post-state
+   * guarantee that holds when this step is complete, in the SAME predicate
+   * vocabulary the action calculus already uses (#168) — not a second one.
+   *
+   * OPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it.
+   */
+  completion?: ActionGuaranteeV1;
+
+  /**
+   * The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate
+   * rather than a name list, so two requirements compare without resolving
+   * either against a lattice. The wire projection of #165.
+   *
+   * OPTIONAL and additive. Carried, not proved.
+   */
+  authority?: AuthorityRequirementV1;
+
+  /**
+   * The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a
+   * schema by its `$id`, never an inline CLR type (LB-2). See
+   * `TypedContractRefV1`: the slot is frozen, the type system is not.
+   */
+  inputs?: TypedContractRefV1;
+
+  /** The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`. */
+  outputs?: TypedContractRefV1;
 };
 
 /**

@@ -1,0 +1,63 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionContractV1.json",
+    "type": "object",
+    "properties": {
+        "subject": {
+            "$ref": "ActionSubjectV1.json",
+            "description": "The object this action acts on."
+        },
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The action name, unique within its subject."
+        },
+        "description": {
+            "type": "string",
+            "description": "Free prose. Excluded from `contentHash`, like every other description."
+        },
+        "requires": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionRequirementV1.json"
+            },
+            "description": "Typed preconditions, hard and soft (#168)."
+        },
+        "ensures": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionGuaranteeV1.json"
+            },
+            "description": "Typed post-state guarantees (#168)."
+        },
+        "touches": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionResourceV1.json"
+            },
+            "description": "The frame: every resource this action can change (#164)."
+        },
+        "authority": {
+            "$ref": "AuthorityRequirementV1.json",
+            "description": "The authority coordinate this action demands. Omitted when the action\ndemands none."
+        },
+        "inverse": {
+            "$ref": "ActionReferenceV1.json",
+            "description": "The action that undoes this one (#169). A full reference, because an\ninverse can live on another object. Omitted when no inverse is declared\nor derivable."
+        },
+        "idempotent": {
+            "type": "boolean",
+            "description": "Whether repeating the action has the same observable effect."
+        }
+    },
+    "required": [
+        "subject",
+        "name",
+        "requires",
+        "ensures",
+        "touches",
+        "idempotent"
+    ],
+    "description": "One action's full contract: what it acts on, what it needs, what it\nguarantees, what it touches, what authority it demands, how it is undone,\nand whether repeating it changes anything.\n\nThe seven members are the action calculus's own vocabulary (#164, #167,\n#168, #169), projected verbatim. `AcceptsType` and `ReturnsType` are NOT\nprojected — see `TypedContractRefV1` for the slot that replaces them."
+}

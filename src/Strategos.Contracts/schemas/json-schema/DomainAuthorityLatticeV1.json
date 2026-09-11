@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "DomainAuthorityLatticeV1.json",
+    "type": "object",
+    "properties": {
+        "domainName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The ontology domain the lattice belongs to."
+        },
+        "lattice": {
+            "$ref": "AuthorityLatticeV1.json",
+            "description": "The lattice itself."
+        }
+    },
+    "required": [
+        "domainName",
+        "lattice"
+    ],
+    "description": "One domain's lattice, named. The catalog carries several."
+}

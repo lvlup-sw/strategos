@@ -15,6 +15,53 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
+## [Unreleased]
+
+### Added
+
+The **#193 workflow-definition kernel**, frozen as additive slots on the shapes that already
+exist rather than as a parallel vocabulary. Every field the kernel names either already
+existed under another name, or is a slot the authority lattice (#165) and the typed predicate
+fragment (#168) already typed. Nothing below narrows the wire, so a 0.12.0 document parses
+against 0.13.0 unchanged.
+
+- **`WorkflowDefinitionV1.contentHash`** — optional SHA-256 over the definition's structural
+  fields, lowercase hex, prose excluded on the `OntologyGraphHasher` rules. The kernel's
+  `identity.contentHash`. #204 reads it for tamper and skew detection across an assembly
+  boundary.
+- **`WorkflowDefinitionV1.authority`** — the kernel's authority frame as `WorkflowAuthorityV1`:
+  optional `invariants`, `goals`, `assumptions`, `delegatedDecisions` and
+  `escalationBoundaries`, each a list of `WorkflowAuthorityStatementV1 { id?, statement }`.
+  **Carried, not proved.** Strategos serializes this block and checks none of it in 3.0.
+  Statements are a model rather than a bare string so the fields a proved statement will need
+  can be added additively later.
+- **Step slots on the shared step common**, so every step kind carries them: `completion`
+  (an `ActionGuaranteeV1`, the kernel's `tasks[].completion: Predicate`, in the #168 predicate
+  vocabulary rather than a second one), `authority` (an `AuthorityRequirementV1`, the kernel's
+  `tasks[].capabilities[]` as a coordinate rather than a name list), and `inputs` / `outputs`
+  (a `TypedContractRefV1`, which references a schema by its `$id` and never inlines a CLR type).
+- **The wire projection of the #165 authority lattice**, which was CLR-only: `AuthorityAxisV1`,
+  `AuthorityCoordinateV1`, `AuthorityDescriptorV1`, `AuthorityLatticeV1`,
+  `AuthorityRequirementV1` and the named `DomainAuthorityLatticeV1`. Before this, only the
+  `x-strategos-authority` name string crossed the wire, so a consumer could not tell whether one
+  authority dominated another. A coordinate is an ARRAY of `{ axis, level }` pairs ordered by
+  `axis`, not a map: a JSON object has no canonical member order, so a map would let two
+  producers emit two different `contentHash` values for one definition.
+- **The action contract as a document**: `ActionSubjectV1` and `ActionContractV1`
+  (`subject`, `name`, `requires`, `ensures`, `touches`, `authority`, `inverse`, `idempotent`),
+  gathered by `ActionCatalogV1`. The wire previously carried only references to actions and
+  the decorators on operations authored in this package.
+- **`ProofCatalogV1`** — the portable proof manifest #204 emits from one assembly and reads
+  from a referencing one. Frozen here, with the types it composes, so #204 is emission,
+  consumption and proof with no further Contracts change.
+
+Reserved composition-combinator kinds (sequence, parallel, choice, compensation,
+host-continuation) are recorded **structurally** in `docs/architecture/kernel-v1.md` and add
+no enum tokens. An enum token with no implementation is a consumer-breaking payload under the
+strict converter.
+
+Part of #193 (stage a, #209). Refs #204, #165, #168, #153.
+
 ## [0.12.0] - 2026-09-09
 
 The first Contracts release since 0.4.0. The 0.5.0 through 0.12.0 minors were pinned in

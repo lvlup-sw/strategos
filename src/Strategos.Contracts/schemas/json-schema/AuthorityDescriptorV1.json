@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthorityDescriptorV1.json",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The authority literal (for example `position.reader`)."
+        },
+        "coordinates": {
+            "type": "array",
+            "items": {
+                "$ref": "AuthorityCoordinateV1.json"
+            },
+            "description": "The authority's level on each axis, ordered ordinally by `axis`. An axis\nabsent from this list means the authority places no requirement on it."
+        },
+        "explicitImplications": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Authority literals this one implies outside the coordinate order. Empty\nwhen the product order alone decides dominance."
+        }
+    },
+    "required": [
+        "name",
+        "coordinates",
+        "explicitImplications"
+    ],
+    "description": "One named authority literal and its coordinate on each axis. Mirrors\n`AuthorityDescriptor(Name, Coordinates, ExplicitImplications)`."
+}

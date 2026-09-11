@@ -80,6 +80,19 @@ internal sealed class WorkflowDefinitionV1 : IWireContractDto
     /// <summary>Gets or sets the diagnostic fork edges for this workflow (#151, DR-10). Optional/additive.</summary>
     public List<DiagnosticForkDefinition> DiagnosticForks { get; set; } = new List<DiagnosticForkDefinition>();
 
+    /// <summary>
+    /// Gets or sets the structural SHA-256 digest of this definition (#193 kernel,
+    /// Contracts 0.13.0). CARRIED, NOT PROVED: the import front-end neither
+    /// recomputes nor compares it. #204 is the consumer.
+    /// </summary>
+    public string? ContentHash { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kernel authority frame (#193, Contracts 0.13.0).
+    /// CARRIED, NOT PROVED: nothing in the lowering path reads it.
+    /// </summary>
+    public WorkflowAuthorityV1? Authority { get; set; }
+
     /// <summary>Gets or sets the step id of the workflow entry step, if set.</summary>
     public string? EntryStepId { get; set; }
 
@@ -117,6 +130,33 @@ internal abstract class StepDefinition : IWireContractDto
 
     /// <summary>Gets or sets the ontology action performed by this step occurrence.</summary>
     public ActionReferenceV1? Action { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kernel completion predicate (#193, Contracts 0.13.0) — a
+    /// typed post-state guarantee in the #168 vocabulary. CARRIED, NOT PROVED: no
+    /// emitter lowers it and no runtime path evaluates it.
+    /// </summary>
+    public ActionGuaranteeV1? Completion { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kernel authority coordinate for this step (#193,
+    /// Contracts 0.13.0), the wire projection of the #165 lattice.
+    /// CARRIED, NOT PROVED.
+    /// </summary>
+    public AuthorityRequirementV1? Authority { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kernel typed-contract reference for this step's input
+    /// (#193, Contracts 0.13.0). A schema `$id`, never a CLR type (LB-2).
+    /// CARRIED, NOT PROVED — the reference is never resolved here.
+    /// </summary>
+    public TypedContractRefV1? Inputs { get; set; }
+
+    /// <summary>
+    /// Gets or sets the kernel typed-contract reference for this step's output.
+    /// See <see cref="Inputs"/>.
+    /// </summary>
+    public TypedContractRefV1? Outputs { get; set; }
 }
 
 /// <summary>Language-neutral ontology action identity twin.</summary>
@@ -522,4 +562,104 @@ internal sealed class PermittedForkTrigger : IWireContractDto
 
     /// <summary>Gets or sets the evidence field NAMES a future fork occurrence must carry for this trigger (INV-8).</summary>
     public List<string> RequiredEvidenceFields { get; set; } = new List<string>();
+}
+
+// =============================================================================
+// #193 kernel twins (Contracts 0.13.0).
+//
+// These mirror slots the import front-end CARRIES and does not interpret. They
+// exist for the same reason the branch-point and loop twins do: the bridge must
+// be able to OBSERVE every slot the schema declares, so a future decision to
+// read or reject one is a change to the bridge rather than a change to the twin
+// graph. The two-directional conformance gate
+// (WireDtoSchemaConformanceTests.ObjectTwins_MatchSchemaPropertiesAndTypes_InEitherDirection)
+// keeps them pinned to the emitted schema.
+// =============================================================================
+
+/// <summary>
+/// Wire twin for the kernel authority frame (#193). Every member is optional:
+/// a definition that declares one member carries only that member.
+/// </summary>
+internal sealed class WorkflowAuthorityV1 : IWireContractDto
+{
+    /// <summary>Gets or sets what the workflow must preserve.</summary>
+    public List<WorkflowAuthorityStatementV1> Invariants { get; set; } = new List<WorkflowAuthorityStatementV1>();
+
+    /// <summary>Gets or sets what the workflow is for.</summary>
+    public List<WorkflowAuthorityStatementV1> Goals { get; set; } = new List<WorkflowAuthorityStatementV1>();
+
+    /// <summary>Gets or sets what the workflow takes for granted about its environment.</summary>
+    public List<WorkflowAuthorityStatementV1> Assumptions { get; set; } = new List<WorkflowAuthorityStatementV1>();
+
+    /// <summary>Gets or sets the decisions the workflow may make without escalating.</summary>
+    public List<WorkflowAuthorityStatementV1> DelegatedDecisions { get; set; } = new List<WorkflowAuthorityStatementV1>();
+
+    /// <summary>Gets or sets the boundaries past which the workflow must escalate.</summary>
+    public List<WorkflowAuthorityStatementV1> EscalationBoundaries { get; set; } = new List<WorkflowAuthorityStatementV1>();
+}
+
+/// <summary>Wire twin for one statement in the kernel authority frame (#193).</summary>
+internal sealed class WorkflowAuthorityStatementV1 : IWireContractDto
+{
+    /// <summary>Gets or sets the stable identifier, when the statement has one (for example <c>U-1</c>).</summary>
+    public string? Id { get; set; }
+
+    /// <summary>Gets or sets the statement itself, in prose.</summary>
+    public string? Statement { get; set; }
+}
+
+/// <summary>
+/// Wire twin for an authority coordinate (#165 projected by #193) — the
+/// pointwise join of one or more named authorities.
+/// </summary>
+internal sealed class AuthorityRequirementV1 : IWireContractDto
+{
+    /// <summary>Gets or sets the level on each axis, ordered ordinally by axis.</summary>
+    public List<AuthorityCoordinateV1> Coordinates { get; set; } = new List<AuthorityCoordinateV1>();
+
+    /// <summary>Gets or sets the authority literals whose join produced the coordinate (provenance only).</summary>
+    public List<string> SourceAuthorities { get; set; } = new List<string>();
+}
+
+/// <summary>
+/// Wire twin for one axis-to-level pair of an authority coordinate (#193).
+/// </summary>
+internal sealed class AuthorityCoordinateV1 : IWireContractDto
+{
+    /// <summary>Gets or sets the axis name.</summary>
+    public string? Axis { get; set; }
+
+    /// <summary>Gets or sets the required level on that axis.</summary>
+    public string? Level { get; set; }
+}
+
+/// <summary>
+/// Wire twin for a typed-contract reference (#193) — the <c>$id</c> of a schema,
+/// never a CLR type handle (LB-2, INV-8).
+/// </summary>
+internal sealed class TypedContractRefV1 : IWireContractDto
+{
+    /// <summary>Gets or sets the <c>$id</c> of the schema describing the contract.</summary>
+    public string? SchemaId { get; set; }
+}
+
+/// <summary>
+/// Wire twin for a typed post-state guarantee (#168), reached from the kernel's
+/// step <c>completion</c> slot.
+/// </summary>
+internal sealed class ActionGuaranteeV1 : IWireContractDto
+{
+    /// <summary>
+    /// Gets or sets the predicate. Carried OPAQUELY: the predicate union is a
+    /// closed recursive tagged union the import front-end never evaluates, so
+    /// mirroring its full closure onto twins would add a large graph that
+    /// nothing reads.
+    /// </summary>
+    public object? Predicate { get; set; }
+
+    /// <summary>Gets or sets the canonical display projection. Never parsed.</summary>
+    public string? Expression { get; set; }
+
+    /// <summary>Gets or sets the free-form description.</summary>
+    public string? Description { get; set; }
 }

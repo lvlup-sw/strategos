@@ -123,6 +123,23 @@ public sealed class WireStepFingerprintCoverageTests
             ObjectTypeName = "Order",
             ActionName = "analyze",
         };
+
+        // #193 kernel slots (Contracts 0.13.0). Carried, not proved — but still
+        // part of wire step identity: two positions claiming to serialize one
+        // occurrence must agree on them before either is discarded.
+        root.Completion = new ActionGuaranteeV1
+        {
+            Predicate = "relation-holds:owner",
+            Expression = "owner(Order, Portfolio)",
+            Description = "ownership survives the step",
+        };
+        root.Authority = new AuthorityRequirementV1
+        {
+            Coordinates = [new AuthorityCoordinateV1 { Axis = "scope", Level = "tenant" }],
+            SourceAuthorities = ["order.writer"],
+        };
+        root.Inputs = new TypedContractRefV1 { SchemaId = "OrderRequest.json" };
+        root.Outputs = new TypedContractRefV1 { SchemaId = "OrderResult.json" };
         root.Configuration = new StepConfigurationDefinition
         {
             ConfidenceThreshold = 0.8,
@@ -205,6 +222,26 @@ public sealed class WireStepFingerprintCoverageTests
             return configuration.Validation!;
         }
 
+        if (targetType == typeof(ActionGuaranteeV1))
+        {
+            return root.Completion!;
+        }
+
+        if (targetType == typeof(AuthorityRequirementV1))
+        {
+            return root.Authority!;
+        }
+
+        if (targetType == typeof(AuthorityCoordinateV1))
+        {
+            return root.Authority!.Coordinates[0];
+        }
+
+        if (targetType == typeof(TypedContractRefV1))
+        {
+            return root.Inputs!;
+        }
+
         throw new InvalidOperationException(
             $"Reachable wire DTO '{targetType.FullName}' needs a populated fingerprint fixture.");
     }
@@ -257,6 +294,26 @@ public sealed class WireStepFingerprintCoverageTests
                 DomainName = "inverse-domain",
                 ObjectTypeName = "InverseObject",
                 ActionName = "inverse-action",
+            };
+        }
+
+        if (property.PropertyType == typeof(object))
+        {
+            // The predicate is carried opaquely by the import front-end; any
+            // different opaque value must still move the fingerprint.
+            return (current as string ?? "opaque") + "-changed";
+        }
+
+        if (property.PropertyType == typeof(List<string>))
+        {
+            return new List<string>((List<string>)current!) { "extra" };
+        }
+
+        if (property.PropertyType == typeof(List<AuthorityCoordinateV1>))
+        {
+            return new List<AuthorityCoordinateV1>((List<AuthorityCoordinateV1>)current!)
+            {
+                new AuthorityCoordinateV1 { Axis = "sensitivity", Level = "high" },
             };
         }
 

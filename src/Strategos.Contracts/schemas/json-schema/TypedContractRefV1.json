@@ -1,0 +1,17 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TypedContractRefV1.json",
+    "type": "object",
+    "properties": {
+        "schemaId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The `$id` of the schema describing this contract.\n\nConstrained to a non-blank string and nothing more, deliberately. A JSON\nSchema `$id` is a URI REFERENCE, not necessarily an absolute URI, and this\npackage emits both forms: the 185 per-model documents carry a relative name\n(`ActionCatalogV1.json`), while the bundle carries an absolute URI\n(`https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json`).\nA pattern demanding a scheme would reject every per-model `$id` this\nrepository produces."
+        }
+    },
+    "required": [
+        "schemaId"
+    ],
+    "description": "The kernel's `inputs` / `outputs: TypedContract` slot — FROZEN AS A SLOT,\nnot as a type system.\n\nA step's accepted and returned CLR types are deliberately not projected\n(LB-2): the wire carries simple-name monikers, never assembly-qualified\nhandles. Rather than invent a second type system on the wire, this slot\ncarries a reference to a schema that already has an identity — the `$id` of\na JSON Schema document.\n\nThe reference is never resolved by Strategos. Whether the id resolves, and\nto what, is the resolving consumer's concern."
+}

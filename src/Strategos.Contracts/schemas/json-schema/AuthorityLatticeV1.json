@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthorityLatticeV1.json",
+    "type": "object",
+    "properties": {
+        "axes": {
+            "type": "array",
+            "items": {
+                "$ref": "AuthorityAxisV1.json"
+            },
+            "description": "The independent axes of the product order."
+        },
+        "authorities": {
+            "type": "array",
+            "items": {
+                "$ref": "AuthorityDescriptorV1.json"
+            },
+            "description": "Every authority literal declared against those axes."
+        }
+    },
+    "required": [
+        "axes",
+        "authorities"
+    ],
+    "description": "The product lattice for one ontology domain. Mirrors `AuthorityLattice`."
+}

@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AuthorityCoordinateV1.json",
+    "type": "object",
+    "properties": {
+        "axis": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The axis name."
+        },
+        "level": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The required level on that axis."
+        }
+    },
+    "required": [
+        "axis",
+        "level"
+    ],
+    "description": "Wire projection of the authority product lattice (#165, #193 kernel).\n\nThe lattice itself is CLR-only today — the `AuthorityLattice` type under\n`Strategos.Ontology.Descriptors`, with its axes, descriptors and\nrequirement. Only the `x-strategos-authority` NAME string crosses the wire\ntoday, so a consumer that\nreceives an action contract cannot tell whether one authority dominates\nanother. These models carry the lattice itself, so the dominance test is\ndecidable on the wire.\n\nDeclarative-only (LB-1) and moniker-only (LB-2, INV-8): every member is a\nstring or a string map. No CLR `Type` handle is projected.One axis-to-level pair.\n\nA coordinate is an ORDERED ARRAY of these pairs rather than a map, for one\nreason: `contentHash` must be deterministic. A JSON object has no canonical\nmember order, so two producers serializing the same coordinate can emit two\nbyte sequences and therefore two digests. An array sorted ordinally by `axis`\nhas exactly one serialization. `OntologyGraphHasher` already sorts every\ncollection before hashing for the same reason."
+}

@@ -77,6 +77,15 @@
             },
             "description": "Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of\nthe fork/compensation edge (DR-7): where the workflow may fork, the closed\ntriggers permitted with their evidence-ref schema, the `maxForks` bound, and\nthe compensation seed. OPTIONAL and additive — a workflow with no fork edge\nomits the slot entirely, so this is a NON-BREAKING wire change.\n\nINV-8: every reference inside a DiagnosticForkDefinition is a string moniker,\nnever a CLR type. The generated saga lowers the edge (DR-9); the runtime\ncompanion is ForkOccurrence (DR-8) in the Events family."
         },
+        "contentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over this definition's STRUCTURAL fields, lowercase hex (#193\nkernel `identity.contentHash`). Prose is excluded, on the same rules\n`OntologyGraphHasher` already applies: documentation churn must not change\nthe hash, because the hash exists to say when the shape changed.\n\nOPTIONAL and additive. A producer that does not stamp one omits the slot,\nand no Strategos path requires it. #204 reads it for tamper and skew\ndetection across an assembly boundary."
+        },
+        "authority": {
+            "$ref": "#/definitions/WorkflowAuthorityV1",
+            "description": "The #193 kernel's authority frame — invariants, goals, assumptions,\ndelegated decisions and escalation boundaries (#193, DR-kernel).\n\n**Carried, not proved in 3.0.** Strategos serializes this block and checks\nnone of it. See `WorkflowAuthorityV1`."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."
@@ -99,6 +108,445 @@
     ],
     "description": "Wire-IR root for a serialized Strategos workflow (issue #50).\n\nThis is the **wire contract** — the flat, language-neutral document that\ncross-product consumers (Exarchos Zod, Basileus, visualization, schema diff)\nread. It is the export-only projection target of the in-memory builder IR\n`WorkflowDefinition<TState>` (see `WorkflowDefinitionProjection.ToContract`):\nthe projection drops executable code (LB-1) and reduces CLR `System.Type`\nhandles to simple-name string monikers (LB-2).\n\n`schemaVersion` is a pinned literal `1.0`. While the Contracts package is\npre-1.0 a minor may narrow this document in place, and every narrowing must\nbe listed in `schemas/breaking-changes.allowlist.json`; after 1.0 a breaking\nchange requires a V2 root.",
     "definitions": {
+        "ActionAllPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "all"
+                },
+                "predicates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActionPredicateV1"
+                    }
+                }
+            },
+            "required": [
+                "kind",
+                "predicates"
+            ],
+            "description": "Conjunction. Empty input canonicalizes to true in the runtime model."
+        },
+        "ActionAnyPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "any"
+                },
+                "predicates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActionPredicateV1"
+                    }
+                }
+            },
+            "required": [
+                "kind",
+                "predicates"
+            ],
+            "description": "Disjunction. Empty input canonicalizes to false in the runtime model."
+        },
+        "ActionBooleanLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "boolean"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "kind",
+                "value"
+            ],
+            "description": "An exact Boolean literal."
+        },
+        "ActionComparisonOperatorV1": {
+            "type": "string",
+            "enum": [
+                "equal",
+                "not-equal",
+                "less-than",
+                "less-than-or-equal",
+                "greater-than",
+                "greater-than-or-equal"
+            ],
+            "description": "The comparison operators accepted by the closed action-predicate language."
+        },
+        "ActionCustomPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "custom"
+                },
+                "evaluatorKey": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "arguments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActionLiteralV1"
+                    }
+                },
+                "readSet": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActionResourceV1"
+                    }
+                }
+            },
+            "required": [
+                "kind",
+                "evaluatorKey",
+                "arguments",
+                "readSet"
+            ],
+            "description": "An explicitly opaque predicate evaluated by a stable registered key.\nDescription text is deliberately absent: it is presentation metadata on the\nsurrounding requirement or guarantee and is not part of semantic identity."
+        },
+        "ActionDecimalLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "decimal"
+                },
+                "value": {
+                    "type": "string",
+                    "pattern": "^(0|-?[1-9][0-9]*|-?(0|[1-9][0-9]*)\\.[0-9]*[1-9])$"
+                }
+            },
+            "required": [
+                "kind",
+                "value"
+            ],
+            "description": "An exact decimal encoded as a canonical base-10 string without exponent notation."
+        },
+        "ActionEnumLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "enum"
+                },
+                "typeName": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "memberName": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "typeName",
+                "memberName"
+            ],
+            "description": "A member of a named ontology enum."
+        },
+        "ActionEventResourceV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "event"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "name"
+            ],
+            "description": "An event resource declared in a custom predicate's read set."
+        },
+        "ActionExternalResourceV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "external"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "name"
+            ],
+            "description": "An external resource declared in a custom predicate's read set."
+        },
+        "ActionFalsePredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "false"
+                }
+            },
+            "required": [
+                "kind"
+            ],
+            "description": "Predicate that is satisfied by no state."
+        },
+        "ActionGuaranteeV1": {
+            "type": "object",
+            "properties": {
+                "predicate": {
+                    "$ref": "#/definitions/ActionPredicateV1"
+                },
+                "expression": {
+                    "type": "string",
+                    "description": "Canonical display projection; consumers never parse this field."
+                },
+                "description": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "predicate",
+                "expression"
+            ],
+            "description": "One typed post-state guarantee carried in schema metadata."
+        },
+        "ActionIntegerLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "integer"
+                },
+                "value": {
+                    "type": "string",
+                    "pattern": "^(0|-?[1-9][0-9]*)$"
+                }
+            },
+            "required": [
+                "kind",
+                "value"
+            ],
+            "description": "An arbitrary-precision integer encoded as a canonical base-10 string.\nJSON numbers are deliberately excluded because their precision is transport dependent."
+        },
+        "ActionLinkExistsPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "link-exists"
+                },
+                "linkName": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "linkName"
+            ],
+            "description": "Assert that a named ontology link is present."
+        },
+        "ActionLinkPathSegmentV1": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "A non-empty segment in an ontology relation traversal path."
+        },
+        "ActionLinkResourceV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "link"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "name"
+            ],
+            "description": "A link resource declared in a custom predicate's read set."
+        },
+        "ActionLiteralV1": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/ActionNullLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionBooleanLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionIntegerLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionDecimalLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionStringLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionEnumLiteralV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionSymbolLiteralV1"
+                }
+            ],
+            "description": "Version 1 of the closed literal vocabulary used by action predicates.\nFloating-point values are intentionally not part of this union."
+        },
+        "ActionNotPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "not"
+                },
+                "predicate": {
+                    "$ref": "#/definitions/ActionPredicateV1"
+                }
+            },
+            "required": [
+                "kind",
+                "predicate"
+            ],
+            "description": "Negation of one closed predicate."
+        },
+        "ActionNullLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "null"
+                }
+            },
+            "required": [
+                "kind"
+            ],
+            "description": "An explicit null literal. Missing data is not represented by this arm."
+        },
+        "ActionPredicateScalarKindV1": {
+            "type": "string",
+            "enum": [
+                "boolean",
+                "integer",
+                "decimal",
+                "string",
+                "enum",
+                "symbol"
+            ],
+            "description": "The scalar domain of a property compared by an action predicate."
+        },
+        "ActionPredicateV1": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/ActionTruePredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionFalsePredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionPropertyComparisonPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionLinkExistsPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionRelationHoldsPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionAllPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionAnyPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionNotPredicateV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionCustomPredicateV1"
+                }
+            ],
+            "description": "Version 1 of the immutable, closed action-predicate language. Unknown kinds\nare invalid; consumers must never reinterpret them as custom or true."
+        },
+        "ActionPropertyComparisonPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "property-comparison"
+                },
+                "property": {
+                    "$ref": "#/definitions/ActionPropertyReferenceV1"
+                },
+                "operator": {
+                    "$ref": "#/definitions/ActionComparisonOperatorV1"
+                },
+                "value": {
+                    "$ref": "#/definitions/ActionLiteralV1"
+                }
+            },
+            "required": [
+                "kind",
+                "property",
+                "operator",
+                "value"
+            ],
+            "description": "Compare one ontology property with a typed literal."
+        },
+        "ActionPropertyReferenceV1": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "scalarKind": {
+                    "$ref": "#/definitions/ActionPredicateScalarKindV1"
+                },
+                "isNullable": {
+                    "type": "boolean"
+                },
+                "enumTypeName": {
+                    "type": "string",
+                    "description": "Required for enum properties; absent for every other scalar kind."
+                }
+            },
+            "required": [
+                "name",
+                "scalarKind",
+                "isNullable"
+            ],
+            "description": "Compare one ontology property with a typed literal."
+        },
+        "ActionPropertyResourceV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "property"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "name"
+            ],
+            "description": "A property resource declared in a custom predicate's read set."
+        },
         "ActionReferenceV1": {
             "type": "object",
             "properties": {
@@ -127,6 +575,96 @@
                 "actionName"
             ],
             "description": "Language-neutral identity of an ontology action performed by a workflow step\noccurrence. Every component is a name; no runtime or CLR type identity crosses\nthe wire boundary."
+        },
+        "ActionRelationHoldsPredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "relation-holds"
+                },
+                "relationName": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "linkPath": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ActionLinkPathSegmentV1"
+                    }
+                }
+            },
+            "required": [
+                "kind",
+                "relationName",
+                "linkPath"
+            ],
+            "description": "Assert that a named relation holds after following an ontology link path."
+        },
+        "ActionResourceV1": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/ActionPropertyResourceV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionLinkResourceV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionEventResourceV1"
+                },
+                {
+                    "$ref": "#/definitions/ActionExternalResourceV1"
+                }
+            ],
+            "description": "Closed resource vocabulary for a custom predicate's declared read set."
+        },
+        "ActionStringLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "kind",
+                "value"
+            ],
+            "description": "An ordinal string literal."
+        },
+        "ActionSymbolLiteralV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "symbol"
+                },
+                "value": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "required": [
+                "kind",
+                "value"
+            ],
+            "description": "A symbolic identifier whose identity is its ordinal token."
+        },
+        "ActionTruePredicateV1": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "const": "true"
+                }
+            },
+            "required": [
+                "kind"
+            ],
+            "description": "Predicate that is satisfied by every state."
         },
         "ApprovalDefinition": {
             "type": "object",
@@ -259,6 +797,22 @@
                     "$ref": "#/definitions/ActionReferenceV1",
                     "description": "Ontology action performed by this specific step occurrence."
                 },
+                "completion": {
+                    "$ref": "#/definitions/ActionGuaranteeV1",
+                    "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+                },
+                "authority": {
+                    "$ref": "#/definitions/AuthorityRequirementV1",
+                    "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+                },
+                "inputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+                },
+                "outputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
+                },
                 "approverType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the approver type (LB-2)."
@@ -272,6 +826,52 @@
                 "approverType"
             ],
             "description": "Approval step — a human-approval pause point. `approverType` is the simple-name\nmoniker of the approver CLR type (LB-2)."
+        },
+        "AuthorityCoordinateV1": {
+            "type": "object",
+            "properties": {
+                "axis": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "The axis name."
+                },
+                "level": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "The required level on that axis."
+                }
+            },
+            "required": [
+                "axis",
+                "level"
+            ],
+            "description": "Wire projection of the authority product lattice (#165, #193 kernel).\n\nThe lattice itself is CLR-only today — the `AuthorityLattice` type under\n`Strategos.Ontology.Descriptors`, with its axes, descriptors and\nrequirement. Only the `x-strategos-authority` NAME string crosses the wire\ntoday, so a consumer that\nreceives an action contract cannot tell whether one authority dominates\nanother. These models carry the lattice itself, so the dominance test is\ndecidable on the wire.\n\nDeclarative-only (LB-1) and moniker-only (LB-2, INV-8): every member is a\nstring or a string map. No CLR `Type` handle is projected.One axis-to-level pair.\n\nA coordinate is an ORDERED ARRAY of these pairs rather than a map, for one\nreason: `contentHash` must be deterministic. A JSON object has no canonical\nmember order, so two producers serializing the same coordinate can emit two\nbyte sequences and therefore two digests. An array sorted ordinally by `axis`\nhas exactly one serialization. `OntologyGraphHasher` already sorts every\ncollection before hashing for the same reason."
+        },
+        "AuthorityRequirementV1": {
+            "type": "object",
+            "properties": {
+                "coordinates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AuthorityCoordinateV1"
+                    },
+                    "minItems": 1,
+                    "description": "The strongest required level on each axis, ordered ordinally by `axis`.\n\nAt least one pair. A requirement that demands nothing is expressed by\nOMITTING the optional `authority` field, so an empty array would be a second\nspelling of the same fact. `AuthorityDescriptorV1.coordinates` is deliberately\nNOT bounded this way: an authority literal that sits at the bottom of every\naxis is meaningful, and its coordinate list is legitimately empty."
+                },
+                "sourceAuthorities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "The authority literals whose join produced this coordinate. Provenance\nonly — the coordinate above is the semantic identity."
+                }
+            },
+            "required": [
+                "coordinates"
+            ],
+            "description": "The pointwise join of one or more named authorities — what an action or a\nworkflow step REQUIRES. Mirrors `AuthorityRequirement`.\n\nThis is the wire form of the kernel's `tasks[].capabilities[]`. It is a\ncoordinate, not a name list, so a consumer can compare two requirements\nwithout resolving either against a lattice."
         },
         "BranchPathDefinition": {
             "type": "object",
@@ -412,6 +1012,22 @@
                 "action": {
                     "$ref": "#/definitions/ActionReferenceV1",
                     "description": "Ontology action performed by this specific step occurrence."
+                },
+                "completion": {
+                    "$ref": "#/definitions/ActionGuaranteeV1",
+                    "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+                },
+                "authority": {
+                    "$ref": "#/definitions/AuthorityRequirementV1",
+                    "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+                },
+                "inputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+                },
+                "outputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
                 },
                 "lambda": {
                     "type": "boolean",
@@ -687,6 +1303,22 @@
                     "$ref": "#/definitions/ActionReferenceV1",
                     "description": "Ontology action performed by this specific step occurrence."
                 },
+                "completion": {
+                    "$ref": "#/definitions/ActionGuaranteeV1",
+                    "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+                },
+                "authority": {
+                    "$ref": "#/definitions/AuthorityRequirementV1",
+                    "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+                },
+                "inputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+                },
+                "outputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
+                },
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
@@ -739,6 +1371,22 @@
                 "action": {
                     "$ref": "#/definitions/ActionReferenceV1",
                     "description": "Ontology action performed by this specific step occurrence."
+                },
+                "completion": {
+                    "$ref": "#/definitions/ActionGuaranteeV1",
+                    "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+                },
+                "authority": {
+                    "$ref": "#/definitions/AuthorityRequirementV1",
+                    "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+                },
+                "inputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+                },
+                "outputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
                 },
                 "stepType": {
                     "type": "string",
@@ -914,6 +1562,22 @@
                     "$ref": "#/definitions/ActionReferenceV1",
                     "description": "Ontology action performed by this specific step occurrence."
                 },
+                "completion": {
+                    "$ref": "#/definitions/ActionGuaranteeV1",
+                    "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+                },
+                "authority": {
+                    "$ref": "#/definitions/AuthorityRequirementV1",
+                    "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+                },
+                "inputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+                },
+                "outputs": {
+                    "$ref": "#/definitions/TypedContractRefV1",
+                    "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
+                },
                 "stepType": {
                     "type": "string",
                     "description": "Simple-name CLR moniker of the step type (LB-2)."
@@ -1015,6 +1679,21 @@
             ],
             "description": "Wire-IR transition — a directed edge between two steps (mirrors the builder's\n`TransitionDefinition`)."
         },
+        "TypedContractRefV1": {
+            "type": "object",
+            "properties": {
+                "schemaId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "The `$id` of the schema describing this contract.\n\nConstrained to a non-blank string and nothing more, deliberately. A JSON\nSchema `$id` is a URI REFERENCE, not necessarily an absolute URI, and this\npackage emits both forms: the 185 per-model documents carry a relative name\n(`ActionCatalogV1.json`), while the bundle carries an absolute URI\n(`https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json`).\nA pattern demanding a scheme would reject every per-model `$id` this\nrepository produces."
+                }
+            },
+            "required": [
+                "schemaId"
+            ],
+            "description": "The kernel's `inputs` / `outputs: TypedContract` slot — FROZEN AS A SLOT,\nnot as a type system.\n\nA step's accepted and returned CLR types are deliberately not projected\n(LB-2): the wire carries simple-name monikers, never assembly-qualified\nhandles. Rather than invent a second type system on the wire, this slot\ncarries a reference to a schema that already has an identity — the `$id` of\na JSON Schema document.\n\nThe reference is never resolved by Strategos. Whether the id resolves, and\nto what, is the resolving consumer's concern."
+        },
         "ValidationDefinition": {
             "type": "object",
             "properties": {
@@ -1032,6 +1711,66 @@
                 "errorMessage"
             ],
             "description": "Wire-IR validation definition (mirrors the builder's `ValidationDefinition`).\n`predicateExpression` is a **declarative description** of the predicate, not\nexecutable code (LB-1) — it is the same string the builder stores for\nvisualization / diagnostics."
+        },
+        "WorkflowAuthorityStatementV1": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Stable identifier, when the statement has one (for example `U-1` from the\nrepository invariants catalog). Omitted for a free statement."
+                },
+                "statement": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "The statement itself, in prose."
+                }
+            },
+            "required": [
+                "statement"
+            ],
+            "description": "The #193 kernel's `authority { … }` block and its typed-contract slot.\n\n**Carried, not proved.** Strategos serializes every member below and checks\nNONE of them in 3.0. No analyzer, no emitter and no runtime path reads this\nblock. It exists so the semantic plane has one vocabulary for the authority\nframe from birth, rather than each consumer inventing its own and converging\nlater. A consumer that acts on this block acts on unproved data.One statement in the authority frame.\n\nA statement is a model rather than a bare string on purpose. The frame's\nmembers are unproved in 3.0, so the fields a proved statement will need\n(a provenance ref, a check id, a severity) are not known yet. Adding a\nfield to this model later is additive. Replacing `string[]` with a model\nlater would be a narrowing, and a narrowing here would be the design error\n#209 exists to avoid."
+        },
+        "WorkflowAuthorityV1": {
+            "type": "object",
+            "properties": {
+                "invariants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkflowAuthorityStatementV1"
+                    },
+                    "description": "What the workflow must preserve."
+                },
+                "goals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkflowAuthorityStatementV1"
+                    },
+                    "description": "What the workflow is for."
+                },
+                "assumptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkflowAuthorityStatementV1"
+                    },
+                    "description": "What the workflow takes for granted about its environment."
+                },
+                "delegatedDecisions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkflowAuthorityStatementV1"
+                    },
+                    "description": "Decisions the workflow may make without escalating."
+                },
+                "escalationBoundaries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkflowAuthorityStatementV1"
+                    },
+                    "description": "The boundaries past which the workflow must escalate."
+                }
+            },
+            "description": "The authority frame of a workflow: what it must preserve, what it is for,\nwhat it takes for granted, what it may decide alone, and where it must stop.\n\nEvery member is OPTIONAL, following the `InvariantEntry` v3 precedent, so a\ndefinition that declares no frame omits the block entirely and a definition\nthat declares one member carries only that member."
         },
         "WorkflowDefinitionV1": {
             "type": "object",
@@ -1109,6 +1848,15 @@
                         "$ref": "#/definitions/DiagnosticForkDefinition"
                     },
                     "description": "Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of\nthe fork/compensation edge (DR-7): where the workflow may fork, the closed\ntriggers permitted with their evidence-ref schema, the `maxForks` bound, and\nthe compensation seed. OPTIONAL and additive — a workflow with no fork edge\nomits the slot entirely, so this is a NON-BREAKING wire change.\n\nINV-8: every reference inside a DiagnosticForkDefinition is a string moniker,\nnever a CLR type. The generated saga lowers the edge (DR-9); the runtime\ncompanion is ForkOccurrence (DR-8) in the Events family."
+                },
+                "contentHash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "SHA-256 over this definition's STRUCTURAL fields, lowercase hex (#193\nkernel `identity.contentHash`). Prose is excluded, on the same rules\n`OntologyGraphHasher` already applies: documentation churn must not change\nthe hash, because the hash exists to say when the shape changed.\n\nOPTIONAL and additive. A producer that does not stamp one omits the slot,\nand no Strategos path requires it. #204 reads it for tamper and skew\ndetection across an assembly boundary."
+                },
+                "authority": {
+                    "$ref": "#/definitions/WorkflowAuthorityV1",
+                    "description": "The #193 kernel's authority frame — invariants, goals, assumptions,\ndelegated decisions and escalation boundaries (#193, DR-kernel).\n\n**Carried, not proved in 3.0.** Strategos serializes this block and checks\nnone of it. See `WorkflowAuthorityV1`."
                 },
                 "entryStepId": {
                     "type": "string",
