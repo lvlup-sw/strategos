@@ -22,7 +22,7 @@ namespace Strategos.Generators.Tests.Docs;
 /// stated caveat understated the truth about legacy compensation in a bound workflow.
 /// </para>
 /// <para>
-/// This gate reads only the <c>[3.0.0-rc.1]</c> section, so an entry in an older section does not
+/// This gate reads only the <c>[3.0.0]</c> section, so an entry in an older section does not
 /// satisfy it. Placeholder comments left for other authors are not content and are stripped
 /// before matching, so an unfilled placeholder cannot make the gate pass.
 /// </para>
@@ -30,7 +30,7 @@ namespace Strategos.Generators.Tests.Docs;
 [Property("Category", "Unit")]
 public sealed class UnreleasedWindowDisclosureTests
 {
-    /// <summary>The identifiers that must appear in the 3.0.0-rc.1 section.</summary>
+    /// <summary>The identifiers that must appear in the 3.0.0 section.</summary>
     /// <returns>Tokens to search for.</returns>
     public static IEnumerable<string> RequiredIdentifiers()
     {
@@ -52,7 +52,7 @@ public sealed class UnreleasedWindowDisclosureTests
             .Because(
                 $"'{identifier}' names a behaviour change made inside the unreleased window; a "
                 + "consumer upgrading from the last published release only sees it if the "
-                + "3.0.0-rc.1 section says so");
+                + "3.0.0 section says so");
     }
 
     /// <summary>
@@ -80,15 +80,15 @@ public sealed class UnreleasedWindowDisclosureTests
         var path = Path.Combine(RepoRoot(), "CHANGELOG.md");
         var content = await File.ReadAllTextAsync(path);
 
-        // Carve between "## [3.0.0-rc.1]" and the next "## [" heading.
+        // Carve between "## [3.0.0]" and the next "## [" heading.
         var match = Regex.Match(
             content,
-            @"^##\s+\[3\.0\.0-rc\.1\](?<body>.*?)(?=^##\s+\[)",
+            @"^##\s+\[3\.0\.0\](?<body>.*?)(?=^##\s+\[)",
             RegexOptions.Multiline | RegexOptions.Singleline);
         if (!match.Success)
         {
             throw new InvalidOperationException(
-                "CHANGELOG.md has no '## [3.0.0-rc.1]' section followed by a later release heading.");
+                "CHANGELOG.md has no '## [3.0.0]' section followed by a later release heading.");
         }
 
         // An unfilled placeholder is a note to another author, not disclosure.

@@ -189,7 +189,7 @@ public sealed class BuilderApiBaselineTests
         // types plus the reviewed non-builder declarations that shipped in the
         // last release: StepDefinition, CompensationConfiguration, StepContext, and
         // WorkflowActionReference (#167's occurrence identity value object, rolled
-        // into Shipped for 3.0.0-rc.1; Shipped = present in the last release, see
+        // into Shipped for 3.0.0-rc.1 and kept there through 3.0.0; Shipped = present in the last release, see
         // src/Strategos/.editorconfig).
         // A type-declaration line is a bare fully-qualified type name with no
         // member ('.' after the type) and no signature arrow ('->').

@@ -54,7 +54,7 @@ public sealed class GateFailClosedTests
 
     /// <summary>
     /// An Ontology member line guaranteed present in that package's shipped baseline
-    /// (rolled from Unshipped for 3.0.0-rc.1, the first Ontology release roll); dropping
+    /// (rolled from Unshipped for 3.0.0-rc.1, the first Ontology release roll, and shipped in 3.0.0); dropping
     /// it is the synthetic drift for the second gated project.
     /// </summary>
     private const string OntologyDriftLineToRemove =
