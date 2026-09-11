@@ -111,4 +111,8 @@ internal static class OntologyDiagnosticIds
     public const string ActionComposabilityCoverage = "AONT219";
     public const string DynamicActionSequence = "AONT220";
     public const string InvalidActionContract = "AONT221";
+
+    // Cross-assembly proof export (#204). Continues the monotonic AONT200-series
+    // allocation; the identity is a stable consumer contract.
+    public const string BindingNotExported = "AONT222";
 }

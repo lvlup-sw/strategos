@@ -64,7 +64,8 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
             OntologyDiagnostics.OpaqueActionContract,
             OntologyDiagnostics.ActionComposabilityCoverage,
             OntologyDiagnostics.DynamicActionSequence,
-            OntologyDiagnostics.InvalidActionContract);
+            OntologyDiagnostics.InvalidActionContract,
+            OntologyDiagnostics.BindingNotExported);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -79,6 +80,11 @@ public sealed class OntologyDefinitionAnalyzer : DiagnosticAnalyzer
         // both across the whole compilation and decide at compilation end.
         context.RegisterCompilationStartAction(RegisterAmbiguousTraversalGuard);
         context.RegisterCompilationAction(OntologyInverseContractAnalyzer.Analyze);
+
+        // #204 — the declaring side of the cross-assembly seam. An assembly that
+        // references this analyzer and not the workflow generator declares bindings
+        // that no generator is present to notice, so the check belongs here.
+        context.RegisterCompilationAction(BindingExportAnalyzer.Analyze);
         context.RegisterSyntaxNodeAction(
             ActionCompositionAnalyzer.AnalyzeInvocation,
             SyntaxKind.InvocationExpression);

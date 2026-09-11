@@ -85,6 +85,27 @@ internal static class OntologyDiagnostics
         isEnabledByDefault: true,
         description: "Rejects unsupported expressions, subject mismatches, contradictions, and unrealizable frames at the earliest visible tier.");
 
+    /// <summary>
+    /// This assembly declares a workflow binding but exports no proof catalog, so no
+    /// compilation can ever discharge it (#204).
+    /// </summary>
+    /// <remarks>
+    /// The declaring side of the cross-assembly seam, and an ANALYZER diagnostic on
+    /// purpose: the assembly that hits it is one that references the ontology
+    /// analyzer and not the workflow generator, so no generator runs to report it.
+    /// That layout compiled silent before #204 — the binding was declared, the
+    /// obligation reached nobody, and nothing said so.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor BindingNotExported = new(
+        OntologyDiagnosticIds.BindingNotExported,
+        "Workflow binding is not exported for proof",
+        "Ontology action binds workflow '{0}', but this assembly exports no proof catalog, so no compilation can prove the binding. Reference LevelUp.Strategos.Generators so the contract is exported, or remove the binding.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A workflow binding declared by an assembly that emits no portable proof catalog is an obligation no compilation can discharge: the declaring assembly cannot see the workflow, and no referencing assembly can see the contract.",
+        customTags: [WellKnownDiagnosticTags.NotConfigurable, WellKnownDiagnosticTags.CompilationEnd]);
+
     // --- Core (AONT001-008) ---
 
     public static readonly DiagnosticDescriptor MissingKey = new(
