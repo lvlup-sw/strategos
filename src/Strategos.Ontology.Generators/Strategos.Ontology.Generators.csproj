@@ -10,6 +10,7 @@
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <NoWarn>$(NoWarn);RS2008;CS8602;CS8604;NU5128</NoWarn>
     <PackageId>LevelUp.Strategos.Ontology.Generators</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Roslyn diagnostic analyzers for Strategos ontology definitions. Validates domain ontology declarations at compile time with AONT001-AONT035 diagnostics covering core, preconditions, lifecycle, derivation, interface actions, and extension points.</Description>
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeSymbols>false</IncludeSymbols>
@@ -49,6 +50,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Strategos.Ontology.Generators.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

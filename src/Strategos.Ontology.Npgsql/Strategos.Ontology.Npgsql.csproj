@@ -3,6 +3,7 @@
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageId>LevelUp.Strategos.Ontology.Npgsql</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>PostgreSQL pgvector-backed object set provider for Strategos.Ontology.</Description>
   </PropertyGroup>
 
@@ -19,6 +20,10 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Pgvector" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

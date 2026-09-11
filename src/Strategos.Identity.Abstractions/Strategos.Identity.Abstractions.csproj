@@ -11,9 +11,14 @@
     <Nullable>enable</Nullable>
     <!-- NuGet package configuration -->
     <PackageId>LevelUp.Strategos.Identity.Abstractions</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Identity seam abstractions for Strategos: workflow and agent identity value records, header constants, and ports (IAgentIdentityProvider, IAgentIdentityAccessor, IPhaseAwareSaga) consumed by Wolverine envelope-header propagation.</Description>
     <PackageTags>workflow;agent;identity;wolverine;saga;ports;hexagonal;strategos</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
