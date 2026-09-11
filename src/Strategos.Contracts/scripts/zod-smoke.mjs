@@ -1,6 +1,13 @@
 // =============================================================================
 // zod-smoke.mjs — T12 Zod-consumability smoke (#36).
 //
+// NOT the shipping projection. Since #219 the Zod artifact Exarchos consumes is
+// emitted by scripts/emit-zod.mjs into Generated/zod/ and committed. This script
+// stays as what it always was: a smoke probe that any emitted schema family
+// dereferences and converts with no manual post-processing, used by
+// AbstentionUnionSchemaTests. It writes to a throwaway directory, carries no
+// referential rules, and nothing consumes its output.
+//
 // Proves the Exarchos derivation path works with NO manual post-processing:
 //   1. dereference every emitted JSON Schema ($ref resolution via
 //      @apidevtools/json-schema-ref-parser — the spike's known-issue mitigation);

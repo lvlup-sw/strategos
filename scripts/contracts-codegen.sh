@@ -4,6 +4,7 @@
 #
 # 1. tsp compile  : TypeSpec (canonical) -> JSON Schema in schemas/json-schema/
 # 2. ContractsCodegen : JSON Schema -> sealed records in Generated/*.g.cs
+# 3. emit-zod         : JSON Schema -> Zod modules in Generated/zod/*.ts
 #
 # Reused by the local build and by the codegen-guard CI workflow, which runs
 # this then `git diff --exit-code` over schemas/ + Generated/ to reject any
@@ -42,5 +43,12 @@ dotnet run --project "$CODEGEN_PROJ" -- \
   "$CONTRACTS_DIR/schemas/json-schema" \
   "$CONTRACTS_DIR/Generated" \
   "$ONTOLOGY_GENERATED_DIR"
+
+echo "[contracts-codegen] emitting Zod modules ..."
+# #219: the TypeScript/Zod projection. Strategos owns every projection of the
+# types it authors, so the Zod arm is emitted here and committed, not derived by
+# the consumer. The emitter stale-cleans its own output directory, and the
+# codegen guard diffs Generated/ — so a hand-edit or a stale artifact fails CI.
+node scripts/emit-zod.mjs
 
 echo "[contracts-codegen] done."

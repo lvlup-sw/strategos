@@ -16,7 +16,7 @@
   "failureHandlers": [],
   "approvalPoints": [],
   "gates": [
-    { "class": "AntipatternDetection", "id": "g1" }
+    { "class": "rules", "id": "g1" }
   ],
   "entryStepId": "s1",
   "terminalStepId": "s3"

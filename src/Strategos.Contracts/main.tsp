@@ -14,6 +14,7 @@ import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Workflow/WorkflowRef.tsp";
 import "./Workflow/WorkflowCatalog.tsp";
 import "./Workflow/WorkflowAuthority.tsp";
+import "./Workflow/references.tsp";
 import "./Diagnostics/CheckNode.tsp";
 import "./Diagnostics/Enforcement.tsp";
 import "./Diagnostics/InvariantEntry.tsp";
@@ -33,8 +34,12 @@ using JsonSchema;
  * LevelUp.Strategos.Contracts — cross-product schema substrate.
  *
  * TypeSpec is the single canonical source. The build emits:
- *   - JSON Schema (language-neutral, embedded as NuGet content; Exarchos derives Zod)
+ *   - JSON Schema (language-neutral, embedded as NuGet content)
  *   - C# records (compiled into the DLL; Basileus references it)
+ *   - Zod schemas (Generated/zod/, read by Exarchos; #219)
+ *
+ * Strategos owns every projection of these types. Exarchos consumes and pins
+ * the emitted Zod; it does not derive one.
  *
  * Phase 0 carries only a trivial probe model that proves the pipeline
  * end-to-end (JSON Schema + a sealed/init-only C# record). The three schema

@@ -1,12 +1,15 @@
 # LevelUp.Strategos.Contracts
 
 Cross-product schema substrate. **TypeSpec is the single canonical source.** The
-build emits two artifacts from it:
+build emits three artifacts from it:
 
 - **JSON Schema** (`schemas/json-schema/*.json`) — language-neutral, embedded as
-  NuGet content (`contentFiles/any/any/schemas/`). Exarchos derives Zod from it.
+  NuGet content (`contentFiles/any/any/schemas/`).
 - **C# records** (`Generated/*.g.cs`) — compiled into this DLL. Basileus
   references the DLL.
+- **Zod modules** (`Generated/zod/*.ts`) — the TypeScript projection Exarchos
+  pins (#219). Strategos owns every projection of the types it authors: one
+  source, one emitter, one direction, one version.
 
 ```
 main.tsp  (canonical)
@@ -16,6 +19,9 @@ schemas/json-schema/*.json
    ├─ Strategos.Contracts.Codegen  (raw JSON + INV-6/7 template)
    │  ▼
    │ Generated/*.g.cs   →   compiled into LevelUp.Strategos.Contracts.dll
+   ├─ scripts/emit-zod.mjs  (+ x-strategos-references-v1)
+   │  ▼
+   │ Generated/zod/*.ts  →   consumed by Exarchos from the contracts-v* tag
    └─ x-strategos-* metadata → ContractOntologyCatalog (Ontology adapter)
 ```
 
@@ -120,18 +126,70 @@ pipeline and asserts every exported `#53` workflow-IR fixture parses against it;
 the C# side (`CrossProductRoundTripTests`) additionally validates a
 representative IR against our NJsonSchema schema.
 
-**External-coordination seam (exarchos#1247) — out of scope here.** The
-*production* gate must run our fixtures against Exarchos's **published, pinned**
-Zod snapshot — proving the two products agree on the wire shape, not just that
-our schema round-trips with itself. That snapshot pin is coordinated in
-exarchos#1247 and is deliberately NOT done in this milestone. The harness
-already exposes the seam as a flag so the production swap is a CI-config change,
-not a code change:
+**The external-coordination seam is closed by #219.** This harness was designed
+when Exarchos owned the Zod derivation, so its production arm was "run our
+fixtures against Exarchos's published, pinned Zod snapshot" — a gate that fires
+in a different repository, at a different time, and protects the consumer rather
+than the contract. Strategos now emits the Zod itself, so there is one artifact
+and nothing to reconcile: `scripts/verify-zod-conformance.mjs` runs the corpus
+against `Generated/zod`, the artifact Exarchos pins. The `--zod-source` flag
+remains for pointing the harness at an arbitrary Zod barrel.
 
 ```
 --zod-source self      # (default) derive Zod from our own JSON Schema — offline
---zod-source <dir>     # production: Exarchos's pinned Zod barrel (exarchos#1247)
+--zod-source <dir>     # any external Zod barrel
 ```
+
+## Zod / TypeScript projection (#219)
+
+`scripts/emit-zod.mjs` reads the emitted JSON Schema and writes one Zod module
+per document into `Generated/zod/`, plus a barrel `index.ts` and the shared
+`_references.ts` runtime. The output is committed and diffed by the same
+codegen guard as `Generated/*.g.cs`, so a hand-edit or a stale artifact fails
+CI. Distribution for GA is the existing `contracts-v*` git-tag channel that
+Exarchos already reads the schemas from; an npm package is a follow-up.
+
+**The emitter is total.** Every JSON Schema keyword it meets is either lowered
+or an error. This matters more than it looks: every fixture in the conformance
+corpus is a VALID document, so a silently dropped constraint produces a Zod
+schema that accepts documents the contract rejects and the corpus still passes.
+`Emitter_FailsClosed_OnAJsonSchemaKeywordItDoesNotLower` pins the behavior.
+
+Two keywords are read and deliberately NOT lowered, because JSON Schema draft
+2020-12 asserts neither by default: `format` (lowering it would make the
+TypeScript arm stricter than the contract) and `default` (lowering it would make
+the parsed value differ from the input). Descriptions are not emitted either —
+the prose lives in the schema and in the TypeSpec, and copying it would triple
+the artifact.
+
+**Referential rules.** `@references(collection, idField)` on a TypeSpec property
+declares that its value must name an entry of a collection on the root document.
+The decorator rejects bad authoring at `tsp compile` time — a collection that is
+not a root-anchored JSON Pointer, a blank id field, or a target that is not a
+string (a reference is a moniker, never a typed handle; INV-8) — and emits
+`x-strategos-references-v1`. The emitter resolves the one root document that both
+declares the collection and reaches the annotated shape, and lowers every rule
+for that root into a single `superRefine`. Three rules ship today:
+
+| Declaration | Rule |
+|---|---|
+| `GateStep.gateId` | must name a `gates[].id` on the workflow root (DR-3; the AGWF032 rule) |
+| `TransitionDefinition.fromStepId` | must name a `steps[].stepId` |
+| `TransitionDefinition.toStepId` | must name a `steps[].stepId` |
+
+The check walks the instance structurally rather than following a fixed list of
+paths, because the positions a gate step can occupy — a fork path, a loop body, a
+low-confidence handler chain — are mutually recursive, so no finite path list
+covers them.
+
+**Conformance.** `scripts/verify-zod-conformance.mjs` compiles the emitted
+modules with `tsc` and runs them: the whole `#53` builder corpus must parse, and
+both reference rules must reject. The `gateId` arm runs the same two
+hand-authored wire documents the generator's AGWF032 test runs
+(`tests/Strategos.Generators.Tests/Import/ImportFixtures/`), so the declared rule
+and the hand-coded check in `Import/WireToModelBridge.cs` are pinned to the same
+verdict at the same position. Deriving the C# import front-end from the same
+declaration is a follow-up; for now the two are pinned, not unified.
 
 ## Breaking-change schema diff (T30)
 
@@ -224,6 +282,12 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
   (forward-reference to DR-13 / task 018 / DR-15) — that is where a gate-bearing
   import is accepted and a dangling reference is turned into a build error. No
   rejection logic lives in this schema package.
+- **The `@references` declaration** (#219) states the rule once, in TypeSpec.
+  It emits as `x-strategos-references-v1` on the property, and the Zod emitter
+  lowers it into a root-level check — so the TypeScript arm rejects the same
+  document, at the same position, without a hand-written `superRefine`. The
+  key is inert to a generic JSON Schema validator, which still accepts a
+  dangling reference; the rule binds where a reader reads it.
 
 ## Versioning & publishing (T32)
 
@@ -260,7 +324,9 @@ slots: the structural `contentHash`, the carried-not-proved `WorkflowAuthorityV1
 frame, the `TypedContractRefV1` slot that references a schema by `$id` instead of
 inlining a CLR type, per-step `completion` and `authority`, the wire projection of
 the authority lattice that was CLR-only, and the `ActionContractV1` /
-`ActionCatalogV1` / `ProofCatalogV1` manifest. Every 0.13.0 addition is optional,
+`ActionCatalogV1` / `ProofCatalogV1` manifest, and adds the emitted Zod/TypeScript
+projection (`Generated/zod/`) with the `@references` referential declarations it
+lowers. Every 0.13.0 addition is optional,
 so a 0.12.0 document parses unchanged and no allowlist entry is needed. Consumers must
 upgrade before receiving one of the new diagnostic tokens. The package embeds all schema
 families under

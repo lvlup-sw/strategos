@@ -25,14 +25,17 @@ public sealed record TransitionDefinition
     public string TransitionId { get; init; } = default!;
 
     /// <summary>
-    /// Step id this transition originates from.
+    /// Step id this transition originates from. `@references` (#219) declares the
+    /// endpoint rule: the value must name a step the document declares. A
+    /// transition to nowhere is the `edges[]`-integrity case of the #193 kernel,
+    /// expressed on the construct the kernel maps a sequence onto.
     /// </summary>
     [JsonPropertyName("fromStepId")]
     [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
-    /// Step id this transition targets.
+    /// Step id this transition targets. See `fromStepId`.
     /// </summary>
     [JsonPropertyName("toStepId")]
     [JsonRequired]
