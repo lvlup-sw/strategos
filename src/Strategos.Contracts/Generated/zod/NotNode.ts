@@ -6,11 +6,15 @@
 
 import { z } from "zod";
 
+import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
-export const NotNodeSchema: z.ZodType<unknown> = z.looseObject({
+export interface NotNode {
+  "kind": "not";
+  "child": CheckNode;
+}
+
+export const NotNodeSchema: z.ZodType<NotNode> = z.looseObject({
     "kind": z.literal("not"),
     "child": z.lazy(() => CheckNodeSchema),
   });
-
-// No inferred type alias: NotNode participates in a reference cycle.

@@ -6,6 +6,12 @@
 
 import { z } from "zod";
 
+import type { ActionGuaranteeV1 } from "./ActionGuaranteeV1.js";
+import type { ActionReferenceV1 } from "./ActionReferenceV1.js";
+import type { AuthorityRequirementV1 } from "./AuthorityRequirementV1.js";
+import type { StepConfigurationDefinition } from "./StepConfigurationDefinition.js";
+import type { StepRuntime } from "./StepRuntime.js";
+import type { TypedContractRefV1 } from "./TypedContractRefV1.js";
 import { ActionGuaranteeV1Schema } from "./ActionGuaranteeV1.js";
 import { ActionReferenceV1Schema } from "./ActionReferenceV1.js";
 import { AuthorityRequirementV1Schema } from "./AuthorityRequirementV1.js";
@@ -13,7 +19,23 @@ import { StepConfigurationDefinitionSchema } from "./StepConfigurationDefinition
 import { StepRuntimeSchema } from "./StepRuntime.js";
 import { TypedContractRefV1Schema } from "./TypedContractRefV1.js";
 
-export const SkillStepSchema: z.ZodType<unknown> = z.looseObject({
+export interface SkillStep {
+  "kind": "skill";
+  "stepId": string;
+  "stepName": string;
+  "instanceName"?: string;
+  "isTerminal": boolean;
+  "runtime"?: StepRuntime;
+  "configuration"?: StepConfigurationDefinition;
+  "action"?: ActionReferenceV1;
+  "completion"?: ActionGuaranteeV1;
+  "authority"?: AuthorityRequirementV1;
+  "inputs"?: TypedContractRefV1;
+  "outputs"?: TypedContractRefV1;
+  "stepType": string;
+}
+
+export const SkillStepSchema: z.ZodType<SkillStep> = z.looseObject({
     "kind": z.literal("skill"),
     "stepId": z.string(),
     "stepName": z.string(),
@@ -28,5 +50,3 @@ export const SkillStepSchema: z.ZodType<unknown> = z.looseObject({
     "outputs": TypedContractRefV1Schema.optional(),
     "stepType": z.string(),
   });
-
-// No inferred type alias: SkillStep participates in a reference cycle.

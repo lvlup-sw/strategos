@@ -1,0 +1,11 @@
+{
+  "//": "Type-checks the emitted projection TOGETHER with the type-level assertions over it (#223). Separate from tsconfig.json because that one is also a BUILD config: verify-zod-conformance.mjs compiles it with --outDir, and a second include root would nest the emitted .js.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "Generated/zod/**/*.ts",
+    "typecheck/**/*.ts"
+  ]
+}

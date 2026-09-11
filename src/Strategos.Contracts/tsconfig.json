@@ -1,5 +1,5 @@
 {
-  "//": "Type-checks the emitted Zod projection (#219). The artifact is what Exarchos consumes, so it is compiled here rather than trusted to compile there.",
+  "//": "Type-checks and BUILDS the emitted Zod projection (#219). verify-zod-conformance.mjs compiles this config with --outDir, so its include must stay rooted at Generated/zod: a second root changes the inferred rootDir and nests the emitted .js. Type-level assertions live in tsconfig.typecheck.json for exactly that reason.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
@@ -9,5 +9,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["Generated/zod/**/*.ts"]
+  "include": [
+    "Generated/zod/**/*.ts"
+  ]
 }

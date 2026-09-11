@@ -6,12 +6,25 @@
 
 import { z } from "zod";
 
+import type { CompensationConfiguration } from "./CompensationConfiguration.js";
+import type { LowConfidenceHandlerDefinition } from "./LowConfidenceHandlerDefinition.js";
+import type { RetryConfiguration } from "./RetryConfiguration.js";
+import type { ValidationDefinition } from "./ValidationDefinition.js";
 import { CompensationConfigurationSchema } from "./CompensationConfiguration.js";
 import { LowConfidenceHandlerDefinitionSchema } from "./LowConfidenceHandlerDefinition.js";
 import { RetryConfigurationSchema } from "./RetryConfiguration.js";
 import { ValidationDefinitionSchema } from "./ValidationDefinition.js";
 
-export const StepConfigurationDefinitionSchema: z.ZodType<unknown> = z.looseObject({
+export interface StepConfigurationDefinition {
+  "confidenceThreshold"?: number;
+  "onLowConfidence"?: LowConfidenceHandlerDefinition;
+  "compensation"?: CompensationConfiguration;
+  "retry"?: RetryConfiguration;
+  "timeout"?: string;
+  "validation"?: ValidationDefinition;
+}
+
+export const StepConfigurationDefinitionSchema: z.ZodType<StepConfigurationDefinition> = z.looseObject({
     "confidenceThreshold": z.number().optional(),
     "onLowConfidence": z.lazy(() => LowConfidenceHandlerDefinitionSchema).optional(),
     "compensation": CompensationConfigurationSchema.optional(),
@@ -19,5 +32,3 @@ export const StepConfigurationDefinitionSchema: z.ZodType<unknown> = z.looseObje
     "timeout": z.string().optional(),
     "validation": ValidationDefinitionSchema.optional(),
   });
-
-// No inferred type alias: StepConfigurationDefinition participates in a reference cycle.

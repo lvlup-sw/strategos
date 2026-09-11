@@ -6,6 +6,13 @@
 
 import { z } from "zod";
 
+import type { AllOfNode } from "./AllOfNode.js";
+import type { AnyOfNode } from "./AnyOfNode.js";
+import type { GrepLeaf } from "./GrepLeaf.js";
+import type { HeuristicLeaf } from "./HeuristicLeaf.js";
+import type { NotNode } from "./NotNode.js";
+import type { ScopeNode } from "./ScopeNode.js";
+import type { StructuralLeaf } from "./StructuralLeaf.js";
 import { AllOfNodeSchema } from "./AllOfNode.js";
 import { AnyOfNodeSchema } from "./AnyOfNode.js";
 import { GrepLeafSchema } from "./GrepLeaf.js";
@@ -14,6 +21,6 @@ import { NotNodeSchema } from "./NotNode.js";
 import { ScopeNodeSchema } from "./ScopeNode.js";
 import { StructuralLeafSchema } from "./StructuralLeaf.js";
 
-export const CheckNodeSchema: z.ZodType<unknown> = z.union([GrepLeafSchema, StructuralLeafSchema, HeuristicLeafSchema, z.lazy(() => AllOfNodeSchema), z.lazy(() => AnyOfNodeSchema), z.lazy(() => NotNodeSchema), z.lazy(() => ScopeNodeSchema)]);
+export type CheckNode = GrepLeaf | StructuralLeaf | HeuristicLeaf | AllOfNode | AnyOfNode | NotNode | ScopeNode;
 
-// No inferred type alias: CheckNode participates in a reference cycle.
+export const CheckNodeSchema: z.ZodType<CheckNode> = z.union([GrepLeafSchema, StructuralLeafSchema, HeuristicLeafSchema, z.lazy(() => AllOfNodeSchema), z.lazy(() => AnyOfNodeSchema), z.lazy(() => NotNodeSchema), z.lazy(() => ScopeNodeSchema)]);

@@ -6,12 +6,17 @@
 
 import { z } from "zod";
 
+import type { ApprovalStep } from "./ApprovalStep.js";
+import type { DelegateStep } from "./DelegateStep.js";
+import type { GateStep } from "./GateStep.js";
+import type { HandlerStep } from "./HandlerStep.js";
+import type { SkillStep } from "./SkillStep.js";
 import { ApprovalStepSchema } from "./ApprovalStep.js";
 import { DelegateStepSchema } from "./DelegateStep.js";
 import { GateStepSchema } from "./GateStep.js";
 import { HandlerStepSchema } from "./HandlerStep.js";
 import { SkillStepSchema } from "./SkillStep.js";
 
-export const StepDefinitionSchema: z.ZodType<unknown> = z.union([z.lazy(() => SkillStepSchema), z.lazy(() => HandlerStepSchema), z.lazy(() => GateStepSchema), z.lazy(() => DelegateStepSchema), z.lazy(() => ApprovalStepSchema)]);
+export type StepDefinition = SkillStep | HandlerStep | GateStep | DelegateStep | ApprovalStep;
 
-// No inferred type alias: StepDefinition participates in a reference cycle.
+export const StepDefinitionSchema: z.ZodType<StepDefinition> = z.union([z.lazy(() => SkillStepSchema), z.lazy(() => HandlerStepSchema), z.lazy(() => GateStepSchema), z.lazy(() => DelegateStepSchema), z.lazy(() => ApprovalStepSchema)]);

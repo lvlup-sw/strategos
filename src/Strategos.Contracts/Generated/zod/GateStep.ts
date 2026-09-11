@@ -6,6 +6,12 @@
 
 import { z } from "zod";
 
+import type { ActionGuaranteeV1 } from "./ActionGuaranteeV1.js";
+import type { ActionReferenceV1 } from "./ActionReferenceV1.js";
+import type { AuthorityRequirementV1 } from "./AuthorityRequirementV1.js";
+import type { StepConfigurationDefinition } from "./StepConfigurationDefinition.js";
+import type { StepRuntime } from "./StepRuntime.js";
+import type { TypedContractRefV1 } from "./TypedContractRefV1.js";
 import { ActionGuaranteeV1Schema } from "./ActionGuaranteeV1.js";
 import { ActionReferenceV1Schema } from "./ActionReferenceV1.js";
 import { AuthorityRequirementV1Schema } from "./AuthorityRequirementV1.js";
@@ -13,7 +19,24 @@ import { StepConfigurationDefinitionSchema } from "./StepConfigurationDefinition
 import { StepRuntimeSchema } from "./StepRuntime.js";
 import { TypedContractRefV1Schema } from "./TypedContractRefV1.js";
 
-export const GateStepSchema: z.ZodType<unknown> = z.looseObject({
+export interface GateStep {
+  "kind": "gate";
+  "stepId": string;
+  "stepName": string;
+  "instanceName"?: string;
+  "isTerminal": boolean;
+  "runtime"?: StepRuntime;
+  "configuration"?: StepConfigurationDefinition;
+  "action"?: ActionReferenceV1;
+  "completion"?: ActionGuaranteeV1;
+  "authority"?: AuthorityRequirementV1;
+  "inputs"?: TypedContractRefV1;
+  "outputs"?: TypedContractRefV1;
+  "stepType": string;
+  "gateId"?: string;
+}
+
+export const GateStepSchema: z.ZodType<GateStep> = z.looseObject({
     "kind": z.literal("gate"),
     "stepId": z.string(),
     "stepName": z.string(),
@@ -29,5 +52,3 @@ export const GateStepSchema: z.ZodType<unknown> = z.looseObject({
     "stepType": z.string(),
     "gateId": z.string().optional(),
   });
-
-// No inferred type alias: GateStep participates in a reference cycle.

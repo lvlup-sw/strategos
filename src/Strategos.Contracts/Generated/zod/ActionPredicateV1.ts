@@ -6,6 +6,15 @@
 
 import { z } from "zod";
 
+import type { ActionAllPredicateV1 } from "./ActionAllPredicateV1.js";
+import type { ActionAnyPredicateV1 } from "./ActionAnyPredicateV1.js";
+import type { ActionCustomPredicateV1 } from "./ActionCustomPredicateV1.js";
+import type { ActionFalsePredicateV1 } from "./ActionFalsePredicateV1.js";
+import type { ActionLinkExistsPredicateV1 } from "./ActionLinkExistsPredicateV1.js";
+import type { ActionNotPredicateV1 } from "./ActionNotPredicateV1.js";
+import type { ActionPropertyComparisonPredicateV1 } from "./ActionPropertyComparisonPredicateV1.js";
+import type { ActionRelationHoldsPredicateV1 } from "./ActionRelationHoldsPredicateV1.js";
+import type { ActionTruePredicateV1 } from "./ActionTruePredicateV1.js";
 import { ActionAllPredicateV1Schema } from "./ActionAllPredicateV1.js";
 import { ActionAnyPredicateV1Schema } from "./ActionAnyPredicateV1.js";
 import { ActionCustomPredicateV1Schema } from "./ActionCustomPredicateV1.js";
@@ -16,6 +25,6 @@ import { ActionPropertyComparisonPredicateV1Schema } from "./ActionPropertyCompa
 import { ActionRelationHoldsPredicateV1Schema } from "./ActionRelationHoldsPredicateV1.js";
 import { ActionTruePredicateV1Schema } from "./ActionTruePredicateV1.js";
 
-export const ActionPredicateV1Schema: z.ZodType<unknown> = z.union([ActionTruePredicateV1Schema, ActionFalsePredicateV1Schema, ActionPropertyComparisonPredicateV1Schema, ActionLinkExistsPredicateV1Schema, ActionRelationHoldsPredicateV1Schema, z.lazy(() => ActionAllPredicateV1Schema), z.lazy(() => ActionAnyPredicateV1Schema), z.lazy(() => ActionNotPredicateV1Schema), ActionCustomPredicateV1Schema]);
+export type ActionPredicateV1 = ActionTruePredicateV1 | ActionFalsePredicateV1 | ActionPropertyComparisonPredicateV1 | ActionLinkExistsPredicateV1 | ActionRelationHoldsPredicateV1 | ActionAllPredicateV1 | ActionAnyPredicateV1 | ActionNotPredicateV1 | ActionCustomPredicateV1;
 
-// No inferred type alias: ActionPredicateV1 participates in a reference cycle.
+export const ActionPredicateV1Schema: z.ZodType<ActionPredicateV1> = z.union([ActionTruePredicateV1Schema, ActionFalsePredicateV1Schema, ActionPropertyComparisonPredicateV1Schema, ActionLinkExistsPredicateV1Schema, ActionRelationHoldsPredicateV1Schema, z.lazy(() => ActionAllPredicateV1Schema), z.lazy(() => ActionAnyPredicateV1Schema), z.lazy(() => ActionNotPredicateV1Schema), ActionCustomPredicateV1Schema]);

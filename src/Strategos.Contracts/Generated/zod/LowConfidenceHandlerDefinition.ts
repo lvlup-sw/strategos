@@ -6,13 +6,19 @@
 
 import { z } from "zod";
 
+import type { StepDefinition } from "./StepDefinition.js";
 import { StepDefinitionSchema } from "./StepDefinition.js";
 
-export const LowConfidenceHandlerDefinitionSchema: z.ZodType<unknown> = z.looseObject({
+export interface LowConfidenceHandlerDefinition {
+  "handlerId": string;
+  "handlerSteps": Array<StepDefinition>;
+  "isTerminal": boolean;
+  "rejoinStepId"?: string;
+}
+
+export const LowConfidenceHandlerDefinitionSchema: z.ZodType<LowConfidenceHandlerDefinition> = z.looseObject({
     "handlerId": z.string(),
     "handlerSteps": z.array(z.lazy(() => StepDefinitionSchema)),
     "isTerminal": z.boolean(),
     "rejoinStepId": z.string().optional(),
   });
-
-// No inferred type alias: LowConfidenceHandlerDefinition participates in a reference cycle.
