@@ -1,0 +1,43 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "WorkflowAuthorityV1.json",
+    "type": "object",
+    "properties": {
+        "invariants": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowAuthorityStatementV1.json"
+            },
+            "description": "What the workflow must preserve."
+        },
+        "goals": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowAuthorityStatementV1.json"
+            },
+            "description": "What the workflow is for."
+        },
+        "assumptions": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowAuthorityStatementV1.json"
+            },
+            "description": "What the workflow takes for granted about its environment."
+        },
+        "delegatedDecisions": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowAuthorityStatementV1.json"
+            },
+            "description": "Decisions the workflow may make without escalating."
+        },
+        "escalationBoundaries": {
+            "type": "array",
+            "items": {
+                "$ref": "WorkflowAuthorityStatementV1.json"
+            },
+            "description": "The boundaries past which the workflow must escalate."
+        }
+    },
+    "description": "The authority frame of a workflow: what it must preserve, what it is for,\nwhat it takes for granted, what it may decide alone, and where it must stop.\n\nEvery member is OPTIONAL, following the `InvariantEntry` v3 precedent, so a\ndefinition that declares no frame omits the block entirely and a definition\nthat declares one member carries only that member."
+}

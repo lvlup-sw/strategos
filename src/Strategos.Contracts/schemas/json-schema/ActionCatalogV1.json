@@ -1,0 +1,18 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionCatalogV1.json",
+    "type": "object",
+    "properties": {
+        "actions": {
+            "type": "array",
+            "items": {
+                "$ref": "ActionContractV1.json"
+            },
+            "description": "The contracts, in a stable ordinal order by (subject.domainName,\nsubject.objectTypeName, name). Order is part of `contentHash`."
+        }
+    },
+    "required": [
+        "actions"
+    ],
+    "description": "Every action contract a catalog declares. The action side of #204's manifest."
+}

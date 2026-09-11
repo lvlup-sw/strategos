@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Workflow;
 
 /// <summary>
-/// T17 — completeness of the workflow wire IR. Asserts every one of the 18
+/// T17 — completeness of the workflow wire IR. Asserts every one of the 21
 /// sub-definitions emits a schema document, and that the bundled
 /// <c>workflow-definition-v1.schema.json</c> is produced with a stable
 /// <c>$id</c> (the equivalence-gate target, T23).
@@ -18,7 +18,11 @@ namespace Strategos.Contracts.Tests.Workflow;
 [NotInParallel("tsp-compile")]
 public class IrCompletenessTests
 {
-    /// <summary>The 18 sub-definitions of the workflow wire IR (excludes the V1 root).</summary>
+    /// <summary>
+    /// The 21 sub-definitions of the workflow wire IR (excludes the V1 root).
+    /// Workflow-family declarations only: a type this IR merely REFERENCES stays
+    /// off the list, as <c>ActionReferenceV1</c> and <c>ActionGuaranteeV1</c> do.
+    /// </summary>
     private static readonly string[] SubDefinitions =
     [
         "StepDefinition",
@@ -39,20 +43,25 @@ public class IrCompletenessTests
         "FailureHandlerDefinition",
         "StepConfigurationDefinition",
         "RetryConfiguration",
+
+        // 0.13.0 — the #193 kernel slots.
+        "WorkflowAuthorityV1",
+        "WorkflowAuthorityStatementV1",
+        "TypedContractRefV1",
     ];
 
     /// <summary>
-    /// Asserts all 18 sub-definition schemas are emitted and the bundled
+    /// Asserts all 21 sub-definition schemas are emitted and the bundled
     /// workflow schema exists with a stable <c>$id</c>.
     /// </summary>
     [Test]
-    public async Task WorkflowIr_Emits18Definitions_WithStableIds()
+    public async Task WorkflowIr_Emits21Definitions_WithStableIds()
     {
         var result = await TspToolchain.CompileAsync();
         await Assert.That(result.ExitCode).IsEqualTo(0).Because(result.Output);
 
-        await Assert.That(SubDefinitions.Length).IsEqualTo(18)
-            .Because("the workflow wire IR has 18 sub-definitions.");
+        await Assert.That(SubDefinitions.Length).IsEqualTo(21)
+            .Because("the workflow wire IR has 21 sub-definitions.");
 
         foreach (var name in SubDefinitions)
         {

@@ -70,26 +70,26 @@ public class PackagingTests
     }
 
     /// <summary>
-    /// T32 — the 0.12.0 release package. Packs the project and asserts:
-    /// the version is 0.12.0; all four schema families (events / workflow /
+    /// T32 — the 0.13.0 release package. Packs the project and asserts:
+    /// the version is 0.13.0; all four schema families (events / workflow /
     /// diagnostics / ontology) are embedded under <c>contentFiles/any/any/schemas/</c>; the
     /// #53 builder fixtures are embedded under
     /// <c>contentFiles/any/any/fixtures/</c> (so Exarchos can extract them); and
     /// the compiled contracts assembly ships under <c>lib/</c>.
-    /// (0.12.0 adds typed inverse-action identity over 0.11.0's
-    /// occurrence-scoped workflow step action identity;
+    /// (0.13.0 adds the #193 workflow-definition kernel over 0.12.0's typed
+    /// inverse-action identity;
     /// see <see cref="Packaging_SmqSchemas_EmbeddedAsContent"/> for content.)
     /// </summary>
     [Test]
     [Property("Category", "Pack")]
-    public async Task Package_Version_Is_0_12_0_WithTypedCompensationAndExistingContent()
+    public async Task Package_Version_Is_0_13_0_WithKernelSlotsAndExistingContent()
     {
         // The fixtures are content (T32): ensure they exist on disk first — the
         // #53 export writes them under artifacts/builder-fixtures/.
         await EnsureFixturesExportedAsync();
 
         var projectDir = RepoLayout.ContractsProjectDir;
-        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-0120-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-0130-").FullName;
 
         try
         {
@@ -103,21 +103,21 @@ public class PackagingTests
                 .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
             await Assert.That(nupkg).IsNotNull();
 
-            // Version 0.12.0 — read from the file name (the canonical packed version).
+            // Version 0.13.0 — read from the file name (the canonical packed version).
             var fileName = Path.GetFileName(nupkg!);
-            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.12.0.nupkg")
-                .Because($"the package must version at exactly 0.12.0; got {fileName}");
+            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.13.0.nupkg")
+                .Because($"the package must version at exactly 0.13.0; got {fileName}");
 
             using var archive = ZipFile.OpenRead(nupkg!);
 
-            // The .nuspec also pins 0.12.0.
+            // The .nuspec also pins 0.13.0.
             var nuspec = archive.Entries.First(e =>
                 e.FullName.EndsWith(".nuspec", StringComparison.Ordinal));
             using (var reader = new StreamReader(nuspec.Open()))
             {
                 var nuspecXml = await reader.ReadToEndAsync();
-                await Assert.That(nuspecXml).Contains("<version>0.12.0</version>")
-                    .Because("the .nuspec must declare version 0.12.0.");
+                await Assert.That(nuspecXml).Contains("<version>0.13.0</version>")
+                    .Because("the .nuspec must declare version 0.13.0.");
             }
 
             string[] entries = [.. archive.Entries.Select(e => e.FullName)];
@@ -168,6 +168,26 @@ public class PackagingTests
                 e.StartsWith("contentFiles/any/any/diagnostics/", StringComparison.Ordinal)
                 && e.EndsWith("agwf-catalog.json", StringComparison.Ordinal))
                 .Because("the AGWF catalog must ship under diagnostics/ for Exarchos extract.");
+
+            // 0.13.0 — the #193 kernel. The authority lattice must cross the wire (it
+            // was CLR-only), and the #204 manifest root must ship, or the kernel is
+            // present in TypeSpec and absent from the artifact consumers actually read.
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("AuthorityLatticeV1.json", StringComparison.Ordinal))
+                .Because("the wire projection of the #165 authority lattice must be embedded.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("WorkflowAuthorityV1.json", StringComparison.Ordinal))
+                .Because("the kernel authority frame must be embedded.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("ActionContractV1.json", StringComparison.Ordinal))
+                .Because("the action contract document must be embedded.");
+            await Assert.That(entries).Contains(e =>
+                e.StartsWith(schemaPath, StringComparison.Ordinal)
+                && e.EndsWith("ProofCatalogV1.json", StringComparison.Ordinal))
+                .Because("the #204 portable proof manifest root must be embedded.");
 
             // The #53 builder fixtures embedded under contentFiles/.../fixtures/.
             var fixtureEntries = entries

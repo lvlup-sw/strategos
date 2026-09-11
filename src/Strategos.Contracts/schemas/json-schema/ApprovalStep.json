@@ -35,6 +35,22 @@
             "$ref": "ActionReferenceV1.json",
             "description": "Ontology action performed by this specific step occurrence."
         },
+        "completion": {
+            "$ref": "ActionGuaranteeV1.json",
+            "description": "The kernel's `tasks[].completion: Predicate` (#193). A typed post-state\nguarantee that holds when this step is complete, in the SAME predicate\nvocabulary the action calculus already uses (#168) — not a second one.\n\nOPTIONAL and additive. Carried, not proved: no 3.0 path evaluates it."
+        },
+        "authority": {
+            "$ref": "AuthorityRequirementV1.json",
+            "description": "The kernel's `tasks[].capabilities[]` (#193), as an authority coordinate\nrather than a name list, so two requirements compare without resolving\neither against a lattice. The wire projection of #165.\n\nOPTIONAL and additive. Carried, not proved."
+        },
+        "inputs": {
+            "$ref": "TypedContractRefV1.json",
+            "description": "The kernel's `tasks[].inputs: TypedContract` (#193) — a reference to a\nschema by its `$id`, never an inline CLR type (LB-2). See\n`TypedContractRefV1`: the slot is frozen, the type system is not."
+        },
+        "outputs": {
+            "$ref": "TypedContractRefV1.json",
+            "description": "The kernel's `tasks[].outputs: TypedContract` (#193). See `inputs`."
+        },
         "approverType": {
             "type": "string",
             "description": "Simple-name CLR moniker of the approver type (LB-2)."

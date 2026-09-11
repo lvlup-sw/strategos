@@ -123,6 +123,29 @@ public sealed record WorkflowDefinitionV1 : IJsonOnDeserialized, IJsonOnSerializ
     public IReadOnlyList<DiagnosticForkDefinition>? DiagnosticForks { get; init; }
 
     /// <summary>
+    /// SHA-256 over this definition&apos;s STRUCTURAL fields, lowercase hex (#193
+    /// kernel `identity.contentHash`). Prose is excluded, on the same rules
+    /// `OntologyGraphHasher` already applies: documentation churn must not change
+    /// the hash, because the hash exists to say when the shape changed.
+    /// 
+    /// OPTIONAL and additive. A producer that does not stamp one omits the slot,
+    /// and no Strategos path requires it. #204 reads it for tamper and skew
+    /// detection across an assembly boundary.
+    /// </summary>
+    [JsonPropertyName("contentHash")]
+    public string? ContentHash { get; init; }
+
+    /// <summary>
+    /// The #193 kernel&apos;s authority frame — invariants, goals, assumptions,
+    /// delegated decisions and escalation boundaries (#193, DR-kernel).
+    /// 
+    /// **Carried, not proved in 3.0.** Strategos serializes this block and checks
+    /// none of it. See `WorkflowAuthorityV1`.
+    /// </summary>
+    [JsonPropertyName("authority")]
+    public WorkflowAuthorityV1? Authority { get; init; }
+
+    /// <summary>
     /// Step id of the workflow entry step, if set.
     /// </summary>
     [JsonPropertyName("entryStepId")]

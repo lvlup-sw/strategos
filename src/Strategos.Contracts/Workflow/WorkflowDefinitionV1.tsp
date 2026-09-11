@@ -1,5 +1,6 @@
 import "@typespec/json-schema";
 import "./StepDefinition.tsp";
+import "./WorkflowAuthority.tsp";
 import "./Structural.tsp";
 import "../Gates/GateDeclaration.tsp";
 
@@ -83,6 +84,28 @@ model WorkflowDefinitionV1 {
    * companion is ForkOccurrence (DR-8) in the Events family.
    */
   diagnosticForks?: DiagnosticForkDefinition[];
+
+  /**
+   * SHA-256 over this definition's STRUCTURAL fields, lowercase hex (#193
+   * kernel `identity.contentHash`). Prose is excluded, on the same rules
+   * `OntologyGraphHasher` already applies: documentation churn must not change
+   * the hash, because the hash exists to say when the shape changed.
+   *
+   * OPTIONAL and additive. A producer that does not stamp one omits the slot,
+   * and no Strategos path requires it. #204 reads it for tamper and skew
+   * detection across an assembly boundary.
+   */
+  @pattern("^[0-9a-f]{64}$")
+  contentHash?: string;
+
+  /**
+   * The #193 kernel's authority frame — invariants, goals, assumptions,
+   * delegated decisions and escalation boundaries (#193, DR-kernel).
+   *
+   * **Carried, not proved in 3.0.** Strategos serializes this block and checks
+   * none of it. See `WorkflowAuthorityV1`.
+   */
+  authority?: WorkflowAuthorityV1;
 
   /** Step id of the workflow entry step, if set. */
   entryStepId?: string;

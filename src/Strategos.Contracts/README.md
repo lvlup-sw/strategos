@@ -227,7 +227,7 @@ isolation. Enforcement lives with the *consumers of the schema*, not the schema:
 
 ## Versioning & publishing (T32)
 
-This package versions at **0.12.0** (see `Strategos.Contracts.csproj`). Per the
+This package versions at **0.13.0** (see `Strategos.Contracts.csproj`). Per the
 repo convention, MinVer derives versions from the `v*` release tag; to pin the
 contracts version explicitly — independent of the product line — we set
 `<MinVerSkip>true</MinVerSkip>` + `<Version>` + `<PackageVersion>` (MinVer
@@ -255,7 +255,13 @@ proof because Strategos cannot reconstruct prior authoritative state from a
 property frame alone. The legacy compensation shape remains valid for
 runtime-only workflows, but it cannot establish rollback safety. Typed inverse
 metadata requires `requiredOnFailure` to be true because derived prefix rollback
-is mandatory. Consumers must
+is mandatory; 0.13.0 freezes the #193 workflow-definition kernel as additive
+slots: the structural `contentHash`, the carried-not-proved `WorkflowAuthorityV1`
+frame, the `TypedContractRefV1` slot that references a schema by `$id` instead of
+inlining a CLR type, per-step `completion` and `authority`, the wire projection of
+the authority lattice that was CLR-only, and the `ActionContractV1` /
+`ActionCatalogV1` / `ProofCatalogV1` manifest. Every 0.13.0 addition is optional,
+so a 0.12.0 document parses unchanged and no allowlist entry is needed. Consumers must
 upgrade before receiving one of the new diagnostic tokens. The package embeds all schema
 families under
 `contentFiles/any/any/schemas/` and the builder-fixture corpus under

@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "ActionSubjectV1.json",
+    "type": "object",
+    "properties": {
+        "domainName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ontology domain name."
+        },
+        "objectTypeName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "Ontology object type name."
+        }
+    },
+    "required": [
+        "domainName",
+        "objectTypeName"
+    ],
+    "description": "The action contract as a DOCUMENT, and the portable catalog that carries it\nacross an assembly boundary (#193 kernel, consumed by #204).\n\nUntil now the wire carried only REFERENCES to actions (`ActionReferenceV1`)\nand the authored-TypeSpec decorators (`x-strategos-requires-v1` and its\nsiblings on an operation's schema). Neither is a document a referencing\ncompilation can read: the first names an action without describing it, the\nsecond describes an action authored HERE. `ActionContractV1` is the contract\nitself, detached from the operation that declared it.The ontology object an action acts on. Mirrors `ActionSubject`."
+}

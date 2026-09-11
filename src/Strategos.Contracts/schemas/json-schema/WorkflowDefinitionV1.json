@@ -77,6 +77,15 @@
             },
             "description": "Diagnostic fork edges for this workflow (#151, DR-10). The DECLARATIVE half of\nthe fork/compensation edge (DR-7): where the workflow may fork, the closed\ntriggers permitted with their evidence-ref schema, the `maxForks` bound, and\nthe compensation seed. OPTIONAL and additive — a workflow with no fork edge\nomits the slot entirely, so this is a NON-BREAKING wire change.\n\nINV-8: every reference inside a DiagnosticForkDefinition is a string moniker,\nnever a CLR type. The generated saga lowers the edge (DR-9); the runtime\ncompanion is ForkOccurrence (DR-8) in the Events family."
         },
+        "contentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 over this definition's STRUCTURAL fields, lowercase hex (#193\nkernel `identity.contentHash`). Prose is excluded, on the same rules\n`OntologyGraphHasher` already applies: documentation churn must not change\nthe hash, because the hash exists to say when the shape changed.\n\nOPTIONAL and additive. A producer that does not stamp one omits the slot,\nand no Strategos path requires it. #204 reads it for tamper and skew\ndetection across an assembly boundary."
+        },
+        "authority": {
+            "$ref": "WorkflowAuthorityV1.json",
+            "description": "The #193 kernel's authority frame — invariants, goals, assumptions,\ndelegated decisions and escalation boundaries (#193, DR-kernel).\n\n**Carried, not proved in 3.0.** Strategos serializes this block and checks\nnone of it. See `WorkflowAuthorityV1`."
+        },
         "entryStepId": {
             "type": "string",
             "description": "Step id of the workflow entry step, if set."

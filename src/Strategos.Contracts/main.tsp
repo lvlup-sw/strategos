@@ -13,6 +13,7 @@ import "./Workflow/ForkTrigger.tsp";
 import "./Workflow/WorkflowDefinitionV1.tsp";
 import "./Workflow/WorkflowRef.tsp";
 import "./Workflow/WorkflowCatalog.tsp";
+import "./Workflow/WorkflowAuthority.tsp";
 import "./Diagnostics/CheckNode.tsp";
 import "./Diagnostics/Enforcement.tsp";
 import "./Diagnostics/InvariantEntry.tsp";
@@ -22,6 +23,8 @@ import "./Gates/GateDeclaration.tsp";
 import "./Ontology/AbstentionResponse.tsp";
 import "./Ontology/ActionPredicates.tsp";
 import "./Ontology/Actions.tsp";
+import "./Ontology/Authority.tsp";
+import "./Ontology/ActionContract.tsp";
 import "./Ontology/decorators.tsp";
 
 using JsonSchema;

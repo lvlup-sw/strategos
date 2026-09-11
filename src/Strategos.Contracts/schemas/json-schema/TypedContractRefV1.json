@@ -1,0 +1,17 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "TypedContractRefV1.json",
+    "type": "object",
+    "properties": {
+        "schemaId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The `$id` of the schema describing this contract. An absolute URI, matching\nthe `$id` the emitter stamps on every emitted schema document."
+        }
+    },
+    "required": [
+        "schemaId"
+    ],
+    "description": "The kernel's `inputs` / `outputs: TypedContract` slot — FROZEN AS A SLOT,\nnot as a type system.\n\nA step's accepted and returned CLR types are deliberately not projected\n(LB-2): the wire carries simple-name monikers, never assembly-qualified\nhandles. Rather than invent a second type system on the wire, this slot\ncarries a reference to a schema that already has an identity — the `$id` of\na JSON Schema document.\n\nThe reference is never resolved by Strategos. Whether the id resolves, and\nto what, is the resolving consumer's concern."
+}
