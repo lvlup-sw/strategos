@@ -61,6 +61,9 @@ enum AgwfCode {
   WorkflowEmissionIdentityCollision: "AGWF043",
   AuthoredInverseDisagrees: "AGWF044",
   CompensationScopeNotDerivable: "AGWF045",
+  ProofCatalogExportIncomplete: "AGWF046",
+  ProofCatalogUnreadable: "AGWF047",
+  ProofCatalogDuplicateIdentity: "AGWF048",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -451,4 +454,34 @@ model AgwfEntryCompensationScopeNotDerivable {
   summary: "Compensation scope is not mechanically derivable";
   remediation: "Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action.";
   since: "2.13.0";
+}
+
+/** AGWF046 — A binding's contract could not be exported for a referencing compilation (#204). */
+@jsonSchema
+model AgwfEntryProofCatalogExportIncomplete {
+  id: "AGWF046";
+  severity: "error";
+  summary: "Proof catalog export is incomplete";
+  remediation: "This assembly declares workflow binding '{0}' but cannot export its contract: {1}. A binding whose contract no referencing compilation can read is a binding nothing can prove; correct the contract or remove the binding.";
+  since: "3.0.0";
+}
+
+/** AGWF047 — A referenced assembly's proof catalog could not be read (#204). */
+@jsonSchema
+model AgwfEntryProofCatalogUnreadable {
+  id: "AGWF047";
+  severity: "error";
+  summary: "Referenced proof catalog is unreadable";
+  remediation: "The proof catalog exported by '{0}' cannot be read: {1}. An unreadable catalog is refused rather than skipped, because skipping it would silently drop every binding obligation it carries.";
+  since: "3.0.0";
+}
+
+/** AGWF048 — Two proof catalogs declare the same ordinal action identity (#204). */
+@jsonSchema
+model AgwfEntryProofCatalogDuplicateIdentity {
+  id: "AGWF048";
+  severity: "error";
+  summary: "Duplicate action identity across proof catalogs";
+  remediation: "Action '{0}' is declared by both '{1}' and '{2}'. Two assemblies claiming one ordinal action identity is an ambiguity no merge can resolve; give the action one declaring assembly.";
+  since: "3.0.0";
 }

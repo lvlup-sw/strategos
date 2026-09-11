@@ -357,12 +357,20 @@ public sealed class WorkflowBindingProofFailClosedTests
     }
 
     /// <summary>
-    /// The proof node runs even when the compilation declares no workflow at all. A bound action
-    /// in an ontology-only compilation that also references the generator is therefore reported
-    /// as unresolved rather than silently accepted because the workflow collection was empty.
+    /// The proof node runs even when the compilation declares no workflow at all: the
+    /// bound action's contract is EXPORTED so a referencing compilation can discharge
+    /// the obligation, rather than the binding being silently accepted because the
+    /// workflow collection was empty.
     /// </summary>
+    /// <remarks>
+    /// Before the cross-assembly catalog this compilation reported an unresolved
+    /// binding, which an ontology-only project then silenced — there was no other way
+    /// to ship one. Exporting the contract is the other way. The property under test
+    /// is unchanged: an empty workflow collection must not short-circuit the proof
+    /// node. What changed is the observable effect of it having run.
+    /// </remarks>
     [Test]
-    public async Task BoundAction_InCompilationWithNoWorkflows_ReportsUnresolvedBinding()
+    public async Task BoundAction_InCompilationWithNoWorkflows_ExportsAndDefersTheBinding()
     {
         const string ontologyOnlySource = """
             using Strategos.Ontology;
@@ -390,21 +398,37 @@ public sealed class WorkflowBindingProofFailClosedTests
             }
             """;
 
-        var result = GeneratorTestHelper.RunGeneratorWithValidInput(ontologyOnlySource, "AGWF039");
+        var result = GeneratorTestHelper.RunGeneratorWithValidInput(ontologyOnlySource);
 
-        var unresolved = result.Diagnostics.Where(diagnostic => diagnostic.Id == "AGWF039").ToArray();
-        await Assert.That(unresolved).HasCount().EqualTo(1)
-            .Because("an empty workflow collection must not short-circuit the proof node");
-        await Assert.That(unresolved[0].GetMessage()).Contains("flow-declared-nowhere");
+        var catalog = result.GeneratedTrees
+            .FirstOrDefault(tree => tree.FilePath.EndsWith(
+                "StrategosProofCatalog.g.cs", StringComparison.Ordinal));
+        await Assert.That(catalog).IsNotNull()
+            .Because("an empty workflow collection must not short-circuit the proof node: it "
+                + "still has to export the obligation it cannot discharge here.");
+        await Assert.That(catalog!.GetText().ToString()).Contains("flow-declared-nowhere")
+            .Because("the exported contract must name the workflow it claims to implement.");
+
+        await Assert.That(result.Diagnostics.Any(diagnostic => diagnostic.Id == "AGWF039")).IsFalse()
+            .Because("a binding whose contract was exported is deferred to whoever lowers the "
+                + "workflow, not reported as unresolvable here.");
     }
 
     /// <summary>
-    /// The proof outcomes (refuted, unprovable, emission collision, invalid inverse, and
-    /// underivable rollback scope) are the machine-checked guarantees of #167 and #169.
-    /// A consumer must not be able to switch those guarantees off with <c>NoWarn</c> or an
-    /// <c>.editorconfig</c> severity.
+    /// Every binding diagnostic — the two resolution ids and the five proof outcomes —
+    /// is a machine-checked guarantee a consumer must not be able to switch off with
+    /// <c>NoWarn</c> or an <c>.editorconfig</c> severity.
     /// </summary>
+    /// <remarks>
+    /// The two resolution ids were configurable until the cross-assembly catalog
+    /// existed, because a layout the compilation-local proof could not see had no
+    /// other exit and the alternative was deleting the binding. Exporting the contract
+    /// is that exit, so the exemption is withdrawn: an unresolved binding now means
+    /// the obligation reaches nobody, which is not a thing to silence.
+    /// </remarks>
     [Test]
+    [Arguments("AGWF039")]
+    [Arguments("AGWF040")]
     [Arguments("AGWF041")]
     [Arguments("AGWF042")]
     [Arguments("AGWF043")]
@@ -416,25 +440,6 @@ public sealed class WorkflowBindingProofFailClosedTests
 
         await Assert.That(descriptor.DefaultSeverity).IsEqualTo(DiagnosticSeverity.Error);
         await Assert.That(descriptor.CustomTags).Contains(WellKnownDiagnosticTags.NotConfigurable);
-    }
-
-    /// <summary>
-    /// The resolution diagnostics (bound workflow not found, action reference invalid) are the
-    /// ones a layout the compilation-local proof cannot see produces (a workflow or ontology in
-    /// another assembly, deferred to #204). They stay Errors by default, but a consumer may
-    /// silence them explicitly and visibly in the project file, so the binding survives in a
-    /// greppable "bound, unproved" state rather than being deleted.
-    /// </summary>
-    [Test]
-    [Arguments("AGWF039")]
-    [Arguments("AGWF040")]
-    public async Task ResolutionDiagnostics_AreErrorsButConfigurable(string id)
-    {
-        var descriptor = ProofDescriptor(id);
-
-        await Assert.That(descriptor.DefaultSeverity).IsEqualTo(DiagnosticSeverity.Error);
-        await Assert.That(descriptor.CustomTags).DoesNotContain(WellKnownDiagnosticTags.NotConfigurable)
-            .Because("a cross-assembly layout must keep an explicit, visible exit until #204 lands");
     }
 
     /// <summary>

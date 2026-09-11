@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryProofCatalogExportIncomplete.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF046"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Proof catalog export is incomplete"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "This assembly declares workflow binding '{0}' but cannot export its contract: {1}. A binding whose contract no referencing compilation can read is a binding nothing can prove; correct the contract or remove the binding."
+        },
+        "since": {
+            "type": "string",
+            "const": "3.0.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF046 — A binding's contract could not be exported for a referencing compilation (#204)."
+}

@@ -46,12 +46,13 @@ internal static class WorkflowBindingProofAnalyzer
     internal static void AnalyzeFailClosed(
         SourceProductionContext context,
         Compilation compilation,
-        ImmutableArray<WorkflowModel> workflows)
+        ImmutableArray<WorkflowModel> workflows,
+        bool requireLocalBindings = false)
     {
         try
         {
             ProofFaultInjection?.Invoke(compilation);
-            Analyze(context, compilation, workflows);
+            Analyze(context, compilation, workflows, requireLocalBindings);
         }
         catch (OperationCanceledException)
         {
@@ -154,9 +155,23 @@ internal static class WorkflowBindingProofAnalyzer
     internal static void Analyze(
         SourceProductionContext context,
         Compilation compilation,
-        ImmutableArray<WorkflowModel> workflows)
+        ImmutableArray<WorkflowModel> workflows,
+        bool requireLocalBindings = false)
     {
-        var catalog = OntologyActionCatalog.Build(compilation, context.CancellationToken);
+        var localCatalog = OntologyActionCatalog.Build(compilation, context.CancellationToken);
+
+        // #204 — the cross-assembly seam, in the order the two halves depend on each
+        // other. Export first, because whether this assembly exports decides what an
+        // unresolved LOCAL binding means: with a catalog it is deferred to whoever
+        // lowers the workflow, without one it is unprovable anywhere.
+        var localWorkflowNames = workflows
+            .Select(model => model.WorkflowName)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+        var exportedIdentities = ProofCatalogExport.Emit(
+            context, compilation, localCatalog, localWorkflowNames);
+        var imported = ImportReferencedCatalogs(context, compilation, localCatalog);
+        var catalog = localCatalog.WithImported(imported.Actions, imported.Lattices);
+
         ReportEmissionIdentityCollisions(context, catalog, workflows);
         var workflowGroups = workflows
             .OrderBy(model => model.WorkflowName, StringComparer.Ordinal)
@@ -218,6 +233,29 @@ internal static class WorkflowBindingProofAnalyzer
                 : ImmutableArray<WorkflowModel>.Empty;
             if (matches.Length != 1)
             {
+                // An IMPORTED binding whose workflow is not here is not this
+                // compilation's obligation. A referenced assembly's contracts travel to
+                // every compilation that references it, and only the one that lowers
+                // the workflow can discharge the binding — reporting it in all the
+                // others would make a package reference fail builds that own nothing.
+                if (imported.Identities.Contains(boundAction.Identity))
+                {
+                    continue;
+                }
+
+                // A LOCAL binding whose workflow is not here is deferred exactly when
+                // THIS action's contract was exported, because then a referencing
+                // compilation can read it and prove the binding. An action the export
+                // refused is one nobody downstream can read, so its binding is still
+                // unresolved here and is reported — alongside the export-incomplete
+                // diagnostic that says why it could not be exported.
+                if (matches.Length == 0
+                    && !requireLocalBindings
+                    && exportedIdentities.Contains(boundAction.Identity))
+                {
+                    continue;
+                }
+
                 context.ReportDiagnostic(Diagnostic.Create(
                     WorkflowDiagnostics.BoundWorkflowNotFound,
                     boundAction.Location,
@@ -235,6 +273,123 @@ internal static class WorkflowBindingProofAnalyzer
                 boundRollbackClaims.Contains(workflowName),
                 compensationProofResults);
         }
+    }
+
+    /// <summary>
+    /// The contracts, lattices and identities read from referenced assemblies' proof
+    /// catalogs (#204).
+    /// </summary>
+    private readonly struct ImportedCatalogs
+    {
+        internal ImportedCatalogs(
+            ImmutableArray<OntologyActionContract> actions,
+            ImmutableArray<OntologyAuthorityLattice> lattices,
+            ImmutableHashSet<ActionIdentity> identities)
+        {
+            Actions = actions;
+            Lattices = lattices;
+            Identities = identities;
+        }
+
+        internal ImmutableArray<OntologyActionContract> Actions { get; }
+
+        internal ImmutableArray<OntologyAuthorityLattice> Lattices { get; }
+
+        internal ImmutableHashSet<ActionIdentity> Identities { get; }
+
+        internal static ImportedCatalogs Empty { get; } = new(
+            ImmutableArray<OntologyActionContract>.Empty,
+            ImmutableArray<OntologyAuthorityLattice>.Empty,
+            ImmutableHashSet<ActionIdentity>.Empty);
+    }
+
+    /// <summary>
+    /// Reads every referenced assembly's proof catalog and merges it, refusing rather
+    /// than skipping anything it cannot trust (#204).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An unreadable catalog produces the unreadable-catalog diagnostic and contributes nothing. It does NOT
+    /// abandon the other catalogs: each is an independent claim, and one bad
+    /// reference should not hide a duplicate identity between two good ones.
+    /// </para>
+    /// <para>
+    /// A duplicate identity — between two catalogs, or between a catalog and this
+    /// compilation — produces the duplicate-identity diagnostic and the duplicate is dropped. There is no
+    /// tie-break to apply: preferring either side would make the proved contract
+    /// depend on reference order.
+    /// </para>
+    /// </remarks>
+    private static ImportedCatalogs ImportReferencedCatalogs(
+        SourceProductionContext context,
+        Compilation compilation,
+        OntologyActionCatalog localCatalog)
+    {
+        var catalogs = ProofCatalogExport.ReadReferenced(compilation, context.CancellationToken);
+        if (catalogs.IsEmpty)
+        {
+            return ImportedCatalogs.Empty;
+        }
+
+        var localAssembly = string.IsNullOrEmpty(compilation.AssemblyName)
+            ? "(unnamed assembly)"
+            : compilation.AssemblyName!;
+        var owners = new Dictionary<ActionIdentity, string>();
+        foreach (var local in localCatalog.Actions)
+        {
+            owners[local.Identity] = localAssembly;
+        }
+
+        var actions = ImmutableArray.CreateBuilder<OntologyActionContract>();
+        var lattices = ImmutableArray.CreateBuilder<OntologyAuthorityLattice>();
+        var identities = ImmutableHashSet.CreateBuilder<ActionIdentity>();
+
+        foreach (var (assemblyName, result) in catalogs)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+            if (!result.Succeeded)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    WorkflowDiagnostics.ProofCatalogUnreadable,
+                    Location.None,
+                    assemblyName,
+                    result.FailureReason));
+                continue;
+            }
+
+            var document = result.Document!;
+            lattices.AddRange(document.AuthorityLattices);
+
+            foreach (var action in document.Actions)
+            {
+                if (owners.TryGetValue(action.Identity, out var owner))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        WorkflowDiagnostics.ProofCatalogDuplicateIdentity,
+                        Location.None,
+                        action.Identity.ToString(),
+                        owner,
+                        document.CatalogId));
+                    continue;
+                }
+
+                owners[action.Identity] = document.CatalogId;
+                identities.Add(action.Identity);
+                actions.Add(OntologyActionContract.FromImported(
+                    action.Identity,
+                    action.BoundWorkflowName,
+                    action.Requirement,
+                    action.Guarantee,
+                    action.Frame,
+                    action.RequiredAuthority,
+                    action.CompensatingActionName));
+            }
+        }
+
+        return new ImportedCatalogs(
+            actions.ToImmutable(),
+            lattices.ToImmutable(),
+            identities.ToImmutable());
     }
 
     private static ImmutableHashSet<string> ReportTypedCompensationBindingBoundaries(

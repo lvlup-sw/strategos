@@ -131,5 +131,14 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF045 — Compensation scope is not mechanically derivable.</summary>
         public const string CompensationScopeNotDerivable = "AGWF045";
+
+        /// <summary>AGWF046 — Proof catalog export is incomplete.</summary>
+        public const string ProofCatalogExportIncomplete = "AGWF046";
+
+        /// <summary>AGWF047 — Referenced proof catalog is unreadable.</summary>
+        public const string ProofCatalogUnreadable = "AGWF047";
+
+        /// <summary>AGWF048 — Duplicate action identity across proof catalogs.</summary>
+        public const string ProofCatalogDuplicateIdentity = "AGWF048";
     }
 }

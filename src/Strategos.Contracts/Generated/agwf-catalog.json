@@ -1,6 +1,6 @@
 {
   "catalog_version": "0.2.0",
-  "count": 39,
+  "count": 42,
   "entries": [
     {
       "name": "EmptyWorkflowName",
@@ -313,6 +313,30 @@
       "summary": "Compensation scope is not mechanically derivable",
       "remediation": "Workflow '{0}' cannot derive rollback scope '{1}': step '{2}' is not compensable ({3}). Give every rollback-reachable forward occurrence a closed, proven inverse action.",
       "since": "2.13.0"
+    },
+    {
+      "name": "ProofCatalogExportIncomplete",
+      "id": "AGWF046",
+      "severity": "error",
+      "summary": "Proof catalog export is incomplete",
+      "remediation": "This assembly declares workflow binding '{0}' but cannot export its contract: {1}. A binding whose contract no referencing compilation can read is a binding nothing can prove; correct the contract or remove the binding.",
+      "since": "3.0.0"
+    },
+    {
+      "name": "ProofCatalogUnreadable",
+      "id": "AGWF047",
+      "severity": "error",
+      "summary": "Referenced proof catalog is unreadable",
+      "remediation": "The proof catalog exported by '{0}' cannot be read: {1}. An unreadable catalog is refused rather than skipped, because skipping it would silently drop every binding obligation it carries.",
+      "since": "3.0.0"
+    },
+    {
+      "name": "ProofCatalogDuplicateIdentity",
+      "id": "AGWF048",
+      "severity": "error",
+      "summary": "Duplicate action identity across proof catalogs",
+      "remediation": "Action '{0}' is declared by both '{1}' and '{2}'. Two assemblies claiming one ordinal action identity is an ambiguity no merge can resolve; give the action one declaring assembly.",
+      "since": "3.0.0"
     }
   ]
 }

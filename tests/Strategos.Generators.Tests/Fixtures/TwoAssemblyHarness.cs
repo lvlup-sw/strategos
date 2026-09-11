@@ -44,12 +44,23 @@ public static class TwoAssemblyHarness
     /// <param name="Reference">The metadata reference a consumer compilation adds.</param>
     /// <param name="GeneratorDiagnostics">Diagnostics the generators reported while building it.</param>
     /// <param name="GeneratedHintNames">Hint names of every tree the generators added.</param>
+    /// <param name="GeneratedSources">Each generated tree's hint name and text.</param>
     public sealed record ProducerAssembly(
         string AssemblyName,
         ImmutableArray<byte> Image,
         MetadataReference Reference,
         ImmutableArray<Diagnostic> GeneratorDiagnostics,
-        ImmutableArray<string> GeneratedHintNames);
+        ImmutableArray<string> GeneratedHintNames,
+        ImmutableArray<(string HintName, string Text)> GeneratedSources)
+    {
+        /// <summary>Gets the text of one generated source, or null when absent.</summary>
+        /// <param name="hintName">The hint name to find.</param>
+        /// <returns>The generated text, or <see langword="null"/>.</returns>
+        public string? Generated(string hintName) => GeneratedSources
+            .Where(source => string.Equals(source.HintName, hintName, StringComparison.Ordinal))
+            .Select(source => source.Text)
+            .FirstOrDefault();
+    }
 
     /// <summary>The result of compiling a consumer against one or more producers.</summary>
     /// <param name="GeneratorDiagnostics">
@@ -124,6 +135,7 @@ public static class TwoAssemblyHarness
 
         var generatorDiagnostics = ImmutableArray<Diagnostic>.Empty;
         var hintNames = ImmutableArray<string>.Empty;
+        var sources = ImmutableArray<(string, string)>.Empty;
         Compilation emitted = compilation;
 
         if (runGenerators)
@@ -147,13 +159,15 @@ public static class TwoAssemblyHarness
                 $"producer '{assemblyName}' generated output does not compile");
 
             generatorDiagnostics = diagnostics;
-            hintNames =
+            sources =
             [
                 .. driver.GetRunResult().Results
                     .SelectMany(static result => result.GeneratedSources)
-                    .Select(static generated => generated.HintName)
-                    .OrderBy(static name => name, StringComparer.Ordinal),
+                    .Select(static generated =>
+                        (generated.HintName, generated.SourceText.ToString()))
+                    .OrderBy(static generated => generated.HintName, StringComparer.Ordinal),
             ];
+            hintNames = [.. sources.Select(static generated => generated.Item1)];
         }
 
         using var stream = new MemoryStream();
@@ -170,7 +184,8 @@ public static class TwoAssemblyHarness
             [.. image],
             MetadataReference.CreateFromImage(image),
             generatorDiagnostics,
-            hintNames);
+            hintNames,
+            sources);
     }
 
     /// <summary>

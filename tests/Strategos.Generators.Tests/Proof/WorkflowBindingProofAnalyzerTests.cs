@@ -235,21 +235,55 @@ public sealed class WorkflowBindingProofAnalyzerTests
         await Assert.That(diagnostics).IsEmpty();
     }
 
-    /// <summary>A binding is rejected when its exact ordinal workflow name is absent.</summary>
+    /// <summary>
+    /// A binding whose ordinal workflow name is absent here is deferred, because the
+    /// contract that names it was exported for a referencing compilation to read.
+    /// </summary>
+    /// <remarks>
+    /// A library cannot know whether a consumer will supply the workflow its action
+    /// binds, so "absent here" is not "absent". The compilation that IS the end of the
+    /// chain says so with <c>StrategosProofRequireLocalBindings</c>; see
+    /// <see cref="MissingBoundWorkflow_UnderRequireLocalBindings_ReportsAgwf039"/>.
+    /// </remarks>
     [Test]
-    public async Task MissingBoundWorkflow_ReportsAgwf039()
+    public async Task MissingBoundWorkflow_IsDeferredToAReferencingCompilation()
     {
-        var diagnostic = SingleBindingDiagnostic(Source(
+        var diagnostics = BindingDiagnostics(Source(
             boundWorkflowName: "missing-workflow",
             firstAction: Action("receive", 0, 1),
             secondAction: Action("complete", 1, 2),
             firstConfiguration: Performs("receive"),
             secondConfiguration: Performs("complete")));
 
+        await Assert.That(diagnostics).IsEmpty()
+            .Because("the contract is exportable, so the obligation travels rather than failing "
+                + "a build that may legitimately not own the workflow.");
+    }
+
+    /// <summary>
+    /// The same binding in a compilation that declares itself the end of the chain is
+    /// an error: there is no later build to discharge it.
+    /// </summary>
+    [Test]
+    public async Task MissingBoundWorkflow_UnderRequireLocalBindings_ReportsAgwf039()
+    {
+        var diagnostic = SingleBindingDiagnostic(
+            Source(
+                boundWorkflowName: "missing-workflow",
+                firstAction: Action("receive", 0, 1),
+                secondAction: Action("complete", 1, 2),
+                firstConfiguration: Performs("receive"),
+                secondConfiguration: Performs("complete")),
+            requireLocalBindings: true);
+
         await Assert.That(diagnostic.Id).IsEqualTo("AGWF039");
         await Assert.That(diagnostic.Severity).IsEqualTo(DiagnosticSeverity.Error);
         await Assert.That(diagnostic.GetMessage()).Contains("missing-workflow");
         await Assert.That(diagnostic.GetMessage()).Contains("resolves to 0 workflow definitions");
+        await Assert.That(diagnostic.Descriptor.CustomTags)
+            .Contains(WellKnownDiagnosticTags.NotConfigurable)
+            .Because("the configurable exemption existed only while a cross-assembly layout had "
+                + "no other exit; exporting the contract is that exit.");
     }
 
     /// <summary>A reachable occurrence with no action declaration fails closed.</summary>
@@ -996,9 +1030,11 @@ public sealed class WorkflowBindingProofAnalyzerTests
             .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
 
-    private static Diagnostic SingleBindingDiagnostic(string source)
+    private static Diagnostic SingleBindingDiagnostic(
+        string source,
+        bool requireLocalBindings = false)
     {
-        var result = RunBindingGenerator(source);
+        var result = RunBindingGenerator(source, requireLocalBindings);
         var diagnostics = result.Diagnostics
             .Where(diagnostic => diagnostic.Id is "AGWF039" or "AGWF040" or "AGWF041" or "AGWF042" or "AGWF044" or "AGWF045")
             .ToArray();
@@ -1019,16 +1055,20 @@ public sealed class WorkflowBindingProofAnalyzerTests
         return diagnostics[0];
     }
 
-    private static GeneratorDriverRunResult RunBindingGenerator(string source)
+    private static GeneratorDriverRunResult RunBindingGenerator(
+        string source,
+        bool requireLocalBindings = false)
     {
-        var result = GeneratorTestHelper.RunGeneratorWithValidInput(
-            source,
-            "AGWF039",
-            "AGWF040",
-            "AGWF041",
-            "AGWF042",
-            "AGWF044",
-            "AGWF045");
+        string[] allowed = ["AGWF039", "AGWF040", "AGWF041", "AGWF042", "AGWF044", "AGWF045"];
+        var result = requireLocalBindings
+            ? GeneratorTestHelper.RunGeneratorWithProperties(
+                source,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["StrategosProofRequireLocalBindings"] = "true",
+                },
+                allowed)
+            : GeneratorTestHelper.RunGeneratorWithValidInput(source, allowed);
         var unexpectedErrors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .Where(static diagnostic => diagnostic.Id is not (

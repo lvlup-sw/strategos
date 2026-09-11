@@ -228,12 +228,37 @@ public static class GeneratorTestHelper
         return compilation.GetDiagnostics();
     }
 
+    /// <summary>
+    /// Runs the workflow generator with MSBuild properties visible to it, so a test can
+    /// exercise behavior a project opts into.
+    /// </summary>
+    /// <param name="source">The source code to compile and run the generator against.</param>
+    /// <param name="globalProperties">
+    /// MSBuild property names (without the <c>build_property.</c> prefix) and values.
+    /// </param>
+    /// <param name="allowedGeneratorErrorIds">
+    /// Generator error identifiers the calling test will assert explicitly.
+    /// </param>
+    /// <returns>The generator driver run result.</returns>
+    public static GeneratorDriverRunResult RunGeneratorWithProperties(
+        string source,
+        IReadOnlyDictionary<string, string> globalProperties,
+        params string[] allowedGeneratorErrorIds) =>
+        RunGeneratorWithValidInput(
+            source,
+            [new WorkflowIncrementalGenerator(), new StateReducerIncrementalGenerator()],
+            [],
+            allowedGeneratorErrorIds,
+            allowInvalidOutputAfterExpectedError: false,
+            globalProperties);
+
     private static GeneratorDriverRunResult RunGeneratorWithValidInput(
         string source,
         IEnumerable<IIncrementalGenerator> generators,
         IEnumerable<AdditionalText> additionalTexts,
         IReadOnlyCollection<string> allowedGeneratorErrorIds,
-        bool allowInvalidOutputAfterExpectedError)
+        bool allowInvalidOutputAfterExpectedError,
+        IReadOnlyDictionary<string, string>? globalProperties = null)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
         ArgumentNullException.ThrowIfNull(generators, nameof(generators));
@@ -257,7 +282,9 @@ public static class GeneratorTestHelper
             generators: generators.Select(static generator => generator.AsSourceGenerator()),
             additionalTexts: additionalTexts.ToArray(),
             parseOptions: null,
-            optionsProvider: null);
+            optionsProvider: globalProperties is null
+                ? null
+                : new GlobalPropertyOptionsProvider(globalProperties));
         driver = driver.RunGeneratorsAndUpdateCompilation(
             compilation,
             out var outputCompilation,
@@ -303,7 +330,23 @@ public static class GeneratorTestHelper
     /// <returns>The generator diagnostics that survive the compilation options.</returns>
     public static ImmutableArray<Diagnostic> RunWorkflowGeneratorThroughDriverFilter(
         string source,
-        CSharpCompilationOptions options)
+        CSharpCompilationOptions options) =>
+        RunWorkflowGeneratorThroughDriverFilter(source, options, globalProperties: null);
+
+    /// <summary>
+    /// Runs the workflow generator through the driver's diagnostic filter with MSBuild
+    /// properties visible to it.
+    /// </summary>
+    /// <param name="source">The C# source to compile.</param>
+    /// <param name="options">The compilation options, including diagnostic options.</param>
+    /// <param name="globalProperties">
+    /// MSBuild property names (without the <c>build_property.</c> prefix) and values.
+    /// </param>
+    /// <returns>The generator diagnostics that survive the compilation options.</returns>
+    public static ImmutableArray<Diagnostic> RunWorkflowGeneratorThroughDriverFilter(
+        string source,
+        CSharpCompilationOptions options,
+        IReadOnlyDictionary<string, string>? globalProperties)
     {
         ArgumentNullException.ThrowIfNull(source, nameof(source));
         ArgumentNullException.ThrowIfNull(options, nameof(options));
@@ -318,7 +361,13 @@ public static class GeneratorTestHelper
             compilation.GetDiagnostics(),
             "The fixture source does not compile before generation");
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(new WorkflowIncrementalGenerator());
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generators: [new WorkflowIncrementalGenerator().AsSourceGenerator()],
+            additionalTexts: [],
+            parseOptions: null,
+            optionsProvider: globalProperties is null
+                ? null
+                : new GlobalPropertyOptionsProvider(globalProperties));
         driver = driver.RunGeneratorsAndUpdateCompilation(
             compilation,
             out _,
