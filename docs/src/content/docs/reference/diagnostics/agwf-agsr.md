@@ -32,6 +32,9 @@ The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Stra
 | AGWF043 | Error | Workflow identities collide after generated-name normalization |
 | AGWF044 | Error | An authored compensation action disagrees with the derived inverse |
 | AGWF045 | Error | A compensation scope is not mechanically derivable |
+| AGWF046 | Error | A declared binding's contract cannot be exported for a referencing compilation |
+| AGWF047 | Error | A referenced assembly's proof catalog cannot be read |
+| AGWF048 | Error | Two assemblies declare one ordinal action identity |
 | AGSR001 | Error | `[Append]` can only be applied to collection types |
 | AGSR002 | Error | `[Merge]` can only be applied to dictionary types |
 
@@ -50,7 +53,27 @@ proof results:
 | `AGWF042` | A binding, workflow topology, action contract, authority lattice, or predicate is dynamic, invalid, opaque, contradictory, unrealizable, absent from the closed proof representation, or otherwise outside the closed proof fragment. | Replace the unprovable input with an analyzer-visible, supported closed form. A runtime check or custom predicate is not a substitute for the binding proof. |
 | `AGWF043` | Two or more ordinal workflow identities normalize to the same generated PascalCase type and source-hint namespace. | Rename the workflows so every normalized generated name is unique. |
 | `AGWF044` | A configured inverse is legacy, dynamic, missing, ambiguous, opaque, or not semantically equivalent to the inverse derived from its forward action. | Use `.Compensate<T>(new WorkflowActionReference(...))` and give the inverse the same subject, frame, and semantic authority, the forward effective guarantee as its requirement, and the forward hard requirement as its effective guarantee. |
-| `AGWF045` | A workflow or bound action claims rollback, but a rollback-reachable non-empty-frame leaf has no proved inverse, the typed compensation program lacks one shared closed subject/binding boundary, or the workflow uses event-sourced persistence whose consumer-defined replay fold cannot be proved. | Make every state-changing leaf in the reported scope compensable. Do not mix legacy, dynamic, and typed declarations into a derived program. Typed derived compensation requires saga-document persistence in 3.0. Keep the workflow, the ontology that binds it, and every action it names in one compilation: the proof reads the action catalog of the compilation being built, so a correct `BoundToWorkflow` declaration in another project is invisible to it. `AllowDiagnosticFork` is not represented in the closed proof, so remove it from a workflow that also declares typed or dynamic compensation. |
+| `AGWF045` | A workflow or bound action claims rollback, but a rollback-reachable non-empty-frame leaf has no proved inverse, the typed compensation program lacks one shared closed subject/binding boundary, or the workflow uses event-sourced persistence whose consumer-defined replay fold cannot be proved. | Make every state-changing leaf in the reported scope compensable. Do not mix legacy, dynamic, and typed declarations into a derived program. Typed derived compensation requires saga-document persistence in 3.0. A contract declared in a referenced assembly is read from that assembly's exported proof catalog, so it is visible here; a contract the exporter refused (`AGWF046`) is not. `AllowDiagnosticFork` is not represented in the closed proof, so remove it from a workflow that also declares typed or dynamic compensation. |
+| `AGWF046` | This assembly declares a workflow binding whose action contract cannot be projected into the portable `ProofCatalogV1` form — it carries an opaque term, or a link or relation atom whose declared read set the wire shape cannot carry. | Move the action to the closed predicate vocabulary, or keep the binding in the compilation that lowers its workflow. The diagnostic names the action and the reason. |
+| `AGWF047` | A referenced assembly's proof catalog declares an unknown `schemaVersion`, is malformed, carries an unknown predicate / literal / operator / scalar discriminator or an authority its own lattice does not define, or its `contentHash` does not match its bytes. | Rebuild the referencing project against a Strategos version that understands the catalog, or against a producer built by one this version emits. An unreadable catalog is refused, never skipped. |
+| `AGWF048` | One ordinal action identity is declared by two catalogs, or by a catalog and this compilation. | Give the action exactly one declaring assembly. There is no tie-break by design: preferring either side would make the proved contract depend on reference order. |
+
+### Across an assembly boundary
+
+The proof reads one `OntologyActionCatalog`. An assembly that declares a
+`BoundToWorkflow` action exports its contracts as a `ProofCatalogV1` document on an
+assembly-level attribute and **defers** the binding; the compilation that lowers the
+workflow imports the catalog, merges it into that same catalog, and proves the binding
+with the same code that proves a local one. An assembly that declares a binding and
+exports nothing is refused with `AONT222`.
+
+Deferral is per action, not per assembly, and it has a limit: a library cannot know
+whether some consumer will supply the workflow, so a binding nothing ever declares is
+never proved by anyone. A leaf application says it is the last compilation with
+`<StrategosProofRequireLocalBindings>true</StrategosProofRequireLocalBindings>`, and a
+deferral there is an error. See
+[cross-assembly binding proof](https://github.com/lvlup-sw/strategos/blob/main/docs/architecture/cross-assembly-proof.md)
+for the manifest, its refusals, and adoption.
 
 The refinement rule is contravariant in requirements and covariant in
 guarantees: the bound action's requirement must imply the workflow entry

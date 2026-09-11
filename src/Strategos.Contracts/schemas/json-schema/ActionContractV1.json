@@ -49,6 +49,12 @@
         "idempotent": {
             "type": "boolean",
             "description": "Whether repeating the action has the same observable effect."
+        },
+        "boundWorkflow": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "description": "The workflow this action is bound to (#167 `BoundToWorkflow`), by ordinal\nworkflow name. Omitted when the action binds no workflow.\n\nThe binding is part of the contract, not metadata about it: it is the\nimplementation claim the refinement proof discharges. A catalog that\ncarried an action's pre- and postconditions but not the workflow it claims\nto implement would describe an action no referencing compilation could\nprove anything about (#204)."
         }
     },
     "required": [
@@ -59,5 +65,5 @@
         "touches",
         "idempotent"
     ],
-    "description": "One action's full contract: what it acts on, what it needs, what it\nguarantees, what it touches, what authority it demands, how it is undone,\nand whether repeating it changes anything.\n\nThe seven members are the action calculus's own vocabulary (#164, #167,\n#168, #169), projected verbatim. `AcceptsType` and `ReturnsType` are NOT\nprojected — see `TypedContractRefV1` for the slot that replaces them."
+    "description": "One action's full contract: what it acts on, what it needs, what it\nguarantees, what it touches, what authority it demands, how it is undone,\nwhether repeating it changes anything, and which workflow it claims to\nimplement.\n\nThese are the action calculus's own vocabulary (#164, #167, #168, #169),\nprojected verbatim. `AcceptsType` and `ReturnsType` are NOT projected — see\n`TypedContractRefV1` for the slot that replaces them."
 }

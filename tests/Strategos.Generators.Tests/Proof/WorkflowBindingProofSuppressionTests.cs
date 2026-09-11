@@ -150,11 +150,24 @@ public sealed class WorkflowBindingProofSuppressionTests
     }
 
     /// <summary>
-    /// The resolution diagnostic for a workflow the compilation cannot see is the sanctioned
-    /// exit for a cross-assembly layout: an explicit <c>/nowarn</c> removes it.
+    /// The resolution diagnostics are no longer silenceable: a cross-assembly layout
+    /// now has a real exit, so it no longer needs a suppression.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This test previously asserted the opposite, and said so: a consumer whose
+    /// workflow lived in another assembly needed "a visible, explicit exit until #204".
+    /// #204 supplies the exit — the declaring assembly exports its contract and the
+    /// obligation travels — so the exemption is withdrawn.
+    /// </para>
+    /// <para>
+    /// What matters is that the id is not silenceable when it DOES fire. It fires here
+    /// because the fixture's binding is unexportable in this compilation, and the
+    /// suppression that used to remove it no longer does.
+    /// </para>
+    /// </remarks>
     [Test]
-    public async Task UnresolvedBinding_UnderNoWarn_IsSilencedExplicitly()
+    public async Task UnresolvedBinding_IsNoLongerSilenceable()
     {
         var source = WithoutPragmas(RefutedBindingWithSuppressions)
             .Replace(".BoundToWorkflow(\"flow\")", ".BoundToWorkflow(\"flow-in-another-assembly\")", StringComparison.Ordinal);
@@ -162,15 +175,31 @@ public sealed class WorkflowBindingProofSuppressionTests
         var silenced = plain.WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>(StringComparer.Ordinal)
         {
             ["AGWF039"] = ReportDiagnostic.Suppress,
+            ["AGWF002"] = ReportDiagnostic.Suppress,
         });
 
-        var unsilenced = GeneratorTestHelper.RunWorkflowGeneratorThroughDriverFilter(source, plain);
-        var explicitlySilenced = GeneratorTestHelper.RunWorkflowGeneratorThroughDriverFilter(source, silenced);
+        // The fixture's binding names a workflow in another assembly, which is now
+        // DEFERRED by default. The project declares itself the end of the chain, so the
+        // deferral becomes the error this test is about.
+        var endOfChain = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["StrategosProofRequireLocalBindings"] = "true",
+        };
+        var unsilenced = GeneratorTestHelper.RunWorkflowGeneratorThroughDriverFilter(
+            source, plain, endOfChain);
+        var attemptedSilence = GeneratorTestHelper.RunWorkflowGeneratorThroughDriverFilter(
+            source, silenced, endOfChain);
 
         await Assert.That(unsilenced.Count(diagnostic => diagnostic.Id == "AGWF039")).IsEqualTo(1)
-            .Because("by default an unresolved binding is an Error");
-        await Assert.That(explicitlySilenced.Any(diagnostic => diagnostic.Id == "AGWF039")).IsFalse()
-            .Because("a consumer whose workflow lives in another assembly needs a visible, explicit exit until #204");
+            .Because("an unresolved binding whose contract cannot be exported is an Error");
+
+        // The control: a configurable diagnostic from the same generator IS removed by
+        // the same options, so "AGWF039 survived" cannot be an inert-options result.
+        await Assert.That(attemptedSilence.Any(diagnostic => diagnostic.Id == "AGWF002")).IsFalse()
+            .Because("a configurable diagnostic must be removed by the same options, proving the "
+                + "driver filter was applied at all");
+        await Assert.That(attemptedSilence.Count(diagnostic => diagnostic.Id == "AGWF039")).IsEqualTo(1)
+            .Because("NotConfigurable must carry the unresolved binding past an explicit suppression");
     }
 
     private static string WithoutPragmas(string source) =>

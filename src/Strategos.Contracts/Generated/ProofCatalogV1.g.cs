@@ -16,8 +16,11 @@ namespace Strategos.Contracts.Generated;
 /// reads from a referencing one, so a binding whose declarations live in a
 /// referenced package can still be machine-checked.
 /// 
-/// This root is frozen HERE, with the types it composes, so #204 is purely
-/// emission, consumption and proof, with no further Contracts change.
+/// This root is frozen HERE, with the types it composes. #209 froze it expecting
+/// #204 to need no further Contracts change; building the emitter found one —
+/// `ActionContractV1` carried no binding, so a catalog could describe an action&apos;s
+/// pre- and postconditions without saying which workflow it claims to implement.
+/// `boundWorkflow` closes that, additively.
 /// 
 /// Fail-closed is the consuming analyzer&apos;s contract, not this schema&apos;s: an
 /// unknown `schemaVersion`, a duplicate identity, an opaque contract or an

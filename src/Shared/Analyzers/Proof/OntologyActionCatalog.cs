@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 using Microsoft.CodeAnalysis;
@@ -47,6 +48,75 @@ internal sealed class OntologyActionCatalog
     internal ImmutableArray<OntologyActionContract> Actions { get; }
 
     internal ImmutableDictionary<string, ImmutableArray<OntologyAuthorityLattice>> AuthorityLattices { get; }
+
+    /// <summary>
+    /// Returns this catalog widened with contracts and lattices read from referenced
+    /// assemblies (#204).
+    /// </summary>
+    /// <param name="importedActions">Contracts from referenced proof catalogs.</param>
+    /// <param name="importedLattices">Authority lattices from those catalogs.</param>
+    /// <returns>The merged catalog.</returns>
+    /// <remarks>
+    /// <para>
+    /// Merging HERE, rather than teaching the proof about two sources, is deliberate:
+    /// every obligation the #167 proof discharges reads this one catalog, so an
+    /// imported contract is proved by exactly the same code as a local one. A second
+    /// source threaded through the proof would be a second place for the two to
+    /// diverge.
+    /// </para>
+    /// <para>
+    /// Local declarations win no precedence here and imported ACTIONS are not deduped
+    /// against them. A duplicate identity across the seam is a real ambiguity — two
+    /// assemblies claiming the same action — and the caller refuses it before
+    /// merging rather than picking a winner.
+    /// </para>
+    /// <para>
+    /// Imported LATTICES are different, and are deduped structurally. One domain may
+    /// legitimately be split across the seam — two assemblies declaring different
+    /// actions of the same domain — and each side then contributes that domain's
+    /// lattice. Every authority-bearing obligation requires the domain to resolve to
+    /// exactly one lattice, so two identical declarations must merge to one or no
+    /// authority in a shared domain could ever be proved. Declarations that actually
+    /// differ are left as the ambiguity they are: the proof refuses the domain rather
+    /// than picking one, because picking would make the proved contract depend on
+    /// reference order.
+    /// </para>
+    /// </remarks>
+    internal OntologyActionCatalog WithImported(
+        ImmutableArray<OntologyActionContract> importedActions,
+        ImmutableArray<OntologyAuthorityLattice> importedLattices)
+    {
+        if (importedActions.IsDefaultOrEmpty && importedLattices.IsDefaultOrEmpty)
+        {
+            return this;
+        }
+
+        var actions = Actions.AddRange(
+            importedActions.IsDefault ? ImmutableArray<OntologyActionContract>.Empty : importedActions);
+
+        var lattices = AuthorityLattices;
+        foreach (var lattice in importedLattices.IsDefault
+            ? ImmutableArray<OntologyAuthorityLattice>.Empty
+            : importedLattices)
+        {
+            var existing = lattices.TryGetValue(lattice.DomainName, out var declared)
+                ? declared
+                : ImmutableArray<OntologyAuthorityLattice>.Empty;
+
+            var key = lattice.StructuralKey();
+            if (existing.Any(candidate => string.Equals(
+                    candidate.StructuralKey(),
+                    key,
+                    StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            lattices = lattices.SetItem(lattice.DomainName, existing.Add(lattice));
+        }
+
+        return new OntologyActionCatalog(actions, lattices);
+    }
 
     internal static OntologyActionCatalog Build(
         Compilation compilation,
@@ -1418,6 +1488,44 @@ internal sealed class OntologyActionContract
             parsed.InvalidReason ?? additionalInvalidReason,
             parsed.Location);
 
+    /// <summary>
+    /// Rebuilds a contract that arrived from a referenced assembly's proof catalog
+    /// (#204).
+    /// </summary>
+    /// <param name="identity">The ordinal three-part action identity.</param>
+    /// <param name="boundWorkflowName">The workflow it claims to implement, if any.</param>
+    /// <param name="requirement">The precondition.</param>
+    /// <param name="guarantee">The post-state guarantee.</param>
+    /// <param name="frame">Every resource the action may change.</param>
+    /// <param name="requiredAuthority">The authority literal it demands, if any.</param>
+    /// <param name="compensatingActionName">The action that undoes it, if declared.</param>
+    /// <returns>The rebuilt contract.</returns>
+    /// <remarks>
+    /// <see cref="Location"/> is <see cref="Location.None"/>, because the declaration
+    /// is genuinely not in this compilation. A diagnostic about an imported action
+    /// therefore names the identity and the catalog rather than pointing at a line —
+    /// which is the truth, and better than pointing at whichever local line happened
+    /// to mention it.
+    /// </remarks>
+    internal static OntologyActionContract FromImported(
+        ActionIdentity identity,
+        string? boundWorkflowName,
+        OntologyPredicateContract requirement,
+        OntologyPredicateContract guarantee,
+        ImmutableArray<string> frame,
+        string? requiredAuthority,
+        string? compensatingActionName) => new(
+            identity,
+            hasWorkflowBinding: !string.IsNullOrEmpty(boundWorkflowName),
+            boundWorkflowName,
+            requirement,
+            guarantee,
+            frame,
+            requiredAuthority,
+            compensatingActionName,
+            invalidReason: null,
+            Location.None);
+
     internal static OntologyActionContract InvalidWorkflowBinding(
         string domainName,
         string? workflowName,
@@ -1469,6 +1577,29 @@ internal sealed class OntologyPredicateContract
             parsed.AtomReads,
             parsed.OpaqueKeys,
             parsed.InvalidReason);
+
+    /// <summary>
+    /// Rebuilds a predicate contract read from a referenced assembly's proof
+    /// catalog (#204).
+    /// </summary>
+    /// <param name="formula">The formula the catalog carried.</param>
+    /// <param name="atomReads">The read set declared for each opaque atom.</param>
+    /// <param name="opaqueKeys">The opaque atom keys, distinct and ordered.</param>
+    /// <returns>The rebuilt contract.</returns>
+    /// <remarks>
+    /// There is deliberately no <c>invalidReason</c> parameter. An invalid contract
+    /// is never exported, so a contract that arrives through this path arrived
+    /// intact; anything the reader could not read became a refusal at the boundary
+    /// instead of an invalid contract carried inward.
+    /// </remarks>
+    internal static OntologyPredicateContract FromImported(
+        LogicFormula formula,
+        ImmutableDictionary<string, ImmutableArray<string>> atomReads,
+        ImmutableArray<string> opaqueKeys) => new(
+            formula,
+            atomReads,
+            opaqueKeys,
+            invalidReason: null);
 }
 
 internal sealed class ActionIdentity : IEquatable<ActionIdentity>
@@ -1528,6 +1659,59 @@ internal sealed class OntologyAuthorityLattice
     internal string DomainName { get; }
 
     internal string? InvalidReason { get; }
+
+    /// <summary>
+    /// Gets the axes, each mapped to its levels ordered WEAKEST to STRONGEST.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so a lattice can be EXPORTED (#204). An authority literal that
+    /// crosses an assembly boundary without the lattice that orders it is an
+    /// authority nobody downstream can compare, and comparing authorities is one
+    /// of the refinement obligations.
+    /// </remarks>
+    internal IEnumerable<KeyValuePair<string, ImmutableArray<string>>> Axes => this.axes;
+
+    /// <summary>Gets each authority literal mapped to its axis-to-level coordinate.</summary>
+    internal IEnumerable<KeyValuePair<string, Dictionary<string, string>>> Authorities =>
+        this.authorities;
+
+    /// <summary>
+    /// Builds a canonical rendering of everything this lattice orders, for deciding
+    /// whether two declarations of one domain are the same lattice.
+    /// </summary>
+    /// <remarks>
+    /// Axis and authority order is not part of a lattice's meaning, but LEVEL order
+    /// is — levels run weakest to strongest and rank is what <see cref="TryJoinAtMost"/>
+    /// compares — so the key sorts the first two and preserves the third.
+    /// </remarks>
+    /// <returns>A rendering equal for exactly the lattices that order identically.</returns>
+    internal string StructuralKey()
+    {
+        var builder = new StringBuilder();
+        builder.Append(DomainName).Append('\u001f');
+
+        foreach (var axis in this.axes.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            builder.Append(axis.Key).Append('=')
+                .Append(string.Join(">", axis.Value))
+                .Append('\u001e');
+        }
+
+        builder.Append('\u001f');
+
+        foreach (var authority in this.authorities.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            builder.Append(authority.Key).Append('=');
+            foreach (var coordinate in authority.Value.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                builder.Append(coordinate.Key).Append(':').Append(coordinate.Value).Append(',');
+            }
+
+            builder.Append('\u001e');
+        }
+
+        return builder.Append('\u001f').Append(InvalidReason ?? string.Empty).ToString();
+    }
 
     internal bool TryJoinAtMost(
         IEnumerable<string?> candidateAuthorities,

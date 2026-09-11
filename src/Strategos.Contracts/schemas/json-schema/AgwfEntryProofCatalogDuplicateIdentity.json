@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryProofCatalogDuplicateIdentity.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF048"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Duplicate action identity across proof catalogs"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "Action '{0}' is declared by both '{1}' and '{2}'. Two assemblies claiming one ordinal action identity is an ambiguity no merge can resolve; give the action one declaring assembly."
+        },
+        "since": {
+            "type": "string",
+            "const": "3.0.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF048 — Two proof catalogs declare the same ordinal action identity (#204)."
+}

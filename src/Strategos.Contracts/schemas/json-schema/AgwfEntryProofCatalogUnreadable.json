@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "AgwfEntryProofCatalogUnreadable.json",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "const": "AGWF047"
+        },
+        "severity": {
+            "type": "string",
+            "const": "error"
+        },
+        "summary": {
+            "type": "string",
+            "const": "Referenced proof catalog is unreadable"
+        },
+        "remediation": {
+            "type": "string",
+            "const": "The proof catalog exported by '{0}' cannot be read: {1}. An unreadable catalog is refused rather than skipped, because skipping it would silently drop every binding obligation it carries."
+        },
+        "since": {
+            "type": "string",
+            "const": "3.0.0"
+        }
+    },
+    "required": [
+        "id",
+        "severity",
+        "summary",
+        "remediation",
+        "since"
+    ],
+    "description": "AGWF047 — A referenced assembly's proof catalog could not be read (#204)."
+}

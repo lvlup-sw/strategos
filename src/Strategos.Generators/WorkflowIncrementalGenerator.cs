@@ -141,14 +141,30 @@ public sealed class WorkflowIncrementalGenerator : IIncrementalGenerator
         // prove every reachable action occurrence against the bound contract. The
         // proof consumes WorkflowModel rather than either authoring syntax so both
         // front ends share one fail-closed analysis path (INV-1).
+        // #204 — a project declares itself the end of the binding chain with
+        // <StrategosProofRequireLocalBindings>true</StrategosProofRequireLocalBindings>.
+        // A library cannot know whether some consumer will supply the workflow its
+        // action binds, so by default an unresolved binding whose contract was
+        // exported is DEFERRED. An application knows it is the last compilation, and
+        // this is how it says so: with the property set, a deferral is an error,
+        // because there is no later build to discharge it.
+        var requireLocalBindings = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) =>
+                provider.GlobalOptions.TryGetValue(
+                    "build_property.StrategosProofRequireLocalBindings",
+                    out var value)
+                && string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+
         var workflowProofInput = authoredWorkflowModels.Collect()
             .Combine(importedWorkflowModels.Collect())
-            .Combine(context.CompilationProvider);
+            .Combine(context.CompilationProvider)
+            .Combine(requireLocalBindings);
 
         context.RegisterSourceOutput(workflowProofInput, static (spc, input) =>
         {
-            var workflows = input.Left.Left.AddRange(input.Left.Right);
-            WorkflowBindingProofAnalyzer.AnalyzeFailClosed(spc, input.Right, workflows);
+            var workflows = input.Left.Left.Left.AddRange(input.Left.Left.Right);
+            WorkflowBindingProofAnalyzer.AnalyzeFailClosed(
+                spc, input.Left.Right, workflows, input.Right);
         });
     }
 

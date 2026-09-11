@@ -124,6 +124,7 @@ Two tag trains, contracts first: `contracts-vX.Y.Z` publishes `LevelUp.Strategos
 | The design, integrations, package inventory, theory | `docs/adrs/` |
 | Architectural invariants (U-1..U-8) + deterministic checks | `docs/architecture/invariants/` and `.exarchos/invariants.md` |
 | Workflow-definition kernel v1 (reserved kinds, carried-not-proved slots) | `docs/architecture/kernel-v1.md` |
+| Cross-assembly binding proof (the portable proof catalog, its refusals, adoption) | `docs/architecture/cross-assembly-proof.md` |
 | Performance targets and baselines | `docs/architecture/benchmarks/` |
 | Design records (dated) | `docs/designs/` (superseded ones in `docs/designs/archive/`) |
 | Implementation plans (dated) | `docs/plans/` (superseded roadmaps in `docs/plans/archive/`) |

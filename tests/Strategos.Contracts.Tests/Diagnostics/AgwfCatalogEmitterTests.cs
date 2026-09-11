@@ -11,7 +11,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 /// <summary>
 /// T3 — the canonical <c>agwf-catalog.json</c> data artifact. After the full
 /// codegen pipeline runs, the catalog file exists under the contracts project,
-/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 39
+/// carries a manifest (<c>catalog_version</c>), and enumerates exactly the 42
 /// ground-truth entries ordered by ID, each with full metadata
 /// (<c>name</c>/<c>id</c>/<c>severity</c>/<c>summary</c>/<c>remediation</c>/
 /// <c>since</c>).
@@ -32,6 +32,7 @@ public sealed class AgwfCatalogEmitterTests
         "AGWF042",
         "AGWF043",
         "AGWF044", "AGWF045",
+        "AGWF046", "AGWF047", "AGWF048",
     ];
 
     /// <summary>

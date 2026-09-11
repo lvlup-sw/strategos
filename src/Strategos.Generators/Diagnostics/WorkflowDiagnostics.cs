@@ -643,7 +643,8 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "A workflow-bound ontology action must resolve exactly one compilation-wide C# or imported workflow model by ordinal workflow name. This resolution diagnostic stays configurable so a layout the compilation-local proof cannot see (a workflow defined in another assembly) can be silenced explicitly and visibly in the project file until cross-assembly bindings are supported.");
+        description: "A workflow-bound ontology action must resolve exactly one workflow model by ordinal workflow name in the compilation being built. A referenced assembly's proof catalog carries action contracts, never workflow models, so a binding whose workflow is absent here is deferred to the compilation that lowers it rather than resolved from a catalog. This diagnostic was configurable while a cross-assembly layout had no other exit; exporting the contract is that exit, so the exemption is withdrawn and an unresolved binding is not silenceable.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>A reachable workflow step has no exact static action identity.</summary>
     public static readonly DiagnosticDescriptor WorkflowActionReferenceInvalid = new(
@@ -653,7 +654,8 @@ internal static class WorkflowDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Every reachable occurrence in a workflow-bound action must declare one closed action reference whose ordinal three-part identity resolves exactly once. This resolution diagnostic stays configurable for the same cross-assembly reason as the bound-workflow-not-found diagnostic; the refinement, unprovable, and collision diagnostics are not configurable.");
+        description: "Every reachable occurrence in a workflow-bound action must declare one closed action reference whose ordinal three-part identity resolves exactly once, here or through a referenced assembly's exported proof catalog. This diagnostic was configurable for the same cross-assembly reason as the bound-workflow-not-found diagnostic, and loses the exemption with it.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>A closed workflow binding has a definite refinement counterexample.</summary>
     public static readonly DiagnosticDescriptor WorkflowBindingRefinementFailed = new(
@@ -686,6 +688,64 @@ internal static class WorkflowDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Distinct ordinal workflow identities must not normalize to the same generated PascalCase type and source-hint namespace.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>
+    /// This compilation declares a workflow binding whose contract it cannot export
+    /// for a referencing compilation to prove (#204).
+    /// </summary>
+    /// <remarks>
+    /// The producing side of the cross-assembly seam. A binding whose contract cannot
+    /// leave the assembly is a binding nothing downstream can discharge, and the
+    /// producing build is the only place that fact is knowable — the consumer sees an
+    /// absence, not a reason. Argument 0 is the action identity; argument 1 is why the
+    /// export failed.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProofCatalogExportIncomplete = new(
+        id: AgwfCodes.ProofCatalogExportIncomplete,
+        title: "Proof catalog export is incomplete",
+        messageFormat: "This assembly declares workflow binding '{0}' but cannot export its contract: {1}. A binding whose contract no referencing compilation can read is a binding nothing can prove; correct the contract or remove the binding.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A workflow binding whose action contract cannot be projected into the portable proof catalog is refused at the declaring assembly, because no referencing compilation can prove it.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>A referenced assembly's proof catalog could not be read (#204).</summary>
+    /// <remarks>
+    /// Covers every way a catalog can fail to be trustworthy: an unknown
+    /// <c>schemaVersion</c>, malformed JSON, a predicate or literal discriminator this
+    /// compiler does not know, an authority the catalog's own lattice does not define,
+    /// and a content hash that does not match the bytes. All of them are refusals
+    /// rather than omissions — an unreadable catalog that were merely skipped would
+    /// silently drop every obligation it carries and leave the build green. Argument 0
+    /// is the declaring assembly; argument 1 is the reason.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProofCatalogUnreadable = new(
+        id: AgwfCodes.ProofCatalogUnreadable,
+        title: "Referenced proof catalog is unreadable",
+        messageFormat: "The proof catalog exported by '{0}' cannot be read: {1}. An unreadable catalog is refused rather than skipped, because skipping it would silently drop every binding obligation it carries.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A referenced proof catalog with an unknown version, an unknown discriminator, an incomplete authority lattice, or a content hash that does not match its bytes is refused; it is never partially read.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>Two assemblies declare the same ordinal action identity (#204).</summary>
+    /// <remarks>
+    /// Identity is ordinal and three-part, and the merge has no tie-break to apply:
+    /// picking a winner would make the proved contract depend on reference order.
+    /// Argument 0 is the action identity; arguments 1 and 2 are the two declaring
+    /// catalogs (this compilation is named as its own assembly).
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProofCatalogDuplicateIdentity = new(
+        id: AgwfCodes.ProofCatalogDuplicateIdentity,
+        title: "Duplicate action identity across proof catalogs",
+        messageFormat: "Action '{0}' is declared by both '{1}' and '{2}'. Two assemblies claiming one ordinal action identity is an ambiguity no merge can resolve; give the action one declaring assembly.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "One ordinal action identity must have one declaring assembly. A duplicate across the merge is refused rather than resolved by reference order.",
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     /// <summary>An authored compensation action does not implement the derived inverse contract.</summary>

@@ -840,26 +840,36 @@ those routes are not yet represented by the closed proof graph.
 No binding proof or runtime enforcement is added to an unbound workflow. The
 topology lowering fixes shipped with this release still apply to every workflow.
 
-The 3.0 proof is compilation-local. It sees source declarations in the
-current compilation and imported workflow JSON supplied as `AdditionalFiles`;
-it does not inspect ontology or workflow declarations inside referenced
-binaries, execute `IOntologySource`, or repeat the proof at runtime. Keep the
-bound action, target workflow, and referenced leaf actions source-visible to
-one generator invocation. Source-visible `DomainOntology.Define` bodies form
-the declaration catalog regardless of which domains a particular host later
-registers. A direct `ActionDescriptor` construction is cataloged only when it
-is inline in the `ObjectTypeDescriptor.Actions` collection passed through
+The 3.0 proof reads one action catalog: the source declarations of the current
+compilation, the workflow JSON imported as `AdditionalFiles`, and the action
+contracts that referenced assemblies carry in their exported proof catalogs. It
+does not inspect arbitrary ontology or workflow declarations inside referenced
+binaries, execute `IOntologySource`, or repeat the proof at runtime.
+Source-visible `DomainOntology.Define` bodies form the declaration catalog
+regardless of which domains a particular host later registers. A direct
+`ActionDescriptor` construction is cataloged only when it is inline in the
+`ObjectTypeDescriptor.Actions` collection passed through
 `ObjectTypeFromDescriptor` from such a body.
 
-Portable proof catalogs for referenced assemblies are deferred to
-[#204](https://github.com/lvlup-sw/strategos/issues/204).
+A catalog carries action contracts and never workflow models, so the **workflow**
+must be lowered in the compilation being built. A binding whose workflow is absent
+here is deferred to the compilation that lowers it, and a leaf application declares
+itself the last compilation with
+`<StrategosProofRequireLocalBindings>true</StrategosProofRequireLocalBindings>`,
+which turns a deferral into an error.
 
-The proof runs inside the `LevelUp.Strategos.Generators` source generator. A
-project that references `LevelUp.Strategos.Ontology` but not the generator
-package compiles a `BoundToWorkflow(...)` binding with no diagnostic at all:
-nothing proves it and nothing reports that it is unproved. Add the generator
-package to every project that declares a workflow-bound action, or move the
-binding into the project that owns the workflow.
+Set that property in host and entry-point projects only. **Do not set it in a
+library**: a library cannot know whether some consumer will supply the workflow its
+action binds, so there the property would refuse every legitimate cross-assembly
+layout — including the one this release exists to prove.
+
+The proof runs inside the `LevelUp.Strategos.Generators` source generator, and so
+does the export. A project that references `LevelUp.Strategos.Ontology` but not the
+generator package has nothing to export its contracts, so its `BoundToWorkflow(...)`
+binding can never be discharged by anyone; that is refused with `AONT222`. Add the
+generator package to every project that declares a workflow-bound action. The
+generator emits nothing else for a project with no workflows, so the cost is a
+development-time package reference.
 
 The generator catalogs a binding only when the whole fluent chain from
 `obj.Action(...)` to `.BoundToWorkflow(...)` is one expression inside
@@ -872,18 +882,20 @@ chain. A `Definition` that delegates to a helper method still generates the
 same saga it did before the binding proof existed, but it cannot be proved and
 reports `AGWF042` while bound.
 
-The proof outcomes `AGWF041` (refuted), `AGWF042` (unprovable), `AGWF043`
-(emission collision), `AGWF044` (invalid inverse), and `AGWF045` (underivable
-rollback scope) carry the `NotConfigurable` tag. `<NoWarn>`, `#pragma warning
-disable`, and `.editorconfig` severity entries do not suppress or downgrade
-them. The resolution diagnostics `AGWF039` (bound workflow not found) and
-`AGWF040` (action reference invalid) are Errors by default but stay
-configurable: a project whose workflow or ontology lives in another assembly,
-which the compilation-local proof cannot see until
-[#204](https://github.com/lvlup-sw/strategos/issues/204) lands, silences them
-explicitly with `<NoWarn>AGWF039</NoWarn>` in its project file. That entry is
-the visible, greppable record that the binding is declared but unproved; delete
-it when the cross-assembly proof ships. An internal failure of the proof itself
+Every proof diagnostic carries the `NotConfigurable` tag — `AGWF039` (bound
+workflow not found), `AGWF040` (action reference invalid), `AGWF041` (refuted),
+`AGWF042` (unprovable), `AGWF043` (emission collision), `AGWF044` (invalid
+inverse), `AGWF045` (underivable rollback scope), `AGWF046` (contract not
+exportable), `AGWF047` (referenced catalog unreadable) and `AGWF048` (duplicate
+identity across catalogs). `<NoWarn>`, `#pragma warning disable`, and
+`.editorconfig` severity entries do not suppress or downgrade any of them.
+
+`AGWF039` and `AGWF040` were configurable in 3.0.0-rc.1, because a cross-assembly
+layout had no other exit and the alternative was deleting the binding. Exporting
+the contract is that exit, so the exemption is withdrawn. **Delete any
+`<NoWarn>AGWF039</NoWarn>` or `<NoWarn>AGWF040</NoWarn>` from your project files**:
+the entry is now inert, and it was very likely silencing exactly the layout this
+release proves. An internal failure of the proof itself
 is reported as `AGWF042` in any compilation that calls `BoundToWorkflow`, rather
 than as the Roslyn generator-crash warning, so a bound workflow never builds
 green because the analyzer did not run. A compilation that binds nothing is not

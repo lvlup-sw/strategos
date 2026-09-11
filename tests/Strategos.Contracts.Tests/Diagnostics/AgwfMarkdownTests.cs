@@ -4,16 +4,18 @@
 // </copyright>
 // =============================================================================
 
+using System.Text.RegularExpressions;
+
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
 /// T5 — the generated <c>docs/diagnostics/agwf.md</c> reference page. After
 /// codegen, the page carries a Markdown table with the columns
-/// id/severity/summary/remediation/since and exactly 39 data rows, one per
+/// id/severity/summary/remediation/since and exactly 42 data rows, one per
 /// ground-truth code, sorted by ID.
 /// </summary>
 [Property("Category", "Diagnostics")]
-public sealed class AgwfMarkdownTests
+public sealed partial class AgwfMarkdownTests
 {
     private static readonly string[] GroundTruthCodes =
     [
@@ -27,6 +29,7 @@ public sealed class AgwfMarkdownTests
         "AGWF042",
         "AGWF043",
         "AGWF044", "AGWF045",
+        "AGWF046", "AGWF047", "AGWF048",
     ];
 
     /// <summary>
@@ -57,19 +60,25 @@ public sealed class AgwfMarkdownTests
                 .Because($"the table header must declare a '{col}' column.");
         }
 
-        // The data rows: each ground-truth code appears as a row, in order.
+        // The data rows: every emitted row, matched structurally rather than by
+        // membership — a membership filter cannot see a row for a code this test
+        // does not already know, so an id added to the catalog and not to the
+        // ground truth would pass vacuously.
         var dataRows = lines
-            .Where(l => GroundTruthCodes.Any(c => l.Contains(c, StringComparison.Ordinal)))
+            .Where(l => DataRow().IsMatch(l))
             .ToList();
 
         await Assert.That(dataRows.Count).IsEqualTo(GroundTruthCodes.Length)
             .Because($"the table must have exactly {GroundTruthCodes.Length} data rows, one per code.");
 
         var rowIds = dataRows
-            .Select(r => GroundTruthCodes.First(c => r.Contains(c, StringComparison.Ordinal)))
+            .Select(r => DataRow().Match(r).Value.Trim('|', ' '))
             .ToArray();
         await Assert.That(string.Join(",", rowIds))
             .IsEqualTo(string.Join(",", GroundTruthCodes))
             .Because("rows must be sorted by ID (ascending).");
     }
+
+    [GeneratedRegex(@"^\|\s*AGWF\d{3}\s*\|")]
+    private static partial Regex DataRow();
 }

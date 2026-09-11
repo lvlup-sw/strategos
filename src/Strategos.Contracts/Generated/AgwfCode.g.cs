@@ -177,6 +177,18 @@ public enum AgwfCode
     /// <summary>AGWF045 — Compensation scope is not mechanically derivable.</summary>
     [JsonStringEnumMemberName("AGWF045")]
     CompensationScopeNotDerivable,
+
+    /// <summary>AGWF046 — Proof catalog export is incomplete.</summary>
+    [JsonStringEnumMemberName("AGWF046")]
+    ProofCatalogExportIncomplete,
+
+    /// <summary>AGWF047 — Referenced proof catalog is unreadable.</summary>
+    [JsonStringEnumMemberName("AGWF047")]
+    ProofCatalogUnreadable,
+
+    /// <summary>AGWF048 — Duplicate action identity across proof catalogs.</summary>
+    [JsonStringEnumMemberName("AGWF048")]
+    ProofCatalogDuplicateIdentity,
 }
 
 public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
@@ -232,6 +244,9 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             "AGWF043" => AgwfCode.WorkflowEmissionIdentityCollision,
             "AGWF044" => AgwfCode.AuthoredInverseDisagrees,
             "AGWF045" => AgwfCode.CompensationScopeNotDerivable,
+            "AGWF046" => AgwfCode.ProofCatalogExportIncomplete,
+            "AGWF047" => AgwfCode.ProofCatalogUnreadable,
+            "AGWF048" => AgwfCode.ProofCatalogDuplicateIdentity,
             _ => throw new JsonException("Unknown AgwfCode wire token."),
         };
     }
@@ -282,6 +297,9 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             AgwfCode.WorkflowEmissionIdentityCollision => "AGWF043",
             AgwfCode.AuthoredInverseDisagrees => "AGWF044",
             AgwfCode.CompensationScopeNotDerivable => "AGWF045",
+            AgwfCode.ProofCatalogExportIncomplete => "AGWF046",
+            AgwfCode.ProofCatalogUnreadable => "AGWF047",
+            AgwfCode.ProofCatalogDuplicateIdentity => "AGWF048",
             _ => throw new JsonException("Unknown AgwfCode value."),
         };
 
