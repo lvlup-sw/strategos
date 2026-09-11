@@ -377,13 +377,20 @@ representation.
 
 ### Static proof boundary
 
-The 3.0 binding proof is compilation-local. It sees C# workflow and
-`DomainOntology.Define` declarations in the current compilation, plus imported
-workflow JSON supplied as `AdditionalFiles`. It does not open declarations from
-referenced binaries and it does not execute runtime `IOntologySource`
-contributions. A bound action, its target workflow, and the leaf-action catalog
-needed for the proof must therefore be source-visible to the same generator
-invocation. There is no runtime re-proof fallback for a cross-assembly binding.
+The 3.0 binding proof reads one action catalog. That catalog holds the C# workflow
+and `DomainOntology.Define` declarations of the current compilation, the workflow
+JSON imported as `AdditionalFiles`, and the action contracts carried by the proof
+catalogs that referenced assemblies export. It still does not open arbitrary
+declarations from referenced binaries — it reads one assembly-level attribute
+through the metadata reference the compilation already has — and it still does not
+execute runtime `IOntologySource` contributions. There is no runtime re-proof.
+
+A catalog carries action contracts, never workflow models, so the **workflow** must
+be lowered in the compilation being built. A bound action whose workflow is absent
+here is deferred to whichever compilation lowers it, and reported rather than
+deferred when its own contract could not be exported. An application sets
+`StrategosProofRequireLocalBindings` to say it is the last compilation, and a
+deferral there becomes an error.
 
 The static action catalog treats each source-visible `DomainOntology.Define`
 body as a declaration root. A directly constructed `ActionDescriptor` counts
@@ -391,9 +398,7 @@ only when it is placed inline in an `ObjectTypeDescriptor.Actions` collection
 passed to `ObjectTypeFromDescriptor` from that root; an unrelated descriptor
 construction elsewhere in the compilation cannot satisfy a workflow leaf.
 Whether a declared ontology is selected by a particular host remains a
-deployment concern. Portable referenced-assembly catalogs are tracked in
-[#204](https://github.com/lvlup-sw/strategos/issues/204), separately from this
-source-visible proof slice.
+deployment concern.
 
 ## Runtime three-valued evaluation
 
@@ -536,8 +541,7 @@ Workflow<OrderState>.Create("process-order")
             "Orders", "Order", "RefundPayment")));
 ```
 
-The generator resolves both identities from the same compilation-local action
-catalog. `AGWF044` rejects a missing, ambiguous, dynamic, opaque, or
+The generator resolves both identities from the same merged action catalog. `AGWF044` rejects a missing, ambiguous, dynamic, opaque, or
 semantically different authored inverse. Once a workflow or one of its bound
 action specifications claims rollback, compensability propagates through the
 scope: every rollback-reachable leaf with a non-empty frame must have a proved

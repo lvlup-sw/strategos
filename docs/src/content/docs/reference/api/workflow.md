@@ -171,13 +171,14 @@ carried but not checked. For imported workflow JSON, a malformed `action`
 object is rejected by the import front end as `AGWF023`; `AGWF040` applies only
 after an action reference has been accepted into the workflow model.
 
-Static binding proof is compilation-local. It sees source declarations in the
-current compilation and imported workflow JSON supplied as `AdditionalFiles`,
-not declarations inside referenced binaries or runtime `IOntologySource`
-contributions. Keep the bound action, target workflow, and leaf-action catalog
-source-visible to the same generator invocation. The proof is not repeated at
-runtime for cross-assembly bindings. Portable referenced-assembly catalogs are
-tracked in [#204](https://github.com/lvlup-sw/strategos/issues/204).
+Static binding proof reads one action catalog: the source declarations of the
+current compilation, the workflow JSON imported as `AdditionalFiles`, and the
+action contracts that referenced assemblies carry in their exported proof
+catalogs. It does not open arbitrary declarations inside referenced binaries and
+does not execute runtime `IOntologySource` contributions, and the proof is never
+repeated at runtime. A catalog carries contracts and not workflow models, so the
+workflow must be lowered in the compilation being built; a binding whose workflow
+is absent here is deferred to the one that lowers it.
 
 The Contracts 0.11.0 workflow schema projects the value as the optional
 occurrence-level `action` object on every step kind:
