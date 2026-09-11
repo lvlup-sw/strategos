@@ -748,6 +748,30 @@ internal static class WorkflowDiagnostics
         description: "One ordinal action identity must have one declaring assembly. A duplicate across the merge is refused rather than resolved by reference order.",
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
+    /// <summary>
+    /// A wire slot typed by a closed contract enum carries a value outside that
+    /// enum's vocabulary (#221).
+    /// </summary>
+    /// <remarks>
+    /// The wire-DTO twins carry these slots as plain strings (INV-8: the polyglot
+    /// identity is the VALUE, never a CLR enum handle), so nothing in the import
+    /// path rejected an unknown token — the same failure mode the dangling-gateId
+    /// check exists to catch, one level down. The accepted set is read from the
+    /// emitted schema through the linked <c>WireEnumVocabularies</c> projection,
+    /// never re-typed here, so adding a member cannot leave this check behind.
+    /// Argument 0 is the import file; 1 names the construct; 2 is the JSON path;
+    /// 3 is the enum; 4 is its vocabulary.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ImportClosedEnumValueUnknown = new(
+        id: AgwfCodes.ImportClosedEnumValueUnknown,
+        title: "Closed-enum wire slot carries an unknown value",
+        messageFormat: "Import file '{0}' declares {1} at {2}. A closed enum is not an extension point — both runtimes match {3} BY VALUE, so check for a member name used in place of its wire value (PascalCase for snake_case), or a class retired in an earlier contract major. The {3} vocabulary is exactly: {4}.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A closed contract enum is not an extension point. Both runtimes match these slots by wire value, so a token outside the vocabulary — a member name used in place of its value, or a class retired in an earlier contract major — is refused at the boundary rather than carried into the IR.",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
     /// <summary>An authored compensation action does not implement the derived inverse contract.</summary>
     public static readonly DiagnosticDescriptor AuthoredInverseDisagrees = new(
         id: AgwfCodes.AuthoredInverseDisagrees,

@@ -189,6 +189,10 @@ public enum AgwfCode
     /// <summary>AGWF048 — Duplicate action identity across proof catalogs.</summary>
     [JsonStringEnumMemberName("AGWF048")]
     ProofCatalogDuplicateIdentity,
+
+    /// <summary>AGWF049 — Closed-enum wire slot carries an unknown value.</summary>
+    [JsonStringEnumMemberName("AGWF049")]
+    ImportClosedEnumValueUnknown,
 }
 
 public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
@@ -247,6 +251,7 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             "AGWF046" => AgwfCode.ProofCatalogExportIncomplete,
             "AGWF047" => AgwfCode.ProofCatalogUnreadable,
             "AGWF048" => AgwfCode.ProofCatalogDuplicateIdentity,
+            "AGWF049" => AgwfCode.ImportClosedEnumValueUnknown,
             _ => throw new JsonException("Unknown AgwfCode wire token."),
         };
     }
@@ -300,6 +305,7 @@ public sealed class AgwfCodeJsonConverter : JsonConverter<AgwfCode>
             AgwfCode.ProofCatalogExportIncomplete => "AGWF046",
             AgwfCode.ProofCatalogUnreadable => "AGWF047",
             AgwfCode.ProofCatalogDuplicateIdentity => "AGWF048",
+            AgwfCode.ImportClosedEnumValueUnknown => "AGWF049",
             _ => throw new JsonException("Unknown AgwfCode value."),
         };
 

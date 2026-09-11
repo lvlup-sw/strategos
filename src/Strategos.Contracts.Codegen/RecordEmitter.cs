@@ -103,6 +103,19 @@ public static class RecordEmitter
             }
         }
 
+        // #221: project every closed string enum's wire vocabulary into a
+        // netstandard2.0-safe constants file, so the isolated import front-end
+        // can fail a wire slot closed against the real set without referencing
+        // this assembly or re-typing the values. Derived from the same
+        // classification pass, so a member added in TypeSpec lands here without
+        // an emitter edit.
+        await WireEnumVocabularyEmitter.WriteAsync(
+            docs.Values
+                .Where(d => d.Kind == SchemaKind.Enum)
+                .Select(d => new WireEnumVocabularyEmitter.EnumVocabulary(d.TypeName, d.EnumValues))
+                .ToList(),
+            outputDir).ConfigureAwait(false);
+
         // AGWF single-source catalog (#52): emit the AgwfCode enum (symbolic
         // member names), the canonical agwf-catalog.json data artifact, and the
         // docs/diagnostics/agwf.md reference from the AgwfEntry* schema consts.

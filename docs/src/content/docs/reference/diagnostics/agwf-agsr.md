@@ -35,6 +35,7 @@ The AGWF (workflow) and AGSR (state reducer) diagnostics are emitted by the Stra
 | AGWF046 | Error | A declared binding's contract cannot be exported for a referencing compilation |
 | AGWF047 | Error | A referenced assembly's proof catalog cannot be read |
 | AGWF048 | Error | Two assemblies declare one ordinal action identity |
+| AGWF049 | Error | A closed-enum wire slot carries a value outside its vocabulary |
 | AGSR001 | Error | `[Append]` can only be applied to collection types |
 | AGSR002 | Error | `[Merge]` can only be applied to dictionary types |
 
@@ -100,6 +101,24 @@ scopes. See
 for inverse equivalence, scope propagation, and runtime journal semantics.
 
 ---
+
+## Closed-enum wire slots
+
+Four slots in a `.workflow.json` are typed by a **closed** contract enum: a gate's
+`class` (`GateClass`), a permitted fork trigger (`ForkTrigger`), a step's `runtime`
+(`StepRuntime`) and a failure handler's `scope` (`FailureHandlerScope`). Both runtimes
+match these **by value**, so the member name is not an accepted spelling of the value,
+and a class retired in an earlier contract major is not an accepted value at all.
+
+| Code | Cause | Fix |
+|---|---|---|
+| `AGWF049` | A closed-enum wire slot declares a token the enum does not define. The diagnostic names the import file, the construct, the JSON path, the enum, and its full vocabulary. | Use the wire value. The two common cases are a member name written where its value belongs (`Typecheck` for `typecheck`, `RatificationFailure` for `ratification_failure`) and a value retired by an earlier contract major. |
+
+The accepted set is not written in the generator. It is emitted from the same TypeSpec
+that produces the enum, linked into the generator as source, and pinned against the
+emitted JSON Schema by a test — so adding a member widens the check with no edit to it.
+Until 3.0 the import front-end read these slots as opaque strings and accepted any
+token; the emitted Zod arm always rejected them, which is how the gap surfaced.
 
 ## Workflow Diagnostics (AGWF)
 

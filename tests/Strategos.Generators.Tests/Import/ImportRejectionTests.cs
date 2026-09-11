@@ -339,7 +339,7 @@ public sealed class ImportRejectionTests
           "diagnosticForks": [
             {
               "anchorStepIds": [ "RejectStepA" ],
-              "permittedTriggers": [ { "trigger": "RatificationFailure", "requiredEvidenceFields": [] } ],
+              "permittedTriggers": [ { "trigger": "ratification_failure", "requiredEvidenceFields": [] } ],
               "maxForks": 2,
               "compensationSeed": "RejectStepB"
             }
@@ -364,7 +364,7 @@ public sealed class ImportRejectionTests
           "diagnosticForks": [
             {
               "anchorStepIds": [ "RejectStepA" ],
-              "permittedTriggers": [ { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] } ],
+              "permittedTriggers": [ { "trigger": "ratification_failure", "requiredEvidenceFields": [ "stampId" ] } ],
               "maxForks": 2,
               "compensationSeed": "RejectStepB"
             }
@@ -391,8 +391,8 @@ public sealed class ImportRejectionTests
             {
               "anchorStepIds": [ "RejectStepA" ],
               "permittedTriggers": [
-                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] },
-                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "otherStampId" ] }
+                { "trigger": "ratification_failure", "requiredEvidenceFields": [ "stampId" ] },
+                { "trigger": "ratification_failure", "requiredEvidenceFields": [ "otherStampId" ] }
               ],
               "maxForks": 2,
               "compensationSeed": "RejectStepB"
@@ -419,7 +419,7 @@ public sealed class ImportRejectionTests
             {
               "anchorStepIds": [ "RejectStepA" ],
               "permittedTriggers": [
-                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] }
+                { "trigger": "ratification_failure", "requiredEvidenceFields": [ "stampId" ] }
               ],
               "maxForks": 2,
               "compensationSeed": "RejectStepB"
@@ -427,7 +427,7 @@ public sealed class ImportRejectionTests
             {
               "anchorStepIds": [ "RejectStepB" ],
               "permittedTriggers": [
-                { "trigger": "GateContradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
+                { "trigger": "gate_contradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
               ],
               "maxForks": 1,
               "compensationSeed": "RejectStepB"
@@ -453,8 +453,8 @@ public sealed class ImportRejectionTests
             {
               "anchorStepIds": [ "RejectStepA" ],
               "permittedTriggers": [
-                { "trigger": "RatificationFailure", "requiredEvidenceFields": [ "stampId" ] },
-                { "trigger": "GateContradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
+                { "trigger": "ratification_failure", "requiredEvidenceFields": [ "stampId" ] },
+                { "trigger": "gate_contradiction", "requiredEvidenceFields": [ "leftGateId", "rightGateId" ] }
               ],
               "maxForks": 2,
               "compensationSeed": "RejectStepB"
@@ -674,7 +674,7 @@ public sealed class ImportRejectionTests
             StepTypes,
             ("reject-fork-empty-evidence.workflow.json", ForkEmptyEvidenceJson),
             ForkTriggerEvidenceCode);
-        await AssertRejected(result, ForkTriggerEvidenceCode, "$.diagnosticForks[0].permittedTriggers[0]", "RatificationFailure");
+        await AssertRejected(result, ForkTriggerEvidenceCode, "$.diagnosticForks[0].permittedTriggers[0]", "ratification_failure");
     }
 
     /// <summary>
@@ -716,7 +716,7 @@ public sealed class ImportRejectionTests
             result,
             DuplicatePermittedForkTriggerCode,
             "$.diagnosticForks[0].permittedTriggers[1]",
-            "RatificationFailure");
+            "ratification_failure");
     }
 
     /// <summary>

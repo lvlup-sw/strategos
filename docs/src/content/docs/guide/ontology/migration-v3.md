@@ -1181,6 +1181,31 @@ present `inverseAction` requires `requiredOnFailure = true`, and it rejects an
 empty or whitespace-only `compensationStepType` — a document that previously
 slipped through and produced a saga with no compensation is now a build error.
 
+### Closed-enum wire slots are now enforced on import
+
+Four slots in a `.workflow.json` are typed by a closed contract enum: a gate's
+`class`, a permitted fork trigger, a step's `runtime`, and a failure handler's
+`scope`. Through 2.10 the .NET import front-end read all four as opaque strings
+and accepted any token, while the emitted TypeScript arm rejected anything
+outside the enum. From 3.0 both arms agree: an unknown token is `AGWF049`, a
+build error naming the file, the construct, the JSON path, and the full
+vocabulary.
+
+This can fail a document that built clean for four minors. Two spellings
+account for nearly every case:
+
+- a **member name where its wire value belongs** — `"Typecheck"` for
+  `"typecheck"`, `"RatificationFailure"` for `"ratification_failure"`. Consumers
+  round-trip these by value, never by member name;
+- a **class retired by an earlier contract major** — `"AntipatternDetection"`
+  predates 0.4.0 and has no successor token; pick the current class that names
+  the mechanism, which for a deterministic rule set is `"rules"`.
+
+The accepted set is emitted from the same TypeSpec as the enum itself, so it is
+always the vocabulary your pinned Contracts version defines. `AGWF049` is a new
+member of the generated closed `AgwfCode` enum; consumers of that enum upgrade
+before Strategos can emit the token.
+
 ## 21. Invalidate graph-version caches once
 
 The canonical graph hash now includes action subjects, normalized typed
