@@ -64,6 +64,7 @@ enum AgwfCode {
   ProofCatalogExportIncomplete: "AGWF046",
   ProofCatalogUnreadable: "AGWF047",
   ProofCatalogDuplicateIdentity: "AGWF048",
+  ImportClosedEnumValueUnknown: "AGWF049",
 }
 
 /** AGWF001 — Empty workflow name. */
@@ -483,5 +484,15 @@ model AgwfEntryProofCatalogDuplicateIdentity {
   severity: "error";
   summary: "Duplicate action identity across proof catalogs";
   remediation: "Action '{0}' is declared by both '{1}' and '{2}'. Two assemblies claiming one ordinal action identity is an ambiguity no merge can resolve; give the action one declaring assembly.";
+  since: "3.0.0";
+}
+
+/** AGWF049 — A wire slot typed by a closed enum carries a value outside its vocabulary (#221). */
+@jsonSchema
+model AgwfEntryImportClosedEnumValueUnknown {
+  id: "AGWF049";
+  severity: "error";
+  summary: "Closed-enum wire slot carries an unknown value";
+  remediation: "Import file '{0}' declares {1} at {2}. A closed enum is not an extension point — both runtimes match {3} BY VALUE, so check for a member name used in place of its wire value (PascalCase for snake_case), or a class retired in an earlier contract major. The {3} vocabulary is exactly: {4}.";
   since: "3.0.0";
 }

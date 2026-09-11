@@ -34,6 +34,17 @@
              Link="Generated\AgwfCodes.g.cs" />
   </ItemGroup>
 
+  <!-- #221 closed-enum single-source: link the generated wire vocabularies the
+       same way. The import front-end reads gates[].class, steps[].runtime,
+       failureHandlers[].scope and permittedTriggers[].trigger as opaque strings
+       (the netstandard2.0 wire-DTO twins carry no CLR enum handles, INV-8), so
+       the fail-closed check needs the accepted set as source. Linking it means
+       adding a member in TypeSpec cannot leave the validator behind. -->
+  <ItemGroup>
+    <Compile Include="..\Strategos.Contracts\Generated\WireEnumVocabularies.g.cs"
+             Link="Generated\WireEnumVocabularies.g.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- #167 consumes the exact same dependency-free proof kernel and Roslyn
          predicate parser as the ontology analyzer. Source links keep the two

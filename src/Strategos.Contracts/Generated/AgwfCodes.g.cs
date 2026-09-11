@@ -140,5 +140,8 @@ namespace Strategos.Contracts.Generated
 
         /// <summary>AGWF048 — Duplicate action identity across proof catalogs.</summary>
         public const string ProofCatalogDuplicateIdentity = "AGWF048";
+
+        /// <summary>AGWF049 — Closed-enum wire slot carries an unknown value.</summary>
+        public const string ImportClosedEnumValueUnknown = "AGWF049";
     }
 }

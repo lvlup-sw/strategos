@@ -54,6 +54,7 @@ export * from "./AgwfEntryDuplicateStepName.js";
 export * from "./AgwfEntryEmptyWorkflowName.js";
 export * from "./AgwfEntryEventSourcedRequiresState.js";
 export * from "./AgwfEntryForkWithoutJoin.js";
+export * from "./AgwfEntryImportClosedEnumValueUnknown.js";
 export * from "./AgwfEntryImportDanglingGateId.js";
 export * from "./AgwfEntryImportForkTriggerWithoutEvidence.js";
 export * from "./AgwfEntryImportRejectedApprovalContext.js";

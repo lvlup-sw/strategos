@@ -430,8 +430,8 @@ public sealed class ImportIdentityGateTests
             pathGateId: "gate-b",
             gates: """
                 [
-                  { "class": "epistemic", "id": "gate-a" },
-                  { "class": "epistemic", "id": "gate-b" }
+                  { "class": "rules", "id": "gate-a" },
+                  { "class": "rules", "id": "gate-b" }
                 ]
                 """);
 

@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
-/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 42
+/// T4 — the generated <c>AgwfCode</c> C# enum. Asserts it has exactly 43
 /// members carrying <em>symbolic</em> names (the wire identity every consumer
 /// binds against by name, never by ordinal; INV-5), each serializing to its <c>AGWF0xx</c> wire string
 /// via the <c>[JsonStringEnumMemberName]</c> path.
@@ -63,6 +63,7 @@ public sealed class AgwfCodeEnumTests
         ("ProofCatalogExportIncomplete", "AGWF046"),
         ("ProofCatalogUnreadable", "AGWF047"),
         ("ProofCatalogDuplicateIdentity", "AGWF048"),
+        ("ImportClosedEnumValueUnknown", "AGWF049"),
     ];
 
     /// <summary>

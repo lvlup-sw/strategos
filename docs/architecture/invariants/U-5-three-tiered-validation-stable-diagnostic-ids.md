@@ -3,7 +3,7 @@
 Validation happens at three tiers, and each error gets a stable, monotonically-assigned diagnostic ID:
 
 1. **Builder-runtime** — fluent calls throw `InvalidOperationException` / `ArgumentException` for misuse caught at build time (`WorkflowBuilder.cs:59,91,140,245,310,388`).
-2. **Roslyn analyzer** — compile-time diagnostics via `WorkflowDiagnostics.cs` (AGWF catalog through AGWF048 as of 3.0, identities in `AgwfCodes.g.cs`) and `OntologyDefinitionAnalyzer.cs` (AONT001..037, AONT200..222).
+2. **Roslyn analyzer** — compile-time diagnostics via `WorkflowDiagnostics.cs` (AGWF catalog through AGWF049 as of 3.0, identities in `AgwfCodes.g.cs`) and `OntologyDefinitionAnalyzer.cs` (AONT001..037, AONT200..222).
 3. **Emitter-time** — source generator guards before emission.
 
 Diagnostic IDs are part of the *public contract*. Consumers suppress specific IDs via `<NoWarn>`, `.editorconfig`, or `#pragma warning disable`. IDs must never be reused, renumbered, or silently removed within a non-major release.
@@ -21,7 +21,7 @@ Validation prefers the earliest tier that can catch the error: analyzer over emi
 ## Repo-grounded checks
 
 - `src/Strategos/Builders/WorkflowBuilder.cs:59,91,140,245,310,388` — fluent throws on misuse
-- `src/Strategos.Contracts/Generated/AgwfCodes.g.cs` — AGWF identities through AGWF048 as of 3.0 (TypeSpec-canonical; descriptors in `WorkflowDiagnostics.cs` consume these constants)
+- `src/Strategos.Contracts/Generated/AgwfCodes.g.cs` — AGWF identities through AGWF049 as of 3.0 (TypeSpec-canonical; descriptors in `WorkflowDiagnostics.cs` consume these constants)
 - `src/Strategos.Generators/Diagnostics/WorkflowDiagnostics.cs` — AGWF descriptors with severity; IDs are not hand-authored literals
 - `src/Strategos.Ontology.Generators/Diagnostics/OntologyDiagnosticIds.cs:5-49` — AONT001..037 plus AONT200..222 (action calculus) covering core, preconditions, lifecycle, derivation, interface actions, extension points
 - `src/Strategos.Ontology.Generators/Analyzers/OntologyDefinitionAnalyzer.cs` — single analyzer driving all AONT reporting

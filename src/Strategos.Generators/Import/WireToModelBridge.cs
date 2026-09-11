@@ -11,6 +11,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 
+using Strategos.Contracts.Generated;
 using Strategos.Generators.Diagnostics;
 using Strategos.Generators.Helpers;
 using Strategos.Generators.Models;
@@ -763,6 +764,45 @@ internal static class WireToModelBridge
             }
         }
 
+        // (7) Closed-enum wire slots carrying a value outside their vocabulary (#221).
+        // gates[].class, steps[].runtime, the failure-handler scope and a permitted
+        // fork trigger are CLOSED contract enums, but the netstandard2.0 twins carry
+        // them as plain strings (INV-8: the polyglot identity is the value), so until
+        // now any token was accepted and carried into the IR — the same failure mode
+        // the dangling-gateId check exists to catch. Every declared slot is checked,
+        // including ones under constructs rejected wholesale above: the slot is a
+        // contract violation wherever it appears, and naming it is cheaper than
+        // explaining why one position is exempt.
+        for (var i = 0; i < definition.Gates.Count; i++)
+        {
+            CheckClosedEnumSlot(
+                definition.Gates[i].Class,
+                WireEnumVocabularies.GateClass,
+                nameof(WireEnumVocabularies.GateClass),
+                "gate class",
+                $"$.gates[{i}].class",
+                jsonFilePath,
+                rejections);
+        }
+
+        for (var i = 0; i < definition.DiagnosticForks.Count; i++)
+        {
+            var permittedTriggers = definition.DiagnosticForks[i].PermittedTriggers;
+            for (var j = 0; j < permittedTriggers.Count; j++)
+            {
+                CheckClosedEnumSlot(
+                    permittedTriggers[j].Trigger,
+                    WireEnumVocabularies.ForkTrigger,
+                    nameof(WireEnumVocabularies.ForkTrigger),
+                    "permitted fork trigger",
+                    $"$.diagnosticForks[{i}].permittedTriggers[{j}].trigger",
+                    jsonFilePath,
+                    rejections);
+            }
+        }
+
+        ScanClosedEnumSlots(definition, jsonFilePath, rejections);
+
         // Two diagnostic-fork edges whose compensation seeds sanitize to the same
         // DiagnosticForkCount_{seed} key (#156.3). Reject rather than share a counter:
         // MapDiagnosticForks would otherwise lower two edges onto one saga property.
@@ -929,6 +969,188 @@ internal static class WireToModelBridge
                     rejections);
             }
         }
+    }
+
+    /// <summary>
+    /// Walks every wire position that declares a <c>StepRuntime</c> or a
+    /// <c>FailureHandlerScope</c> and checks the declared token against its closed
+    /// vocabulary (#221).
+    /// </summary>
+    /// <remarks>
+    /// Reach is deliberately the WHOLE step tree, not just the importable positions
+    /// <see cref="ScanImportableSteps"/> covers: a value outside a closed vocabulary is
+    /// a contract violation wherever it sits, and a walk with an exemption is a walk a
+    /// later reader has to re-derive. Every one of the eight step lists the twins expose
+    /// is reachable from here.
+    /// </remarks>
+    private static void ScanClosedEnumSlots(
+        WorkflowDefinitionV1 definition,
+        string jsonFilePath,
+        List<Diagnostic> rejections)
+    {
+        ScanStepRuntimes(definition.Steps, "$.steps", jsonFilePath, rejections);
+
+        for (var i = 0; i < definition.FailureHandlers.Count; i++)
+        {
+            ScanFailureHandler(
+                definition.FailureHandlers[i], $"$.failureHandlers[{i}]", jsonFilePath, rejections);
+        }
+
+        for (var i = 0; i < definition.BranchPoints.Count; i++)
+        {
+            var paths = definition.BranchPoints[i].Paths;
+            for (var p = 0; p < paths.Count; p++)
+            {
+                ScanStepRuntimes(
+                    paths[p].Steps, $"$.branchPoints[{i}].paths[{p}].steps", jsonFilePath, rejections);
+            }
+        }
+
+        for (var i = 0; i < definition.Loops.Count; i++)
+        {
+            ScanStepRuntimes(
+                definition.Loops[i].BodySteps, $"$.loops[{i}].bodySteps", jsonFilePath, rejections);
+        }
+
+        for (var i = 0; i < definition.ForkPoints.Count; i++)
+        {
+            var paths = definition.ForkPoints[i].Paths;
+            for (var p = 0; p < paths.Count; p++)
+            {
+                var pathPath = $"$.forkPoints[{i}].paths[{p}]";
+                ScanStepRuntimes(paths[p].Steps, $"{pathPath}.steps", jsonFilePath, rejections);
+                if (paths[p].FailureHandler is { } pathHandler)
+                {
+                    ScanFailureHandler(
+                        pathHandler, $"{pathPath}.failureHandler", jsonFilePath, rejections);
+                }
+            }
+        }
+
+        for (var i = 0; i < definition.ApprovalPoints.Count; i++)
+        {
+            ScanApproval(definition.ApprovalPoints[i], $"$.approvalPoints[{i}]", jsonFilePath, rejections);
+        }
+    }
+
+    /// <summary>Checks a failure handler's scope, then descends into its recovery steps.</summary>
+    private static void ScanFailureHandler(
+        FailureHandlerDefinition handler,
+        string path,
+        string jsonFilePath,
+        List<Diagnostic> rejections)
+    {
+        CheckClosedEnumSlot(
+            handler.Scope,
+            WireEnumVocabularies.FailureHandlerScope,
+            nameof(WireEnumVocabularies.FailureHandlerScope),
+            "failure-handler scope",
+            $"{path}.scope",
+            jsonFilePath,
+            rejections);
+        ScanStepRuntimes(handler.Steps, $"{path}.steps", jsonFilePath, rejections);
+    }
+
+    /// <summary>Descends into an approval's escalation and rejection handler step lists.</summary>
+    private static void ScanApproval(
+        ApprovalDefinition approval,
+        string path,
+        string jsonFilePath,
+        List<Diagnostic> rejections)
+    {
+        if (approval.EscalationHandler is { } escalation)
+        {
+            ScanStepRuntimes(
+                escalation.Steps, $"{path}.escalationHandler.steps", jsonFilePath, rejections);
+            for (var i = 0; i < escalation.NestedApprovals.Count; i++)
+            {
+                ScanApproval(
+                    escalation.NestedApprovals[i],
+                    $"{path}.escalationHandler.nestedApprovals[{i}]",
+                    jsonFilePath,
+                    rejections);
+            }
+        }
+
+        if (approval.RejectionHandler is { } rejection)
+        {
+            ScanStepRuntimes(
+                rejection.Steps, $"{path}.rejectionHandler.steps", jsonFilePath, rejections);
+        }
+    }
+
+    /// <summary>Checks every step's runtime slot, descending into low-confidence handler chains.</summary>
+    private static void ScanStepRuntimes(
+        IReadOnlyList<StepDefinition> steps,
+        string path,
+        string jsonFilePath,
+        List<Diagnostic> rejections)
+    {
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var stepPath = $"{path}[{i}]";
+            CheckClosedEnumSlot(
+                steps[i].Runtime,
+                WireEnumVocabularies.StepRuntime,
+                nameof(WireEnumVocabularies.StepRuntime),
+                "step runtime",
+                $"{stepPath}.runtime",
+                jsonFilePath,
+                rejections);
+
+            var handlerSteps = steps[i].Configuration?.OnLowConfidence?.HandlerSteps;
+            if (handlerSteps is not null && handlerSteps.Count > 0)
+            {
+                ScanStepRuntimes(
+                    handlerSteps,
+                    $"{stepPath}.configuration.onLowConfidence.handlerSteps",
+                    jsonFilePath,
+                    rejections);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reports <c>ImportClosedEnumValueUnknown</c> when a declared wire token is outside
+    /// <paramref name="vocabulary"/> — the emitted contract's own value set, linked as
+    /// source rather than re-typed, so a member added in TypeSpec widens this check
+    /// without an edit here.
+    /// </summary>
+    /// <remarks>
+    /// An ABSENT slot is not this diagnostic's subject: whether a slot may be omitted is
+    /// the schema's required-ness, reported as malformed JSON. A slot declared as the
+    /// empty string IS checked — that is a token, and it is not in any vocabulary.
+    /// </remarks>
+    private static void CheckClosedEnumSlot(
+        string? value,
+        string[] vocabulary,
+        string enumName,
+        string construct,
+        string jsonPath,
+        string jsonFilePath,
+        List<Diagnostic> rejections)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < vocabulary.Length; i++)
+        {
+            if (string.Equals(vocabulary[i], value, StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+
+        rejections.Add(Diagnostic.Create(
+            WorkflowDiagnostics.ImportClosedEnumValueUnknown,
+            Location.None,
+            jsonFilePath,
+            $"{construct} '{value}'",
+            jsonPath,
+            enumName,
+            string.Join(", ", vocabulary)));
     }
 
     /// <summary>
