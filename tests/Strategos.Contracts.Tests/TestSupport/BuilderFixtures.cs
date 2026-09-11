@@ -4,6 +4,8 @@
 // </copyright>
 // =============================================================================
 
+using System.Text.Json;
+
 namespace Strategos.Contracts.Tests;
 
 /// <summary>
@@ -52,11 +54,50 @@ internal static class BuilderFixtures
         }
     }
 
+    /// <summary>
+    /// Whether the corpus on disk is complete enough to reuse.
+    /// </summary>
+    /// <remarks>
+    /// "Any file is present" is not the question. A directory left by an older build
+    /// can hold plenty of valid fixtures and still not be the corpus this run needs,
+    /// and a conformance gate that passed against it would be reporting on a corpus
+    /// nobody asked for. The manifest is the authority: its <c>count</c> must match
+    /// what is on disk, and every fixture it lists must exist.
+    /// </remarks>
     private static bool HasFixtures()
     {
         var dir = RepoLayout.BuilderFixturesDir;
-        return Directory.Exists(dir)
-            && Directory.EnumerateFiles(dir, "*.json", SearchOption.AllDirectories)
-                .Any(path => !path.EndsWith("index.json", StringComparison.Ordinal));
+        var manifestPath = Path.Combine(dir, "index.json");
+        if (!Directory.Exists(dir) || !File.Exists(manifestPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = manifest.RootElement;
+            if (!root.TryGetProperty("count", out var count)
+                || !root.TryGetProperty("fixtures", out var fixtures))
+            {
+                return false;
+            }
+
+            var onDisk = Directory.EnumerateFiles(dir, "*.json", SearchOption.AllDirectories)
+                .Count(path => !path.EndsWith("index.json", StringComparison.Ordinal));
+            if (onDisk != count.GetInt32())
+            {
+                return false;
+            }
+
+            return fixtures.EnumerateArray().All(entry =>
+                entry.TryGetProperty("path", out var relative)
+                && relative.GetString() is { } value
+                && File.Exists(Path.Combine(dir, value)));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }

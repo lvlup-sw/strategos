@@ -186,6 +186,36 @@ public sealed class ZodProjectionTests
                 .Because("the emitter must name the keyword it cannot lower.");
             await Assert.That(Directory.Exists(output) && Directory.EnumerateFiles(output).Any()).IsFalse()
                 .Because("a stopped emit must not leave a partial projection behind.");
+
+            // Knowing a keyword is not the same as reading it. A constraint can be
+            // lowered on one branch and silently dropped on another — `minProperties`
+            // beside a `$ref` — and no corpus of VALID documents can detect that,
+            // because the result is merely too permissive.
+            await File.WriteAllTextAsync(Path.Combine(schemas, "Probe.json"), """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "$id": "Probe.json",
+                  "type": "object",
+                  "properties": {
+                    "value": { "$ref": "Target.json", "maxLength": 4 }
+                  },
+                  "required": ["value"]
+                }
+                """);
+            await File.WriteAllTextAsync(Path.Combine(schemas, "Target.json"), """
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "$id": "Target.json",
+                  "type": "string"
+                }
+                """);
+
+            var unread = await Cli.RunAsync("node", $"scripts/emit-zod.mjs \"{output}\"", probeDir);
+
+            await Assert.That(unread.ExitCode).IsNotEqualTo(0)
+                .Because($"a keyword the chosen branch does not read must stop the emit:\n{unread.Output}");
+            await Assert.That(unread.Output).Contains("maxLength")
+                .Because("the emitter must name the keyword it read past.");
         }
         finally
         {

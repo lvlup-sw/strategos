@@ -194,6 +194,18 @@ function cycleGroups(graph) {
  * one is an error: an ambiguous rule would attach the check to an arbitrary
  * root, and a rule attached nowhere is a rule that does not hold.
  */
+let cachedClosure = null;
+let cachedClosureGraph = null;
+
+/** The reference-graph closure, computed once per graph. */
+function closureFor(graph) {
+  if (cachedClosureGraph !== graph) {
+    cachedClosure = reachableFrom(graph);
+    cachedClosureGraph = graph;
+  }
+  return cachedClosure;
+}
+
 function collectReferenceRules(documents, graph) {
   const rules = [];
 
@@ -231,7 +243,7 @@ function collectReferenceRules(documents, graph) {
 }
 
 function resolveReferenceRoot(documents, graph, owner, pointer, collection, property) {
-  const reachable = reachableFrom(graph);
+  const reachable = closureFor(graph);
   const candidates = [];
 
   for (const [name, document] of documents) {
@@ -263,31 +275,36 @@ function resolveReferenceRoot(documents, graph, owner, pointer, collection, prop
   return candidates[0];
 }
 
+/**
+ * Full transitive closure of the reference graph, per node.
+ *
+ * Computed by breadth-first expansion from each node rather than by a memoized
+ * depth-first walk. A memoized walk that shares one visited set across branches
+ * caches a PARTIAL closure for any node first reached through an already-visited
+ * sibling — and a rule that resolves against a partial closure silently attaches
+ * to the wrong root, or to none.
+ */
 function reachableFrom(graph) {
-  const memo = new Map();
-  const walk = (node, seen) => {
-    if (memo.has(node)) {
-      return memo.get(node);
-    }
-    const result = new Set();
-    memo.set(node, result);
-    for (const next of graph.get(node) ?? []) {
-      if (!graph.has(next) || seen.has(next)) {
-        result.add(next);
+  const closure = new Map();
+  for (const node of graph.keys()) {
+    const reached = new Set();
+    const queue = [...(graph.get(node) ?? [])];
+    while (queue.length > 0) {
+      const next = queue.pop();
+      if (reached.has(next)) {
         continue;
       }
-      result.add(next);
-      seen.add(next);
-      for (const deep of walk(next, seen)) {
-        result.add(deep);
+      reached.add(next);
+      for (const deeper of graph.get(next) ?? []) {
+        if (!reached.has(deeper)) {
+          queue.push(deeper);
+        }
       }
     }
-    return result;
-  };
-  for (const node of graph.keys()) {
-    walk(node, new Set([node]));
+
+    closure.set(node, reached);
   }
-  return memo;
+  return closure;
 }
 
 /** The `const`-pinned properties of a document — a discriminator, in practice. */
@@ -324,7 +341,20 @@ function compile(node, context) {
   }
 
   if ("$ref" in node) {
-    return reference(refName(node.$ref), context);
+    // A `$ref` can carry sibling constraints that refine what it points at —
+    // `ForkOccurrence.evidence` is a reference to a record PLUS `minProperties: 1`.
+    // Returning the reference alone would drop that, which is exactly the silent
+    // weakening this emitter exists to prevent, so the siblings are applied here
+    // and then declared consumed.
+    let expression = reference(refName(node.$ref), context);
+    const consumed = ["$ref"];
+    if ("minProperties" in node) {
+      expression = minPropertiesRefinement(expression, node.minProperties);
+      consumed.push("minProperties");
+    }
+
+    requireConsumed(node, context, consumed);
+    return expression;
   }
   if ("anyOf" in node) {
     const arms = node.anyOf.map((arm, i) =>
@@ -332,36 +362,70 @@ function compile(node, context) {
     if (arms.length < 2) {
       fail(`${context.where}: anyOf needs at least two arms`);
     }
+
+    requireConsumed(node, context, ["anyOf"]);
     return `z.union([${arms.join(", ")}])`;
   }
   if ("const" in node) {
+    requireConsumed(node, context, ["const", "type"]);
     return `z.literal(${JSON.stringify(node.const)})`;
   }
   if ("enum" in node) {
     if (node.type !== "string") {
       fail(`${context.where}: only string enums are lowered, got type '${node.type}'`);
     }
+
+    requireConsumed(node, context, ["enum", "type"]);
     return `z.enum([${node.enum.map((member) => JSON.stringify(member)).join(", ")}])`;
   }
 
   switch (node.type) {
     case "object":
+      requireConsumed(node, context, [
+        "type", "properties", "required", "unevaluatedProperties", "minProperties", "if", "then",
+      ]);
       return objectExpression(node, context);
     case "array":
+      requireConsumed(node, context, ["type", "items", "minItems"]);
       return arrayExpression(node, context);
     case "string":
+      requireConsumed(node, context, ["type", "minLength", "maxLength", "pattern"]);
       return stringExpression(node, context);
     case "integer":
     case "number":
+      requireConsumed(node, context, ["type", "minimum", "maximum"]);
       return numberExpression(node, context);
     case "boolean":
-      return "z.boolean()";
     case "null":
-      return "z.null()";
+      requireConsumed(node, context, ["type"]);
+      return node.type === "boolean" ? "z.boolean()" : "z.null()";
     default:
       fail(`${context.where}: unsupported type '${JSON.stringify(node.type)}'`);
       return "";
   }
+}
+
+/**
+ * Fails unless every lowered keyword present on `node` is one the chosen branch
+ * reads.
+ *
+ * The keyword allow-list alone is not enough. A keyword can be lowered SOMEWHERE
+ * and still be dropped HERE — `minProperties` beside a `$ref`, say — and a corpus
+ * of valid documents cannot detect that, because the emitted schema is merely too
+ * permissive. This makes "the branch read everything it was given" the property,
+ * rather than "the emitter knows this word".
+ */
+function requireConsumed(node, context, consumed) {
+  const unread = Object.keys(node)
+    .filter((key) => LOWERED.has(key) && !consumed.includes(key));
+  if (unread.length > 0) {
+    fail(`${context.where}: keyword(s) ${unread.join(", ")} are not lowered beside ${consumed[0]}`);
+  }
+}
+
+function minPropertiesRefinement(expression, minimum) {
+  return `${expression}.refine((value) => Object.keys(value).length >= ${minimum}, ` +
+    `{ message: "must declare at least ${minimum} member(s)" })`;
 }
 
 function reference(name, context) {
@@ -408,9 +472,7 @@ function objectExpression(node, context) {
   }
 
   if ("minProperties" in node) {
-    expression =
-      `${expression}.refine((value) => Object.keys(value).length >= ${node.minProperties}, ` +
-      `{ message: "must declare at least ${node.minProperties} member(s)" })`;
+    expression = minPropertiesRefinement(expression, node.minProperties);
   }
 
   if ("if" in node || "then" in node) {

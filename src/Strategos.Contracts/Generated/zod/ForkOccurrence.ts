@@ -12,7 +12,7 @@ import { RecordStringSchema } from "./RecordString.js";
 export const ForkOccurrenceSchema = z.looseObject({
     "schemaVersion": z.literal("fork.v1"),
     "trigger": ForkTriggerSchema,
-    "evidence": RecordStringSchema,
+    "evidence": RecordStringSchema.refine((value) => Object.keys(value).length >= 1, { message: "must declare at least 1 member(s)" }),
   });
 
 export type ForkOccurrence = z.infer<typeof ForkOccurrenceSchema>;
