@@ -858,6 +858,11 @@ itself the last compilation with
 `<StrategosProofRequireLocalBindings>true</StrategosProofRequireLocalBindings>`,
 which turns a deferral into an error.
 
+Set that property in host and entry-point projects only. **Do not set it in a
+library**: a library cannot know whether some consumer will supply the workflow its
+action binds, so there the property would refuse every legitimate cross-assembly
+layout — including the one this release exists to prove.
+
 The proof runs inside the `LevelUp.Strategos.Generators` source generator, and so
 does the export. A project that references `LevelUp.Strategos.Ontology` but not the
 generator package has nothing to export its contracts, so its `BoundToWorkflow(...)`
