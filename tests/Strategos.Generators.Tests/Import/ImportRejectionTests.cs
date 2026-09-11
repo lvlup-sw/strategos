@@ -294,7 +294,7 @@ public sealed class ImportRejectionTests
           ],
           "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
           "failureHandlers": [], "approvalPoints": [],
-          "gates": [ { "class": "AntipatternDetection", "id": "g1" } ],
+          "gates": [ { "class": "rules", "id": "g1" } ],
           "entryStepId": "s1", "terminalStepId": "s2"
         }
         """;
@@ -311,7 +311,7 @@ public sealed class ImportRejectionTests
           "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
           "failureHandlers": [], "approvalPoints": [],
           "gates": [
-            { "class": "AntipatternDetection", "id": "g1",
+            { "class": "rules", "id": "g1",
               "reliability": { "fpr": 0.02, "sampleSize": 500, "asOf": "2026-01-01T00:00:00Z", "source": "telemetry" } }
           ],
           "entryStepId": "s1", "terminalStepId": "s2"
@@ -476,7 +476,7 @@ public sealed class ImportRejectionTests
           ],
           "transitions": [], "branchPoints": [], "loops": [], "forkPoints": [],
           "failureHandlers": [], "approvalPoints": [],
-          "gates": [ { "class": "AntipatternDetection", "id": "g1" } ],
+          "gates": [ { "class": "rules", "id": "g1" } ],
           "entryStepId": "s1", "terminalStepId": "s3"
         }
         """;

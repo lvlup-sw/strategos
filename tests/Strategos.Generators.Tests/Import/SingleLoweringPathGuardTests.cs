@@ -449,7 +449,7 @@ public sealed class SingleLoweringPathGuardTests
           "forkPoints": [],
           "failureHandlers": [],
           "approvalPoints": [],
-          "gates": [ { "class": "AntipatternDetection", "id": "g1" } ],
+          "gates": [ { "class": "rules", "id": "g1" } ],
           "entryStepId": "s1",
           "terminalStepId": "s3"
         }

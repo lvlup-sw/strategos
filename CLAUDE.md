@@ -66,6 +66,8 @@ bash scripts/contracts-codegen.sh                                   # TypeSpec -
 node scripts/contracts-schema-diff.mjs <previous-dir> <current-dir> <previous-version> <candidate-version>   # --allowlist defaults to src/Strategos.Contracts/schemas/breaking-changes.allowlist.json
 ```
 
+`scripts/contracts-codegen.sh` emits three targets from the one TypeSpec source: JSON Schema (`schemas/`), C# records (`Generated/*.g.cs`) and the Zod/TypeScript projection Exarchos pins (`Generated/zod/`, #219). Referential rules JSON Schema cannot express are declared with `@references` in the TypeSpec and lowered by the Zod emitter; the emitter fails closed on any JSON Schema keyword it does not lower.
+
 Every change under `src/Strategos.Contracts/` bumps `<ContractsVersion>` in `Strategos.Contracts.csproj` (pre-1.0: a breaking change advances the minor and needs an allowlist entry; an additive change passes after any increment). Hand-edits to `Generated/` or `schemas/` are rejected by CI. `AGWF` ids are single-sourced from `AgwfCatalog.tsp`; never quote one as a literal in production code.
 
 ### Public API and packed-artifact probes

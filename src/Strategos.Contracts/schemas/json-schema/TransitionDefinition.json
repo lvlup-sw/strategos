@@ -9,11 +9,19 @@
         },
         "fromStepId": {
             "type": "string",
-            "description": "Step id this transition originates from."
+            "description": "Step id this transition originates from. `@references` (#219) declares the\nendpoint rule: the value must name a step the document declares. This is the\nkernel's referential-integrity obligation for a sequence (#193), stated on\nthe construct `docs/architecture/kernel-v1.md` maps a sequence onto — a\ntransition to nowhere is a workflow with a step that does not exist.",
+            "x-strategos-references-v1": {
+                "collection": "/steps",
+                "idField": "stepId"
+            }
         },
         "toStepId": {
             "type": "string",
-            "description": "Step id this transition targets."
+            "description": "Step id this transition targets. See `fromStepId`.",
+            "x-strategos-references-v1": {
+                "collection": "/steps",
+                "idField": "stepId"
+            }
         },
         "isDefault": {
             "type": "boolean",

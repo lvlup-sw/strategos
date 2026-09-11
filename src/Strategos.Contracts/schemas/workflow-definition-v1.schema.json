@@ -1325,7 +1325,11 @@
                 },
                 "gateId": {
                     "type": "string",
-                    "description": "Optional back-reference to a gate declaration on the workflow root (#150,\nDR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.\nOPTIONAL and additive. A value naming an id absent from `gates` is a\ndangling reference — a semantic rule JSON Schema cannot express (see README,\n\"Dangling gateId\"); the build-time import front-end rejects it (DR-13/DR-15),\nnot this schema."
+                    "description": "Optional back-reference to a gate declaration on the workflow root (#150,\nDR-3): the `id` of a WorkflowDefinitionV1.gates entry this step evaluates.\nOPTIONAL and additive. A value naming an id absent from `gates` is a\ndangling reference — a semantic rule JSON Schema cannot express (see README,\n\"Dangling gateId\"); the build-time import front-end rejects it (DR-13/DR-15),\nnot this schema.\n\nThe `@references` declaration (#219) states that rule once. The emitted\nJSON Schema carries it as `x-strategos-references-v1` and the emitted Zod\nlowers it into a root-level check, so a consumer no longer hand-writes the\n`superRefine` this comment used to be the only statement of.",
+                    "x-strategos-references-v1": {
+                        "collection": "/gates",
+                        "idField": "id"
+                    }
                 }
             },
             "required": [
@@ -1660,11 +1664,19 @@
                 },
                 "fromStepId": {
                     "type": "string",
-                    "description": "Step id this transition originates from."
+                    "description": "Step id this transition originates from. `@references` (#219) declares the\nendpoint rule: the value must name a step the document declares. This is the\nkernel's referential-integrity obligation for a sequence (#193), stated on\nthe construct `docs/architecture/kernel-v1.md` maps a sequence onto — a\ntransition to nowhere is a workflow with a step that does not exist.",
+                    "x-strategos-references-v1": {
+                        "collection": "/steps",
+                        "idField": "stepId"
+                    }
                 },
                 "toStepId": {
                     "type": "string",
-                    "description": "Step id this transition targets."
+                    "description": "Step id this transition targets. See `fromStepId`.",
+                    "x-strategos-references-v1": {
+                        "collection": "/steps",
+                        "idField": "stepId"
+                    }
                 },
                 "isDefault": {
                     "type": "boolean",

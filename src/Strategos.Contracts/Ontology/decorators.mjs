@@ -42,6 +42,24 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`Ontology operations '${"operationName"}' and '${"existingOperationName"}' declare the same action identity '${"actionIdentity"}'.`,
       },
     },
+    "contract-references-collection": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Property '${"propertyName"}' declares @references into '${"collection"}', which is not a root-anchored JSON Pointer (for example '/gates').`,
+      },
+    },
+    "contract-references-id-field": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Property '${"propertyName"}' declares @references with id field '${"idField"}', which is not a member name.`,
+      },
+    },
+    "contract-references-target-type": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Property '${"propertyName"}' declares @references but is typed '${"typeName"}'. A reference is a string moniker (INV-8).`,
+      },
+    },
     "contract-action-subject-kind": {
       severity: "error",
       messages: {
@@ -671,6 +689,95 @@ export function $readOnly(context, operation) {
 export function $idempotent(context, operation) {
   extend(context, operation, "x-strategos-idempotent", true);
 }
+
+// =============================================================================
+// @references (#219) — the referential rule core JSON Schema cannot express.
+//
+// Declared in Workflow/references.tsp, bound to LevelUp.Strategos.Contracts (the
+// namespace the workflow models live in) through the $decorators export below,
+// so a workflow model reaches it without a `using` clause.
+//
+// The decorator does two things: it rejects bad authoring here, at tsp compile
+// time, and it emits `x-strategos-references-v1` onto the PROPERTY schema for
+// the Zod emitter to lower. It deliberately does not weaken the emitted JSON
+// Schema: an `x-strategos-*` key is inert to a validator that does not read it.
+// =============================================================================
+
+// A root-anchored JSON Pointer over member names: `/gates`, `/steps`,
+// `/spec/tasks`. Not a relative pointer, not an array index, not a blank
+// segment — the emitter resolves it against a document root.
+const REFERENCE_COLLECTION_POINTER = /^(?:\/[A-Za-z_][A-Za-z0-9_]*)+$/;
+const REFERENCE_MEMBER_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** True when `type` is `string` or a scalar deriving from it. */
+function isStringScalar(type) {
+  let current = type;
+  while (current !== undefined && current !== null && current.kind === "Scalar") {
+    if (current.name === "string") {
+      return true;
+    }
+    current = current.baseScalar;
+  }
+  return false;
+}
+
+function referencesDecorator(context, property, collection, idField) {
+  let valid = true;
+
+  if (typeof collection !== "string" || !REFERENCE_COLLECTION_POINTER.test(collection)) {
+    reportDiagnostic(context.program, {
+      code: "contract-references-collection",
+      format: {
+        propertyName: property.name,
+        collection: typeof collection === "string" ? collection : String(collection),
+      },
+      target: property,
+    });
+    valid = false;
+  }
+
+  if (typeof idField !== "string" || !REFERENCE_MEMBER_NAME.test(idField)) {
+    reportDiagnostic(context.program, {
+      code: "contract-references-id-field",
+      format: {
+        propertyName: property.name,
+        idField: typeof idField === "string" ? idField : String(idField),
+      },
+      target: property,
+    });
+    valid = false;
+  }
+
+  // A reference is a string moniker, never a typed handle (INV-8). Rejecting the
+  // type here is what keeps the emitter total: it lowers one shape, and cannot
+  // meet a reference it has no lowering for.
+  if (!isStringScalar(property.type)) {
+    reportDiagnostic(context.program, {
+      code: "contract-references-target-type",
+      format: {
+        propertyName: property.name,
+        typeName: getTypeName(property.type),
+      },
+      target: property,
+    });
+    valid = false;
+  }
+
+  if (!valid) {
+    return;
+  }
+
+  setExtension(context.program, property, "x-strategos-references-v1", {
+    collection,
+    idField,
+  });
+}
+
+export const $decorators = {
+  "LevelUp.Strategos.Contracts": {
+    references: referencesDecorator,
+  },
+};
 
 export function $onValidate(program) {
   const operations = actionMetadataByProgram.get(program);

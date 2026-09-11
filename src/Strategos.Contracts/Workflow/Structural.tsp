@@ -2,6 +2,7 @@ import "@typespec/json-schema";
 import "./StepDefinition.tsp";
 import "./ApprovalFailureConfig.tsp";
 import "./ForkTrigger.tsp";
+import "./references.tsp";
 
 using JsonSchema;
 
@@ -16,10 +17,18 @@ model TransitionDefinition {
   /** Stable transition identifier. */
   transitionId: string;
 
-  /** Step id this transition originates from. */
+  /**
+   * Step id this transition originates from. `@references` (#219) declares the
+   * endpoint rule: the value must name a step the document declares. This is the
+   * kernel's referential-integrity obligation for a sequence (#193), stated on
+   * the construct `docs/architecture/kernel-v1.md` maps a sequence onto — a
+   * transition to nowhere is a workflow with a step that does not exist.
+   */
+  @references("/steps", "stepId")
   fromStepId: string;
 
-  /** Step id this transition targets. */
+  /** Step id this transition targets. See `fromStepId`. */
+  @references("/steps", "stepId")
   toStepId: string;
 
   /** Whether this is the default (fallthrough) transition. */

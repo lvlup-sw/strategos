@@ -27,7 +27,12 @@ internal static class TspToolchain
             "npx", "tsp compile .", RepoLayout.ContractsProjectDir);
     }
 
-    private static async Task EnsureRestoredAsync()
+    /// <summary>
+    /// Ensures the contracts Node toolchain is restored. Public so the Zod
+    /// projection tests, which drive <c>tsc</c> and the emitter rather than
+    /// <c>tsp</c>, share the one restore per test process.
+    /// </summary>
+    public static async Task EnsureRestoredAsync()
     {
         if (restored)
         {

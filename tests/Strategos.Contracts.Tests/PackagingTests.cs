@@ -280,26 +280,5 @@ public class PackagingTests
     /// Ensures the #53 builder fixtures are present on disk (the packaging step
     /// embeds them as content). Runs the fixture-export entry point if absent.
     /// </summary>
-    private static async Task EnsureFixturesExportedAsync()
-    {
-        var fixturesDir = RepoLayout.BuilderFixturesDir;
-        var hasFixtures = Directory.Exists(fixturesDir)
-            && Directory.EnumerateFiles(fixturesDir, "*.json", SearchOption.AllDirectories)
-                .Any(p => !p.EndsWith("index.json", StringComparison.Ordinal));
-        if (hasFixtures)
-        {
-            return;
-        }
-
-        // The exporter lives in the Strategos.Tests project (it depends on the
-        // builder). Drive it via its fixture-export test entry point so the
-        // packaging test is self-contained when run in isolation.
-        var testProj = Path.Combine(
-            RepoLayout.RepoRoot, "tests", "Strategos.Tests", "Strategos.Tests.csproj");
-        var run = await Cli.RunAsync(
-            "dotnet",
-            $"run --project \"{testProj}\" -- --treenode-filter \"/*/*/FixtureExportTests/*\"");
-        await Assert.That(run.ExitCode).IsEqualTo(0)
-            .Because($"fixture export must succeed to populate package content:\n{run.Output}");
-    }
+    private static Task EnsureFixturesExportedAsync() => BuilderFixtures.EnsureExportedAsync();
 }

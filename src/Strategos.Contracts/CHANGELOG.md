@@ -62,6 +62,48 @@ strict converter.
 
 Part of #193 (stage a, #209). Refs #204, #165, #168, #153.
 
+The **Zod/TypeScript projection**, emitted here rather than derived downstream. Strategos
+owns every projection of the types it authors: one source, one emitter, one direction, one
+version. Exarchos consumes and pins; it does not derive, and it does not own the drift gate.
+This is the second acceptance bullet of #193, closed inside this repository.
+
+- **`Generated/zod/*.ts`** — one Zod module per emitted JSON Schema document, a barrel
+  `index.ts`, and the shared `_references.ts` runtime. Emitted by
+  `scripts/emit-zod.mjs` on the `scripts/contracts-codegen.sh` path, committed, and diffed by
+  the codegen guard exactly like the C# records. Distribution for GA is the existing
+  `contracts-v*` git-tag channel Exarchos already reads the schemas from; an npm package is a
+  follow-up, not GA.
+- **`@references(collection, idField)`** — a TypeSpec authoring decorator for the referential
+  rules core JSON Schema cannot express. It rejects bad authoring at `tsp compile` time with
+  its own library diagnostics (`contract-references-collection`,
+  `contract-references-id-field`, `contract-references-target-type`), emits
+  `x-strategos-references-v1` onto the property, and the emitter lowers it into a root-level
+  check. Three rules ship: `GateStep.gateId` into `gates[].id` (the AGWF032 rule), and both
+  `TransitionDefinition` endpoints into `steps[].stepId`.
+- **The emitter is total.** An unlowered JSON Schema keyword stops the emit. A corpus of valid
+  fixtures cannot detect a silently dropped constraint, so the emitter refuses to drop one.
+  `format` and `default` are read and deliberately not lowered — draft 2020-12 asserts neither
+  by default, so lowering them would make the TypeScript arm stricter, or lossier, than the
+  contract.
+- **Conformance.** `scripts/verify-zod-conformance.mjs` compiles the emitted modules with
+  `tsc` and runs them against the whole #53 builder corpus, and against the same two
+  hand-authored wire documents the generator's AGWF032 test runs — so the declared rule and
+  the hand-coded check in `Import/WireToModelBridge.cs` are pinned to the same verdict at the
+  same position (`$.steps[1].gateId`, naming `gX`).
+
+No wire shape changed: `x-strategos-references-v1` is an annotation a generic validator
+ignores, and the structural schema diff reports zero changes.
+
+Part of #193 (acceptance 2, #219). Refs #209, #204, #153, exarchos#1901.
+
+### Fixed
+
+- **Four hand-authored wire fixtures declared a gate class the contract forbids.**
+  `gates[].class` is the closed `GateClass` enum, whose wire values are the eight snake_case
+  tokens; the fixtures carried `AntipatternDetection`, a pre-0.4.0 name. They are now `rules`.
+  The import front-end reads `class` as an opaque string and accepted them, which is the gap
+  this exposed — filed separately; nothing here changes generator behavior.
+
 ## [0.12.0] - 2026-09-09
 
 The first Contracts release since 0.4.0. The 0.5.0 through 0.12.0 minors were pinned in
