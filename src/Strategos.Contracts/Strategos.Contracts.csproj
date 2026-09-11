@@ -37,8 +37,13 @@
        structural contentHash, the carried-not-proved WorkflowAuthorityV1 frame, the
        typed-contract $id slot, the step completion predicate and authority coordinate,
        the wire projection of the #165 authority lattice (coordinates as ordered
-       axis/level pairs, not a map, so contentHash is deterministic), and the ActionContractV1 /
-       ActionCatalogV1 / ProofCatalogV1 manifest #204 serializes.
+       axis/level pairs, not a map, so contentHash is deterministic), the ActionContractV1 /
+       ActionCatalogV1 / ProofCatalogV1 manifest #204 serializes, and the emitted
+       Zod/TypeScript projection under Generated/zod/ with the @references
+       referential declarations it lowers (#219 — Strategos owns every projection
+       of the types it authors; Exarchos consumes and pins). The Zod arm adds no
+       wire shape: x-strategos-references-v1 is an annotation a generic validator
+       ignores, so the structural diff reports zero changes and 0.13.0 stands.
        MinVer silently overwrites a bare
        <Version>, so per repo convention (cf. Strategos.Agents smoke-pin) we
        also set <MinVerSkip>true</MinVerSkip> + <PackageVersion>. The

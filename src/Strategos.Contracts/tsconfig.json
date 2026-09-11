@@ -1,0 +1,13 @@
+{
+  "//": "Type-checks the emitted Zod projection (#219). The artifact is what Exarchos consumes, so it is compiled here rather than trusted to compile there.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["Generated/zod/**/*.ts"]
+}

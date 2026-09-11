@@ -25,14 +25,18 @@ public sealed record TransitionDefinition
     public string TransitionId { get; init; } = default!;
 
     /// <summary>
-    /// Step id this transition originates from.
+    /// Step id this transition originates from. `@references` (#219) declares the
+    /// endpoint rule: the value must name a step the document declares. This is the
+    /// kernel&apos;s referential-integrity obligation for a sequence (#193), stated on
+    /// the construct `docs/architecture/kernel-v1.md` maps a sequence onto — a
+    /// transition to nowhere is a workflow with a step that does not exist.
     /// </summary>
     [JsonPropertyName("fromStepId")]
     [JsonRequired]
     public string FromStepId { get; init; } = default!;
 
     /// <summary>
-    /// Step id this transition targets.
+    /// Step id this transition targets. See `fromStepId`.
     /// </summary>
     [JsonPropertyName("toStepId")]
     [JsonRequired]

@@ -1,6 +1,7 @@
 import "@typespec/json-schema";
 import "./ActionReference.tsp";
 import "./StepConfiguration.tsp";
+import "./references.tsp";
 import "./WorkflowAuthority.tsp";
 import "../Ontology/ActionPredicates.tsp";
 import "../Ontology/Authority.tsp";
@@ -120,7 +121,13 @@ model GateStep {
    * dangling reference — a semantic rule JSON Schema cannot express (see README,
    * "Dangling gateId"); the build-time import front-end rejects it (DR-13/DR-15),
    * not this schema.
+   *
+   * The `@references` declaration (#219) states that rule once. The emitted
+   * JSON Schema carries it as `x-strategos-references-v1` and the emitted Zod
+   * lowers it into a root-level check, so a consumer no longer hand-writes the
+   * `superRefine` this comment used to be the only statement of.
    */
+  @references("/gates", "id")
   gateId?: string;
 }
 
