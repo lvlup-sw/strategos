@@ -3,6 +3,7 @@
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageId>LevelUp.Strategos.Ontology.Embeddings</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>OpenAI-compatible embedding provider for Strategos.Ontology vector search.</Description>
   </PropertyGroup>
 
@@ -18,6 +19,10 @@
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
