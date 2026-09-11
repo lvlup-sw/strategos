@@ -36,11 +36,12 @@ model ActionSubjectV1 {
 /**
  * One action's full contract: what it acts on, what it needs, what it
  * guarantees, what it touches, what authority it demands, how it is undone,
- * and whether repeating it changes anything.
+ * whether repeating it changes anything, and which workflow it claims to
+ * implement.
  *
- * The seven members are the action calculus's own vocabulary (#164, #167,
- * #168, #169), projected verbatim. `AcceptsType` and `ReturnsType` are NOT
- * projected — see `TypedContractRefV1` for the slot that replaces them.
+ * These are the action calculus's own vocabulary (#164, #167, #168, #169),
+ * projected verbatim. `AcceptsType` and `ReturnsType` are NOT projected — see
+ * `TypedContractRefV1` for the slot that replaces them.
  */
 model ActionContractV1 {
   /** The object this action acts on. */
@@ -78,6 +79,20 @@ model ActionContractV1 {
 
   /** Whether repeating the action has the same observable effect. */
   idempotent: boolean;
+
+  /**
+   * The workflow this action is bound to (#167 `BoundToWorkflow`), by ordinal
+   * workflow name. Omitted when the action binds no workflow.
+   *
+   * The binding is part of the contract, not metadata about it: it is the
+   * implementation claim the refinement proof discharges. A catalog that
+   * carried an action's pre- and postconditions but not the workflow it claims
+   * to implement would describe an action no referencing compilation could
+   * prove anything about (#204).
+   */
+  @minLength(1)
+  @pattern(".*\\S.*")
+  boundWorkflow?: string;
 }
 
 /** Every action contract a catalog declares. The action side of #204's manifest. */
@@ -94,8 +109,11 @@ model ActionCatalogV1 {
  * reads from a referencing one, so a binding whose declarations live in a
  * referenced package can still be machine-checked.
  *
- * This root is frozen HERE, with the types it composes, so #204 is purely
- * emission, consumption and proof, with no further Contracts change.
+ * This root is frozen HERE, with the types it composes. #209 froze it expecting
+ * #204 to need no further Contracts change; building the emitter found one —
+ * `ActionContractV1` carried no binding, so a catalog could describe an action's
+ * pre- and postconditions without saying which workflow it claims to implement.
+ * `boundWorkflow` closes that, additively.
  *
  * Fail-closed is the consuming analyzer's contract, not this schema's: an
  * unknown `schemaVersion`, a duplicate identity, an opaque contract or an

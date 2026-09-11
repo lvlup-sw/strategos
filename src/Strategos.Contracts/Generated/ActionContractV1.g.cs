@@ -14,11 +14,12 @@ namespace Strategos.Contracts.Generated;
 /// <summary>
 /// One action&apos;s full contract: what it acts on, what it needs, what it
 /// guarantees, what it touches, what authority it demands, how it is undone,
-/// and whether repeating it changes anything.
+/// whether repeating it changes anything, and which workflow it claims to
+/// implement.
 /// 
-/// The seven members are the action calculus&apos;s own vocabulary (#164, #167,
-/// #168, #169), projected verbatim. `AcceptsType` and `ReturnsType` are NOT
-/// projected — see `TypedContractRefV1` for the slot that replaces them.
+/// These are the action calculus&apos;s own vocabulary (#164, #167, #168, #169),
+/// projected verbatim. `AcceptsType` and `ReturnsType` are NOT projected — see
+/// `TypedContractRefV1` for the slot that replaces them.
 /// </summary>
 public sealed record ActionContractV1 : IJsonOnDeserialized, IJsonOnSerializing
 {
@@ -85,6 +86,19 @@ public sealed record ActionContractV1 : IJsonOnDeserialized, IJsonOnSerializing
     [JsonRequired]
     public bool Idempotent { get; init; }
 
+    /// <summary>
+    /// The workflow this action is bound to (#167 `BoundToWorkflow`), by ordinal
+    /// workflow name. Omitted when the action binds no workflow.
+    /// 
+    /// The binding is part of the contract, not metadata about it: it is the
+    /// implementation claim the refinement proof discharges. A catalog that
+    /// carried an action&apos;s pre- and postconditions but not the workflow it claims
+    /// to implement would describe an action no referencing compilation could
+    /// prove anything about (#204).
+    /// </summary>
+    [JsonPropertyName("boundWorkflow")]
+    public string? BoundWorkflow { get; init; }
+
     void IJsonOnDeserialized.OnDeserialized() =>
         ValidateRequiredReferences();
 
@@ -99,5 +113,6 @@ public sealed record ActionContractV1 : IJsonOnDeserialized, IJsonOnSerializing
         global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(Ensures, "ActionContractV1.ensures");
         global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(Touches, "ActionContractV1.touches");
         global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(Name, "ActionContractV1.name", required: true);
+        global::Strategos.Contracts.ContractJsonValidation.RequireNonWhitespace(BoundWorkflow, "ActionContractV1.boundWorkflow", required: false);
     }
 }
