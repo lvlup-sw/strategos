@@ -353,6 +353,19 @@ public static class GeneratorTestHelper
         string.Join(" | ", diagnostics.Select(static diagnostic =>
             diagnostic.Id + ": " + diagnostic.GetMessage()));
 
+    /// <summary>
+    /// Gets the ambient compile graph every fixture compilation references — the test host's
+    /// dependencies, the target-framework surface, and the Strategos authoring assemblies.
+    /// </summary>
+    /// <remarks>
+    /// Internal so the two-assembly harness builds its producer and consumer compilations from
+    /// the SAME reference set as every single-assembly fixture. A harness that assembled its own
+    /// set could differ from the rest of the suite in ways that hide, or invent, a cross-assembly
+    /// failure.
+    /// </remarks>
+    /// <returns>The metadata references for a fixture compilation.</returns>
+    internal static List<MetadataReference> GetCompileGraphReferences() => GetMetadataReferences();
+
     private static List<MetadataReference> GetMetadataReferences()
     {
         var references = new List<MetadataReference>();
