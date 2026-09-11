@@ -51,7 +51,7 @@
        release pipeline bump in one place; the `contracts-v<version>` publish
        workflow fails closed if the tag disagrees with it. -->
   <PropertyGroup>
-    <ContractsVersion>0.13.0</ContractsVersion>
+    <ContractsVersion>0.14.0</ContractsVersion>
     <MinVerSkip>true</MinVerSkip>
     <Version>$(ContractsVersion)</Version>
     <PackageVersion>$(ContractsVersion)</PackageVersion>

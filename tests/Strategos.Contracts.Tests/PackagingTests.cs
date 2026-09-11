@@ -70,19 +70,20 @@ public class PackagingTests
     }
 
     /// <summary>
-    /// T32 — the 0.13.0 release package. Packs the project and asserts:
-    /// the version is 0.13.0; all four schema families (events / workflow /
+    /// T32 — the 0.14.0 release package. Packs the project and asserts:
+    /// the version is 0.14.0; all four schema families (events / workflow /
     /// diagnostics / ontology) are embedded under <c>contentFiles/any/any/schemas/</c>; the
     /// #53 builder fixtures are embedded under
     /// <c>contentFiles/any/any/fixtures/</c> (so Exarchos can extract them); and
     /// the compiled contracts assembly ships under <c>lib/</c>.
-    /// (0.13.0 adds the #193 workflow-definition kernel over 0.12.0's typed
+    /// (0.14.0 adds the #223 TypeScript type graph over 0.13.0's kernel; 0.13.0 added
+    /// the #193 workflow-definition kernel over 0.12.0's typed
     /// inverse-action identity;
     /// see <see cref="Packaging_SmqSchemas_EmbeddedAsContent"/> for content.)
     /// </summary>
     [Test]
     [Property("Category", "Pack")]
-    public async Task Package_Version_Is_0_13_0_WithKernelSlotsAndExistingContent()
+    public async Task Package_Version_Is_0_14_0_WithKernelSlotsAndExistingContent()
     {
         // The fixtures are content (T32): ensure they exist on disk first — the
         // #53 export writes them under artifacts/builder-fixtures/.
@@ -103,21 +104,21 @@ public class PackagingTests
                 .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
             await Assert.That(nupkg).IsNotNull();
 
-            // Version 0.13.0 — read from the file name (the canonical packed version).
+            // Version 0.14.0 — read from the file name (the canonical packed version).
             var fileName = Path.GetFileName(nupkg!);
-            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.13.0.nupkg")
-                .Because($"the package must version at exactly 0.13.0; got {fileName}");
+            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.14.0.nupkg")
+                .Because($"the package must version at exactly 0.14.0; got {fileName}");
 
             using var archive = ZipFile.OpenRead(nupkg!);
 
-            // The .nuspec also pins 0.13.0.
+            // The .nuspec also pins 0.14.0.
             var nuspec = archive.Entries.First(e =>
                 e.FullName.EndsWith(".nuspec", StringComparison.Ordinal));
             using (var reader = new StreamReader(nuspec.Open()))
             {
                 var nuspecXml = await reader.ReadToEndAsync();
-                await Assert.That(nuspecXml).Contains("<version>0.13.0</version>")
-                    .Because("the .nuspec must declare version 0.13.0.");
+                await Assert.That(nuspecXml).Contains("<version>0.14.0</version>")
+                    .Because("the .nuspec must declare version 0.14.0.");
             }
 
             string[] entries = [.. archive.Entries.Select(e => e.FullName)];

@@ -6,12 +6,17 @@
 
 import { z } from "zod";
 
+import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
-export const ScopeNodeSchema: z.ZodType<unknown> = z.looseObject({
+export interface ScopeNode {
+  "kind": "scope";
+  "file-glob": string;
+  "child": CheckNode;
+}
+
+export const ScopeNodeSchema: z.ZodType<ScopeNode> = z.looseObject({
     "kind": z.literal("scope"),
     "file-glob": z.string(),
     "child": z.lazy(() => CheckNodeSchema),
   });
-
-// No inferred type alias: ScopeNode participates in a reference cycle.

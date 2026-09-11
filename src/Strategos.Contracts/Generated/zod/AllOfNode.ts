@@ -6,11 +6,15 @@
 
 import { z } from "zod";
 
+import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
-export const AllOfNodeSchema: z.ZodType<unknown> = z.looseObject({
+export interface AllOfNode {
+  "kind": "all-of";
+  "children": Array<CheckNode>;
+}
+
+export const AllOfNodeSchema: z.ZodType<AllOfNode> = z.looseObject({
     "kind": z.literal("all-of"),
     "children": z.array(z.lazy(() => CheckNodeSchema)),
   });
-
-// No inferred type alias: AllOfNode participates in a reference cycle.

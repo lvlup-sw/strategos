@@ -6,11 +6,15 @@
 
 import { z } from "zod";
 
+import type { ActionPredicateV1 } from "./ActionPredicateV1.js";
 import { ActionPredicateV1Schema } from "./ActionPredicateV1.js";
 
-export const ActionAnyPredicateV1Schema: z.ZodType<unknown> = z.looseObject({
+export interface ActionAnyPredicateV1 {
+  "kind": "any";
+  "predicates": Array<ActionPredicateV1>;
+}
+
+export const ActionAnyPredicateV1Schema: z.ZodType<ActionAnyPredicateV1> = z.looseObject({
     "kind": z.literal("any"),
     "predicates": z.array(z.lazy(() => ActionPredicateV1Schema)),
   });
-
-// No inferred type alias: ActionAnyPredicateV1 participates in a reference cycle.

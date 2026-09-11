@@ -6,14 +6,21 @@
 
 import { z } from "zod";
 
+import type { ApprovalDefinition } from "./ApprovalDefinition.js";
+import type { StepDefinition } from "./StepDefinition.js";
 import { ApprovalDefinitionSchema } from "./ApprovalDefinition.js";
 import { StepDefinitionSchema } from "./StepDefinition.js";
 
-export const ApprovalEscalationDefinitionSchema: z.ZodType<unknown> = z.looseObject({
+export interface ApprovalEscalationDefinition {
+  "escalationId": string;
+  "steps": Array<StepDefinition>;
+  "nestedApprovals": Array<ApprovalDefinition>;
+  "isTerminal": boolean;
+}
+
+export const ApprovalEscalationDefinitionSchema: z.ZodType<ApprovalEscalationDefinition> = z.looseObject({
     "escalationId": z.string(),
     "steps": z.array(StepDefinitionSchema),
     "nestedApprovals": z.array(z.lazy(() => ApprovalDefinitionSchema)),
     "isTerminal": z.boolean(),
   });
-
-// No inferred type alias: ApprovalEscalationDefinition participates in a reference cycle.
