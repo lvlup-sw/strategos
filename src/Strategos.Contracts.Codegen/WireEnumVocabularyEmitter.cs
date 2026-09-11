@@ -5,6 +5,7 @@
 // =============================================================================
 
 using System.Text;
+using System.Text.Json;
 
 namespace Strategos.Contracts.Codegen;
 
@@ -78,7 +79,11 @@ internal static class WireEnumVocabularyEmitter
             sb.AppendLine("        {");
             foreach (var value in vocabulary.Values)
             {
-                sb.Append("            \"").Append(value).AppendLine("\",");
+                // Serialize rather than interpolate: a schema value is any JSON string, and
+                // one carrying a quote, a backslash or a newline would emit C# that does not
+                // compile or that silently means something else. Same idiom as
+                // RecordEmitter.AppendExactEnumConverter.
+                sb.Append("            ").Append(JsonSerializer.Serialize(value)).AppendLine(",");
             }
 
             sb.AppendLine("        };");
