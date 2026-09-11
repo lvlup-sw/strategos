@@ -7,39 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [3.0.0] - 2026-09-11
 
-- **In-memory chained traversal keeps the producing descriptor's identity (#128).**
-  `InMemoryExpressionEvaluator` resolved the source of a chained hop from the prior hop's
-  CLR-simple type name and the source of a post-narrow hop from the interface's CLR name, so
-  `.TraverseLink<TEdge>("link").Where(...).TraverseLink<TNode>("To")` over an association
-  registered under an alias (or one of several registrations of one CLR type), and
-  `.OfInterface<TInterface>().TraverseLink<T>("link")`, both failed with
-  `Object type '<CLR name>' not found in ontology graph`. The evaluator now carries the
-  graph-resolved descriptor name (`TraverseLinkExpression.RootObjectTypeName`) through the
-  chain and treats an interface narrow as transparent, matching the Npgsql provider. No
-  public API change.
-- **Every generated Npgsql identifier goes through the 63-byte guard (#130, R3a).** Vertex,
-  junction and association-object table names, `{role}_id` endpoint columns and index names
-  now all derive through one deterministic truncate-and-hash function (`PgIdentifier`, the
-  generalized DR-11 junction guard), so a logical name over PostgreSQL's 63-byte
-  `NAMEDATALEN - 1` limit yields the SAME identifier in the DDL and in the
-  relate/unrelate/traversal DML. Previously only the relate/unrelate write path derived the
-  junction name; the junction DDL, the traversal read and the association-object DDL emitted
-  the raw name, which PostgreSQL silently truncates — a `42P01 relation does not exist` on the
-  first relate over a long `{source}_{link}`, and two long descriptor or role names could
-  collapse onto one table or column. The association endpoint-role collision guard now
-  compares the derived columns. Names within the cap are byte-identical to before.
-
-## [3.0.0-rc.1] - 2026-09-09
-
-The first release since 2.10.0. It folds three milestones that were merged but never
-published — **2.11.0** (correctness core and paved road), **2.12.0** (the action calculus:
-the object) and **2.13.0** (the action calculus: the operators) — into one major
-pre-release, because their sum is source-breaking in ways a minor cannot honestly carry.
-Each program keeps its own block below, newest first, so the history reads as it was
-built. `Strategos.Contracts` ships **0.12.0** alongside, published independently from its
-own tag and the first Contracts release since 0.4.0. Consumers on 2.9.1 also read the
+The first stable release since 2.10.0, and the whole of 3.0. It **supersedes and includes
+`3.0.0-rc.1`** (2026-09-09): every entry below shipped under this major, and a consumer
+who skipped the pre-release reads this one section. It folds four programs — **correctness
+core and paved road** (planned as 2.11.0), the action calculus as **the object** (2.12.0)
+and as **the operators** (2.13.0), and the **cross-assembly proof, definition kernel and
+TypeScript projection** finished after rc.1 — because their sum is source-breaking in ways
+a minor cannot honestly carry. Each program keeps its own block below, newest first, so the
+history reads as it was built. `Strategos.Contracts` ships **0.13.0** alongside (0.12.0 at
+rc.1), published independently from its own tag. Consumers on 2.9.1 also read the
 [2.10.0](#2100---2026-08-07) section.
 
 Upgrade guide: [3.0 migration guide](docs/src/content/docs/guide/ontology/migration-v3.md).
@@ -69,9 +47,90 @@ Everything a consumer must act on, with the block that documents it.
   System.Text.Json it is not. → *correctness core*
 - **Emitted `ValidTransitions` content changes for fork, branch, loop and `OnFailure` workflows,
   and `AGWF003` now rejects duplicate names on `BranchPath` (#155).** → *correctness core*
-- **`Strategos.Contracts` 0.4.0 → 0.12.0, consumer-first.** The strict enum converters throw on
-  an unknown member, so consumers restore 0.12.0 before producers emit `AGWF035`–`AGWF045`. The
+- **A project that declares a workflow-bound action must reference the generator (#204).** The
+  export runs inside `LevelUp.Strategos.Generators`, so a project that references only
+  `LevelUp.Strategos.Ontology` has nothing to export its contracts and its `BoundToWorkflow(...)`
+  can never be discharged by anyone. That is refused with `AONT222`. Add the generator package;
+  it emits nothing else for a project with no workflows. → *cross-assembly proof*
+- **A closed-enum wire slot with an unknown value fails the build (#221).** `gates[].class`,
+  `steps[].runtime`, a failure handler's `scope` and a permitted fork trigger are closed contract
+  enums. The import front-end read all four as opaque strings and accepted any token; the emitted
+  TypeScript arm always rejected them. Both arms now agree, as `AGWF049`. A document that built
+  clean for four minors can fail — usually a member name written where its wire value belongs, or
+  a gate class retired by an earlier contract major. → *cross-assembly proof*
+- **`Strategos.Contracts` 0.4.0 → 0.13.0, consumer-first.** The strict enum converters throw on
+  an unknown member, so consumers restore 0.13.0 before producers emit `AGWF035`–`AGWF049`. The
   narrowings (0.6.0, 0.11.0, 0.12.0) are allowlisted and listed in the package changelog.
+
+### Cross-assembly proof, the definition kernel and the TypeScript projection (3.0.0 GA; PRs #220, #222, #224, #225)
+
+The work finished after `3.0.0-rc.1`. Three of these close the last places where two
+runtimes could disagree about one contract: an action contract could not cross an assembly
+boundary, the TypeScript projection was derived by the consumer rather than emitted here,
+and the import front-end read four closed enums as free strings.
+
+#### Added
+
+- **An action contract now crosses an assembly boundary (#204).** A project that declares a
+  `BoundToWorkflow` action exports its contracts as a `ProofCatalogV1` document on an
+  assembly-level attribute and **defers** the binding; the compilation that lowers the workflow
+  imports the catalog, merges it into the same `OntologyActionCatalog`, and discharges the
+  binding with the code that proves a local one. Until now a binding was provable only in the
+  compilation that declared it, which forced the ontology and the workflow into one project.
+  The seam is refused rather than weakened: `AGWF046` when a contract cannot be projected into
+  the portable form, `AGWF047` when a referenced catalog is unreadable (an unreadable catalog is
+  never skipped — skipping drops every obligation it carries), and `AGWF048` when two catalogs
+  claim one ordinal action identity, which has no tie-break by design. A leaf application
+  declares itself the last compilation with
+  `<StrategosProofRequireLocalBindings>true</StrategosProofRequireLocalBindings>`, which turns a
+  deferral into an error. Set it in hosts and entry points only — in a library it would refuse
+  every legitimate cross-assembly layout, including the one this release exists to prove.
+- **The workflow-definition kernel is frozen as additive slots (#193, #209).** `contentHash`,
+  the `authority` frame (invariants, goals, assumptions, delegated decisions, escalation
+  boundaries) and the reserved composition-combinator `kind` values enter `WorkflowDefinitionV1`
+  as the language-neutral surface the Exarchos semantic plane shares. They are **carried, not
+  proved**: nothing in the lowering path reads them in 3.0, and the import front-end neither
+  recomputes nor compares `contentHash`. Freezing the names now makes the later behavior an
+  additive minor rather than a breaking kernel change.
+- **Strategos emits the Zod/TypeScript projection (#219).** `scripts/contracts-codegen.sh` now
+  emits a third target from the one TypeSpec source: Zod modules under `Generated/zod/`, which
+  Exarchos consumes and pins rather than deriving. Referential rules JSON Schema cannot express
+  are declared with `@references` in the TypeSpec and lowered by the emitter, and the emitter
+  fails closed on any JSON Schema keyword it does not lower — so a shape it cannot faithfully
+  project stops the build instead of shipping a projection that silently means something else.
+
+#### Changed
+
+- **`ActionContractV1` carries `boundWorkflow` (#204)**, the wire slot the portable catalog needs
+  to name the workflow an exported contract binds.
+- **A closed-enum wire slot is checked against the emitted vocabulary (#221).** `AGWF049` names
+  the import file, the construct, the JSON path, the enum and the enum's full vocabulary. The
+  accepted set is emitted from the same TypeSpec that produces the enum and linked into the
+  generator as source, so adding a member widens the check with no edit to the validator.
+
+#### Fixed
+
+- **In-memory chained traversal keeps the producing descriptor's identity (#128).**
+  `InMemoryExpressionEvaluator` resolved the source of a chained hop from the prior hop's
+  CLR-simple type name and the source of a post-narrow hop from the interface's CLR name, so
+  `.TraverseLink<TEdge>("link").Where(...).TraverseLink<TNode>("To")` over an association
+  registered under an alias (or one of several registrations of one CLR type), and
+  `.OfInterface<TInterface>().TraverseLink<T>("link")`, both failed with
+  `Object type '<CLR name>' not found in ontology graph`. The evaluator now carries the
+  graph-resolved descriptor name (`TraverseLinkExpression.RootObjectTypeName`) through the
+  chain and treats an interface narrow as transparent, matching the Npgsql provider. No
+  public API change.
+- **Every generated Npgsql identifier goes through the 63-byte guard (#130, R3a).** Vertex,
+  junction and association-object table names, `{role}_id` endpoint columns and index names
+  now all derive through one deterministic truncate-and-hash function (`PgIdentifier`, the
+  generalized DR-11 junction guard), so a logical name over PostgreSQL's 63-byte
+  `NAMEDATALEN - 1` limit yields the SAME identifier in the DDL and in the
+  relate/unrelate/traversal DML. Previously only the relate/unrelate write path derived the
+  junction name; the junction DDL, the traversal read and the association-object DDL emitted
+  the raw name, which PostgreSQL silently truncates — a `42P01 relation does not exist` on the
+  first relate over a long `{source}_{link}`, and two long descriptor or role names could
+  collapse onto one table or column. The association endpoint-role collision guard now
+  compares the derived columns. Names within the cap are byte-identical to before.
 
 ### Action calculus — the operators (planned as 2.13.0; PRs #203, #205, #206)
 
