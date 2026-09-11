@@ -30,9 +30,16 @@
 #                         All three descriptors carry NotConfigurable, so each
 #                         refutation must still be the sole build error. Both
 #                         channels are first shown to REMOVE a configurable
-#                         diagnostic (AGWF039 for the generator path via the
-#                         UNRESOLVED_BINDING variant, AONT004 for the analyzer
+#                         diagnostic (AGWF010 for the generator path via the
+#                         CONFIGURABLE_CONTROL variant, AONT004 for the analyzer
 #                         path), so no arm can pass on an inert build flag.
+#   7. cross-assembly   - a producer project declaring the ontology and a consumer
+#                         project declaring the workflow, both built against the
+#                         packed analyzers. Proves the packed generator exports a
+#                         proof catalog, that the consumer reads it and proves the
+#                         binding, that an illegal seam across the boundary is
+#                         refuted with AGWF041, and that a producer built without
+#                         the generator is refused with AONT222.
 #
 # Out of reach of any descriptor tag: -p:RunAnalyzers=false and
 # -p:RunAnalyzersDuringBuild=false unload EVERY analyzer, so NotConfigurable
@@ -248,12 +255,10 @@ public sealed class OrdersOntology : DomainOntology
                 .Ensures(order => order.Stage == 2)
                 .Modifies(order => order.Stage)
 #if UNRESOLVED_BINDING
-                // The suppression matrix's channel control. AGWF039 is an Error from
-                // the same generator that deliberately does NOT carry NotConfigurable:
-                // a cross-assembly workflow layout needs a visible, explicit exit. If a
-                // suppression channel cannot remove AGWF039 either, that channel never
-                // reached the packaged generator and the AGWF044/AGWF045 arms below
-                // would prove nothing.
+                // Since #204 this is the DEFERRAL arm, not a failure arm: the bound
+                // workflow is not in this compilation, the packed generator exports
+                // this action's contract instead, and the obligation travels to
+                // whichever compilation lowers the workflow. The build stays clean.
                 .BoundToWorkflow(new WorkflowBindingReference("consumer-probe-elsewhere"));
 #else
                 .BoundToWorkflow(new WorkflowBindingReference("consumer-probe"));
@@ -338,6 +343,21 @@ public static partial class ConsumerProbeWorkflowDefinition
                 "orders", "Order", "undo-complete")));
 #endif
 }
+
+#if CONFIGURABLE_CONTROL
+// The suppression matrix's channel control. A workflow with steps and no
+// Finally<> produces AGWF010, a configurable Warning from the same generator the
+// AGWF044/AGWF045 arms come from, promoted to an error by -warnaserror. If a
+// suppression channel cannot remove AGWF010, that channel never reached the
+// packaged generator and those arms would prove nothing.
+[Workflow("consumer-probe-control")]
+public static partial class ControlWorkflowDefinition
+{
+    public static WorkflowDefinition<FlowState> Definition => Workflow<FlowState>
+        .Create("consumer-probe-control")
+        .StartWith<ReceiveStep>();
+}
+#endif
 
 #if INVALID_AUTHORED_INVERSE
 public sealed class InvalidAuthoredInverseOntology : DomainOntology
@@ -614,9 +634,16 @@ echo "OK: non-derivable packed consumer rollback scope failed closed with AGWF04
 #     AONT004 warning from the same analyzer is the control.
 #   * AGWF044/AGWF045 are SOURCE GENERATOR diagnostics. csc reports generator
 #     errors and then skips analyzer execution entirely, so no analyzer warning
-#     can serve as their control. AGWF039 -- an Error from the same generator
-#     that deliberately omits NotConfigurable -- is used instead, and each
-#     channel must be shown to remove it before the AGWF044/AGWF045 arms count.
+#     can serve as their control. AGWF010 -- a configurable Warning from the same
+#     generator, promoted to an error here by -warnaserror -- is used instead, and
+#     each channel must be shown to remove it before the AGWF044/AGWF045 arms
+#     count.
+#
+#     AGWF039 held this role until #204. It no longer can: the cross-assembly
+#     layout it existed to let a consumer silence now has a real exit -- the
+#     declaring assembly exports its contract -- so AGWF039 carries
+#     NotConfigurable and neither channel removes it. A control has to be
+#     configurable AND generator-produced, and AGWF010 is both.
 #
 # Out of reach of any descriptor tag: -p:RunAnalyzers=false and
 # -p:RunAnalyzersDuringBuild=false unload EVERY analyzer and generator, so no
@@ -693,33 +720,33 @@ require_error_removed() {
   fi
 }
 
-# --- Channel control: a configurable generator Error must be silenceable ----
-# UNRESOLVED_BINDING also strands the workflow's typed compensation, so AGWF045
-# accompanies AGWF039 here. That is harmless: the control asks only whether each
-# channel can remove AGWF039, not whether the probe builds.
-run_probe_arm "$PROBE_DIR/control-agwf039.log" UNRESOLVED_BINDING /p:ProbeNoWarn=AONT004
-if ! grep -Fq "error AGWF039" "$PROBE_DIR/control-agwf039.log"; then
-  echo "FAIL: the unresolved-binding control did not produce AGWF039; the suppression matrix has no control subject." >&2
-  cat "$PROBE_DIR/control-agwf039.log" >&2
+# --- Channel control: a configurable generator diagnostic must be silenceable ----
+# The control variant carries other diagnostics too (its workflow declares no
+# terminal step). That is harmless: the control asks only whether each channel can
+# remove AGWF010, not whether the probe builds.
+run_probe_arm "$PROBE_DIR/control-agwf010.log" CONFIGURABLE_CONTROL /p:ProbeNoWarn=AONT004
+if ! grep -Fq "AGWF010" "$PROBE_DIR/control-agwf010.log"; then
+  echo "FAIL: the control variant did not produce AGWF010; the suppression matrix has no control subject." >&2
+  cat "$PROBE_DIR/control-agwf010.log" >&2
   exit 2
 fi
 
-run_probe_arm "$PROBE_DIR/control-agwf039-nowarn.log" UNRESOLVED_BINDING \
-  '/p:ProbeNoWarn=AONT004%3BAGWF039'
+run_probe_arm "$PROBE_DIR/control-agwf010-nowarn.log" CONFIGURABLE_CONTROL \
+  '/p:ProbeNoWarn=AONT004%3BAGWF010'
 require_error_removed \
-  "$PROBE_DIR/control-agwf039-nowarn.log" \
-  AGWF039 \
-  "<NoWarn>AGWF039"
+  "$PROBE_DIR/control-agwf010-nowarn.log" \
+  AGWF010 \
+  "<NoWarn>AGWF010"
 
-write_severity_none_editorconfig AGWF039
-run_probe_arm "$PROBE_DIR/control-agwf039-editorconfig.log" UNRESOLVED_BINDING /p:ProbeNoWarn=AONT004
+write_severity_none_editorconfig AGWF010
+run_probe_arm "$PROBE_DIR/control-agwf010-editorconfig.log" CONFIGURABLE_CONTROL /p:ProbeNoWarn=AONT004
 rm -f "$PROBE_EDITORCONFIG"
 require_error_removed \
-  "$PROBE_DIR/control-agwf039-editorconfig.log" \
-  AGWF039 \
-  ".editorconfig severity=none for AGWF039"
+  "$PROBE_DIR/control-agwf010-editorconfig.log" \
+  AGWF010 \
+  ".editorconfig severity=none for AGWF010"
 
-echo "OK: control -- both suppression channels do remove a configurable generator error (AGWF039)."
+echo "OK: control -- both suppression channels do remove a configurable generator diagnostic (AGWF010)."
 
 # --- AONT216: the ontology analyzer path ----------------------------------
 # NoWarn is pointed at AONT216 instead of AONT004; AONT004 must therefore
@@ -799,3 +826,237 @@ if [[ -e "$PROBE_EDITORCONFIG" ]]; then
 fi
 
 echo "OK: AONT216, AGWF044 and AGWF045 all survived <NoWarn> and .editorconfig severity=none."
+
+# --- Arm 7: the cross-assembly seam, at the packed tier (#204) -------------
+#
+# Every arm above lives in ONE compilation, which is the shape the #167 proof was
+# always complete for. This one splits the binding across a real assembly
+# boundary: a producer project declares the ontology and the binding, a consumer
+# project declares the workflow and references the producer, and both build
+# against the PACKED analyzers rather than the ones in this repository's bin.
+#
+# Three verdicts, because each fails differently:
+#   legal      - the producer exports a proof catalog and defers; the consumer
+#                reads it and proves the binding. Both build clean.
+#   illegal    - the producer's leaf contract no longer refines; the consumer must
+#                refute it with AGWF041, because no other compilation can.
+#   unexported - the producer is built WITHOUT the generator package, so nothing
+#                exports the contract. AONT222 must refuse it at the producer,
+#                since a consumer only ever sees an absence.
+
+XASM_DIR="$PROBE_DIR/xasm"
+mkdir -p "$XASM_DIR/producer" "$XASM_DIR/consumer"
+cp "$PROBE_DIR/NuGet.Config" "$XASM_DIR/NuGet.Config"
+
+write_producer_project() {
+  local with_generator="$1"
+  local generator_reference=""
+  if [[ "$with_generator" == "with-generator" ]]; then
+    generator_reference="<PackageReference Include=\"LevelUp.Strategos.Generators\" Version=\"$VERSION\" />"
+  fi
+
+  cat > "$XASM_DIR/producer/ProducerProbe.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ProducerProbe</AssemblyName>
+    <NoWarn>\$(ProbeNoWarn)</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LevelUp.Strategos" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Ontology" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Ontology.Generators" Version="$VERSION" />
+    $generator_reference
+    <PackageReference Include="WolverineFx" Version="$WOLVERINE_VERSION" />
+    <PackageReference Include="WolverineFx.Marten" Version="$WOLVERINE_MARTEN_VERSION" />
+    <PackageReference Include="Marten" Version="$MARTEN_VERSION" />
+  </ItemGroup>
+</Project>
+EOF
+}
+
+write_producer_source() {
+  local receive_requires="$1"
+
+  cat > "$XASM_DIR/producer/Producer.cs" <<EOF
+using Strategos.Ontology;
+using Strategos.Ontology.Builder;
+
+namespace ProducerProbe;
+
+public sealed class Order
+{
+    public string Id { get; set; } = string.Empty;
+    public int Stage { get; set; }
+}
+
+public sealed class OrdersOntology : DomainOntology
+{
+    public override string DomainName => "orders";
+
+    protected override void Define(IOntologyBuilder builder)
+    {
+        builder.Object<Order>(obj =>
+        {
+            obj.Key(order => order.Id);
+            obj.Property(order => order.Stage);
+
+            obj.Action("fulfill")
+                .Requires(order => order.Stage == 0)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage)
+                .BoundToWorkflow("xasm-probe");
+
+            obj.Action("receive")
+                .Requires(order => order.Stage == $receive_requires)
+                .Ensures(order => order.Stage == 1)
+                .Modifies(order => order.Stage);
+
+            obj.Action("complete")
+                .Requires(order => order.Stage == 1)
+                .Ensures(order => order.Stage == 2)
+                .Modifies(order => order.Stage);
+        });
+    }
+}
+EOF
+}
+
+cat > "$XASM_DIR/consumer/XasmConsumer.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>\$(ProbeNoWarn)</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../producer/ProducerProbe.csproj" />
+    <PackageReference Include="LevelUp.Strategos" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Agents" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Generators" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Ontology" Version="$VERSION" />
+    <PackageReference Include="LevelUp.Strategos.Ontology.Generators" Version="$VERSION" />
+    <PackageReference Include="WolverineFx" Version="$WOLVERINE_VERSION" />
+    <PackageReference Include="WolverineFx.Marten" Version="$WOLVERINE_MARTEN_VERSION" />
+    <PackageReference Include="Marten" Version="$MARTEN_VERSION" />
+  </ItemGroup>
+</Project>
+EOF
+
+cat > "$XASM_DIR/consumer/Consumer.cs" <<'EOF'
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Strategos.Abstractions;
+using Strategos.Attributes;
+using Strategos.Builders;
+using Strategos.Definitions;
+using Strategos.Steps;
+
+namespace XasmConsumer;
+
+[WorkflowState]
+public sealed record FlowState : IWorkflowState
+{
+    public Guid WorkflowId { get; init; }
+}
+
+public class ProbeStep : IWorkflowStep<FlowState>
+{
+    public Task<StepResult<FlowState>> ExecuteAsync(
+        FlowState state,
+        StepContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(StepResult<FlowState>.FromState(state));
+}
+
+public sealed class ReceiveStep : ProbeStep { }
+public sealed class CompleteStep : ProbeStep { }
+
+// The bound action, its contract and the ontology that declares them are all in
+// ProducerProbe. Nothing here mentions them except by ordinal name.
+[Workflow("xasm-probe")]
+public static partial class XasmProbeWorkflowDefinition
+{
+    public static WorkflowDefinition<FlowState> Definition => Workflow<FlowState>
+        .Create("xasm-probe")
+        .StartWith<ReceiveStep>(step => step
+            .Performs(new WorkflowActionReference("orders", "Order", "receive")))
+        .Finally<CompleteStep>(step => step
+            .Performs(new WorkflowActionReference("orders", "Order", "complete")));
+}
+EOF
+
+build_xasm() {
+  local log="$1"
+  shift
+  dotnet build "$XASM_DIR/consumer/XasmConsumer.csproj" \
+    --nologo \
+    -v:m \
+    --no-incremental \
+    /p:ProbeNoWarn=AONT004 \
+    /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+    /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" \
+    "$@" > "$log" 2>&1 || true
+}
+
+# (7a) legal — the producer exports, the consumer proves.
+write_producer_project with-generator
+write_producer_source 0
+if ! dotnet restore "$XASM_DIR/consumer/XasmConsumer.csproj" \
+       --nologo -v:m --no-cache \
+       /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+       /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" > "$PROBE_DIR/xasm-restore.log" 2>&1; then
+  echo "INDETERMINATE: the cross-assembly probe could not restore; no product verdict was reached." >&2
+  cat "$PROBE_DIR/xasm-restore.log" >&2
+  exit 3
+fi
+
+build_xasm "$PROBE_DIR/xasm-legal.log"
+if grep -Eq "error (AGWF|AONT)[0-9]+" "$PROBE_DIR/xasm-legal.log"; then
+  echo "FAIL: the legal cross-assembly binding did not build clean." >&2
+  grep -E "error (AGWF|AONT)[0-9]+" "$PROBE_DIR/xasm-legal.log" >&2
+  exit 2
+fi
+if ! grep -Fq "Build succeeded" "$PROBE_DIR/xasm-legal.log"; then
+  echo "FAIL: the legal cross-assembly probe did not build at all." >&2
+  cat "$PROBE_DIR/xasm-legal.log" >&2
+  exit 2
+fi
+echo "OK: a workflow binding declared in a referenced assembly builds clean through the packed analyzers."
+
+# (7b) illegal seam — the imported contract no longer refines.
+write_producer_source 9
+build_xasm "$PROBE_DIR/xasm-illegal.log"
+if ! grep -Fq "AGWF041" "$PROBE_DIR/xasm-illegal.log"; then
+  echo "FAIL: an illegal cross-assembly seam was not refuted (expected AGWF041)." >&2
+  cat "$PROBE_DIR/xasm-illegal.log" >&2
+  exit 2
+fi
+echo "OK: an illegal seam across an assembly boundary is refuted with AGWF041."
+
+# (7c) unexported — the producer has no generator, so nothing carries the contract.
+write_producer_project without-generator
+write_producer_source 0
+if ! dotnet restore "$XASM_DIR/producer/ProducerProbe.csproj" \
+       --nologo -v:m --no-cache \
+       /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+       /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" > "$PROBE_DIR/xasm-producer-restore.log" 2>&1; then
+  echo "INDETERMINATE: the unexported-producer probe could not restore; no product verdict was reached." >&2
+  exit 3
+fi
+dotnet build "$XASM_DIR/producer/ProducerProbe.csproj" \
+  --nologo -v:m --no-incremental \
+  /p:ProbeNoWarn=AONT004 \
+  /p:RestorePackagesPath="$PROBE_GLOBAL_PACKAGES" \
+  /p:NuGetPackageRoot="$PROBE_GLOBAL_PACKAGES" > "$PROBE_DIR/xasm-unexported.log" 2>&1 || true
+if ! grep -Fq "AONT222" "$PROBE_DIR/xasm-unexported.log"; then
+  echo "FAIL: a binding no assembly exports was not refused (expected AONT222)." >&2
+  cat "$PROBE_DIR/xasm-unexported.log" >&2
+  exit 2
+fi
+echo "OK: a binding declared by an assembly that exports no proof catalog is refused with AONT222."
