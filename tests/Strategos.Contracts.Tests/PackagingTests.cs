@@ -174,19 +174,19 @@ public class PackagingTests
             // present in TypeSpec and absent from the artifact consumers actually read.
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
-                && e.EndsWith("AuthorityLatticeV1.json", StringComparison.Ordinal))
+                && e.EndsWith("/AuthorityLatticeV1.json", StringComparison.Ordinal))
                 .Because("the wire projection of the #165 authority lattice must be embedded.");
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
-                && e.EndsWith("WorkflowAuthorityV1.json", StringComparison.Ordinal))
+                && e.EndsWith("/WorkflowAuthorityV1.json", StringComparison.Ordinal))
                 .Because("the kernel authority frame must be embedded.");
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
-                && e.EndsWith("ActionContractV1.json", StringComparison.Ordinal))
+                && e.EndsWith("/ActionContractV1.json", StringComparison.Ordinal))
                 .Because("the action contract document must be embedded.");
             await Assert.That(entries).Contains(e =>
                 e.StartsWith(schemaPath, StringComparison.Ordinal)
-                && e.EndsWith("ProofCatalogV1.json", StringComparison.Ordinal))
+                && e.EndsWith("/ProofCatalogV1.json", StringComparison.Ordinal))
                 .Because("the #204 portable proof manifest root must be embedded.");
 
             // The #53 builder fixtures embedded under contentFiles/.../fixtures/.

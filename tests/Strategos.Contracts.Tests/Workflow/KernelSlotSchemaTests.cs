@@ -171,6 +171,17 @@ public sealed class KernelSlotSchemaTests
             .IsEqualTo("AuthorityCoordinateV1")
             .Because("coordinate items must be the shared axis/level pair model.");
 
+        // The asymmetry is deliberate. A REQUIREMENT that demands nothing is spelled
+        // by omitting the optional `authority` field, so an empty array would be a
+        // second spelling of one fact. A DESCRIPTOR sitting at the bottom of every
+        // axis is meaningful, so its list is legitimately empty.
+        await Assert.That(coordinates.GetProperty("minItems").GetInt32()).IsEqualTo(1)
+            .Because("an empty requirement coordinate duplicates an omitted authority field.");
+        var descriptor = await LoadAsync("AuthorityDescriptorV1");
+        await Assert.That(descriptor.GetProperty("properties").GetProperty("coordinates")
+            .TryGetProperty("minItems", out _)).IsFalse()
+            .Because("an authority at the bottom of every axis has an empty coordinate list.");
+
         var axis = await LoadAsync("AuthorityAxisV1");
         await Assert.That(axis.GetProperty("properties").GetProperty("levels")
             .GetProperty("type").GetString()).IsEqualTo("array")

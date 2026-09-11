@@ -857,7 +857,8 @@
                     "items": {
                         "$ref": "#/definitions/AuthorityCoordinateV1"
                     },
-                    "description": "The strongest required level on each axis, ordered ordinally by `axis`."
+                    "minItems": 1,
+                    "description": "The strongest required level on each axis, ordered ordinally by `axis`.\n\nAt least one pair. A requirement that demands nothing is expressed by\nOMITTING the optional `authority` field, so an empty array would be a second\nspelling of the same fact. `AuthorityDescriptorV1.coordinates` is deliberately\nNOT bounded this way: an authority literal that sits at the bottom of every\naxis is meaningful, and its coordinate list is legitimately empty."
                 },
                 "sourceAuthorities": {
                     "type": "array",
@@ -1685,7 +1686,7 @@
                     "type": "string",
                     "minLength": 1,
                     "pattern": ".*\\S.*",
-                    "description": "The `$id` of the schema describing this contract. An absolute URI, matching\nthe `$id` the emitter stamps on every emitted schema document."
+                    "description": "The `$id` of the schema describing this contract.\n\nConstrained to a non-blank string and nothing more, deliberately. A JSON\nSchema `$id` is a URI REFERENCE, not necessarily an absolute URI, and this\npackage emits both forms: the 185 per-model documents carry a relative name\n(`ActionCatalogV1.json`), while the bundle carries an absolute URI\n(`https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json`).\nA pattern demanding a scheme would reject every per-model `$id` this\nrepository produces."
                 }
             },
             "required": [

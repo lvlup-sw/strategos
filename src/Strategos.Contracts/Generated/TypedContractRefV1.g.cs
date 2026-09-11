@@ -27,8 +27,15 @@ namespace Strategos.Contracts.Generated;
 public sealed record TypedContractRefV1 : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
-    /// The `$id` of the schema describing this contract. An absolute URI, matching
-    /// the `$id` the emitter stamps on every emitted schema document.
+    /// The `$id` of the schema describing this contract.
+    /// 
+    /// Constrained to a non-blank string and nothing more, deliberately. A JSON
+    /// Schema `$id` is a URI REFERENCE, not necessarily an absolute URI, and this
+    /// package emits both forms: the 185 per-model documents carry a relative name
+    /// (`ActionCatalogV1.json`), while the bundle carries an absolute URI
+    /// (`https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json`).
+    /// A pattern demanding a scheme would reject every per-model `$id` this
+    /// repository produces.
     /// </summary>
     [JsonPropertyName("schemaId")]
     [JsonRequired]

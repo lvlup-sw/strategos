@@ -100,7 +100,16 @@ model AuthorityLatticeV1 {
  * without resolving either against a lattice.
  */
 model AuthorityRequirementV1 {
-  /** The strongest required level on each axis, ordered ordinally by `axis`. */
+  /**
+   * The strongest required level on each axis, ordered ordinally by `axis`.
+   *
+   * At least one pair. A requirement that demands nothing is expressed by
+   * OMITTING the optional `authority` field, so an empty array would be a second
+   * spelling of the same fact. `AuthorityDescriptorV1.coordinates` is deliberately
+   * NOT bounded this way: an authority literal that sits at the bottom of every
+   * axis is meaningful, and its coordinate list is legitimately empty.
+   */
+  @minItems(1)
   coordinates: AuthorityCoordinateV1[];
 
   /**
