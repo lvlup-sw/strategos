@@ -1,0 +1,13 @@
+{
+  "//": "Builds the publishable package (dist/): JavaScript plus declarations. Separate from tsconfig.json, which verify-zod-conformance.mjs compiles with its own --outDir, and from tsconfig.typecheck.json, which adds the type-level assertions and emits nothing.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "Generated/zod",
+    "outDir": "dist"
+  },
+  "include": ["Generated/zod/**/*.ts"]
+}

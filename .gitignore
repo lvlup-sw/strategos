@@ -60,6 +60,12 @@ secrets.json
 # Node.js
 node_modules/
 
+# Build output of the publishable Zod/TypeScript package (#1901). Emitted by
+# `npm run build:package` from the committed Generated/zod sources, so it is
+# derived twice over and never committed.
+src/Strategos.Contracts/dist/
+*.tgz
+
 # Contracts cross-product round-trip harness scratch (T31)
 src/Strategos.Contracts/.roundtrip-zod.tmp/
 
