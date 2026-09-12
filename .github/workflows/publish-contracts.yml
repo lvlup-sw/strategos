@@ -25,6 +25,7 @@ env:
 permissions:
   id-token: write   # OIDC token for NuGet trusted publishing
   contents: write   # Create the GitHub Release
+  packages: write   # Publish the Zod/TypeScript package to GitHub Packages
 
 jobs:
   publish-contracts:
@@ -67,9 +68,17 @@ jobs:
         run: |
           tag_version="${GITHUB_REF_NAME#contracts-v}"
           pinned="$(grep -oP '(?<=<ContractsVersion>)[^<]+' "$CONTRACTS_PROJECT")"
-          echo "tag=$tag_version pinned=$pinned"
+          npm_version="$(node -p "require('./src/Strategos.Contracts/package.json').version")"
+          echo "tag=$tag_version pinned=$pinned npm=$npm_version"
           if [[ "$tag_version" != "$pinned" ]]; then
             echo "::error::Tag contracts-v$tag_version does not match pinned <ContractsVersion>$pinned. Update the csproj or retag."
+            exit 1
+          fi
+          # One tag publishes two packages. They must carry one version, or a
+          # consumer pinning the npm package gets schemas from a different release
+          # than the C# records were generated from.
+          if [[ "$npm_version" != "$pinned" ]]; then
+            echo "::error::package.json version $npm_version does not match pinned <ContractsVersion>$pinned."
             exit 1
           fi
 
@@ -243,6 +252,34 @@ jobs:
               --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
               --source https://api.nuget.org/v3/index.json
           done
+
+      - name: Build the Zod/TypeScript package
+        working-directory: src/Strategos.Contracts
+        run: npm run build:package
+
+      - name: Publish the Zod/TypeScript package to GitHub Packages
+        # Private to the organization: the scope is @lvlup-sw and the registry is
+        # GitHub Packages, so GITHUB_TOKEN authenticates it and no long-lived
+        # credential is stored. Exarchos consumes and pins this rather than
+        # deriving its own stand-in (exarchos#1901).
+        working-directory: src/Strategos.Contracts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm config set @lvlup-sw:registry https://npm.pkg.github.com
+          npm config set //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
+          # Re-publishing an existing version is not an error worth failing the
+          # whole release for: the NuGet half may already have succeeded, and the
+          # symbols-push failure on contracts-v0.12.0 is the precedent for making
+          # a late step idempotent rather than fatal.
+          if npm publish --ignore-scripts 2>&1 | tee /tmp/npm-publish.log; then
+            echo "published"
+          elif grep -qiE "cannot publish over|already exists|conflict" /tmp/npm-publish.log; then
+            echo "::warning::npm package version already published; leaving it as is."
+          else
+            echo "::error::npm publish failed for a reason other than an existing version."
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

@@ -363,7 +363,62 @@ public sealed class CodegenGuardTests
             .Because("a duplicate push must not turn different local package bytes into a green release.");
         await Assert.That(yaml).Contains(
             "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
-        await Assert.That(yaml.Contains("packages: write", StringComparison.Ordinal)).IsFalse();
+        // Least privilege, pinned EXACTLY rather than by the absence of one scope.
+        // The workflow gained `packages: write` when it began publishing the
+        // Zod/TypeScript package to GitHub Packages (exarchos#1901). Pinning the whole
+        // set means the next scope added has to be justified here too — which the old
+        // "does not contain packages: write" line could not do for any other scope.
+        await Assert.That(WorkflowPermissionScopes(yaml)).IsEquivalentTo(new[]
+        {
+            "id-token: write",
+            "contents: write",
+            "packages: write",
+        }).Because("every token scope this release workflow requests is accounted for.");
         await Assert.That(yaml).Contains("persist-credentials: false");
+    }
+
+    /// <summary>
+    /// Reads the top-level <c>permissions:</c> block of a workflow as a list of
+    /// <c>scope: level</c> entries, with comments and blank lines removed.
+    /// </summary>
+    private static string[] WorkflowPermissionScopes(string yaml)
+    {
+        var lines = yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var scopes = new List<string>();
+        var inside = false;
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("permissions:", StringComparison.Ordinal))
+            {
+                inside = true;
+                continue;
+            }
+
+            if (!inside)
+            {
+                continue;
+            }
+
+            // The block ends at the first line that is not indented.
+            if (line.Length > 0 && !char.IsWhiteSpace(line[0]))
+            {
+                break;
+            }
+
+            var entry = line.Trim();
+            var comment = entry.IndexOf('#', StringComparison.Ordinal);
+            if (comment >= 0)
+            {
+                entry = entry[..comment].Trim();
+            }
+
+            if (entry.Length > 0)
+            {
+                scopes.Add(entry);
+            }
+        }
+
+        return [.. scopes];
     }
 }
