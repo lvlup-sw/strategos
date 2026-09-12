@@ -17,13 +17,13 @@ namespace Strategos.Contracts.Generated;
 /// unchanged (back-compat).
 /// 
 /// Wire names are preserved verbatim — kebab-case (`cost-of-load`, `applies-to`,
-/// the affinities, `integrity-class`) and snake_case (`axiom_overlap`) — via
+/// the affinities, `integrity-class`) — via
 /// quoted TypeSpec identifiers, so the generated decoder validates Exarchos&apos;s
 /// YAML frontmatter without re-casing. Declarative-only (LB-1 / INV-4): the only
 /// enforcement payload is the `Enforcement` union, which itself carries no
 /// executable code.
 /// </summary>
-public sealed record InvariantEntry
+public sealed record InvariantEntry : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Stable invariant identifier (e.g. `INV-4`).
@@ -44,14 +44,14 @@ public sealed record InvariantEntry
     /// </summary>
     [JsonPropertyName("axis")]
     [JsonRequired]
-    public string Axis { get; init; } = default!;
+    public InvariantAxis Axis { get; init; }
 
     /// <summary>
     /// Relative cost of loading/checking the invariant (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("cost-of-load")]
     [JsonRequired]
-    public string CostOfLoad { get; init; } = default!;
+    public InvariantLoadCost CostOfLoad { get; init; }
 
     /// <summary>
     /// Scopes the invariant applies to (kebab-case wire name).
@@ -68,18 +68,10 @@ public sealed record InvariantEntry
     public string Summary { get; init; } = default!;
 
     /// <summary>
-    /// Overlapping axioms (snake_case wire name preserved verbatim).
-    /// </summary>
-    [JsonPropertyName("axiom_overlap")]
-    [JsonRequired]
-    public IReadOnlyList<string> AxiomOverlap { get; init; } = default!;
-
-    /// <summary>
     /// Supporting citations.
     /// </summary>
     [JsonPropertyName("citations")]
-    [JsonRequired]
-    public IReadOnlyList<string> Citations { get; init; } = default!;
+    public IReadOnlyList<string>? Citations { get; init; }
 
     /// <summary>
     /// Cross-references to related material.
@@ -92,13 +84,13 @@ public sealed record InvariantEntry
     /// SDLC phases the invariant is most relevant to (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("phase-affinity")]
-    public IReadOnlyList<string>? PhaseAffinity { get; init; }
+    public IReadOnlyList<InvariantPhase>? PhaseAffinity { get; init; }
 
     /// <summary>
     /// Workflows the invariant is most relevant to (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("workflow-affinity")]
-    public IReadOnlyList<string>? WorkflowAffinity { get; init; }
+    public IReadOnlyList<InvariantWorkflow>? WorkflowAffinity { get; init; }
 
     /// <summary>
     /// Ontological states the invariant is most relevant to (kebab-case wire name).
@@ -116,11 +108,25 @@ public sealed record InvariantEntry
     /// Severity of a violation.
     /// </summary>
     [JsonPropertyName("severity")]
-    public string? Severity { get; init; }
+    public InvariantSeverity? Severity { get; init; }
 
     /// <summary>
     /// Integrity class the invariant guards (kebab-case wire name).
     /// </summary>
     [JsonPropertyName("integrity-class")]
-    public string? IntegrityClass { get; init; }
+    public InvariantIntegrityClass? IntegrityClass { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (Id is not null && Id.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("InvariantEntry.id violates its declared constraint.");
+        }
+    }
 }

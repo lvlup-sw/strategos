@@ -1,5 +1,6 @@
 import "@typespec/json-schema";
 import "./Enforcement.tsp";
+import "./InvariantVocabulary.tsp";
 
 using JsonSchema;
 
@@ -11,7 +12,7 @@ namespace LevelUp.Strategos.Contracts;
  * unchanged (back-compat).
  *
  * Wire names are preserved verbatim — kebab-case (`cost-of-load`, `applies-to`,
- * the affinities, `integrity-class`) and snake_case (`axiom_overlap`) — via
+ * the affinities, `integrity-class`) — via
  * quoted TypeSpec identifiers, so the generated decoder validates Exarchos's
  * YAML frontmatter without re-casing. Declarative-only (LB-1 / INV-4): the only
  * enforcement payload is the `Enforcement` union, which itself carries no
@@ -22,16 +23,17 @@ model InvariantEntry {
   // --- v2 fields ---
 
   /** Stable invariant identifier (e.g. `INV-4`). */
+  @minLength(1)
   id: string;
 
   /** Design dimension the invariant belongs to (e.g. `DIM-3`). */
   dimension: string;
 
   /** Axis within the dimension. */
-  axis: string;
+  axis: InvariantAxis;
 
   /** Relative cost of loading/checking the invariant (kebab-case wire name). */
-  `cost-of-load`: string;
+  `cost-of-load`: InvariantLoadCost;
 
   /** Scopes the invariant applies to (kebab-case wire name). */
   `applies-to`: string[];
@@ -39,11 +41,8 @@ model InvariantEntry {
   /** Human-readable summary of the invariant. */
   summary: string;
 
-  /** Overlapping axioms (snake_case wire name preserved verbatim). */
-  axiom_overlap: string[];
-
   /** Supporting citations. */
-  citations: string[];
+  citations?: string[];
 
   /** Cross-references to related material. */
   references: string[];
@@ -51,10 +50,10 @@ model InvariantEntry {
   // --- v3 additive fields (all OPTIONAL for back-compat) ---
 
   /** SDLC phases the invariant is most relevant to (kebab-case wire name). */
-  `phase-affinity`?: string[];
+  `phase-affinity`?: InvariantPhase[];
 
   /** Workflows the invariant is most relevant to (kebab-case wire name). */
-  `workflow-affinity`?: string[];
+  `workflow-affinity`?: InvariantWorkflow[];
 
   /** Ontological states the invariant is most relevant to (kebab-case wire name). */
   `state-affinity`?: string[];
@@ -63,8 +62,8 @@ model InvariantEntry {
   enforcement?: Enforcement;
 
   /** Severity of a violation. */
-  severity?: string;
+  severity?: InvariantSeverity;
 
   /** Integrity class the invariant guards (kebab-case wire name). */
-  `integrity-class`?: string;
+  `integrity-class`?: InvariantIntegrityClass;
 }

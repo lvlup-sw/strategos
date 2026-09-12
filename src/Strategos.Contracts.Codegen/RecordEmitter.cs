@@ -92,6 +92,7 @@ public static class RecordEmitter
             {
                 SchemaKind.Enum => EmitEnum(doc),
                 SchemaKind.DiscriminatedUnion => EmitUnionBase(doc, docs),
+                SchemaKind.StructuralUnion => EmitStructuralUnion(doc, docs),
                 SchemaKind.Record => EmitRecord(doc, docs, armToUnion),
                 _ => null, // open object / scalar alias: not a standalone type.
             };
@@ -157,17 +158,32 @@ public static class RecordEmitter
         var index = new Dictionary<string, ArmBinding>(StringComparer.Ordinal);
         foreach (var doc in docs.Values)
         {
-            if (doc.Kind != SchemaKind.DiscriminatedUnion)
+            if (doc.Kind is not (SchemaKind.DiscriminatedUnion or SchemaKind.StructuralUnion))
             {
                 continue;
             }
 
-            var discriminatorName = ResolveDiscriminatorName(doc, docs);
+            var discriminatorName = doc.Kind == SchemaKind.StructuralUnion ? null : ResolveDiscriminatorName(doc, docs);
+            if (doc.Kind == SchemaKind.StructuralUnion)
+            {
+                ValidateStructuralUnion(doc, docs);
+            }
 
             foreach (var armFile in doc.UnionArmRefs)
             {
                 if (!docs.TryGetValue(armFile, out var arm))
                 {
+                    continue;
+                }
+
+                if (doc.Kind == SchemaKind.StructuralUnion)
+                {
+                    if (arm.Kind != SchemaKind.Record || !arm.Closed)
+                    {
+                        throw new InvalidOperationException($"Structural union {doc.TypeName} requires closed object arms.");
+                    }
+
+                    index[armFile] = new ArmBinding(doc.TypeName, null, null);
                     continue;
                 }
 
@@ -224,7 +240,8 @@ public static class RecordEmitter
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        return candidates.Count == 1 ? candidates[0] : "kind";
+        return candidates.Count == 1 ? candidates[0]
+            : throw new InvalidOperationException($"{union.TypeName}: no shared discriminator; declare a supported structural oneOf union.");
     }
 
     /// <summary>
@@ -266,6 +283,98 @@ public static class RecordEmitter
         }
 
         sb.Append("public abstract record ").Append(doc.TypeName).AppendLine(";");
+        return sb.ToString();
+    }
+
+    private static void ValidateStructuralUnion(SchemaDoc union, IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        var arms = union.UnionArmRefs.Select(name => docs[name]).ToArray();
+        if (arms.Length < 2 || arms.Any(arm => !arm.Closed || !arm.Properties.Any(p => p.Required)))
+        {
+            throw new InvalidOperationException($"{union.TypeName}: structural unions require closed arms with required keys.");
+        }
+
+        static bool Excludes(SchemaDoc left, SchemaDoc right) => left.Properties.Where(p => p.Required).Any(p =>
+            !right.Properties.Any(q => q.WireName == p.WireName)
+            || right.Properties.Any(q => q.WireName == p.WireName && q.Required
+                && p.ConstValue is not null && q.ConstValue is not null && p.ConstValue != q.ConstValue));
+
+        for (var i = 0; i < arms.Length; i++)
+        {
+            for (var j = i + 1; j < arms.Length; j++)
+            {
+                if (!Excludes(arms[i], arms[j]) && !Excludes(arms[j], arms[i]))
+                {
+                    throw new InvalidOperationException($"{union.TypeName}: overlapping oneOf arms are unsupported.");
+                }
+            }
+        }
+    }
+
+    private static string EmitStructuralUnion(SchemaDoc doc, IReadOnlyDictionary<string, SchemaDoc> docs)
+    {
+        var sb = new StringBuilder();
+        AppendHeader(sb, ["System", "System.Text.Json", "System.Text.Json.Serialization", "System.Text.Json.Serialization.Metadata"]);
+        sb.Append("[JsonConverter(typeof(").Append(doc.TypeName).AppendLine("JsonConverter))]");
+        sb.Append("public abstract record ").Append(doc.TypeName).AppendLine(";");
+        sb.AppendLine();
+        sb.Append("public sealed class ").Append(doc.TypeName).Append("JsonConverter : JsonConverter<")
+            .Append(doc.TypeName).AppendLine(">");
+        sb.AppendLine("{");
+        sb.AppendLine("    public override bool HandleNull => true;");
+        sb.AppendLine();
+        sb.Append("    public override ").Append(doc.TypeName)
+            .AppendLine(" Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        using var document = JsonDocument.ParseValue(ref reader);");
+        sb.AppendLine("        var root = document.RootElement;");
+        sb.AppendLine("        if (root.ValueKind != JsonValueKind.Object) throw new JsonException(\"Expected a structural union object.\");");
+        sb.AppendLine("        var match = -1;");
+        for (var i = 0; i < doc.UnionArmRefs.Count; i++)
+        {
+            var arm = docs[doc.UnionArmRefs[i]];
+            var conditions = arm.Properties.Where(p => p.Required).Select(p =>
+                p.ConstValue is null
+                    ? $"root.TryGetProperty({JsonSerializer.Serialize(p.WireName)}, out _)"
+                    : $"root.TryGetProperty({JsonSerializer.Serialize(p.WireName)}, out var token{i}{ToPascalCase(p.WireName)}) && token{i}{ToPascalCase(p.WireName)}.ValueKind == JsonValueKind.String && token{i}{ToPascalCase(p.WireName)}.GetString() == {JsonSerializer.Serialize(p.ConstValue)}");
+            sb.Append("        if (").Append(string.Join(" && ", conditions)).AppendLine(")");
+            sb.AppendLine("        {");
+            sb.AppendLine("            if (match != -1) throw new JsonException(\"Ambiguous structural union.\");");
+            sb.Append("            match = ").Append(i).AppendLine(";");
+            sb.AppendLine("        }");
+        }
+
+        sb.AppendLine("        return match switch");
+        sb.AppendLine("        {");
+        for (var i = 0; i < doc.UnionArmRefs.Count; i++)
+        {
+            var arm = docs[doc.UnionArmRefs[i]];
+            sb.Append("            ").Append(i).Append(" => JsonSerializer.Deserialize(root, (JsonTypeInfo<")
+                .Append(arm.TypeName).Append(">)options.GetTypeInfo(typeof(").Append(arm.TypeName).AppendLine(")))!,");
+        }
+
+        sb.AppendLine("            _ => throw new JsonException(\"No structural union arm matches.\"),");
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.Append("    public override void Write(Utf8JsonWriter writer, ").Append(doc.TypeName)
+            .AppendLine(" value, JsonSerializerOptions options)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        switch (value)");
+        sb.AppendLine("        {");
+        foreach (var armFile in doc.UnionArmRefs)
+        {
+            var name = docs[armFile].TypeName;
+            sb.Append("            case ").Append(name).AppendLine(" arm:");
+            sb.Append("                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<").Append(name)
+                .Append(">)options.GetTypeInfo(typeof(").Append(name).AppendLine(")));");
+            sb.AppendLine("                break;");
+        }
+
+        sb.AppendLine("            default: throw new JsonException(\"Unknown structural union arm.\");");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
         return sb.ToString();
     }
 
@@ -389,7 +498,7 @@ public static class RecordEmitter
         var emitProps = isUnionArm
             ? doc.Properties.Where(p => !string.Equals(p.WireName, binding!.DiscriminatorName, StringComparison.Ordinal)).ToList()
             : doc.Properties;
-        var validatedReferenceProperties = doc.TypeName.StartsWith("Action", StringComparison.Ordinal)
+        var validatedReferenceProperties = doc.Closed || doc.TypeName.StartsWith("Action", StringComparison.Ordinal)
             ? emitProps
                 .Where(property => property.Required && IsReferenceProperty(property, docs))
                 .ToList()
@@ -405,8 +514,17 @@ public static class RecordEmitter
             })
             .Where(item => item.RequiresNonWhitespace)
             .ToList();
+        var constrainedProperties = emitProps
+            .Where(p => (doc.Closed && p.ConstValue is not null)
+                || (p.MinLength is not null && !(p.MinLength <= 1 && p.Pattern == ContainsNonWhitespacePattern)))
+            .ToList();
         var requiresValidation = validatedReferenceProperties.Count > 0
-            || nonWhitespaceProperties.Count > 0;
+            || nonWhitespaceProperties.Count > 0 || constrainedProperties.Count > 0;
+
+        if (doc.Closed)
+        {
+            sb.AppendLine("[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]");
+        }
 
         sb.Append("public sealed record ").Append(doc.TypeName);
         if (isUnionArm)
@@ -446,7 +564,11 @@ public static class RecordEmitter
             // Required reference types need a null-forgiving default so the
             // nullable analyzer does not flag the uninitialised non-null member.
             // Value types (incl. enums) and optional members are left unassigned.
-            if (prop.Required && isReference)
+            if (doc.Closed && prop.ConstValue is not null)
+            {
+                sb.Append(" = ").Append(JsonSerializer.Serialize(prop.ConstValue)).Append(';');
+            }
+            else if (prop.Required && isReference)
             {
                 sb.Append(" = default!;");
             }
@@ -475,6 +597,20 @@ public static class RecordEmitter
                     .Append(property.IsArray ? "RequireNoNullElements" : "RequireNotNull")
                     .Append('(').Append(ToPascalCase(property.WireName)).Append(", \"")
                     .Append(doc.TypeName).Append('.').Append(property.WireName).AppendLine("\");");
+            }
+
+            foreach (var property in constrainedProperties)
+            {
+                var name = ToPascalCase(property.WireName);
+                var condition = property.ConstValue is not null
+                    ? $"{name} != {JsonSerializer.Serialize(property.ConstValue)}"
+                    : $"{name} is not null && {name}.Length < {property.MinLength}";
+                sb.Append("        if (").Append(condition).AppendLine(")");
+                sb.AppendLine("        {");
+                sb.Append("            throw new global::System.Text.Json.JsonException(\"")
+                    .Append(doc.TypeName).Append('.').Append(property.WireName)
+                    .AppendLine(" violates its declared constraint.\");");
+                sb.AppendLine("        }");
             }
 
             foreach (var item in nonWhitespaceProperties)
@@ -556,6 +692,7 @@ public static class RecordEmitter
                     return target.TypeName;
                 case SchemaKind.Record:
                 case SchemaKind.DiscriminatedUnion:
+                case SchemaKind.StructuralUnion:
                     // A union ref resolves to the [JsonPolymorphic] base record.
                     return target.TypeName;
             }
@@ -563,6 +700,11 @@ public static class RecordEmitter
             // A typed map (TypeSpec Record<T> with a scalar value type, e.g.
             // Record<string>) resolves to a strongly-typed dictionary rather than an
             // opaque object; an untyped open object (Record<unknown>) stays `object`.
+            if (target.MapValueRef is not null)
+            {
+                return $"IReadOnlyDictionary<string, {ResolveRef(target.MapValueRef, docs, out _)}>";
+            }
+
             if (target.MapValueScalar is not null)
             {
                 return $"IReadOnlyDictionary<string, {MapScalar(target.MapValueScalar)}>";
@@ -651,6 +793,7 @@ public static class RecordEmitter
         Enum,
         Record,
         DiscriminatedUnion,
+        StructuralUnion,
     }
 
     /// <summary>
@@ -659,7 +802,7 @@ public static class RecordEmitter
     /// or <c>mode</c>), and the discriminator value (the arm's pinned const)
     /// System.Text.Json writes/reads.
     /// </summary>
-    private sealed record ArmBinding(string BaseTypeName, string DiscriminatorName, string Discriminator);
+    private sealed record ArmBinding(string BaseTypeName, string? DiscriminatorName, string? Discriminator);
 
     /// <summary>A property of an object schema, flattened from the raw JSON.</summary>
     private sealed record PropertyInfo
@@ -689,6 +832,8 @@ public static class RecordEmitter
 
         /// <summary>JSON Schema <c>pattern</c> for a string property.</summary>
         public string? Pattern { get; init; }
+
+        public int? MinLength { get; init; }
     }
 
     /// <summary>A classified JSON Schema document.</summary>
@@ -717,6 +862,10 @@ public static class RecordEmitter
         /// (<c>Record&lt;unknown&gt;</c>), which stays an opaque <c>object</c>.
         /// </summary>
         public string? MapValueScalar { get; init; }
+
+        public string? MapValueRef { get; init; }
+
+        public bool Closed { get; init; }
 
         /// <summary>
         /// The JSON scalar type represented by a named scalar-alias schema. This lets
@@ -750,7 +899,7 @@ public static class RecordEmitter
             // Top-level anyOf of $refs → discriminated union (the TypeSpec
             // `union` form). Each arm carries its own `kind` const; the union
             // base is emitted as a [JsonPolymorphic] abstract record.
-            if (root.TryGetProperty("anyOf", out var anyOfEl)
+            if ((root.TryGetProperty("anyOf", out var anyOfEl) || root.TryGetProperty("oneOf", out anyOfEl))
                 && anyOfEl.ValueKind == JsonValueKind.Array)
             {
                 var armRefs = anyOfEl.EnumerateArray()
@@ -759,11 +908,16 @@ public static class RecordEmitter
                     .ToList();
                 if (armRefs.Count > 0)
                 {
+                    if (armRefs.Count != anyOfEl.GetArrayLength())
+                    {
+                        throw new InvalidOperationException($"{typeName}: union arms must all be named references.");
+                    }
+
                     return new SchemaDoc
                     {
                         FileName = fileName,
                         TypeName = typeName,
-                        Kind = SchemaKind.DiscriminatedUnion,
+                        Kind = root.TryGetProperty("oneOf", out _) ? SchemaKind.StructuralUnion : SchemaKind.DiscriminatedUnion,
                         Description = description,
                         UnionArmRefs = armRefs,
                     };
@@ -797,6 +951,7 @@ public static class RecordEmitter
                     Kind = SchemaKind.Record,
                     Description = description,
                     Properties = props,
+                    Closed = root.TryGetProperty("additionalProperties", out var additional) && additional.ValueKind == JsonValueKind.False,
                 };
             }
 
@@ -817,6 +972,7 @@ public static class RecordEmitter
                 Kind = SchemaKind.OpenObjectOrScalar,
                 Description = description,
                 MapValueScalar = mapValueScalar,
+                MapValueRef = ReadMapValueRef(root),
                 UnderlyingScalarType = underlyingScalarType,
             };
         }
@@ -826,6 +982,21 @@ public static class RecordEmitter
         /// <c>additionalProperties</c> or <c>unevaluatedProperties</c> value schema — or
         /// null when the open object carries no typed value schema.
         /// </summary>
+        private static string? ReadMapValueRef(JsonElement root)
+        {
+            foreach (var keyword in new[] { "additionalProperties", "unevaluatedProperties" })
+            {
+                if (root.TryGetProperty(keyword, out var value)
+                    && value.ValueKind == JsonValueKind.Object
+                    && value.TryGetProperty("$ref", out var reference))
+                {
+                    return Path.GetFileName(reference.GetString());
+                }
+            }
+
+            return null;
+        }
+
         private static string? ReadMapValueScalar(JsonElement root)
         {
             foreach (var keyword in new[] { "additionalProperties", "unevaluatedProperties" })
@@ -907,6 +1078,7 @@ public static class RecordEmitter
                 ScalarType = scalar,
                 ConstValue = constValue,
                 Pattern = ReadPattern(prop),
+                MinLength = prop.TryGetProperty("minLength", out var length) ? length.GetInt32() : null,
             };
         }
 

@@ -10,11 +10,9 @@ import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
 export interface AnyOfNode {
-  "kind": "any-of";
-  "children": Array<CheckNode>;
+  "any-of": Array<CheckNode>;
 }
 
-export const AnyOfNodeSchema: z.ZodType<AnyOfNode> = z.looseObject({
-    "kind": z.literal("any-of"),
-    "children": z.array(z.lazy(() => CheckNodeSchema)),
+export const AnyOfNodeSchema: z.ZodType<AnyOfNode> = z.strictObject({
+    "any-of": z.array(z.lazy(() => CheckNodeSchema)),
   });

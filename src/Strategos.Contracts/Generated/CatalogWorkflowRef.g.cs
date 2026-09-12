@@ -22,7 +22,7 @@ namespace Strategos.Contracts.Generated;
 /// `(workflowId, catalogVersion)` pair (the operational path). `authored`
 /// references a free-form journey description.
 /// </summary>
-public sealed record CatalogWorkflowRef : WorkflowRef
+public sealed record CatalogWorkflowRef : WorkflowRef, IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Catalog workflow identity (resolves against `WorkflowCatalogEntry.workflowId`).
@@ -37,4 +37,22 @@ public sealed record CatalogWorkflowRef : WorkflowRef
     [JsonPropertyName("catalogVersion")]
     [JsonRequired]
     public string CatalogVersion { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (WorkflowId is not null && WorkflowId.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("CatalogWorkflowRef.workflowId violates its declared constraint.");
+        }
+        if (CatalogVersion is not null && CatalogVersion.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("CatalogWorkflowRef.catalogVersion violates its declared constraint.");
+        }
+    }
 }

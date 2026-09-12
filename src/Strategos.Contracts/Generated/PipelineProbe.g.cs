@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// a scalar, a bounded int32 sequence (int64 is avoided per the spike finding),
 /// and a collection (proving `IReadOnlyList&lt;T&gt;` emission for INV-7).
 /// </summary>
-public sealed record PipelineProbe
+public sealed record PipelineProbe : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Stable identifier for the probe instance.
@@ -38,4 +38,18 @@ public sealed record PipelineProbe
     [JsonPropertyName("tags")]
     [JsonRequired]
     public IReadOnlyList<string> Tags { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (Id is not null && Id.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("PipelineProbe.id violates its declared constraint.");
+        }
+    }
 }

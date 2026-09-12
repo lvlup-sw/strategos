@@ -43,7 +43,7 @@ public class SandboxGuaranteeTests
     /// member that could hold a payload.
     /// </summary>
     private static readonly string[] AllowedScalarMembers =
-        ["kind", "pattern", "file-glob", "threshold"];
+        ["kind", "pattern", "file-glob", "threshold", "phase"];
 
     /// <summary>
     /// Asserts the CheckNode schema is structurally incapable of expressing an
@@ -56,17 +56,20 @@ public class SandboxGuaranteeTests
         await Assert.That(compile.ExitCode).IsEqualTo(0).Because(compile.Output);
 
         var root = await EventSchemas.LoadAsync("CheckNode");
-        var armNames = root.GetProperty("anyOf").EnumerateArray()
+        var armNames = root.GetProperty("oneOf").EnumerateArray()
             .Where(a => a.TryGetProperty("$ref", out _))
             .Select(a => Path.GetFileNameWithoutExtension(a.GetProperty("$ref").GetString()))
             .ToList();
         await Assert.That(armNames.Count).IsGreaterThan(0);
+
+        armNames.Add("CheckScope");
 
         // --- Prong 1: structural shape assertion over every arm member. ---
         foreach (var armName in armNames)
         {
             var arm = await EventSchemas.LoadAsync(armName!);
             var props = arm.GetProperty("properties");
+            await Assert.That(arm.GetProperty("additionalProperties").GetBoolean()).IsFalse();
 
             foreach (var member in props.EnumerateObject())
             {
@@ -102,7 +105,7 @@ public class SandboxGuaranteeTests
         // System.Text.Json polymorphic deserialization rejects an unknown
         // discriminator: there is no `exec` arm for it to land on.
         var checkNodeType = typeof(ContractsMarker).Assembly
-            .GetTypes().First(t => t.Name == "CheckNode");
+            .GetTypes().First(t => t.Name is "CheckNode" or "CheckScope");
 
         const string executableFixture = """
             { "kind": "exec", "command": "rm -rf /" }
@@ -126,7 +129,7 @@ public class SandboxGuaranteeTests
     private static bool RefsCheckNode(JsonElement member)
     {
         if (member.TryGetProperty("$ref", out var r)
-            && Path.GetFileNameWithoutExtension(r.GetString()) == "CheckNode")
+            && Path.GetFileNameWithoutExtension(r.GetString()) is "CheckNode" or "CheckScope")
         {
             return true;
         }
@@ -135,7 +138,7 @@ public class SandboxGuaranteeTests
         if (member.TryGetProperty("type", out var t) && t.GetString() == "array"
             && member.TryGetProperty("items", out var items)
             && items.TryGetProperty("$ref", out var ir)
-            && Path.GetFileNameWithoutExtension(ir.GetString()) == "CheckNode")
+            && Path.GetFileNameWithoutExtension(ir.GetString()) is "CheckNode" or "CheckScope")
         {
             return true;
         }

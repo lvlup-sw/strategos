@@ -8,7 +8,7 @@ namespace Strategos.Contracts.Tests.Diagnostics;
 
 /// <summary>
 /// T25 — the recursive <c>CheckNode</c> combinator tree (#98). Compiles the
-/// canonical <c>.tsp</c> and asserts <c>CheckNode</c> is a discriminated union
+/// canonical <c>.tsp</c> and asserts <c>CheckNode</c> is an exclusive structural union
 /// over the three leaf kinds (<c>grep</c> / <c>structural</c> / <c>heuristic</c>,
 /// carrying <c>pattern</c> / <c>file-glob</c> / <c>threshold</c>) and the four
 /// combinator arms (<c>all-of</c> / <c>any-of</c> / <c>not</c> / <c>scope</c>)
@@ -35,8 +35,8 @@ public class CheckNodeTests
 
         var root = await EventSchemas.LoadAsync("CheckNode");
 
-        await Assert.That(root.TryGetProperty("anyOf", out var anyOf)).IsTrue()
-            .Because("CheckNode must be a discriminated union (anyOf of arms).");
+        await Assert.That(root.TryGetProperty("oneOf", out var anyOf)).IsTrue()
+            .Because("CheckNode must be an exclusive structural union (anyOf of arms).");
 
         var armNames = anyOf.EnumerateArray()
             .Where(a => a.TryGetProperty("$ref", out _))
@@ -50,7 +50,11 @@ public class CheckNodeTests
         foreach (var armName in armNames)
         {
             var arm = await EventSchemas.LoadAsync(armName!);
-            var kind = arm.GetProperty("properties").GetProperty("kind").GetProperty("const").GetString();
+            var props = arm.GetProperty("properties");
+            var kind = props.TryGetProperty("kind", out var literal)
+                ? literal.GetProperty("const").GetString()
+                : props.EnumerateObject().First().Name;
+            await Assert.That(arm.GetProperty("additionalProperties").GetBoolean()).IsFalse();
             armsByKind[kind!] = arm;
         }
 
@@ -81,7 +85,7 @@ public class CheckNodeTests
 
     private static async Task AssertRefsCheckNodeArray(System.Text.Json.JsonElement arm, string kind)
     {
-        var children = arm.GetProperty("properties").GetProperty("children");
+        var children = arm.GetProperty("properties").GetProperty(kind);
         await Assert.That(children.GetProperty("type").GetString()).IsEqualTo("array")
             .Because($"the {kind} arm's children must be an array.");
         var itemRef = Path.GetFileNameWithoutExtension(
@@ -92,7 +96,7 @@ public class CheckNodeTests
 
     private static async Task AssertRefsCheckNodeChild(System.Text.Json.JsonElement arm, string kind)
     {
-        var child = arm.GetProperty("properties").GetProperty("child");
+        var child = arm.GetProperty("properties").GetProperty(kind == "scope" ? "node" : "not");
         var childRef = Path.GetFileNameWithoutExtension(child.GetProperty("$ref").GetString());
         await Assert.That(childRef).IsEqualTo("CheckNode")
             .Because($"the {kind} arm's child must recurse into CheckNode.");

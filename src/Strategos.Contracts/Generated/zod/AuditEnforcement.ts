@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-export const AuditEnforcementSchema = z.looseObject({
+export const AuditEnforcementSchema = z.strictObject({
     "mode": z.literal("audit"),
     "audit-prompt": z.string(),
   });

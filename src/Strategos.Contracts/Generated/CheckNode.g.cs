@@ -6,28 +6,100 @@
 // =============================================================================
 #nullable enable
 
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Strategos.Contracts.Generated;
 
-/// <summary>
-/// Recursive combinator tree (#98) describing a declarative check. A
-/// discriminated union over three leaf kinds (`grep` / `structural` / `heuristic`)
-/// and four combinator arms (`all-of` / `any-of` / `not` / `scope`) whose children
-/// recurse back into `CheckNode`.
-/// 
-/// Declarative-only (LB-1 / INV-4 — the sandbox guarantee): every arm carries only
-/// inert match data (`pattern`, `file-glob`, `threshold`) or child `CheckNode`s.
-/// **No arm admits an arbitrary-code / command / exec member.** The schema is
-/// therefore structurally incapable of expressing an embedded executable — the
-/// sandbox guarantee is a property of the shape, not of downstream validation.
-/// </summary>
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
-[JsonDerivedType(typeof(GrepLeaf), "grep")]
-[JsonDerivedType(typeof(StructuralLeaf), "structural")]
-[JsonDerivedType(typeof(HeuristicLeaf), "heuristic")]
-[JsonDerivedType(typeof(AllOfNode), "all-of")]
-[JsonDerivedType(typeof(AnyOfNode), "any-of")]
-[JsonDerivedType(typeof(NotNode), "not")]
-[JsonDerivedType(typeof(ScopeNode), "scope")]
+[JsonConverter(typeof(CheckNodeJsonConverter))]
 public abstract record CheckNode;
+
+public sealed class CheckNodeJsonConverter : JsonConverter<CheckNode>
+{
+    public override bool HandleNull => true;
+
+    public override CheckNode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) throw new JsonException("Expected a structural union object.");
+        var match = -1;
+        if (root.TryGetProperty("kind", out var token0Kind) && token0Kind.ValueKind == JsonValueKind.String && token0Kind.GetString() == "grep" && root.TryGetProperty("pattern", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 0;
+        }
+        if (root.TryGetProperty("kind", out var token1Kind) && token1Kind.ValueKind == JsonValueKind.String && token1Kind.GetString() == "structural" && root.TryGetProperty("pattern", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 1;
+        }
+        if (root.TryGetProperty("kind", out var token2Kind) && token2Kind.ValueKind == JsonValueKind.String && token2Kind.GetString() == "heuristic" && root.TryGetProperty("pattern", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 2;
+        }
+        if (root.TryGetProperty("all-of", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 3;
+        }
+        if (root.TryGetProperty("any-of", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 4;
+        }
+        if (root.TryGetProperty("not", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 5;
+        }
+        if (root.TryGetProperty("scope", out _) && root.TryGetProperty("node", out _))
+        {
+            if (match != -1) throw new JsonException("Ambiguous structural union.");
+            match = 6;
+        }
+        return match switch
+        {
+            0 => JsonSerializer.Deserialize(root, (JsonTypeInfo<GrepLeaf>)options.GetTypeInfo(typeof(GrepLeaf)))!,
+            1 => JsonSerializer.Deserialize(root, (JsonTypeInfo<StructuralLeaf>)options.GetTypeInfo(typeof(StructuralLeaf)))!,
+            2 => JsonSerializer.Deserialize(root, (JsonTypeInfo<HeuristicLeaf>)options.GetTypeInfo(typeof(HeuristicLeaf)))!,
+            3 => JsonSerializer.Deserialize(root, (JsonTypeInfo<AllOfNode>)options.GetTypeInfo(typeof(AllOfNode)))!,
+            4 => JsonSerializer.Deserialize(root, (JsonTypeInfo<AnyOfNode>)options.GetTypeInfo(typeof(AnyOfNode)))!,
+            5 => JsonSerializer.Deserialize(root, (JsonTypeInfo<NotNode>)options.GetTypeInfo(typeof(NotNode)))!,
+            6 => JsonSerializer.Deserialize(root, (JsonTypeInfo<ScopeNode>)options.GetTypeInfo(typeof(ScopeNode)))!,
+            _ => throw new JsonException("No structural union arm matches."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, CheckNode value, JsonSerializerOptions options)
+    {
+        switch (value)
+        {
+            case GrepLeaf arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<GrepLeaf>)options.GetTypeInfo(typeof(GrepLeaf)));
+                break;
+            case StructuralLeaf arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<StructuralLeaf>)options.GetTypeInfo(typeof(StructuralLeaf)));
+                break;
+            case HeuristicLeaf arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<HeuristicLeaf>)options.GetTypeInfo(typeof(HeuristicLeaf)));
+                break;
+            case AllOfNode arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<AllOfNode>)options.GetTypeInfo(typeof(AllOfNode)));
+                break;
+            case AnyOfNode arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<AnyOfNode>)options.GetTypeInfo(typeof(AnyOfNode)));
+                break;
+            case NotNode arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<NotNode>)options.GetTypeInfo(typeof(NotNode)));
+                break;
+            case ScopeNode arm:
+                JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<ScopeNode>)options.GetTypeInfo(typeof(ScopeNode)));
+                break;
+            default: throw new JsonException("Unknown structural union arm.");
+        }
+    }
+}

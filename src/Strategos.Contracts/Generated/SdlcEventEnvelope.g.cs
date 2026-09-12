@@ -20,7 +20,7 @@ namespace Strategos.Contracts.Generated;
 /// never rejected** (forward compatibility — a consumer that does not recognise
 /// a type retains the raw envelope rather than dropping the event).
 /// </summary>
-public sealed record SdlcEventEnvelope
+public sealed record SdlcEventEnvelope : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Stream identifier for event routing (typically the feature/workflow ID).
@@ -91,4 +91,22 @@ public sealed record SdlcEventEnvelope
     /// </summary>
     [JsonPropertyName("data")]
     public object? Data { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (StreamId is not null && StreamId.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("SdlcEventEnvelope.streamId violates its declared constraint.");
+        }
+        if (Type is not null && Type.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("SdlcEventEnvelope.type violates its declared constraint.");
+        }
+    }
 }

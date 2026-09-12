@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InvariantIntegrityClass.json",
+    "type": "string",
+    "enum": [
+        "substrate",
+        "sdlc",
+        "authoring",
+        "user"
+    ],
+    "description": "Integrity boundary guarded by an invariant."
+}

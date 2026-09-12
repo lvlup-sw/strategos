@@ -144,6 +144,56 @@ namespace Strategos.Contracts.Generated
             "rules",
         };
 
+        /// <summary>The 2 wire values of the closed <c>InvariantAxis</c> enum.</summary>
+        public static readonly string[] InvariantAxis = new[]
+        {
+            "substrate",
+            "authoring",
+        };
+
+        /// <summary>The 4 wire values of the closed <c>InvariantIntegrityClass</c> enum.</summary>
+        public static readonly string[] InvariantIntegrityClass = new[]
+        {
+            "substrate",
+            "sdlc",
+            "authoring",
+            "user",
+        };
+
+        /// <summary>The 3 wire values of the closed <c>InvariantLoadCost</c> enum.</summary>
+        public static readonly string[] InvariantLoadCost = new[]
+        {
+            "always-load",
+            "reference-only",
+            "archivable",
+        };
+
+        /// <summary>The 4 wire values of the closed <c>InvariantPhase</c> enum.</summary>
+        public static readonly string[] InvariantPhase = new[]
+        {
+            "plan",
+            "delegate",
+            "review",
+            "synthesize",
+        };
+
+        /// <summary>The 2 wire values of the closed <c>InvariantSeverityLevel</c> enum.</summary>
+        public static readonly string[] InvariantSeverityLevel = new[]
+        {
+            "blocking",
+            "advisory",
+        };
+
+        /// <summary>The 5 wire values of the closed <c>InvariantWorkflow</c> enum.</summary>
+        public static readonly string[] InvariantWorkflow = new[]
+        {
+            "feature",
+            "debug",
+            "refactor",
+            "discovery",
+            "oneshot",
+        };
+
         /// <summary>The 4 wire values of the closed <c>JourneyOutcomeStatus</c> enum.</summary>
         public static readonly string[] JourneyOutcomeStatus = new[]
         {

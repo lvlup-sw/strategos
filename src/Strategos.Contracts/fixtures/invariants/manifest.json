@@ -1,0 +1,48 @@
+{
+  "catalogs": [
+    {
+      "file": "strategos.md",
+      "repository": "lvlup-sw/strategos",
+      "revision": "96532a11e3e8358f6f012a4058897a7810b90067",
+      "ids": [
+        "U-1",
+        "U-2",
+        "U-3",
+        "U-4",
+        "U-5",
+        "U-6",
+        "U-7",
+        "U-8"
+      ]
+    },
+    {
+      "file": "exarchos.md",
+      "repository": "lvlup-sw/exarchos",
+      "revision": "e4c6b579ad1ac81ab3c50194eb503fabcee04cd0",
+      "migration": "Rename exactly three fileGlob keys to file-glob; no other edits.",
+      "ids": [
+        "INV-1",
+        "INV-7",
+        "INV-8",
+        "INV-9",
+        "INV-10",
+        "INV-11",
+        "INV-12",
+        "INV-13",
+        "INV-14",
+        "INV-15",
+        "INV-2",
+        "INV-3",
+        "INV-4",
+        "INV-5a",
+        "INV-5b",
+        "INV-5c",
+        "INV-5d",
+        "INV-6",
+        "INV-16",
+        "basileus-boundary",
+        "INV-17"
+      ]
+    }
+  ]
+}

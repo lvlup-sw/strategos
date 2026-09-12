@@ -3,23 +3,17 @@
     "$id": "ScopeNode.json",
     "type": "object",
     "properties": {
-        "kind": {
-            "type": "string",
-            "const": "scope"
+        "scope": {
+            "$ref": "CheckScope.json"
         },
-        "file-glob": {
-            "type": "string",
-            "description": "File glob the child check is scoped to (kebab-case wire name)."
-        },
-        "child": {
-            "description": "The child check evaluated within the scope (recurses into CheckNode).",
+        "node": {
             "$ref": "CheckNode.json"
         }
     },
     "required": [
-        "kind",
-        "file-glob",
-        "child"
+        "scope",
+        "node"
     ],
-    "description": "Combinator: `scope` — narrows a child check to files matching a glob. Recurses\ninto `CheckNode` via `child`."
+    "description": "A child check evaluated within the declared scope.",
+    "additionalProperties": false
 }

@@ -43,6 +43,10 @@ public sealed record ActionPropertyReferenceV1 : IJsonOnDeserialized, IJsonOnSer
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Name, "ActionPropertyReferenceV1.name");
+        if (Name is not null && Name.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionPropertyReferenceV1.name violates its declared constraint.");
+        }
         global::Strategos.Contracts.ContractJsonValidation.RequireEnumTypeName(ScalarKind == ActionPredicateScalarKindV1.Enum, EnumTypeName, "ActionPropertyReferenceV1.enumTypeName");
     }
 }

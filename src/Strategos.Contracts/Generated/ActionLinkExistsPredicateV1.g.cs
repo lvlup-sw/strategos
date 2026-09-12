@@ -29,5 +29,9 @@ public sealed record ActionLinkExistsPredicateV1 : ActionPredicateV1, IJsonOnDes
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(LinkName, "ActionLinkExistsPredicateV1.linkName");
+        if (LinkName is not null && LinkName.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionLinkExistsPredicateV1.linkName violates its declared constraint.");
+        }
     }
 }

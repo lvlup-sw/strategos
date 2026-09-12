@@ -16,7 +16,8 @@ namespace Strategos.Contracts.Generated;
 /// audit prompt (an LLM/agent reviews against it). The `audit-prompt` is inert
 /// prose, never executable code.
 /// </summary>
-public sealed record AuditEnforcement : Enforcement
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AuditEnforcement : Enforcement, IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Natural-language audit prompt (kebab-case wire name); inert prose.
@@ -24,4 +25,15 @@ public sealed record AuditEnforcement : Enforcement
     [JsonPropertyName("audit-prompt")]
     [JsonRequired]
     public string AuditPrompt { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(AuditPrompt, "AuditEnforcement.audit-prompt");
+    }
 }

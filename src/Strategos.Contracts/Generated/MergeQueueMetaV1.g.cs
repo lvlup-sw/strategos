@@ -17,7 +17,7 @@ namespace Strategos.Contracts.Generated;
 /// response to a specific merge attempt: the head/base SHAs, the merge group, and
 /// the evaluator tier (Tier 1 merge-gate / Tier 2 e2e) that produced it.
 /// </summary>
-public sealed record MergeQueueMetaV1
+public sealed record MergeQueueMetaV1 : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// When true, the producer fell back: downstream consumers MUST NOT treat the
@@ -60,4 +60,30 @@ public sealed record MergeQueueMetaV1
     [JsonPropertyName("evaluatorTier")]
     [JsonRequired]
     public string EvaluatorTier { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (HeadSha is not null && HeadSha.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("MergeQueueMetaV1.headSha violates its declared constraint.");
+        }
+        if (BaseSha is not null && BaseSha.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("MergeQueueMetaV1.baseSha violates its declared constraint.");
+        }
+        if (MergeGroupId is not null && MergeGroupId.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("MergeQueueMetaV1.mergeGroupId violates its declared constraint.");
+        }
+        if (EvaluatorTier is not null && EvaluatorTier.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("MergeQueueMetaV1.evaluatorTier violates its declared constraint.");
+        }
+    }
 }

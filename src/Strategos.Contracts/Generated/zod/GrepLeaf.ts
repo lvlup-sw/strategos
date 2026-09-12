@@ -6,10 +6,11 @@
 
 import { z } from "zod";
 
-export const GrepLeafSchema = z.looseObject({
+export const GrepLeafSchema = z.strictObject({
     "kind": z.literal("grep"),
     "pattern": z.string(),
     "file-glob": z.string().optional(),
+    "threshold": z.number().optional(),
   });
 
 export type GrepLeaf = z.infer<typeof GrepLeafSchema>;

@@ -12,15 +12,23 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Combinator: `all-of` — the conjunction of its child checks. Recurses back into
-/// `CheckNode` via the `children` array (the self-referential arm of the tree).
+/// Conjunction of child checks; an empty list is permitted.
 /// </summary>
-public sealed record AllOfNode : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AllOfNode : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// Child checks; all must hold (recurses into CheckNode).
-    /// </summary>
-    [JsonPropertyName("children")]
+    [JsonPropertyName("all-of")]
     [JsonRequired]
-    public IReadOnlyList<CheckNode> Children { get; init; } = default!;
+    public IReadOnlyList<CheckNode> AllOf { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(AllOf, "AllOfNode.all-of");
+    }
 }

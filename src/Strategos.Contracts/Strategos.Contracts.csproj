@@ -51,7 +51,7 @@
        release pipeline bump in one place; the `contracts-v<version>` publish
        workflow fails closed if the tag disagrees with it. -->
   <PropertyGroup>
-    <ContractsVersion>0.14.0</ContractsVersion>
+    <ContractsVersion>0.15.0</ContractsVersion>
     <MinVerSkip>true</MinVerSkip>
     <Version>$(ContractsVersion)</Version>
     <PackageVersion>$(ContractsVersion)</PackageVersion>
@@ -88,6 +88,14 @@
              CopyToOutputDirectory="Never">
       <Visible>false</Visible>
     </Content>
+  </ItemGroup>
+
+  <!-- #231: a separate, pinned invariant corpus for consumer conformance. -->
+  <ItemGroup>
+    <Content Include="fixtures/invariants/**/*"
+             Pack="true"
+             PackagePath="contentFiles/any/any/invariant-fixtures/"
+             CopyToOutputDirectory="Never" />
   </ItemGroup>
 
   <!-- T32: embed the #53 builder-fixture corpus under contentFiles/.../fixtures/

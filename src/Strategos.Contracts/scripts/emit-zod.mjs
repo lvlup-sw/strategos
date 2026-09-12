@@ -44,7 +44,7 @@ const REFERENCE_KEY = "x-strategos-references-v1";
  * the Zod arm stricter (`format`) or lossy (`default`) than the contract.
  */
 const LOWERED = new Set([
-  "type", "const", "enum", "$ref", "anyOf",
+  "type", "const", "enum", "$ref", "anyOf", "oneOf", "additionalProperties",
   "properties", "required", "items",
   "minLength", "maxLength", "pattern",
   "minimum", "maximum", "minItems", "minProperties",
@@ -322,6 +322,29 @@ function constProperties(document) {
 // JSON Schema -> Zod expression
 // -----------------------------------------------------------------------------
 
+/** Prove disjointness before lowering exclusive oneOf to z.union. */
+function assertDisjoint(arms, context) {
+  const resolved = arms.map((arm) => arm.$ref ? context.documents.get(refName(arm.$ref)) : arm);
+  for (const arm of resolved) {
+    if (arm?.type !== "object" || arm.additionalProperties !== false) {
+      fail(`${context.where}: oneOf requires closed object arms`);
+    }
+  }
+  for (let i = 0; i < resolved.length; i++) {
+    for (let j = i + 1; j < resolved.length; j++) {
+      const a = resolved[i], b = resolved[j];
+      const excludes = (left, right) => (left.required ?? []).some((key) =>
+        !(key in (right.properties ?? {})) ||
+        ((right.required ?? []).includes(key) &&
+          "const" in left.properties[key] && "const" in right.properties[key] &&
+          left.properties[key].const !== right.properties[key].const));
+      if (!excludes(a, b) && !excludes(b, a)) {
+        fail(`${context.where}: overlapping oneOf arms ${i} and ${j} are unsupported`);
+      }
+    }
+  }
+}
+
 function compile(node, context) {
   if (node === null || typeof node !== "object" || Array.isArray(node)) {
     fail(`${context.where}: expected a schema object, got ${JSON.stringify(node)}`);
@@ -356,14 +379,16 @@ function compile(node, context) {
     requireConsumed(node, context, consumed);
     return expression;
   }
-  if ("anyOf" in node) {
-    const arms = node.anyOf.map((arm, i) =>
-      compile(arm, { ...context, where: `${context.where}.anyOf[${i}]` }));
+  if ("anyOf" in node || "oneOf" in node) {
+    const keyword = "oneOf" in node ? "oneOf" : "anyOf";
+    if (keyword === "oneOf") assertDisjoint(node.oneOf, context);
+    const arms = node[keyword].map((arm, i) =>
+      compile(arm, { ...context, where: `${context.where}.${keyword}[${i}]` }));
     if (arms.length < 2) {
-      fail(`${context.where}: anyOf needs at least two arms`);
+      fail(`${context.where}: ${keyword} needs at least two arms`);
     }
 
-    requireConsumed(node, context, ["anyOf"]);
+    requireConsumed(node, context, [keyword]);
     return `z.union([${arms.join(", ")}])`;
   }
   if ("const" in node) {
@@ -382,7 +407,7 @@ function compile(node, context) {
   switch (node.type) {
     case "object":
       requireConsumed(node, context, [
-        "type", "properties", "required", "unevaluatedProperties", "minProperties", "if", "then",
+        "type", "properties", "required", "unevaluatedProperties", "additionalProperties", "minProperties", "if", "then",
       ]);
       return objectExpression(node, context);
     case "array":
@@ -439,9 +464,11 @@ function typeExpression(node, context) {
     context.typeImports.add(name);
     return name;
   }
-  if ("anyOf" in node) {
-    const arms = node.anyOf.map((arm, i) =>
-      typeExpression(arm, { ...context, where: `${context.where}.anyOf[${i}]` }));
+  if ("anyOf" in node || "oneOf" in node) {
+    const keyword = "oneOf" in node ? "oneOf" : "anyOf";
+    if (keyword === "oneOf") assertDisjoint(node.oneOf, context);
+    const arms = node[keyword].map((arm, i) =>
+      typeExpression(arm, { ...context, where: `${context.where}.${keyword}[${i}]` }));
     return arms.join(" | ");
   }
   if ("const" in node) {
@@ -545,11 +572,14 @@ function objectExpression(node, context) {
   });
 
   // A JSON Schema object with no `additionalProperties: false` admits unknown
-  // members, and this contract never writes one. `looseObject` keeps them on the
+  // members. `looseObject` keeps them on the
   // parsed value rather than stripping them, so a consumer that reads a document
   // from a newer producer and writes it back does not silently drop its slots.
   const shape = members.length === 0 ? "{}" : `{\n    ${members.join(",\n    ")},\n  }`;
-  let expression = `z.looseObject(${shape})`;
+  if ("additionalProperties" in node && node.additionalProperties !== false) {
+    fail(`${context.where}: only additionalProperties: false is supported beside named properties`);
+  }
+  let expression = node.additionalProperties === false ? `z.strictObject(${shape})` : `z.looseObject(${shape})`;
 
   if ("unevaluatedProperties" in node) {
     const value = compile(node.unevaluatedProperties, {

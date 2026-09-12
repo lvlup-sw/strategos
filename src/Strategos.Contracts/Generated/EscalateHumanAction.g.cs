@@ -15,7 +15,7 @@ namespace Strategos.Contracts.Generated;
 /// `next_actions` branch (#63): escalate to a human. Mirrors the `escalate_human`
 /// decision — terminal, no journey to run, carries a human-readable reason.
 /// </summary>
-public sealed record EscalateHumanAction : NextAction
+public sealed record EscalateHumanAction : NextAction, IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Why the action escalates to a human.
@@ -23,4 +23,18 @@ public sealed record EscalateHumanAction : NextAction
     [JsonPropertyName("reason")]
     [JsonRequired]
     public string Reason { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (Reason is not null && Reason.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("EscalateHumanAction.reason violates its declared constraint.");
+        }
+    }
 }

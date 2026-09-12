@@ -1,6 +1,6 @@
 {
   "name": "@lvlup-sw/strategos-contracts",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Zod schemas and TypeScript types for the Strategos workflow/ontology wire contract. Emitted from the TypeSpec sources that also produce the JSON Schema and the LevelUp.Strategos.Contracts C# records, so all three arms agree by construction.",
   "type": "module",
   "license": "UNLICENSED",
@@ -37,7 +37,8 @@
     "emit:zod": "node scripts/emit-zod.mjs",
     "check:zod": "tsc --project tsconfig.typecheck.json",
     "build:package": "tsc --project tsconfig.build.json",
-    "prepack": "npm run build:package"
+    "prepack": "npm run build:package",
+    "check:invariants": "npm run build:package && node scripts/verify-invariant-conformance.mjs"
   },
   "peerDependencies": {
     "zod": "^4.4.3"
@@ -46,8 +47,10 @@
     "@apidevtools/json-schema-ref-parser": "^11.7.0",
     "@typespec/compiler": "^1.11.0",
     "@typespec/json-schema": "^1.11.0",
+    "ajv": "8.20.0",
     "json-schema-to-zod": "^2.6.1",
-    "zod": "^4.4.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "yaml": "2.9.1",
+    "zod": "^4.4.3"
   }
 }

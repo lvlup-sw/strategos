@@ -12,22 +12,28 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Combinator: `scope` — narrows a child check to files matching a glob. Recurses
-/// into `CheckNode` via `child`.
+/// A child check evaluated within the declared scope.
 /// </summary>
-public sealed record ScopeNode : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ScopeNode : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// File glob the child check is scoped to (kebab-case wire name).
-    /// </summary>
-    [JsonPropertyName("file-glob")]
+    [JsonPropertyName("scope")]
     [JsonRequired]
-    public string FileGlob { get; init; } = default!;
+    public CheckScope Scope { get; init; } = default!;
 
-    /// <summary>
-    /// The child check evaluated within the scope (recurses into CheckNode).
-    /// </summary>
-    [JsonPropertyName("child")]
+    [JsonPropertyName("node")]
     [JsonRequired]
-    public CheckNode Child { get; init; } = default!;
+    public CheckNode Node { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Scope, "ScopeNode.scope");
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Node, "ScopeNode.node");
+    }
 }

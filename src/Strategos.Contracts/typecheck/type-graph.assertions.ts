@@ -53,3 +53,17 @@ export type CheckNodeIsNotUnknown = Assert<NotUnknown<CheckNode>>;
 // --- A cyclic member reached THROUGH a non-cyclic document keeps its type.
 type Configuration = NonNullable<Extract<StepDefinition, { kind: "skill" }>["configuration"]>;
 export type NestedConfigurationIsNotUnknown = Assert<NotUnknown<Configuration>>;
+
+// Key-keyed checks keep both recursive payloads and scoped restrictions visible.
+export type CheckConjunctionChildren = Assert<MutuallyAssignable<
+  Extract<CheckNode, { "all-of": unknown }>["all-of"][number], CheckNode
+>>;
+export type CheckScopeChild = Assert<MutuallyAssignable<
+  Extract<CheckNode, { scope: unknown }>["node"], CheckNode
+>>;
+export type CheckScopeGlob = Assert<MutuallyAssignable<
+  Extract<CheckNode, { scope: unknown }>["scope"]["file-glob"], string | undefined
+>>;
+export type CheckLeafKinds = Assert<MutuallyAssignable<
+  Extract<CheckNode, { kind: unknown }>["kind"], "grep" | "structural" | "heuristic"
+>>;

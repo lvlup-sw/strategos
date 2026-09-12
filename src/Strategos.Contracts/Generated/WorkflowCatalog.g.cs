@@ -20,7 +20,7 @@ namespace Strategos.Contracts.Generated;
 /// `(workflowId, catalogVersion)` pair matches some entry (see
 /// `WorkflowCatalogResolver`).
 /// </summary>
-public sealed record WorkflowCatalog
+public sealed record WorkflowCatalog : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Version of this catalog manifest.
@@ -35,4 +35,18 @@ public sealed record WorkflowCatalog
     [JsonPropertyName("entries")]
     [JsonRequired]
     public IReadOnlyList<WorkflowCatalogEntry> Entries { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (CatalogVersion is not null && CatalogVersion.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("WorkflowCatalog.catalogVersion violates its declared constraint.");
+        }
+    }
 }

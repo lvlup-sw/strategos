@@ -29,5 +29,9 @@ public sealed record ActionEventResourceV1 : ActionResourceV1, IJsonOnDeserializ
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Name, "ActionEventResourceV1.name");
+        if (Name is not null && Name.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionEventResourceV1.name violates its declared constraint.");
+        }
     }
 }

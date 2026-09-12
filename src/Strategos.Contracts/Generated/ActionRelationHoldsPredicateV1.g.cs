@@ -34,5 +34,9 @@ public sealed record ActionRelationHoldsPredicateV1 : ActionPredicateV1, IJsonOn
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(RelationName, "ActionRelationHoldsPredicateV1.relationName");
         global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(LinkPath, "ActionRelationHoldsPredicateV1.linkPath");
+        if (RelationName is not null && RelationName.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionRelationHoldsPredicateV1.relationName violates its declared constraint.");
+        }
     }
 }

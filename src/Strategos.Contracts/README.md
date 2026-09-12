@@ -105,7 +105,7 @@ emit path) and classifies each document as enum / record / open-object:
   (#50) and the invariant `Enforcement` `mode` union (#98) both round-trip
   without hard-coding a single discriminator name.
 - **Recursive types** (Family 3 / #98 `CheckNode`). A self-referential model (an
-  arm whose `children`/`child` `$ref`s the union it belongs to) needs no special
+  arm whose payload `$ref`s the union it belongs to) needs no special
   handling: `$ref` resolution is **by document name**, not by recursive descent,
   so a cycle resolves to the generated type name (`IReadOnlyList<CheckNode>` /
   `CheckNode`) without infinite recursion. The combinator tree is declarative-only
@@ -116,6 +116,53 @@ emit path) and classifies each document as enum / record / open-object:
 before `tsp compile`, so a removed/renamed TypeSpec model does not linger as an
 orphan schema/record (the json-schema emitter does not prune its own output) —
 keeping the codegen-guard diff honest across P2/P3 renames.
+
+## Invariant catalogs (0.15.0)
+
+`InvariantEntry` describes parsed catalog frontmatter entries. The entry stays open to
+consumer metadata; the enforcement DSL and severity objects are closed. `citations`
+is optional. The obsolete `axiom_overlap` contract field and C# property are removed.
+
+The exact vocabularies are `InvariantAxis` (`substrate`, `authoring`), `InvariantLoadCost`
+(`always-load`, `reference-only`, `archivable`), `InvariantIntegrityClass` (`substrate`,
+`sdlc`, `authoring`, `user`), `InvariantPhase` (`plan`, `delegate`, `review`, `synthesize`),
+and `InvariantWorkflow` (`feature`, `debug`, `refactor`, `discovery`, `oneshot`). Severity
+uses `InvariantSeverityLevel` (`blocking`, `advisory`); context override keys remain open.
+
+Migration from 0.14.0:
+
+```json
+{
+  "severity": { "default": "blocking", "by-workflow": { "oneshot": "advisory" } },
+  "enforcement": {
+    "mode": "check",
+    "check": {
+      "scope": { "file-glob": "src/**", "phase": "review" },
+      "node": { "not": { "kind": "grep", "pattern": "forbidden" } }
+    }
+  }
+}
+```
+
+Replace combinator `kind`/`children`/`child` fields with `all-of`, `any-of`, `not`, or
+`scope`/`node`. Leaf kinds remain `grep`, `structural`, `heuristic`; every leaf requires
+`pattern` and allows optional `threshold` and `file-glob`. Empty arrays and scope
+objects are valid. No evaluator is shipped. Exarchos must rename `fileGlob` to
+`file-glob`, including nested scopes; it is not accepted as an alias.
+
+Structural unions emit abstract C# bases with generated converters and sealed arms.
+Closed schemas emit `JsonUnmappedMemberHandling.Disallow` and Zod `strictObject`.
+The structural converter recognizes required keys and literals without inventing a
+wire discriminator. Zod lowers `oneOf` only when its closed arms are provably disjoint.
+Severity maps retain `IReadOnlyDictionary<string, InvariantSeverityLevel>` in C#.
+
+`npm run check:invariants` validates the pinned corpus and live catalog against JSON
+Schema and the built Zod package. `CatalogRoundTripTests` reads the same normalized
+JSON and proves C# round-trip preservation. Frontmatter uses the locked YAML parser;
+missing, malformed, empty, or incomplete fixtures fail the gate. The NuGet corpus is
+separate from the workflow builder fixtures. Source revisions and the three-key Exarchos
+migration are recorded in `fixtures/invariants/manifest.json`. Exarchos implementation
+is tracked in [exarchos#1902](https://github.com/lvlup-sw/exarchos/issues/1902).
 
 ## Cross-product round-trip (T31, exarchos#1247)
 

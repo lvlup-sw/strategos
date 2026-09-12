@@ -1,5 +1,5 @@
 {
-    "$comment": "Accepted breaking (narrowing) changes to the Contracts JSON Schema tree. scripts/contracts-schema-diff.mjs accepts a BREAKING change ONLY when the candidate version carries the required increment AND an entry here matches the reported change exactly. 'file' is the schema path relative to the schema root, 'path' is the location the classifier reports, and 'kind' is its verbatim message; all three are compared with exact string equality. 'version' is the Contracts version that introduced the narrowing — an entry outside the compared (previous, candidate] window is reported as a stale allowlist entry and accepts nothing. Every entry needs a matching line in src/Strategos.Contracts/CHANGELOG.md.",
+    "$comment": "Accepted breaking (narrowing) changes to the Contracts JSON Schema tree. scripts/contracts-schema-diff.mjs accepts a BREAKING change ONLY when the candidate version carries the required increment AND an entry here matches the reported change exactly. 'file' is the schema path relative to the schema root, 'path' is the location the classifier reports, and 'kind' is its verbatim message; all three are compared with exact string equality. 'version' is the Contracts version that introduced the narrowing \u2014 an entry outside the compared (previous, candidate] window is reported as a stale allowlist entry and accepts nothing. Every entry needs a matching line in src/Strategos.Contracts/CHANGELOG.md.",
     "entries": [
         {
             "file": "json-schema/AgwfEntryDuplicateStepName.json",
@@ -84,6 +84,244 @@
             "kind": "'then' conditional was added or narrowed",
             "version": "0.12.0",
             "reason": "Bundled twin of the AGWF044 'then' arm on CompensationConfiguration."
+        },
+        {
+            "file": "json-schema/AllOfNode.json",
+            "path": "$",
+            "kind": "property 'kind' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AllOfNode.json",
+            "path": "$",
+            "kind": "property 'children' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AllOfNode.json",
+            "path": "$",
+            "kind": "property 'all-of' was added as required",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AllOfNode.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/AnyOfNode.json",
+            "path": "$",
+            "kind": "property 'kind' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AnyOfNode.json",
+            "path": "$",
+            "kind": "property 'children' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AnyOfNode.json",
+            "path": "$",
+            "kind": "property 'any-of' was added as required",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/AnyOfNode.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/AuditEnforcement.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/CheckEnforcement.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/CheckNode.json",
+            "path": "$",
+            "kind": "'anyOf' union changed shape",
+            "version": "0.15.0",
+            "reason": "Replace the unused kind-discriminated combinator encoding with an exclusive union of closed consumer-shaped leaf and key-keyed combinator arms (#231)."
+        },
+        {
+            "file": "json-schema/CheckNode.json",
+            "path": "$",
+            "kind": "'oneOf' union changed shape",
+            "version": "0.15.0",
+            "reason": "Replace the unused kind-discriminated combinator encoding with an exclusive union of closed consumer-shaped leaf and key-keyed combinator arms (#231)."
+        },
+        {
+            "file": "json-schema/GrepLeaf.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/HeuristicLeaf.json",
+            "path": "$",
+            "kind": "property 'pattern' was added as required",
+            "version": "0.15.0",
+            "reason": "All consumer leaf kinds require a pattern; heuristic thresholds remain optional match-count gates (#231)."
+        },
+        {
+            "file": "json-schema/HeuristicLeaf.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$",
+            "kind": "property 'axiom_overlap' was removed",
+            "version": "0.15.0",
+            "reason": "Remove axiom_overlap entirely: neither real consumer writes it; its generated C# property is removed as well (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"id\"]",
+            "kind": "'minLength' increased from 0 to 1",
+            "version": "0.15.0",
+            "reason": "Match the consumer requirement that invariant IDs are nonempty (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"axis\"]",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Close the catalog vocabulary to the existing Exarchos schema tokens rather than accepting arbitrary strings (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"cost-of-load\"]",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Close the catalog vocabulary to the existing Exarchos schema tokens rather than accepting arbitrary strings (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"phase-affinity\"].items",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Close the catalog vocabulary to the existing Exarchos schema tokens rather than accepting arbitrary strings (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"workflow-affinity\"].items",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Close the catalog vocabulary to the existing Exarchos schema tokens rather than accepting arbitrary strings (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"severity\"]",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Replace scalar severity with the consumer default/by-workflow/by-phase model over blocking and advisory (#231)."
+        },
+        {
+            "file": "json-schema/InvariantEntry.json",
+            "path": "$.properties[\"integrity-class\"]",
+            "kind": "'$ref' constraint changed",
+            "version": "0.15.0",
+            "reason": "Close the catalog vocabulary to the existing Exarchos schema tokens rather than accepting arbitrary strings (#231)."
+        },
+        {
+            "file": "json-schema/NotNode.json",
+            "path": "$",
+            "kind": "property 'kind' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/NotNode.json",
+            "path": "$",
+            "kind": "property 'child' was removed",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/NotNode.json",
+            "path": "$",
+            "kind": "property 'not' was added as required",
+            "version": "0.15.0",
+            "reason": "Replace kind plus children/child with the consumer all-of/any-of/not key carrying the recursive payload (#231)."
+        },
+        {
+            "file": "json-schema/NotNode.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "property 'kind' was removed",
+            "version": "0.15.0",
+            "reason": "Adopt the consumer scope/node wrapper with optional file-glob and phase restrictions inside scope (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "property 'file-glob' was removed",
+            "version": "0.15.0",
+            "reason": "Adopt the consumer scope/node wrapper with optional file-glob and phase restrictions inside scope (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "property 'child' was removed",
+            "version": "0.15.0",
+            "reason": "Adopt the consumer scope/node wrapper with optional file-glob and phase restrictions inside scope (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "property 'scope' was added as required",
+            "version": "0.15.0",
+            "reason": "Adopt the consumer scope/node wrapper with optional file-glob and phase restrictions inside scope (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "property 'node' was added as required",
+            "version": "0.15.0",
+            "reason": "Adopt the consumer scope/node wrapper with optional file-glob and phase restrictions inside scope (#231)."
+        },
+        {
+            "file": "json-schema/ScopeNode.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/StructuralLeaf.json",
+            "path": "$",
+            "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
+            "version": "0.15.0",
+            "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
         }
     ]
 }

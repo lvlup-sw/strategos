@@ -29,5 +29,9 @@ public sealed record ActionLinkResourceV1 : ActionResourceV1, IJsonOnDeserialize
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Name, "ActionLinkResourceV1.name");
+        if (Name is not null && Name.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionLinkResourceV1.name violates its declared constraint.");
+        }
     }
 }

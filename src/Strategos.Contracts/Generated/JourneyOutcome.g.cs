@@ -15,7 +15,7 @@ namespace Strategos.Contracts.Generated;
 /// A per-journey outcome record (#63): the catalog identity of the journey that
 /// ran, its individual outcome status, and a reference to the evidence it produced.
 /// </summary>
-public sealed record JourneyOutcome
+public sealed record JourneyOutcome : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Catalog workflow identity of the journey that ran.
@@ -44,4 +44,26 @@ public sealed record JourneyOutcome
     [JsonPropertyName("evidenceRef")]
     [JsonRequired]
     public string EvidenceRef { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (WorkflowId is not null && WorkflowId.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("JourneyOutcome.workflowId violates its declared constraint.");
+        }
+        if (CatalogVersion is not null && CatalogVersion.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("JourneyOutcome.catalogVersion violates its declared constraint.");
+        }
+        if (EvidenceRef is not null && EvidenceRef.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("JourneyOutcome.evidenceRef violates its declared constraint.");
+        }
+    }
 }
