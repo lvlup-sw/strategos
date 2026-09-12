@@ -1,0 +1,21 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InvariantSeverity.json",
+    "type": "object",
+    "properties": {
+        "default": {
+            "$ref": "InvariantSeverityLevel.json"
+        },
+        "by-workflow": {
+            "$ref": "InvariantSeverityOverrides.json"
+        },
+        "by-phase": {
+            "$ref": "InvariantSeverityOverrides.json"
+        }
+    },
+    "required": [
+        "default"
+    ],
+    "description": "Default severity and optional context-specific overrides; evaluation belongs to the consumer.",
+    "additionalProperties": false
+}

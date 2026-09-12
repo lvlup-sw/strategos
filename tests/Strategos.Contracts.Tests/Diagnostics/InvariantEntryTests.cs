@@ -21,7 +21,7 @@ public class InvariantEntryTests
     private static readonly string[] V2Fields =
     [
         "id", "dimension", "axis", "cost-of-load", "applies-to",
-        "summary", "axiom_overlap", "citations", "references",
+        "summary", "citations", "references",
     ];
 
     /// <summary>The additive v3 fields, by their exact wire name. All optional.</summary>
@@ -66,8 +66,10 @@ public class InvariantEntryTests
         // The kebab/snake wire names are preserved verbatim (no camelCase leak).
         await Assert.That(props.TryGetProperty("cost-of-load", out _)).IsTrue()
             .Because("the kebab-case wire name 'cost-of-load' must be verbatim, not 'costOfLoad'.");
-        await Assert.That(props.TryGetProperty("axiom_overlap", out _)).IsTrue()
-            .Because("the snake_case wire name 'axiom_overlap' must be preserved verbatim.");
+        await Assert.That(props.TryGetProperty("axiom_overlap", out _)).IsFalse()
+            .Because("the removed axiom_overlap field must not be emitted.");
+
+        await Assert.That(required.Contains("citations")).IsFalse();
 
         // enforcement references the Enforcement union (T27).
         var enforcementRef = Path.GetFileNameWithoutExtension(

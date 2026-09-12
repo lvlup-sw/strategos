@@ -16,7 +16,8 @@ namespace Strategos.Contracts.Generated;
 /// declarative `CheckNode` combinator tree. Carries no executable code (LB-1 /
 /// INV-4); the `check` is the inert combinator tree.
 /// </summary>
-public sealed record CheckEnforcement : Enforcement
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CheckEnforcement : Enforcement, IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// The declarative check tree evaluated to enforce the invariant.
@@ -24,4 +25,15 @@ public sealed record CheckEnforcement : Enforcement
     [JsonPropertyName("check")]
     [JsonRequired]
     public CheckNode Check { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Check, "CheckEnforcement.check");
+    }
 }

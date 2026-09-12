@@ -7,23 +7,28 @@
 import { z } from "zod";
 
 import { EnforcementSchema } from "./Enforcement.js";
+import { InvariantAxisSchema } from "./InvariantAxis.js";
+import { InvariantIntegrityClassSchema } from "./InvariantIntegrityClass.js";
+import { InvariantLoadCostSchema } from "./InvariantLoadCost.js";
+import { InvariantPhaseSchema } from "./InvariantPhase.js";
+import { InvariantSeveritySchema } from "./InvariantSeverity.js";
+import { InvariantWorkflowSchema } from "./InvariantWorkflow.js";
 
 export const InvariantEntrySchema = z.looseObject({
-    "id": z.string(),
+    "id": z.string().min(1),
     "dimension": z.string(),
-    "axis": z.string(),
-    "cost-of-load": z.string(),
+    "axis": InvariantAxisSchema,
+    "cost-of-load": InvariantLoadCostSchema,
     "applies-to": z.array(z.string()),
     "summary": z.string(),
-    "axiom_overlap": z.array(z.string()),
-    "citations": z.array(z.string()),
+    "citations": z.array(z.string()).optional(),
     "references": z.array(z.string()),
-    "phase-affinity": z.array(z.string()).optional(),
-    "workflow-affinity": z.array(z.string()).optional(),
+    "phase-affinity": z.array(InvariantPhaseSchema).optional(),
+    "workflow-affinity": z.array(InvariantWorkflowSchema).optional(),
     "state-affinity": z.array(z.string()).optional(),
     "enforcement": EnforcementSchema.optional(),
-    "severity": z.string().optional(),
-    "integrity-class": z.string().optional(),
+    "severity": InvariantSeveritySchema.optional(),
+    "integrity-class": InvariantIntegrityClassSchema.optional(),
   });
 
 export type InvariantEntry = z.infer<typeof InvariantEntrySchema>;

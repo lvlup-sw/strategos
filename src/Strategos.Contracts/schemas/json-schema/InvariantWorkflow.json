@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InvariantWorkflow.json",
+    "type": "string",
+    "enum": [
+        "feature",
+        "debug",
+        "refactor",
+        "discovery",
+        "oneshot"
+    ],
+    "description": "Catalog workflow affinity vocabulary."
+}

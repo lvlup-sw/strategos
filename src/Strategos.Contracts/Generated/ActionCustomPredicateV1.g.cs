@@ -41,5 +41,9 @@ public sealed record ActionCustomPredicateV1 : ActionPredicateV1, IJsonOnDeseria
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(EvaluatorKey, "ActionCustomPredicateV1.evaluatorKey");
         global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(Arguments, "ActionCustomPredicateV1.arguments");
         global::Strategos.Contracts.ContractJsonValidation.RequireNoNullElements(ReadSet, "ActionCustomPredicateV1.readSet");
+        if (EvaluatorKey is not null && EvaluatorKey.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionCustomPredicateV1.evaluatorKey violates its declared constraint.");
+        }
     }
 }

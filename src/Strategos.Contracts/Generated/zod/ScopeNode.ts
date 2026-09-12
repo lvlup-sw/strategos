@@ -7,16 +7,16 @@
 import { z } from "zod";
 
 import type { CheckNode } from "./CheckNode.js";
+import type { CheckScope } from "./CheckScope.js";
 import { CheckNodeSchema } from "./CheckNode.js";
+import { CheckScopeSchema } from "./CheckScope.js";
 
 export interface ScopeNode {
-  "kind": "scope";
-  "file-glob": string;
-  "child": CheckNode;
+  "scope": CheckScope;
+  "node": CheckNode;
 }
 
-export const ScopeNodeSchema: z.ZodType<ScopeNode> = z.looseObject({
-    "kind": z.literal("scope"),
-    "file-glob": z.string(),
-    "child": z.lazy(() => CheckNodeSchema),
+export const ScopeNodeSchema: z.ZodType<ScopeNode> = z.strictObject({
+    "scope": CheckScopeSchema,
+    "node": z.lazy(() => CheckNodeSchema),
   });

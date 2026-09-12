@@ -10,11 +10,9 @@ import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
 export interface AllOfNode {
-  "kind": "all-of";
-  "children": Array<CheckNode>;
+  "all-of": Array<CheckNode>;
 }
 
-export const AllOfNodeSchema: z.ZodType<AllOfNode> = z.looseObject({
-    "kind": z.literal("all-of"),
-    "children": z.array(z.lazy(() => CheckNodeSchema)),
+export const AllOfNodeSchema: z.ZodType<AllOfNode> = z.strictObject({
+    "all-of": z.array(z.lazy(() => CheckNodeSchema)),
   });

@@ -34,5 +34,13 @@ public sealed record ActionEnumLiteralV1 : ActionLiteralV1, IJsonOnDeserialized,
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(TypeName, "ActionEnumLiteralV1.typeName");
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(MemberName, "ActionEnumLiteralV1.memberName");
+        if (TypeName is not null && TypeName.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionEnumLiteralV1.typeName violates its declared constraint.");
+        }
+        if (MemberName is not null && MemberName.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionEnumLiteralV1.memberName violates its declared constraint.");
+        }
     }
 }

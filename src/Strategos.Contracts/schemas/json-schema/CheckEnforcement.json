@@ -16,5 +16,6 @@
         "mode",
         "check"
     ],
-    "description": "Enforcement arm: `check` — the invariant is enforced by evaluating a\ndeclarative `CheckNode` combinator tree. Carries no executable code (LB-1 /\nINV-4); the `check` is the inert combinator tree."
+    "description": "Enforcement arm: `check` — the invariant is enforced by evaluating a\ndeclarative `CheckNode` combinator tree. Carries no executable code (LB-1 /\nINV-4); the `check` is the inert combinator tree.",
+    "additionalProperties": false
 }

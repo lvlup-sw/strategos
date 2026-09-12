@@ -29,5 +29,9 @@ public sealed record ActionExternalResourceV1 : ActionResourceV1, IJsonOnDeseria
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Name, "ActionExternalResourceV1.name");
+        if (Name is not null && Name.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionExternalResourceV1.name violates its declared constraint.");
+        }
     }
 }

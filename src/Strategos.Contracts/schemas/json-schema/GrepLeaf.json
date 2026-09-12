@@ -8,17 +8,19 @@
             "const": "grep"
         },
         "pattern": {
-            "type": "string",
-            "description": "The pattern to match (regex/literal); inert match data, not a command."
+            "type": "string"
         },
         "file-glob": {
-            "type": "string",
-            "description": "Optional file glob scoping the match (kebab-case wire name)."
+            "type": "string"
+        },
+        "threshold": {
+            "type": "number"
         }
     },
     "required": [
         "kind",
         "pattern"
     ],
-    "description": "Leaf: a `grep` check — a literal/regex pattern match over files selected by an\noptional glob. Declarative-only (LB-1 / INV-4): `pattern` and `file-glob` are\ninert match data, never an executable command. There is no field on this arm\nthat can carry code."
+    "description": "Declarative grep match. Pattern and glob are inert data; threshold is consumer-interpreted.",
+    "additionalProperties": false
 }

@@ -29,5 +29,9 @@ public sealed record ActionSymbolLiteralV1 : ActionLiteralV1, IJsonOnDeserialize
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Value, "ActionSymbolLiteralV1.value");
+        if (Value is not null && Value.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionSymbolLiteralV1.value violates its declared constraint.");
+        }
     }
 }

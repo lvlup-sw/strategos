@@ -16,7 +16,7 @@ namespace Strategos.Contracts.Generated;
 /// identity paired with its `WorkflowDefinitionV1` IR payload. A catalog
 /// `WorkflowRef` resolves to exactly one entry whose identity pair matches.
 /// </summary>
-public sealed record WorkflowCatalogEntry
+public sealed record WorkflowCatalogEntry : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Catalog workflow identity (the lookup key for a catalog `WorkflowRef`).
@@ -38,4 +38,22 @@ public sealed record WorkflowCatalogEntry
     [JsonPropertyName("definition")]
     [JsonRequired]
     public WorkflowDefinitionV1 Definition { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (WorkflowId is not null && WorkflowId.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("WorkflowCatalogEntry.workflowId violates its declared constraint.");
+        }
+        if (CatalogVersion is not null && CatalogVersion.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("WorkflowCatalogEntry.catalogVersion violates its declared constraint.");
+        }
+    }
 }

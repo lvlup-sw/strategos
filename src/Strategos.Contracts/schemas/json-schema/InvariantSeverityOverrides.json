@@ -1,0 +1,10 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "InvariantSeverityOverrides.json",
+    "type": "object",
+    "properties": {},
+    "unevaluatedProperties": {
+        "$ref": "InvariantSeverityLevel.json"
+    },
+    "description": "Context keys are consumer-defined; values use the closed severity vocabulary."
+}

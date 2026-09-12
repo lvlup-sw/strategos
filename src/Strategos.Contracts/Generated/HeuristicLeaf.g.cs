@@ -12,16 +12,38 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Leaf: a `heuristic` check — a bounded numeric heuristic gated by a threshold.
-/// Declarative-only: the only payload is the numeric `threshold`; there is no
-/// member admitting code or a command (LB-1 / INV-4).
+/// Declarative heuristic match. Pattern and glob are inert data; threshold is consumer-interpreted.
 /// </summary>
-public sealed record HeuristicLeaf : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record HeuristicLeaf : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// Numeric gate the heuristic compares against (e.g. a ratio/count).
-    /// </summary>
-    [JsonPropertyName("threshold")]
+    [JsonPropertyName("kind")]
     [JsonRequired]
-    public double Threshold { get; init; }
+    public string Kind { get; init; } = "heuristic";
+
+    [JsonPropertyName("pattern")]
+    [JsonRequired]
+    public string Pattern { get; init; } = default!;
+
+    [JsonPropertyName("file-glob")]
+    public string? FileGlob { get; init; }
+
+    [JsonPropertyName("threshold")]
+    public double? Threshold { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Kind, "HeuristicLeaf.kind");
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Pattern, "HeuristicLeaf.pattern");
+        if (Kind != "heuristic")
+        {
+            throw new global::System.Text.Json.JsonException("HeuristicLeaf.kind violates its declared constraint.");
+        }
+    }
 }

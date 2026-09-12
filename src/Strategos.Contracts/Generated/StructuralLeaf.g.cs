@@ -12,22 +12,38 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Leaf: a `structural` check — a pattern match interpreted structurally (e.g.
-/// over an AST or symbol table) rather than line-by-line. Declarative-only: the
-/// `pattern`/`file-glob` are match data, never executable code (LB-1 / INV-4).
+/// Declarative structural match. Pattern and glob are inert data; threshold is consumer-interpreted.
 /// </summary>
-public sealed record StructuralLeaf : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record StructuralLeaf : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// The structural pattern to match; inert match data, not a command.
-    /// </summary>
+    [JsonPropertyName("kind")]
+    [JsonRequired]
+    public string Kind { get; init; } = "structural";
+
     [JsonPropertyName("pattern")]
     [JsonRequired]
     public string Pattern { get; init; } = default!;
 
-    /// <summary>
-    /// Optional file glob scoping the match (kebab-case wire name).
-    /// </summary>
     [JsonPropertyName("file-glob")]
     public string? FileGlob { get; init; }
+
+    [JsonPropertyName("threshold")]
+    public double? Threshold { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Kind, "StructuralLeaf.kind");
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Pattern, "StructuralLeaf.pattern");
+        if (Kind != "structural")
+        {
+            throw new global::System.Text.Json.JsonException("StructuralLeaf.kind violates its declared constraint.");
+        }
+    }
 }

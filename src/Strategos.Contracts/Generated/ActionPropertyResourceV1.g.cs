@@ -29,5 +29,9 @@ public sealed record ActionPropertyResourceV1 : ActionResourceV1, IJsonOnDeseria
     private void ValidateRequiredReferences()
     {
         global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Name, "ActionPropertyResourceV1.name");
+        if (Name is not null && Name.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("ActionPropertyResourceV1.name violates its declared constraint.");
+        }
     }
 }

@@ -31,7 +31,7 @@ namespace Strategos.Contracts.Generated;
 /// is a NON-BREAKING wire change. The generated saga lowers it (DR-9); the
 /// runtime-occurrence companion is ForkOccurrence (DR-8), in the Events family.
 /// </summary>
-public sealed record DiagnosticForkDefinition
+public sealed record DiagnosticForkDefinition : IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// The anchor step monikers — the step ids where this workflow may fork (INV-8:
@@ -69,4 +69,18 @@ public sealed record DiagnosticForkDefinition
     [JsonPropertyName("compensationSeed")]
     [JsonRequired]
     public string CompensationSeed { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (CompensationSeed is not null && CompensationSeed.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("DiagnosticForkDefinition.compensationSeed violates its declared constraint.");
+        }
+    }
 }

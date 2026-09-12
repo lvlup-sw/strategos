@@ -6,9 +6,11 @@
 
 import { z } from "zod";
 
-export const HeuristicLeafSchema = z.looseObject({
+export const HeuristicLeafSchema = z.strictObject({
     "kind": z.literal("heuristic"),
-    "threshold": z.number(),
+    "pattern": z.string(),
+    "file-glob": z.string().optional(),
+    "threshold": z.number().optional(),
   });
 
 export type HeuristicLeaf = z.infer<typeof HeuristicLeafSchema>;

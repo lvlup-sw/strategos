@@ -16,5 +16,6 @@
         "mode",
         "audit-prompt"
     ],
-    "description": "Enforcement arm: `audit` — the invariant is enforced by a natural-language\naudit prompt (an LLM/agent reviews against it). The `audit-prompt` is inert\nprose, never executable code."
+    "description": "Enforcement arm: `audit` — the invariant is enforced by a natural-language\naudit prompt (an LLM/agent reviews against it). The `audit-prompt` is inert\nprose, never executable code.",
+    "additionalProperties": false
 }

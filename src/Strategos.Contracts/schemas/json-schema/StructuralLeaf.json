@@ -8,17 +8,19 @@
             "const": "structural"
         },
         "pattern": {
-            "type": "string",
-            "description": "The structural pattern to match; inert match data, not a command."
+            "type": "string"
         },
         "file-glob": {
-            "type": "string",
-            "description": "Optional file glob scoping the match (kebab-case wire name)."
+            "type": "string"
+        },
+        "threshold": {
+            "type": "number"
         }
     },
     "required": [
         "kind",
         "pattern"
     ],
-    "description": "Leaf: a `structural` check — a pattern match interpreted structurally (e.g.\nover an AST or symbol table) rather than line-by-line. Declarative-only: the\n`pattern`/`file-glob` are match data, never executable code (LB-1 / INV-4)."
+    "description": "Declarative structural match. Pattern and glob are inert data; threshold is consumer-interpreted.",
+    "additionalProperties": false
 }

@@ -12,15 +12,23 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Combinator: `not` — the negation of a single child check. Recurses into
-/// `CheckNode` via `child`.
+/// Negation of a child check.
 /// </summary>
-public sealed record NotNode : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record NotNode : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// The single child check to negate (recurses into CheckNode).
-    /// </summary>
-    [JsonPropertyName("child")]
+    [JsonPropertyName("not")]
     [JsonRequired]
-    public CheckNode Child { get; init; } = default!;
+    public CheckNode Not { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Not, "NotNode.not");
+    }
 }

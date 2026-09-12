@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { CheckNodeSchema } from "./CheckNode.js";
 
-export const CheckEnforcementSchema = z.looseObject({
+export const CheckEnforcementSchema = z.strictObject({
     "mode": z.literal("check"),
     "check": CheckNodeSchema,
   });

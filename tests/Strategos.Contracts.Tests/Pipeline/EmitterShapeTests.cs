@@ -59,9 +59,9 @@ public class EmitterShapeTests
             if (type.IsAbstract)
             {
                 var isPolymorphicBase = type.GetCustomAttributes()
-                    .Any(a => a.GetType().Name == "JsonPolymorphicAttribute");
+                    .Any(a => a.GetType().Name is "JsonPolymorphicAttribute" or "JsonConverterAttribute");
                 await Assert.That(isPolymorphicBase).IsTrue()
-                    .Because($"abstract record {type.Name} is only allowed as a [JsonPolymorphic] union base (INV-6).");
+                    .Because($"abstract record {type.Name} is only allowed as a discriminator- or converter-backed union base (INV-6).");
             }
 
             var props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);

@@ -15,6 +15,41 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
+## [0.15.0] — 2026-09-12
+
+### Changed
+
+- **Invariant catalogs (#231):** `citations` is optional and `axiom_overlap` is removed,
+  including the generated C# `AxiomOverlap` property. Existing catalog entries never
+  wrote that field. An entry remains open to unknown metadata; removal does not add
+  a special rejection for that old key.
+- `InvariantEntry.id` now requires at least one character. `axis`, `cost-of-load`,
+  `integrity-class`, and phase/workflow affinity items use the closed consumer vocabularies.
+  `severity` is `InvariantSeverity { default, by-workflow?, by-phase? }` over exact
+  `blocking | advisory` tokens. Overrides are typed string-keyed dictionaries.
+- **Check encoding:** `CheckNode` changes from `anyOf` to exclusive `oneOf`.
+  `AllOfNode`/`AnyOfNode` remove `kind` and `children` and require `all-of`/`any-of`;
+  `NotNode` removes `kind` and `child` and requires `not`; `ScopeNode` removes `kind`,
+  `file-glob`, and `child` and requires `scope` plus `node`. `CheckScope` carries
+  optional `file-glob` and `phase`. All three leaves require `pattern`, permit
+  optional `file-glob` and `threshold`; in particular `HeuristicLeaf.pattern` is
+  newly required and its threshold is no longer required.
+- Leaf, combinator, scope, enforcement and severity objects reject unknown keys through
+  `additionalProperties: false`. Old `fileGlob` input must migrate to `file-glob`.
+  Each of the 34 reported breaking changes is recorded with its exact schema-diff
+  tuple in the 0.15.0 allowlist. The workflow kernel schema is unchanged.
+- C# emission supports structural union converters, strict objects, enum-valued maps,
+  and declared minimum string lengths. Zod emission preserves recursive types and
+  rejects unsupported overlapping `oneOf` arms instead of weakening exclusivity.
+
+### Added
+
+- Complete pinned Strategos and Exarchos catalog fixtures, packaged separately under
+  `contentFiles/any/any/invariant-fixtures/`. Regression tests validate both snapshots
+  and the live Strategos catalog, then prove C# round-trips and JSON Schema/Zod agreement
+  on positive and negative cases.
+- Exarchos adoption follow-up: https://github.com/lvlup-sw/exarchos/issues/1902.
+
 ## [Unreleased]
 
 ### Added

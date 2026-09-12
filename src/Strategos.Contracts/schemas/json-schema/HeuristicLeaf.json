@@ -7,14 +7,20 @@
             "type": "string",
             "const": "heuristic"
         },
+        "pattern": {
+            "type": "string"
+        },
+        "file-glob": {
+            "type": "string"
+        },
         "threshold": {
-            "type": "number",
-            "description": "Numeric gate the heuristic compares against (e.g. a ratio/count)."
+            "type": "number"
         }
     },
     "required": [
         "kind",
-        "threshold"
+        "pattern"
     ],
-    "description": "Leaf: a `heuristic` check — a bounded numeric heuristic gated by a threshold.\nDeclarative-only: the only payload is the numeric `threshold`; there is no\nmember admitting code or a command (LB-1 / INV-4)."
+    "description": "Declarative heuristic match. Pattern and glob are inert data; threshold is consumer-interpreted.",
+    "additionalProperties": false
 }

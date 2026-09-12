@@ -3,21 +3,16 @@
     "$id": "AnyOfNode.json",
     "type": "object",
     "properties": {
-        "kind": {
-            "type": "string",
-            "const": "any-of"
-        },
-        "children": {
+        "any-of": {
             "type": "array",
             "items": {
                 "$ref": "CheckNode.json"
-            },
-            "description": "Child checks; at least one must hold (recurses into CheckNode)."
+            }
         }
     },
     "required": [
-        "kind",
-        "children"
+        "any-of"
     ],
-    "description": "Combinator: `any-of` — the disjunction of its child checks. Recurses back into\n`CheckNode` via the `children` array."
+    "description": "Disjunction of child checks; an empty list is permitted.",
+    "additionalProperties": false
 }

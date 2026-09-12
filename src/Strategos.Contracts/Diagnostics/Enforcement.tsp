@@ -10,6 +10,7 @@ namespace LevelUp.Strategos.Contracts;
  * declarative `CheckNode` combinator tree. Carries no executable code (LB-1 /
  * INV-4); the `check` is the inert combinator tree.
  */
+@extension("additionalProperties", false)
 model CheckEnforcement {
   mode: "check";
 
@@ -22,6 +23,7 @@ model CheckEnforcement {
  * audit prompt (an LLM/agent reviews against it). The `audit-prompt` is inert
  * prose, never executable code.
  */
+@extension("additionalProperties", false)
 model AuditEnforcement {
   mode: "audit";
 

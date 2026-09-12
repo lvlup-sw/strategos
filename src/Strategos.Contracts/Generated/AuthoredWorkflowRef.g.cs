@@ -20,7 +20,7 @@ namespace Strategos.Contracts.Generated;
 /// for authored journeys ships later (basileus#179 / exarchos#1255). Until then
 /// producers emit only the `catalog` variant.
 /// </summary>
-public sealed record AuthoredWorkflowRef : WorkflowRef
+public sealed record AuthoredWorkflowRef : WorkflowRef, IJsonOnDeserialized, IJsonOnSerializing
 {
     /// <summary>
     /// Natural-language description of the journey to author/run.
@@ -28,4 +28,18 @@ public sealed record AuthoredWorkflowRef : WorkflowRef
     [JsonPropertyName("journeyDescription")]
     [JsonRequired]
     public string JourneyDescription { get; init; } = default!;
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        if (JourneyDescription is not null && JourneyDescription.Length < 1)
+        {
+            throw new global::System.Text.Json.JsonException("AuthoredWorkflowRef.journeyDescription violates its declared constraint.");
+        }
+    }
 }

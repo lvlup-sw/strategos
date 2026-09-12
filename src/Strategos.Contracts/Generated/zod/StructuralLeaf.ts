@@ -6,10 +6,11 @@
 
 import { z } from "zod";
 
-export const StructuralLeafSchema = z.looseObject({
+export const StructuralLeafSchema = z.strictObject({
     "kind": z.literal("structural"),
     "pattern": z.string(),
     "file-glob": z.string().optional(),
+    "threshold": z.number().optional(),
   });
 
 export type StructuralLeaf = z.infer<typeof StructuralLeafSchema>;

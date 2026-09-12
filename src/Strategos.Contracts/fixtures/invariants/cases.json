@@ -1,0 +1,834 @@
+[
+  {
+    "name": "leaf-grep",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "grep",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5
+    }
+  },
+  {
+    "name": "minimal-grep",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "grep",
+      "pattern": ""
+    }
+  },
+  {
+    "name": "leaf-structural",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "structural",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5
+    }
+  },
+  {
+    "name": "minimal-structural",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "structural",
+      "pattern": ""
+    }
+  },
+  {
+    "name": "leaf-heuristic",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "heuristic",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5
+    }
+  },
+  {
+    "name": "minimal-heuristic",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "kind": "heuristic",
+      "pattern": ""
+    }
+  },
+  {
+    "name": "all-empty",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "all-of": []
+    }
+  },
+  {
+    "name": "any-empty",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "any-of": []
+    }
+  },
+  {
+    "name": "nested-scopes",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "scope": {
+        "file-glob": "src/**",
+        "phase": "custom-phase"
+      },
+      "node": {
+        "all-of": [
+          {
+            "kind": "grep",
+            "pattern": "needle",
+            "file-glob": "src/**",
+            "threshold": 2.5
+          },
+          {
+            "any-of": [
+              {
+                "not": {
+                  "kind": "heuristic",
+                  "pattern": "x"
+                }
+              },
+              {
+                "scope": {},
+                "node": {
+                  "kind": "structural",
+                  "pattern": "y",
+                  "threshold": 0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "invalid-check-0",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {}
+  },
+  {
+    "name": "invalid-check-1",
+    "model": "CheckNode",
+    "valid": false,
+    "document": null
+  },
+  {
+    "name": "invalid-check-2",
+    "model": "CheckNode",
+    "valid": false,
+    "document": []
+  },
+  {
+    "name": "invalid-check-3",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "exec",
+      "pattern": "x"
+    }
+  },
+  {
+    "name": "invalid-check-4",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "grep"
+    }
+  },
+  {
+    "name": "invalid-check-5",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "heuristic",
+      "threshold": 0.8
+    }
+  },
+  {
+    "name": "invalid-check-6",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "all-of",
+      "children": [
+        {
+          "kind": "grep",
+          "pattern": "needle",
+          "file-glob": "src/**",
+          "threshold": 2.5
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-check-7",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "not",
+      "child": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-8",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "scope",
+      "file-glob": "**",
+      "child": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-9",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "all-of": [],
+      "any-of": []
+    }
+  },
+  {
+    "name": "invalid-check-10",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "grep",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5,
+      "not": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-11",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "grep",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5,
+      "fileGlob": "elsewhere/**"
+    }
+  },
+  {
+    "name": "invalid-check-12",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "grep",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": 2.5,
+      "exec": "echo bad"
+    }
+  },
+  {
+    "name": "invalid-check-13",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "kind": "grep",
+      "pattern": "needle",
+      "file-glob": "src/**",
+      "threshold": "many"
+    }
+  },
+  {
+    "name": "invalid-check-14",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "scope": {
+        "fileGlob": "src/**"
+      },
+      "node": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-15",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "scope": {
+        "exec": "x"
+      },
+      "node": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-16",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "scope": {
+        "phase": 1
+      },
+      "node": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      }
+    }
+  },
+  {
+    "name": "invalid-check-17",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "scope": {}
+    }
+  },
+  {
+    "name": "invalid-check-18",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "not": null
+    }
+  },
+  {
+    "name": "invalid-check-19",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "all-of": [
+        null
+      ]
+    }
+  },
+  {
+    "name": "invalid-check-20",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "all-of": [
+        {
+          "kind": "grep",
+          "pattern": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-check-21",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "any-of": "bad"
+    }
+  },
+  {
+    "name": "invalid-check-22",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "not": {
+        "kind": "grep",
+        "pattern": "needle",
+        "file-glob": "src/**",
+        "threshold": 2.5
+      },
+      "code": "x"
+    }
+  },
+  {
+    "name": "minimal-entry",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "full-entry",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "citations": [
+        "source"
+      ],
+      "severity": {
+        "default": "blocking",
+        "by-workflow": {
+          "custom-workflow": "advisory"
+        },
+        "by-phase": {
+          "custom-phase": "blocking"
+        }
+      },
+      "phase-affinity": [
+        "plan",
+        "delegate",
+        "review",
+        "synthesize"
+      ],
+      "workflow-affinity": [
+        "feature",
+        "debug",
+        "refactor",
+        "discovery",
+        "oneshot"
+      ],
+      "state-affinity": [
+        "custom"
+      ],
+      "enforcement": {
+        "mode": "check",
+        "check": {
+          "kind": "grep",
+          "pattern": "needle",
+          "file-glob": "src/**",
+          "threshold": 2.5
+        }
+      },
+      "integrity-class": "user"
+    }
+  },
+  {
+    "name": "axis-substrate",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "axis-authoring",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "authoring",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "cost-of-load-always-load",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "cost-of-load-reference-only",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "reference-only",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "cost-of-load-archivable",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "archivable",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "integrity-class-substrate",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "integrity-class": "substrate"
+    }
+  },
+  {
+    "name": "integrity-class-sdlc",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "integrity-class": "sdlc"
+    }
+  },
+  {
+    "name": "integrity-class-authoring",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "integrity-class": "authoring"
+    }
+  },
+  {
+    "name": "integrity-class-user",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "integrity-class": "user"
+    }
+  },
+  {
+    "name": "audit-entry",
+    "model": "InvariantEntry",
+    "valid": true,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "enforcement": {
+        "mode": "audit",
+        "audit-prompt": "Inspect this."
+      },
+      "severity": {
+        "default": "advisory",
+        "by-phase": {},
+        "by-workflow": {}
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-0",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "invalid-entry-1",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "typo",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "invalid-entry-2",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "low",
+      "applies-to": [],
+      "summary": "",
+      "references": []
+    }
+  },
+  {
+    "name": "invalid-entry-3",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "integrity-class": "structural"
+    }
+  },
+  {
+    "name": "invalid-entry-4",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "phase-affinity": [
+        "implement"
+      ]
+    }
+  },
+  {
+    "name": "invalid-entry-5",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "workflow-affinity": [
+        "discover"
+      ]
+    }
+  },
+  {
+    "name": "invalid-entry-6",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": "blocking"
+    }
+  },
+  {
+    "name": "invalid-entry-7",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": {}
+    }
+  },
+  {
+    "name": "invalid-entry-8",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": {
+        "default": "BLOCKING"
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-9",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": {
+        "default": "blocking",
+        "by-workflow": {
+          "x": "typo"
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-10",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": {
+        "default": "blocking",
+        "by-phase": {
+          "x": "typo"
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-11",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "severity": {
+        "default": "blocking",
+        "extra": true
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-12",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "enforcement": {
+        "mode": "audit",
+        "audit-prompt": "x",
+        "exec": "x"
+      }
+    }
+  },
+  {
+    "name": "invalid-entry-13",
+    "model": "InvariantEntry",
+    "valid": false,
+    "document": {
+      "id": "U-fixture",
+      "dimension": "custom",
+      "axis": "substrate",
+      "cost-of-load": "always-load",
+      "applies-to": [],
+      "summary": "",
+      "references": [],
+      "enforcement": {
+        "mode": "check",
+        "check": {
+          "kind": "grep",
+          "pattern": "needle",
+          "file-glob": "src/**",
+          "threshold": 2.5
+        },
+        "audit-prompt": "x"
+      }
+    }
+  }
+]

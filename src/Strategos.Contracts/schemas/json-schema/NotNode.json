@@ -3,18 +3,13 @@
     "$id": "NotNode.json",
     "type": "object",
     "properties": {
-        "kind": {
-            "type": "string",
-            "const": "not"
-        },
-        "child": {
-            "description": "The single child check to negate (recurses into CheckNode).",
+        "not": {
             "$ref": "CheckNode.json"
         }
     },
     "required": [
-        "kind",
-        "child"
+        "not"
     ],
-    "description": "Combinator: `not` — the negation of a single child check. Recurses into\n`CheckNode` via `child`."
+    "description": "Negation of a child check.",
+    "additionalProperties": false
 }

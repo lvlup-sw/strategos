@@ -10,11 +10,9 @@ import type { CheckNode } from "./CheckNode.js";
 import { CheckNodeSchema } from "./CheckNode.js";
 
 export interface NotNode {
-  "kind": "not";
-  "child": CheckNode;
+  "not": CheckNode;
 }
 
-export const NotNodeSchema: z.ZodType<NotNode> = z.looseObject({
-    "kind": z.literal("not"),
-    "child": z.lazy(() => CheckNodeSchema),
+export const NotNodeSchema: z.ZodType<NotNode> = z.strictObject({
+    "not": z.lazy(() => CheckNodeSchema),
   });

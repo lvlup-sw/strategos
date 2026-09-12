@@ -12,23 +12,38 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Leaf: a `grep` check — a literal/regex pattern match over files selected by an
-/// optional glob. Declarative-only (LB-1 / INV-4): `pattern` and `file-glob` are
-/// inert match data, never an executable command. There is no field on this arm
-/// that can carry code.
+/// Declarative grep match. Pattern and glob are inert data; threshold is consumer-interpreted.
 /// </summary>
-public sealed record GrepLeaf : CheckNode
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record GrepLeaf : CheckNode, IJsonOnDeserialized, IJsonOnSerializing
 {
-    /// <summary>
-    /// The pattern to match (regex/literal); inert match data, not a command.
-    /// </summary>
+    [JsonPropertyName("kind")]
+    [JsonRequired]
+    public string Kind { get; init; } = "grep";
+
     [JsonPropertyName("pattern")]
     [JsonRequired]
     public string Pattern { get; init; } = default!;
 
-    /// <summary>
-    /// Optional file glob scoping the match (kebab-case wire name).
-    /// </summary>
     [JsonPropertyName("file-glob")]
     public string? FileGlob { get; init; }
+
+    [JsonPropertyName("threshold")]
+    public double? Threshold { get; init; }
+
+    void IJsonOnDeserialized.OnDeserialized() =>
+        ValidateRequiredReferences();
+
+    void IJsonOnSerializing.OnSerializing() =>
+        ValidateRequiredReferences();
+
+    private void ValidateRequiredReferences()
+    {
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Kind, "GrepLeaf.kind");
+        global::Strategos.Contracts.ContractJsonValidation.RequireNotNull(Pattern, "GrepLeaf.pattern");
+        if (Kind != "grep")
+        {
+            throw new global::System.Text.Json.JsonException("GrepLeaf.kind violates its declared constraint.");
+        }
+    }
 }
