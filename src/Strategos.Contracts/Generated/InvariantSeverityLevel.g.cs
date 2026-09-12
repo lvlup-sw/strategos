@@ -13,7 +13,7 @@ using System.Text.Json.Serialization;
 namespace Strategos.Contracts.Generated;
 
 /// <summary>
-/// Violation severity, including context overrides.
+/// Closed violation severity vocabulary.
 /// </summary>
 [JsonConverter(typeof(InvariantSeverityLevelJsonConverter))]
 public enum InvariantSeverityLevel

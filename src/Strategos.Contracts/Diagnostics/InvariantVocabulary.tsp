@@ -12,7 +12,7 @@ enum InvariantIntegrityClass { substrate, sdlc, authoring, user }
 enum InvariantPhase { plan, delegate, review, synthesize }
 /** Catalog workflow affinity vocabulary. */
 enum InvariantWorkflow { feature, debug, refactor, discovery, oneshot }
-/** Violation severity, including context overrides. */
+/** Closed violation severity vocabulary. */
 enum InvariantSeverityLevel { blocking, advisory }
 /** Context keys are consumer-defined; values use the closed severity vocabulary. */
 model InvariantSeverityOverrides is Record<InvariantSeverityLevel>;

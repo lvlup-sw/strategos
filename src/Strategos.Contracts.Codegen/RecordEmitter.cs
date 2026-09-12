@@ -360,8 +360,12 @@ public static class RecordEmitter
         sb.Append("    public override void Write(Utf8JsonWriter writer, ").Append(doc.TypeName)
             .AppendLine(" value, JsonSerializerOptions options)");
         sb.AppendLine("    {");
+        // The structural oneOf contains only object arms: null is invalid on both
+        // read and write. HandleNull opts into rejecting it instead of letting
+        // System.Text.Json bypass the converter and silently emit invalid JSON.
         sb.AppendLine("        switch (value)");
         sb.AppendLine("        {");
+        sb.AppendLine("            case null: throw new JsonException(\"Structural union values cannot be null.\");");
         foreach (var armFile in doc.UnionArmRefs)
         {
             var name = docs[armFile].TypeName;

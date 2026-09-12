@@ -23,7 +23,7 @@ public class CheckNodeTests
         ["grep", "structural", "heuristic", "all-of", "any-of", "not", "scope"];
 
     /// <summary>
-    /// Asserts <c>CheckNode</c> emits an <c>anyOf</c> union over the seven kind
+    /// Asserts <c>CheckNode</c> emits an <c>oneOf</c> union over the seven kind
     /// arms, that the leaf arms carry their declarative match fields, and that
     /// the combinator arms recurse into <c>CheckNode</c> (a self <c>$ref</c>).
     /// </summary>
@@ -35,10 +35,10 @@ public class CheckNodeTests
 
         var root = await EventSchemas.LoadAsync("CheckNode");
 
-        await Assert.That(root.TryGetProperty("oneOf", out var anyOf)).IsTrue()
-            .Because("CheckNode must be an exclusive structural union (anyOf of arms).");
+        await Assert.That(root.TryGetProperty("oneOf", out var oneOf)).IsTrue()
+            .Because("CheckNode must be an exclusive structural union (oneOf of arms).");
 
-        var armNames = anyOf.EnumerateArray()
+        var armNames = oneOf.EnumerateArray()
             .Where(a => a.TryGetProperty("$ref", out _))
             .Select(a => Path.GetFileNameWithoutExtension(a.GetProperty("$ref").GetString()))
             .ToList();

@@ -105,7 +105,7 @@ public class SandboxGuaranteeTests
         // System.Text.Json polymorphic deserialization rejects an unknown
         // discriminator: there is no `exec` arm for it to land on.
         var checkNodeType = typeof(ContractsMarker).Assembly
-            .GetTypes().First(t => t.Name is "CheckNode" or "CheckScope");
+            .GetType("Strategos.Contracts.Generated.CheckNode", throwOnError: true)!;
 
         const string executableFixture = """
             { "kind": "exec", "command": "rm -rf /" }

@@ -63,6 +63,15 @@ public class CatalogRoundTripTests
     }
 
     [Test]
+    public async Task CheckNode_Null_ReadAndWrite_RejectTheNonObjectValue()
+    {
+        // CheckNode's oneOf contains only object schemas. Serializing null must
+        // not produce a document that JSON Schema and the emitted Zod reject.
+        await Assert.That(() => JsonSerializer.Deserialize<CheckNode>("null", ContractsJson.Options)).Throws<JsonException>();
+        await Assert.That(() => ContractsJson.Serialize<CheckNode>(null!)).Throws<JsonException>();
+    }
+
+    [Test]
     public async Task Severity_Maps_Are_Typed_And_Removed_Field_Is_Absent()
     {
         await Assert.That(typeof(InvariantSeverity).GetProperty(nameof(InvariantSeverity.ByWorkflow))!.PropertyType)

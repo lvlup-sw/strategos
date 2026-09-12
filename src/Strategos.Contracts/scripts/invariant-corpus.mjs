@@ -23,7 +23,8 @@ export function parseCatalog(text, name) {
 export async function loadCorpus() {
   const manifest = JSON.parse(await readFile(path.join(corpusRoot, "manifest.json"), "utf8"));
   if (manifest.catalogs?.length !== 2 ||
-      new Set(manifest.catalogs.map(x => x.repository)).size !== 2) {
+      JSON.stringify(manifest.catalogs.map(x => x.repository).sort()) !==
+        JSON.stringify(["lvlup-sw/exarchos", "lvlup-sw/strategos"])) {
     throw new Error("Expected both repository fixtures");
   }
   const cases = [];

@@ -78,6 +78,7 @@ public sealed class CheckNodeJsonConverter : JsonConverter<CheckNode>
     {
         switch (value)
         {
+            case null: throw new JsonException("Structural union values cannot be null.");
             case GrepLeaf arm:
                 JsonSerializer.Serialize(writer, arm, (JsonTypeInfo<GrepLeaf>)options.GetTypeInfo(typeof(GrepLeaf)));
                 break;

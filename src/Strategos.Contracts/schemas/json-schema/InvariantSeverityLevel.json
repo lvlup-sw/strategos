@@ -6,5 +6,5 @@
         "blocking",
         "advisory"
     ],
-    "description": "Violation severity, including context overrides."
+    "description": "Closed violation severity vocabulary."
 }
