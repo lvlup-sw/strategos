@@ -1,0 +1,91 @@
+# CI lanes for strategos. Read by lvlup-sw/.github actions/ci-lanes.
+
+schema_version = 1
+
+[lanes.build_test]
+description = "Build, test, and coverage for strategos.slnx."
+workflows = ["ci.yml"]
+paths = [
+  "strategos.slnx",
+  "Directory.Build.props",
+  "Directory.Packages.props",
+  "global.json",
+  "nuget.config",
+  "src/**",
+  "tests/**",
+]
+
+[lanes.contracts]
+description = "Strategos.Contracts tests (Node toolchain)."
+workflows = ["ci.yml"]
+paths = [
+  "src/Strategos.Contracts/**",
+  "tests/Strategos.Contracts.Tests/**",
+]
+
+[lanes.docs]
+description = "Documentation site build."
+workflows = ["ci.yml"]
+paths = ["docs/**"]
+
+[lanes.pack]
+description = "Pack strategos.slnx and verify the generator consumer build."
+workflows = ["ci.yml"]
+paths = [
+  "strategos.slnx",
+  "src/**",
+  "tests/**",
+  "scripts/**",
+  "Directory.*",
+]
+
+[lanes.smoke]
+description = "Basileus smoke: pack Strategos.Agents and run tests/basileus-smoke."
+workflows = ["ci.yml"]
+paths = [
+  "strategos.slnx",
+  "src/**",
+  "tests/basileus-smoke/**",
+  "scripts/pack-to-local-feed.sh",
+  "scripts/verify-basileus-smoke.sh",
+  "Directory.*",
+]
+
+[lanes.builder_api]
+description = "Builder public API stability and PublicAPI.Unshipped.txt placement."
+workflows = ["ci.yml"]
+paths = [
+  "scripts/check-builder-api-stability.sh",
+  "scripts/check-unshipped-against-tag.sh",
+  "src/Strategos/**",
+  "src/Strategos.Ontology/**",
+]
+
+[lanes.dbsf]
+description = "DBSF oracle parity against pinned qdrant-client."
+workflows = ["ci.yml"]
+paths = [
+  "scripts/regenerate-dbsf-oracle.py",
+  "scripts/requirements.txt",
+  "tests/Strategos.Ontology.Tests/Retrieval/**",
+]
+
+[[fixtures]]
+name = "docs-only README.md"
+files = ["README.md"]
+expect = { build_test = false, contracts = false, docs = false, pack = false, smoke = false, builder_api = false, dbsf = false }
+
+[[fixtures]]
+name = "src change"
+files = ["src/Strategos/Strategos.csproj"]
+expect = { build_test = true }
+
+[[fixtures]]
+name = "docs-only markdown"
+files = ["docs/foo.md"]
+expect = { docs = true, build_test = false }
+
+[[fixtures]]
+name = "contracts path"
+files = ["src/Strategos.Contracts/main.tsp"]
+expect = { contracts = true }

@@ -1,3 +1,9 @@
+# Org reusable workflows and ci-lanes are pinned at `@v1`. Never pin `@main`.
+#
+# Required check names (do not change):
+#   build-test / Build & Test
+#   coverage-gate / Enforce Coverage Threshold
+
 name: CI
 
 on:
@@ -7,10 +13,42 @@ on:
     branches: [main]
 
 jobs:
+  plan:
+    name: CI Lane Plan
+    runs-on: ubuntu-latest
+    outputs:
+      lanes: ${{ steps.plan.outputs.lanes }}
+    steps:
+      - name: Checkout (full history, no file contents)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+      - name: Plan lanes
+        id: plan
+        uses: lvlup-sw/.github/actions/ci-lanes@v1
+
+  lanes-check:
+    name: CI Lanes Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check lane contract
+        uses: lvlup-sw/.github/actions/ci-lanes@v1
+        with:
+          mode: check
+
   build-test:
     # Required proof policy executes an immutable org-workflow revision.
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    needs: [plan]
+    if: always()
+    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@v1
     with:
+      enabled: ${{ needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).build_test != 'false' }}
       solution-path: 'strategos.slnx'
       test-project-patterns: |
         tests/*Tests/*.csproj
@@ -46,6 +84,8 @@ jobs:
     # requires Node 22+ (it imports `glob` from `fs/promises`), matching the
     # Node 24 the codegen guard already pins.
     name: Contracts tests (Node toolchain)
+    needs: [plan]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).contracts != 'false') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -77,7 +117,8 @@ jobs:
 
   pack-verify:
     name: Pack (verify)
-    needs: build-test
+    needs: [plan, build-test]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).pack != 'false') }}
     # Named explicitly: every runner in this org registers with `blacksmith-*`
     # labels and no bare `self-hosted` label, so the generic label matches
     # nothing and the job queues until it expires.
@@ -116,7 +157,8 @@ jobs:
     # single-arity IAgentStep<>/AgentStepBase<> types is reflected in
     # the packed artifact (not just the in-repo build).
     name: Basileus smoke (release-readiness)
-    needs: build-test
+    needs: [plan, build-test]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).smoke != 'false') }}
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout
@@ -143,12 +185,13 @@ jobs:
         run: bash scripts/verify-basileus-smoke.sh ./local-feed
 
   coverage-gate:
-    needs: build-test
-    if: github.event_name == 'pull_request'
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    needs: [plan, build-test]
+    if: ${{ always() && github.event_name == 'pull_request' && needs.build-test.result != 'failure' && needs.build-test.result != 'cancelled' }}
+    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@v1
     permissions:
       pull-requests: write
     with:
+      enabled: ${{ needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).build_test != 'false' }}
       coverage-threshold: 80
       # The reusable defaults `runner` to the generic self-hosted label, which
       # matches no runner registered in this org. This is a REQUIRED check, so
@@ -158,12 +201,16 @@ jobs:
   update-baseline:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@v1
+    with:
+      runner: blacksmith-4vcpu-ubuntu-2204
 
   docs-build:
     # Documentation changes must compile on the PR revision, before the
     # deployment-only workflow sees them on main.
     name: Documentation build
+    needs: [plan]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).docs != 'false') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -216,6 +263,8 @@ jobs:
     # matching PublicAPI.Unshipped.txt entry raises RS0016/RS0017 and fails with
     # the verbatim cross-product remediation message.
     name: Builder API stability (#51)
+    needs: [plan]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).builder_api != 'false') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -247,6 +296,8 @@ jobs:
     # for the pinned qdrant-client version. Reconciliation issue #79; see
     # docs/plans/2026-05-16-refactor-dbsf-qdrant-parity.md.
     name: DBSF parity guard
+    needs: [plan]
+    if: ${{ always() && (needs.plan.result != 'success' || fromJSON(needs.plan.outputs.lanes).dbsf != 'false') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
