@@ -9,7 +9,7 @@ on:
 jobs:
   build-test:
     # Required proof policy executes an immutable org-workflow revision.
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@d0c22ae8eb67bea344404c779469869369aba531
     with:
       solution-path: 'strategos.slnx'
       test-project-patterns: |
@@ -145,7 +145,7 @@ jobs:
   coverage-gate:
     needs: build-test
     if: github.event_name == 'pull_request'
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@d0c22ae8eb67bea344404c779469869369aba531
     permissions:
       pull-requests: write
     with:
@@ -158,7 +158,7 @@ jobs:
   update-baseline:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@d0c22ae8eb67bea344404c779469869369aba531
 
   docs-build:
     # Documentation changes must compile on the PR revision, before the
