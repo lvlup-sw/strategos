@@ -159,6 +159,10 @@ jobs:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    with:
+      # The reusable at this pin defaults `runner` to the retired self-hosted
+      # label, which matches no runner, so the job queues until it expires.
+      runner: 'ubuntu-latest'
 
   docs-build:
     # Documentation changes must compile on the PR revision, before the
