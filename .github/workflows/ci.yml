@@ -9,7 +9,7 @@ on:
 jobs:
   build-test:
     # Required proof policy executes an immutable org-workflow revision.
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@b35d6be03b576723f3abfa0b4cb1fb59b960a3ec
     with:
       solution-path: 'strategos.slnx'
       test-project-patterns: |
@@ -62,7 +62,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
 
@@ -145,7 +145,7 @@ jobs:
   coverage-gate:
     needs: build-test
     if: github.event_name == 'pull_request'
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@b35d6be03b576723f3abfa0b4cb1fb59b960a3ec
     permissions:
       pull-requests: write
     with:
@@ -158,7 +158,7 @@ jobs:
   update-baseline:
     needs: build-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@b35d6be03b576723f3abfa0b4cb1fb59b960a3ec
     with:
       # The reusable at this pin defaults `runner` to the retired self-hosted
       # label, which matches no runner, so the job queues until it expires.
@@ -176,7 +176,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: '22'
           cache: npm

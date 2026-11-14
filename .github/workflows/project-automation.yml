@@ -189,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Add to project
-        uses: actions/add-to-project@v2.0.0
+        uses: actions/add-to-project@v2.0.1
         with:
           project-url: https://github.com/orgs/lvlup-sw/projects/${{ env.PROJECT_NUMBER }}
           github-token: ${{ secrets.PROJECT_TOKEN }}
