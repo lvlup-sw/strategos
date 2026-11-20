@@ -163,6 +163,11 @@ public sealed class ForkPathConfidenceTests
         await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfReviewStep);
         await Assert.That(saga.Fork_ForkPathConfidence_Fork0_Path0Status).IsEqualTo(ForkPathStatus.Success);
         await Assert.That(saga.Fork_ForkPathConfidence_Fork0_Path1Status).IsEqualTo(ForkPathStatus.Success);
+
+        // A sibling redelivery while the review is pending cannot open the join.
+        await Assert.That(saga.Handle(siblingResult, session, logger).ToArray().Length).IsEqualTo(0);
+        await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfReviewStep);
+        events.Received(1).Append(workflowId, siblingResult);
         events.Received(1).Append(
             workflowId,
             Arg.Is<ForkPathConfidenceLowConfidenceRouted>(evt =>

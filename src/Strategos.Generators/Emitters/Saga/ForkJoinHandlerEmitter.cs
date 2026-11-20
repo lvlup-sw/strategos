@@ -113,6 +113,15 @@ internal sealed class ForkJoinHandlerEmitter
             compensationOccurrence,
             "yield break;");
 
+        if (fork.HasConfidenceGate)
+        {
+            sb.AppendLine($"        if (Fork_{sanitizedId}_Path{path.PathIndex}Status != Strategos.Definitions.ForkPathStatus.InProgress)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
         // Apply state change and store path state if state type is specified
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
