@@ -84,6 +84,12 @@ internal sealed class StepStartHandlerEmitter
             workerCommandName = $"Execute{naming.StemFor(forkKey, baseStepName)}WorkerCommand";
         }
 
+        var forkPath = context.ForkPathEnding is { } ending
+            && ending.Fork.HasConfidenceGate
+            && !CompensationTopology.UsesDerivedRuntime(model)
+                ? ending.Fork.PathPropertyPrefix(ending.Path.PathIndex)
+                : null;
+
         // XML documentation
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Handles the {commandName} - transitions phase and dispatches to worker.");
@@ -106,7 +112,8 @@ internal sealed class StepStartHandlerEmitter
                 commandName,
                 workerCommandName,
                 hasTimeout,
-                compensationOccurrence);
+                compensationOccurrence,
+                forkPath);
         }
         else
         {
@@ -117,7 +124,8 @@ internal sealed class StepStartHandlerEmitter
                 commandName,
                 workerCommandName,
                 hasTimeout,
-                compensationOccurrence);
+                compensationOccurrence,
+                forkPath);
         }
     }
 
@@ -129,7 +137,8 @@ internal sealed class StepStartHandlerEmitter
         string commandName,
         string workerCommandName,
         bool hasTimeout,
-        CompensationOccurrence? compensationOccurrence)
+        CompensationOccurrence? compensationOccurrence,
+        string? forkPath)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -144,7 +153,7 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
 
-        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;", forkPath);
         EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
 
         // Emit validation guard (Guard-Then-Dispatch pattern)
@@ -202,7 +211,8 @@ internal sealed class StepStartHandlerEmitter
             workerCommandName,
             compensationOccurrence,
             "yield return ",
-            "        ");
+            "        ",
+            forkPath);
 
         if (hasTimeout)
         {
@@ -210,7 +220,7 @@ internal sealed class StepStartHandlerEmitter
             // delivery from the TimeoutMessage base and re-enters the saga later.
             sb.AppendLine();
             sb.AppendLine("        // Start the timeout deadline race for this step.");
-            EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
+            EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence, forkPath);
         }
 
         sb.AppendLine("    }");
@@ -283,7 +293,8 @@ internal sealed class StepStartHandlerEmitter
         string commandName,
         string workerCommandName,
         bool hasTimeout,
-        CompensationOccurrence? compensationOccurrence)
+        CompensationOccurrence? compensationOccurrence,
+        string? forkPath)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
 
@@ -296,20 +307,22 @@ internal sealed class StepStartHandlerEmitter
                 commandName,
                 workerCommandName,
                 sagaClassName,
-                compensationOccurrence);
+                compensationOccurrence,
+                forkPath);
             return;
         }
 
-        if (CompensationTopology.UsesDerivedRuntime(model))
+        if (CompensationTopology.UsesDerivedRuntime(model) || forkPath is not null)
         {
-            EmitDerivedStandardHandler(
+            EmitCascadingStandardHandler(
                 sb,
                 model,
                 stepName,
                 commandName,
                 workerCommandName,
                 sagaClassName,
-                compensationOccurrence);
+                compensationOccurrence,
+                forkPath);
             return;
         }
 
@@ -340,14 +353,15 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("    }");
     }
 
-    private static void EmitDerivedStandardHandler(
+    private static void EmitCascadingStandardHandler(
         StringBuilder sb,
         WorkflowModel model,
         string stepName,
         string commandName,
         string workerCommandName,
         string sagaClassName,
-        CompensationOccurrence? compensationOccurrence)
+        CompensationOccurrence? compensationOccurrence,
+        string? forkPath)
     {
         sb.AppendLine($"    /// <returns>The worker command to execute the {stepName} step, or rollback work while a fork quiesces.</returns>");
         sb.AppendLine("    public IEnumerable<object> Handle(");
@@ -357,7 +371,7 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
-        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;", forkPath);
         EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.{stepName};");
         sb.AppendLine();
@@ -372,7 +386,8 @@ internal sealed class StepStartHandlerEmitter
             workerCommandName,
             compensationOccurrence,
             "yield return ",
-            "        ");
+            "        ",
+            forkPath);
         sb.AppendLine("    }");
     }
 
@@ -383,7 +398,8 @@ internal sealed class StepStartHandlerEmitter
         string commandName,
         string workerCommandName,
         string sagaClassName,
-        CompensationOccurrence? compensationOccurrence)
+        CompensationOccurrence? compensationOccurrence,
+        string? forkPath)
     {
         // Yield-based handler so the start handler can cascade BOTH the worker
         // command and the {Phase}Timeout (Wolverine TimeoutMessage) that begins the
@@ -397,7 +413,7 @@ internal sealed class StepStartHandlerEmitter
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(command, nameof(command));");
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
-        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;");
+        EmitForwardStartGuard(sb, model, compensationOccurrence, "yield break;", forkPath);
         EmitPendingForkStartQuiescenceGuard(sb, model, compensationOccurrence);
         sb.AppendLine($"        Phase = {model.PhaseEnumName}.{stepName};");
         sb.AppendLine();
@@ -412,10 +428,11 @@ internal sealed class StepStartHandlerEmitter
             workerCommandName,
             compensationOccurrence,
             "yield return ",
-            "        ");
+            "        ",
+            forkPath);
         sb.AppendLine();
         sb.AppendLine("        // Start the timeout deadline race for this step.");
-        EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
+        EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence, forkPath);
         sb.AppendLine("    }");
     }
 
@@ -423,8 +440,19 @@ internal sealed class StepStartHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         CompensationOccurrence? occurrence,
-        string exitStatement)
+        string exitStatement,
+        string? forkPath)
     {
+        if (forkPath is not null)
+        {
+            sb.AppendLine($"        if ({forkPath}Status != Strategos.Definitions.ForkPathStatus.InProgress");
+            sb.AppendLine($"            || ({forkPath}ExecutionId is Guid existing && existing != Guid.Empty))");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            {exitStatement}");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
         if (!CompensationTopology.UsesDerivedRuntime(model))
         {
             return;
@@ -511,12 +539,13 @@ internal sealed class StepStartHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string stepName,
-        CompensationOccurrence? occurrence)
+        CompensationOccurrence? occurrence,
+        string? forkPath)
     {
         sb.Append($"        yield return new {stepName}Timeout(WorkflowId)");
         if (!CompensationTopology.UsesDerivedRuntime(model))
         {
-            sb.AppendLine(";");
+            sb.AppendLine(forkPath is null ? ";" : " { ForwardExecutionId = executionId };");
             return;
         }
 
@@ -562,11 +591,20 @@ internal sealed class StepStartHandlerEmitter
         string workerCommandName,
         CompensationOccurrence? occurrence,
         string statementPrefix,
-        string indent)
+        string indent,
+        string? forkPath = null)
     {
         if (!CompensationTopology.UsesDerivedRuntime(model))
         {
-            sb.AppendLine($"{indent}{statementPrefix}new {workerCommandName}(WorkflowId, Guid.NewGuid(), State);");
+            var executionId = "Guid.NewGuid()";
+            if (forkPath is not null)
+            {
+                sb.AppendLine($"{indent}var executionId = Guid.NewGuid();");
+                sb.AppendLine($"{indent}{forkPath}ExecutionId = executionId;");
+                executionId = "executionId";
+            }
+
+            sb.AppendLine($"{indent}{statementPrefix}new {workerCommandName}(WorkflowId, {executionId}, State);");
             return;
         }
 

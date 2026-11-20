@@ -4,6 +4,10 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using Marten;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Strategos.Definitions;
 using Strategos.Generators.Behavioral.Tests.Infrastructure;
 using Strategos.Generators.Behavioral.Tests.Workflows;
 
@@ -16,8 +20,8 @@ namespace Strategos.Generators.Behavioral.Tests;
 /// fork path's last step; the generated fork path-completed handler now compares the
 /// step result's confidence to the threshold and, when below, routes to the
 /// <c>OnLowConfidence</c> handler chain (a Wolverine cascade) and appends the
-/// <c>LowConfidenceRouted</c> audit stream event — instead of marking the path succeeded
-/// and letting the join fire.
+/// <c>LowConfidenceRouted</c> audit stream event after the fork paths settle, before
+/// the join can fire.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -122,5 +126,93 @@ public sealed class ForkPathConfidenceTests
         await Assert.That(routed!.StepName).IsEqualTo(nameof(ForkConfAssessStep));
         await Assert.That(routed.Confidence).IsEqualTo(0.5);
         await Assert.That(routed.Threshold).IsEqualTo(0.85);
+    }
+
+    /// <summary>
+    /// Exercises both completion orders without relying on worker timing.
+    /// </summary>
+    /// <param name="gatedPathFirst">Whether the below-threshold result is handled first.</param>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task Saga_LowConfidenceRouteWaitsForSiblingCompletion(bool gatedPathFirst)
+    {
+        var workflowId = Guid.NewGuid();
+        var state = new ForkPathConfidenceState { WorkflowId = workflowId };
+        var saga = new ForkPathConfidenceSaga
+        {
+            WorkflowId = workflowId,
+            State = state,
+        };
+        var session = Substitute.For<IDocumentSession>();
+        var events = session.Events;
+        var logger = NullLogger<ForkPathConfidenceSaga>.Instance;
+        var now = DateTimeOffset.UtcNow;
+        var intake = new ForkConfIntakeStepCompleted(workflowId, Guid.NewGuid(), state, null, now);
+        var assessStart = new StartForkConfAssessStepCommand(workflowId);
+        var siblingStart = new StartForkConfSecondPathStepCommand(workflowId);
+
+        // Restart the fork with a result from the former execution still in flight.
+        _ = saga.Handle(intake, session, logger).ToArray();
+        var former = saga.Handle(assessStart, logger).ToArray();
+        var formerWorker = former.OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var staleTimeout = former.OfType<ForkPathConfidenceSaga.ForkConfAssessStepTimeout>().Single();
+        _ = saga.Handle(intake, session, logger).ToArray();
+        var staleResult = new ForkConfAssessStepCompleted(workflowId, formerWorker.StepExecutionId, state, 0.1, now);
+        await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
+
+        var siblingWorker = saga.Handle(siblingStart, logger).OfType<ExecuteForkConfSecondPathStepWorkerCommand>().Single();
+        var assess = saga.Handle(assessStart, logger).ToArray();
+        var assessWorker = assess.OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var deadline = assess.OfType<ForkPathConfidenceSaga.ForkConfAssessStepTimeout>().Single();
+        saga.Handle(staleTimeout, logger);
+        await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfAssessStep);
+        await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
+        await Assert.That(saga.Handle(assessStart, logger).ToArray().Length).IsEqualTo(0);
+        events.DidNotReceive().Append(workflowId, staleResult);
+
+        var gatedResult = new ForkConfAssessStepCompleted(workflowId, assessWorker.StepExecutionId, state, 0.5, now);
+        var siblingResult = new ForkConfSecondPathStepCompleted(workflowId, siblingWorker.StepExecutionId, state, null, now);
+
+        var first = gatedPathFirst ? saga.Handle(gatedResult, session, logger) : saga.Handle(siblingResult, session, logger);
+        await Assert.That(first.ToArray().Length).IsEqualTo(0);
+        events.DidNotReceive().Append(workflowId, Arg.Any<ForkPathConfidenceLowConfidenceRouted>());
+        if (gatedPathFirst)
+        {
+            // The path finished on time. Its delayed deadline may fire before its sibling finishes.
+            saga.Handle(deadline, logger);
+            await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfAssessStep);
+
+            // The same deadline still fails an active path when another path owns the phase.
+            var active = new ForkPathConfidenceSaga
+            {
+                WorkflowId = workflowId,
+                State = state,
+                Phase = ForkPathConfidencePhase.ForkConfSecondPathStep,
+                Fork_ForkPathConfidence_Fork0_Path0Status = ForkPathStatus.InProgress,
+                Fork_ForkPathConfidence_Fork0_Path0ExecutionId = assessWorker.StepExecutionId,
+            };
+            active.Handle(deadline, logger);
+            await Assert.That(active.Phase).IsEqualTo(ForkPathConfidencePhase.Failed);
+        }
+
+        var second = gatedPathFirst ? saga.Handle(siblingResult, session, logger) : saga.Handle(gatedResult, session, logger);
+        var route = second.Single();
+        await Assert.That(route).IsTypeOf<StartForkConfReviewStepCommand>();
+        await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfReviewStep);
+        await Assert.That(saga.Fork_ForkPathConfidence_Fork0_Path0Status).IsEqualTo(ForkPathStatus.Success);
+        await Assert.That(saga.Fork_ForkPathConfidence_Fork0_Path1Status).IsEqualTo(ForkPathStatus.Success);
+
+        // A sibling redelivery while the review is pending cannot open the join.
+        await Assert.That(saga.Handle(siblingResult, session, logger).ToArray().Length).IsEqualTo(0);
+        await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfReviewStep);
+        events.Received(1).Append(workflowId, siblingResult);
+        events.Received(1).Append(
+            workflowId,
+            Arg.Is<ForkPathConfidenceLowConfidenceRouted>(evt =>
+                evt.StepName == nameof(ForkConfAssessStep)
+                && evt.Confidence == 0.5
+                && evt.Threshold == 0.85));
     }
 }

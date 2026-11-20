@@ -4,6 +4,10 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System.Text;
+
+using Strategos.Generators.Emitters.Saga;
+using Strategos.Generators.Models;
 using Strategos.Generators.Tests.Fixtures;
 
 namespace Strategos.Generators.Tests.Emitters;
@@ -182,5 +186,44 @@ public class TimeoutLoweringTests
         // Assert — no timeout message, no derivation, no cascade.
         await Assert.That(sagaSource).DoesNotContain(": TimeoutMessage");
         await Assert.That(sagaSource).DoesNotContain("Timeout(");
+    }
+
+    /// <summary>
+    /// Verifies an intermediate step keeps its untagged deadline even when it
+    /// shares a phase with a fork path's execution-bound final step.
+    /// </summary>
+    /// <returns>A task representing the asynchronous test.</returns>
+    [Test]
+    public async Task Emit_SharedPhaseTimeout_PreservesUntaggedOccurrence()
+    {
+        var review = StepModel.Create("Review", "TestNamespace.Review");
+        var shared = StepModel.Create("Shared", "TestNamespace.Shared") with
+        {
+            Timeout = new TimeoutModel(TimeSpan.FromSeconds(10)),
+        };
+        var gated = shared with { Confidence = new ConfidenceModel(0.8, OnLowConfidenceHandlerStep: review) };
+        var last = StepModel.Create("Last", "TestNamespace.Last");
+        var fork = ForkModel.Create(
+            "parallel",
+            "Start",
+            [ForkPathModel.Create(0, [gated], false, false), ForkPathModel.Create(1, [shared, last], false, false)],
+            "Join");
+        var model = WorkflowModel.Create(
+            "shared-deadline",
+            "SharedDeadline",
+            "TestNamespace",
+            ["Start", "Shared", "Last", "Join", "Review"],
+            "TestState",
+            steps: [StepModel.Create("Start", "TestNamespace.Start"), gated, last, StepModel.Create("Join", "TestNamespace.Join"), review],
+            forks: [fork],
+            confidenceHandlerStepNames: ["Review"]);
+        var source = new StringBuilder();
+
+        new SagaTimeoutComponentEmitter().Emit(source, model);
+
+        var handler = source.ToString();
+        await Assert.That(handler).Contains($"            ? Phase != SharedDeadlinePhase.Shared{Environment.NewLine}");
+        await Assert.That(handler).Contains("Fork_parallel_Path0ExecutionId == t.ForwardExecutionId");
+        await Assert.That(handler).Contains("MarkCompleted();");
     }
 }

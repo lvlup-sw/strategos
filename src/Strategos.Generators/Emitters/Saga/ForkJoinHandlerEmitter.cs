@@ -113,6 +113,23 @@ internal sealed class ForkJoinHandlerEmitter
             compensationOccurrence,
             "yield break;");
 
+        if (fork.HasConfidenceGate)
+        {
+            sb.Append($"        if (Fork_{sanitizedId}_Path{path.PathIndex}Status != Strategos.Definitions.ForkPathStatus.InProgress");
+            if (!CompensationTopology.UsesDerivedRuntime(model))
+            {
+                var executionSlot = fork.PathPropertyPrefix(path.PathIndex) + "ExecutionId";
+                sb.AppendLine();
+                sb.Append($"            || evt.StepExecutionId == Guid.Empty || ({executionSlot} is Guid active && evt.StepExecutionId != active)");
+            }
+
+            sb.AppendLine(")");
+            sb.AppendLine("        {");
+            sb.AppendLine("            yield break;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+
         // Apply state change and store path state if state type is specified
         if (!string.IsNullOrEmpty(model.StateTypeName))
         {
@@ -156,14 +173,18 @@ internal sealed class ForkJoinHandlerEmitter
             sb.AppendLine();
         }
 
-        // Confidence gate (DR-4 / #145 gap A): a fork path's LAST step may declare
-        // .RequireConfidence(t).OnLowConfidence(alt => alt.Then<H>()). Mirroring the
-        // top-level StepCompletedHandlerEmitter.EmitConfidenceGatedHandler, compare the
-        // completed event's Confidence to the threshold BEFORE marking the path complete:
-        // when below, cascade the OnLowConfidence handler chain's start command (INV-1)
-        // and do NOT mark the path succeeded nor check the join — the path diverts to the
-        // handler chain, which terminates or rejoins per its own routing.
-        EmitForkPathConfidenceGate(sb, model, path, baseStepName);
+        // The completed worker has stopped writing. Record its decision now,
+        // then consume it at the same quiescence boundary as the normal join.
+        if (path.ConfidenceGateStep?.Confidence is { } confidence)
+        {
+            var threshold = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            sb.AppendLine($"        if (Fork_{sanitizedId}_LowConfidencePath is null && evt.Confidence is double score && score < {threshold})");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            Fork_{sanitizedId}_LowConfidencePath = {path.PathIndex};");
+            sb.AppendLine($"            Fork_{sanitizedId}_LowConfidenceScore = score;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
 
         // Update path status to Success
         sb.AppendLine($"        // Mark path {path.PathIndex} as completed");
@@ -181,6 +202,17 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine("        // Check if all paths are complete - yield join command if ready");
         sb.AppendLine($"        if (CheckJoinReady_{sanitizedId}())");
         sb.AppendLine("        {");
+        if (fork.HasConfidenceGate)
+        {
+            var session = model.IsEventSourced ? ", session" : string.Empty;
+            sb.AppendLine($"            if (RouteLowConfidence_{sanitizedId}(logger{session}) is {{ }} route)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                yield return route;");
+            sb.AppendLine("                yield break;");
+            sb.AppendLine("            }");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"            logger.LogDebug(");
         sb.AppendLine($"                \"All fork paths complete, joining for workflow {{WorkflowId}}\",");
         sb.AppendLine("                WorkflowId);");
@@ -191,75 +223,56 @@ internal sealed class ForkJoinHandlerEmitter
         sb.AppendLine("    }");
     }
 
-    /// <summary>
-    /// Emits the confidence gate for a fork path's last step (DR-4 / #145 gap A), when that
-    /// step declared <c>.RequireConfidence(t).OnLowConfidence(alt =&gt; ...)</c>. Emits nothing
-    /// when the last step is not confidence-gated, keeping non-confidence fork output
-    /// byte-unchanged. Mirrors <c>StepCompletedHandlerEmitter.EmitConfidenceGatedHandler</c>:
-    /// below-threshold confidence routes to the lowered OnLowConfidence handler chain's start
-    /// command and, in EventSourced mode, appends the <c>{Pascal}LowConfidenceRouted</c> audit
-    /// stream event.
-    /// </summary>
-    /// <param name="sb">The <see cref="StringBuilder"/> to append generated code to.</param>
-    /// <param name="model">The workflow model.</param>
-    /// <param name="path">The fork path whose last step is being handled.</param>
-    /// <param name="gatedStepName">The gated step's base (unprefixed) name, for the audit event.</param>
-    private static void EmitForkPathConfidenceGate(
+    private static void EmitLowConfidenceRoute(
         StringBuilder sb,
         WorkflowModel model,
-        ForkPathModel path,
-        string gatedStepName)
+        ForkModel fork,
+        string sanitizedId,
+        string sagaClassName)
     {
-        if (path.Steps.Count == 0)
+        if (!fork.HasConfidenceGate)
         {
             return;
         }
 
-        var confidence = path.Steps[path.Steps.Count - 1].Confidence;
-        if (confidence?.OnLowConfidenceHandlerStep is null)
-        {
-            return;
-        }
-
-        var handlerStepName = confidence.OnLowConfidenceHandlerStep.StepName;
-        var lowConfidenceCommand = $"Start{handlerStepName}Command";
-        var thresholdLiteral = confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
-
-        sb.AppendLine("        // Confidence gate: route to the low-confidence handler when the fork-path");
-        sb.AppendLine("        // step's result confidence is present and below the configured threshold.");
-        sb.AppendLine($"        if (evt.Confidence is double confidenceScore && confidenceScore < {thresholdLiteral})");
+        var session = model.IsEventSourced ? ", IDocumentSession session" : string.Empty;
+        sb.AppendLine();
+        sb.AppendLine($"    private object? RouteLowConfidence_{sanitizedId}(ILogger<{sagaClassName}> logger{session})");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        switch (Fork_{sanitizedId}_LowConfidencePath)");
         sb.AppendLine("        {");
-        sb.AppendLine($"            Phase = {model.PhaseEnumName}.{handlerStepName};");
-        sb.AppendLine();
-        sb.AppendLine("            logger.LogWarning(");
-        sb.AppendLine("                \"Fork-path step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
-        sb.AppendLine("                confidenceScore,");
-        sb.AppendLine($"                {thresholdLiteral},");
-        sb.AppendLine("                WorkflowId,");
-        sb.AppendLine($"                nameof({lowConfidenceCommand}));");
-
-        // Append the LowConfidenceRouted audit STREAM event when event-sourced. This is the
-        // single site where a confidence-gated fork path actually routes below-threshold, so
-        // it is where the named event belongs. The handler already receives IDocumentSession
-        // session in EventSourced mode.
-        if (model.IsEventSourced)
+        foreach (var path in fork.Paths)
         {
-            sb.AppendLine();
-            sb.AppendLine("            session.Events.Append(");
-            sb.AppendLine("                WorkflowId,");
-            sb.AppendLine($"                new {model.PascalName}LowConfidenceRouted(");
-            sb.AppendLine("                    WorkflowId,");
-            sb.AppendLine($"                    \"{gatedStepName}\",");
-            sb.AppendLine("                    confidenceScore,");
-            sb.AppendLine($"                    {thresholdLiteral},");
-            sb.AppendLine("                    DateTimeOffset.UtcNow));");
+            var step = path.ConfidenceGateStep;
+            if (step?.Confidence?.OnLowConfidenceHandlerStep is not { } handler)
+            {
+                continue;
+            }
+
+            var threshold = step.Confidence.Threshold.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            var command = $"Start{handler.StepName}Command";
+            sb.AppendLine($"            case {path.PathIndex}:");
+            sb.AppendLine($"                Fork_{sanitizedId}_LowConfidencePath = null;");
+            sb.AppendLine($"                Phase = {model.PhaseEnumName}.{handler.StepName};");
+            sb.AppendLine("                logger.LogWarning(");
+            sb.AppendLine("                    \"Fork-path step confidence {Confidence} below threshold {Threshold} for workflow {WorkflowId}, routing to {Handler}\",");
+            sb.AppendLine($"                    Fork_{sanitizedId}_LowConfidenceScore, {threshold}, WorkflowId, nameof({command}));");
+
+            if (model.IsEventSourced)
+            {
+                sb.AppendLine("                session.Events.Append(");
+                sb.AppendLine("                    WorkflowId,");
+                sb.AppendLine($"                    new {model.PascalName}LowConfidenceRouted(");
+                sb.AppendLine($"                        WorkflowId, \"{step.StepName}\", Fork_{sanitizedId}_LowConfidenceScore, {threshold}, DateTimeOffset.UtcNow));");
+            }
+
+            sb.AppendLine($"                return new {command}(WorkflowId);");
         }
 
-        sb.AppendLine();
-        sb.AppendLine($"            yield return new {lowConfidenceCommand}(WorkflowId);");
-        sb.AppendLine("            yield break;");
+        sb.AppendLine("            default:");
+        sb.AppendLine("                return null;");
         sb.AppendLine("        }");
-        sb.AppendLine();
+        sb.AppendLine("    }");
     }
 
     /// <summary>
@@ -323,6 +336,8 @@ internal sealed class ForkJoinHandlerEmitter
         var sanitizedId = fork.ForkId.Replace("-", "_");
         var joinStepCommand = $"Start{fork.JoinStepName}Command";
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
+
+        EmitLowConfidenceRoute(sb, model, fork, sanitizedId, sagaClassName);
 
         sb.AppendLine();
         sb.AppendLine("    /// <summary>");

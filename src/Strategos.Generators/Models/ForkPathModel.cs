@@ -49,6 +49,14 @@ internal sealed record ForkPathModel(
     public IReadOnlyList<string> StepNames => [.. Steps.Select(s => s.PhaseName)];
 
     /// <summary>
+    /// Gets the path's final step when it can divert on low confidence.
+    /// </summary>
+    public StepModel? ConfidenceGateStep => Steps.Count > 0
+        && Steps[Steps.Count - 1].Confidence?.OnLowConfidenceHandlerStep is not null
+            ? Steps[Steps.Count - 1]
+            : null;
+
+    /// <summary>
     /// Gets the first step name in this path.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="Steps"/> is empty.</exception>
