@@ -6,15 +6,6 @@ name: Contracts codegen guard
 # output or forgot to regenerate after a .tsp change.
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/Strategos.Contracts/**'
-      - 'src/Strategos.Contracts.Codegen/**'
-      - 'src/Strategos.Ontology/Contracts/**'
-      - 'docs/diagnostics/**'
-      - 'scripts/contracts-codegen.sh'
-      - '.github/workflows/contracts-codegen-guard.yml'
   push:
     branches: [main]
     paths:

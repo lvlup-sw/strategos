@@ -1,0 +1,115 @@
+# =============================================================================
+# Reusable Workflow: Build & Test with Coverage
+# =============================================================================
+# Builds a .NET solution, runs test projects with coverage collection, merges
+# coverage reports, and uploads the result as an artifact.
+#
+# This is a THIN PRESET WRAPPER over the dotnet-build-test composite action
+# (actions/dotnet-build-test). All build/test/coverage logic lives in the
+# action (single source of truth, DR-3); this workflow only owns the
+# workflow-level concerns the action cannot (runs-on/runner, the workflow_call
+# signature). Inputs, defaults, and the tests-passed output are unchanged, so
+# existing consumers (strategos, basileus, DataFerry) need no changes.
+#
+# Usage:
+#   jobs:
+#     test:
+#       uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@v1
+#       with:
+#         solution-path: 'MyProject.slnx'
+#         test-project-patterns: |
+#           **/tests/**/*.Tests.csproj
+#           **/src/**/*.Tests.csproj
+#
+# Coverage:
+#   - Each test project produces a Cobertura XML report
+#   - Reports are merged via ReportGenerator into coverage.cobertura.xml
+#   - Uploaded as the 'coverage-reports' artifact (7-day retention)
+#
+# Skip patterns:
+#   - Use skip-patterns to exclude test projects (e.g., integration tests)
+#   - Patterns are matched against the full project path using bash globbing
+# =============================================================================
+
+name: Build & Test
+
+on:
+  workflow_call:
+    inputs:
+      solution-path:
+        description: 'Path to solution file (.sln or .slnx)'
+        required: true
+        type: string
+      test-project-patterns:
+        description: 'Newline-separated glob patterns for test .csproj files'
+        required: true
+        type: string
+      skip-patterns:
+        description: 'Newline-separated glob patterns to skip (e.g., *Integration.Tests*)'
+        required: false
+        type: string
+        default: ''
+      coverage-filters:
+        description: 'ReportGenerator -assemblyfilters value'
+        required: false
+        type: string
+        default: ''
+      exclude-generated:
+        description: 'When true, exclude generated code (GeneratedCodeAttribute + .g.cs/.Designer.cs) from coverage collection via a default code-coverage settings file. Opt-in; default false leaves collection unchanged.'
+        required: false
+        type: boolean
+        default: false
+      exclude-sources:
+        description: 'Newline-separated ECMAScript regexes matched against source file paths; matching files are dropped from coverage collection. The repo-supplied targeting lever (coverage-filters is assembly-level only). Composes with exclude-generated. Opt-in; default empty leaves collection unchanged.'
+        required: false
+        type: string
+        default: ''
+      runner:
+        description: 'GitHub Actions runner label'
+        required: false
+        type: string
+        default: 'self-hosted'
+      dotnet-version:
+        description: '.NET SDK version (e.g., 9.0.x, 10.0.x)'
+        required: false
+        type: string
+        default: '10.0.x'
+      dotnet-quality:
+        description: '.NET SDK quality (ga, preview)'
+        required: false
+        type: string
+        default: 'preview'
+    outputs:
+      tests-passed:
+        description: 'Whether all test projects passed'
+        value: ${{ jobs.test.outputs.tests-passed }}
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      tests-passed: ${{ steps.build-test.outputs.tests-passed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # All build/test/coverage logic lives in the dotnet-build-test composite
+      # action (single source of truth, DR-3). This workflow is a thin preset
+      # wrapper over it. The action is referenced by its full org-repo path so
+      # GitHub resolves it without a manual checkout. Pinned to the v1.4 release
+      # SHA rather than @main so a consumer pinning this workflow @v1 gets a
+      # fully SHA-pinned action graph (DR-6 / T13). Dependabot
+      # (.github/dependabot.yml) keeps this pin current.
+      - name: Build & test
+        id: build-test
+        uses: ./.github/actions/dotnet-build-test-289c489 # v1.6
+        with:
+          solution-path: ${{ inputs.solution-path }}
+          test-project-patterns: ${{ inputs.test-project-patterns }}
+          skip-patterns: ${{ inputs.skip-patterns }}
+          coverage-filters: ${{ inputs.coverage-filters }}
+          exclude-generated: ${{ inputs.exclude-generated }}
+          exclude-sources: ${{ inputs.exclude-sources }}
+          dotnet-version: ${{ inputs.dotnet-version }}
+          dotnet-quality: ${{ inputs.dotnet-quality }}

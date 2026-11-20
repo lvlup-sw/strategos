@@ -71,7 +71,8 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     private static readonly string DefaultPodmanSocketUri =
         $"unix://{DefaultPodmanSocketPath}";
 
-    private readonly PostgreSqlContainer container;
+    private readonly PostgreSqlContainer? container;
+    private readonly string? workerConnectionString;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PostgresFixture"/> class,
@@ -88,6 +89,12 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// </remarks>
     public PostgresFixture()
     {
+        this.workerConnectionString = Environment.GetEnvironmentVariable("STRATEGOS_BEHAVIORAL_TEST_CONN");
+        if (!string.IsNullOrWhiteSpace(this.workerConnectionString))
+        {
+            return;
+        }
+
         ConfigurePodmanProvider();
 
         // Ryuk (the reaper sidecar) is disabled under rootless podman (see
@@ -107,7 +114,8 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// Gets the connection string for the running container's database. Only
     /// valid after <see cref="InitializeAsync"/> has completed.
     /// </summary>
-    public string ConnectionString => this.container.GetConnectionString();
+    public string ConnectionString =>
+        this.container is null ? this.workerConnectionString! : this.container.GetConnectionString();
 
     /// <summary>
     /// Starts the single shared PostgreSQL container.
@@ -120,8 +128,19 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// regression in the code under test.
     /// </remarks>
     /// <returns>A task that completes when the container is ready.</returns>
-    public Task InitializeAsync() =>
-        StartWithRuntimeDiagnosticsAsync(() => this.container.StartAsync());
+    public async Task InitializeAsync()
+    {
+        if (this.container is not null)
+        {
+            await StartWithRuntimeDiagnosticsAsync(() => this.container.StartAsync()).ConfigureAwait(false);
+            return;
+        }
+
+        // Protected CI has already provisioned an isolated PostgreSQL service.
+        // Missing or unreachable fixture inputs fail before any assertions run.
+        await using var connection = new Npgsql.NpgsqlConnection(this.ConnectionString);
+        await connection.OpenAsync().ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Runs a container start and converts any failure into a
@@ -294,7 +313,7 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
     /// Stops and disposes the shared container.
     /// </summary>
     /// <returns>A value task that completes when the container is disposed.</returns>
-    public ValueTask DisposeAsync() => this.container.DisposeAsync();
+    public ValueTask DisposeAsync() => this.container is null ? ValueTask.CompletedTask : this.container.DisposeAsync();
 
     /// <summary>
     /// Points Testcontainers at the rootless podman socket and disables Ryuk —

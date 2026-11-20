@@ -1,0 +1,301 @@
+# =============================================================================
+# Composite Action: dotnet-build-test
+# =============================================================================
+# Builds a .NET solution, runs test projects with coverage collection, merges
+# coverage reports, and uploads the result as an artifact.
+#
+# This is the composable primitive extracted from the reusable workflow
+# `.github/workflows/build-and-test.yml` (DR-3). The workflow is now a thin
+# wrapper that calls this action; advanced consumers (e.g. bifrost) may call
+# this action directly and interleave their own steps around it.
+#
+# Coverage:
+#   - Each test project produces a Cobertura XML report
+#   - Reports are merged via ReportGenerator into coverage.cobertura.xml
+#   - Uploaded as the 'coverage-reports' artifact (7-day retention)
+#   - exclude-generated=true passes a default code-coverage settings file
+#     (coverage-settings.generated-exclusion.xml) so generated code is kept out
+#     of the denominator (GeneratedCodeAttribute + .g.cs/.Designer.cs). Opt-in.
+#   - exclude-sources adds repo-supplied source-path regexes on top, so a
+#     consumer can target the denominator at hand-written logic (e.g. drop
+#     Program.cs host bootstrap). Needed because coverage-filters is
+#     assembly-level only and `file`-scoped generated types cannot carry a
+#     partial-class [ExcludeFromCodeCoverage] stamp. Opt-in.
+#
+# Skip patterns:
+#   - Use skip-patterns to exclude test projects (e.g., integration tests)
+#   - Patterns are matched against the full project path using bash globbing
+# =============================================================================
+
+name: 'dotnet-build-test'
+description: 'Build a .NET solution, run MTP test projects with coverage, merge reports, and upload the coverage-reports artifact.'
+
+inputs:
+  solution-path:
+    description: 'Path to solution file (.sln or .slnx)'
+    required: true
+  test-project-patterns:
+    description: 'Newline-separated glob patterns for test .csproj files'
+    required: true
+  skip-patterns:
+    description: 'Newline-separated glob patterns to skip (e.g., *Integration.Tests*)'
+    required: false
+    default: ''
+  test-filter:
+    description: >-
+      Microsoft.Testing.Platform --treenode-filter expression applied to every
+      test project, scoping which tests run within each (e.g.
+      "/*/*/*/*[Category!=Stress]" to exclude a category that runs in a separate
+      gated job). Empty (the default) runs every test, so existing consumers are
+      unaffected.
+    required: false
+    default: ''
+  coverage-filters:
+    description: 'ReportGenerator -assemblyfilters value'
+    required: false
+    default: ''
+  exclude-generated:
+    description: >-
+      When 'true', exclude generated code from coverage collection by passing a
+      default Microsoft code-coverage settings file (coverage-settings) that
+      drops elements carrying [GeneratedCodeAttribute] and sources matching
+      .g.cs / .g.i.cs / .Designer.cs. Defense-in-depth for generators that do
+      not stamp [ExcludeFromCodeCoverage] (issue #21). Opt-in: the default
+      'false' leaves collection byte-for-byte unchanged for existing consumers.
+    required: false
+    default: 'false'
+  exclude-sources:
+    description: >-
+      Newline-separated ECMAScript regular expressions matched (case-
+      insensitively) against SOURCE FILE PATHS. Elements defined in a matching
+      file are dropped from coverage collection. This is the repo-supplied
+      targeting lever: coverage-filters is assembly-level only, and a source
+      generator that emits C# `file`-scoped types cannot be excluded with a
+      partial-class [ExcludeFromCodeCoverage] stamp at all. Use it to keep
+      non-logic code out of the denominator — host bootstrap (Program.cs),
+      or a generated support class whose generator does not stamp the
+      attribute. Composes with exclude-generated: the generated-code rules are
+      emitted when that input is 'true', and these rules are added on top.
+      Opt-in: empty (the default) leaves collection unchanged.
+    required: false
+    default: ''
+  dotnet-version:
+    description: '.NET SDK version (e.g., 9.0.x, 10.0.x)'
+    required: false
+    default: '10.0.x'
+  dotnet-quality:
+    description: '.NET SDK quality (ga, preview)'
+    required: false
+    default: 'preview'
+
+outputs:
+  tests-passed:
+    description: 'Whether all test projects passed'
+    value: ${{ steps.run-tests.outputs.tests-passed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+        dotnet-quality: ${{ inputs.dotnet-quality }}
+
+    - name: Restore dependencies
+      shell: bash
+      env:
+        SOLUTION_PATH: ${{ inputs.solution-path }}
+      run: dotnet restore "$SOLUTION_PATH"
+
+    - name: Build
+      id: build
+      shell: bash
+      env:
+        SOLUTION_PATH: ${{ inputs.solution-path }}
+      run: |
+        marker="$(mktemp "$RUNNER_TEMP/coverage-build.XXXXXXXX")"
+        dotnet build "$SOLUTION_PATH" --no-restore --configuration Release
+        echo "marker=$marker" >> "$GITHUB_OUTPUT"
+
+    - name: Run tests with coverage
+      id: run-tests
+      shell: bash
+      env:
+        TEST_PROJECT_PATTERNS: ${{ inputs.test-project-patterns }}
+        SKIP_PATTERNS: ${{ inputs.skip-patterns }}
+        TEST_FILTER: ${{ inputs.test-filter }}
+        EXCLUDE_GENERATED: ${{ inputs.exclude-generated }}
+        EXCLUDE_SOURCES: ${{ inputs.exclude-sources }}
+        ACTION_PATH: ${{ github.action_path }}
+        BUILD_MARKER: ${{ steps.build.outputs.marker }}
+      run: |
+        set -uo pipefail
+        mkdir -p ./TestResults
+        failed=0
+
+        # Optional MTP --treenode-filter, applied to every project (e.g. to
+        # exclude a [Category=...] that runs in a separate gated job). Empty =
+        # run all tests, so the flag is omitted entirely.
+        filter_args=()
+        [[ -n "$TEST_FILTER" ]] && filter_args+=(--treenode-filter "$TEST_FILTER")
+
+        # Optional coverage-denominator targeting. Two opt-in levers:
+        #   exclude-generated -> drop generated code (GeneratedCodeAttribute +
+        #                        .g.cs/.g.i.cs/.Designer.cs sources).
+        #   exclude-sources   -> drop additional source paths by regex.
+        # Both default off, so the --coverage invocation is unchanged for
+        # consumers that set neither.
+        #
+        # When exclude-sources is empty the STATIC settings file ships as-is, so
+        # existing exclude-generated consumers keep byte-for-byte behavior. Only
+        # when a consumer supplies its own source rules is a merged file built,
+        # because a supplied settings file fully specifies <CodeCoverage> and the
+        # defaults it must preserve have to be re-declared alongside the new rules.
+        coverage_settings_args=()
+        has_extra_sources=false
+        [[ -n "$(printf '%s' "${EXCLUDE_SOURCES}" | tr -d '[:space:]')" ]] && has_extra_sources=true
+
+        if [[ "$has_extra_sources" == "true" ]]; then
+          settings_file="${RUNNER_TEMP}/coverage-settings.merged.xml"
+          {
+            echo '<?xml version="1.0" encoding="utf-8"?>'
+            echo '<!-- Generated by actions/dotnet-build-test. Do not edit. -->'
+            echo '<Configuration>'
+            echo '  <CodeCoverage>'
+            echo '    <IncludeTestAssembly>False</IncludeTestAssembly>'
+            echo '    <Attributes>'
+            echo '      <Exclude>'
+            echo '        <Attribute>^System\.Diagnostics\.DebuggerHiddenAttribute$</Attribute>'
+            echo '        <Attribute>^System\.Diagnostics\.DebuggerNonUserCodeAttribute$</Attribute>'
+            echo '        <Attribute>^System\.Diagnostics\.CodeAnalysis\.ExcludeFromCodeCoverageAttribute$</Attribute>'
+            if [[ "$EXCLUDE_GENERATED" == "true" ]]; then
+              echo '        <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>'
+            fi
+            echo '      </Exclude>'
+            echo '    </Attributes>'
+            echo '    <Sources>'
+            echo '      <Exclude>'
+            if [[ "$EXCLUDE_GENERATED" == "true" ]]; then
+              echo '        <Source>.*\.g\.cs$</Source>'
+              echo '        <Source>.*\.g\.i\.cs$</Source>'
+              echo '        <Source>.*\.Designer\.cs$</Source>'
+            fi
+            while IFS= read -r src_rule; do
+              [[ -z "$(printf '%s' "$src_rule" | tr -d '[:space:]')" ]] && continue
+              # XML-escape the three markup-significant characters. Ampersand
+              # first, so the entities emitted after it are not re-escaped.
+              esc=$(printf '%s' "$src_rule" \
+                | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+              echo "        <Source>${esc}</Source>"
+            done <<< "$EXCLUDE_SOURCES"
+            echo '      </Exclude>'
+            echo '    </Sources>'
+            echo '  </CodeCoverage>'
+            echo '</Configuration>'
+          } > "$settings_file"
+          coverage_settings_args+=(--coverage-settings "$settings_file")
+          echo "Coverage source targeting ENABLED (exclude-generated=$EXCLUDE_GENERATED) via $settings_file"
+          cat "$settings_file"
+        elif [[ "$EXCLUDE_GENERATED" == "true" ]]; then
+          settings_file="${ACTION_PATH}/coverage-settings.generated-exclusion.xml"
+          if [[ -f "$settings_file" ]]; then
+            coverage_settings_args+=(--coverage-settings "$settings_file")
+            echo "Generated-code exclusion ENABLED via $settings_file"
+          else
+            echo "::warning::exclude-generated=true but settings file not found at $settings_file; collecting without it"
+          fi
+        fi
+
+        while IFS= read -r pattern; do
+          [[ -z "$pattern" ]] && continue
+          for proj in $pattern; do
+            # Skip if glob didn't expand (no matching files)
+            [[ ! -f "$proj" ]] && continue
+
+            # Check skip patterns
+            skip=false
+            while IFS= read -r skip_pat; do
+              [[ -z "$skip_pat" ]] && continue
+              if [[ "$proj" == $skip_pat ]]; then
+                skip=true
+                break
+              fi
+            done <<< "$SKIP_PATTERNS"
+
+            if [[ "$skip" == "true" ]]; then
+              echo "Skipping: $proj"
+              continue
+            fi
+
+            projname=$(basename "$proj" .csproj)
+            coverage_path="${GITHUB_WORKSPACE}/TestResults/${projname}.cobertura.xml"
+            echo "Running tests: $proj"
+
+            # Reuse only the Release target produced by the solution build in
+            # this job. A project outside the build keeps its original build path.
+            build_args=()
+            if [[ -n "$BUILD_MARKER" && -f "$BUILD_MARKER" ]] &&
+               target="$(dotnet msbuild "$proj" -nologo -p:Configuration=Release -getProperty:TargetPath)" &&
+               [[ -n "$target" && -f "$target" && "$target" -nt "$BUILD_MARKER" ]]; then
+              build_args=(--no-build --no-restore)
+              echo "Reusing solution build: $proj"
+            fi
+
+            if ! dotnet run --project "$proj" --configuration Release "${build_args[@]}" -- \
+              "${filter_args[@]}" \
+              --coverage \
+              "${coverage_settings_args[@]}" \
+              --coverage-output-format cobertura \
+              --coverage-output "$coverage_path"; then
+              echo "::error::Tests failed for $proj"
+              failed=1
+            fi
+          done
+        done <<< "$TEST_PROJECT_PATTERNS"
+
+        if [[ "$failed" -eq 0 ]]; then
+          echo "tests-passed=true" >> $GITHUB_OUTPUT
+        else
+          echo "tests-passed=false" >> $GITHUB_OUTPUT
+        fi
+
+        exit $failed
+
+    - name: Merge coverage reports
+      if: always()
+      shell: bash
+      env:
+        COVERAGE_FILTERS: ${{ inputs.coverage-filters }}
+      run: |
+        dotnet tool install -g dotnet-reportgenerator-globaltool || true
+        export PATH="$PATH:$HOME/.dotnet/tools"
+
+        if ls ./TestResults/*.cobertura.xml 1> /dev/null 2>&1; then
+          FILTER_ARG=""
+          if [[ -n "$COVERAGE_FILTERS" ]]; then
+            FILTER_ARG="-assemblyfilters:$COVERAGE_FILTERS"
+          fi
+
+          reportgenerator \
+            -reports:"./TestResults/*.cobertura.xml" \
+            -targetdir:"./TestResults" \
+            -reporttypes:"Cobertura" \
+            $FILTER_ARG \
+            -verbosity:Warning
+
+          if [ -f "./TestResults/Cobertura.xml" ]; then
+            cp ./TestResults/Cobertura.xml ./TestResults/coverage.cobertura.xml
+          fi
+        else
+          echo "::warning::No coverage files found in ./TestResults/"
+        fi
+
+    - name: Upload coverage reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports
+        path: ./TestResults/coverage.cobertura.xml
+        retention-days: 7
+        if-no-files-found: warn

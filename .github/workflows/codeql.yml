@@ -1,23 +1,8 @@
-# CodeQL — static analysis for the C# sources (#147 supply-chain).
-#
-# Thin CALLER of the org reusable
-# (lvlup-sw/.github/.github/workflows/codeql.yml). The analysis logic and the
-# codeql-action SHA pins live there. This file owns only the triggers and the
-# call-site inputs.
-#
-# Buildless analysis (build-mode: none) so the scan does not depend on the
-# solution file format. Triggers on PRs and pushes to main, plus a weekly
-# schedule so newly disclosed queries catch code that has not changed.
-#
-# This repository is public, so GitHub code scanning is available without a
-# GHAS gate (unlike the private hierophant caller).
-
+# GitHub Actions owns main and weekly C# scans. Buildkite owns PR scans.
 name: CodeQL
 
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
   schedule:
     # Weekly, Mondays 07:00 UTC.
@@ -33,12 +18,7 @@ jobs:
       contents: read
       security-events: write   # upload CodeQL results to the Security tab
       actions: read            # read the base run for the PR overlay cache
-    # Org reusable workflows are pinned to the v1 tag, which resolved to
-    # c10269573359bc91ff59fe5e9cb8090bbc6cb87a when this pin was set. A tag is
-    # movable, so the SHA is recorded here to make that visible; the reusable
-    # SHA-pins its internal actions, so the action graph under this ref is fixed.
-    # Pinned to the same immutable org-workflow revision as ci.yml (the moving v1 tag lags it).
-    uses: lvlup-sw/.github/.github/workflows/codeql.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: ./.github/workflows/lvlup-codeql-ffd6fb4.yml
     with:
       languages: csharp
       build-mode: none
