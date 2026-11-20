@@ -66,3 +66,10 @@ Layout rules: `src/` holds product projects only, and every test project lives u
 - **Focus Areas**: Security vulnerabilities, code quality, dependency hygiene
 - **Ignore Patterns**: `**/bin/`, `**/obj/`, `**/node_modules/`, `.git/`, `TestResults/`, `coverage/`, `packages/`
 - **Severity Threshold**: Report Medium and above
+
+## Pull requests
+
+When you create or update a pull request, follow `.agents/skills/write-pr/SKILL.md`.
+Use only the five headings in `.github/PULL_REQUEST_TEMPLATE.md`.
+Write the body in Simple English.
+Keep the body short.

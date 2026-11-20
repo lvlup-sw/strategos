@@ -134,3 +134,10 @@ Two tag trains, contracts first: `contracts-vX.Y.Z` publishes `LevelUp.Strategos
 | Published documentation source | `docs/src/content/docs/` (learn, guide, reference, examples) |
 | Contracts package README | `src/Strategos.Contracts/README.md` |
 | Roadmap tracker | lvlup-sw/strategos#153 |
+
+## Pull requests
+
+When you create or update a pull request, follow `.claude/skills/write-pr/SKILL.md`.
+Use only the five headings in `.github/PULL_REQUEST_TEMPLATE.md`.
+Write the body in Simple English.
+Keep the body short.
