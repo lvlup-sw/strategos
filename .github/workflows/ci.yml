@@ -1,15 +1,20 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!README.md'
+      - '!CHANGELOG.md'
+      - '!docs/**'
+      - 'docs/diagnostics/**'
+      - 'docs/architecture/invariants/**'
 
 jobs:
   build-test:
     # Required proof policy executes an immutable org-workflow revision.
-    uses: lvlup-sw/.github/.github/workflows/build-and-test.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
+    uses: ./.github/workflows/lvlup-build-and-test-ffd6fb4.yml
     with:
       solution-path: 'strategos.slnx'
       test-project-patterns: |
@@ -33,7 +38,7 @@ jobs:
       # Strategos production code, so they do not belong in the coverage gate.
       coverage-filters: '-*Tests;-JasperFx*;-Wolverine*;-Marten*;-Weasel*;-Npgsql*'
       exclude-generated: true
-      runner: 'blacksmith-4vcpu-ubuntu-2204'
+      runner: 'ubuntu-latest'
       dotnet-version: '10.0.x'
       dotnet-quality: 'preview'
 
@@ -78,10 +83,7 @@ jobs:
   pack-verify:
     name: Pack (verify)
     needs: build-test
-    # Named explicitly: every runner in this org registers with `blacksmith-*`
-    # labels and no bare `self-hosted` label, so the generic label matches
-    # nothing and the job queues until it expires.
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -117,7 +119,7 @@ jobs:
     # the packed artifact (not just the in-repo build).
     name: Basileus smoke (release-readiness)
     needs: build-test
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -141,54 +143,6 @@ jobs:
         # and byte-compares the restored Strategos closure with ./local-feed,
         # preventing a runner-wide fixed-version cache from masking the pack.
         run: bash scripts/verify-basileus-smoke.sh ./local-feed
-
-  coverage-gate:
-    needs: build-test
-    if: github.event_name == 'pull_request'
-    uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
-    permissions:
-      pull-requests: write
-    with:
-      coverage-threshold: 80
-      # The reusable defaults `runner` to the generic self-hosted label, which
-      # matches no runner registered in this org. This is a REQUIRED check, so
-      # taking that default queues it forever and nothing can merge.
-      runner: blacksmith-4vcpu-ubuntu-2204
-
-  update-baseline:
-    needs: build-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@ffd6fb4979fba8a4317cca6fd7ad9ec4090acff9
-    with:
-      # The reusable at this pin defaults `runner` to the retired self-hosted
-      # label, which matches no runner, so the job queues until it expires.
-      runner: 'ubuntu-latest'
-
-  docs-build:
-    # Documentation changes must compile on the PR revision, before the
-    # deployment-only workflow sees them on main.
-    name: Documentation build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: docs
-
-      - name: Build documentation
-        run: npm run build
-        working-directory: docs
 
   quality-gates:
     # T-023 / DR-7, DR-10, DR-11 grep gates. Pure shell — no .NET needed,

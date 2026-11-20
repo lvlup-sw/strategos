@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default Microsoft code-coverage settings for actions/dotnet-build-test when
+  `exclude-generated: true` (issue #21). Passed to the Microsoft.Testing
+  .Extensions.CodeCoverage collector via the coverage-settings option. It keeps
+  generated code out of the coverage denominator by GeneratedCodeAttribute AND
+  by .g.cs / .g.i.cs / .Designer.cs source paths, so generated code never
+  pollutes coverage even for consumers whose generators do not stamp
+  [ExcludeFromCodeCoverage].
+
+  IMPORTANT: a supplied settings file fully specifies the <CodeCoverage> config,
+  so this file deliberately RE-DECLARES the standard defaults it must preserve,
+  rather than only adding the generated-code rules:
+    - ExcludeFromCodeCoverageAttribute is still honored.
+    - DebuggerHidden / DebuggerNonUserCode are still excluded.
+    - IncludeTestAssembly=False keeps test projects out of coverage (the MTP
+      Microsoft.Testing.Extensions.CodeCoverage default; VSTest defaulted true).
+
+  Exclude entries are ECMAScript regular expressions, matched case-insensitively
+  (NOT globs). CompilerGeneratedAttribute is intentionally NOT excluded —
+  excluding it would also drop async/await, yield, and auto-property code from
+  coverage. Schema ref:
+  https://learn.microsoft.com/dotnet/core/additional-tools/dotnet-coverage#settings
+-->
+<Configuration>
+  <CodeCoverage>
+    <IncludeTestAssembly>False</IncludeTestAssembly>
+
+    <!-- Exclude elements carrying these attributes (full name, anchored). -->
+    <Attributes>
+      <Exclude>
+        <Attribute>^System\.Diagnostics\.DebuggerHiddenAttribute$</Attribute>
+        <Attribute>^System\.Diagnostics\.DebuggerNonUserCodeAttribute$</Attribute>
+        <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>
+        <Attribute>^System\.Diagnostics\.CodeAnalysis\.ExcludeFromCodeCoverageAttribute$</Attribute>
+      </Exclude>
+    </Attributes>
+
+    <!-- Exclude elements defined in generated source files (by path suffix). -->
+    <Sources>
+      <Exclude>
+        <Source>.*\.g\.cs$</Source>
+        <Source>.*\.g\.i\.cs$</Source>
+        <Source>.*\.Designer\.cs$</Source>
+      </Exclude>
+    </Sources>
+  </CodeCoverage>
+</Configuration>

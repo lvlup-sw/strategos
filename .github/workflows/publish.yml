@@ -19,7 +19,7 @@ permissions:
 jobs:
   publish:
     name: Publish to NuGet
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     environment: nuget-publish
     steps:
       - name: Checkout
@@ -27,6 +27,29 @@ jobs:
         with:
           fetch-depth: 0  # Required for MinVer and git-cliff
           fetch-tags: true  # Explicitly fetch tags for version detection
+
+      - name: Classify the exact release tag
+        id: release-kind
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          core='(0|[1-9][0-9]*)'
+          tag_expression="^${core}\.${core}\.${core}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$"
+          [[ "$RELEASE_TAG" == v* && "$version" =~ $tag_expression ]]
+          [[ "$(git rev-parse 'HEAD^{commit}')" == "$(git rev-parse "$GITHUB_SHA^{commit}")" ]]
+          if [[ "$version" == *-* ]]; then
+            IFS='.' read -ra identifiers <<<"${version#*-}"
+            for identifier in "${identifiers[@]}"; do
+              if [[ "$identifier" =~ ^0[0-9]+$ ]]; then exit 1; fi
+            done
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          fi
+          printf 'MinVerVersionOverride=%s\n' "$version" >> "$GITHUB_ENV"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -62,6 +85,14 @@ jobs:
 
       - name: Pack
         run: dotnet pack ${{ env.SOLUTION_PATH }} --no-build --configuration Release --output ./packages
+
+      - name: Verify stable packed consumers
+        if: steps.release-kind.outputs.stable == 'true'
+        run: |
+          set -euo pipefail
+          bash scripts/verify-generator-consumer-build.sh ./packages
+          bash scripts/pack-to-local-feed.sh ./local-feed
+          bash scripts/verify-basileus-smoke.sh ./local-feed
 
       - name: List packages
         run: ls -la ./packages/
