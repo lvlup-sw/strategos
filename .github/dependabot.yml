@@ -1,5 +1,5 @@
 # Dependabot updates action pins in the remaining GitHub workflows.
-# Renovate maintains .NET packages. Buildkite selects and runs PR validation.
+# Buildkite selects and runs PR validation.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
