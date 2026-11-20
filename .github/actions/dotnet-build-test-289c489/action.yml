@@ -133,6 +133,7 @@ runs:
         set -uo pipefail
         mkdir -p ./TestResults
         failed=0
+        selected_projects=0
 
         # Optional MTP --treenode-filter, applied to every project (e.g. to
         # exclude a [Category=...] that runs in a separate gated job). Empty =
@@ -228,8 +229,9 @@ runs:
               continue
             fi
 
+            selected_projects=$((selected_projects + 1))
             projname=$(basename "$proj" .csproj)
-            coverage_path="${GITHUB_WORKSPACE}/TestResults/${projname}.cobertura.xml"
+            coverage_path="${GITHUB_WORKSPACE}/TestResults/${selected_projects}-${projname}.cobertura.xml"
             echo "Running tests: $proj"
 
             # Reuse only the Release target produced by the solution build in
@@ -254,6 +256,10 @@ runs:
           done
         done <<< "$TEST_PROJECT_PATTERNS"
 
+        if [[ "$selected_projects" -eq 0 ]]; then
+          echo "::error::No test projects selected"
+          failed=1
+        fi
         if [[ "$failed" -eq 0 ]]; then
           echo "tests-passed=true" >> $GITHUB_OUTPUT
         else

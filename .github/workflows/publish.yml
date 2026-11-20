@@ -49,6 +49,7 @@ jobs:
           else
             echo "stable=true" >> "$GITHUB_OUTPUT"
           fi
+          printf 'MinVerVersionOverride=%s\n' "$version" >> "$GITHUB_ENV"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
