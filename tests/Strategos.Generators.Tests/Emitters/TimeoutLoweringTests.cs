@@ -222,7 +222,7 @@ public class TimeoutLoweringTests
         new SagaTimeoutComponentEmitter().Emit(source, model);
 
         var handler = source.ToString();
-        await Assert.That(handler).Contains("            ? Phase != SharedDeadlinePhase.Shared\n");
+        await Assert.That(handler).Contains($"            ? Phase != SharedDeadlinePhase.Shared{Environment.NewLine}");
         await Assert.That(handler).Contains("Fork_parallel_Path0ExecutionId == t.ForwardExecutionId");
         await Assert.That(handler).Contains("MarkCompleted();");
     }
