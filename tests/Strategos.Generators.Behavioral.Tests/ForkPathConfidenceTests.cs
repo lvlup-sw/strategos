@@ -155,13 +155,19 @@ public sealed class ForkPathConfidenceTests
 
         // Restart the fork with a result from the former execution still in flight.
         _ = saga.Handle(intake, session, logger).ToArray();
-        var former = saga.Handle(assessStart, logger).OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var former = saga.Handle(assessStart, logger).ToArray();
+        var formerWorker = former.OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var staleTimeout = former.OfType<ForkPathConfidenceSaga.ForkConfAssessStepTimeout>().Single();
         _ = saga.Handle(intake, session, logger).ToArray();
-        var staleResult = new ForkConfAssessStepCompleted(workflowId, former.StepExecutionId, state, 0.1, now);
+        var staleResult = new ForkConfAssessStepCompleted(workflowId, formerWorker.StepExecutionId, state, 0.1, now);
         await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
 
-        var assessWorker = saga.Handle(assessStart, logger).OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
         var siblingWorker = saga.Handle(siblingStart, logger).OfType<ExecuteForkConfSecondPathStepWorkerCommand>().Single();
+        var assess = saga.Handle(assessStart, logger).ToArray();
+        var assessWorker = assess.OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var deadline = assess.OfType<ForkPathConfidenceSaga.ForkConfAssessStepTimeout>().Single();
+        saga.Handle(staleTimeout, logger);
+        await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfAssessStep);
         await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
         await Assert.That(saga.Handle(assessStart, logger).ToArray().Length).IsEqualTo(0);
         events.DidNotReceive().Append(workflowId, staleResult);
@@ -172,6 +178,24 @@ public sealed class ForkPathConfidenceTests
         var first = gatedPathFirst ? saga.Handle(gatedResult, session, logger) : saga.Handle(siblingResult, session, logger);
         await Assert.That(first.ToArray().Length).IsEqualTo(0);
         events.DidNotReceive().Append(workflowId, Arg.Any<ForkPathConfidenceLowConfidenceRouted>());
+        if (gatedPathFirst)
+        {
+            // The path finished on time. Its delayed deadline may fire before its sibling finishes.
+            saga.Handle(deadline, logger);
+            await Assert.That(saga.Phase).IsEqualTo(ForkPathConfidencePhase.ForkConfAssessStep);
+
+            // The same deadline still fails an active path when another path owns the phase.
+            var active = new ForkPathConfidenceSaga
+            {
+                WorkflowId = workflowId,
+                State = state,
+                Phase = ForkPathConfidencePhase.ForkConfSecondPathStep,
+                Fork_ForkPathConfidence_Fork0_Path0Status = ForkPathStatus.InProgress,
+                Fork_ForkPathConfidence_Fork0_Path0ExecutionId = assessWorker.StepExecutionId,
+            };
+            active.Handle(deadline, logger);
+            await Assert.That(active.Phase).IsEqualTo(ForkPathConfidencePhase.Failed);
+        }
 
         var second = gatedPathFirst ? saga.Handle(siblingResult, session, logger) : saga.Handle(gatedResult, session, logger);
         var route = second.Single();

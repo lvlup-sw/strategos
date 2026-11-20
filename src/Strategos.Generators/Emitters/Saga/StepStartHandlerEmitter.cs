@@ -220,7 +220,7 @@ internal sealed class StepStartHandlerEmitter
             // delivery from the TimeoutMessage base and re-enters the saga later.
             sb.AppendLine();
             sb.AppendLine("        // Start the timeout deadline race for this step.");
-            EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
+            EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence, forkPath);
         }
 
         sb.AppendLine("    }");
@@ -432,7 +432,7 @@ internal sealed class StepStartHandlerEmitter
             forkPath);
         sb.AppendLine();
         sb.AppendLine("        // Start the timeout deadline race for this step.");
-        EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence);
+        EmitTimeoutConstruction(sb, model, stepName, compensationOccurrence, forkPath);
         sb.AppendLine("    }");
     }
 
@@ -539,12 +539,13 @@ internal sealed class StepStartHandlerEmitter
         StringBuilder sb,
         WorkflowModel model,
         string stepName,
-        CompensationOccurrence? occurrence)
+        CompensationOccurrence? occurrence,
+        string? forkPath)
     {
         sb.Append($"        yield return new {stepName}Timeout(WorkflowId)");
         if (!CompensationTopology.UsesDerivedRuntime(model))
         {
-            sb.AppendLine(";");
+            sb.AppendLine(forkPath is null ? ";" : " { ForwardExecutionId = executionId };");
             return;
         }
 

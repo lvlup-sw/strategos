@@ -73,8 +73,17 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
                 continue;
             }
 
+            var forkPaths = topology is null
+                ? (model.Forks ?? [])
+                    .Where(fork => fork.HasConfidenceGate)
+                    .SelectMany(fork => fork.Paths
+                        .Where(path => path.Steps.Count > 0 && path.LastStepName == phaseName)
+                        .Select(path => fork.PathPropertyPrefix(path.PathIndex)))
+                    .ToArray()
+                : [];
+
             sb.AppendLine();
-            EmitTimeoutMessageRecord(sb, model, phaseName, stepModel.Timeout);
+            EmitTimeoutMessageRecord(sb, model, phaseName, stepModel.Timeout, forkPaths.Length > 0);
 
             sb.AppendLine();
             EmitTimeoutHandler(
@@ -87,7 +96,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
                         phaseName,
                         StringComparison.Ordinal))
                     .OrderBy(static occurrence => occurrence.StableKey, StringComparer.Ordinal)
-                    .ToList() ?? []);
+                    .ToList() ?? [],
+                forkPaths);
         }
     }
 
@@ -100,7 +110,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
         StringBuilder sb,
         WorkflowModel model,
         string phaseName,
-        TimeoutModel timeout)
+        TimeoutModel timeout,
+        bool tracksForkExecution)
     {
         // Reconstruct the configured TimeSpan deterministically from ticks so the
         // emitted literal is exact regardless of how the duration was expressed in
@@ -114,7 +125,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
         sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    public sealed record {phaseName}Timeout(");
         sb.AppendLine("        [property: Wolverine.Persistence.Sagas.SagaIdentity] Guid WorkflowId)");
-        if (!CompensationTopology.UsesDerivedRuntime(model))
+        var usesDerivedRuntime = CompensationTopology.UsesDerivedRuntime(model);
+        if (!usesDerivedRuntime && !tracksForkExecution)
         {
             sb.AppendLine($"        : TimeoutMessage(System.TimeSpan.FromTicks({ticks}L));");
             return;
@@ -122,6 +134,13 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
 
         sb.AppendLine($"        : TimeoutMessage(System.TimeSpan.FromTicks({ticks}L))");
         sb.AppendLine("    {");
+        if (!usesDerivedRuntime)
+        {
+            sb.AppendLine("        public Guid? ForwardExecutionId { get; init; }");
+            sb.AppendLine("    }");
+            return;
+        }
+
         sb.AppendLine("        public string? ForwardOccurrenceKey { get; init; }");
         sb.AppendLine();
         sb.AppendLine("        public string? CompensationScopeKey { get; init; }");
@@ -148,7 +167,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
         StringBuilder sb,
         WorkflowModel model,
         string phaseName,
-        IReadOnlyList<CompensationOccurrence> occurrences)
+        IReadOnlyList<CompensationOccurrence> occurrences,
+        IReadOnlyList<string> forkPaths)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var usesDerivedRuntime = CompensationTopology.UsesDerivedRuntime(model);
@@ -183,7 +203,21 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
 
         sb.AppendLine("        ArgumentNullException.ThrowIfNull(logger, nameof(logger));");
         sb.AppendLine();
-        if (!usesDerivedRuntime)
+        if (forkPaths.Count > 0)
+        {
+            // The final worker's completion and timeout compete for the same
+            // active path slot. A sibling may have changed the global phase.
+            var activePaths = string.Join(" || ", forkPaths.Select(path =>
+                $"({path}Status == Strategos.Definitions.ForkPathStatus.InProgress && {path}ExecutionId == t.ForwardExecutionId)"));
+            sb.AppendLine("        if (t.ForwardExecutionId == Guid.Empty");
+            sb.AppendLine($"            || (t.ForwardExecutionId is null && Phase != {model.PhaseEnumName}.{phaseName})");
+            sb.AppendLine($"            || !({activePaths}))");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+        }
+        else if (!usesDerivedRuntime)
         {
             sb.AppendLine("        // Race guard: if the step already completed, the saga's Phase has");
             sb.AppendLine("        // advanced past this step and the timeout is a no-op (the Completed");

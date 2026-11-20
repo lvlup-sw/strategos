@@ -92,7 +92,7 @@ public sealed class ForkConfIntakeStep(WorkflowInvocationLog log) : IWorkflowSte
 /// path). Returns a step result whose <c>Confidence</c> is 0.5 — below the 0.85
 /// threshold — so the generated fork path-completed handler's confidence gate routes to
 /// <see cref="ForkConfReviewStep"/> AND appends the <c>LowConfidenceRouted</c> audit
-/// event, instead of marking the path complete and joining.
+/// event after all fork paths finish, before the join can run.
 /// </summary>
 /// <param name="log">The shared invocation log injected by the host.</param>
 public sealed class ForkConfAssessStep(WorkflowInvocationLog log) : IWorkflowStep<ForkPathConfidenceState>
@@ -139,7 +139,7 @@ public sealed class ForkConfReviewStep(WorkflowInvocationLog log) : IWorkflowSte
 /// <summary>
 /// The single step of the SECOND fork path (deterministic, not confidence-gated). It
 /// runs so the fork is well-formed; its completion marks path 1 succeeded but the join
-/// never fires because path 0 diverted to the handler and never reached Success.
+/// stays bypassed because path 0 requests review.
 /// </summary>
 /// <param name="log">The shared invocation log injected by the host.</param>
 public sealed class ForkConfSecondPathStep(WorkflowInvocationLog log) : IWorkflowStep<ForkPathConfidenceState>
@@ -231,6 +231,7 @@ public static partial class ForkPathConfidenceWorkflowDefinition
             .StartWith<ForkConfIntakeStep>()
             .Fork(
                 path => path.Then<ForkConfAssessStep>(step => step
+                    .WithTimeout(TimeSpan.FromMinutes(5))
                     .RequireConfidence(0.85)
                     .OnLowConfidence(alt => alt.Then<ForkConfReviewStep>())),
                 path => path.Then<ForkConfSecondPathStep>())
