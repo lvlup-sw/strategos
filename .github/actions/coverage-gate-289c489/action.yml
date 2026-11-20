@@ -1,0 +1,154 @@
+# =============================================================================
+# Composite Action: Coverage Gate & PR Comment
+# =============================================================================
+# Enforces a code-coverage threshold against a merged Cobertura report and
+# posts/updates a summary comment on the pull request. This is the composable
+# primitive behind the org's `coverage-gate.yml` reusable workflow (single
+# source of truth): the workflow is a thin preset over this action.
+#
+# It wraps the shared `scripts/ci/coverage-gate.sh` and maps its inputs onto
+# the script's CLI. The DEFAULT inputs (gate-mode=aggregate, metrics=line)
+# reproduce the org's historical aggregate/line gate byte-for-byte, so the
+# three existing consumers (strategos/basileus/DataFerry) are unaffected.
+#
+# Modes (input -> script flag):
+#   gate-mode=aggregate     -> --coverage-file <coverage-file>   (default)
+#   gate-mode=per-project   -> --per-project   <report-dir>
+#   gate-mode=per-assembly  -> --per-assembly  <coverage-file>
+#   metrics=line|line+branch-> --metrics <metrics>   (aggregate mode only)
+#   exclude="<globs>"       -> --exclude <glob> (repeated, per-project/assembly)
+#   assembly-thresholds=... -> ASSEMBLY_THRESHOLDS env (per-assembly tiered floors)
+#   threshold=N             -> --threshold N
+#   output-dir=DIR          -> --output-dir DIR
+#
+# The action sparse-checks-out the shared `scripts/ci` from lvlup-sw/.github to
+# `.shared` (matching the historical workflow). The caller is responsible for
+# producing the merged Cobertura report referenced by `coverage-file` /
+# `report-dir` (e.g. via the `dotnet-build-test` action + ReportGenerator, as
+# the `coverage-gate.yml` preset does).
+# =============================================================================
+
+name: 'Coverage Gate'
+description: 'Enforce a Cobertura coverage threshold and post/update a PR comment. Wraps the org shared coverage-gate.sh.'
+
+inputs:
+  threshold:
+    description: 'Minimum coverage percentage (line always; branch in per-project/per-assembly, or aggregate when metrics=line+branch).'
+    required: false
+    default: '90'
+  gate-mode:
+    description: 'Gate mode: aggregate (single merged report, default), per-project (each *.cobertura.xml in a dir), or per-assembly (each <package> in one merged report).'
+    required: false
+    default: 'aggregate'
+  metrics:
+    description: 'Aggregate mode only: "line" (default, line-only gate — org-historical behavior) or "line+branch" (also gate branch).'
+    required: false
+    default: 'line'
+  coverage-file:
+    description: 'Path to the merged Cobertura XML. Used by gate-mode=aggregate (--coverage-file) and gate-mode=per-assembly (--per-assembly).'
+    required: false
+    default: './coverage-merged/Cobertura.xml'
+  report-dir:
+    description: 'Directory of per-project *.cobertura.xml reports. Used by gate-mode=per-project (--per-project).'
+    required: false
+    default: './coverage-reports'
+  exclude:
+    description: 'Whitespace-separated globs of units to skip (per-project: Cobertura file name; per-assembly: <package> name). One --exclude per glob.'
+    required: false
+    default: ''
+  assembly-thresholds:
+    description: >-
+      (gate-mode=per-assembly only) Optional risk-tiered floor map: a
+      newline-separated list of "GLOB = LINE[/BRANCH]" rules applied to each
+      <package> whose name matches GLOB. First matching rule wins; assemblies
+      matching no rule fall back to `threshold`. Omit BRANCH (e.g.
+      "*.Host = 70") to gate line only. Passed to the gate as ASSEMBLY_THRESHOLDS.
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory for the generated pr-comment.md and other gate output.'
+    required: false
+    default: './coverage-merged'
+  shared-ref:
+    description: 'Ref of lvlup-sw/.github to sparse-checkout the shared scripts/ci from. Pin to a SHA/tag for reproducibility.'
+    required: false
+    default: 'main'
+  pr-number:
+    description: 'Pull-request number to comment on. Defaults to the triggering PR; set explicitly when the PR context is not available (e.g. canary fixtures).'
+    required: false
+    default: ''
+  github-token:
+    description: 'Token used to post the PR comment. Requires pull-requests: write on the calling job.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run coverage gate
+      id: coverage
+      shell: bash
+      env:
+        COVERAGE_GATE_ACTION: ${{ github.action_path }}
+        GATE_MODE: ${{ inputs.gate-mode }}
+        METRICS: ${{ inputs.metrics }}
+        THRESHOLD: ${{ inputs.threshold }}
+        COVERAGE_FILE: ${{ inputs.coverage-file }}
+        REPORT_DIR: ${{ inputs.report-dir }}
+        EXCLUDE_GLOBS: ${{ inputs.exclude }}
+        ASSEMBLY_THRESHOLDS: ${{ inputs.assembly-thresholds }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        chmod +x "${COVERAGE_GATE_ACTION}/coverage-gate.sh"
+
+        args=()
+        case "$GATE_MODE" in
+          aggregate)
+            args+=(--coverage-file "$COVERAGE_FILE" --metrics "$METRICS")
+            ;;
+          per-project)
+            args+=(--per-project "$REPORT_DIR")
+            ;;
+          per-assembly)
+            args+=(--per-assembly "$COVERAGE_FILE")
+            ;;
+          *)
+            echo "::error::Invalid gate-mode '$GATE_MODE' (expected aggregate|per-project|per-assembly)"
+            exit 1
+            ;;
+        esac
+
+        args+=(--threshold "$THRESHOLD" --output-dir "$OUTPUT_DIR")
+
+        # Map the whitespace-separated `exclude` input to repeated --exclude flags.
+        if [ -n "$EXCLUDE_GLOBS" ]; then
+          # shellcheck disable=SC2206  # intentional word-splitting of the glob list
+          globs=($EXCLUDE_GLOBS)
+          for g in "${globs[@]}"; do
+            args+=(--exclude "$g")
+          done
+        fi
+
+        echo "Running: coverage-gate.sh ${args[*]}"
+        "${COVERAGE_GATE_ACTION}/coverage-gate.sh" "${args[@]}"
+
+    - name: Post PR comment
+      if: always() && (inputs.pr-number != '' || github.event.pull_request.number)
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        PR_NUMBER: ${{ inputs.pr-number != '' && inputs.pr-number || github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        if [ -f "$OUTPUT_DIR/pr-comment.md" ] && command -v gh >/dev/null 2>&1; then
+          gh pr comment "$PR_NUMBER" \
+            --repo "$REPO" \
+            --body-file "$OUTPUT_DIR/pr-comment.md" \
+            --edit-last || \
+          gh pr comment "$PR_NUMBER" \
+            --repo "$REPO" \
+            --body-file "$OUTPUT_DIR/pr-comment.md"
+        fi
