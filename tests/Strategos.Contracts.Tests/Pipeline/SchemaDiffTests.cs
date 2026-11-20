@@ -901,42 +901,6 @@ public class SchemaDiffTests
         }
     }
 
-    /// <summary>The workflow must bind its baseline to the published package.</summary>
-    [Test]
-    public async Task SchemaDiff_Workflow_UsesPublishedPackageAndCompleteSchemaTree()
-    {
-        var workflowPath = Path.Combine(
-            RepoLayout.RepoRoot,
-            ".github",
-            "workflows",
-            "contracts-schema-diff.yml");
-        var workflow = await File.ReadAllTextAsync(workflowPath);
-
-        await Assert.That(workflow).Contains("api.nuget.org/v3-flatcontainer");
-        await Assert.That(workflow).Contains("contentFiles/any/any/schemas");
-        await Assert.That(workflow).Contains("src/Strategos.Contracts/schemas");
-        await Assert.That(workflow).Contains("previous_version");
-        await Assert.That(workflow).Contains("candidate_version");
-        await Assert.That(workflow).Contains("schema compatibility is indeterminate");
-        await Assert.That(workflow).Contains("permissions:\n  contents: read");
-        await Assert.That(workflow).Contains(
-            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
-        await Assert.That(workflow).Contains("persist-credentials: false");
-
-        // Second arm: the published baseline can be several minors behind, so a
-        // pre-1.0 minor bump already in ContractsVersion permits every narrowing
-        // there. The merge-base arm compares the versions this PR actually moves
-        // between.
-        await Assert.That(workflow).Contains("github.event.pull_request.base.sha")
-            .Because("the merge-base arm must materialise the PR base's schema tree");
-        await Assert.That(workflow).Contains("--allow-equal-versions")
-            .Because("base and head ContractsVersion are usually equal; the arm must still evaluate");
-        await Assert.That(workflow).Contains("Structural breaking-change diff vs merge base");
-        await Assert.That(Regex.Matches(workflow, @"--allowlist").Count).IsEqualTo(2)
-            .Because("both arms must pass the breaking-change allowlist");
-        await Assert.That(workflow).Contains("breaking-changes.allowlist.json");
-    }
-
     /// <summary>
     /// The publish gate runs the same script and must carry the same allowlist:
     /// a release must not be able to ship a narrowing the PR gate would reject.

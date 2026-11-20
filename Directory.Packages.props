@@ -56,8 +56,9 @@
          target; it exposes CompensatingAction on the error-handling chain
          and the TimeoutMessage saga base needed by later DR-9 tasks. The
          design's "3.x" note predates the 6.x release; 6.12.0 supersedes it.
-         WolverineFx.Marten 6.12.0 depends on Marten 9.8.0 — pinned to 9.9.0
-         (>= 9.8.0). Npgsql 10.0.3 (above) satisfies Weasel.Postgresql's
+         WolverineFx.Marten 6.12.0 depends on Marten 9.8.0. Use Marten
+         9.13.0 to include the GHSA-rfx3-98h7-v3xp security fix.
+         Npgsql 10.0.3 (above) satisfies Weasel.Postgresql's
          Npgsql >= 9.0.4 floor. Wolverine/Marten are referenced now but only
          *used* by a later host-wiring task; this task uses Npgsql +
          Testcontainers for the fixture + smoke test only. -->
@@ -68,7 +69,7 @@
          host fixture. RuntimeCompilation auto-registers the IAssemblyGenerator
          so the host can start in TypeLoadMode.Dynamic. -->
     <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.12.0" />
-    <PackageVersion Include="Marten" Version="9.9.0" />
+    <PackageVersion Include="Marten" Version="9.13.0" />
     <!-- 4.14.0 lifts transitive SSH.NET to the CVE-2026-48798-patched 2026.0.0 release. -->
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
   </ItemGroup>
