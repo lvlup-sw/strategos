@@ -137,6 +137,11 @@ internal sealed class ForkDispatchHandlerEmitter
         sb.AppendLine("            WorkflowId);");
         sb.AppendLine();
 
+        if (fork.HasConfidenceGate)
+        {
+            sb.AppendLine($"        Fork_{sanitizedId}_LowConfidencePath = null;");
+        }
+
         // Set all path statuses to InProgress
         sb.AppendLine("        // Initialize all path statuses to InProgress");
         foreach (var path in fork.Paths)

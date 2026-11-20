@@ -127,6 +127,20 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
                 // Sanitize ForkId for valid C# identifier
                 var sanitizedId = fork.ForkId.Replace("-", "_");
 
+                if (fork.HasConfidenceGate)
+                {
+                    sb.AppendLine("    /// <summary>");
+                    sb.AppendLine("    /// Gets or sets the first path that requested low-confidence routing.");
+                    sb.AppendLine("    /// </summary>");
+                    sb.AppendLine($"    public int? Fork_{sanitizedId}_LowConfidencePath {{ get; set; }}");
+                    sb.AppendLine();
+                    sb.AppendLine("    /// <summary>");
+                    sb.AppendLine("    /// Gets or sets the confidence score for the pending route.");
+                    sb.AppendLine("    /// </summary>");
+                    sb.AppendLine($"    public double Fork_{sanitizedId}_LowConfidenceScore {{ get; set; }}");
+                    sb.AppendLine();
+                }
+
                 foreach (var path in fork.Paths)
                 {
                     // Path status property

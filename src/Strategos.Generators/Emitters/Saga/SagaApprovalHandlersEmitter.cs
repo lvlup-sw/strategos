@@ -309,6 +309,11 @@ internal sealed class SagaApprovalHandlersEmitter
         sb.AppendLine("                }");
         sb.AppendLine();
         sb.AppendLine($"                Phase = {model.PhaseEnumName}.Forking_{sanitizedId};");
+        if (fork.HasConfidenceGate)
+        {
+            sb.AppendLine($"                Fork_{sanitizedId}_LowConfidencePath = null;");
+        }
+
         foreach (var path in fork.Paths)
         {
             sb.AppendLine($"                Fork_{sanitizedId}_Path{path.PathIndex}Status = Strategos.Definitions.ForkPathStatus.InProgress;");

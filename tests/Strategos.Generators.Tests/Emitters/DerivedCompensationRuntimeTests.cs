@@ -283,11 +283,15 @@ public class DerivedCompensationRuntimeTests
         var emitted = source.ToString();
         var journalIndex = emitted.IndexOf("RecordCompensationCompletion(", StringComparison.Ordinal);
         var quiescenceIndex = emitted.IndexOf("PendingCompensationForkId", StringComparison.Ordinal);
-        var confidenceIndex = emitted.IndexOf("if (evt.Confidence", StringComparison.Ordinal);
+        var confidenceIndex = emitted.IndexOf("Fork_fan_out_LowConfidencePath = 0;", StringComparison.Ordinal);
+        var readyIndex = emitted.IndexOf("if (CheckJoinReady_fan_out())", StringComparison.Ordinal);
+        var routeIndex = emitted.IndexOf("RouteLowConfidence_fan_out(logger", StringComparison.Ordinal);
 
         await Assert.That(journalIndex).IsGreaterThanOrEqualTo(0);
         await Assert.That(quiescenceIndex).IsGreaterThan(journalIndex);
         await Assert.That(confidenceIndex).IsGreaterThan(quiescenceIndex);
+        await Assert.That(readyIndex).IsGreaterThan(confidenceIndex);
+        await Assert.That(routeIndex).IsGreaterThan(readyIndex);
     }
 
     /// <summary>The authoritative generator fixture compiles with explicit LINQ use.</summary>

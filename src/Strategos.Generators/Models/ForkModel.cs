@@ -41,6 +41,11 @@ internal sealed record ForkModel(
     public int PathCount => Paths.Count;
 
     /// <summary>
+    /// Gets whether any path can divert on low confidence.
+    /// </summary>
+    public bool HasConfidenceGate => Paths.Any(path => path.ConfidenceGateStep is not null);
+
+    /// <summary>
     /// Gets a value indicating whether any path has a failure handler.
     /// </summary>
     public bool HasAnyFailureHandler => Paths.Any(p => p.HasFailureHandler);
