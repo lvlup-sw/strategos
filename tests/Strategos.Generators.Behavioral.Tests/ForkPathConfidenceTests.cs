@@ -144,14 +144,30 @@ public sealed class ForkPathConfidenceTests
         {
             WorkflowId = workflowId,
             State = state,
-            Fork_ForkPathConfidence_Fork0_Path0Status = ForkPathStatus.InProgress,
-            Fork_ForkPathConfidence_Fork0_Path1Status = ForkPathStatus.InProgress,
         };
         var session = Substitute.For<IDocumentSession>();
         var events = session.Events;
         var logger = NullLogger<ForkPathConfidenceSaga>.Instance;
-        var gatedResult = new ForkConfAssessStepCompleted(workflowId, Guid.NewGuid(), state, 0.5, DateTimeOffset.UtcNow);
-        var siblingResult = new ForkConfSecondPathStepCompleted(workflowId, Guid.NewGuid(), state, null, DateTimeOffset.UtcNow);
+        var now = DateTimeOffset.UtcNow;
+        var intake = new ForkConfIntakeStepCompleted(workflowId, Guid.NewGuid(), state, null, now);
+        var assessStart = new StartForkConfAssessStepCommand(workflowId);
+        var siblingStart = new StartForkConfSecondPathStepCommand(workflowId);
+
+        // Restart the fork with a result from the former execution still in flight.
+        _ = saga.Handle(intake, session, logger).ToArray();
+        var former = saga.Handle(assessStart, logger).OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        _ = saga.Handle(intake, session, logger).ToArray();
+        var staleResult = new ForkConfAssessStepCompleted(workflowId, former.StepExecutionId, state, 0.1, now);
+        await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
+
+        var assessWorker = saga.Handle(assessStart, logger).OfType<ExecuteForkConfAssessStepWorkerCommand>().Single();
+        var siblingWorker = saga.Handle(siblingStart, logger).OfType<ExecuteForkConfSecondPathStepWorkerCommand>().Single();
+        await Assert.That(saga.Handle(staleResult, session, logger).ToArray().Length).IsEqualTo(0);
+        await Assert.That(saga.Handle(assessStart, logger).ToArray().Length).IsEqualTo(0);
+        events.DidNotReceive().Append(workflowId, staleResult);
+
+        var gatedResult = new ForkConfAssessStepCompleted(workflowId, assessWorker.StepExecutionId, state, 0.5, now);
+        var siblingResult = new ForkConfSecondPathStepCompleted(workflowId, siblingWorker.StepExecutionId, state, null, now);
 
         var first = gatedPathFirst ? saga.Handle(gatedResult, session, logger) : saga.Handle(siblingResult, session, logger);
         await Assert.That(first.ToArray().Length).IsEqualTo(0);

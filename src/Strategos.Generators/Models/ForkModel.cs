@@ -46,6 +46,11 @@ internal sealed record ForkModel(
     public bool HasConfidenceGate => Paths.Any(path => path.ConfidenceGateStep is not null);
 
     /// <summary>
+    /// Gets the generated property prefix for a fork path.
+    /// </summary>
+    public string PathPropertyPrefix(int pathIndex) => $"Fork_{ForkId.Replace("-", "_")}_Path{pathIndex}";
+
+    /// <summary>
     /// Gets a value indicating whether any path has a failure handler.
     /// </summary>
     public bool HasAnyFailureHandler => Paths.Any(p => p.HasFailureHandler);

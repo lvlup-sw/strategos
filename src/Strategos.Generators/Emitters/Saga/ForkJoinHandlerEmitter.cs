@@ -115,7 +115,15 @@ internal sealed class ForkJoinHandlerEmitter
 
         if (fork.HasConfidenceGate)
         {
-            sb.AppendLine($"        if (Fork_{sanitizedId}_Path{path.PathIndex}Status != Strategos.Definitions.ForkPathStatus.InProgress)");
+            sb.Append($"        if (Fork_{sanitizedId}_Path{path.PathIndex}Status != Strategos.Definitions.ForkPathStatus.InProgress");
+            if (!CompensationTopology.UsesDerivedRuntime(model))
+            {
+                var executionSlot = fork.PathPropertyPrefix(path.PathIndex) + "ExecutionId";
+                sb.AppendLine();
+                sb.Append($"            || evt.StepExecutionId == Guid.Empty || ({executionSlot} is Guid active && evt.StepExecutionId != active)");
+            }
+
+            sb.AppendLine(")");
             sb.AppendLine("        {");
             sb.AppendLine("            yield break;");
             sb.AppendLine("        }");

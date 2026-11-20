@@ -150,6 +150,16 @@ internal sealed class SagaPropertiesEmitter : ISagaComponentEmitter
                     sb.AppendLine($"    public Strategos.Definitions.ForkPathStatus Fork_{sanitizedId}_Path{path.PathIndex}Status {{ get; set; }} = Strategos.Definitions.ForkPathStatus.Pending;");
                     sb.AppendLine();
 
+                    if (fork.HasConfidenceGate && !CompensationTopology.UsesDerivedRuntime(model))
+                    {
+                        sb.AppendLine("    /// <summary>");
+                        sb.AppendLine($"    /// Gets or sets the active final worker execution for path {path.PathIndex}.");
+                        sb.AppendLine("    /// Null means the path was dispatched by an older saga version.");
+                        sb.AppendLine("    /// </summary>");
+                        sb.AppendLine($"    public Guid? {fork.PathPropertyPrefix(path.PathIndex)}ExecutionId {{ get; set; }}");
+                        sb.AppendLine();
+                    }
+
                     // Path state property (nullable to store path result)
                     if (!string.IsNullOrEmpty(model.StateTypeName))
                     {
