@@ -81,6 +81,10 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
                         .Select(path => fork.PathPropertyPrefix(path.PathIndex)))
                     .ToArray()
                 : [];
+            var hasUntaggedOccurrence = forkPaths.Length > 0
+                && model.Forks!.Any(fork => fork.Paths.Any(path =>
+                    path.Steps.Take(fork.HasConfidenceGate ? path.Steps.Count - 1 : path.Steps.Count)
+                        .Any(step => step.PhaseName == phaseName)));
 
             sb.AppendLine();
             EmitTimeoutMessageRecord(sb, model, phaseName, stepModel.Timeout, forkPaths.Length > 0);
@@ -97,7 +101,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
                         StringComparison.Ordinal))
                     .OrderBy(static occurrence => occurrence.StableKey, StringComparer.Ordinal)
                     .ToList() ?? [],
-                forkPaths);
+                forkPaths,
+                hasUntaggedOccurrence);
         }
     }
 
@@ -168,7 +173,8 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
         WorkflowModel model,
         string phaseName,
         IReadOnlyList<CompensationOccurrence> occurrences,
-        IReadOnlyList<string> forkPaths)
+        IReadOnlyList<string> forkPaths,
+        bool hasUntaggedOccurrence)
     {
         var sagaClassName = NamingHelper.GetSagaClassName(model.PascalName, model.Version);
         var usesDerivedRuntime = CompensationTopology.UsesDerivedRuntime(model);
@@ -209,9 +215,17 @@ internal sealed class SagaTimeoutComponentEmitter : ISagaComponentEmitter
             // active path slot. A sibling may have changed the global phase.
             var activePaths = string.Join(" || ", forkPaths.Select(path =>
                 $"({path}Status == Strategos.Definitions.ForkPathStatus.InProgress && {path}ExecutionId == t.ForwardExecutionId)"));
-            sb.AppendLine("        if (t.ForwardExecutionId == Guid.Empty");
-            sb.AppendLine($"            || (t.ForwardExecutionId is null && Phase != {model.PhaseEnumName}.{phaseName})");
-            sb.AppendLine($"            || !({activePaths}))");
+            // An ordinary occurrence of this phase still emits the original,
+            // untagged deadline. Its phase guard remains independent of path slots.
+            var untaggedGuard = $"Phase != {model.PhaseEnumName}.{phaseName}";
+            if (!hasUntaggedOccurrence)
+            {
+                untaggedGuard += $" || !({activePaths})";
+            }
+
+            sb.AppendLine("        if (t.ForwardExecutionId is null");
+            sb.AppendLine($"            ? {untaggedGuard}");
+            sb.AppendLine($"            : t.ForwardExecutionId == Guid.Empty || !({activePaths}))");
             sb.AppendLine("        {");
             sb.AppendLine("            return;");
             sb.AppendLine("        }");
