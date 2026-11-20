@@ -1,0 +1,65 @@
+# =============================================================================
+# Reusable Workflow: Update Coverage Baseline
+# =============================================================================
+# Caches coverage baseline on main branch merges for future diff comparisons.
+# Runs after build-and-test workflow uploads coverage artifacts.
+#
+# Usage:
+#   jobs:
+#     update-baseline:
+#       needs: build-test
+#       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#       uses: lvlup-sw/.github/.github/workflows/update-baseline.yml@main
+# =============================================================================
+
+name: Update Coverage Baseline
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'GitHub Actions runner label'
+        required: false
+        type: string
+        default: 'self-hosted'
+      dotnet-version:
+        description: '.NET SDK version for ReportGenerator (e.g., 9.0.x, 10.0.x)'
+        required: false
+        type: string
+        default: '9.0.x'
+
+jobs:
+  update-baseline:
+    name: Update Coverage Baseline
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: ./coverage-reports
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Install ReportGenerator
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Generate merged report
+        run: |
+          reportgenerator \
+            -reports:"./coverage-reports/**/coverage.cobertura.xml" \
+            -targetdir:"./coverage-merged" \
+            -reporttypes:"JsonSummary"
+
+      # TODO: Wire up baseline consumption in coverage-gate.yml for diff comparisons
+      # See: coverage-gate.sh --baseline flag (currently unimplemented)
+      - name: Cache baseline coverage
+        uses: actions/cache/save@v4
+        with:
+          path: ./coverage-merged/Summary.json
+          key: coverage-baseline-${{ github.sha }}

@@ -1,0 +1,112 @@
+# =============================================================================
+# Reusable Workflow: Coverage Gate & PR Comment
+# =============================================================================
+# Enforces code coverage thresholds and posts a summary comment on pull
+# requests. Designed to run AFTER build-and-test.yml has uploaded the
+# 'coverage-reports' artifact containing Cobertura XML files.
+#
+# This workflow is a thin PRESET over the `actions/coverage-gate` composite
+# action (single source of truth — the gate logic lives in the action and the
+# shared scripts/ci/coverage-gate.sh). Its inputs/outputs/defaults are
+# UNCHANGED from the pre-refactor workflow, so the existing consumers
+# (strategos/basileus/DataFerry) need no change and keep identical
+# aggregate/line behavior at default inputs.
+#
+# Usage:
+#   jobs:
+#     coverage:
+#       uses: lvlup-sw/.github/.github/workflows/coverage-gate.yml@v1
+#       with:
+#         coverage-threshold: 90
+#
+# Behavior:
+#   - Downloads coverage artifacts from the calling workflow
+#   - Merges reports using ReportGenerator
+#   - Invokes the coverage-gate composite action to enforce the threshold
+#   - Posts or updates a PR comment with the coverage summary
+# =============================================================================
+
+name: Coverage Gate
+
+on:
+  workflow_call:
+    inputs:
+      coverage-threshold:
+        description: 'Minimum line coverage percent'
+        required: false
+        type: number
+        default: 90
+      dotnet-version:
+        description: '.NET SDK version for ReportGenerator (e.g., 9.0.x, 10.0.x)'
+        required: false
+        type: string
+        default: '9.0.x'
+      runner:
+        description: 'GitHub Actions runner label'
+        required: false
+        type: string
+        default: 'self-hosted'
+      gate-mode:
+        description: 'Gate mode: aggregate (default), per-project, or per-assembly. Pass-through to the coverage-gate action.'
+        required: false
+        type: string
+        default: 'aggregate'
+      metrics:
+        description: 'Aggregate-mode metric: line (default) or line+branch. Pass-through to the coverage-gate action.'
+        required: false
+        type: string
+        default: 'line'
+      assembly-thresholds:
+        description: 'gate-mode=per-assembly only: newline-separated "GLOB = LINE[/BRANCH]" risk-tiered floor rules. First match wins; unmatched assemblies use coverage-threshold. Pass-through to the coverage-gate action.'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  coverage-gate:
+    name: Enforce Coverage Threshold
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: ./coverage-reports
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Install ReportGenerator
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Merge coverage reports
+        run: |
+          reportgenerator \
+            -reports:"./coverage-reports/**/coverage.cobertura.xml" \
+            -targetdir:"./coverage-merged" \
+            -reporttypes:"Cobertura;TextSummary"
+
+      # Pinned to the v1.4 release SHA, not @main, so a consumer pinning this
+      # workflow @v1 gets a fully SHA-pinned action graph (DR-6 / T13).
+      # Dependabot (.github/dependabot.yml) keeps this pin current.
+      - name: Coverage gate
+        uses: lvlup-sw/strategos/.github/actions/coverage-gate-289c489@3234395aae38ffec45533f50a0cb57267ded0d08 # v1.6
+        with:
+          threshold: ${{ inputs.coverage-threshold }}
+          gate-mode: ${{ inputs.gate-mode }}
+          metrics: ${{ inputs.metrics }}
+          assembly-thresholds: ${{ inputs.assembly-thresholds }}
+          coverage-file: ./coverage-merged/Cobertura.xml
+          report-dir: ./coverage-reports
+          output-dir: ./coverage-merged
+          # Pin the shared scripts/ci checkout to the same release SHA as the
+          # action above, so the GATE SCRIPT is pinned too — not just the action
+          # (it otherwise defaults to @main and would float; DR-6 / T13).
+          shared-ref: 289c489837981df587525b7e6ea731a4b7e91939 # v1.6
+          github-token: ${{ github.token }}

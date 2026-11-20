@@ -1,0 +1,65 @@
+# =============================================================================
+# Reusable Workflow: Dependency Review (supply chain)
+# =============================================================================
+# Promotes the dependency-review job that hierophant ran inline into an org
+# reusable workflow. Fails a PR when it introduces dependencies with known
+# vulnerabilities (and, once Phase 5 sets it, disallowed licenses).
+#
+# Thin `workflow_call` PRESET over `actions/dependency-review-action`. The action
+# only works on `pull_request` events (it diffs the PR's base..head dependency
+# graph), so the CALLER must invoke this from a pull_request-triggered workflow
+# and owns any GHAS/`vars.GHAS_ENABLED` gating.
+#
+# License allow/deny policy is intentionally NOT set here — it is deferred to
+# Phase 5 governance (design Open Question), at which point `allow-licenses` /
+# `deny-licenses` inputs are threaded through.
+#
+# Usage:
+#   on: pull_request
+#   jobs:
+#     dependency-review:
+#       if: vars.GHAS_ENABLED == 'true'
+#       uses: lvlup-sw/.github/.github/workflows/dependency-review.yml@v1
+#       with:
+#         fail-on-severity: high
+# =============================================================================
+
+name: Dependency Review
+
+on:
+  workflow_call:
+    inputs:
+      fail-on-severity:
+        description: 'Minimum severity that fails the PR: low | moderate | high | critical.'
+        required: false
+        type: string
+        default: 'high'
+      runner:
+        description: 'GitHub Actions runner label.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      comment-summary-in-pr:
+        description: 'Post the dependency-review summary as a PR comment: always | on-failure | never.'
+        required: false
+        type: string
+        default: 'never'
+
+jobs:
+  review:
+    name: Dependency Review
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      pull-requests: write   # only used when comment-summary-in-pr != never
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: ${{ inputs.fail-on-severity }}
+          comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}

@@ -1,0 +1,100 @@
+# =============================================================================
+# Reusable Workflow: CodeQL Static Analysis (SAST)
+# =============================================================================
+# Promotes the CodeQL analysis that hierophant ran inline (and basileus runs in
+# per-stack-gates.yml) into an org reusable workflow — closing stack-seed §7.3
+# gap #3. Buildless analysis by default (`build-mode: none`), so no project
+# compile is required.
+#
+# Thin `workflow_call` PRESET over `github/codeql-action` (single source of
+# truth — the analysis logic lives in the action). Mirrors the convention of
+# build-and-test.yml / coverage-gate.yml: this workflow owns only the
+# workflow-level concerns (runs-on, the workflow_call signature, least-privilege
+# permissions); everything else is a documented passthrough input.
+#
+# The CALLER owns event triggers (push/pull_request/schedule) and any
+# GHAS/`vars.GHAS_ENABLED` gating — keep this workflow free of policy so every
+# consumer can apply its own.
+#
+# Usage:
+#   jobs:
+#     codeql:
+#       permissions:
+#         contents: read
+#         security-events: write
+#         actions: read
+#       uses: lvlup-sw/.github/.github/workflows/codeql.yml@v1
+#       with:
+#         languages: csharp        # buildless by default
+# =============================================================================
+
+name: CodeQL
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: 'Comma-separated CodeQL languages (e.g. csharp, javascript-typescript, actions).'
+        required: false
+        type: string
+        default: 'csharp'
+      build-mode:
+        description: 'CodeQL build mode for compiled languages (none | autobuild | manual). Buildless by default.'
+        required: false
+        type: string
+        default: 'none'
+      runner:
+        description: 'GitHub Actions runner label. CodeQL runs on GitHub-hosted by default.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      queries:
+        description: 'Comma-separated additional query suites/packs. Prefix with "+" to add to (not replace) config queries.'
+        required: false
+        type: string
+        default: ''
+      config-file:
+        description: 'Path to a CodeQL config file (optional).'
+        required: false
+        type: string
+        default: ''
+      upload:
+        description: "Upload SARIF to Code Scanning: always (default) | failure-only | never. Canaries pass 'never'."
+        required: false
+        type: string
+        default: 'always'
+      upload-database:
+        description: 'Whether to upload the resulting CodeQL database. Canaries pass false.'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ inputs.languages }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write   # upload CodeQL results to the Security tab
+      actions: read            # read the base run for the PR overlay cache (private repos)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          languages: ${{ inputs.languages }}
+          build-mode: ${{ inputs.build-mode }}
+          queries: ${{ inputs.queries }}
+          config-file: ${{ inputs.config-file }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          category: "/language:${{ inputs.languages }}"
+          upload: ${{ inputs.upload }}
+          upload-database: ${{ inputs.upload-database }}
