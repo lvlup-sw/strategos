@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "propertyRef": "workflow-definition/transitions/immutable-replacement",
+  "method": "stateful",
+  "caseId": "Case_10",
+  "operations": [
+    {
+      "name": "replace",
+      "domain": {
+        "kind": "enum",
+        "values": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    }
+  ],
+  "histories": [
+    [
+      {
+        "operation": "replace",
+        "args": "a"
+      },
+      {
+        "operation": "replace",
+        "args": "a"
+      }
+    ]
+  ],
+  "original": [
+    {
+      "operation": "replace",
+      "args": "b"
+    },
+    {
+      "operation": "replace",
+      "args": "c"
+    }
+  ],
+  "signature": "stateful/replace/state-mismatch",
+  "reduction": {
+    "attempts": 11,
+    "rejected": 0,
+    "duplicates": 5,
+    "exhausted": false,
+    "aborted": null
+  }
+}
