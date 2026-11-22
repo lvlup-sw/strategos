@@ -1,1 +1,1 @@
-Temporary fixture for native Buildkite status verification. Close this PR after the smoke run.
+Disposable PR fixture for the shared native Buildkite status check. This branch will be closed after verification.
