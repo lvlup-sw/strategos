@@ -15,6 +15,12 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
+## [0.15.1] — 2026-11-23
+
+### Added
+
+- Two invariant conformance fixtures for consumer validation.
+
 ## [0.15.0] — 2026-09-12
 
 ### Changed

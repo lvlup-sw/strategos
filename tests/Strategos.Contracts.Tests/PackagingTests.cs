@@ -70,8 +70,8 @@ public class PackagingTests
     }
 
     /// <summary>
-    /// T32 — the 0.15.0 release package. Packs the project and asserts:
-    /// the version is 0.15.0; all four schema families (events / workflow /
+    /// T32 — the 0.15.1 release package. Packs the project and asserts:
+    /// the version is 0.15.1; all four schema families (events / workflow /
     /// diagnostics / ontology) are embedded under <c>contentFiles/any/any/schemas/</c>; the
     /// #53 builder fixtures are embedded under
     /// <c>contentFiles/any/any/fixtures/</c> (so Exarchos can extract them); and
@@ -83,14 +83,14 @@ public class PackagingTests
     /// </summary>
     [Test]
     [Property("Category", "Pack")]
-    public async Task Package_Version_Is_0_15_0_WithKernelSlotsAndExistingContent()
+    public async Task Package_Version_Is_0_15_1_WithKernelSlotsAndExistingContent()
     {
         // The fixtures are content (T32): ensure they exist on disk first — the
         // #53 export writes them under artifacts/builder-fixtures/.
         await EnsureFixturesExportedAsync();
 
         var projectDir = RepoLayout.ContractsProjectDir;
-        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-0150-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("contracts-pack-0151-").FullName;
 
         try
         {
@@ -104,21 +104,21 @@ public class PackagingTests
                 .FirstOrDefault(p => !p.EndsWith(".symbols.nupkg", StringComparison.Ordinal));
             await Assert.That(nupkg).IsNotNull();
 
-            // Version 0.15.0 — read from the file name (the canonical packed version).
+            // Version 0.15.1 — read from the file name (the canonical packed version).
             var fileName = Path.GetFileName(nupkg!);
-            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.15.0.nupkg")
-                .Because($"the package must version at exactly 0.15.0; got {fileName}");
+            await Assert.That(fileName).IsEqualTo("LevelUp.Strategos.Contracts.0.15.1.nupkg")
+                .Because($"the package must version at exactly 0.15.1; got {fileName}");
 
             using var archive = ZipFile.OpenRead(nupkg!);
 
-            // The .nuspec also pins 0.15.0.
+            // The .nuspec also pins 0.15.1.
             var nuspec = archive.Entries.First(e =>
                 e.FullName.EndsWith(".nuspec", StringComparison.Ordinal));
             using (var reader = new StreamReader(nuspec.Open()))
             {
                 var nuspecXml = await reader.ReadToEndAsync();
-                await Assert.That(nuspecXml).Contains("<version>0.15.0</version>")
-                    .Because("the .nuspec must declare version 0.15.0.");
+                await Assert.That(nuspecXml).Contains("<version>0.15.1</version>")
+                    .Because("the .nuspec must declare version 0.15.1.");
             }
 
             string[] entries = [.. archive.Entries.Select(e => e.FullName)];
