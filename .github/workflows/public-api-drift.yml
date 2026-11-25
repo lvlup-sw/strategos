@@ -69,7 +69,26 @@ jobs:
         run: |
           set -euo pipefail
           baseline='src/Strategos/PublicAPI/PublicAPI.Shipped.txt src/Strategos.Ontology/PublicAPI.Shipped.txt'
-          prev_tag="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
+          # Anyone with write access can push a v* tag with any name, so only a
+          # strict version tag may become the baseline or reach the step outputs.
+          core='(0|[1-9][0-9]*)'
+          version_tag="^v${core}\.${core}\.${core}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$"
+          prev_tag=""
+          rejected=""
+          excludes=()
+          while candidate="$(git describe --tags --abbrev=0 --match 'v*' "${excludes[@]}" HEAD^ 2>/dev/null)"; do
+            if [[ "${candidate}" =~ ${version_tag} ]]; then
+              prev_tag="${candidate}"
+              break
+            fi
+            if [ "${candidate}" = "${rejected}" ]; then
+              echo "::error::git describe kept returning an excluded non-version tag."
+              exit 1
+            fi
+            echo "::warning::Skipping a v* tag that is not a strict version tag."
+            rejected="${candidate}"
+            excludes+=(--exclude "${candidate}")
+          done
           if [ -z "${prev_tag}" ]; then
             echo "No previous v* tag found — nothing to diff against; skipping."
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -90,7 +109,9 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         env:
           EXARCHOS_ISSUES_PAT: ${{ secrets.EXARCHOS_ISSUES_PAT }}
-        run: bash scripts/build-drift-issue.sh --diff-url "${{ steps.diff.outputs.diff_url }}"
+          DIFF_URL: ${{ steps.diff.outputs.diff_url }}
+        run: |
+          bash scripts/build-drift-issue.sh --diff-url "${DIFF_URL}"
 
   mocked-gh-dry-run:
     # T14: proves the notify wiring (--repo/--label/body) end-to-end WITHOUT a
