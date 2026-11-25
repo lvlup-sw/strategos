@@ -1,0 +1,189 @@
+# Strategos PR validation.
+#
+# lvlup-sw/.github reads this file from the tip of main (never from the PR),
+# checks it against its ci/policy.json, and runs it on the tested merge in the
+# secretless ci-pr cluster. The mandatory secret scan, CodeQL and dependency
+# review run first and are not listed here. Step logic lives in scripts/ci/.
+#
+# Queues: pr-small runs 2 vCPU work, pr-large runs 4 vCPU work. Every image is
+# a digest-pinned ghcr.io/lvlup-sw/ci-* image; Renovate updates the digest.
+
+image: "ghcr.io/lvlup-sw/ci-worker-validation@sha256:72e15261502c9997de21132b7ac0eaf8b98fa921b6eb049386e930afac7473b5"
+
+steps:
+  - label: "Test and coverage"
+    key: coverage
+    command: scripts/ci/coverage.sh
+    agents: { queue: pr-large }
+    timeout_in_minutes: 45
+    artifact_paths:
+      - "ci-out/coverage/Cobertura.xml"
+      - "ci-out/coverage/project-*/tests.trx"
+    if_changed:
+      - "src/**"
+      - "tests/**"
+      - "samples/**"
+      - "Directory.Build.*"
+      - "Directory.Packages.props"
+      - "global.json"
+      - "strategos.slnx"
+      - "NuGet.Config"
+      - "nuget.config"
+      - ".editorconfig"
+      - ".github/workflows/ci.yml"
+      - "docs/architecture/invariants/**"
+      - ".exarchos/**"
+      - ".exarchos.yml"
+      - "scripts/ci/coverage*"
+      - "scripts/ci/lib.sh"
+
+  - label: "Package consumers"
+    key: package-consumers
+    command: scripts/ci/package-consumers.sh
+    agents: { queue: pr-large }
+    timeout_in_minutes: 35
+    if_changed:
+      - "src/**"
+      - "tests/**"
+      - "samples/**"
+      - "Directory.Build.*"
+      - "Directory.Packages.props"
+      - "global.json"
+      - "strategos.slnx"
+      - "NuGet.Config"
+      - "nuget.config"
+      - ".editorconfig"
+      - ".github/workflows/ci.yml"
+      - "scripts/verify-*.sh"
+      - "scripts/pack-to-local-feed.sh"
+      - "scripts/ci/package-consumers.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "Builder API stability"
+    key: builder-api
+    command: scripts/ci/builder-api.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 20
+    if_changed:
+      - "src/**"
+      - "tests/**"
+      - "samples/**"
+      - "Directory.Build.*"
+      - "Directory.Packages.props"
+      - "global.json"
+      - "strategos.slnx"
+      - "NuGet.Config"
+      - "nuget.config"
+      - ".editorconfig"
+      - ".github/workflows/ci.yml"
+      - "scripts/check-builder-api-stability.sh"
+      - "scripts/check-unshipped-against-tag.sh"
+      - "scripts/ci/builder-api.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "DBSF parity"
+    key: dbsf
+    command: python3 scripts/regenerate-dbsf-oracle.py --check
+    agents: { queue: pr-small }
+    timeout_in_minutes: 5
+    if_changed:
+      - "src/Strategos.Ontology/**"
+      - "tests/Strategos.Ontology.Tests/**"
+      - "scripts/regenerate-dbsf-oracle.py"
+      - "scripts/requirements.txt"
+
+  - label: "Docs site"
+    key: docs
+    command: scripts/ci/docs.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 8
+    if_changed:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+      - "scripts/ci/docs.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "Quality gates"
+    key: quality
+    commands:
+      - bash scripts/check-agag-hygiene.sh
+      - bash scripts/check-catch-discipline.sh
+      - bash scripts/check-prose.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 5
+    if_changed:
+      - "src/**"
+      - "tests/**"
+      - "docs/**"
+      - "scripts/check-*.sh"
+
+  - label: "Contracts codegen and tests"
+    key: contracts
+    command: scripts/ci/contracts.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 18
+    if_changed:
+      - "src/Strategos.Contracts/**"
+      - "src/Strategos.Contracts.Codegen/**"
+      - "tests/Strategos.Contracts.Tests/**"
+      - "scripts/contracts-*.sh"
+      - "scripts/contracts-*.mjs"
+      - "global.json"
+      - "Directory.*"
+      - ".github/workflows/contracts-*.yml"
+      - "src/Strategos.Ontology/Contracts/**"
+      - "docs/diagnostics/**"
+      - ".github/workflows/publish-contracts.yml"
+      - "scripts/ci/contracts.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "Contracts schema diff"
+    key: schema-diff
+    command: scripts/ci/schema-diff.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 8
+    if_changed:
+      - "src/Strategos.Contracts/**"
+      - "src/Strategos.Contracts.Codegen/**"
+      - "tests/Strategos.Contracts.Tests/**"
+      - "scripts/contracts-*.sh"
+      - "scripts/contracts-*.mjs"
+      - "global.json"
+      - "Directory.*"
+      - ".github/workflows/contracts-*.yml"
+      - "src/Strategos.Ontology/Contracts/**"
+      - "docs/diagnostics/**"
+      - "scripts/ci/schema-diff.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "Public API drift"
+    key: api-drift
+    command: scripts/ci/api-drift.sh
+    agents: { queue: pr-small }
+    timeout_in_minutes: 4
+    artifact_paths: "ci-out/api-drift.txt"
+    if_changed:
+      - "src/Strategos/PublicAPI/PublicAPI.*.txt"
+      - "src/Strategos.Ontology/PublicAPI.*.txt"
+      - "scripts/ci/api-drift.sh"
+      - "scripts/ci/lib.sh"
+
+  - label: "Benchmarks (advisory)"
+    key: benchmark
+    command: scripts/ci/benchmark.sh
+    agents: { queue: pr-large }
+    timeout_in_minutes: 40
+    soft_fail: true
+    artifact_paths:
+      - "ci-out/benchmark-results/**/*.md"
+      - "ci-out/benchmark-results/**/*.json"
+      - "ci-out/benchmark-results/**/*.csv"
+    if_changed:
+      - "**/Selection/**"
+      - "**/LoopDetection/**"
+      - "**/Ledgers/**"
+      - "**/Budget/**"
+      - "**/Rag/**"
+      - "src/Strategos.Benchmarks/**"
+      - "scripts/ci/benchmark.sh"
+      - "scripts/ci/lib.sh"
