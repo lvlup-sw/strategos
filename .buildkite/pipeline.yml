@@ -6,9 +6,10 @@
 # review run first and are not listed here. Step logic lives in scripts/ci/.
 #
 # Queues: pr-small runs 2 vCPU work, pr-large runs 4 vCPU work. Every image is
-# a digest-pinned ghcr.io/lvlup-sw/ci-* image; Renovate updates the digest.
+# a ghcr.io/lvlup-sw/ci-*:stable image; the ci-images pipeline in lvlup-sw/.github
+# moves :stable when the image's Dockerfile changes on main.
 
-image: ghcr.io/lvlup-sw/ci-worker-validation:migration-72e15261502c9997@sha256:72e15261502c9997de21132b7ac0eaf8b98fa921b6eb049386e930afac7473b5
+image: ghcr.io/lvlup-sw/ci-worker-validation:stable
 
 steps:
   - label: "Test and coverage"
