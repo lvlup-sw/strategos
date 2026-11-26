@@ -2,6 +2,8 @@ using System;
 using System.Globalization;
 using System.Numerics;
 
+using Strategos.Ontology.ActionLogic;
+
 namespace Strategos.Ontology.Descriptors;
 
 /// <summary>
@@ -29,13 +31,7 @@ public readonly struct PredicateDecimal :
             return;
         }
 
-        while (scale > 0 && unscaledValue % 10 == 0)
-        {
-            unscaledValue /= 10;
-            scale--;
-        }
-
-        UnscaledValue = unscaledValue;
+        UnscaledValue = DecimalNormalization.StripTrailingZeros(unscaledValue, ref scale);
         Scale = scale;
     }
 
@@ -111,10 +107,19 @@ public readonly struct PredicateDecimal :
             return false;
         }
 
+        var end = text.Length;
+        if (point >= 0)
+        {
+            while (end > point + 1 && text[end - 1] == '0')
+            {
+                end--;
+            }
+        }
+
         var digits = point < 0
             ? text.Substring(index)
-            : text.Substring(index, point - index) + text.Substring(point + 1);
-        var scale = point < 0 ? 0 : text.Length - point - 1;
+            : text.Substring(index, point - index) + text.Substring(point + 1, end - point - 1);
+        var scale = point < 0 ? 0 : end - point - 1;
         if (!BigInteger.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var unscaled))
         {
             return false;

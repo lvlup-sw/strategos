@@ -36,6 +36,8 @@
              Link="ActionLogic\LogicFormula.cs" />
     <Compile Include="..\Strategos.Ontology\ActionLogic\FiniteDomainSolver.cs"
              Link="ActionLogic\FiniteDomainSolver.cs" />
+    <Compile Include="..\Strategos.Ontology\ActionLogic\DecimalNormalization.cs"
+             Link="ActionLogic\DecimalNormalization.cs" />
   </ItemGroup>
 
   <ItemGroup>
