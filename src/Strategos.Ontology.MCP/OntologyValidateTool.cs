@@ -18,6 +18,11 @@ namespace Strategos.Ontology.MCP;
 /// </summary>
 public sealed class OntologyValidateTool
 {
+    // JSON numbers are unbounded on the wire, and big-integer parsing and
+    // scale alignment grow with digit count. Longer caller numbers become
+    // unknown facts rather than exact literals.
+    private const int MaxNumberLiteralLength = 1_000;
+
     private readonly IOntologyQuery _query;
     private readonly IOntologyCoverageProvider? _coverage;
 
@@ -239,6 +244,11 @@ public sealed class OntologyValidateTool
             case JsonValueKind.Number:
             {
                 var text = value.GetRawText();
+                if (text.Length > MaxNumberLiteralLength)
+                {
+                    break;
+                }
+
                 if (BigInteger.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var integer))
                 {
                     literal = PredicateLiteral.Integer(integer);

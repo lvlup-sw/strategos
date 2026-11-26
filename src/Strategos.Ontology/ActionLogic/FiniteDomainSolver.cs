@@ -1205,12 +1205,7 @@ internal static class FiniteDomainSolver
     {
         private ExactDecimal(BigInteger coefficient, int scale)
         {
-            while (scale > 0 && coefficient % 10 == 0)
-            {
-                coefficient /= 10;
-                scale--;
-            }
-
+            coefficient = DecimalNormalization.StripTrailingZeros(coefficient, ref scale);
             Coefficient = coefficient;
             Scale = coefficient.IsZero ? 0 : scale;
         }
@@ -1254,6 +1249,7 @@ internal static class FiniteDomainSolver
                 throw new FormatException($"'{value}' is not an exact base-10 decimal.");
             }
 
+            fraction = fraction.TrimEnd('0');
             var digits = whole + fraction;
             var coefficient = BigInteger.Parse(digits, CultureInfo.InvariantCulture);
             return new ExactDecimal(negative ? -coefficient : coefficient, fraction.Length);
