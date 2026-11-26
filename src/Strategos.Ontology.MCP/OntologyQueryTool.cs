@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 
+using Strategos.Ontology.Descriptors;
 using Strategos.Ontology.Events;
 using Strategos.Ontology.ObjectSets;
 using Strategos.Ontology.Retrieval;
@@ -68,20 +69,21 @@ public sealed class OntologyQueryTool
         // before any retrieval work is initiated (design §6.6).
         hybridOptions?.Validate();
 
+        var descriptor = RequireDescriptor(domain, objectType);
         var inclusion = ParseInclusion(include);
-        var expression = BuildExpression(domain, objectType, filter, traverseLink, interfaceName, inclusion);
+        var expression = BuildExpression(domain, descriptor, filter, traverseLink, interfaceName, inclusion);
 
         if (semanticQuery is not null)
         {
             var request = new SemanticQueryRequest(
-                objectType, semanticQuery, topK, minRelevance, distanceMetric,
+                descriptor.Name, semanticQuery, topK, minRelevance, distanceMetric,
                 filter, traverseLink, interfaceName, include);
             return await ExecuteSemanticQueryAsync(expression, request, hybridOptions, ct).ConfigureAwait(false);
         }
 
         var result = await _objectSetProvider.ExecuteAsync<object>(expression, ct).ConfigureAwait(false);
 
-        return new QueryResult(objectType, result.Items, CurrentMeta())
+        return new QueryResult(descriptor.Name, result.Items, CurrentMeta())
         {
             Filter = filter,
             TraverseLink = traverseLink,
@@ -144,23 +146,48 @@ public sealed class OntologyQueryTool
             .ConfigureAwait(false);
     }
 
-    private ObjectSetExpression BuildExpression(
+    /// <summary>
+    /// Resolves the caller-supplied object type to a registered descriptor — scoped to
+    /// <paramref name="domain"/> when one is given — and refuses anything else. The
+    /// query is then built from the returned descriptor, never from the raw string, so
+    /// providers that derive storage from the descriptor name (e.g. a pgvector table)
+    /// cannot be pointed at storage outside the published ontology.
+    /// </summary>
+    private ObjectTypeDescriptor RequireDescriptor(string? domain, string objectType)
+    {
+        ArgumentNullException.ThrowIfNull(objectType);
+
+        var descriptor = domain is not null
+            ? _graph.GetObjectType(domain, objectType)
+            : _graph.ObjectTypes.FirstOrDefault(
+                candidate => string.Equals(candidate.Name, objectType, StringComparison.Ordinal));
+
+        if (descriptor is null)
+        {
+            throw new InvalidOperationException(domain is not null
+                ? $"Object type '{objectType}' is not registered in domain '{domain}' of the ontology graph."
+                : $"Object type '{objectType}' is not registered in the ontology graph.");
+        }
+
+        return descriptor;
+    }
+
+    private static ObjectSetExpression BuildExpression(
         string? domain,
-        string objectType,
+        ObjectTypeDescriptor descriptor,
         string? filter,
         string? traverseLink,
         string? interfaceName,
         ObjectSetInclusion? inclusion)
     {
         var clrType = domain is not null
-            ? _graph.GetObjectType(domain, objectType)?.ClrType ?? typeof(object)
+            ? descriptor.ClrType ?? typeof(object)
             : typeof(object);
 
-        // The MCP protocol passes the ontology descriptor name as the objectType parameter,
-        // which is exactly what RootExpression needs to dispatch against the correct descriptor
-        // partition when the same CLR type is registered under multiple names. See D2 tests in
-        // OntologyQueryToolTests.QueryAsync_WithExplicitDescriptorName_*.
-        ObjectSetExpression expression = new RootExpression(clrType, objectType);
+        // The descriptor name is exactly what RootExpression needs to dispatch against the
+        // correct descriptor partition when the same CLR type is registered under multiple
+        // names. See D2 tests in OntologyQueryToolTests.QueryAsync_WithExplicitDescriptorName_*.
+        ObjectSetExpression expression = new RootExpression(clrType, descriptor.Name);
 
         if (filter is not null)
         {
