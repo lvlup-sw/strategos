@@ -148,27 +148,30 @@ public class OntologyQueryToolTests
     }
 
     [Test]
-    public async Task QueryAsync_UnknownObjectType_FallsBackToObjectType()
+    public async Task QueryAsync_UnknownObjectType_IsRefusedWithoutQueryingProvider()
     {
-        // Arrange
-        ObjectSetExpression? capturedExpression = null;
-        var testItems = new List<object>();
-        _objectSetProvider
-            .ExecuteAsync<object>(Arg.Any<ObjectSetExpression>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                capturedExpression = callInfo.Arg<ObjectSetExpression>();
-                return new ObjectSetResult<object>(testItems, testItems.Count, ObjectSetInclusion.Properties);
-            });
+        // An unregistered name must never reach the provider, which may map it onto
+        // storage outside the ontology (e.g. a table in the pgvector schema).
+        var ex = await Assert.That(async () =>
+                await _tool.QueryAsync(objectType: "NonExistentType", domain: "trading"))
+            .Throws<InvalidOperationException>();
 
-        // Act
-        await _tool.QueryAsync(objectType: "NonExistentType", domain: "trading");
+        await Assert.That(ex!.Message).Contains("NonExistentType");
+        await Assert.That(ex.Message).Contains("not registered");
+        await _objectSetProvider.DidNotReceiveWithAnyArgs()
+            .ExecuteAsync<object>(default!, default);
+    }
 
-        // Assert — should fall back to typeof(object) when type is not found
-        await Assert.That(capturedExpression).IsNotNull();
-        var root = capturedExpression as RootExpression;
-        await Assert.That(root).IsNotNull();
-        await Assert.That(root!.ObjectType).IsEqualTo(typeof(object));
+    [Test]
+    public async Task QueryAsync_UnknownObjectTypeWithoutDomain_IsRefusedWithoutQueryingProvider()
+    {
+        var ex = await Assert.That(async () =>
+                await _tool.QueryAsync(objectType: "NonExistentType", semanticQuery: "anything"))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(ex!.Message).Contains("not registered");
+        await _objectSetProvider.DidNotReceiveWithAnyArgs()
+            .ExecuteSimilarityAsync<object>(default!, default);
     }
 
     [Test]

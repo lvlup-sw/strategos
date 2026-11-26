@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`ontology_query` only reads registered object types.** `OntologyQueryTool.QueryAsync`
+  resolves `objectType` (within `domain` when one is given) to a registered descriptor and
+  throws `InvalidOperationException` otherwise, instead of querying with `typeof(object)`.
+  `PgVectorObjectSetProvider` applies the same check on `ExecuteAsync`, `StreamAsync` and
+  `ExecuteSimilarityAsync` whenever it holds an `OntologyGraph`, deriving the table from the
+  descriptor's name. Before, a caller-supplied name was snake-cased straight into a table in
+  `PgVectorOptions.Schema`, so any relation there with `id` / `data` columns — for example
+  Marten's `mt_events` or `mt_doc_*` in the shared `public` schema — could be read through
+  the MCP server.
+
 ## [3.0.0] - 2026-09-11
 
 The first stable release since 2.10.0, and the whole of 3.0. It **supersedes and includes

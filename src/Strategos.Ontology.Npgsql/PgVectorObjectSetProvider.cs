@@ -77,11 +77,27 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     /// <see cref="StreamAsync{T}"/>) share a single dispatch step and unit tests
     /// can pin its behavior without needing a live
     /// <see cref="NpgsqlDataSource"/>.
+    /// <para>
+    /// When <paramref name="graph"/> is supplied the root name must be a registered
+    /// descriptor: the table is derived from that descriptor's name, and an
+    /// unregistered name throws <see cref="InvalidOperationException"/> before any
+    /// SQL is built. Without this, a caller-supplied name (e.g. an MCP
+    /// <c>objectType</c>) selects any relation in <see cref="PgVectorOptions.Schema"/>
+    /// that has <c>id</c> / <c>data</c> columns, including non-ontology tables that
+    /// share the schema.
+    /// </para>
     /// </remarks>
-    internal static string ResolveTableName(ObjectSetExpression expression)
+    internal static string ResolveTableName(ObjectSetExpression expression, OntologyGraph? graph = null)
     {
         ArgumentNullException.ThrowIfNull(expression);
-        return SqlGenerator.ObjectTableName(expression.RootObjectTypeName);
+
+        if (graph is null)
+        {
+            return SqlGenerator.ObjectTableName(expression.RootObjectTypeName);
+        }
+
+        var descriptor = RequireDescriptor(graph, expression.RootObjectTypeName);
+        return SqlGenerator.ObjectTableName(descriptor.Name);
     }
 
     /// <summary>
@@ -164,16 +180,17 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     {
         ArgumentNullException.ThrowIfNull(expression);
 
-        // 1. Get query vector: use expression.QueryVector if provided, else embed QueryText
+        // 1. Resolve table name from the expression's declared descriptor name
+        //    (honors explicit names supplied via GetObjectSet<T>(descriptorName);
+        //    see ResolveTableName docs / bug #31). Resolved before embedding so an
+        //    unregistered descriptor is refused without any provider work.
+        var tableName = ResolveTableName(expression, _graph);
+
+        // 2. Get query vector: use expression.QueryVector if provided, else embed QueryText
         var queryVector = expression.QueryVector
             ?? await _embeddingProvider.EmbedAsync(expression.QueryText, ct).ConfigureAwait(false);
 
         ValidateEmbedding<T>(queryVector);
-
-        // 2. Resolve table name from the expression's declared descriptor name
-        //    (honors explicit names supplied via GetObjectSet<T>(descriptorName);
-        //    see ResolveTableName docs / bug #31).
-        var tableName = ResolveTableName(expression);
 
         // 3. Translate Source expression (handles Filter, Include, Root transparently)
         var sourceTranslation = ExpressionTranslator.Translate(expression.Source);
@@ -327,7 +344,7 @@ public sealed class PgVectorObjectSetProvider : IObjectSetProvider, IObjectSetWr
     private (string Sql, IReadOnlyList<ExpressionTranslator.SqlParameter> Parameters) LowerSelect(
         ObjectSetExpression expression)
     {
-        var tableName = ResolveTableName(expression);
+        var tableName = ResolveTableName(expression, _graph);
         var translation = ExpressionTranslator.Translate(expression);
         var sql = SqlGenerator.BuildSelectQuery(_options.Schema, tableName, translation.WhereClause);
         return (sql, translation.Parameters);
