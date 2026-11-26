@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exact-decimal normalization is no longer quadratic in the trailing-zero count.**
+  `PredicateDecimal` and the finite-domain solver's exact decimal stripped trailing zeros
+  one full-width division at a time, so a literal such as `1.000…0` with hundreds of
+  thousands of zeros held a CPU core for minutes. Both now strip in a logarithmic number of
+  divisions, and `PredicateDecimal.TryParse` drops trailing fractional zeros before parsing.
+  `ontology_validate` treats a caller JSON number longer than 1,000 characters as an unknown
+  fact instead of an exact literal.
+
 ## [3.0.0] - 2026-09-11
 
 The first stable release since 2.10.0, and the whole of 3.0. It **supersedes and includes
