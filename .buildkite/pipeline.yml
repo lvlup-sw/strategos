@@ -8,7 +8,7 @@
 # Queues: pr-small runs 2 vCPU work, pr-large runs 4 vCPU work. Every image is
 # a digest-pinned ghcr.io/lvlup-sw/ci-* image; Renovate updates the digest.
 
-image: "ghcr.io/lvlup-sw/ci-worker-validation@sha256:72e15261502c9997de21132b7ac0eaf8b98fa921b6eb049386e930afac7473b5"
+image: ghcr.io/lvlup-sw/ci-worker-validation:migration-72e15261502c9997@sha256:72e15261502c9997de21132b7ac0eaf8b98fa921b6eb049386e930afac7473b5
 
 steps:
   - label: "Test and coverage"
