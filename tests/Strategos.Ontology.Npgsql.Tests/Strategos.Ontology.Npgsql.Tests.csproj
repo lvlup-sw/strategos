@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Strategos.Ontology.Npgsql/Strategos.Ontology.Npgsql.csproj" />
+    <!-- The unvalidated-object-type tests drive OntologyQueryTool against the real pgvector provider. -->
+    <ProjectReference Include="../../src/Strategos.Ontology.MCP/Strategos.Ontology.MCP.csproj" />
     <!--
       DR-9/DR-10 cross-provider parity (t13): consume T12's provider-agnostic
       RationaleOntologyFixture (corpus + relate/traverse SCRIPT) from
