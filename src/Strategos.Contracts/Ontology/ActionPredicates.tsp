@@ -6,7 +6,7 @@ namespace LevelUp.Strategos.Contracts;
 
 /** A non-empty segment in an ontology relation traversal path. */
 @minLength(1)
-@pattern(".*\\S.*")
+@pattern("\\S")
 @jsonSchema
 scalar ActionLinkPathSegmentV1 extends string;
 

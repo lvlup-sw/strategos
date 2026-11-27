@@ -32,12 +32,12 @@ namespace LevelUp.Strategos.Contracts;
 model AuthorityCoordinateV1 {
   /** The axis name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   axis: string;
 
   /** The required level on that axis. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   level: string;
 }
 
@@ -48,7 +48,7 @@ model AuthorityCoordinateV1 {
 model AuthorityAxisV1 {
   /** The axis name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   name: string;
 
   /**
@@ -66,7 +66,7 @@ model AuthorityAxisV1 {
 model AuthorityDescriptorV1 {
   /** The authority literal (for example `position.reader`). */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   name: string;
 
   /**
@@ -123,7 +123,7 @@ model AuthorityRequirementV1 {
 model DomainAuthorityLatticeV1 {
   /** The ontology domain the lattice belongs to. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   domainName: string;
 
   /** The lattice itself. */

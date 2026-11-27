@@ -11,7 +11,7 @@
         "catalogId": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "Ordinal identity of the assembly or package this manifest describes.\nCompared ordinally when catalogs merge, never parsed."
         },
         "contentHash": {

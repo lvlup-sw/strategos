@@ -9,7 +9,7 @@ import { z } from "zod";
 import { AuthorityCoordinateV1Schema } from "./AuthorityCoordinateV1.js";
 
 export const AuthorityDescriptorV1Schema = z.looseObject({
-    "name": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "name": z.string().min(1).regex(new RegExp("\\S")),
     "coordinates": z.array(AuthorityCoordinateV1Schema),
     "explicitImplications": z.array(z.string()),
   });

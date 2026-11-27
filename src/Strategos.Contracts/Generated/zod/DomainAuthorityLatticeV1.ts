@@ -9,7 +9,7 @@ import { z } from "zod";
 import { AuthorityLatticeV1Schema } from "./AuthorityLatticeV1.js";
 
 export const DomainAuthorityLatticeV1Schema = z.looseObject({
-    "domainName": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "domainName": z.string().min(1).regex(new RegExp("\\S")),
     "lattice": AuthorityLatticeV1Schema,
   });
 

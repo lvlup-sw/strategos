@@ -6,6 +6,6 @@
 
 import { z } from "zod";
 
-export const ActionLinkPathSegmentV1Schema = z.string().min(1).regex(new RegExp(".*\\S.*"));
+export const ActionLinkPathSegmentV1Schema = z.string().min(1).regex(new RegExp("\\S"));
 
 export type ActionLinkPathSegmentV1 = z.infer<typeof ActionLinkPathSegmentV1Schema>;

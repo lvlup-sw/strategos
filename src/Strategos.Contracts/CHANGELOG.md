@@ -15,6 +15,23 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
+## [0.16.0] — 2026-11-27
+
+### Security
+
+- **Non-blank fields validate in linear time:** every field that carried the
+  non-blank pattern `.*\S.*` now carries `\S` (TypeSpec, JSON Schema, the
+  bundled `workflow-definition-v1.schema.json` and the Zod projection). JSON
+  Schema `pattern` and `RegExp.test` are unanchored searches, so both patterns
+  accept exactly the strings that contain one non-whitespace character and no
+  document changes validity. The old pattern made a backtracking engine retry
+  the greedy `.*` from every start position, so validating a long whitespace-only
+  name took time quadratic in its length and blocked a Node consumer's event loop.
+  The C# records are unchanged: they still map the pattern to
+  `ContractJsonValidation.RequireNonWhitespace`. The structural diff compares
+  pattern text, so it reports the 29 rewritten patterns as breaking; each is
+  recorded in the 0.16.0 allowlist with the reason above.
+
 ## [0.15.0] — 2026-09-12
 
 ### Changed

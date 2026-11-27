@@ -35,7 +35,7 @@ model WorkflowDefinitionV1 {
 
   /** Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`). */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   name: string;
 
   /** Ordered step definitions (the discriminated `StepDefinition` union). */

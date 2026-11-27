@@ -8,7 +8,7 @@ import { z } from "zod";
 
 export const WorkflowAuthorityStatementV1Schema = z.looseObject({
     "id": z.string().optional(),
-    "statement": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "statement": z.string().min(1).regex(new RegExp("\\S")),
   });
 
 export type WorkflowAuthorityStatementV1 = z.infer<typeof WorkflowAuthorityStatementV1Schema>;
