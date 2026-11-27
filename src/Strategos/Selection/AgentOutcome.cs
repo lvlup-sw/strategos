@@ -41,8 +41,9 @@ public sealed record AgentOutcome
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Reserved for future use with partial credit updates, where high-confidence
-    /// failures or low-confidence successes can be weighted differently.
+    /// Used as partial credit by <see cref="AgentBelief.WithOutcome"/>, which rejects
+    /// a value that is NaN or outside [0, 1]. Callers forwarding an external score
+    /// (for example an evaluator's output) must normalize it into that range first.
     /// </para>
     /// </remarks>
     public double? Confidence { get; init; }

@@ -194,12 +194,31 @@ public sealed class InMemoryBeliefStore : IBeliefStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(belief);
+        ThrowIfInvalidShape(belief.Alpha, "belief.Alpha");
+        ThrowIfInvalidShape(belief.Beta, "belief.Beta");
 
         var key = GetKey(belief.AgentId, belief.TaskCategory);
         _beliefs[key] = belief;
         AddToIndices(belief.AgentId, belief.TaskCategory, key);
 
         return new ValueTask<Result<Unit>>(Result<Unit>.Success(Unit.Value));
+    }
+
+    /// <summary>
+    /// Rejects a Beta distribution parameter that is not finite and positive, so a
+    /// stored belief can always be sampled.
+    /// </summary>
+    /// <param name="value">The Alpha or Beta parameter.</param>
+    /// <param name="paramName">The parameter name reported in the exception.</param>
+    private static void ThrowIfInvalidShape(double value, string paramName)
+    {
+        if (!double.IsFinite(value) || value <= 0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                value,
+                "Belief parameters must be finite and positive.");
+        }
     }
 
     /// <summary>

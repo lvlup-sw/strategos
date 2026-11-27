@@ -50,12 +50,12 @@ public sealed class DefaultBeliefPriorFactory : IBeliefPriorFactory
     /// <param name="alpha">The Alpha parameter for the Beta distribution (must be positive).</param>
     /// <param name="beta">The Beta parameter for the Beta distribution (must be positive).</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="alpha"/> or <paramref name="beta"/> is not positive.
+    /// Thrown when <paramref name="alpha"/> or <paramref name="beta"/> is not finite and positive.
     /// </exception>
     public DefaultBeliefPriorFactory(double alpha, double beta)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(alpha, 0.0, nameof(alpha));
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(beta, 0.0, nameof(beta));
+        ThrowIfInvalidShape(alpha, nameof(alpha));
+        ThrowIfInvalidShape(beta, nameof(beta));
 
         _alpha = alpha;
         _beta = beta;
@@ -76,5 +76,16 @@ public sealed class DefaultBeliefPriorFactory : IBeliefPriorFactory
             ObservationCount = 0,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
+    }
+
+    private static void ThrowIfInvalidShape(double value, string paramName)
+    {
+        if (!double.IsFinite(value) || value <= 0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                value,
+                "Prior parameters must be finite and positive.");
+        }
     }
 }

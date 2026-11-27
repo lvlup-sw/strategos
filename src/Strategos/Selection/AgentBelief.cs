@@ -184,12 +184,25 @@ public sealed record AgentBelief
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="outcome"/> is null.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="AgentOutcome.Confidence"/> is NaN or outside [0, 1].
+    /// </exception>
     public AgentBelief WithOutcome(AgentOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(outcome, nameof(outcome));
 
         // Use confidence for partial credit if available, otherwise binary credit
         var credit = outcome.Confidence ?? (outcome.Success ? 1.0 : 0.0);
+
+        // Written as a negated range test so NaN is rejected too. Credit outside [0, 1]
+        // would drive Alpha or Beta non-positive, which no Beta distribution accepts.
+        if (!(credit >= 0.0 && credit <= 1.0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(outcome),
+                credit,
+                "Outcome confidence must be between 0 and 1.");
+        }
 
         return this with
         {
