@@ -7,7 +7,7 @@
 import { z } from "zod";
 
 export const TypedContractRefV1Schema = z.looseObject({
-    "schemaId": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "schemaId": z.string().min(1).regex(new RegExp("\\S")),
   });
 
 export type TypedContractRefV1 = z.infer<typeof TypedContractRefV1Schema>;

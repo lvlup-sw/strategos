@@ -10,7 +10,7 @@
         "statement": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The statement itself, in prose."
         }
     },

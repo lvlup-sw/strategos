@@ -211,7 +211,7 @@ public sealed class WireDtoSchemaConformanceTests
             var property = schemaProperties[name];
             await Assert.That(property.GetProperty("type").GetString()).IsEqualTo("string");
             await Assert.That(property.GetProperty("minLength").GetInt32()).IsEqualTo(1);
-            await Assert.That(property.GetProperty("pattern").GetString()).IsEqualTo(".*\\S.*");
+            await Assert.That(property.GetProperty("pattern").GetString()).IsEqualTo("\\S");
             await Assert.That(twinProperties[name].PropertyType).IsEqualTo(typeof(string));
         }
     }
@@ -359,7 +359,7 @@ public sealed class WireDtoSchemaConformanceTests
         {
             var moniker = schema.GetProperty("properties").GetProperty("compensationStepType");
             await Assert.That(moniker.GetProperty("minLength").GetInt32()).IsEqualTo(1);
-            await Assert.That(moniker.GetProperty("pattern").GetString()).IsEqualTo(@".*\S.*");
+            await Assert.That(moniker.GetProperty("pattern").GetString()).IsEqualTo(@"\S");
             await Assert.That(RequiredNames(schema)).Contains("compensationStepType");
             await Assert.That(schema.GetProperty("properties")
                 .GetProperty("requiredOnFailure")

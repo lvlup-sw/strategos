@@ -71,7 +71,7 @@ public class ApprovalFailureConfigTests
         await Assert.That(compensationStepType.GetProperty("minLength").GetInt32()).IsEqualTo(1)
             .Because("an empty moniker names no type; before 0.12.0 the importer silently dropped "
                 + "the whole compensation block for one.");
-        await Assert.That(compensationStepType.GetProperty("pattern").GetString()).IsEqualTo(@".*\S.*")
+        await Assert.That(compensationStepType.GetProperty("pattern").GetString()).IsEqualTo(@"\S")
             .Because("minLength alone admits a whitespace-only moniker. That the schema, the "
                 + "generated DTO and the vendored importer reader reach the SAME verdict on every "
                 + "blank form is proven by Strategos.Generators.Tests.Import."

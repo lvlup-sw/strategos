@@ -16,7 +16,7 @@ namespace Strategos.Generators.Tests.Import;
 // The "compensationStepType must be non-blank" rule has THREE independent
 // encodings, none of which is derived from the others:
 //
-//   1. the emitted JSON Schema      — minLength: 1 + pattern ".*\S.*"
+//   1. the emitted JSON Schema      — minLength: 1 + pattern "\S"
 //   2. the generated contract DTO   — ContractJsonValidation.RequireNonWhitespace
 //                                     in CompensationConfiguration.g.cs
 //   3. the vendored analyzer reader — MinimalJsonReader.ReadRequiredCompensationStepType

@@ -9,7 +9,7 @@ import { z } from "zod";
 import { ActionReferenceV1Schema } from "./ActionReferenceV1.js";
 
 export const CompensationConfigurationSchema = z.looseObject({
-    "compensationStepType": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "compensationStepType": z.string().min(1).regex(new RegExp("\\S")),
     "inverseAction": ActionReferenceV1Schema.optional(),
     "requiredOnFailure": z.boolean().optional(),
     "timeout": z.string().optional(),

@@ -7,7 +7,7 @@
 import { z } from "zod";
 
 export const AuthorityAxisV1Schema = z.looseObject({
-    "name": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "name": z.string().min(1).regex(new RegExp("\\S")),
     "levels": z.array(z.string()),
   });
 

@@ -6,13 +6,13 @@
         "axis": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The axis name."
         },
         "level": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The required level on that axis."
         }
     },

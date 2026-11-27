@@ -6,19 +6,19 @@
         "domainName": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "Ontology domain name."
         },
         "objectTypeName": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "Ontology object type name."
         },
         "actionName": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "Ontology action name."
         }
     },

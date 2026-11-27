@@ -13,16 +13,16 @@ namespace LevelUp.Strategos.Contracts;
 model ActionReferenceV1 {
   /** Ontology domain name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   domainName: string;
 
   /** Ontology object type name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   objectTypeName: string;
 
   /** Ontology action name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   actionName: string;
 }
