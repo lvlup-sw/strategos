@@ -1,6 +1,6 @@
 {
   "name": "@lvlup-sw/strategos-contracts",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Zod schemas and TypeScript types for the Strategos workflow/ontology wire contract. Emitted from the TypeSpec sources that also produce the JSON Schema and the LevelUp.Strategos.Contracts C# records, so all three arms agree by construction.",
   "type": "module",
   "license": "UNLICENSED",

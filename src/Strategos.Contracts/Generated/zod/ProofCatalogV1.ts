@@ -12,7 +12,7 @@ import { WorkflowDefinitionV1Schema } from "./WorkflowDefinitionV1.js";
 
 export const ProofCatalogV1Schema = z.looseObject({
     "schemaVersion": z.literal("1.0"),
-    "catalogId": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "catalogId": z.string().min(1).regex(new RegExp("\\S")),
     "contentHash": z.string().regex(new RegExp("^[0-9a-f]{64}$")).optional(),
     "actions": ActionCatalogV1Schema,
     "authorities": z.array(DomainAuthorityLatticeV1Schema).optional(),

@@ -24,12 +24,12 @@ namespace LevelUp.Strategos.Contracts;
 model ActionSubjectV1 {
   /** Ontology domain name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   domainName: string;
 
   /** Ontology object type name. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   objectTypeName: string;
 }
 
@@ -49,7 +49,7 @@ model ActionContractV1 {
 
   /** The action name, unique within its subject. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   name: string;
 
   /** Free prose. Excluded from `contentHash`, like every other description. */
@@ -91,7 +91,7 @@ model ActionContractV1 {
    * prove anything about (#204).
    */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   boundWorkflow?: string;
 }
 
@@ -129,7 +129,7 @@ model ProofCatalogV1 {
    * Compared ordinally when catalogs merge, never parsed.
    */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   catalogId: string;
 
   /**

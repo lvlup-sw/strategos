@@ -7,8 +7,8 @@
 import { z } from "zod";
 
 export const AuthorityCoordinateV1Schema = z.looseObject({
-    "axis": z.string().min(1).regex(new RegExp(".*\\S.*")),
-    "level": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "axis": z.string().min(1).regex(new RegExp("\\S")),
+    "level": z.string().min(1).regex(new RegExp("\\S")),
   });
 
 export type AuthorityCoordinateV1 = z.infer<typeof AuthorityCoordinateV1Schema>;

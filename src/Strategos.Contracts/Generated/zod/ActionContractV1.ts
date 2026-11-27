@@ -15,7 +15,7 @@ import { AuthorityRequirementV1Schema } from "./AuthorityRequirementV1.js";
 
 export const ActionContractV1Schema = z.looseObject({
     "subject": ActionSubjectV1Schema,
-    "name": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "name": z.string().min(1).regex(new RegExp("\\S")),
     "description": z.string().optional(),
     "requires": z.array(ActionRequirementV1Schema),
     "ensures": z.array(ActionGuaranteeV1Schema),
@@ -23,7 +23,7 @@ export const ActionContractV1Schema = z.looseObject({
     "authority": AuthorityRequirementV1Schema.optional(),
     "inverse": ActionReferenceV1Schema.optional(),
     "idempotent": z.boolean(),
-    "boundWorkflow": z.string().min(1).regex(new RegExp(".*\\S.*")).optional(),
+    "boundWorkflow": z.string().min(1).regex(new RegExp("\\S")).optional(),
   });
 
 export type ActionContractV1 = z.infer<typeof ActionContractV1Schema>;

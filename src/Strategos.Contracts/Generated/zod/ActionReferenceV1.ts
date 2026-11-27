@@ -7,9 +7,9 @@
 import { z } from "zod";
 
 export const ActionReferenceV1Schema = z.looseObject({
-    "domainName": z.string().min(1).regex(new RegExp(".*\\S.*")),
-    "objectTypeName": z.string().min(1).regex(new RegExp(".*\\S.*")),
-    "actionName": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "domainName": z.string().min(1).regex(new RegExp("\\S")),
+    "objectTypeName": z.string().min(1).regex(new RegExp("\\S")),
+    "actionName": z.string().min(1).regex(new RegExp("\\S")),
   });
 
 export type ActionReferenceV1 = z.infer<typeof ActionReferenceV1Schema>;

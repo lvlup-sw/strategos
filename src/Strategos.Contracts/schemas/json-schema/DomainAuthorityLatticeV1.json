@@ -6,7 +6,7 @@
         "domainName": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The ontology domain the lattice belongs to."
         },
         "lattice": {

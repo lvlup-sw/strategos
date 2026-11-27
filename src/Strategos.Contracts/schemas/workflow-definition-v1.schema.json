@@ -11,7 +11,7 @@
         "name": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
         },
         "steps": {
@@ -358,7 +358,7 @@
         "ActionLinkPathSegmentV1": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "A non-empty segment in an ontology relation traversal path."
         },
         "ActionLinkResourceV1": {
@@ -553,19 +553,19 @@
                 "domainName": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "Ontology domain name."
                 },
                 "objectTypeName": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "Ontology object type name."
                 },
                 "actionName": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "Ontology action name."
                 }
             },
@@ -833,13 +833,13 @@
                 "axis": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "The axis name."
                 },
                 "level": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "The required level on that axis."
                 }
             },
@@ -944,7 +944,7 @@
                 "compensationStepType": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "Simple-name CLR moniker of the compensation step type (LB-2)."
                 },
                 "inverseAction": {
@@ -1697,7 +1697,7 @@
                 "schemaId": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "The `$id` of the schema describing this contract.\n\nConstrained to a non-blank string and nothing more, deliberately. A JSON\nSchema `$id` is a URI REFERENCE, not necessarily an absolute URI, and this\npackage emits both forms: the 185 per-model documents carry a relative name\n(`ActionCatalogV1.json`), while the bundle carries an absolute URI\n(`https://schemas.levelup.software/strategos/workflow-definition-v1.schema.json`).\nA pattern demanding a scheme would reject every per-model `$id` this\nrepository produces."
                 }
             },
@@ -1734,7 +1734,7 @@
                 "statement": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "The statement itself, in prose."
                 }
             },
@@ -1795,7 +1795,7 @@
                 "name": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": ".*\\S.*",
+                    "pattern": "\\S",
                     "description": "Workflow name (the IR identity, matches the builder's `WorkflowDefinition.Name`)."
                 },
                 "steps": {

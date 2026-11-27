@@ -93,7 +93,7 @@ public sealed class ActionPredicateContractTests
         var segment = await EventSchemas.LoadAsync("ActionLinkPathSegmentV1");
         await Assert.That(segment.GetProperty("type").GetString()).IsEqualTo("string");
         await Assert.That(segment.GetProperty("minLength").GetInt32()).IsEqualTo(1);
-        await Assert.That(segment.GetProperty("pattern").GetString()).IsEqualTo(".*\\S.*");
+        await Assert.That(segment.GetProperty("pattern").GetString()).IsEqualTo("\\S");
 
         var clrProperty = typeof(ActionRelationHoldsPredicateV1).GetProperty(
             nameof(ActionRelationHoldsPredicateV1.LinkPath));

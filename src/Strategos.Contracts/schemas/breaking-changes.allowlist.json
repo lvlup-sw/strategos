@@ -322,6 +322,209 @@
             "kind": "unsupported compatibility keyword 'additionalProperties' changed; safety cannot be proven",
             "version": "0.15.0",
             "reason": "Reject unknown enforcement fields, including embedded executable keys and the obsolete fileGlob spelling, matching Exarchos strict objects (#231)."
+        },
+        {
+            "file": "json-schema/ActionContractV1.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionContractV1.json",
+            "path": "$.properties[\"boundWorkflow\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionLinkPathSegmentV1.json",
+            "path": "$",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionReferenceV1.json",
+            "path": "$.properties[\"domainName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionReferenceV1.json",
+            "path": "$.properties[\"objectTypeName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionReferenceV1.json",
+            "path": "$.properties[\"actionName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionSubjectV1.json",
+            "path": "$.properties[\"domainName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ActionSubjectV1.json",
+            "path": "$.properties[\"objectTypeName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/AuthorityAxisV1.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/AuthorityCoordinateV1.json",
+            "path": "$.properties[\"axis\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/AuthorityCoordinateV1.json",
+            "path": "$.properties[\"level\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/AuthorityDescriptorV1.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/CompensationConfiguration.json",
+            "path": "$.properties[\"compensationStepType\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/DomainAuthorityLatticeV1.json",
+            "path": "$.properties[\"domainName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/ProofCatalogV1.json",
+            "path": "$.properties[\"catalogId\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/TypedContractRefV1.json",
+            "path": "$.properties[\"schemaId\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/WorkflowAuthorityStatementV1.json",
+            "path": "$.properties[\"statement\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "json-schema/WorkflowDefinitionV1.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"ActionLinkPathSegmentV1\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"ActionReferenceV1\"].properties[\"domainName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"ActionReferenceV1\"].properties[\"objectTypeName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"ActionReferenceV1\"].properties[\"actionName\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"AuthorityCoordinateV1\"].properties[\"axis\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"AuthorityCoordinateV1\"].properties[\"level\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"CompensationConfiguration\"].properties[\"compensationStepType\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"TypedContractRefV1\"].properties[\"schemaId\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"WorkflowAuthorityStatementV1\"].properties[\"statement\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
+        },
+        {
+            "file": "workflow-definition-v1.schema.json",
+            "path": "$.definitions[\"WorkflowDefinitionV1\"].properties[\"name\"]",
+            "kind": "'pattern' constraint changed",
+            "version": "0.16.0",
+            "reason": "The non-blank pattern '.*\\\\S.*' is rewritten as '\\\\S'. Under the unanchored search JSON Schema and RegExp.test perform, both match exactly the strings that contain one non-whitespace character, so no document changes validity; '\\\\S' scans the string once, where '.*\\\\S.*' backtracks quadratically on a long whitespace run. The classifier compares pattern text, not the language it accepts."
         }
     ]
 }

@@ -20,7 +20,7 @@ import { WorkflowAuthorityV1Schema } from "./WorkflowAuthorityV1.js";
 
 export const WorkflowDefinitionV1Schema = z.looseObject({
     "schemaVersion": z.literal("1.0"),
-    "name": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "name": z.string().min(1).regex(new RegExp("\\S")),
     "steps": z.array(StepDefinitionSchema),
     "transitions": z.array(TransitionDefinitionSchema),
     "branchPoints": z.array(BranchPointDefinitionSchema),

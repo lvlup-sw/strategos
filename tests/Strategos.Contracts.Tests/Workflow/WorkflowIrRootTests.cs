@@ -48,7 +48,7 @@ public class WorkflowIrRootTests
             .Because("the workflow name is the IR identity.");
         var name = props.GetProperty("name");
         await Assert.That(name.GetProperty("minLength").GetInt32()).IsEqualTo(1);
-        await Assert.That(name.GetProperty("pattern").GetString()).IsEqualTo(".*\\S.*")
+        await Assert.That(name.GetProperty("pattern").GetString()).IsEqualTo("\\S")
             .Because("the workflow identity must contain at least one non-whitespace character.");
 
         // The ordered step collection is present.

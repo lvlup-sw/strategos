@@ -3,6 +3,6 @@
     "$id": "ActionLinkPathSegmentV1.json",
     "type": "string",
     "minLength": 1,
-    "pattern": ".*\\S.*",
+    "pattern": "\\S",
     "description": "A non-empty segment in an ontology relation traversal path."
 }
