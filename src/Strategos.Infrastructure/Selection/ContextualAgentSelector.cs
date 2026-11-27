@@ -201,15 +201,35 @@ public sealed class ContextualAgentSelector : IAgentSelector
     /// For shape less than 1, uses the transformation: if X ~ Gamma(shape + 1, 1),
     /// then X * U^(1/shape) ~ Gamma(shape, 1) where U ~ Uniform(0, 1).
     /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="shape"/> is not finite and positive.
+    /// </exception>
     private double SampleGamma(double shape)
     {
-        // For shape less than 1, use the transformation
-        if (shape < 1)
+        if (!double.IsFinite(shape) || shape <= 0.0)
         {
-            return SampleGamma(shape + 1) * Math.Pow(_random.NextDouble(), 1.0 / shape);
+            throw new ArgumentOutOfRangeException(
+                nameof(shape),
+                shape,
+                "Belief parameters must be finite and positive.");
         }
 
-        // Marsaglia and Tsang's method for shape >= 1
+        // For shape less than 1, boost once: shape + 1 is >= 1, so no further boosting is needed
+        if (shape < 1)
+        {
+            return SampleGammaMarsagliaTsang(shape + 1) * Math.Pow(_random.NextDouble(), 1.0 / shape);
+        }
+
+        return SampleGammaMarsagliaTsang(shape);
+    }
+
+    /// <summary>
+    /// Samples from a Gamma(shape) distribution with scale=1 using Marsaglia and Tsang's method.
+    /// </summary>
+    /// <param name="shape">The shape parameter (α), which must be finite and at least 1.</param>
+    /// <returns>A sample from Gamma(shape, 1).</returns>
+    private double SampleGammaMarsagliaTsang(double shape)
+    {
         var d = shape - (1.0 / 3.0);
         var c = 1.0 / Math.Sqrt(9.0 * d);
 

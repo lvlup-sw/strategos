@@ -211,11 +211,21 @@ public sealed class MockAgentSelector : IAgentSelector
 
     private double SampleGamma(double shape)
     {
-        if (shape < 1)
+        if (!double.IsFinite(shape) || shape <= 0.0)
         {
-            return SampleGamma(shape + 1) * Math.Pow(_random.NextDouble(), 1.0 / shape);
+            throw new ArgumentOutOfRangeException(nameof(shape), shape, "Belief parameters must be finite and positive.");
         }
 
+        if (shape < 1)
+        {
+            return SampleGammaMarsagliaTsang(shape + 1) * Math.Pow(_random.NextDouble(), 1.0 / shape);
+        }
+
+        return SampleGammaMarsagliaTsang(shape);
+    }
+
+    private double SampleGammaMarsagliaTsang(double shape)
+    {
         var d = shape - (1.0 / 3.0);
         var c = 1.0 / Math.Sqrt(9.0 * d);
 
