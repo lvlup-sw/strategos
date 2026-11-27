@@ -7,8 +7,8 @@
 import { z } from "zod";
 
 export const ActionSubjectV1Schema = z.looseObject({
-    "domainName": z.string().min(1).regex(new RegExp(".*\\S.*")),
-    "objectTypeName": z.string().min(1).regex(new RegExp(".*\\S.*")),
+    "domainName": z.string().min(1).regex(new RegExp("\\S")),
+    "objectTypeName": z.string().min(1).regex(new RegExp("\\S")),
   });
 
 export type ActionSubjectV1 = z.infer<typeof ActionSubjectV1Schema>;

@@ -170,11 +170,11 @@ public sealed class CodegenGuardTests
                   "properties": {
                     "requiredExact": {
                       "type": "string",
-                      "pattern": ".*\\S.*"
+                      "pattern": "\\S"
                     },
                     "optionalExact": {
                       "type": "string",
-                      "pattern": ".*\\S.*"
+                      "pattern": "\\S"
                     },
                     "unrelatedPattern": {
                       "type": "string",
@@ -193,7 +193,7 @@ public sealed class CodegenGuardTests
                 {
                   "$schema": "https://json-schema.org/draft/2020-12/schema",
                   "type": "string",
-                  "pattern": ".*\\S.*"
+                  "pattern": "\\S"
                 }
                 """);
 

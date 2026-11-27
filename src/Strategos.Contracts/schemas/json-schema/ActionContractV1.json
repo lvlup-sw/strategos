@@ -10,7 +10,7 @@
         "name": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The action name, unique within its subject."
         },
         "description": {
@@ -53,7 +53,7 @@
         "boundWorkflow": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The workflow this action is bound to (#167 `BoundToWorkflow`), by ordinal\nworkflow name. Omitted when the action binds no workflow.\n\nThe binding is part of the contract, not metadata about it: it is the\nimplementation claim the refinement proof discharges. A catalog that\ncarried an action's pre- and postconditions but not the workflow it claims\nto implement would describe an action no referencing compilation could\nprove anything about (#204)."
         }
     },

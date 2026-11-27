@@ -28,7 +28,7 @@ namespace Strategos.Contracts.Codegen;
 public static class RecordEmitter
 {
     private const string Namespace = "Strategos.Contracts.Generated";
-    private const string ContainsNonWhitespacePattern = ".*\\S.*";
+    private const string ContainsNonWhitespacePattern = "\\S";
 
     /// <summary>Generates records/enums for every <c>*.json</c> schema in <paramref name="schemasDir"/>.</summary>
     /// <param name="schemasDir">Directory containing emitted JSON Schema documents.</param>

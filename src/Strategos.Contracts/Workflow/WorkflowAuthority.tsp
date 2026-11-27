@@ -33,7 +33,7 @@ model WorkflowAuthorityStatementV1 {
 
   /** The statement itself, in prose. */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   statement: string;
 }
 
@@ -88,6 +88,6 @@ model TypedContractRefV1 {
    * repository produces.
    */
   @minLength(1)
-  @pattern(".*\\S.*")
+  @pattern("\\S")
   schemaId: string;
 }

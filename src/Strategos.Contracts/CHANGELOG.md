@@ -15,6 +15,25 @@ every breaking change must also be named in
 [`schemas/breaking-changes.allowlist.json`](schemas/breaking-changes.allowlist.json)
 and carry a line here.
 
+## [0.16.0]
+
+### Fixed
+
+- **Linear-time non-blank pattern:** every non-blank identifier (workflow `name`,
+  `ActionReferenceV1`/`ActionSubjectV1` names, `ActionContractV1.name` and `boundWorkflow`,
+  `ProofCatalogV1.catalogId`, `ActionLinkPathSegmentV1`, the authority axis, level, descriptor
+  and lattice names, `CompensationConfiguration.compensationStepType`,
+  `TypedContractRefV1.schemaId`, `WorkflowAuthorityStatementV1.statement`) changes its
+  `pattern` from `.*\S.*` to `\S`. As an unanchored search the two accept exactly the same
+  strings, so no document changes validity, but the leading `.*` made a backtracking engine
+  retry the rest of the input from every start position: a blank of a few hundred kilobytes
+  held Zod `safeParse` or Ajv on the event loop for seconds. The schema diff reports each
+  rewrite as a changed `pattern`; all 29 (per-model and bundled) are recorded in the 0.16.0
+  allowlist. The generated C# records are unchanged.
+- `emit-zod.mjs` now stops the emit on a `pattern` that is unanchored and carries an
+  unbounded quantifier (`*`, `+`, `{n,}`), so a superlinear pattern cannot reach the
+  published Zod or JSON Schema arm again.
+
 ## [0.15.0] — 2026-09-12
 
 ### Changed

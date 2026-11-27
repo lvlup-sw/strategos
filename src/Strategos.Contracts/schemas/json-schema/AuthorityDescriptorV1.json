@@ -6,7 +6,7 @@
         "name": {
             "type": "string",
             "minLength": 1,
-            "pattern": ".*\\S.*",
+            "pattern": "\\S",
             "description": "The authority literal (for example `position.reader`)."
         },
         "coordinates": {

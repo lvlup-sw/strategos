@@ -105,7 +105,7 @@ public class StepDefinitionSchemaTests
             await Assert.That(actionProperties.GetProperty(name).GetProperty("minLength").GetInt32())
                 .IsEqualTo(1);
             await Assert.That(actionProperties.GetProperty(name).GetProperty("pattern").GetString())
-                .IsEqualTo(".*\\S.*");
+                .IsEqualTo("\\S");
         }
 
         foreach (var armName in new[]

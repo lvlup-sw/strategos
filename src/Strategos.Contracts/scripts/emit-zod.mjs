@@ -675,10 +675,50 @@ function stringExpression(node, context) {
   if ("pattern" in node) {
     // JSON Schema `pattern` is an unanchored search, which is what RegExp.test
     // does — so the pattern transfers verbatim, with no added anchors.
+    requireLinearSearch(node.pattern, context);
     expression = `${expression}.regex(new RegExp(${JSON.stringify(node.pattern)}))`;
   }
-  void context;
   return expression;
+}
+
+/**
+ * RegExp.test retries an unanchored pattern from every start position, so an
+ * unbounded quantifier in one can rescan the rest of the input from each of
+ * them: `.*\S.*` against a long blank costs n²/2 steps on the consumer's event
+ * loop, and ajv does the same with the JSON Schema twin. Such a pattern stops
+ * the emit. Anchor it with `^`, or state the same language without the
+ * quantifier — "contains a non-blank" is `\S`.
+ */
+function requireLinearSearch(pattern, context) {
+  let depth = 0;
+  let inClass = false;
+  let anchored = pattern.startsWith("^");
+  let unboundedAt = -1;
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index];
+    if (char === "\\") {
+      index++;
+    } else if (inClass) {
+      inClass = char !== "]";
+    } else if (char === "[") {
+      inClass = true;
+    } else if (char === "(") {
+      depth++;
+    } else if (char === ")") {
+      depth--;
+    } else if (char === "|" && depth === 0) {
+      anchored = anchored && pattern[index + 1] === "^";
+    } else if (unboundedAt < 0
+      && (char === "*" || char === "+" || (char === "{" && /^\{\d+,\}/.test(pattern.slice(index))))) {
+      unboundedAt = index;
+    }
+  }
+  if (!anchored && unboundedAt >= 0) {
+    fail(
+      `${context.where}: pattern ${JSON.stringify(pattern)} is unanchored and has an unbounded ` +
+        `quantifier at offset ${unboundedAt}; a search retries it from every start position, ` +
+        "which is superlinear in the input length. Anchor it with '^' or drop the quantifier.");
+  }
 }
 
 function numberExpression(node, context) {
