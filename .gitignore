@@ -90,3 +90,6 @@ docs/workflow-state/
 
 # Python bytecode from scripts/
 __pycache__/
+
+# scripts/ci step outputs
+ci-out/
