@@ -830,5 +830,31 @@
         "audit-prompt": "x"
       }
     }
+  },
+  {
+    "name": "nested-not-preserves-unicode-and-zero",
+    "model": "CheckNode",
+    "valid": true,
+    "document": {
+      "not": {
+        "all-of": [
+          { "kind": "grep", "pattern": "é 🚀", "threshold": 0 },
+          { "any-of": [] }
+        ]
+      }
+    }
+  },
+  {
+    "name": "nested-not-rejects-numeric-pattern",
+    "model": "CheckNode",
+    "valid": false,
+    "document": {
+      "not": {
+        "all-of": [
+          { "kind": "grep", "pattern": 0, "threshold": 0 },
+          { "any-of": [] }
+        ]
+      }
+    }
   }
 ]

@@ -1,0 +1,48 @@
+{
+  "contractVersion": 2,
+  "framework": "tunit",
+  "frameworkVersion": "1.2.11",
+  "propertyRef": "workflow-definition/transitions/immutable-replacement",
+  "assumptions": [],
+  "target": {
+    "project": "tests/Strategos.Tests/Strategos.Tests.csproj",
+    "path": "tests/Strategos.Tests/Systematic/WorkflowEdgesGeneratedTests.cs",
+    "namespace": "Strategos.Tests.Systematic",
+    "className": "WorkflowEdgesGeneratedTests",
+    "binding": "Strategos.Tests.Systematic.WorkflowEdgesBinding"
+  },
+  "operations": [
+    {
+      "name": "replace",
+      "domain": {
+        "kind": "enum",
+        "values": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    }
+  ],
+  "histories": [
+    [
+      {
+        "operation": "replace",
+        "args": "a"
+      },
+      {
+        "operation": "replace",
+        "args": "b"
+      }
+    ]
+  ],
+  "generation": {
+    "seed": 13,
+    "count": 12,
+    "maxSteps": 8,
+    "maxAttempts": 32
+  },
+  "reduction": {
+    "maxAttempts": 32
+  }
+}
