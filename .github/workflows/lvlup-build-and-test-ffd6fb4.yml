@@ -92,7 +92,7 @@ jobs:
       tests-passed: ${{ steps.build-test.outputs.tests-passed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # All build/test/coverage logic lives in the dotnet-build-test composite
       # action (single source of truth, DR-3). This workflow is a thin preset
